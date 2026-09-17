@@ -78,6 +78,7 @@ SnoopCompile = "aa65fe97-06da-5843-b5b1-d5d13cad87d2"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 Thermodynamics = "b60c26fb-14c3-4610-9d3e-2d17fe7ff00c"
 TimerOutputs = "a759f4b9-e2f1-59dc-863e-4aeb61b1ea8f"
 TrixiBase = "9a0f1c46-06d5-4909-a5a3-ce25d3fa3284"
@@ -121,6 +122,7 @@ STRUMPACK_jll = "8.0.0"
 SciMLBase = "2.148.0"
 Serialization = "1.11.0"
 SparseArrays = "1.11.0"
+Statistics = "1.11.1"
 Thermodynamics = "=0.12.7"
 TimerOutputs = "0.5.29"
 TrixiBase = "0.1.8"
@@ -128,11 +130,6 @@ UUIDs = "1.11.0"
 UnicodePlots = "=3.7.2"
 julia = "1.11.5"
 
-# Test-only dependencies. `Pkg.test()` resolves the test suite in its own
-# sandbox environment built from [deps] plus the "test" target below; Test is
-# a stdlib but still has to be declared here, or test/runtests.jl fails with
-#   ArgumentError: Package Test not found in current path
-# Everything else the suite needs (HDF5) is a regular dependency above.
 [extras]
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 

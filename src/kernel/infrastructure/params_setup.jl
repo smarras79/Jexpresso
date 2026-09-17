@@ -329,9 +329,15 @@ function params_setup(sem,
     #     [:,4] = κ_θ  (already scaled by Pr/(γ-1))
     ldsgs     = inputs[:lvisc] == true && inputs[:visc_model] == DSGS()
     ldsgs_mhd = inputs[:lvisc] == true && inputs[:visc_model] == DSGS_MHD()
+    lndsgs   = inputs[:lvisc] == true && inputs[:visc_model] == NDSGS()
     if ldsgs || ldsgs_mhd
         μ_dsgs       = KernelAbstractions.zeros(backend, TFloat,
                                                 Int64(sem.mesh.nelem), Int64(qp.neqs))
+        μ_dsgs_pnode = KernelAbstractions.zeros(backend, TFloat,
+                                                Int64(sem.mesh.npoin), Int64(qp.neqs))
+    elseif lndsgs
+        μ_dsgs       = KernelAbstractions.zeros(backend, TFloat,
+                                                Int64(sem.mesh.nelem), Int64(sem.mesh.ngl), Int64(qp.neqs))
         μ_dsgs_pnode = KernelAbstractions.zeros(backend, TFloat,
                                                 Int64(sem.mesh.npoin), Int64(qp.neqs))
     else
@@ -350,7 +356,7 @@ function params_setup(sem,
     #
     # dsgs_avg / dsgs_denom are the per-equation domain-reduction scratch,
     # preallocated so compute_dsgs_viscosity! stays allocation-free.
-    if ldsgs || ldsgs_mhd
+    if ldsgs || ldsgs_mhd || lndsgs
         # Shaped like qp.qn / uaux, NOT (npoin, neqs): uaux carries one
         # extra trailing column (pressure) beyond the neqs solution slots,
         # which is why qp.qnm1/qnm2 are allocated from dims1 too. Sizing
@@ -427,7 +433,7 @@ function params_setup(sem,
                   WM,
                   sem.matrix.M, sem.matrix.Minv, g_dss_cache=g_dss_cache, tspan,
                   Δt, deps, xmax, xmin, ymax, ymin, zmin, zmax,
-                  qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, sem.fz, fz_t, laguerre=true,
+                  qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, sem.fz, fz_t, sem.f_back, sem.back_weights, laguerre=true,
                   les_stat_cache,
                   les_cross_section,
                   les_bottom_cache,
@@ -467,7 +473,7 @@ function params_setup(sem,
                   WM,
                   phys_grid = sem.phys_grid,
                   atmos_data = sem.atmos_data,
-                  qp, mp, LST, sem.fx, sem.fy, fy_t, sem.fz, fz_t, laguerre=false,
+                  qp, mp, LST, sem.fx, sem.fy, fy_t, sem.fz, fz_t, sem.f_back, sem.back_weights, laguerre=false,
                   les_stat_cache,
                   les_cross_section,
                   les_bottom_cache,

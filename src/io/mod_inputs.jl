@@ -49,6 +49,9 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         end
     end
 
+    if(!haskey(inputs, :backscatter_filter))
+       inputs[:backscatter_filter] = false
+    end
 
     if(!haskey(inputs, :RT_atmos_coupling))
        inputs[:RT_atmos_coupling] = false

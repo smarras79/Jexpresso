@@ -86,7 +86,7 @@ function write_output(SD, sol::SciMLBase.LinearSolution, uaux, mesh::St_mesh,
     nothing
 end
 
-function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
+function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp, ω, Je,
                       connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                       OUTPUT_DIR::String, inputs,
                       varnames, outvarnames,
@@ -105,7 +105,7 @@ function write_output(SD::NSD_1D, q::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::
     plot_results(SD, mesh, q[:], "initial", OUTPUT_DIR, varnames, inputs; iout=1, nvar=nvar, PT=nothing)
 end
 
-function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp,
+function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp, ω, Je,
                       connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                       OUTPUT_DIR::String, inputs,
                       varnames, outvarnames,
@@ -128,11 +128,11 @@ function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp,
             marker = markers[imarker]
             title = string("sol.u at time ", t)
             if (inputs[:backend] == CPU())
-                plot_results!(SD, mesh, sol, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, fig=fig,color = color,p=p,marker=marker,PT=nothing)
+                plot_results!(SD, mesh, sol, ω, Je, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, fig=fig,color = color,p=p,marker=marker,PT=nothing)
             else
                 uout = KernelAbstractions.allocate(CPU(),Float32, Int64(mesh.npoin))
                 KernelAbstractions.copyto!(CPU(), uout, sol)
-                plot_results!(SD, mesh, uout, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, fig=fig,color = color,p=p,marker=marker,PT=nothing)
+                plot_results!(SD, mesh, uout, ω, Je, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, fig=fig,color = color,p=p,marker=marker,PT=nothing)
             end
         #end
     else
@@ -142,19 +142,19 @@ function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp,
         # the same output time (the per-node broadcast is in μ_dsgs_pnode)
         μ_nodes = (μ_dsgs_pnode !== nothing && inputs[:backend] == CPU()) ? μ_dsgs_pnode : nothing
             if (inputs[:backend] == CPU())
-                plot_results(SD, mesh, sol, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, PT=nothing, μ_nodes=μ_nodes, t=t)
+                plot_results(SD, mesh, sol, ω, Je, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, PT=nothing, μ_nodes=μ_nodes, t=t)
             else
                 uout = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin*nvar))
                 KernelAbstractions.copyto!(CPU(), uout, sol)
                 convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
-                plot_results(SD, mesh, uout, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, PT=nothing, μ_nodes=μ_nodes, t=t)
+                plot_results(SD, mesh, uout, ω, Je, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, PT=nothing, μ_nodes=μ_nodes, t=t)
             end
         #end
     end
     MPI.Comm_rank(get_mpi_comm()) == 0 && println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE ") )
 end
 
-function write_output(SD::NSD_2D, sol, uaux, t, iout,  mesh::St_mesh, mp,
+function write_output(SD::NSD_2D, sol, uaux, t, iout,  mesh::St_mesh, mp, ω, Je,
                       connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                       OUTPUT_DIR::String, inputs,
                       varnames, outvarnames,
@@ -236,7 +236,7 @@ function write_output(SD, sol::SciMLBase.LinearSolution, uaux, mesh::St_mesh,
 
 end
 
-function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
+function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp, ω, Je,
                       connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                       OUTPUT_DIR::String, inputs,
                       varnames, outvarnames,
@@ -270,7 +270,7 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
 
 end
 
-function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
+function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp, ω, Je,
                     connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                     OUTPUT_DIR::String, inputs,
                     varnames, outvarnames,
@@ -873,7 +873,7 @@ end
 #------------
 # HDF5 writer/reader
 #------------
-function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
+function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp, ω, Je,
                       connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                       OUTPUT_DIR::String, inputs,
                       varnames, outvarnames,

@@ -261,6 +261,7 @@ function time_loop!(inputs, params, u, args...)
                      " in ", inputs[:output_dir], " ........."; msg_rank = rank)
         write_output(params.SD, u, params.uaux, inputs[:tinit], idx,
                      params.mesh, params.mp,
+                     params.ω, params.metrics.Je,
                      params.connijk_original, params.poin_in_bdy_face_original,
                      params.x_original, params.y_original, params.z_original,
                      inputs[:output_dir], inputs,
@@ -313,6 +314,7 @@ function time_loop!(inputs, params, u, args...)
         MPI.Barrier(comm)
         write_output(integrator.p.SD, integrator.u, params.uaux, integrator.t, idx,
                         integrator.p.mesh, integrator.p.mp,
+                        params.ω, params.metrics.Je,
                         integrator.p.connijk_original, integrator.p.poin_in_bdy_face_original,
                         integrator.p.x_original, integrator.p.y_original, integrator.p.z_original,
                         tmp_restart_path, inputs,
@@ -397,6 +399,7 @@ function time_loop!(inputs, params, u, args...)
             # end
             write_output(integrator.p.SD, integrator.u, integrator.p.uaux, integrator.t, idx,
                          integrator.p.mesh, integrator.p.mp,
+                         params.ω, params.metrics.Je,
                          integrator.p.connijk_original, integrator.p.poin_in_bdy_face_original,
                          integrator.p.x_original, integrator.p.y_original, integrator.p.z_original,
                          inputs[:output_dir], inputs,

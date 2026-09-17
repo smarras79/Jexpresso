@@ -656,7 +656,7 @@ function _build_rhs!(RHS, u, params, time)
 
         @timeit_debug JEXPRESSO_TIMER "resetRHS_visc" resetRHSToZero_viscous!(params, SD)
         
-        @timeit_debug JEXPRESSO_TIMER "viscous_rhs_el" viscous_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, SD)
+        @timeit_debug JEXPRESSO_TIMER "viscous_rhs_el" viscous_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, TFloat(time), SD)
         
         if inputs[:ladapt] == true
             DSS_nc_gather_rhs!(params.RHS_visc, SD, QT, params.rhs_diff_el,
@@ -987,7 +987,7 @@ end
 function _visc_el_loop_1d!(rhs_diffxi_el, uprimitive, mu_dsgs, visc_coeff,
                            omega, ngl::Int, dpsi, Je, dxidx, inputs, rhs_el,
                            nelem::Int, neqs::Int, connijk, uaux, qe, SVT,
-                           QT, VT, AD, SD, ldsgs::Bool)
+                           QT, VT, AD, SD, ldsgs::Bool, lndsgs::Bool)
 
     for iel = 1:nelem
 
@@ -1003,6 +1003,12 @@ function _visc_el_loop_1d!(rhs_diffxi_el, uprimitive, mu_dsgs, visc_coeff,
                                  omega, ngl, dpsi, Je, dxidx, inputs, rhs_el,
                                  iel, ieq, QT, DSGS(), SD, AD)
             end
+        elseif lndsgs
+            for ieq = 1:neqs
+                _expansion_visc!(rhs_diffxi_el, uprimitive, mu_dsgs,
+                                 omega, ngl, dpsi, Je, dxidx, inputs, rhs_el,
+                                 iel, ieq, QT, NDSGS(), SD, AD)
+            end
         else
             for ieq = 1:neqs
                 _expansion_visc!(rhs_diffxi_el, uprimitive, visc_coeff,
@@ -1014,7 +1020,7 @@ function _visc_el_loop_1d!(rhs_diffxi_el, uprimitive, mu_dsgs, visc_coeff,
     return nothing
 end
 
-function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}, SD::NSD_1D)
+function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}, time, SD::NSD_1D)
 
     nelem::Int = params.mesh.nelem
     ngl::Int   = params.mesh.ngl
@@ -1029,14 +1035,26 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
     # background.
     if params.VT == DSGS()
         TT = eltype(params.μ_dsgs)
-        compute_dsgs_viscosity!(params.μ_dsgs, DSGS(), SD,
+        compute_dsgs_viscosity!(params.μ_dsgs, DSGS(), SD, params.mesh.coords,
+                                params.uaux, params.dsgs_qnm2, params.dsgs_qnm1,
+                                params.qp.qe,
+                                params.RHS, params.f_back, params.Minv, params.visc_coeff, params.back_weights,
+                                TT(params.Δt),
+                                params.mesh.connijk, params.mesh.Δx,
+                                Int(nelem), Int(ngl), TT(time))
+        broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
+                                 params.mesh.connijk,
+                                 Int(nelem), Int(ngl), SD)
+    elseif params.VT == NDSGS()
+        TT = eltype(params.μ_dsgs)
+        compute_dsgs_viscosity!(params.μ_dsgs, NDSGS(), SD,
                                 params.uaux, params.dsgs_qnm2, params.dsgs_qnm1,
                                 params.qp.qe,
                                 params.RHS, params.Minv, params.visc_coeff,
                                 TT(params.Δt),
                                 params.mesh.connijk, params.mesh.Δx,
                                 Int(nelem), Int(ngl))
-        broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
+        broadcast_ndsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
                                  params.mesh.connijk,
                                  Int(nelem), Int(ngl), SD)
     end
@@ -1048,13 +1066,13 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                       params.inputs, params.rhs_el,
                       nelem, neqs, connijk, params.uaux, qe,
                       params.SOL_VARS_TYPE, params.QT, params.VT, params.AD, SD,
-                      params.VT == DSGS())
+                      params.VT == DSGS(), params.VT == NDSGS())
 
     params.rhs_diff_el .= @views (params.rhs_diffξ_el)
 
 end
 
-function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}, SD::NSD_2D)
+function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}, time, SD::NSD_2D)
     # Entropy-stable Navier-Stokes parabolic path (M. Artiano, ported
     # from ma/ab_dev): instead of the per-equation Laplacian of
     # _expansion_visc!, assemble the full viscous flux (deviatoric
@@ -1371,7 +1389,7 @@ function _viscous_rhs_el_2d_navierstokes!(uaux, qe, uprimitive,
 end
 
 
-function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}, SD::NSD_3D)
+function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}, time, SD::NSD_3D)
     # Typed function barrier (paired with FullSpecialize at the
     # ODEProblem construction site in TimeIntegrators.jl): pull every
     # params.* field used in the hot loop out into concretely-typed
@@ -1955,6 +1973,30 @@ function _expansion_visc!(rhs_diffξ_el, uprimitiveieq, μ_el, ω,
 
         dqdx   = dqdξ*dξdx_k
         flux_x = μ_el*dqdx
+
+        integrand = ωJac*dξdx_k*flux_x
+
+        @turbo for i = 1:ngl
+            rhs_diffξ_el[iel,i,ieq] -= dψ[i,k]*integrand
+        end
+    end
+end
+
+function _expansion_visc!(rhs_diffξ_el, uprimitiveieq, μ_n, ω,
+                          ngl, dψ, Je, dξdx, inputs, rhs_el, iel, ieq,
+                          QT::Inexact, VT::NDSGS, SD::NSD_1D, ::ContGal; Δ=1.0, lrichardson=false)
+
+    for k = 1:ngl
+        ωJac    = ω[k]*Je[iel,k]
+        dξdx_k  = dξdx[iel,k]
+
+        dqdξ = 0.0
+        @turbo for ii = 1:ngl
+            dqdξ += dψ[ii,k]*uprimitiveieq[ii,ieq]
+        end
+
+        dqdx   = dqdξ*dξdx_k
+        flux_x = μ_n[iel,k,ieq]*dqdx
 
         integrand = ωJac*dξdx_k*flux_x
 

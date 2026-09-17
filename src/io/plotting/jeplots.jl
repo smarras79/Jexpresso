@@ -47,7 +47,7 @@ function plot_initial(SD::NSD_1D, x, q, ivar, OUTPUT_DIR::String)
     plt
 end
 
-function plot_results(SD::NSD_1D, mesh::St_mesh, q, title::String, OUTPUT_DIR::String, outvar, inputs; iout=1, nvar=1, PT=nothing, μ_nodes=nothing, t=nothing)
+function plot_results(SD::NSD_1D, mesh::St_mesh, q, ω, Je, title::String, OUTPUT_DIR::String, outvar, inputs; iout=1, nvar=1, PT=nothing, μ_nodes=nothing, t=nothing)
 
     epsi = 1.1
     npoin = mesh.npoin
@@ -88,7 +88,7 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q, title::String, OUTPUT_DIR::S
             qref = nothing
         end
     end
-    for ivar=1:nvar
+    #=for ivar=1:nvar
 
         idx = (ivar - 1)*npoin
 
@@ -112,6 +112,28 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q, title::String, OUTPUT_DIR::S
                         marker = :none,
                         label = "exact",
                         legend = :best)
+            err = error_norms_1d(qout, qref, ivar, mesh, ω, Je)
+            @info string(outvar[ivar], "  t=", t) begin
+                @sprintf("L1=%.4e (rel %.4e)  L2=%.4e (rel %.4e)  Linf=%.4e (rel %.4e)",
+                         err.L1, err.L1_rel, err.L2, err.L2_rel, err.Linf, err.Linf_rel)
+            end
+            # NEW: total variation in the two star-plateau windows,
+            # nodal values already sorted by x via sort_idx.
+            if ivar == 1  # density only, matching the sensor's own input variable
+                head, tail, contact_x, shock_x = sod_wave_positions(t)
+                xs = x_coords[sort_idx]
+                vals_sorted = qout[sort_idx, ivar]
+
+                raref_mask      = (head .< xs .< tail)
+                left_star_mask  = (tail .< xs .< contact_x)
+                right_star_mask = (contact_x .< xs .< shock_x)
+
+                tv_raref = total_variation(vals_sorted, raref_mask)
+                tv_lstar = total_variation(vals_sorted, left_star_mask)
+                tv_rstar = total_variation(vals_sorted, right_star_mask)
+
+                @info "total variation (density), t=$t" rarefaction=tv_raref left_star=tv_lstar right_star=tv_rstar
+            end
         end
 
         vlines = inputs[:plot_vlines]
@@ -159,7 +181,7 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q, title::String, OUTPUT_DIR::S
         push!(plts, plt_μ)
     end
 
-    render_plot_matrix(lmatrix, plts, OUTPUT_DIR, iout; wfig=600, hfig=400)
+    render_plot_matrix(lmatrix, plts, OUTPUT_DIR, iout; wfig=600, hfig=400)=#
 end
 
 #
@@ -197,7 +219,7 @@ function render_plot_matrix(lmatrix, plts, OUTPUT_DIR, iout; wfig=600, hfig=400)
 end
 
 
-function plot_results!(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, outvar, inputs; iout=1, nvar=1, fig=nothing, color ="blue", p=[], marker = :circle, PT=nothing)
+function plot_results!(SD::NSD_1D, mesh::St_mesh, q::Array, ω, Je, title::String, OUTPUT_DIR::String, outvar, inputs; iout=1, nvar=1, fig=nothing, color ="blue", p=[], marker = :circle, PT=nothing)
     
     epsi = 1.1
     npoin = mesh.npoin
@@ -541,4 +563,75 @@ function plot_surf3d(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_
         plt
     end
 
+end
+
+
+"""
+    error_norms_1d(qout, qref, ivar, mesh, ω, Je)
+
+Integrated L1, L2, L∞ error (and relative versions) for variable `ivar`,
+using the same element-local LGL quadrature (ω, Je) that assembles the
+mass matrix elsewhere in the code — NOT a plain node-average, since LGL
+nodes are non-uniformly spaced and would otherwise over-weight the
+element-boundary clusters.
+
+Loops over (element, local node) pairs directly via connijk; does not use
+the plotting sort_idx, which only reorders points for line-drawing.
+
+Points where qref is NaN (case has no exact solution at that point/variable)
+are skipped individually, not just at the whole-variable level, in case a
+case ever supplies a partial reference.
+"""
+function error_norms_1d(qout::AbstractMatrix, qref::AbstractMatrix, ivar::Int,
+                         mesh, ω::AbstractVector, Je::AbstractArray)
+    nelem, ngl = mesh.nelem, mesh.ngl
+    L1 = 0.0; L2sq = 0.0; Linf = 0.0
+    L1r = 0.0; L2rsq = 0.0; Linfr = 0.0
+
+    for ie = 1:nelem
+        for i = 1:ngl
+            ip = mesh.connijk[ie, i]
+            qe = qref[ip, ivar]
+            isfinite(qe) || continue
+
+            wJ = ω[i] * Je[ie, i,1,1]
+            e  = qout[ip, ivar] - qe
+            ae = abs(e)
+            aqe = abs(qe)
+
+            L1    += wJ * ae
+            L2sq  += wJ * ae^2
+            Linf   = max(Linf, ae)
+
+            L1r   += wJ * aqe
+            L2rsq += wJ * aqe^2
+            Linfr  = max(Linfr, aqe)
+        end
+    end
+
+    eps = 1.0e-14
+    L2, L2r = sqrt(L2sq), sqrt(L2rsq)
+    return (L1=L1, L2=L2, Linf=Linf,
+            L1_rel = L1 / (L1r + eps),
+            L2_rel = L2 / (L2r + eps),
+            Linf_rel = Linf / (Linfr + eps))
+end
+
+"""
+    total_variation(vals::AbstractVector, mask::AbstractVector{Bool})
+
+Discrete total variation of `vals` (already sorted by x) restricted to
+the nodes selected by `mask`. Nodes must be contiguous in the sorted
+ordering for this to be a meaningful windowed TV -- a non-contiguous
+mask would sum jumps across a gap that isn't physically part of the
+window.
+"""
+function total_variation(vals::AbstractVector{TT}, mask::AbstractVector{Bool}) where {TT<:AbstractFloat}
+    idx = findall(mask)
+    length(idx) < 2 && return zero(TT)
+    tv = zero(TT)
+    for k in 2:length(idx)
+        tv += abs(vals[idx[k]] - vals[idx[k-1]])
+    end
+    return tv
 end

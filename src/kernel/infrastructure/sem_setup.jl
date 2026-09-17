@@ -135,15 +135,17 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
     rank = MPI.Comm_rank(comm)
     adapt_flags, partitioned_model_coarse, omesh = _handle_optional_args4amr(args...)
     
-    fx         = zeros(Float64,1,1)
-    fy         = zeros(Float64,1,1)
-    fz         = zeros(Float64,1,1)
-    fy_lag     = zeros(Float64,1,1)
-    phys_grid  = zeros(Float64,1,1)
-    atmos_data = zeros(Float64,1,1)
-    Nξ         = inputs[:nop]
-    AD         = inputs[:AD]
-    CL         = inputs[:CL]
+    fx           = zeros(Float64,1,1)
+    fy           = zeros(Float64,1,1)
+    fz           = zeros(Float64,1,1)
+    fy_lag       = zeros(Float64,1,1)
+    f_back       = zeros(Float64,1,1)
+    back_weights = zeros(Float64,1)
+    phys_grid    = zeros(Float64,1,1)
+    atmos_data   = zeros(Float64,1,1)
+    Nξ           = inputs[:nop]
+    AD           = inputs[:AD]
+    CL           = inputs[:CL]
     
     lexact_integration = inputs[:lexact_integration]
     SOL_VARS_TYPE      = inputs[:SOL_VARS_TYPE]
@@ -531,6 +533,20 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
                                         backend = inputs[:backend], interp)
                 isnothing(adapt_flags) && _save_sem_cache(preprocess_cache, metrics, matrix; inputs=inputs, nparts=nparts)
             end
+            if (inputs[:lfilter]) 
+                if (inputs[:backend] == CPU())
+                    fx = init_filter(mesh.ngl-1,ξ,inputs[:mu_x],mesh,inputs, rank)
+                else
+                    ξ_temp = KernelAbstractions.zeros(CPU(), Float64, Int64(mesh.ngl))
+                    KernelAbstractions.copyto!(CPU(),ξ_temp,ξ)
+                    fx_1 = init_filter(mesh.ngl-1,ξ_temp,inputs[:mu_x],mesh,inputs, rank)
+                    fx = KernelAbstractions.allocate(inputs[:backend], TFloat, Int64(mesh.ngl), Int64(mesh.ngl))
+                    KernelAbstractions.copyto!(inputs[:backend], fx, fx_1)
+                end
+            elseif (inputs[:backscatter_filter])
+                fx, f_back, back_weights = init_filter(mesh.ngl-1,ξ,inputs[:mu_x],mesh,inputs, rank)
+            end
+
         end
     end
 
@@ -556,10 +572,10 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
     # Build matrices
     #--------------------------------------------------------
     if isnothing(adapt_flags)
-        return (; QT, CL, AD, SOL_VARS_TYPE, volume_flux, mesh, metrics, basis, ξ, ω, matrix, fx, fy, fy_lag, fz, phys_grid, atmos_data,
+        return (; QT, CL, AD, SOL_VARS_TYPE, volume_flux, mesh, metrics, basis, ξ, ω, matrix, fx, fy, fy_lag, fz, f_back, back_weights, phys_grid, atmos_data,
                 connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original, interp, project, nparts, distribute), partitioned_model
     else
-        return (; QT, CL, AD, SOL_VARS_TYPE, volume_flux, mesh, metrics, basis, ξ, ω, matrix, fx, fy, fy_lag, fz, phys_grid, atmos_data,
+        return (; QT, CL, AD, SOL_VARS_TYPE, volume_flux, mesh, metrics, basis, ξ, ω, matrix, fx, fy, fy_lag, fz, f_back, back_weights, phys_grid, atmos_data,
                 connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original, interp, project, nparts, distribute), partitioned_model, uaux_new
     end
     

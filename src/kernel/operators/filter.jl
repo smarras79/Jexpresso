@@ -736,7 +736,17 @@ function init_filter(nop,xgl,mu_x,mesh,inputs, rank)
         end
         f[i,i] = f[i,i] + (1.0 - mu_x)
     end
-    return f
+    if (inputs[:backscatter_filter])
+        f_back = zeros(Float64, size(leg_inv))
+        for i=1:nop+1
+            for j=1:nop+1
+                f_back[i,j] = Float64(leg_inv[i,j])
+            end
+        end
+        return f, f_back, weight
+    else
+        return f
+    end
 end
 
 

@@ -35,6 +35,7 @@ function user_inputs()
         # 1D analysis includes it; switching it off lets the Sod shock
         # ring).
         :μ                    => [1.0, 1.0, 1.0],
+        :backscatter_filter   => true,
         #---------------------------------------------------------------------------
         # Mesh parameters and files
         #---------------------------------------------------------------------------

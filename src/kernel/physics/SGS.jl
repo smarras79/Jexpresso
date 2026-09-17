@@ -1,3 +1,8 @@
+using Statistics
+using Plots
+
+# module-level counter; persists across calls without changing the function signature
+const _DIAG_CALL_COUNT = Ref(0)
 #----------------------------------------------------------------------
 # SMAGORINSKY
 #----------------------------------------------------------------------
@@ -535,6 +540,215 @@ end
 #
 function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  ::DSGS, ::NSD_1D,
+                                 coords,
+                                 q::AbstractMatrix{TT},
+                                 q1::AbstractMatrix{TT},
+                                 q2::AbstractMatrix{TT},
+                                 qe::AbstractMatrix{TT},
+                                 rhs::AbstractMatrix{TT},
+                                 f_back::AbstractMatrix{TT},
+                                 Minv::AbstractVector{TT},
+                                 visc_coeff::AbstractVector{TT},
+                                 back_weights::AbstractVector{TT},
+                                 Δt::TT,
+                                 connijk::AbstractArray{TI,4},
+                                 Δx::AbstractVector{TT},
+                                 nelem::Int, ngl::Int, time::TT;
+                                 # NEW: region(s) to correlate mu_res_orig against (1-s),
+                                 # deliberately AWAY from the known shock/contact elements.
+                                 # Defaults below are guesses at the two "star state" plateaus
+                                 # for the standard Sod IC at t=0.2 -- adjust to match the
+                                 # actual exact-solution structure for the case being run.
+                                 diagnostic_xranges::Vector{Tuple{TT,TT}} =
+                                     [(TT(0.50), TT(0.62)), (TT(0.73), TT(0.80))]
+                                 ) where {TT<:AbstractFloat, TI<:Integer}
+    
+    invnp = one(TT)/(nelem*ngl)
+    γ     = TT(1.4)
+    C1    = TT(1.0)
+    C2    = TT(0.5)
+    eps   = Base.eps(TT)
+    neqs  = size(μ_dsgs, 2)
+
+    # --- Pass 1: domain averages of q ----------------------------------
+    ρ_avg  = zero(TT); ρu_avg = zero(TT); ρE_avg = zero(TT)
+    rho_el = zeros(TT, ngl)
+    x_el = zeros(TT, ngl)
+    R_el = zeros(TT,ngl)
+    ent_el       = zeros(TT, ngl) 
+    r_el = zeros(TT,nelem)
+    s_ent_el     = zeros(TT, nelem)   # NEW: sensor value from entropy field
+    r_ent_el     = zeros(TT, nelem)
+    decay_ent_el = zeros(TT, nelem)
+    logr_ent_el = zeros(TT, nelem)
+    logr_el = zeros(TT,nelem)
+    decay_el = zeros(TT,nelem)
+    @inbounds for ie = 1:nelem
+        for i = 1:ngl
+            ip = connijk[ie,i,1,1]
+            ρ_avg  += q[ip,1]
+            ρu_avg += q[ip,2]
+            ρE_avg += q[ip,3]
+        end
+    end
+    ρ_avg  *= invnp
+    ρu_avg *= invnp
+    ρE_avg *= invnp
+
+    # --- Pass 2: domain L∞ norms of |q - ⟨q⟩| --------------------------
+    denom1 = zero(TT); denom2 = zero(TT); denom3 = zero(TT)
+    @inbounds for ie = 1:nelem
+        for i = 1:ngl
+            ip = connijk[ie,i,1,1]
+            denom1 = max(denom1, abs(q[ip,1] - ρ_avg))
+            denom2 = max(denom2, abs(q[ip,2] - ρu_avg))
+            denom3 = max(denom3, abs(q[ip,3] - ρE_avg))
+        end
+    end
+    denom1 += eps; denom2 += eps; denom3 += eps
+
+    # NEW: per-element storage for the correlation diagnostic
+    μres_orig_el = zeros(TT, nelem)
+    s_el         = zeros(TT, nelem)
+    xc_el        = zeros(TT, nelem)
+
+    # --- Pass 3: per-element loop --------------------------------------
+    inv2Δt = one(TT)/(2*Δt)
+    @inbounds for ie = 1:nelem
+        Δ = Δx[ie]/ngl
+
+        n1   = zero(TT); n2 = zero(TT); n3 = zero(TT)
+        uTmx = zero(TT)
+        @simd for i = 1:ngl
+            ip = connijk[ie,i,1,1]
+            Mi = Minv[ip]
+            rho_el[i] = q[ip,1]
+            x_el[i] = coords[1,ip]
+            R1 = abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])*inv2Δt - Mi*rhs[ip,1])
+            R2 = abs((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])*inv2Δt - Mi*rhs[ip,2])
+            R3 = abs((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])*inv2Δt - Mi*rhs[ip,3])
+            R_el[i] = R1
+            n1 = max(n1, R1); n2 = max(n2, R2); n3 = max(n3, R3)
+
+            ρl = q[ip,1]
+            ul = q[ip,2]/ρl
+            el = q[ip,3]/ρl
+            eint = max(el - TT(0.5)*ul*ul, zero(TT))
+            uTmx = max(uTmx, abs(ul) + sqrt(γ*(γ - one(TT))*eint))
+
+            # NEW: entropy-function field, log form: ln(p) - γ*ln(ρ)
+            pl = (γ - one(TT)) * ρl * eint
+            ent_el[i] = log(max(pl, eps)) - γ*log(max(ρl, eps))
+        end
+
+        μ_res_orig = C1*Δ*Δ*max(n1/denom1, n2/denom2, n3/denom3)  # renamed, kept pristine
+        μ_res, s, b, r_rho, logr = backscatter_gate(rho_el, f_back, back_weights, μ_res_orig, x_el; beta_max= TT(0.6),tau=TT(-7.0), kappa=TT(0.7))
+        μ_max = C2*Δ*uTmx
+        μ     = max(zero(TT), min(μ_max, μ_res))
+        for ieq = 1:neqs
+            μ_dsgs[ie, ieq] = visc_coeff[ieq] * μ
+        end
+
+        # NEW: same modal machinery, entropy field instead of density
+        m_ent = f_back * ent_el
+        s_ent, r_ent, logr_ent, decay_ent = smoothness_sensor(ent_el, f_back, back_weights;
+                                                                tau=TT(-8.7), kappa=TT(0.7))
+
+        decay_ent = spectral_decay_rate(m_ent)
+
+        m = f_back * rho_el
+        decay_el[ie] = spectral_decay_rate(m)
+
+        μres_orig_el[ie] = μ_res_orig
+        s_el[ie]         = s
+        r_el[ie]         = r_rho
+        logr_el[ie] = logr
+
+        logr_ent_el[ie] = logr_ent; s_ent_el[ie] = s_ent; r_ent_el[ie] = r_ent; decay_ent_el[ie] = decay_ent
+        xc = zero(TT)
+        for i = 1:ngl
+            ip = connijk[ie,i,1,1]
+            xc += coords[1,ip]
+        end
+        xc_el[ie] = xc / ngl
+    end
+
+    # NEW: plateau-region correlation between the UNMODIFIED mu_res and (1-s).
+    # High correlation -> s is tracking the same structure mu_res already has
+    # in these nominally-smooth regions. Low/near-zero -> s is adding
+    # information (or noise) independent of what mu_res already sees there.
+    mask = falses(nelem)
+    @inbounds for ie = 1:nelem
+        for (xlo, xhi) in diagnostic_xranges
+            if xlo <= xc_el[ie] <= xhi
+                mask[ie] = true
+                break
+            end
+        end
+    end
+    n_pts = count(mask)
+    #=if n_pts >= 3
+        corr = cor(μres_orig_el[mask], one(TT) .- s_el[mask])
+        @info "plateau-region correlation(mu_res_orig, 1-s)" n_points=n_pts correlation=corr
+    else
+        @warn "plateau-region correlation: too few elements matched diagnostic_xranges" n_points=n_pts
+    end=#
+
+    plot_every = 50
+    _DIAG_CALL_COUNT[] += 1
+    if plot_every > 0 && _DIAG_CALL_COUNT[] % plot_every == 0
+        n = _DIAG_CALL_COUNT[]
+
+        p1 = plot(xc_el, μres_orig_el, label="μ_res_orig", lw=2, title="raw vs final")
+        plot!(p1, xc_el, μ_dsgs[:,1], label="μ_final", lw=2, ls=:dash)
+
+        p2 = plot(xc_el, s_el, label="s (density)", lw=2, ylim=(0,1), title="smoothness sensor")
+        plot!(p2, xc_el, s_ent_el, label="s (entropy)", lw=2)
+
+        p5 = plot(xc_el, decay_el, label="decay (density)", lw=2, color=:green, title="modal decay slope")
+        plot!(p5, xc_el, decay_ent_el, label="decay (entropy)", lw=2, color=:purple)
+
+        display(plot(p2, p5, layout=(1,2), size=(1400,500), plot_title="call $n"))
+
+        head, tail, contact_x, shock_x = sod_wave_positions(time)
+        margin = TT(3) * (Δx[1] / ngl)   # a few nodes' worth, keeps windows off the fronts
+
+        raref_mask      = (head + margin .<= xc_el .<= tail - margin)
+        left_star_mask  = (tail + margin .<= xc_el .<= contact_x - margin)
+        right_star_mask = (contact_x + margin .<= xc_el .<= shock_x - margin)
+        contact_mask    = (contact_x - margin .<= xc_el .<= contact_x + margin)
+        shock_mask       = (shock_x   - margin .<= xc_el .<= shock_x   + margin)
+        @info maximum(decay_el[shock_mask]), maximum(logr_el[shock_mask])
+        # guard against empty windows early in the run, before features
+        # have separated enough for a window to contain any elements
+        function safe_stats(vals, mask, label)
+            if count(mask) < 2
+                @info "entropy logr -- $label" note="window empty or too small" n=count(mask)
+                return
+            end
+            @info "entropy logr -- $label" mean=mean(vals[mask]) std=std(vals[mask]) n=count(mask)
+        end
+        @info "maximum shock decay, logr", maximum(decay_el[shock_mask]), maximum(logr_el[shock_mask])
+        safe_stats(logr_el, raref_mask,      "rarefaction")
+        safe_stats(logr_el, left_star_mask,  "left star plateau")
+        safe_stats(logr_el, right_star_mask, "right star plateau")
+        safe_stats(decay_el, raref_mask,      "rarefaction")
+        safe_stats(decay_el, left_star_mask,  "left star plateau")
+        safe_stats(decay_el, right_star_mask, "right star plateau")
+
+        #=if count(contact_mask) >= 1
+            @info "entropy logr -- contact peak" value=maximum(logr_ent_el[contact_mask]) t=time x=contact_x
+        end
+        if count(shock_mask) >= 1
+            @info "entropy logr -- shock peak" value=maximum(logr_ent_el[shock_mask]) t=time x=shock_x
+        end=#
+    end
+   
+    return nothing
+end
+
+function compute_dsgs_viscosity!(μ_dsgs::AbstractArray{TT},
+                                 ::NDSGS, ::NSD_1D,
                                  q::AbstractMatrix{TT},
                                  q1::AbstractMatrix{TT},
                                  q2::AbstractMatrix{TT},
@@ -621,17 +835,377 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
             uTmx = max(uTmx, abs(ul) + sqrt(γ*(γ - one(TT))*eint))
         end
 
-        μ_res = C1*Δ*Δ*max(n1/denom1, n2/denom2, n3/denom3)
-        μ_max = C2*Δ*uTmx
-        μ     = max(zero(TT), min(μ_max, μ_res))
+        #Forward scattering only Nodal DSGS V0 max(abs(element)) num, abs(nodal) denom (WORKING STABLE)
+        #=μ_max = C2*Δ*uTmx
+        for i =1:ngl
+            ip = connijk[ie,i,1,1]
+            denom1 = abs(q[ip,1] - ρ_avg)
+            denom2 = abs(q[ip,2] - ρu_avg)
+            denom3 = abs(q[ip,3] - ρE_avg)
+            denom1 += eps; denom2 += eps; denom3 += eps
+            μ_dsgs[ie, i, 1] = visc_coeff[1] * max(zero(TT), min(μ_max, C1*Δ*Δ*max(n1/denom1)))
+            μ_dsgs[ie, i, 2] = visc_coeff[2] * max(zero(TT), min(μ_max, C1*Δ*Δ*max(n2/denom2)))
+            μ_dsgs[ie, i, 3] = visc_coeff[3] * max(zero(TT), min(μ_max, C1*Δ*Δ*max(n3/denom3)))
+        end=#
 
-        # Same coefficient on every equation (1D E-form, Marras eq. 10),
-        # scaled per equation by the user-supplied inputs[:μ] vector.
-        for ieq = 1:neqs
-            μ_dsgs[ie, ieq] = visc_coeff[ieq] * μ
+        #Forward scattering only Nodal DSGS V0.1 abs(nodal) num, abs(nodal) denom (WORKING STABLE)
+        #=μ_max = C2*Δ*uTmx
+        for i =1:ngl
+            ip = connijk[ie,i,1,1]
+            Mi = Minv[ip]
+            n1 = abs(((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])*inv2Δt - Mi*rhs[ip,1]))
+            n2 = abs(((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])*inv2Δt - Mi*rhs[ip,2]))
+            n3 = abs(((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])*inv2Δt - Mi*rhs[ip,3]))
+            denom1 = abs(q[ip,1] - ρ_avg)
+            denom2 = abs(q[ip,2] - ρu_avg)
+            denom3 = abs(q[ip,3] - ρE_avg)
+            denom1 += eps; denom2 += eps; denom3 += eps
+            μ_dsgs[ie, i, 1] = visc_coeff[1] * max(zero(TT), min(μ_max, C1*Δ*Δ*max(n1/denom1)))
+            μ_dsgs[ie, i, 2] = visc_coeff[2] * max(zero(TT), min(μ_max, C1*Δ*Δ*max(n2/denom2)))
+            μ_dsgs[ie, i, 3] = visc_coeff[3] * max(zero(TT), min(μ_max, C1*Δ*Δ*max(n3/denom3)))
+        end=#
+        #Forward scattering only Nodal DSGS V0.2 avg(abs(element)) num, abs(nodal) denom (WORKING STABLE)
+        #=μ_max = C2*Δ*uTmx
+        R1 =0.0; R2=0.0; R3=0.0
+        @simd for i = 1:ngl
+            ip = connijk[ie,i,1,1]
+            Mi = Minv[ip]
+
+            R1 += abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])*inv2Δt - Mi*rhs[ip,1])
+            R2 += abs((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])*inv2Δt - Mi*rhs[ip,2])
+            R3 += abs((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])*inv2Δt - Mi*rhs[ip,3])
         end
-    end
+        n1 = R1*invnp; n2 = R2*invnp; n3 = R3*invnp
+        for i =1:ngl
+            ip = connijk[ie,i,1,1]
+            Mi = Minv[ip]
+            n1 = abs(((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])*inv2Δt - Mi*rhs[ip,1]))
+            n2 = abs(((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])*inv2Δt - Mi*rhs[ip,2]))
+            n3 = abs(((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])*inv2Δt - Mi*rhs[ip,3]))
+            denom1 = abs(q[ip,1] - ρ_avg)
+            denom2 = abs(q[ip,2] - ρu_avg)
+            denom3 = abs(q[ip,3] - ρE_avg)
+            denom1 += eps; denom2 += eps; denom3 += eps
+            μ_dsgs[ie, i, 1] = visc_coeff[1] * max(zero(TT), min(μ_max, C1*Δ*Δ*max(n1/denom1)))
+            μ_dsgs[ie, i, 2] = visc_coeff[2] * max(zero(TT), min(μ_max, C1*Δ*Δ*max(n2/denom2)))
+            μ_dsgs[ie, i, 3] = visc_coeff[3] * max(zero(TT), min(μ_max, C1*Δ*Δ*max(n3/denom3)))
+        end=#
+        #Dual scattering  Nodal DSGS V1.1 max(abs(element)) num, nodal denom (unstable)
+        #=μ_max = C2*Δ*uTmx
+        for i =1:ngl
+            ip = connijk[ie,i,1,1]
+            denom1 = q[ip,1] - ρ_avg
+            denom2 = q[ip,2] - ρu_avg
+            denom3 = q[ip,3] - ρE_avg
+            denom1 += eps; denom2 += eps; denom3 += eps
+            μ_dsgs[ie, i, 1] = visc_coeff[1] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n1/denom1)))
+            μ_dsgs[ie, i, 2] = visc_coeff[2] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n2/denom2)))
+            μ_dsgs[ie, i, 3] = visc_coeff[3] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n3/denom3)))
+        end=#
+        #Dual scattering Nodal DSGS V1.0 max(abs(element)) num, avg(element) denom (unstable)
+        #=μ_max = C2*Δ*uTmx
+        denom1 = 0.0; denom2=0.0; denom3=0.0
+        for i = 1:ngl
+            ip = connijk[ie,i,1,1]
+            denom1 += (q[ip,1] - ρ_avg)*invnp
+            denom2 += (q[ip,2] - ρu_avg)*invnp
+            denom3 += (q[ip,3] - ρE_avg)*invnp
+        end
+        denom1 += eps; denom2 += eps; denom3 += eps
+        for i =1:ngl
+            ip = connijk[ie,i,1,1]
+            μ_dsgs[ie, i, 1] = visc_coeff[1] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n1/denom1)))
+            μ_dsgs[ie, i, 2] = visc_coeff[2] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n2/denom2)))
+            μ_dsgs[ie, i, 3] = visc_coeff[3] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n3/denom3)))
+        end=#
+        #Dual scattering Nodal DSGS V1.2 avg(abs(element)) num, nodal denom (unstable)
+        #=μ_max = C2*Δ*uTmx
+        R1 =0.0; R2=0.0; R3=0.0
+        @simd for i = 1:ngl
+            ip = connijk[ie,i,1,1]
+            Mi = Minv[ip]
 
+            R1 += abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])*inv2Δt - Mi*rhs[ip,1])
+            R2 += abs((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])*inv2Δt - Mi*rhs[ip,2])
+            R3 += abs((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])*inv2Δt - Mi*rhs[ip,3])
+        end
+        n1 = R1*invnp; n2 = R2*invnp; n3 = R3*invnp
+        for i =1:ngl
+            ip = connijk[ie,i,1,1]
+            denom1 = q[ip,1] - ρ_avg
+            denom2 = q[ip,2] - ρu_avg
+            denom3 = q[ip,3] - ρE_avg
+            denom1 += eps; denom2 += eps; denom3 += eps
+            μ_dsgs[ie, i, 1] = visc_coeff[1] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n1/denom1)))
+            μ_dsgs[ie, i, 2] = visc_coeff[2] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n2/denom2)))
+            μ_dsgs[ie, i, 3] = visc_coeff[3] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n3/denom3)))
+        end=#
+        #Dual scattering Nodal DSGS V1.3 nodal num, nodal denom (unstable)
+        #=μ_max = C2*Δ*uTmx
+        
+        for i =1:ngl
+            ip = connijk[ie,i,1,1]
+            Mi = Minv[ip]
+            n1 = (3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])*inv2Δt - Mi*rhs[ip,1]
+            n2 = (3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])*inv2Δt - Mi*rhs[ip,2]
+            n3 = (3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])*inv2Δt - Mi*rhs[ip,3]
+            denom1 = q[ip,1] - ρ_avg
+            denom2 = q[ip,2] - ρu_avg
+            denom3 = q[ip,3] - ρE_avg
+            denom1 += eps; denom2 += eps; denom3 += eps
+            μ_dsgs[ie, i, 1] = visc_coeff[1] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n1/denom1)))
+            μ_dsgs[ie, i, 2] = visc_coeff[2] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n2/denom2)))
+            μ_dsgs[ie, i, 3] = visc_coeff[3] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n3/denom3)))
+        end=#
+        #Dual scattering Nodal DSGS V1.4 avg(element) num, nodal denom (unstable)
+        #=μ_max = C2*Δ*uTmx
+        R1 =0.0; R2=0.0; R3=0.0
+        @simd for i = 1:ngl
+            ip = connijk[ie,i,1,1]
+            Mi = Minv[ip]
+
+            R1 += (3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])*inv2Δt - Mi*rhs[ip,1]
+            R2 += (3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])*inv2Δt - Mi*rhs[ip,2]
+            R3 += (3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])*inv2Δt - Mi*rhs[ip,3]
+        end
+        n1 = R1*invnp; n2 = R2*invnp; n3 = R3*invnp
+        for i =1:ngl
+            ip = connijk[ie,i,1,1]
+            denom1 = q[ip,1] - ρ_avg
+            denom2 = q[ip,2] - ρu_avg
+            denom3 = q[ip,3] - ρE_avg
+            denom1 += eps; denom2 += eps; denom3 += eps
+            μ_dsgs[ie, i, 1] = visc_coeff[1] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n1/denom1)))
+            μ_dsgs[ie, i, 2] = visc_coeff[2] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n2/denom2)))
+            μ_dsgs[ie, i, 3] = visc_coeff[3] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n3/denom3)))
+        end=#
+        #Dual scattering Nodal DSGS V1.5 -nodal num, nodal denom (unstable)
+        #=μ_max = C2*Δ*uTmx
+        
+        for i =1:ngl
+            ip = connijk[ie,i,1,1]
+            Mi = Minv[ip]
+            n1 = -((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])*inv2Δt - Mi*rhs[ip,1])
+            n2 = -((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])*inv2Δt - Mi*rhs[ip,2])
+            n3 = -((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])*inv2Δt - Mi*rhs[ip,3])
+            denom1 = q[ip,1] - ρ_avg
+            denom2 = q[ip,2] - ρu_avg
+            denom3 = q[ip,3] - ρE_avg
+            denom1 += eps; denom2 += eps; denom3 += eps
+            μ_dsgs[ie, i, 1] = visc_coeff[1] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n1/denom1)))
+            μ_dsgs[ie, i, 2] = visc_coeff[2] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n2/denom2)))
+            μ_dsgs[ie, i, 3] = visc_coeff[3] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n3/denom3)))
+        end=#
+        #Dual scattering Nodal DSGS V1.6 -avg(element) num, nodal denom (unstable) ALL PURE NODAL DENOM ARE UNSTABLE
+        #=μ_max = C2*Δ*uTmx
+        R1 =0.0; R2=0.0; R3=0.0
+        @simd for i = 1:ngl
+            ip = connijk[ie,i,1,1]
+            Mi = Minv[ip]
+
+            R1 += (3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])*inv2Δt - Mi*rhs[ip,1]
+            R2 += (3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])*inv2Δt - Mi*rhs[ip,2]
+            R3 += (3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])*inv2Δt - Mi*rhs[ip,3]
+        end
+        n1 = -R1*invnp; n2 = -R2*invnp; n3 = -R3*invnp
+        for i =1:ngl
+            ip = connijk[ie,i,1,1]
+            denom1 = q[ip,1] - ρ_avg
+            denom2 = q[ip,2] - ρu_avg
+            denom3 = q[ip,3] - ρE_avg
+            denom1 += eps; denom2 += eps; denom3 += eps
+            μ_dsgs[ie, i, 1] = visc_coeff[1] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n1/denom1)))
+            μ_dsgs[ie, i, 2] = visc_coeff[2] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n2/denom2)))
+            μ_dsgs[ie, i, 3] = visc_coeff[3] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n3/denom3)))
+        end
+    end=#
+    #Dual scattering Nodal DSGS V1.7 avg(abs(element)) num, avg(element) denom (unstable)
+        #=μ_max = C2*Δ*uTmx
+        denom1 = 0.0; denom2=0.0; denom3=0.0
+        for i = 1:ngl
+            ip = connijk[ie,i,1,1]
+            denom1 += (q[ip,1] - ρ_avg)*invnp
+            denom2 += (q[ip,2] - ρu_avg)*invnp
+            denom3 += (q[ip,3] - ρE_avg)*invnp
+        end
+        denom1 += eps; denom2 += eps; denom3 += eps
+        R1 =0.0; R2=0.0; R3=0.0
+        @simd for i = 1:ngl
+            ip = connijk[ie,i,1,1]
+            Mi = Minv[ip]
+
+            R1 += abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])*inv2Δt - Mi*rhs[ip,1])
+            R2 += abs((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])*inv2Δt - Mi*rhs[ip,2])
+            R3 += abs((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])*inv2Δt - Mi*rhs[ip,3])
+        end
+        n1 = R1*invnp; n2 = R2*invnp; n3 = R3*invnp
+        for i =1:ngl
+            ip = connijk[ie,i,1,1]
+            μ_dsgs[ie, i, 1] = visc_coeff[1] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n1/denom1)))
+            μ_dsgs[ie, i, 2] = visc_coeff[2] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n2/denom2)))
+            μ_dsgs[ie, i, 3] = visc_coeff[3] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n3/denom3)))
+        end=#
+        #Dual scattering Nodal DSGS V1.8 nodal num, avg(element) denom  (unstable)
+        #=μ_max = C2*Δ*uTmx
+        denom1 = 0.0; denom2=0.0; denom3=0.0
+        for i = 1:ngl
+            ip = connijk[ie,i,1,1]
+            denom1 += (q[ip,1] - ρ_avg)*invnp
+            denom2 += (q[ip,2] - ρu_avg)*invnp
+            denom3 += (q[ip,3] - ρE_avg)*invnp
+        end
+        denom1 += eps; denom2 += eps; denom3 += eps
+        for i =1:ngl
+            ip = connijk[ie,i,1,1]
+            Mi = Minv[ip]
+            n1 = (3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])*inv2Δt - Mi*rhs[ip,1]
+            n2 = (3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])*inv2Δt - Mi*rhs[ip,2]
+            n3 = (3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])*inv2Δt - Mi*rhs[ip,3]
+            μ_dsgs[ie, i, 1] = visc_coeff[1] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n1/denom1)))
+            μ_dsgs[ie, i, 2] = visc_coeff[2] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n2/denom2)))
+            μ_dsgs[ie, i, 3] = visc_coeff[3] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n3/denom3)))
+        end=#
+        #Dual scattering Nodal DSGS V1.9 avg(element) num, avg(element) denom (unstable)
+        #=μ_max = C2*Δ*uTmx
+        denom1 = 0.0; denom2=0.0; denom3=0.0
+        for i = 1:ngl
+            ip = connijk[ie,i,1,1]
+            denom1 += (q[ip,1] - ρ_avg)*invnp
+            denom2 += (q[ip,2] - ρu_avg)*invnp
+            denom3 += (q[ip,3] - ρE_avg)*invnp
+        end
+        denom1 += eps; denom2 += eps; denom3 += eps
+        R1 =0.0; R2=0.0; R3=0.0
+        @simd for i = 1:ngl
+            ip = connijk[ie,i,1,1]
+            Mi = Minv[ip]
+
+            R1 += (3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])*inv2Δt - Mi*rhs[ip,1]
+            R2 += (3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])*inv2Δt - Mi*rhs[ip,2]
+            R3 += (3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])*inv2Δt - Mi*rhs[ip,3]
+        end
+        n1 = R1*invnp; n2 = R2*invnp; n3 = R3*invnp
+        for i =1:ngl
+            ip = connijk[ie,i,1,1]
+            μ_dsgs[ie, i, 1] = visc_coeff[1] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n1/denom1)))
+            μ_dsgs[ie, i, 2] = visc_coeff[2] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n2/denom2)))
+            μ_dsgs[ie, i, 3] = visc_coeff[3] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n3/denom3)))
+        end=#
+        #Dual scattering Nodal DSGS V1.10 -nodal num, avg(element) denom (unstable)
+        #=μ_max = C2*Δ*uTmx
+        denom1 = 0.0; denom2=0.0; denom3=0.0
+        for i = 1:ngl
+            ip = connijk[ie,i,1,1]
+            denom1 += (q[ip,1] - ρ_avg)*invnp
+            denom2 += (q[ip,2] - ρu_avg)*invnp
+            denom3 += (q[ip,3] - ρE_avg)*invnp
+        end
+        denom1 += eps; denom2 += eps; denom3 += eps
+        for i =1:ngl
+            ip = connijk[ie,i,1,1]
+            Mi = Minv[ip]
+            n1 = -((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])*inv2Δt - Mi*rhs[ip,1])
+            n2 = -((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])*inv2Δt - Mi*rhs[ip,2])
+            n3 = -((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])*inv2Δt - Mi*rhs[ip,3])
+            μ_dsgs[ie, i, 1] = visc_coeff[1] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n1/denom1)))
+            μ_dsgs[ie, i, 2] = visc_coeff[2] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n2/denom2)))
+            μ_dsgs[ie, i, 3] = visc_coeff[3] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n3/denom3)))
+        end=#
+        #Dual scattering Nodal DSGS V1.11 -avg(element) num, avg(element) denom (unstable)
+        #=μ_max = C2*Δ*uTmx
+        denom1 = 0.0; denom2=0.0; denom3=0.0
+        for i = 1:ngl
+            ip = connijk[ie,i,1,1]
+            denom1 += (q[ip,1] - ρ_avg)*invnp
+            denom2 += (q[ip,2] - ρu_avg)*invnp
+            denom3 += (q[ip,3] - ρE_avg)*invnp
+        end
+        denom1 += eps; denom2 += eps; denom3 += eps
+        R1 =0.0; R2=0.0; R3=0.0
+        @simd for i = 1:ngl
+            ip = connijk[ie,i,1,1]
+            Mi = Minv[ip]
+
+            R1 += (3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])*inv2Δt - Mi*rhs[ip,1]
+            R2 += (3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])*inv2Δt - Mi*rhs[ip,2]
+            R3 += (3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])*inv2Δt - Mi*rhs[ip,3]
+        end
+        n1 = -R1*invnp; n2 = -R2*invnp; n3 = -R3*invnp
+        for i =1:ngl
+            ip = connijk[ie,i,1,1]
+            μ_dsgs[ie, i, 1] = visc_coeff[1] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n1/denom1)))
+            μ_dsgs[ie, i, 2] = visc_coeff[2] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n2/denom2)))
+            μ_dsgs[ie, i, 3] = visc_coeff[3] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n3/denom3)))
+        end=#
+        #Dual scattering Nodal DSGS V1.12 avg(element) num, max(abs(denom))
+        #=μ_max = C2*Δ*uTmx
+        
+        R1 =0.0; R2=0.0; R3=0.0
+        @simd for i = 1:ngl
+            ip = connijk[ie,i,1,1]
+            Mi = Minv[ip]
+            R1 += (3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])*inv2Δt - Mi*rhs[ip,1]
+            R2 += (3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])*inv2Δt - Mi*rhs[ip,2]
+            R3 += (3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])*inv2Δt - Mi*rhs[ip,3]
+        end
+        n1 = R1*invnp; n2 = R2*invnp; n3 = R3*invnp
+        for i =1:ngl
+            ip = connijk[ie,i,1,1]
+            μ_dsgs[ie, i, 1] = visc_coeff[1] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n1/denom1)))
+            μ_dsgs[ie, i, 2] = visc_coeff[2] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n2/denom2)))
+            μ_dsgs[ie, i, 3] = visc_coeff[3] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n3/denom3)))
+        end=#
+        #Dual scattering Nodal DSGS V1.13 -avg(element) num, max(abs(denom)) (unstable)
+        #=μ_max = C2*Δ*uTmx
+        
+        R1 =0.0; R2=0.0; R3=0.0
+        @simd for i = 1:ngl
+            ip = connijk[ie,i,1,1]
+            Mi = Minv[ip]
+            R1 += (3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])*inv2Δt - Mi*rhs[ip,1]
+            R2 += (3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])*inv2Δt - Mi*rhs[ip,2]
+            R3 += (3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])*inv2Δt - Mi*rhs[ip,3]
+        end
+        n1 = -R1*invnp; n2 = -R2*invnp; n3 = -R3*invnp
+        for i =1:ngl
+            ip = connijk[ie,i,1,1]
+            μ_dsgs[ie, i, 1] = visc_coeff[1] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n1/denom1)))
+            μ_dsgs[ie, i, 2] = visc_coeff[2] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n2/denom2)))
+            μ_dsgs[ie, i, 3] = visc_coeff[3] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n3/denom3)))
+        end=#
+        #Dual scattering Nodal DSGS V1.14 nodal num, max(abs(denom))
+        μ_max = C2*Δ*uTmx
+        for i =1:ngl
+            ip = connijk[ie,i,1,1]
+            Mi = Minv[ip]
+            n1 = (3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])*inv2Δt - Mi*rhs[ip,1]
+            n2 = (3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])*inv2Δt - Mi*rhs[ip,2]
+            n3 = (3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])*inv2Δt - Mi*rhs[ip,3]
+            μ_dsgs[ie, i, 1] = visc_coeff[1] * max(-1e-6, min(μ_max, C1*Δ*Δ*max(n1/denom1)))
+            μ_dsgs[ie, i, 2] = visc_coeff[2] * max(-1e-6, min(μ_max, C1*Δ*Δ*max(n2/denom2)))
+            μ_dsgs[ie, i, 3] = visc_coeff[3] * max(-1e-6, min(μ_max, C1*Δ*Δ*max(n3/denom3)))
+            #STABILITY ISSUES are likely dictated by negative viscosity limit.
+            #=μ_dsgs[ie, i, 1] = maximum(μ_dsgs[ie, i, :])
+            μ_dsgs[ie, i, 2] = maximum(μ_dsgs[ie, i, :])
+            μ_dsgs[ie, i, 3] = maximum(μ_dsgs[ie, i, :])=#
+        end
+        #Dual scattering Nodal DSGS V1.15 -nodal num, max(abs(denom))
+        #=μ_max = C2*Δ*uTmx
+        for i =1:ngl
+            ip = connijk[ie,i,1,1]
+            Mi = Minv[ip]
+            n1 = -(3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])*inv2Δt - Mi*rhs[ip,1]
+            n2 = -(3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])*inv2Δt - Mi*rhs[ip,2]
+            n3 = -(3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])*inv2Δt - Mi*rhs[ip,3]
+            μ_dsgs[ie, i, 1] = visc_coeff[1] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n1/denom1)))
+            μ_dsgs[ie, i, 2] = visc_coeff[2] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n2/denom2)))
+            μ_dsgs[ie, i, 3] = visc_coeff[3] * max(-μ_max, min(μ_max, C1*Δ*Δ*max(n3/denom3)))
+        end=#
+    end
+    @info maximum(μ_dsgs[:, :, 1]), minimum(μ_dsgs[:, :, 1])
+    @info maximum(μ_dsgs[:, :, 2]), minimum(μ_dsgs[:, :, 2])
+    @info maximum(μ_dsgs[:, :, 3]), minimum(μ_dsgs[:, :, 3])
+    
     return nothing
 end
 
@@ -1078,6 +1652,51 @@ function broadcast_dsgs_to_nodes!(μ_dsgs_pnode::AbstractMatrix{TT},
     end
     return nothing
 end
+
+function broadcast_ndsgs_to_nodes!(μ_dsgs_pnode::AbstractMatrix{TT},
+                                  μ_dsgs::AbstractArray{TT},
+                                  connijk::AbstractArray{TI,4},
+                                  nelem::Int, ngl::Int,
+                                  SD::AbstractSpaceDimensions) where {TT,TI}
+    neqs = size(μ_dsgs, 2)
+    if SD === NSD_1D()
+        @inbounds for ie = 1:nelem
+            for i = 1:ngl
+                ip = connijk[ie,i,1,1]
+                for ieq = 1:neqs
+                    μ_dsgs_pnode[ip, ieq] = μ_dsgs[ie, i, ieq]
+                end
+            end
+        end
+    elseif SD === NSD_2D()
+        @inbounds for ie = 1:nelem
+            for j = 1:ngl
+                for i = 1:ngl
+                    ip = connijk[ie,i,j,1]
+                    for ieq = 1:neqs
+                        μ_dsgs_pnode[ip, ieq] = μ_dsgs[ie, i, j, ieq]
+                    end
+                end
+            end
+        end
+    elseif SD === NSD_3D()
+        @inbounds for ie = 1:nelem
+            for k = 1:ngl
+                for j = 1:ngl
+                    for i = 1:ngl
+                        ip = connijk[ie,i,j,k]
+                        for ieq = 1:neqs
+                            μ_dsgs_pnode[ip, ieq] = μ_dsgs[ie, i, j, k, ieq]
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return nothing
+end
+
+
 # ================================================================================
 # Cache-reading SGS_diffusion — NSD_3D
 # Called inside the ieq loop after compute_sgs_cache! has run for the element.
@@ -1738,4 +2357,158 @@ end
                                           dwdx, dwdy, dwdz,
                                           PhysConst, Δ2, ::Any)
     return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+end
+
+"""
+    backscatter_gate(rho_el, f_x, weight, mu_res_el; beta_max=0.2)
+
+Per-element, per-RK-stage backscatter gate for the residual-based DSGS model.
+
+Purely local: uses only this element's own nodal density values, its own
+hierarchical modal transform, and the pre-existing Vandeven trust weights.
+No neighbor or column information of any kind.
+
+Arguments:
+  rho_el   :: Vector{TFloat}  -- local density at this element's ngl nodes
+  f_x      :: Matrix{TFloat}  -- UNBLENDED nodal->modal transform for this
+                                  element (i.e. `leg_inv` from init_filter,
+                                  NOT the mu_x-blended production filter `f`)
+  weight   :: Vector{TFloat}  -- per-mode Vandeven trust weights, length ngl,
+                                  the same `weight` computed inside init_filter
+                                  (currently local-only there; needs to be
+                                  returned alongside f_x for this to work)
+  mu_res_el:: TFloat          -- this element's already-computed mu_res
+                                  (unchanged, existing model)
+
+Keyword:
+  beta_max :: TFloat = 0.2    -- ceiling on the fraction of mu_res that can
+                                  be withheld, even in a maximally smooth,
+                                  maximally under-resolved element
+
+Returns:
+  nu_eff, s, beta   -- the modified diffusion coefficient to use in place
+                        of mu_res, plus the sensor and beta for diagnostics
+"""
+function backscatter_gate(rho_el::AbstractVector{TFloat},
+                           f_x::AbstractMatrix{TFloat},
+                           weight::AbstractVector{TFloat},
+                           mu_res_el::TFloat, x_el;
+                           beta_max::TFloat = TFloat(0.2), tau = TFloat(-8.7), kappa = TFloat(0.7)) where {TFloat<:AbstractFloat}
+
+    ngl = length(rho_el)
+    eps_energy = TFloat(1.0e-14)
+
+    # --- modal coefficients of the local density field (single element) ---
+    m = f_x * rho_el   # m[k] = amplitude of hierarchical mode k
+
+    # --- energy sitting in modes the existing Vandeven weighting distrusts ---
+    #=atten_energy = zero(TFloat)
+    total_energy = zero(TFloat)
+    @inbounds for k = 1:ngl
+        mk2 = m[k]^2
+        atten_energy += (one(TFloat) - weight[k])^2 * mk2
+        total_energy += mk2
+    end
+
+    # s -> 1 : energy concentrated in trusted (vertex/low) modes, smooth field
+    # s -> 0 : energy concentrated in distrusted (high bubble) modes, shock-like
+    s = one(TFloat) - atten_energy / (total_energy + eps_energy)
+    s = clamp(s, zero(TFloat), one(TFloat))=#
+    s, r, logr, decay = smoothness_sensor(rho_el,
+                            f_x,
+                            weight;
+                            tau = tau,
+                            kappa = kappa,
+                            eps = TFloat(1e-14))
+    #@info "element coordinates", x_el
+    #@info "s, r, logr", s, r, logr
+    beta = beta_max * s
+    nu_eff = mu_res_el * (one(TFloat) - beta)
+
+    return nu_eff, s, beta, r, logr
+end
+
+"""
+    smoothness_sensor(rho_el, leg_inv, weight; tau=-8.7, kappa=0.7, eps=1e-14)
+
+Log-space energy-fraction ratio (r, logr) is still computed and returned
+for diagnostics/comparison, but s itself is now built from the spectral
+decay rate of rho's modal coefficients, not from logr -- confirmed via
+separation-ratio comparison to discriminate rarefaction/plateau vs. shock
+more cleanly than the energy-fraction metric (see prototype log).
+
+s -> 1 : element smooth (fast modal decay), decay << tau
+s -> 0 : element shock-like (slow/flat modal decay), decay >> tau
+
+tau, kappa are empirical, calibrated from this problem's own rarefaction
+and star-plateau decay-rate means/stds (tau near their midpoint, kappa
+near their common std) -- revisit if resolution, order, or problem changes.
+"""
+function smoothness_sensor(rho_el::AbstractVector{TT},
+                            leg_inv::AbstractMatrix{TT},
+                            weight::AbstractVector{TT};
+                            tau::TT = TT(-8.7),
+                            kappa::TT = TT(0.7),
+                            eps::TT = TT(1e-14)) where {TT<:AbstractFloat}
+
+    ngl = length(rho_el)
+    m = leg_inv * rho_el
+
+    atten_energy = zero(TT)
+    total_energy = zero(TT)
+    @inbounds for k = 1:ngl
+        mk2 = m[k]^2
+        atten_energy += (one(TT) - weight[k])^2 * mk2
+        total_energy += mk2
+    end
+    r = atten_energy / (total_energy + eps)
+    logr = log10(r + eps)
+
+    decay = spectral_decay_rate(m)   # already defined; reuses the same m
+
+    # NOTE: sign convention -- decay is MORE NEGATIVE for smooth elements,
+    # LESS NEGATIVE (closer to 0) for shock-like elements, same "larger =
+    # more shock-like" polarity as logr had, so the tanh form is unchanged.
+    s = 1 - 0.5*(1 + tanh((decay - tau) / kappa))
+
+    return s, r, logr, decay
+end
+
+function spectral_decay_rate(m::AbstractVector{TT}) where {TT<:AbstractFloat}
+    ngl = length(m)
+    # skip mode 1 (constant/vertex mode dominates trivially, not informative
+    # about decay shape) and any exactly-zero coefficients (log undefined)
+    ks = TT[]; logm = TT[]
+    for k in 2:ngl
+        if abs(m[k]) > eps(TT)
+            push!(ks, log(TT(k)))
+            push!(logm, log(abs(m[k])))
+        end
+    end
+    length(ks) < 3 && return zero(TT)  # not enough points, degenerate element
+    # least-squares slope
+    kbar, lbar = sum(ks)/length(ks), sum(logm)/length(logm)
+    num = sum((ks .- kbar) .* (logm .- lbar))
+    den = sum((ks .- kbar).^2)
+    return num / den   # more negative = faster decay = smoother
+end
+
+function separation_ratio(vals::AbstractVector{TT}, xc::AbstractVector{TT},
+                           smooth_range::Tuple{TT,TT}, shock_range::Tuple{TT,TT}) where {TT}
+    smooth_mask = smooth_range[1] .<= xc .<= smooth_range[2]
+    shock_mask  = shock_range[1] .<= xc .<= shock_range[2]
+
+    μ_smooth, σ_smooth = mean(vals[smooth_mask]), std(vals[smooth_mask])
+    μ_shock            = maximum(vals[shock_mask])  # peak, not mean, since shock is a spike not a plateau
+
+    gap = abs(μ_shock - μ_smooth)
+    return gap / σ_smooth, μ_smooth, σ_smooth, μ_shock
+end
+
+function sod_wave_positions(t::TT; x0::TT=TT(0.5)) where {TT<:AbstractFloat}
+    head    = x0 + TT(-1.1832) * t
+    tail    = x0 + TT(-0.0704) * t
+    contact = x0 + TT( 0.9275) * t
+    shock   = x0 + TT( 1.7522) * t
+    return head, tail, contact, shock
 end
