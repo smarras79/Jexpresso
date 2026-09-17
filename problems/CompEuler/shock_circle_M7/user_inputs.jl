@@ -73,9 +73,27 @@ function user_inputs()
         # in the wall cells, 2.4e-4 in the far field, and 0.032 from the
         # MOLECULAR viscosity at the wall, where the low density and the
         # 300 K wall give ν = μ/ρ = 0.32 m²/s. All comfortable.
-        # 7.5e-9, HALVED from the 1.5e-8 of the first runs, and the only new
-        # variable in this configuration — everything else is back to what got
-        # furthest. Advective CFL becomes ~0.04.
+        # 3.75e-9: halved AGAIN, and the only variable that has ever moved
+        # this case. The scaling is the reason, and it is the one measurement
+        # in this series that says the failure may be removable at all:
+        #
+        #   run 1  Δt 1.50e-8   887 steps   t_fail 1.33e-5
+        #   run 3  Δt 7.50e-9  3969 steps   t_fail 2.98e-5
+        #
+        # Halving Δt multiplied the steps by 4.47 and the PHYSICAL survival
+        # time by 2.24. Compare what the two null hypotheses predict:
+        #
+        #   a hard physical limit (the shock simply cannot form)  -> x1.00
+        #   fixed damage per step (purely numerical, unbounded)   -> x0.50
+        #   MEASURED                                              -> x2.24
+        #
+        # Better than both. The damage per unit PHYSICAL time FELL when Δt
+        # fell, which is what a Δt-dependent instability looks like and what a
+        # hard limit does not. So there may be a Δt at which this runs.
+        #
+        # This run is the test of that, and it is worth something either way:
+        # if the trend holds, t_fail lands near 6.7e-5; if it saturates near
+        # 3e-5, Δt is exhausted and the answer is structural, not a step size.
         #
         # Why Δt and not more dissipation: the two runs so far differ only in
         # how much dissipation they had, and the one with LESS died sooner
@@ -86,7 +104,7 @@ function user_inputs()
         # shock layer only half formed — 9.4 mm and 20.9 mm of flow travel
         # against a 42 mm standoff — so the whole difficulty is the FORMATION
         # of the normal shock, not any developed state.
-        :Δt                   => 7.5e-9,
+        :Δt                   => 3.75e-9,
         :diagnostics_at_times => (0:2.0e-6:1.0e-3),   # dense: the first µs is the hard part
         :lsource              => false,
         :SOL_VARS_TYPE        => TOTAL(),
