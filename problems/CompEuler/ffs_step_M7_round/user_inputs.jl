@@ -8,6 +8,8 @@
 #   JEXPRESSO_M7_MU       slots 2-4 (μ, κ) multiplier          default 4.0
 #   JEXPRESSO_M7_CMAX     :dsgs_Cmax, the cap constant         default 0.5
 #   JEXPRESSO_M7_CMIN     :dsgs_Cmin, background floor         default 0.0
+#   JEXPRESSO_M7_KEP      "none" | "ranocha" | "kg" | "central" default none
+#   JEXPRESSO_M7_MACH     free-stream Mach (initialize.jl)      default 7.0
 #   JEXPRESSO_M7_FILTER   modal-filter blend μ_x, 0 = off      default 0.0
 #   JEXPRESSO_M7_DT       :Δt                                  default 5.0e-8
 #   JEXPRESSO_M7_TEND     :tend                                default 3.5e-3
@@ -19,6 +21,11 @@
 _m7_s(k, d)  = get(ENV, k, d)
 _m7_f(k, d)  = parse(Float64, get(ENV, k, string(d)))
 _m7_i(k, d)  = parse(Int,     get(ENV, k, string(d)))
+# JEXPRESSO_M7_KEP -> (:lkep, :volume_flux). See the note by :lkep below.
+_m7_kep()    = lowercase(get(ENV, "JEXPRESSO_M7_KEP", "none"))
+_m7_vflux()  = (k = _m7_kep();
+                k == "kg"      ? kennedy_gruber() :
+                k == "central" ? central_euler()  : ranocha())
 
 function user_inputs()
 
@@ -190,6 +197,30 @@ function user_inputs()
         # Physical parameters / constants
         #---------------------------------------------------------------------------
         :energy_equation      => "energy",        # slot 4 is ρE — see note (1)
+        # JEXPRESSO_M7_KEP. Assemble the inviscid RHS by FLUX DIFFERENCING
+        # from symmetric two-point volume fluxes (_expansion_inviscid_KEP! in
+        # rhs.jl) instead of from the pointwise flux. The aux states it needs
+        # are the user_fluxaux! methods added to user_flux.jl.
+        #
+        # This is the lever aimed at the pervasive element-scale checkerboard
+        # — the one that is present even in the UNDISTURBED FREE STREAM
+        # upstream of the bow shock, where no physical feature exists and no
+        # shock-capturing sensor can legitimately fire. A collocation CG
+        # integrates the nonlinear flux with the same LGL rule it interpolates
+        # on, so the flux is aliased: energy goes into the grid-scale modes
+        # and CG has nothing to take it back out. At Mach 7 that costs
+        # 1 + γ(γ-1)M²/2 = 14.7x in pressure against 3.5x at Mach 3, because
+        # p is the difference of ρE and ½ρ|u|², which agree to one part in 15
+        # here. KEP/EC flux differencing removes that transfer by
+        # construction.
+        #
+        # NOTE the DynSGS sensor. :dsgs_sensor => "legacy" reads the ASSEMBLED
+        # RHS, which is filled on both paths, so it keeps working. The
+        # "residual" sensor reads params.rhs_el, which the KEP branch may not
+        # fill — check before combining JEXPRESSO_M7_KEP with
+        # JEXPRESSO_M7_SENSOR=residual.
+        :lkep                 => (_m7_kep() != "none"),
+        :volume_flux          => _m7_vflux(),
         :lvisc                => true,
         # DynSGS sensor: "legacy" = the sensor this case was validated with
         # (the assembled RHS against a fixed BDF2 of the stage state, in

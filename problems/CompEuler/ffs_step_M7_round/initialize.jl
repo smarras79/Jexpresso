@@ -73,7 +73,17 @@ function ffs_freestream()
 
     PhysConst = PhysicalConst{Float64}()
 
-    M∞ = 7.0                    # inflow Mach number  (ffs_step: 3.0)
+    # JEXPRESSO_M7_MACH. The decisive experiment this deck now supports:
+    # the SAME configuration at a sweep of Mach numbers. p = (γ-1)(ρE-½ρ|u|²)
+    # is a difference of nearly equal numbers, and a relative error in ρE or
+    # ρu comes out of it amplified by (γ-1)ρE/p = 1 + γ(γ-1)M²/2 —
+    #
+    #    M     3     4     5     6     7    7.7
+    #    amp  3.5   5.5   8.0  11.0  14.7  17.5      (grows like M²)
+    #
+    # If the survival time collapses with THAT rather than with anything
+    # geometric, the formulation is the problem, not the corner or the grid.
+    M∞ = parse(Float64, get(ENV, "JEXPRESSO_M7_MACH", "7.0"))   # ffs_step: 3.0
     p∞ = 101325.0               # Pa
     T∞ = 293.0                  # K
 
