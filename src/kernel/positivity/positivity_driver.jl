@@ -67,8 +67,12 @@ function positivity_validate(inputs, params, neqs::Int, ien::Int)
 
     rank = MPI.Comm_rank(get_mpi_comm())
     if rank == 0
-        @info @sprintf(" # POSITIVITY REPAIR ON: ρ_min = %.3e, p_min = %.3e (absolute). This is a REPAIR, not a preserving scheme — every intervention is counted and reported.",
-                       ρmin, pmin)
+    # println_rank, NOT @info: Julia sends @info/@warn to STDERR, and the submit
+    # scripts split the streams (--output=%x.%j.out, --error=%x.%j.err), so the
+    # audit trail landed in a file nobody reads while the CFL narration it has
+    # to be compared against went to the other one.
+        println_rank(@sprintf(" # POSITIVITY REPAIR ON: ρ_min = %.3e, p_min = %.3e (absolute). This is a REPAIR, not a preserving scheme — every intervention is counted and reported.",
+                       ρmin, pmin); msg_rank = rank)
     end
     return nothing
 end
@@ -113,13 +117,13 @@ function apply_positivity!(u, params, SD)
     if get(inputs, :positivity_report, true) &&
        Positivity.positivity_should_report(POSITIVITY_STATS)
         if MPI.Comm_rank(get_mpi_comm()) == 0
-            @warn string(" # POSITIVITY REPAIR ENGAGED — ",
+            println_rank(string(" # POSITIVITY REPAIR ENGAGED — ",
                          Positivity.positivity_summary(POSITIVITY_STATS), "\n",
                          " #   A few node-visits near a shock is the repair doing its job.\n",
                          " #   Engagement growing without bound, or anywhere inside the\n",
                          " #   boundary layer, means the ANSWER is wrong and the repair is\n",
                          " #   only hiding it — check the first-engagement coordinates above\n",
-                         " #   against the wall before trusting any heat flux from this run.")
+                         " #   against the wall before trusting any heat flux from this run."))
         end
     end
 
