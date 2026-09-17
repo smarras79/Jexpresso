@@ -154,6 +154,31 @@ Expect the bow shock to stand off `0.212 R = 42 mm`. `schlieren` shows it best.
 For the heating, `T` is in `qoutvars`: the wall heat flux is
 `q_w = k ∂T/∂n` along the now-exact wall normal.
 
+## Startup
+
+A uniform free stream is **not** a legal starting field for a no-slip isothermal
+wall. At the wall the BC sets `u = v = 0` and `ρE = ρ cv T_w`, so `ρE` drops
+183.85 → 30.02 while the node one 2.2 mm cell away is still at 183.85 —
+dominated by the kinetic energy going (−171.3) rather than the temperature
+(+17.5). That transient drove `p` to **−0.296 Pa** against `p∞ = 5 Pa` in the
+first steps.
+
+`rampCaoEtAl2021` already learned this and starts from a compressible laminar
+boundary-layer profile instead of a uniform stream. Same idea here, adapted: a
+cylinder has no similarity profile to lay down before the bow shock even
+exists, so this is not a boundary layer — it is a **boundary-condition-consistent
+field**. Velocity → 0 and `T` → `T_w` over `δ₀ = 5 mm` (≈2 wall cells, ≈2δ)
+with the ramp's Pohlhausen blend `su = 2ζ − 2ζ³ + ζ⁴`, pressure held at `p∞`
+across the layer, density following from `p∞` and the blended `T`. The wall node
+then starts at `ρE = 12.55`, which is what the BC would set it to anyway — no
+jump. The real boundary layer grows out of it.
+
+Separately, `user_flux.jl` now floors `ρ` and `p` at `FLUXAUX_FLOOR = 1e-14`
+before `ranocha()` takes their logarithms. A single node at `p ≤ 0` was not
+degrading the answer, it was throwing `DomainError` out of `log` and killing the
+run from inside the RHS. **If that floor engages anywhere but the first few
+steps the run is wrong** — it is a guard, not a fix.
+
 ## Status
 
 **Not yet run.** The mesh is generated and verified; no Julia was available in

@@ -56,6 +56,32 @@ function user_flux_gpu(q, qe, PhysConst, lpert)
 end
 
 #---------------------------------------------------------------------------------
+# REALIZABILITY FLOOR for the two-point fluxes.
+#
+# ranocha() needs log(ρ) and log(p), so a single node at p <= 0 does not
+# degrade the answer — it throws DomainError out of `log` and kills the run
+# from inside the RHS, with no chance for the step to be rejected or for the
+# artificial viscosity to heal it. Measured on shock_circle_M7: p = -0.296 Pa
+# against p_inf = 5 Pa, i.e. a 6% excursion during the startup transient, took
+# the whole run down.
+#
+# A transient negative pressure at one node is a state the scheme should be
+# allowed to recover from. So ρ and p are floored here, which is the same
+# policy the DSGS kernels already apply (SGS.jl clamps its own T and p with
+# max(..., 0) for exactly this reason). The floor is strictly positive so the
+# logarithms stay finite, and it is far below any physical pressure in these
+# cases (p_inf is 5 Pa on the cylinder, 101325 Pa on the step), so it engages
+# ONLY where the state has already left the realizable set.
+#
+# This is a guard, not a fix: if it engages anywhere except the first few
+# startup steps, the run is wrong and the deck needs attention, not a bigger
+# floor. NaNMath.log would be the alternative — it returns NaN and lets
+# mpi_unstable_check abort cleanly — but that turns a recoverable excursion
+# into a stop, which is the wrong trade during a startup transient.
+#---------------------------------------------------------------------------------
+const FLUXAUX_FLOOR = 1.0e-14
+
+#---------------------------------------------------------------------------------
 # KINETIC-ENERGY / ENTROPY-PRESERVING FLUX DIFFERENCING (:lkep => true).
 #
 # With :lkep the RHS is not assembled from the pointwise flux above. Instead
@@ -105,9 +131,9 @@ function user_fluxaux!(aux, SD::NSD_2D, q, ::TOTAL, ::kennedy_gruber)
     u = rho_u/rho
     v = rho_v/rho
 
-    p = PhysConst.γm1*(rho_e - (0.5*rho_u*u + 0.5*v*rho_v))
+    p = max(PhysConst.γm1*(rho_e - (0.5*rho_u*u + 0.5*v*rho_v)), FLUXAUX_FLOOR)
 
-    aux[1] = rho
+    aux[1] = max(rho, FLUXAUX_FLOOR)
     aux[2] = u
     aux[3] = v
     aux[4] = p
@@ -126,15 +152,18 @@ function user_fluxaux!(aux, SD::NSD_2D, q, ::TOTAL, ::ranocha)
     u = rho_u/rho
     v = rho_v/rho
 
-    p = PhysConst.γm1*(rho_e - (0.5*rho_u*u + 0.5*v*rho_v))
+    # Floored — see FLUXAUX_FLOOR above. Both logs below read these, so the
+    # floor has to be applied BEFORE them, not to aux[1]/aux[4] afterwards.
+    ρ_safe = max(rho, FLUXAUX_FLOOR)
+    p_safe = max(PhysConst.γm1*(rho_e - (0.5*rho_u*u + 0.5*v*rho_v)), FLUXAUX_FLOOR)
 
-    aux[1] = rho
+    aux[1] = ρ_safe
     aux[2] = u
     aux[3] = v
-    aux[4] = p
+    aux[4] = p_safe
     aux[5] = rho_e
-    aux[6] = log(rho)
-    aux[7] = log(p)
+    aux[6] = log(ρ_safe)
+    aux[7] = log(p_safe)
 end
 
 #---------------------------------------------------------------------------------
