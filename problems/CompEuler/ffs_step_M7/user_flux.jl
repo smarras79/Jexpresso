@@ -136,3 +136,146 @@ function user_fluxaux!(aux, SD::NSD_2D, q, ::TOTAL, ::ranocha)
     aux[6] = log(rho)
     aux[7] = log(p)
 end
+
+#---------------------------------------------------------------------------------
+# The two-point volume fluxes themselves.
+#
+# _expansion_inviscid_KEP! (rhs.jl:2403) calls flux_turbo(aux_l, aux_r,
+# volume_flux_type) for every node pair in the element. Like user_fluxaux!,
+# flux_turbo is a PER-CASE function — the kernel declares the call, the case
+# supplies the methods — so a deck that sets :lkep => true without these gets
+#
+#     UndefVarError: `flux_turbo` not defined
+#
+# from inside the first RHS evaluation. Copied verbatim from
+# CompEuler/kelvinHelmholtzChan2022, which is where this path is exercised for
+# the 2D total-energy system.
+#
+# Three volume fluxes, matching the three user_fluxaux! methods above:
+#
+#   ranocha()         entropy conservative (Ranocha 2018). The default here,
+#                     and the one the aliasing argument in user_inputs.jl is
+#                     aimed at. Needs aux slots 1-7, log(ρ) and log(p)
+#                     included; the logarithmic means are inlined with the
+#                     series expansion for nearly-equal arguments, so there is
+#                     no 0/0 in the smooth free stream.
+#   kennedy_gruber()  kinetic-energy preserving only, aux slots 1-5.
+#   central_euler()   the plain central flux written in flux-differencing
+#                     form, aux slots 1-4. The CONTROL: if a case behaves the
+#                     same under this as under ranocha(), the two-point
+#                     machinery is not what is helping. It needs flux(q,
+#                     ::central_euler) below, which is the same pointwise flux
+#                     as user_flux! above but returning SVectors.
+#---------------------------------------------------------------------------------
+
+@inline function flux(q, ::central_euler)
+    PhysConst = PhysicalConst{Float64}()
+    
+    ρ  = q[1]
+    ρu = q[2]
+    ρv = q[3]
+    ρe = q[4]
+
+    e  = ρe/ρ
+    u  = ρu/ρ
+    v  = ρv/ρ
+
+    γ   = PhysConst.γ
+    γm1 = γ - 1.0
+    
+    velomagsq = (u*u + v*v)
+    ke        = 0.5*ρ*velomagsq
+    Pressure  = γm1*(ρe - ke)
+    
+    f1 = ρu
+    f2 = ρu*u .+ Pressure
+    f3 = ρv*u
+    f4 = u*(ke + γ*Pressure/γm1)
+
+    g1 = ρv
+    g2 = ρu*v
+    g3 = ρv*v .+ Pressure
+    g4 = v*(ke + γ*Pressure/γm1)
+
+    return SVector(f1, f2, f3, f4), SVector(g1, g2, g3, g4)
+end
+
+@inline function flux_turbo(u_ll, u_rr, ::ranocha)
+    PhysConst = PhysicalConst{Float64}()
+	rho_ll, v1_ll, v2_ll, p_ll, rho_e_ll, log_rho_ll, log_p_ll = u_ll
+	rho_rr, v1_rr, v2_rr, p_rr, rho_e_rr, log_rho_rr, log_p_rr = u_rr
+	    x1 = rho_ll
+            log_x1 = log_rho_ll
+            y1 = rho_rr
+            log_y1 = log_rho_rr
+            x1_plus_y1 = x1 + y1
+            y1_minus_x1 = y1 - x1
+            z1 = y1_minus_x1^2 / x1_plus_y1^2
+            special_path1 = x1_plus_y1 / (2 + z1 * (2 / 3 + z1 * (2 / 5 + 2 / 7 * z1)))
+            regular_path1 = y1_minus_x1 / (log_y1 - log_x1)
+            rho_mean = ifelse(z1 < 1.0e-4, special_path1, regular_path1)
+
+            # algebraically equivalent to `inv_ln_mean(rho_ll / p_ll, rho_rr / p_rr)`
+            # in exact arithmetic since
+            #     log((ϱₗ/pₗ) / (ϱᵣ/pᵣ)) / (ϱₗ/pₗ - ϱᵣ/pᵣ)
+            #   = pₗ pᵣ log((ϱₗ pᵣ) / (ϱᵣ pₗ)) / (ϱₗ pᵣ - ϱᵣ pₗ)
+            # inv_rho_p_mean = p_ll * p_rr * inv_ln_mean(rho_ll * p_rr, rho_rr * p_ll)
+            x2 = rho_ll * p_rr
+            log_x2 = log_rho_ll + log_p_rr
+            y2 = rho_rr * p_ll
+            log_y2 = log_rho_rr + log_p_ll
+            x2_plus_y2 = x2 + y2
+            y2_minus_x2 = y2 - x2
+            z2 = y2_minus_x2^2 / x2_plus_y2^2
+            special_path2 = (2 + z2 * (2 / 3 + z2 * (2 / 5 + 2 / 7 * z2))) / x2_plus_y2
+            regular_path2 = (log_y2 - log_x2) / y2_minus_x2
+            inv_rho_p_mean = p_ll * p_rr * ifelse(z2 < 1.0e-4, special_path2, regular_path2)
+
+            v1_avg = 0.5 * (v1_ll + v1_rr)
+            v2_avg = 0.5 * (v2_ll + v2_rr)
+            p_avg = 0.5 * (p_ll + p_rr)
+            velocity_square_avg = 0.5 * (v1_ll * v1_rr + v2_ll * v2_rr)
+	    gamma = PhysConst.cp/PhysConst.cv
+            # calculate fluxes depending on cartesian orientation
+            f1 = rho_mean * v1_avg
+            f2 = f1 * v1_avg + p_avg
+            f3 = f1 * v2_avg
+            f4 = f1 * (velocity_square_avg + inv_rho_p_mean * 1/(gamma - 1)) + 0.5 * (p_ll * v1_rr + p_rr * v1_ll)
+
+            g1 = rho_mean * v2_avg
+            g2 = g1 * v1_avg 
+	    g3 = g1 * v2_avg + p_avg
+            g4 = g1 * (velocity_square_avg + inv_rho_p_mean * 1/(gamma - 1)) + 0.5 * (p_ll * v2_rr + p_rr * v2_ll)
+    return SVector(f1, f2, f3, f4), SVector(g1, g2, g3, g4)
+end
+
+@inline function flux_turbo(u_ll, u_rr, ::kennedy_gruber)
+    PhysConst = PhysicalConst{Float64}()
+    rho_ll, v1_ll, v2_ll, p_ll, e_ll = u_ll
+    rho_rr, v1_rr, v2_rr, p_rr, e_rr = u_rr
+
+    # Average each factor of products in flux
+    rho_avg = 0.5f0 * (rho_ll + rho_rr)
+    v1_avg = 0.5f0 * (v1_ll + v1_rr)
+    v2_avg = 0.5f0 * (v2_ll + v2_rr)
+    p_avg = 0.5f0 * (p_ll + p_rr)
+    e_avg = 0.5f0 * (e_ll + e_rr)
+
+    # Calculate fluxes depending on orientation
+    
+        f1 = rho_avg * v1_avg
+        f2 = rho_avg * v1_avg * v1_avg + p_avg
+        f3 = rho_avg * v1_avg * v2_avg
+        f4 = (rho_avg * e_avg + p_avg) * v1_avg
+    
+        g1 = rho_avg * v2_avg
+        g2 = rho_avg * v2_avg * v1_avg
+        g3 = rho_avg * v2_avg * v2_avg + p_avg
+        g4 = (rho_avg * e_avg + p_avg) * v2_avg
+
+    return SVector(f1, f2, f3, f4), SVector(g1, g2, g3, g4)
+end
+
+@inline function flux_turbo(u_ll, u_rr, sol_type::central_euler)
+	return 0.5f0 .* (flux(u_ll,sol_type) .+ flux(u_rr, sol_type))
+end
