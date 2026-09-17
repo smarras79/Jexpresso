@@ -67,7 +67,7 @@ export SV_L=${SV_L:-20}
 # is a longer integration, so the errors are larger than theirs and the
 # orders are what is being compared, not the absolute numbers.
 # ---------------------------------------------------------------------------
-export SV_NOPS=${SV_NOPS:-"4 5 6"}
+export SV_NOPS=${SV_NOPS:-"3 4 5 6"}
 export SV_NELX=${SV_NELX:-"16 32 64"}
 export SV_VISC=${SV_VISC:-"dsgs none"}
 export SV_TEND=${SV_TEND:-0.5}
@@ -83,7 +83,7 @@ export SV_DT=${SV_DT:-auto}
 export SV_SOLVER=${SV_SOLVER:-ck54}
 export SV_NP=${SV_NP:-16}
 export SV_JOBS=${SV_JOBS:-6}
-export SV_PLOT_NOPS=${SV_PLOT_NOPS:-"4 7"}   # the extremes, on their own axes
+export SV_PLOT_NOPS=${SV_PLOT_NOPS:-"3 6"}   # the extremes, on their own axes
 
 # ---------------------------------------------------------------------------
 # THE DynSGS KNOBS, and how to add a curve without losing the one you have.
