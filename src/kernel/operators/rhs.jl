@@ -813,6 +813,10 @@ function _build_rhs!(RHS, u, params, time)
         @timeit_debug JEXPRESSO_TIMER "u2uaux" u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     end
 
+    # Realizability repair, BEFORE any flux sees the state. No-op unless the
+    # deck sets :lpositivity => true. See src/kernel/positivity/.
+    @timeit_debug JEXPRESSO_TIMER "positivity" apply_positivity!(u, params, SD)
+
     if (inputs[:ladapt] == true) && (params.inputs[:lfilter] == false)
         @timeit_debug JEXPRESSO_TIMER "conformity4ncf_q" conformity4ncf_q!(params.uaux, params.rhs_el_tmp, @view(params.utmp[:,1:neqs]), params.vaux,
                           params.g_dss_cache,

@@ -92,17 +92,68 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     end
 
     #
-    # Uniform free stream everywhere at t = 0. The cylinder is a hole in the
-    # mesh, so every node is fluid; the no-slip wall is imposed by the BC and
-    # the boundary layer grows out of this impulsive start.
+    # STARTING FIELD: free stream everywhere EXCEPT a thin layer on the
+    # cylinder, where it is blended to the wall condition.
     #
+    # A uniform free stream is NOT a legal starting field for a no-slip
+    # isothermal wall, and this case found that out the hard way. At the wall
+    # nodes the boundary condition sets u = v = 0 and ρE = ρ cv T_w, so ρE
+    # goes from 183.85 to 30.02 — a factor of 6 — while the node one cell
+    # away is still at 183.85. The jump is dominated by the KINETIC energy
+    # being removed, not by the temperature: of the -153.8 change, -171.3 is
+    # the kinetic energy going and +17.5 is the wall being hotter (300 K)
+    # than the free stream (125 K). Across one 2.2 mm cell that is a violent
+    # startup transient, and it drove the pressure to -0.296 Pa against
+    # p∞ = 5 Pa within the first steps.
+    #
+    # rampCaoEtAl2021 already learned this and starts from a compressible
+    # laminar boundary-layer profile rather than a uniform stream (its
+    # initialize.jl, "STARTING FIELD: a compressible laminar boundary layer,
+    # not a uniform stream"). The same idea, adapted: a cylinder has no
+    # similarity profile to lay down before the bow shock even exists, so
+    # this is not a boundary layer — it is a BOUNDARY-CONDITION-CONSISTENT
+    # field, nothing more. The velocity is taken to zero and the temperature
+    # to T_w over a layer of thickness δ₀ using the same Pohlhausen blend the
+    # ramp uses,
+    #
+    #     ζ  = n/δ₀,  n = r - R the wall distance
+    #     su = 2ζ - 2ζ³ + ζ⁴          (su = 0 at the wall, 1 and smooth at δ₀)
+    #     u  = su·u∞,  v = su·v∞,  T = T_w + (T∞ - T_w)·su
+    #
+    # δ₀ = 5 mm is about two wall cells and about twice the estimated laminar
+    # δ ~ 2.8 mm, so the layer is resolved from the first step. The pressure
+    # is left at p∞ throughout — a boundary layer has no pressure rise across
+    # it — and the density follows from p∞ and the blended T. This is a
+    # starting guess, not an answer: the real boundary layer grows out of it.
+    #
+    PhysConst = PhysicalConst{Float64}()
+    cv   = PhysConst.Rair/PhysConst.γm1
+    Tw   = cyl_Twall()
+    δ₀   = 5.0e-3          # m, blend thickness: ~2 wall cells, ~2δ
+    xc, yc, R = 1.0, 0.0, 0.2
+
     for ip = 1:mesh.npoin
-        q.qn[ip,1]   = ρ∞
-        q.qn[ip,2]   = ρ∞*u∞
-        q.qn[ip,3]   = ρ∞*v∞
-        q.qn[ip,4]   = ρE∞
+
+        # mesh.coords[dim, ip] — the per-axis mesh.x/mesh.y are deprecated.
+        n  = sqrt((mesh.coords[1,ip] - xc)^2 + (mesh.coords[2,ip] - yc)^2) - R
+        ζ  = clamp(n/δ₀, 0.0, 1.0)
+        su = 2.0*ζ - 2.0*ζ^3 + ζ^4        # 0 at the wall, 1 and smooth at δ₀
+
+        uL = su*u∞
+        vL = su*v∞
+        TL = Tw + (T∞ - Tw)*su
+        ρL = p∞/(PhysConst.Rair*TL)          # constant pressure across the layer
+        ρEL = ρL*cv*TL + 0.5*ρL*(uL*uL + vL*vL)
+
+        q.qn[ip,1]   = ρL
+        q.qn[ip,2]   = ρL*uL
+        q.qn[ip,3]   = ρL*vL
+        q.qn[ip,4]   = ρEL
         q.qn[ip,end] = p∞
 
+        # Reference state = the undisturbed free stream, NOT the blended
+        # layer. qe is what the perturbation output and the PERT() branches
+        # read; this case runs TOTAL(), so nothing integrates against it.
         q.qe[ip,1]   = ρ∞
         q.qe[ip,2]   = ρ∞*u∞
         q.qe[ip,3]   = ρ∞*v∞

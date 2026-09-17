@@ -58,13 +58,54 @@ function user_inputs()
         # ~1792 m/s in the free stream and cannot exceed √(2h₀) + c₀ ≈ 2380
         # anywhere, Δt = 1.5e-8 s is an advective CFL of about 0.08.
         #
-        # The VISCOUS limit is comfortable here and worth writing down, since
-        # it is the one that bound ffs_step: the free-stream kinematic
-        # viscosity is large at this density, ν = μ/ρ = 0.062 m²/s, but
-        # νΔt/Δx² is only 0.006. The DynSGS coefficient, capped at
-        # C_max = 0.1 below, adds about as much again.
-        :Δt                   => 1.5e-8,
-        :diagnostics_at_times => (0:1.0e-5:1.0e-3),
+        # DO NOT TRUST THE PRINTED "Viscous CFL" ON THIS MESH. computeCFL
+        # forms it as max(ν) over the whole mesh times Δt over min(Δx)² over
+        # the whole mesh (soundSpeed.jl), and on a graded grid those two are
+        # at OPPOSITE ENDS: max ν is in the 77 mm far-field cells, where
+        # μ_cap ∝ Δ is largest, and min Δx is in the 2.2 mm wall cells. The
+        # first run printed 0.312 that way, while the true per-cell parabolic
+        # number ν_i Δt/Δx_i² is at most 8.1e-3 anywhere in the domain —
+        # a factor of 38 of pure diagnostic artifact. The number is correct
+        # on the near-uniform meshes it was written against (ffs_step) and
+        # meaningless here.
+        #
+        # The real viscous margins, per cell, at this Δt: 8.1e-3 from DynSGS
+        # in the wall cells, 2.4e-4 in the far field, and 0.032 from the
+        # MOLECULAR viscosity at the wall, where the low density and the
+        # 300 K wall give ν = μ/ρ = 0.32 m²/s. All comfortable.
+        # 3.75e-9: halved AGAIN, and the only variable that has ever moved
+        # this case. The scaling is the reason, and it is the one measurement
+        # in this series that says the failure may be removable at all:
+        #
+        #   run 1  Δt 1.50e-8   887 steps   t_fail 1.33e-5
+        #   run 3  Δt 7.50e-9  3969 steps   t_fail 2.98e-5
+        #
+        # Halving Δt multiplied the steps by 4.47 and the PHYSICAL survival
+        # time by 2.24. Compare what the two null hypotheses predict:
+        #
+        #   a hard physical limit (the shock simply cannot form)  -> x1.00
+        #   fixed damage per step (purely numerical, unbounded)   -> x0.50
+        #   MEASURED                                              -> x2.24
+        #
+        # Better than both. The damage per unit PHYSICAL time FELL when Δt
+        # fell, which is what a Δt-dependent instability looks like and what a
+        # hard limit does not. So there may be a Δt at which this runs.
+        #
+        # This run is the test of that, and it is worth something either way:
+        # if the trend holds, t_fail lands near 6.7e-5; if it saturates near
+        # 3e-5, Δt is exhausted and the answer is structural, not a step size.
+        #
+        # Why Δt and not more dissipation: the two runs so far differ only in
+        # how much dissipation they had, and the one with LESS died sooner
+        # (398 steps against 887). So the failure responds to the numerics
+        # rather than sitting at a fixed physical time, and Δt is the lever
+        # that buys margin through a violent transient without touching the
+        # boundary layer this case exists to resolve. Both runs died with the
+        # shock layer only half formed — 9.4 mm and 20.9 mm of flow travel
+        # against a 42 mm standoff — so the whole difficulty is the FORMATION
+        # of the normal shock, not any developed state.
+        :Δt                   => 3.75e-9,
+        :diagnostics_at_times => (0:2.0e-6:1.0e-3),   # dense: the first µs is the hard part
         :lsource              => false,
         :SOL_VARS_TYPE        => TOTAL(),
         #---------------------------------------------------------------------------
@@ -145,10 +186,101 @@ function user_inputs()
         # unnecessary. If the free stream still quilts, :dsgs_Cmin => 0.01 is
         # the first thing to try, and the heat flux must then be re-checked.
         #---------------------------------------------------------------------------
+        #---------------------------------------------------------------------------
+        # REALIZABILITY REPAIR (src/kernel/positivity/). Floors are ABSOLUTE and
+        # set from this case's own scales: 1e-6 of the free stream, i.e.
+        # ρ∞ = 1.394e-4 -> 1.4e-10 and p∞ = 5 Pa -> 5e-6 Pa. Six orders below
+        # anything physical here, so the repair engages only outside the
+        # realizable set and never inside the solution.
+        #
+        # It is a REPAIR, not a preserving scheme, and the reason it is on is
+        # the audit rather than the rescue. Every run so far has ended with the
+        # state leaving the realizable set (p < 0, total enthalpy exceeded by
+        # 1.5-1.8x) and then NaN spreading globally through the domain-norm
+        # Allreduce, which destroys the evidence. With the repair on, a local
+        # defect stays local and gets COUNTED, so the next run answers the
+        # question the last five could not: is this a handful of nodes at the
+        # bow shock, or a field that is globally wrong?
+        #
+        # READ THE REPORT, do not just note that the run survived. A few
+        # node-visits near the shock is the repair working. Engagement growing
+        # without bound, or first-engagement coordinates ON THE CYLINDER rather
+        # than out at the shock, means the answer is wrong and the repair is
+        # hiding it — and this case exists to produce a wall heat flux, which is
+        # exactly the quantity a limiter firing in the boundary layer ruins.
+        :lpositivity          => true,
+        :positivity_rho_min   => 1.4e-10,         # 1e-6 * ρ∞
+        :positivity_p_min     => 5.0e-6,          # 1e-6 * p∞
+        #---------------------------------------------------------------------------
         :visc_model           => DSGS(),
+        #---------------------------------------------------------------------------
+        # :ldsgs_nodal IS OFF, AND MUST STAY OFF WHILE :dsgs_sensor IS
+        # "residual". Tried as run 4 and it was a 17x regression — 231 steps
+        # against 3969, and the failure went GLOBAL (reported nodes scattered
+        # to the domain corner at (0,-1)) instead of staying on the stagnation
+        # streamline. The reason is in the kernel's own header (SGS.jl:2156):
+        #
+        #   "the residual is the assembled (lumped-mass) nodal residual
+        #    R_i = |BDF2(q)_i - M^-1_i rhs_i|"
+        #
+        # and DSGS.md §1.2 says what that quantity is worth: with a lumped LGL
+        # mass matrix the assembled rate M^-1 RHS IS what the integrator
+        # advances, so the difference is the time-integration error and
+        # nothing else — "it vanishes on an under-resolved solution exactly as
+        # on a resolved one". The element form uses the ELEMENT RHS precisely
+        # to avoid that. So nodal + "residual" is a BLIND sensor: nu ~ 0
+        # everywhere, no shock capturing at all, and a Mach-7 bow shock has
+        # nothing holding it. 231 steps is what that looks like.
+        #
+        # This does NOT condemn the nodal form. It is the right cure for what
+        # the mu_dsgs field shows — the element kernel's staircase, which its
+        # header records as "one wiggle per element in the smooth plateau" on
+        # the Brio-Wu tube, measured — and it gives a C0 nu with no jump in
+        # the diffusive flux at element interfaces. It just needs a sensor
+        # that is not the assembled residual. The combination to try is
+        # :ldsgs_nodal => true WITH :dsgs_sensor => "legacy", which is what
+        # the MHD decks that exercise this path actually run: legacy makes
+        # R ~ |dq/dt|, imperfect but not identically zero.
+        #---------------------------------------------------------------------------
+        :ldsgs_nodal          => false,
         :dsgs_sensor          => "residual",
-        :dsgs_hold_steps      => 0,               # impulsive start: see ffs_step
+        #
+        # STARTUP HOLD OFF, as ffs_step has it. I turned it on for one run on
+        # the argument that this case's initial field is smooth BY
+        # CONSTRUCTION (the 5 mm blend of initialize.jl) and is therefore the
+        # very condition the hold was written for. The run died SOONER — 398
+        # steps against 887 — so the argument was wrong, and it is worth
+        # writing down why.
+        #
+        # What the hold protects against is a sensor misreading a smooth
+        # FIELD. What kills this case is a violent first few STEPS, and those
+        # are violent no matter how smooth the field is: a 1568 m/s stream is
+        # standing on a no-slip wall at t = 0 and a normal shock has to form
+        # in front of it. That is ffs_step's own argument — "holding ν at zero
+        # there integrates the most violent steps of the run with no
+        # dissipation at all" — and it applies here for the same reason, which
+        # I missed because I was looking at the initial condition instead of
+        # at the first steps.
+        :dsgs_hold_steps      => 0,
         :μ                    => [1.0, 1.0, 1.0, 1.0],
+        #
+        # :dsgs_Cmax => 0.03, not the ramp's 0.1, because μ_cap ∝ Δ and THIS
+        # mesh is graded 34x (2.2 mm at the wall, 77 mm far field). The cap is
+        # meant to be a ceiling reached at a shock, and per-cell it comes out
+        #
+        #     h = 2.2 mm  ->  ν_cap = 0.080 m²/s      (0.024 at Cmax = 0.03)
+        #     h = 20  mm  ->  ν_cap = 0.72            (0.22)
+        #     h = 77  mm  ->  ν_cap = 2.76            (0.83)
+        #
+        # against a molecular ν of 0.062 in the free stream. 0.03 was tried
+        # and REVERTED: it went in the same run as the startup hold, both
+        # changes cut dissipation, and the run died sooner. Back at the ramp's
+        # 0.1. The coarse cells are then allowed 44x the molecular viscosity,
+        # which is ugly but is not what is killing this case — the failure is
+        # a tight cluster on the stagnation streamline, nowhere near the
+        # coarse far field. If the far-field cap does become the problem, the
+        # answer is less grading in the mesh (lc_far 0.06 -> 0.03 in
+        # cylinder_M7.geo): μ_cap ∝ Δ cannot be undone from a deck.
         :dsgs_Cmax            => 0.1,
         :Pr                   => 0.1,
         :dsgs_norms           => "domain",
@@ -172,9 +304,12 @@ function user_inputs()
         # field: measured max/ideal load is 5.68x on 16 ranks, 6.66x on 32 and
         # 7.55x on 64, where one rank would own 1687 cells against an ideal
         # 223 and every other rank waits for it. (The same measurement on the
-        # uniform ffs_step_M7 mesh gives 1.19-1.27x, which is why it never
-        # showed up there.) This is now the default too — stated here because
-        # a wall-clustered grid is exactly the case that cannot tolerate it.
+        # uniform ffs_step_M7 mesh gives 1.19-1.27x, and the unstructured
+        # ffs_step_M7_round one 1.27-1.36x, which is why it never showed up
+        # there.) The GLOBAL DEFAULT IS STILL true, because the same flag also
+        # selects the mesh-READ strategy — see the note on :lxy_partition in
+        # mod_inputs.jl — so a deck on a graded mesh has to say so itself, as
+        # rampCaoEtAl2021 does.
         :lxy_partition        => false,
         #---------------------------------------------------------------------------
         # CURVE THE CYLINDER. This is not optional on a curved wall.

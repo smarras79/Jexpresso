@@ -152,6 +152,28 @@ sod1d). Cases whose flux and source are already written on the perturbation
 (the well-balanced MHD and shallow-water splits, PERT variables) have a
 vanishing reference RHS and need nothing.
 
+A θ deck that runs DynSGS in place of a constant-coefficient model must also
+revisit its `:μ` vector, because the two models differ by orders of magnitude in
+what they put under those multipliers. Measured on `CompEuler/thetaTracers`
+(464 quads, Δx_min = 48.9 m, 3 ranks, Δt = 0.2, to t = 1000):
+
+| model / sensor | max ν over the run |
+|---|---|
+| `SMAG()` | 3.0 m²/s, flat |
+| `DSGS()`, `:dsgs_sensor => "legacy"` | 1.0×10² - 1.8×10³ m²/s |
+| `DSGS()`, `:dsgs_sensor => "residual"` | 2.8×10² - 2.0×10³ m²/s |
+| `DSGS()`, `"residual"` + `:dsgs_reference => true` | 4.0×10² - 9.6×10² m²/s |
+
+`:μ = [0, 1, 1, 2, 3, 1]`, tuned for the `SMAG()` row, means 6 and 9 m²/s there
+and 2-6×10³ m²/s under the residual sensor: that deck dies before t = 50 with a
+`DomainError` on ρθ < 0 in `p = C_0(ρθ)^γ`, while the same run at
+`:dsgs_sensor => "legacy"` completes 1000 s and the same run at Δt = 0.1
+completes as well. Note also what the third and fourth rows say about this
+case: subtracting the hydrostatic reference does NOT lower ν here, so on a
+mesh this coarse the residual is dominated by the bubble and not by the
+hydrostatic imbalance the paragraph above describes.
+
+
 **Dirichlet boundary nodes.** The boundary condition constrains the assembled
 rate at those nodes (free-slip wall: the normal momentum stays zero; a 1D end:
 the prescribed components stay put) while the element RHS carries the

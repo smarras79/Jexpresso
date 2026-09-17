@@ -171,6 +171,13 @@ include(joinpath( "kernel", "physics", "sgsStructs.jl"))
 
 include(joinpath( "kernel", "physics", "SGS.jl"))
 
+# Node-wise realizability repair for the compressible Euler state. Own module,
+# own directory: Positivity.jl is self-contained numerics with no Jexpresso
+# dependency, positivity_driver.jl is the adapter. OFF unless a deck sets
+# :lpositivity => true. See src/kernel/positivity/README.md.
+include(joinpath( "kernel", "positivity", "Positivity.jl"))
+include(joinpath( "kernel", "positivity", "positivity_driver.jl"))
+
 include(joinpath( "kernel", "physics", "CM_MOST.jl"))
 
 include(joinpath( "kernel", "physics", "atmos_to_rad.jl"))
