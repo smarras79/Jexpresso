@@ -120,7 +120,7 @@ function precompile_warmup_run!(inputs, params, u,
 
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
-    rank == 0 && (print(" # Precompile warm-up (1 step solve) ......... "); flush(stdout))
+    rank == 0 && (print(" # Precompile warm-up ......... "); flush(stdout))
     t0 = time_ns()
 
     # Snapshot mutable state that the warm-up step would advance.
@@ -133,12 +133,32 @@ function precompile_warmup_run!(inputs, params, u,
     dsgs_qnm1_snapshot = copy(params.dsgs_qnm1)
     dsgs_qnm2_snapshot = copy(params.dsgs_qnm2)
     dsgs_thist_snapshot = params.dsgs_thist[]
+    # nhist counts the step-cadenced rotations and gates the startup hold
+    # (rhs.jl, _dsgs_hold_steps). It was NOT restored, so the warm-up silently
+    # spent part of the real run's hold.
+    dsgs_nhist_snapshot = params.dsgs_nhist[]
 
-    # 1-step problem; same params and same FullSpecialize as the real
-    # solve, so the compiled code is reused.
+    # HOW MANY STEPS, AND WHY IT IS NOT ONE UNDER DynSGS.
+    #
+    # dsgs_first_step_check below reads the coefficient this warm-up leaves in
+    # μ_dsgs_pnode and warns when ν·Δt/Δx_min² is past what an explicit step
+    # can carry. But DynSGS holds ν at exactly zero for the first
+    # :dsgs_hold_steps steps (rhs.jl, _dsgs_hold_steps, default 2 → the
+    # coefficient is live from the third rotation), so a ONE-step warm-up
+    # always sampled ν = 0 and the check could not fire on any case. It was
+    # added in September 2026 and the startup hold landed three days later:
+    # from then until here it warned about nothing. CompEuler/thetaTracers ran
+    # into a DomainError on (ρθ)^γ with no diagnostic in front of it, which is
+    # the failure this check exists to name.
+    #
+    # Warming up past the hold costs a few steps of one extra solve and makes
+    # the number the check reads the one the run will actually carry.
     Δt_warmup    = Float32(inputs[:Δt])
     t0_warmup    = params.tspan[1]
-    warmup_tspan = (t0_warmup, t0_warmup + Δt_warmup)
+    ldsgs_warmup = (params.VT == DSGS() || params.VT == DSGS_MHD() || params.VT == DSGS_SW()) &&
+                   get(inputs, :lvisc, false) == true
+    nstep_warmup = ldsgs_warmup ? max(1, _dsgs_hold_steps(params) + 1) : 1
+    warmup_tspan = (t0_warmup, t0_warmup + nstep_warmup*Δt_warmup)
     warmup_prob  = ODEProblem{true, FullSpecialize}(rhs!, u, warmup_tspan, params)
 
     # Silence all log output during the warm-up step. Also silences the
@@ -182,6 +202,10 @@ function precompile_warmup_run!(inputs, params, u,
     # the first step; warn now if the explicit step cannot carry it
     # (soundSpeed.jl), before the real solve dies on it.
     dsgs_first_step_check(params, inputs, params.SD)
+
+    # restored only now: the check above has to read the coefficient the
+    # warm-up produced, and that is only live once nhist is past the hold.
+    params.dsgs_nhist[] = dsgs_nhist_snapshot
 
     # Reset JEXPRESSO_TIMER so the alloc summary table only reflects
     # steady-state allocations from the real solve. The
