@@ -186,7 +186,40 @@ steps the run is wrong** — it is a guard, not a fix.
 | 1 | hold 0, Cmax 0.1, Δt 1.5e-8 | 1.33e-5 | 887 | 20.9 mm |
 | 2 | hold 2, Cmax 0.03, Δt 1.5e-8 | 5.97e-6 | 398 | 9.4 mm |
 | 3 | hold 0, Cmax 0.1, **Δt 7.5e-9** | 2.98e-5 | 3969 | 46.7 mm |
-| 4 | run 3 + **`:ldsgs_nodal`** | — | — | — |
+| 4 | run 3 + `:ldsgs_nodal` | 1.73e-6 | 231 | 2.7 mm |
+| 5 | run 3 with **Δt 3.75e-9** | — | — | — |
+
+Run 4 was a **17× regression** and the failure went *global* (nodes scattered
+to the domain corner at (0,−1)) instead of staying on the stagnation
+streamline. Reverted. The nodal kernel's residual is the **assembled**
+one (`SGS.jl:2156`), and `DSGS.md` §1.2 says that quantity "vanishes on an
+under-resolved solution exactly as on a resolved one" — the element form uses
+the *element* RHS precisely to avoid it. So `:ldsgs_nodal` + `"residual"` is a
+blind sensor: ν ≈ 0, nothing holding a Mach-7 bow shock. Pairing the two
+without checking they compose was the same class of error as copying
+`:dsgs_hold_steps` from `ffs_step`.
+
+The nodal form is still the right cure for the `mu_dsgs` staircase — it just
+needs `:dsgs_sensor => "legacy"` alongside it, which is what the MHD decks that
+exercise that path actually run.
+
+### Why run 5 is Δt again
+
+| | Δt | steps | `t_fail` |
+|---|---|---|---|
+| run 1 | 1.50e-8 | 887 | 1.33e-5 |
+| run 3 | 7.50e-9 | 3969 | 2.98e-5 |
+
+Halving Δt multiplied the steps by 4.47 and the **physical** survival time by
+**2.24**. Against the two null hypotheses — a hard physical limit predicts
+×1.00, fixed damage per step predicts ×0.50 — the measurement beats both. The
+damage per unit physical time *fell* when Δt fell. That is what a Δt-dependent
+instability looks like and what a hard limit does not, so a small enough Δt may
+remove it.
+
+Run 5 tests exactly that, and is worth something either way: **trend holds →
+`t_fail ≈ 6.7e-5`; saturates near 3e-5 → Δt is exhausted and the answer is
+structural.**
 
 Run 3 confirmed `Δt` was the right lever: halving it took the failure from
 1.33e-5 to 2.98e-5 s and from 887 to 3969 steps, and the shock layer finally

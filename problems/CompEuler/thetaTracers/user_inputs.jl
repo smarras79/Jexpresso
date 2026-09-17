@@ -23,32 +23,33 @@ function user_inputs()
         #:visc_model     => SMAG(),
         :visc_model     => DSGS(),   # Marras et al. Dynamic SGS; :μ below are multipliers of its ν
         #
-        # THE TWO KEYS BELOW ARE NOT OPTIONAL FOR THIS CASE, and without them
-        # the run is slow and dies at t ≈ 200 s whatever :Δt is.
+        # WHAT CHANGES WHEN THIS DECK RUNS DynSGS INSTEAD OF SMAG(), and why
+        # the :μ line below is not the one the SMAG version of this deck used.
         #
-        # This deck advances the TOTAL variables (:SOL_VARS_TYPE defaults to
-        # TOTAL()) on top of the hydrostatic qe built in initialize.jl, with
-        # the full flux and the full gravity source. The element-wise strong
-        # residual that DynSGS uses by default (:dsgs_sensor => "residual",
-        # the default since September 2026) therefore reads, at rest, the
-        # interpolation error of the hydrostatic balance at every element
-        # interface — about 30 % of ρg, steady, and nothing to do with the
-        # flow. It holds the normalized ratio above 1 for the whole run, so ν
-        # sits at its cap Cmax·Δ·(|u|+c) ≈ 10³-10⁴ m²/s from the first step:
-        # three orders of magnitude above the ≈ 2 m²/s that SMAG() gives this
-        # same case. The bubble is then destroyed by its own stabilization
-        # (diffusion time over an element Δx²/ν ≈ 1 s), and the failure time
-        # does not move when :Δt is reduced, because the cap does not contain
-        # Δt. DSGS.md §1.2, "The reference state"; rhs.jl warns about it now.
+        # Measured here, 3 ranks, Δt = 0.2, to t = 1000, max ν over the run:
+        #
+        #     SMAG()                                3.0 m²/s, flat
+        #     DSGS(), :dsgs_sensor => "legacy"      1.0e2 - 1.8e3 m²/s
+        #     DSGS(), :dsgs_sensor => "residual"    2.8e2 - 2.0e3 m²/s
+        #
+        # The :μ entries multiply that ν, so the [0, 1, 1, 2, 3, 1] this case
+        # carried under SMAG() (6 and 9 m²/s there) becomes 2-6e3 m²/s under
+        # the residual sensor. That run DIES before t = 50 with a DomainError
+        # on ρθ < 0 in p = C0(ρθ)^γ -- measured. At [0, 1, 1, 1, 1, 1] it
+        # completes 1000 s on either sensor; at Δt = 0.1 the 2-3 vector
+        # completes too.
         #
         # "legacy" is the sensor every θ case of this code was validated with
         # (problems/CompEuler/theta_dsgs sets the same pair): the assembled
-        # rate against a fixed BDF2, which at hydrostatic rest reads ≈ 0.
-        # :dsgs_reference => true is what the "residual" sensor needs instead
-        # — the element RHS of qe, time-independent, evaluated once and
-        # subtracted so the residual measures the DEPARTURE from qe. It is
-        # kept here so that flipping :dsgs_sensor to "residual" is a one-line
-        # experiment rather than a blow-up.
+        # rate against a fixed BDF2, which at hydrostatic rest reads ~0. It is
+        # the least dissipative of the three over the first half of this run
+        # and it carries the 2-3 :μ vector at Δt = 0.2 where "residual" does
+        # not. :dsgs_reference => true is inert under it and is kept only so
+        # that flipping to "residual" is a one-line experiment; on THIS mesh
+        # it does not lower ν (measured: 4.0e2 - 9.6e2 m²/s with it against
+        # 2.8e2 - 2.0e3 without), the rising bubble of theta_dsgs on 1 km
+        # elements is where it earns its keep.
+        #
         :dsgs_sensor     => "legacy",
         :dsgs_reference  => true,
         :Pr              => 0.1,     # artificial Prandtl number of the θ slot (the default)

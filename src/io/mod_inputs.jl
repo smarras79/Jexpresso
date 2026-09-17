@@ -453,6 +453,23 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:yfac_laguerre] = 1.0
     end
      
+    # Node-wise realizability repair (src/kernel/positivity/). OFF by default,
+    # so no existing case changes. The two floors are ABSOLUTE and have no safe
+    # default — a deck that turns the repair on must state them from its own
+    # scales, and positivity_validate errors if it does not.
+    if(!haskey(inputs, :lpositivity))
+        inputs[:lpositivity] = false
+    end
+    if(!haskey(inputs, :positivity_rho_min))
+        inputs[:positivity_rho_min] = 0.0
+    end
+    if(!haskey(inputs, :positivity_p_min))
+        inputs[:positivity_p_min] = 0.0
+    end
+    if(!haskey(inputs, :positivity_report))
+        inputs[:positivity_report] = true
+    end
+
     if(!haskey(inputs,:lfilter))
         inputs[:lfilter] = false
     end

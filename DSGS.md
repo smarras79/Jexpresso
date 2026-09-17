@@ -152,17 +152,27 @@ sod1d). Cases whose flux and source are already written on the perturbation
 (the well-balanced MHD and shallow-water splits, PERT variables) have a
 vanishing reference RHS and need nothing.
 
-A θ deck that advances TOTAL variables over a non-trivial $q_e$ and sets
-neither `:dsgs_reference => true` nor `:dsgs_sensor => "legacy"` is therefore
-running the sensor on the hydrostatic imbalance rather than on its flow, and
-`_dsgs_residual_rhs!` now says so once, on the first RHS call, in a warning
-naming both exits. `CompEuler/thetaTracers` was in that state between the
-September 2026 sensor change and the fix to its deck: $\nu$ sat at the cap
-$C_{max}\Delta(|u|+c)\approx 10^4$ m²/s on its 283-500 m elements, against the
-$\approx 2$ m²/s the same case gets from `SMAG()`, and the run was destroyed by
-its own stabilization at $t \approx 200$ s at every $\Delta t$ tried — the cap
-does not contain $\Delta t$, so neither the coefficient nor the failure time
-moves when the step is reduced.
+A θ deck that runs DynSGS in place of a constant-coefficient model must also
+revisit its `:μ` vector, because the two models differ by orders of magnitude in
+what they put under those multipliers. Measured on `CompEuler/thetaTracers`
+(464 quads, Δx_min = 48.9 m, 3 ranks, Δt = 0.2, to t = 1000):
+
+| model / sensor | max ν over the run |
+|---|---|
+| `SMAG()` | 3.0 m²/s, flat |
+| `DSGS()`, `:dsgs_sensor => "legacy"` | 1.0×10² - 1.8×10³ m²/s |
+| `DSGS()`, `:dsgs_sensor => "residual"` | 2.8×10² - 2.0×10³ m²/s |
+| `DSGS()`, `"residual"` + `:dsgs_reference => true` | 4.0×10² - 9.6×10² m²/s |
+
+`:μ = [0, 1, 1, 2, 3, 1]`, tuned for the `SMAG()` row, means 6 and 9 m²/s there
+and 2-6×10³ m²/s under the residual sensor: that deck dies before t = 50 with a
+`DomainError` on ρθ < 0 in `p = C_0(ρθ)^γ`, while the same run at
+`:dsgs_sensor => "legacy"` completes 1000 s and the same run at Δt = 0.1
+completes as well. Note also what the third and fourth rows say about this
+case: subtracting the hydrostatic reference does NOT lower ν here, so on a
+mesh this coarse the residual is dominated by the bubble and not by the
+hydrostatic imbalance the paragraph above describes.
+
 
 **Dirichlet boundary nodes.** The boundary condition constrains the assembled
 rate at those nodes (free-slip wall: the normal momentum stays zero; a 1D end:

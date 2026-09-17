@@ -77,6 +77,28 @@ function user_inputs()
         # (the assembled RHS against a fixed BDF2 of the stage state, in
         # effect a |∂ₜq| sensor); "residual" (the default) = the element-wise
         # strong residual with the stage-consistent stencil, DSGS.md §1.2.
+        #---------------------------------------------------------------------------
+        # REALIZABILITY REPAIR (src/kernel/positivity/), ON AS A TEST.
+        #
+        # This case is the control: it is validated, it runs to t = 8e-3, and
+        # the repair should therefore report ZERO engagements. If it reports
+        # any, that is a finding about THIS case — it has been sitting closer
+        # to the edge of the realizable set than anyone knew — and not a
+        # licence to raise the floors.
+        #
+        # Leaving it on costs nothing measurable and nothing at all in the
+        # answer: positivity_limit! returns the number of repairs it made and
+        # the driver skips the write-back when that is zero, so a run that
+        # never engages is BIT-IDENTICAL to one with :lpositivity => false. It
+        # pays one read sweep per RHS call.
+        #
+        # Floors are 1e-6 of this case's own free stream (ρ∞ = 1.20494 kg/m³,
+        # p∞ = 101325 Pa), i.e. five to six orders below anything the Mach-3
+        # solution contains, including the expansion round the step corner.
+        :lpositivity          => true,
+        :positivity_rho_min   => 1.2e-6,          # 1e-6 * ρ∞
+        :positivity_p_min     => 1.0e-1,          # 1e-6 * p∞  (Pa)
+        #---------------------------------------------------------------------------
         :visc_model           => DSGS(),          # residual-based shock capturing
         :dsgs_sensor          => "legacy",
         # Startup hold OFF — the single difference that this case cannot

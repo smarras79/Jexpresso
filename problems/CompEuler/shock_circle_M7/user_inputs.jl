@@ -73,9 +73,27 @@ function user_inputs()
         # in the wall cells, 2.4e-4 in the far field, and 0.032 from the
         # MOLECULAR viscosity at the wall, where the low density and the
         # 300 K wall give ν = μ/ρ = 0.32 m²/s. All comfortable.
-        # 7.5e-9, HALVED from the 1.5e-8 of the first runs, and the only new
-        # variable in this configuration — everything else is back to what got
-        # furthest. Advective CFL becomes ~0.04.
+        # 3.75e-9: halved AGAIN, and the only variable that has ever moved
+        # this case. The scaling is the reason, and it is the one measurement
+        # in this series that says the failure may be removable at all:
+        #
+        #   run 1  Δt 1.50e-8   887 steps   t_fail 1.33e-5
+        #   run 3  Δt 7.50e-9  3969 steps   t_fail 2.98e-5
+        #
+        # Halving Δt multiplied the steps by 4.47 and the PHYSICAL survival
+        # time by 2.24. Compare what the two null hypotheses predict:
+        #
+        #   a hard physical limit (the shock simply cannot form)  -> x1.00
+        #   fixed damage per step (purely numerical, unbounded)   -> x0.50
+        #   MEASURED                                              -> x2.24
+        #
+        # Better than both. The damage per unit PHYSICAL time FELL when Δt
+        # fell, which is what a Δt-dependent instability looks like and what a
+        # hard limit does not. So there may be a Δt at which this runs.
+        #
+        # This run is the test of that, and it is worth something either way:
+        # if the trend holds, t_fail lands near 6.7e-5; if it saturates near
+        # 3e-5, Δt is exhausted and the answer is structural, not a step size.
         #
         # Why Δt and not more dissipation: the two runs so far differ only in
         # how much dissipation they had, and the one with LESS died sooner
@@ -86,7 +104,7 @@ function user_inputs()
         # shock layer only half formed — 9.4 mm and 20.9 mm of flow travel
         # against a 42 mm standoff — so the whole difficulty is the FORMATION
         # of the normal shock, not any developed state.
-        :Δt                   => 7.5e-9,
+        :Δt                   => 3.75e-9,
         :diagnostics_at_times => (0:2.0e-6:1.0e-3),   # dense: the first µs is the hard part
         :lsource              => false,
         :SOL_VARS_TYPE        => TOTAL(),
@@ -168,40 +186,63 @@ function user_inputs()
         # unnecessary. If the free stream still quilts, :dsgs_Cmin => 0.01 is
         # the first thing to try, and the heat flux must then be re-checked.
         #---------------------------------------------------------------------------
+        #---------------------------------------------------------------------------
+        # REALIZABILITY REPAIR (src/kernel/positivity/). Floors are ABSOLUTE and
+        # set from this case's own scales: 1e-6 of the free stream, i.e.
+        # ρ∞ = 1.394e-4 -> 1.4e-10 and p∞ = 5 Pa -> 5e-6 Pa. Six orders below
+        # anything physical here, so the repair engages only outside the
+        # realizable set and never inside the solution.
+        #
+        # It is a REPAIR, not a preserving scheme, and the reason it is on is
+        # the audit rather than the rescue. Every run so far has ended with the
+        # state leaving the realizable set (p < 0, total enthalpy exceeded by
+        # 1.5-1.8x) and then NaN spreading globally through the domain-norm
+        # Allreduce, which destroys the evidence. With the repair on, a local
+        # defect stays local and gets COUNTED, so the next run answers the
+        # question the last five could not: is this a handful of nodes at the
+        # bow shock, or a field that is globally wrong?
+        #
+        # READ THE REPORT, do not just note that the run survived. A few
+        # node-visits near the shock is the repair working. Engagement growing
+        # without bound, or first-engagement coordinates ON THE CYLINDER rather
+        # than out at the shock, means the answer is wrong and the repair is
+        # hiding it — and this case exists to produce a wall heat flux, which is
+        # exactly the quantity a limiter firing in the boundary layer ruins.
+        :lpositivity          => true,
+        :positivity_rho_min   => 1.4e-10,         # 1e-6 * ρ∞
+        :positivity_p_min     => 5.0e-6,          # 1e-6 * p∞
+        #---------------------------------------------------------------------------
         :visc_model           => DSGS(),
         #---------------------------------------------------------------------------
-        # NODAL DynSGS. The one change in this run, and the mu_dsgs field is
-        # what asks for it.
+        # :ldsgs_nodal IS OFF, AND MUST STAY OFF WHILE :dsgs_sensor IS
+        # "residual". Tried as run 4 and it was a 17x regression — 231 steps
+        # against 3969, and the failure went GLOBAL (reported nodes scattered
+        # to the domain corner at (0,-1)) instead of staying on the stagnation
+        # streamline. The reason is in the kernel's own header (SGS.jl:2156):
         #
-        # By default the coefficient is ELEMENT-WISE CONSTANT: compute_dsgs_-
-        # viscosity! fills μ_dsgs[ie, ieq], and broadcast_dsgs_to_nodes!
-        # (SGS.jl:3017) then spreads it to nodes with
+        #   "the residual is the assembled (lumped-mass) nodal residual
+        #    R_i = |BDF2(q)_i - M^-1_i rhs_i|"
         #
-        #     μ_pnode[ip] = max(μ_pnode[ip], μ_dsgs[ie])
+        # and DSGS.md §1.2 says what that quantity is worth: with a lumped LGL
+        # mass matrix the assembled rate M^-1 RHS IS what the integrator
+        # advances, so the difference is the time-integration error and
+        # nothing else — "it vanishes on an under-resolved solution exactly as
+        # on a resolved one". The element form uses the ELEMENT RHS precisely
+        # to avoid that. So nodal + "residual" is a BLIND sensor: nu ~ 0
+        # everywhere, no shock capturing at all, and a Mach-7 bow shock has
+        # nothing holding it. 231 steps is what that looks like.
         #
-        # a MAX over the elements sharing the node — a morphological dilation,
-        # not a smoothing. Two consequences, both visible in the plotted
-        # mu_dsgs: the field is blocky at element scale, and a hot element
-        # bleeds its value onto every neighbour it touches while the value
-        # itself still jumps from ~0.8 to ~0 between adjacent elements.
-        #
-        # A CG discretization cannot absorb that. ∇·(μ∇q) with μ jumping
-        # across an element interface produces a spurious forcing there
-        # proportional to the jump, the forcing makes element-scale
-        # oscillation, the sensor reads that oscillation as under-resolution,
-        # and μ gets more speckled still. That loop is a much better
-        # explanation of a salt-and-pepper μ sitting on top of a
-        # salt-and-pepper velocity field than anything about the shock.
-        #
-        # :ldsgs_nodal => true takes the nodal (Dao & Nazarov) form instead
-        # (compute_dsgs_viscosity_nodal!, reached for DSGS() 2D at
-        # rhs.jl:1681): ν is built AT EVERY NODE from the mass-weighted
-        # average of the residual over the elements containing it
-        # (DSGS.md §1.2), and the element loop interpolates it. There is no
-        # element-wise constant, no jump at the interfaces, and no broadcast.
-        # It is the same model, evaluated in a form a continuous Galerkin
-        # method can actually carry.
-        :ldsgs_nodal          => true,
+        # This does NOT condemn the nodal form. It is the right cure for what
+        # the mu_dsgs field shows — the element kernel's staircase, which its
+        # header records as "one wiggle per element in the smooth plateau" on
+        # the Brio-Wu tube, measured — and it gives a C0 nu with no jump in
+        # the diffusive flux at element interfaces. It just needs a sensor
+        # that is not the assembled residual. The combination to try is
+        # :ldsgs_nodal => true WITH :dsgs_sensor => "legacy", which is what
+        # the MHD decks that exercise this path actually run: legacy makes
+        # R ~ |dq/dt|, imperfect but not identically zero.
+        #---------------------------------------------------------------------------
+        :ldsgs_nodal          => false,
         :dsgs_sensor          => "residual",
         #
         # STARTUP HOLD OFF, as ffs_step has it. I turned it on for one run on
