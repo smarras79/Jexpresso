@@ -14,6 +14,13 @@
 #   "inflow"   left wall, x = 0            supersonic inflow
 #   "outflow"  right wall, x = 3           supersonic outflow
 #   "wall"     floor, step face, step top, tunnel roof     free slip
+#   "fillet"   the rounded step corner                     free slip
+#
+# "fillet" is a separate gmsh group for ONE reason: it is the tag
+# :exact_geometry names in user_inputs.jl, so that the high-order nodes on
+# the arc are snapped onto the true circle instead of sitting on the chords.
+# Dynamically it is an ordinary free-slip wall, which is what the `else`
+# branch below already makes it — no code here needs to know about it.
 #
 # Supersonic inflow: every characteristic enters the domain, so the whole
 # conservative state is prescribed at the free stream.
@@ -79,7 +86,8 @@ function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String,
         # Supersonic outflow: impose nothing.
 
     else
-        # "wall": free slip. Remove the wall-normal momentum component.
+        # "wall" and "fillet": free slip. Remove the wall-normal momentum
+        # component.
         # No corner special case: the fillet gives every wall node a single
         # well-defined normal — see the note above.
         qnl     = nx*q[2] + ny*q[3]

@@ -37,6 +37,7 @@ function user_inputs()
         # switches. The two decks differ in exactly two things:
         #
         #     the mesh   ffs_step_transfinite.msh -> ffs_step_round.msh
+        #     :exact_geometry  curves the fillet (see below) — NEW key
         #     user_bc.jl the (0.6, 0.2) corner special case is GONE
         #
         # so a side-by-side run isolates one variable: whether the corner
@@ -44,11 +45,17 @@ function user_inputs()
         #
         # WHAT THE FILLET IS. The step's top-left corner, where the fluid's
         # interior angle is 270 degrees, is replaced by a circular arc of
-        # radius r = 0.05 m — two elements — centred at (0.65, 0.15), tangent
-        # to the step face at (0.6, 0.15) and to the step top at (0.65, 0.2).
-        # The three transfinite blocks survive: the block corner just moves
-        # to (0.6+r, 0.2) and block A's right side becomes face + arc. 4033
-        # elements against the sharp mesh's 4032.
+        # radius r = 0.05 m centred at (0.65, 0.15), tangent to the step face
+        # at (0.6, 0.15) and to the step top at (0.65, 0.2).
+        #
+        # The mesh is UNSTRUCTURED QUADS, not transfinite blocks. Forcing a
+        # structured block around the fillet — the step face and the arc on
+        # one side, a straight line opposite — makes the transfinite map shear
+        # the cells at exactly the place this case is failing: measured
+        # minSICN 0.235, against 1.000 for the sharp rectangular mesh. gmsh's
+        # quasi-structured quad algorithm gives 0.676 here and stays
+        # near-Cartesian away from the fillet. 4150 elements against the
+        # sharp mesh's 4032.
         #
         # WHY. An expansion fan is a SMOOTH solution, so a residual sensor
         # correctly returns almost nothing in it — DynSGS is structurally
@@ -60,13 +67,13 @@ function user_inputs()
         # singular point of the flow" and patch the cells beside it, at Mach
         # 3. This deck removes the singularity from the geometry instead.
         #
-        # READ THE CFL LINES. Δx_min is 1.32x smaller here (0.0189 against
-        # the sharp mesh's uniform 0.025; edge lengths run 0.0189-0.0260, a
-        # max/min of 1.38 — mild, and NOT a stretched grid). At the same Δt
-        # the printed advective CFL is therefore ~1.3x and the viscous one up
-        # to ~1.75x the sharp case's. Both still have room at the default
-        # Δt = 5.0e-8, but if you want the comparison at MATCHED CFL rather
-        # than matched Δt, use JEXPRESSO_M7_DT=3.8e-8.
+        # READ THE CFL LINES. Δx_min is 1.49x smaller here (0.0168 against
+        # the sharp mesh's uniform 0.025; edge lengths run 0.0168-0.0380).
+        # At the same Δt the printed advective CFL is therefore ~1.5x the
+        # sharp case's and the viscous one up to ~2.2x. Both still have room
+        # at the default Δt = 5.0e-8 (the sharp run printed 0.036 advective
+        # and 0.12 viscous), but for the comparison at MATCHED CFL rather
+        # than matched Δt use JEXPRESSO_M7_DT=3.4e-8.
         #
         # ORIGINAL MOTIVATION, unchanged. rampCaoEtAl2021 on an unstretched grid goes
         # non-finite at t = 4.8e-7 (step 481 at its Δt = 1e-9), in slot 1,
@@ -318,17 +325,43 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Mesh
         #
-        # ffs_step_round.msh is the same three-block transfinite quad mesh
-        # as ffs_step_M7's with the step corner filleted (4033 elements
-        # against 4032; edge lengths 0.0189-0.0260 m against a uniform
-        # 0.025). Regenerate it, or change the fillet radius through rfac,
-        # with `gmsh -2 ffs_step_round.geo -o ffs_step_round.msh`. Its physical
+        # ffs_step_round.msh is an UNSTRUCTURED all-quad mesh of the same
+        # L-shape with the step corner filleted (4150 elements against the
+        # sharp mesh's 4032, minSICN 0.676, no inverted cells). The Mesh.*
+        # options are inside the .geo, so
+        # `gmsh -2 ffs_step_round.geo -o ffs_step_round.msh` reproduces the
+        # committed mesh exactly; rfac there changes the fillet radius. Its physical
         # curve groups — "inflow", "outflow", "wall" — are the tags that
         # reach user_bc_dirichlet!. Regenerate at twice the resolution by
         # setting ref = 2 in ffs_step_transfinite.geo.
         #---------------------------------------------------------------------------
         :lread_gmsh           => true,
         :gmsh_filename        => "./problems/CompEuler/ffs_step_M7_round/ffs_step_round.msh",
+        # CURVE THE FILLET. gmsh writes a LINEAR grid, so the arc arrives as
+        # four straight segments whose endpoints happen to lie on the circle;
+        # filling those elements with LGL nodes would put every high-order
+        # node on the CHORD, and the wall the solver sees would be a polygon
+        # however large :nop is — a free-slip wall then generates spurious
+        # vorticity at each polygon corner, which is the very disease the
+        # fillet is meant to cure. src/kernel/mesh/exact_geometry.jl snaps the
+        # high-order nodes of the "fillet" edges onto the true circle and
+        # blends the element interiors (Kopriva, J. Sci. Comput. 26(3):
+        # 301-327, 2006, §3: linear blending transfinite map, which stays in
+        # P^N and so preserves the discrete metric identities and the free
+        # stream exactly).
+        #
+        # The EXPLICIT form, not the :circle shorthand: the shorthand fits the
+        # centre and radius from the linear vertices, and a refined grid puts
+        # new vertices at chord midpoints, which makes the fit ambiguous and
+        # it is then refused (exact_geometry.jl, "REFINEMENT NEEDS THE CIRCLE
+        # STATED"). Stating it keeps JEXPRESSO_M7_REF working.
+        #
+        # The arc carries only four linear segments and that is deliberate:
+        # after the snap they give 17 boundary nodes exactly on the circle at
+        # :nop => 4. Over-refining the arc to chase the geometry would only
+        # cut Δt. Fold margin (element thickness against the segment sagitta)
+        # is 17.5x, so _check_curved_elements has room.
+        :exact_geometry       => Dict("fillet" => (:circle, 0.65, 0.15, 0.05)),
         #---------------------------------------------------------------------------
         # Plotting
         #---------------------------------------------------------------------------
