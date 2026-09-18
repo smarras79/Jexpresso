@@ -30,8 +30,42 @@
 # preservation is fine and the Mach-7 failures have another cause.
 #---------------------------------------------------------------------------------
 
-const FSP_OUTFLOW = :nothing      # :nothing (production) | :freestream (control)
-const FSP_WALL    = :freestream   # :freestream (removed) | :noslip (production)
+#---------------------------------------------------------------------------------
+# THE TWO BOUNDARY CONSTANTS.  Exactly one of each pair is uncommented.
+# The deck rungs live in user_inputs.jl; these are the two that cannot,
+# because user_bc_dirichlet! is not handed `inputs`.
+#---------------------------------------------------------------------------------
+
+#
+# OUTFLOW.  ALREADY ANSWERED -- leave it alone unless you are re-checking.
+#
+# RUNG 0 ran with :nothing, the production condition, and dp_rel came back
+# at +/-5.8e-13 on the outflow plane like everywhere else.  The "impose
+# nothing" outflow manufactures NOTHING, so the :freestream control below
+# is no longer needed; it is kept only so the comparison can be redone.
+#
+const FSP_OUTFLOW = :nothing        # production, and the one that passed
+#const FSP_OUTFLOW = :freestream    # control: prescribe the stream here too
+
+#
+# WALL.  THIS IS RUNG 2.  Comment the first line, uncomment the second.
+#
+# :freestream REMOVES the wall -- the plate and the ramp are prescribed
+# free stream like every other boundary, so the uniform stream is an exact
+# solution of the whole problem and dp_rel measures the discretisation and
+# nothing else.  This is what RUNG 0 and RUNG 1 need.
+#
+# :noslip restores the production wall.  From that point on the uniform
+# stream is NO LONGER an exact solution -- a 1725 m/s stream standing on a
+# no-slip isothermal wall is a genuine discontinuity and dp_rel WILL become
+# large.  That is not a failure.  What is under test from RUNG 2 on is not
+# the magnitude of dp_rel but its LOCATION: a real disturbance is bounded
+# by the fastest signal speed, u + c = 1949 m/s, which crosses the 60 mm to
+# the top boundary in 3.1e-5 s, i.e. step 31,000.  Anything appearing at
+# the top of the domain inside 500 steps did not travel there.
+#
+const FSP_WALL    = :freestream     # RUNG 0, RUNG 1  -- wall removed
+#const FSP_WALL   = :noslip         # RUNG 2 and up   -- production wall
 
 function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String,
                             qbdy::AbstractArray, nx, ny, qe, ::TOTAL)
