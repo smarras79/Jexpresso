@@ -1,6 +1,13 @@
 #---------------------------------------------------------------------------------
 # 2D hypersonic compression-ramp flow with laminar separation.
 #
+# FORK OF problems/CompEuler/rampCaoEtAl2021.  The physics, the geometry,
+# the conditions and the starting profile are identical; see README.md for
+# the three-line list of what is different (entropy-conservative flux
+# differencing, the positivity repair, one named Mach constant) and
+# user_inputs.jl for why.  The two meshes are read from the original
+# directory rather than duplicated.
+#
 #   S. Cao, J. Hao, I. Klioutchnikov, H. Olivier, C.-Y. Wen,
 #   "Unsteady effects in a hypersonic compression ramp flow with laminar
 #    separation", J. Fluid Mech. 912, A3 (2021), doi:10.1017/jfm.2020.1093
@@ -63,11 +70,27 @@
 # which is what user_inputs.jl sets, are the ones the paper used.  Change
 # :sutherland_muref and this case stops being the paper's case.
 #
+#
+# THE ONE MACH NUMBER.  7.7 is Table 1 of the paper and it is what makes
+# this the paper's case.  It used to be written twice -- here and again,
+# hardcoded, in the recovery temperature T_aw below -- so a stepping-stone
+# run at a lower Mach silently kept the Mach-7.7 wall enthalpy in the
+# starting field.  It is one constant now, read by both.
+#
+# Set it to 7.0 to get the stepping stone that matches ffs_step_M7 and
+# shock_circle_M7; nothing else in the deck needs to change, and the
+# printed free-stream banner reports back what you chose.  Everything
+# BELOW this line (the mesh, delta_ref = 1.38 mm at s = 59 mm, T_w = 293 K)
+# is still calibrated on 7.7, so a lower Mach is a numerics experiment,
+# not the paper's flow.
+#
+const RAMP_MACH = 7.7
+
 function ramp_freestream()
 
     PhysConst = PhysicalConst{Float64}()
 
-    M∞ = 7.7                                  # free stream Mach number
+    M∞ = RAMP_MACH                            # free stream Mach number
     p∞ = 760.0                                # Pa
     T∞ = 125.0                                # K
 
@@ -179,7 +202,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     if rank == 0
-        println(" Initialize fields for 2D CompEuler (rampCaoEtAl2021: Mach-7.7 15-deg compression ramp) ... ")
+        @printf(" Initialize fields for 2D CompEuler (rampCaoEtAl2021_M7: Mach-%.1f 15-deg compression ramp, KEP + positivity) ... \n", RAMP_MACH)
     end
 
     #---------------------------------------------------------------------------------
@@ -224,7 +247,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
 
     Tw  = ramp_Twall()
     r   = sqrt(0.71)                                  # laminar recovery factor
-    Taw = T∞*(1.0 + r*0.5*PhysConst.γm1*7.7^2)        # ~1374 K
+    Taw = T∞*(1.0 + r*0.5*PhysConst.γm1*RAMP_MACH^2)  # ~1374 K at M = 7.7
     zt, yyt = ramp_profile_table(T∞, Tw, Taw)
 
     δref, sref = 1.38e-3, 0.059                       # Section 2.2
@@ -288,7 +311,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     end
 
     if rank == 0
-        println(" Initialize fields for 2D CompEuler (rampCaoEtAl2021) ... DONE ")
+        println(" Initialize fields for 2D CompEuler (rampCaoEtAl2021_M7) ... DONE ")
     end
 
     return q
