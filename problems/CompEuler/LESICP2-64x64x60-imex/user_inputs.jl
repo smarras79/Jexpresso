@@ -263,7 +263,8 @@ function user_inputs()
         :tend                 => tend,
 	:lrestart             => false,
 	#:restart_time         => 9000.0,
-        :lrestart_vtk         => true,
+        # DBG_RESTART_VTK=true continues from the last snapshot in the output dir.
+        :lrestart_vtk         => parse(Bool, get(ENV, "DBG_RESTART_VTK", "false")),
 	# EVERY range needs its own `...`; the third was missing one, which made this
 	# a tuple of 28 Floats followed by a StepRangeLen and killed the run in
 	# time_loop! (collect(Float64, ...) cannot convert a range to a Float64).
