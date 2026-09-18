@@ -250,8 +250,63 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     Taw = T∞*(1.0 + r*0.5*PhysConst.γm1*RAMP_MACH^2)  # ~1374 K at M = 7.7
     zt, yyt = ramp_profile_table(T∞, Tw, Taw)
 
+    #-----------------------------------------------------------------------------
+    # delta(s): SMOOTH, and floored at a thickness the grid can actually carry.
+    #
+    # MEASURED, not guessed. On a 1-rank run of this case the positivity repair
+    # named the first negative pressure in the whole domain at
+    #
+    #     (x, y) = (7.103784e-4, 1.496259e-4)
+    #
+    # and that node decodes exactly:
+    #   y  = 0.06/401, the top of the FIRST wall element of ramp15_uniform.msh
+    #   x  = the mid-LGL node of streamwise ELEMENT 2, [4.7264e-4, 9.4812e-4]
+    #   y/delta there = 0.988, i.e. the boundary-layer EDGE
+    #
+    # Two defects met in that one cell, and both are in this starting field
+    # rather than in the scheme (the inviscid operator, the metrics, the
+    # outflow and the KEP flux differencing were all cleared to machine zero
+    # by problems/CompEuler/rampFreeStreamTest):
+    #
+    # (1) THE max() WAS A KINK. delta = max(delta_floor, delta_ref*sqrt(s/sref))
+    #     has a SLOPE DISCONTINUITY where the two branches cross, at
+    #     s = sref*(delta_floor/delta_ref)^2 = 6.0723e-4 m. That is 28% of the
+    #     way along element 2 -- the same element whose mid-node went negative
+    #     first. A C0-but-not-C1 field INSIDE a spectral element is a Gibbs
+    #     generator: the element cannot represent a slope jump and rings
+    #     instead, and at M = 7.7 the internal energy is 5.7% of the total, so
+    #     the ringing reaches p amplified 17.5x and takes it below zero.
+    #
+    #     sqrt(delta_floor^2 + delta_ref^2*s/sref) is the same two asymptotes
+    #     with no kink at all: it is delta_floor at s = 0, it approaches
+    #     delta_ref*sqrt(s/sref) for large s, and it is smooth everywhere in
+    #     between. One line, and the crossover stops being an event.
+    #
+    # (2) THE FLOOR WAS TOO THIN TO RESOLVE. At that station delta = 1.514e-4
+    #     against an element height of 0.06/401 = 1.496e-4, so the ENTIRE
+    #     boundary layer was one element -- five LGL nodes -- thick. At
+    #     x = 100 mm the same layer spans 12 elements. The leading edge was
+    #     therefore 12x less resolved than the rest of the plate, on a mesh
+    #     that is uniform in y precisely because stretching broke this case.
+    #
+    #     6.0e-4 m is four element heights. It is the honest reading of what
+    #     this grid can carry, and it is what the original comment already
+    #     claimed to be doing ("~3 wall elements") while actually setting one.
+    #     The floor now dominates over the first
+    #         sref*(6.0e-4/1.38e-3)^2 = 1.115e-2 m = 11 mm
+    #     of plate, i.e. 11% of it and far upstream of separation at 59 mm, so
+    #     the flow this case exists to compute is untouched. What is smeared is
+    #     the sharp-leading-edge singularity, which no starting field on any
+    #     grid could resolve anyway.
+    #
+    # WHAT IS NOT FIXED HERE: the leading edge still sits ON the inflow plane,
+    # because this deck removed the paper's 1 mm upstream strip (see the mesh
+    # block in user_inputs.jl). The starting field is free stream at x = 0 and
+    # carries a boundary layer at the first interior node, so a jump remains
+    # there. That is inherent to the no-strip choice, not to these two lines.
+    #-----------------------------------------------------------------------------
     δref, sref = 1.38e-3, 0.059                       # Section 2.2
-    δfloor     = 1.4e-4                               # ~3 wall elements
+    δfloor     = 6.0e-4                               # 4 element heights (0.06/401)
 
     nbl = 0
     for ip = 1:mesh.npoin
@@ -272,7 +327,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         if s_wall <= 0.0 || n_wall <= 0.0
             u, v, T = u∞, v∞, T∞                      # free stream
         else
-            δ  = max(δref*sqrt(s_wall/sref), δfloor)
+            δ  = sqrt(δfloor*δfloor + δref*δref*(s_wall/sref))   # smooth: no kink
             su, T = ramp_profile_at(n_wall, δ, zt, yyt, T∞, Tw, Taw)
             n_wall < δ && (nbl += 1)
             # the velocity follows the wall, so it turns with the ramp

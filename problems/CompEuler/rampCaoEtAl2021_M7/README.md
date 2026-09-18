@@ -60,6 +60,29 @@ seen anywhere, and **where and when the first repair happened**:
 If repairs appear away from the first few startup steps, **the run is
 wrong**. Do not raise the floors to silence it — the message is the finding.
 
+## Starting-field fix (measured on a 1-rank run)
+
+A 1-rank run named the first negative pressure in the **whole domain** at
+`(x, y) = (7.103784e-4, 1.496259e-4)` — the mid-LGL node of streamwise
+element 2, at the top of the first wall element, `y/δ = 0.988`. Two defects
+met in that one cell, both in `initialize.jl`, neither in the scheme:
+
+1. **`δ = max(δfloor, δref√(s/sref))` is a kink.** The branches cross at
+   `s = 6.0723e-4`, which is **28% along that same element**. A C⁰-but-not-C¹
+   field inside a spectral element rings, and at M = 7.7 the ringing reaches
+   `p` amplified 17.5×. Now `δ = √(δfloor² + δref²·s/sref)` — same asymptotes,
+   no kink.
+2. **The floor was one element thick.** `δ = 1.514e-4` against an element
+   height of `0.06/401 = 1.496e-4`, so the whole boundary layer was 5 LGL
+   nodes. At x = 100 mm it spans 12 elements — the leading edge was **12×
+   less resolved** than the rest of the plate. `δfloor` is now `6.0e-4`,
+   four element heights, dominant over the first 11 mm (separation is at
+   59 mm, untouched).
+
+Still not fixed: the leading edge sits *on* the inflow plane because this
+deck removed the paper's 1 mm upstream strip. That jump is inherent to the
+no-strip choice.
+
 ## Running
 
 ```julia
