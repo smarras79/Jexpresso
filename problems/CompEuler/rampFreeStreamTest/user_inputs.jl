@@ -14,14 +14,37 @@
 #   RUNG  what it adds                        where            result
 #   ----  ----------------------------------  ---------------  --------------
 #     0   bare inviscid operator, no wall     (base deck)      PASS 5.8e-13
-#     1   :lkep + ranocha flux differencing   this file        ?
+#     1   :lkep + ranocha flux differencing   base deck        PASS 2.5e-11
 #     2   the no-slip isothermal wall         user_bc.jl       ?
 #     3   Sutherland molecular viscosity      this file        ?
 #     4   DynSGS, :dsgs_norms => "domain"     this file        ?
 #     5   DynSGS, :dsgs_norms => "rank"       this file        ?
 #    (+)  positivity, to get a coordinate     this file        optional
 #
-# RUNG 0 IS DONE AND IT PASSED: dp_rel came back at +/-5.8e-13 — machine
+# RUNG 1 IS DONE AND IT PASSED: dp_rel came back at -1.9e-11 .. +2.5e-11,
+# uniform, with no structure at the outflow, at the 15-degree kink or at the
+# block junction. It is now part of the BASE DICT above (:lkep => true,
+# :volume_flux => ranocha()), so every rung from here on carries it.
+#
+# 43x rung 0, and still pure round-off rather than a source. The budget says
+# so -- 500 steps x 5 stages = 2500 RHS evaluations:
+#
+#   rung 0   5.8e-13 / 2500 = 2.3e-16 per evaluation =  1.0 eps
+#   rung 1   2.5e-11 / 2500 = 1.0e-14 per evaluation = 45.0 eps
+#
+# 45 eps per evaluation is what flux differencing COSTS: instead of one
+# pointwise flux per node it evaluates a two-point flux against every other
+# node in the line, each with a logarithmic mean carrying a series expansion.
+# A longer arithmetic chain accumulates more round-off; it does not
+# manufacture a source. A broken FSP would show as STRUCTURE that GROWS, a
+# pattern locked to the mesh and orders of magnitude larger. The gap still to
+# be explained is 2.7e9x: the production first repair was at p = -52.1 Pa,
+# i.e. dp_rel = -6.9e-2.
+#
+# SO THE WHOLE INVISCID PATH IS CLEARED -- volume operator, metrics, the
+# "impose nothing" outflow, and flux differencing.
+#
+# RUNG 0 PASSED TOO: dp_rel came back at +/-5.8e-13 — machine
 # zero — uniform over the whole domain including the outflow plane. So the
 # metric terms are exact across the 15-degree kink and the two-block
 # junction, the "impose nothing" outflow manufactures nothing, and the
@@ -128,8 +151,12 @@ function user_inputs()
     # useful third data point: it is the plain central flux written in
     # flux-differencing FORM, so if ranocha() breaks FSP and central_euler()
     # does not, the entropy machinery is at fault rather than the form.
-    # inputs[:lkep]        = true
-    # inputs[:volume_flux] = ranocha()          # or kennedy_gruber(), central_euler()
+    # DONE -- these two are now set directly in the base Dict above, so this
+    # block is spent. Kept only to name the alternatives: kennedy_gruber() is
+    # kinetic-energy preserving only, and central_euler() is the plain central
+    # flux written in flux-differencing FORM, so if ranocha() had broken FSP
+    # and central_euler() had not, the entropy machinery would have been at
+    # fault rather than the form.
 
     # RUNG 2 — THE NO-SLIP ISOTHERMAL WALL          (in user_bc.jl, not here)
     #

@@ -5,7 +5,30 @@ discretisation.** One property, one number, one flip at a time — each rung is
 ~500 steps, seconds of wall clock, and the result is a single number: the
 **range of `dp_rel`** in ParaView's Information tab at the last frame.
 
-## Rung 0 — DONE, and it PASSED
+## Rungs 0 and 1 — DONE, both PASSED
+
+| rung | `dp_rel` range | per RHS evaluation | verdict |
+|---|---|---|---|
+| 0 — pointwise flux | −3.6e-13 … **+5.8e-13** | 2.3e-16 = **1.0 eps** | pure round-off |
+| 1 — `:lkep` + `ranocha()` | −1.9e-11 … **+2.5e-11** | 1.0e-14 = **45 eps** | pure round-off |
+
+500 steps × 5 stages = 2500 RHS evaluations. Rung 1's 43× is what flux
+differencing *costs*: instead of one pointwise flux per node it evaluates a
+two-point flux against every other node in the line, each carrying a
+logarithmic mean with a series expansion. A longer arithmetic chain
+accumulates more round-off; it does not manufacture a source. A broken FSP
+would show as **structure that grows** — a pattern locked to the mesh, orders
+of magnitude larger. Both pictures are uniform, with nothing at the outflow,
+the kink or the block junction.
+
+The gap still to be explained is **2.7e9×**: the production first repair was
+at p = −52.1 Pa, i.e. `dp_rel` = −6.9e-2.
+
+**The whole inviscid path is now cleared** — volume operator, metrics,
+outflow, and flux differencing. Rung 1 lives in the base Dict from here on,
+so every later rung carries it.
+
+## Rung 0 in detail
 
 | | |
 |---|---|
@@ -71,7 +94,7 @@ collide with the base Dict.
 | rung | what it adds | where | result |
 |---|---|---|---|
 | **0** | bare inviscid operator, no wall | base deck | **PASS 5.8e-13** |
-| **1** | `:lkep` + ranocha flux differencing | `user_inputs.jl` | ? |
+| **1** | `:lkep` + ranocha flux differencing | base deck | **PASS 2.5e-11** |
 | **2** | the no-slip isothermal wall | `user_bc.jl` | ? |
 | **3** | Sutherland molecular viscosity | `user_inputs.jl` | ? |
 | **4** | DynSGS, `:dsgs_norms => "domain"` | `user_inputs.jl` | ? |
