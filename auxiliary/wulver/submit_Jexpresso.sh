@@ -1,5 +1,5 @@
 #!/bin/bash -l
-#SBATCH --job-name=orszag
+#SBATCH --job-name=ffs_step
 #SBATCH --output=%x.%j.out
 #SBATCH --error=%x.%j.err
 #SBATCH --partition=general
@@ -31,6 +31,6 @@ julia --project=. -e 'using MPI; using Jexpresso' 2>/dev/null || \
 echo "--- Setup complete, launching 64 ranks ---"
 export JULIA_PKG_PRECOMPILE_AUTO=0  # ranks must never attempt to precompile
 
-#mpirun -np 64 julia --project=. src/Jexpresso.jl CompEuler ffs_step
-mpirun -np 32 julia --project=. src/Jexpresso.jl MHD orszagTangBormanis2024
+mpirun -np 64 julia --project=. src/Jexpresso.jl CompEuler ffs_step
+#mpirun -np 32 julia --project=. src/Jexpresso.jl MHD orszagTangBormanis2024
 #mpirun -np 64 julia --project=. src/Jexpresso.jl MHD fluxEmergenceSon2025DSGS

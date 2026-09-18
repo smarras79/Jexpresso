@@ -84,7 +84,8 @@ function user_inputs()
         :lvisc                => false,
         :lfilter              => false,
         :lpositivity          => false,
-        :lkep                 => false,
+        :volume_flux          => ranocha(),
+        :lkep                 => true,        
         #---------------------------------------------------------------------------
         # The PRODUCTION mesh, read from the production directory. Swap for
         # ramp15.msh to ask the same question of the wall-stretched grid.
@@ -104,7 +105,6 @@ function user_inputs()
         :lxy_partition        => false,
     ) #Dict
 
-    #===========================================================================
     # RUNG 1 — ENTROPY-CONSERVATIVE FLUX DIFFERENCING
     #
     # rampCaoEtAl2021_M7 runs with this ON and rung 0 ran with it OFF, so it
@@ -128,11 +128,9 @@ function user_inputs()
     # useful third data point: it is the plain central flux written in
     # flux-differencing FORM, so if ranocha() breaks FSP and central_euler()
     # does not, the entropy machinery is at fault rather than the form.
-    #===========================================================================#
     # inputs[:lkep]        = true
     # inputs[:volume_flux] = ranocha()          # or kennedy_gruber(), central_euler()
 
-    #===========================================================================
     # RUNG 2 — THE NO-SLIP ISOTHERMAL WALL          (in user_bc.jl, not here)
     #
     # Set FSP_WALL = :noslip in user_bc.jl.
@@ -150,9 +148,8 @@ function user_inputs()
     # layer precisely BECAUSE a uniform stream on a no-slip wall is illegal.
     # Rung 2 deliberately keeps the illegal start, because an illegal start
     # that stays LOCAL is still a passing result for the question being asked.
-    #===========================================================================#
 
-    #===========================================================================
+
     # RUNG 3 — SUTHERLAND MOLECULAR VISCOSITY
     #
     # Real Navier-Stokes viscous terms, still with no artificial viscosity.
@@ -163,7 +160,7 @@ function user_inputs()
     #
     # Requires RUNG 2 (a viscous run with no wall has nothing to be viscous
     # about).
-    #===========================================================================#
+
     # inputs[:lvisc]            = true
     # inputs[:lsutherland]      = true
     # inputs[:sutherland_muref] = 1.716e-5
@@ -171,7 +168,7 @@ function user_inputs()
     # inputs[:sutherland_S]     = 110.4
     # inputs[:Pr_lam]           = 0.71
 
-    #===========================================================================
+
     # RUNG 4 — DYNSGS WITH DOMAIN NORMS          (the production stabilisation)
     #
     # THIS IS THE RUNG THE CAUSALITY ARGUMENT POINTS AT. :dsgs_norms =>
@@ -186,7 +183,7 @@ function user_inputs()
     # exactly 0 and you are measuring a 0/0, not the scheme.
     #
     # Settings are rampCaoEtAl2021's own, unchanged.
-    #===========================================================================#
+
     # inputs[:lvisc]        = true              # required by :visc_model
     # inputs[:visc_model]   = DSGS()
     # inputs[:dsgs_sensor]  = "legacy"
@@ -196,7 +193,6 @@ function user_inputs()
     # inputs[:dsgs_Cmax]    = 0.1
     # inputs[:Pr]           = 0.1
 
-    #===========================================================================
     # RUNG 5 — THE SAME, WITH RANK NORMS                   (the discriminator)
     #
     # Uncomment on top of RUNG 4. "rank" reduces over each MPI rank instead of
@@ -211,10 +207,8 @@ function user_inputs()
     # NOTE that "rank" makes the answer partition-dependent BY DESIGN. That is
     # a defect in production and a feature here: it is the variable being
     # changed.
-    #===========================================================================#
     # inputs[:dsgs_norms] = "rank"
 
-    #===========================================================================
     # OPTIONAL ADD-ON — POSITIVITY, FOR THE COORDINATE ONLY
     #
     # Turn this on ONLY as a second run of a rung that already failed, never
@@ -225,7 +219,7 @@ function user_inputs()
     # production failure to the outflow plane in one line.
     #
     # Floors are 1e-6 of this free stream, as in rampCaoEtAl2021_M7.
-    #===========================================================================#
+
     # inputs[:lpositivity]            = true
     # inputs[:positivity_rho_min]     = 2.1e-8
     # inputs[:positivity_p_min]       = 7.6e-4
@@ -233,7 +227,7 @@ function user_inputs()
     # inputs[:positivity_report_every] = 200    # tighter than production: this
     #                                           # run is 2500 RHS calls total
 
-    #===========================================================================
+
     # THE MPI CHECK — no code change, and it is not optional
     #
     # Rung 0 passed, but a uniform field is invariant under any permutation of
@@ -249,7 +243,6 @@ function user_inputs()
     # :dsgs_norms => "domain" exists precisely so the answer does NOT depend
     # on the rank count. If those numbers differ, the parallel path is
     # implicated and every Mach-7 result in this campaign is suspect.
-    #===========================================================================#
 
     return inputs
 
