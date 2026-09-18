@@ -115,7 +115,7 @@
 #  WHAT TO RUN.
 #-----------------------------------------------------------------------------
 EQS="CompEuler"
-CASE="LESICP2-30x30x60-imex"
+CASE="${JEXPRESSO_CASE:-LESICP2-30x30x60-imex}"   # JEXPRESSO_CASE=LESICP2-30x30x60-80m-imex for the 80 m deck
 TEND="10800.0"
 MESH=""
 # ROOT: the repo checkout. Defaults to the directory you ran `sbatch` FROM,
