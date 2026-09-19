@@ -104,6 +104,13 @@ so its writes would land on unrelated nodes.
   deck's header.
 * **Shock capturing / positivity limiting.** Nothing beyond the interface
   Rusanov jump. Cases with a wet/dry front or a steepening front need more.
+  Worth noting for whoever picks this up: `src/kernel/positivity/README.md`
+  rules Zhang-Shu out for CG because it needs elements that can be modified
+  independently and a cell average kept positive by a positivity-preserving
+  interface flux, and CG-SEM has neither. `DiscGal` supplies both. That
+  repair module itself is compressible-Euler-specific (it repairs rho and p)
+  and off unless `:lpositivity => true`, so it does not apply to the shallow
+  water case as it stands.
 * **Mesh adaptivity.** Refused at input parsing (`:lamr`, `:ladapt`,
   `:lpreadapt` must be false): the CG mortar projections have no meaning on
   duplicated DOFs.
