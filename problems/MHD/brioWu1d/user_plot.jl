@@ -7,12 +7,17 @@
 # when user_analytic.jl supplies the reference. Set :plot_user => false in
 # user_inputs.jl to get the generic panels of the 1D plotter instead.
 #
-# Written at EVERY output time, beside the density figure:
+# Written at EVERY output time, beside the density figure. EVERY figure of
+# this case is vector graphics (see _bw_fig_ext): .svg by default, .pdf with
+# JEXPRESSO_BW_FIGFMT=pdf, .png only if raster is asked for.
 #
-#   fields-it<n>.png    one panel per solution quantity (ρ, u, v, w, p, Bx,
-#                       By, Bz), each against the reference where
-#                       user_analytic.jl has one
-#   mu_dsgs-it<n>.png   the structure of the DynSGS coefficient: ρ and By on
+#   <var>-it<n>.svg     ONE FILE PER SOLUTION QUANTITY -- rho, u, v, w, p, Bx,
+#                       By, Bz -- each on the full canvas against the
+#                       reference where user_analytic.jl has one, with the
+#                       zoom boxes of BW_FIELD_INSETS on u, v, p and By where
+#                       the DynSGS solution leaves the reference, and the four
+#                       of the paper on rho
+#   mu_dsgs-it<n>.svg   the structure of the DynSGS coefficient: ρ and By on
 #                       top, ν per equation slot below, so that where the
 #                       coefficient fires can be read against the waves
 #
@@ -73,6 +78,54 @@ const BW_INSETS = [   # (x-range, y-range, inset position as fractions of the ax
 # states, so it is the one place on this solution where the order of the
 # scheme can show. The errors are reported there as well as over the whole tube.
 const BW_SMOOTH_WINDOW = (0.33, 0.41)
+
+# OUTPUT FORMAT. A raster figure of a shock tube is unreadable exactly where
+# it matters: the whole point of the zoom boxes is to look closely at two or
+# three nodes across a shock, and at that magnification a PNG is pixels. The
+# figures are therefore written as VECTOR graphics, default SVG (every viewer
+# and every browser opens it, and one of these is ~100-300 kB because a 1D
+# figure holds a few thousand path points and nothing else); "pdf" for direct
+# \includegraphics into the paper, "png" to go back to raster.
+#
+#   JEXPRESSO_BW_FIGFMT=pdf   or   :plot_format => "pdf" in user_inputs.jl
+function _bw_fig_ext(inputs)
+    e = lowercase(strip(get(ENV, "JEXPRESSO_BW_FIGFMT",
+                            string(get(inputs, :plot_format, "svg")))))
+    if !(e in ("svg", "pdf", "png"))
+        @warn "brioWu1d: unknown figure format $(e); using svg." _module=nothing _file=nothing
+        return "svg"
+    end
+    return e
+end
+
+# ASCII file names: a figure called "ρ-it5.svg" is a nuisance to reference from
+# a Makefile, a shell loop or a LaTeX \includegraphics.
+const BW_SLUG = Dict("ρ" => "rho", "u" => "u", "v" => "v", "w" => "w", "p" => "p",
+                     "Bx" => "Bx", "By" => "By", "Bz" => "Bz")
+_bw_slug(name) = get(BW_SLUG, string(name), string(name))
+
+# ZOOM BOXES, PER VARIABLE: (x-range, y-range, inset position as fractions of
+# the axes from the bottom-left: x, y, w, h).
+#
+# Every box sits where the DynSGS solution leaves the reference, which on this
+# problem is the neighbourhood of the slow shock at x = 0.64 and of the
+# compound wave at x = 0.47 -- the two structures the coefficient has to
+# resolve. The inset positions are chosen over the EMPTY part of each frame,
+# which differs from variable to variable because the curves do; they are
+# fractions, so they follow the axis limits computed from the data.
+#
+# ρ keeps the four boxes of the paper's Fig. 2 (BW_INSETS above).
+const BW_FIELD_INSETS = Dict{String, Vector{Any}}(
+    "u"  => [((0.600, 0.685), ( 0.520,  0.665), (0.11, 0.56, 0.29, 0.29)),   # top of the plateau into the slow shock
+             ((0.605, 0.700), (-0.300, -0.175), (0.64, 0.56, 0.29, 0.29))],  # the post-shock state
+    "v"  => [((0.595, 0.745), (-0.300,  0.040), (0.11, 0.38, 0.29, 0.29)),   # the jump back up across the slow shock
+             ((0.555, 0.670), (-1.700, -1.470), (0.64, 0.09, 0.29, 0.29))],  # the deep plateau into the shock
+    "p"  => [((0.520, 0.745), ( 0.040,  0.165), (0.64, 0.50, 0.29, 0.29)),   # the post-shock plateau
+             ((0.430, 0.510), ( 0.420,  0.790), (0.11, 0.09, 0.29, 0.29))],  # the compound wave
+    "By" => [((0.585, 0.700), (-1.030, -0.440), (0.64, 0.54, 0.29, 0.29)),   # the slow shock
+             ((0.430, 0.520), (-0.640,  0.640), (0.11, 0.09, 0.29, 0.29))],  # the compound wave
+)
+_bw_field_insets(name) = get(BW_FIELD_INSETS, string(name), Any[])
 
 # Where the per-(order, resolution) curves accumulate.
 const BW_CURVE_DIR = joinpath(@__DIR__, "curves")
@@ -336,7 +389,7 @@ end
 # plays the same role.) The legend carries the rate measured between the two
 # finest resolutions of each order.
 #---------------------------------------------------------------------------------
-function _bw_plot_convergence(rows, OUTPUT_DIR, iout; smooth::Bool)
+function _bw_plot_convergence(rows, inputs, OUTPUT_DIR, iout; smooth::Bool)
     fields = smooth ? (:l1_sm, :l2_sm, :linf_sm) : (:l1_all, :l2_all, :linf_all)
     names  = ("L^1", "L^2", "L^\\infty")
     nops   = sort(unique(r.nop for r in rows))
@@ -387,7 +440,7 @@ function _bw_plot_convergence(rows, OUTPUT_DIR, iout; smooth::Bool)
     end
     plt = Plots.plot(panels...; layout = (1, 3), size = (1500, 450),
                      left_margin = 9Plots.mm, bottom_margin = 8Plots.mm, show = false)
-    _savefig_silent(plt, string(OUTPUT_DIR, "/convergence", smooth ? "_smooth" : "", "-it", iout, ".png"))
+    _savefig_silent(plt, string(OUTPUT_DIR, "/convergence", smooth ? "_smooth" : "", "-it", iout, ".", _bw_fig_ext(inputs)))
     return nothing
 end
 
@@ -440,94 +493,139 @@ function _bw_plot_density(curves, xs, href, inputs, OUTPUT_DIR, iout, tag)
         # The only solid line on the figure.
         Plots.plot!(plt, xs, href; line = (:black, 1.8, :solid), label = "Reference solution")
 
-        # Zoom boxes: a gray frame on the main axes, a dashed connector to the
-        # inset, and the inset itself (every curve, tick labels only).
-        for (k, (xr, yr, pos)) in enumerate(BW_INSETS)
-            bx = [xr[1], xr[2], xr[2], xr[1], xr[1]]
-            by = [yr[1], yr[1], yr[2], yr[2], yr[1]]
-            Plots.plot!(plt, bx, by; line = (:gray, 1.0), label = "")
-            # The inset rectangle in data coordinates (pos are fractions of
-            # the axes span from the bottom-left); the dashed connector joins
-            # the box corner nearest the inset to the inset corner nearest
-            # the box, as in the paper.
-            ix = (xl[1] + pos[1]*(xl[2] - xl[1]), xl[1] + (pos[1] + pos[3])*(xl[2] - xl[1]))
-            iy = (yl[1] + pos[2]*(yl[2] - yl[1]), yl[1] + (pos[2] + pos[4])*(yl[2] - yl[1]))
-            bcx = 0.5*(xr[1] + xr[2]); bcy = 0.5*(yr[1] + yr[2])
-            icx = 0.5*(ix[1] + ix[2]); icy = 0.5*(iy[1] + iy[2])
-            cornerx = (icx < bcx) ? xr[1] : xr[2]
-            cornery = (icy < bcy) ? yr[1] : yr[2]
-            insx    = (icx < bcx) ? ix[2] : ix[1]
-            insy    = (icy < bcy) ? iy[2] : iy[1]
-            Plots.plot!(plt, [cornerx, insx], [cornery, insy]; line = (:black, 1.0, :dash), label = "")
-            Plots.plot!(plt; inset = (1, Plots.bbox(pos[1], pos[2], pos[3], pos[4], :bottom, :left)),
-                        subplot = k + 1)
+        # Zoom boxes: the paper's four (_bw_add_insets! draws the frame, the
+        # connector and the inset; this fills it with every stored curve).
+        _bw_add_insets!(plt, BW_INSETS, xl, yl, (sp, xr, yr) -> begin
             sel = (xs .>= xr[1]) .& (xs .<= xr[2])
-            Plots.plot!(plt[k + 1], xs[sel], href[sel]; line = (:black, 1.8, :solid), label = "",
-                        xlims = xr, ylims = yr, framestyle = :box, grid = true,
-                        tickfontsize = 9, background_color_inside = :white)
+            Plots.plot!(sp, xs[sel], href[sel]; line = (:black, 1.8, :solid), label = "")
             for c in curves
                 col, ls, _ = _bw_style(c.nop)
-                s = (c.x .>= xr[1]) .& (c.x .<= xr[2])
-                any(s) && Plots.plot!(plt[k + 1], c.x[s], c.y[s]; line = (col, 1.6, ls), label = "")
+                q = (c.x .>= xr[1]) .& (c.x .<= xr[2])
+                any(q) && Plots.plot!(sp, c.x[q], c.y[q]; line = (col, 1.6, ls), label = "")
             end
-        end
+        end)
     end
-    _savefig_silent(plt, string(OUTPUT_DIR, "/density", tag, "-it", iout, ".png"))
+    _savefig_silent(plt, string(OUTPUT_DIR, "/density", tag, "-it", iout, ".", _bw_fig_ext(inputs)))
     return nothing
 end
 
 # ---------------------------------------------------------------------------
-# EVERY SOLUTION QUANTITY, one panel each: fields-it<n>.png
-#
-# The density figure above is the paper's; this is the one that says whether
-# the rest of the state is right. The reference of user_analytic.jl carries
-# rho, u, v, w, p, By, Bz, so each of those panels gets its dashed reference;
-# Bx has none because it is a constant of the 1D system (d_x Bx = 0), and its
-# panel is the check that the discretization keeps it at 0.75.
+# ZOOM BOXES. Shared by the density figure and the per-variable figures: the
+# gray frame on the main axes, the dashed connector from the corner of the box
+# nearest the inset to the corner of the inset nearest the box, and the inset
+# subplot itself. `draw!(sp, xr, yr)` fills the inset -- the two callers have
+# different curves to put in it (a whole store of orders, or this run and its
+# reference), which is the only part that differs.
 # ---------------------------------------------------------------------------
-function _bw_plot_fields(xs, qs, qrefs, outvar, inputs, OUTPUT_DIR, iout, t)
-    names  = string.(outvar)
-    nvar   = length(names)
-    panels = Plots.Plot[]
-    midx   = _bw_marker_idx(length(xs), 1, 1, inputs)
-    for ivar = 1:nvar
-        y  = @view qs[:, ivar]
-        # A quantity that is constant by construction (w, Bx, Bz here) would
-        # otherwise be auto-scaled to an arbitrary window and the panel would
-        # say nothing about whether the constant is KEPT. Center it and put
-        # the spread in the title, so the panel reads as the check it is.
-        lo, hi = extrema(y)
-        mid    = 0.5*(lo + hi)
-        ttl    = names[ivar]
-        ylim   = nothing
-        if hi - lo <= 1.0e-8*max(1.0, abs(mid))
-            d    = max(hi - lo, 1.0e-12*max(1.0, abs(mid)))
-            ylim = (mid - 5d, mid + 5d)
-            ttl  = string(names[ivar], @sprintf("  (const, spread %.1e)", hi - lo))
-        end
-        pl = Plots.plot(xs, y; line = (:blue, 1.6), label = "Jexpresso",
-                        title = ttl, xlabel = "x",
-                        titlefontsize = 13, guidefontsize = 10, tickfontsize = 9,
-                        legendfontsize = 8, legend = (ivar == 1 ? :best : false),
-                        show = false)
-        ylim === nothing || Plots.ylims!(pl, ylim)
-        isempty(midx) || Plots.scatter!(pl, xs[midx], y[midx];
-                                        marker = (:circle, 2.5, :blue),
-                                        markerstrokewidth = 0, label = "")
-        if qrefs !== nothing && any(isfinite, @view(qrefs[:, ivar]))
-            Plots.plot!(pl, xs, @view(qrefs[:, ivar]); line = (:black, 1.6, :dash),
-                        label = ivar == 1 ? "Reference solution" : "")
-        end
-        push!(panels, pl)
+function _bw_add_insets!(plt, boxes, xl, yl, draw!)
+    for (k, (xr, yr, pos)) in enumerate(boxes)
+        bx = [xr[1], xr[2], xr[2], xr[1], xr[1]]
+        by = [yr[1], yr[1], yr[2], yr[2], yr[1]]
+        Plots.plot!(plt, bx, by; line = (:gray, 1.0), label = "")
+        ix  = (xl[1] + pos[1]*(xl[2] - xl[1]), xl[1] + (pos[1] + pos[3])*(xl[2] - xl[1]))
+        iy  = (yl[1] + pos[2]*(yl[2] - yl[1]), yl[1] + (pos[2] + pos[4])*(yl[2] - yl[1]))
+        bcx = 0.5*(xr[1] + xr[2]); bcy = 0.5*(yr[1] + yr[2])
+        icx = 0.5*(ix[1] + ix[2]); icy = 0.5*(iy[1] + iy[2])
+        cornerx = (icx < bcx) ? xr[1] : xr[2]
+        cornery = (icy < bcy) ? yr[1] : yr[2]
+        insx    = (icx < bcx) ? ix[2] : ix[1]
+        insy    = (icy < bcy) ? iy[2] : iy[1]
+        Plots.plot!(plt, [cornerx, insx], [cornery, insy]; line = (:black, 1.0, :dash), label = "")
+        Plots.plot!(plt; inset = (1, Plots.bbox(pos[1], pos[2], pos[3], pos[4], :bottom, :left)),
+                    subplot = k + 1)
+        sp = plt[k + 1]
+        Plots.plot!(sp; xlims = xr, ylims = yr, framestyle = :box, grid = true,
+                    tickfontsize = 8, legend = false, background_color_inside = :white)
+        draw!(sp, xr, yr)
     end
-    ncol = nvar <= 4 ? 2 : 4
-    nrow = cld(nvar, ncol)
-    plt  = Plots.plot(panels...; layout = (nrow, ncol),
-                      size = (380*ncol, 300*nrow),
-                      plot_title = @sprintf("Brio-Wu, t = %.4f", t === nothing ? NaN : t),
-                      plot_titlefontsize = 15,
-                      left_margin = 5Plots.mm, bottom_margin = 5Plots.mm, show = false)
-    _savefig_silent(plt, string(OUTPUT_DIR, "/fields-it", iout, ".png"))
+    return nothing
+end
+
+# ---------------------------------------------------------------------------
+# ONE FIGURE PER SOLUTION QUANTITY: <name>-it<n>.<svg|pdf|png>
+#
+# rho-it5.svg, u-it5.svg, v-it5.svg, w-it5.svg, p-it5.svg, Bx-it5.svg,
+# By-it5.svg, Bz-it5.svg -- each the full canvas rather than one cell of a
+# panel matrix, so a figure can go into a paper or a slide on its own and the
+# zoom boxes have room to be read.
+#
+# The reference of user_analytic.jl covers rho, u, v, w, p, By, Bz; Bx has
+# none because it is a constant of the 1D system, and a quantity that is
+# constant by construction is centred on its own value with the spread in the
+# title, so the panel reads as the check it is rather than as an arbitrary
+# auto-scaled window.
+#
+# Boxes come from BW_FIELD_INSETS (rho: the paper's four), and are drawn only
+# where there is a reference to compare against -- at the earlier output times
+# there is none, and a zoom on a single curve says nothing.
+# ---------------------------------------------------------------------------
+function _bw_plot_field(xs, y, yref, name, inputs, OUTPUT_DIR, iout, t, ext)
+    lo, hi = extrema(y)
+    if yref !== nothing
+        rlo, rhi = extrema(yref)
+        lo = min(lo, rlo); hi = max(hi, rhi)
+    end
+    mid  = 0.5*(lo + hi)
+    ttl  = string(name)
+    lconst = hi - lo <= 1.0e-8*max(1.0, abs(mid))
+    if lconst
+        d  = max(hi - lo, 1.0e-12*max(1.0, abs(mid)))
+        yl = (mid - 5d, mid + 5d)
+        ttl = string(name, @sprintf("  (const, spread %.1e)", hi - lo))
+    else
+        pad = 0.06*(hi - lo)
+        yl  = (lo - pad, hi + pad)
+    end
+    # ρ keeps the fixed frame of the paper's density figure, because its four
+    # inset positions were tuned against exactly these limits.
+    string(name) == "ρ" && (yl = (0.1, 1.0))
+    xl = (minimum(xs), maximum(xs))
+
+    plt = Plots.plot(; title = LaTeXStrings.latexstring(string("\\mathrm{Brio-Wu},\\ t = ",
+                                                            @sprintf("%.3f", t === nothing ? NaN : t))),
+                     xlabel = LaTeXStrings.L"x", ylabel = ttl,
+                     xlims = xl, ylims = yl, xticks = 0.0:0.2:1.0,
+                     framestyle = :box, grid = false,
+                     # OUTSIDE the frame: with two entries and up to four zoom
+                     # insets, any in-frame corner is one the insets want, and
+                     # a legend under an inset is a legend nobody can read.
+                     legend = :outertop, legend_columns = 2, legendfontsize = 12,
+                     titlefontsize = 20, guidefontsize = 18, tickfontsize = 13,
+                     size = (900, 720), left_margin = 6Plots.mm, bottom_margin = 5Plots.mm,
+                     show = false)
+
+    midx = _bw_marker_idx(length(xs), 1, 1, inputs)
+    Plots.plot!(plt, xs, y; line = (:blue, 1.8, :dash), label = "Jexpresso")
+    isempty(midx) || Plots.scatter!(plt, xs[midx], y[midx];
+                                    marker = (:circle, 3.5, :blue),
+                                    markerstrokewidth = 0, label = "")
+    yref === nothing || Plots.plot!(plt, xs, yref; line = (:black, 1.8, :solid),
+                                    label = "Reference solution")
+
+    if yref !== nothing && !lconst
+        _bw_add_insets!(plt, _bw_field_insets(name), xl, yl, (sp, xr, yr) -> begin
+            sel = (xs .>= xr[1]) .& (xs .<= xr[2])
+            if any(sel)
+                Plots.plot!(sp, xs[sel], yref[sel]; line = (:black, 1.8, :solid), label = "")
+                Plots.plot!(sp, xs[sel], y[sel];    line = (:blue,  1.8, :dash),  label = "")
+                Plots.scatter!(sp, xs[sel], y[sel]; marker = (:circle, 3.0, :blue),
+                               markerstrokewidth = 0, label = "")
+            end
+        end)
+    end
+    _savefig_silent(plt, string(OUTPUT_DIR, "/", _bw_slug(name), "-it", iout, ".", ext))
+    return nothing
+end
+
+function _bw_plot_fields(xs, qs, qrefs, outvar, inputs, OUTPUT_DIR, iout, t)
+    names = string.(outvar)
+    ext   = _bw_fig_ext(inputs)
+    for ivar = 1:length(names)
+        yref = (qrefs !== nothing && any(isfinite, @view(qrefs[:, ivar]))) ?
+               collect(@view qrefs[:, ivar]) : nothing
+        _bw_plot_field(xs, collect(@view qs[:, ivar]), yref,
+                       names[ivar], inputs, OUTPUT_DIR, iout, t, ext)
+    end
     return nothing
 end
 
@@ -614,7 +712,7 @@ function _bw_plot_mu(xs, qs, μs, outvar, inputs, OUTPUT_DIR, iout, t)
 
     plt = Plots.plot(top, bot; layout = (2, 1), size = (900, 700), link = :x,
                      left_margin = 7Plots.mm, bottom_margin = 5Plots.mm, show = false)
-    _savefig_silent(plt, string(OUTPUT_DIR, "/mu_dsgs-it", iout, ".png"))
+    _savefig_silent(plt, string(OUTPUT_DIR, "/mu_dsgs-it", iout, ".", _bw_fig_ext(inputs)))
     return nothing
 end
 
@@ -691,8 +789,8 @@ function user_plot_1d(x, q, qref, μ_nodes, t, outvar, inputs, OUTPUT_DIR, iout)
     if lfinal && !isempty(stored)
         rows = _bw_error_table(stored)
         _bw_report_errors(rows)
-        _bw_plot_convergence(rows, OUTPUT_DIR, iout; smooth = false)
-        _bw_plot_convergence(rows, OUTPUT_DIR, iout; smooth = true)
+        _bw_plot_convergence(rows, inputs, OUTPUT_DIR, iout; smooth = false)
+        _bw_plot_convergence(rows, inputs, OUTPUT_DIR, iout; smooth = true)
         println(" #   (", form, " form of the DynSGS coefficient)")
     end
     return nothing

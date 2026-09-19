@@ -31,7 +31,7 @@ julia --project=. src/Jexpresso.jl MHD brioWu1d
 
 Serial; a few seconds of time stepping after compilation. Output goes to
 `./output/MHD/brioWu1d/output/`. By default (`:plot_user => true`) the case
-writes the figure of the paper's Fig. 2: `density-it<n>.png` at every
+writes the figure of the paper's Fig. 2: `density-it<n>.svg` at every
 output time ($t = 0, 0.025, \dots, 0.1$), density against $x$ on the paper's
 axes, the numerical solution labelled `nop <N>, <n> DOFs`, and at the final
 time the reference solution with four zoom boxes: the paper's three (the
@@ -43,12 +43,26 @@ diamonds, nop 7 purple dash-dot-dot triangles); the reference is the only
 solid line, so the curves are told apart in print and by line type, not by
 colour alone. The background floor `:dsgs_Cmin` is written in the title when
 all the curves on the figure share it, and in their legend entries when they
-do not. With
-`:plot_user => false` the output is the format of `CompEuler/sod1d`: one
-figure `fields-it<n>.png` per output time with a panel per output variable
-($\rho$, $u$, $v$, $p$, $B_y$; the reference dashed at the final time) and a
-last panel with the DynSGS coefficient per element (`:plot_matrix => false`
-writes those panels as separate files).
+do not.
+
+Beside it, at every output time, **one figure per solution quantity** —
+`rho-it<n>.svg`, `u-it<n>.svg`, `v-it<n>.svg`, `w-it<n>.svg`, `p-it<n>.svg`,
+`Bx-it<n>.svg`, `By-it<n>.svg`, `Bz-it<n>.svg` — each on the full canvas
+against the reference, with zoom boxes on $u$, $v$, $p$ and $B_y$ where the
+DynSGS solution leaves it (the slow shock at $x \approx 0.647$ and the
+compound wave at $x \approx 0.47$), and the paper's four on $\rho$. $B_x$,
+$w$ and $B_z$ are constant by construction, so those three are centred on
+their own value with the spread in the title rather than auto-scaled to an
+arbitrary window; this run reports `spread 0.0e+00` for all three.
+`mu_dsgs-it<n>.svg` carries the structure of the DynSGS coefficient: $\rho$
+and $B_y$ on top, $\nu$ per equation slot below on the same $x$ axis.
+
+**Every figure is vector graphics**, because the zoom boxes exist to be looked
+at closely and a raster figure is pixels at that magnification. `.svg` by
+default (~80–250 kB each), `.pdf` with `JEXPRESSO_BW_FIGFMT=pdf` for
+`\includegraphics`, `.png` with `JEXPRESSO_BW_FIGFMT=png` (or
+`:plot_format` in the deck) if raster is wanted. `:plot_user => false` falls
+back to the generic panels of the 1D plotter.
 
 ### Comparing polynomial orders, and the convergence history
 
@@ -73,10 +87,10 @@ on stdout and leaves them off the figure.
 
 | figure | contents |
 |---|---|
-| `density_dof<M>-it<n>.png` | **one file per resolution**: every order that ran at $M$ degrees of freedom, against the reference, with the four zoom boxes. A sweep over 150, 300, 600 and 1200 DOFs leaves `density_dof150-it<n>.png`, `density_dof300-it<n>.png`, … side by side |
-| `density-it<n>.png` | the same figure for the finest resolution in the store, under the plain name |
-| `convergence-it<n>.png` | the layout of the paper's Fig. 1: the relative $L^1$, $L^2$ and $L^\infty$ error of $\rho$ against $1/\#\mathrm{DOFs}$ on log-log axes, one line per order, with slope guides and the measured rate in each legend entry |
-| `convergence_smooth-it<n>.png` | the same, restricted to $x \in (0.33, 0.41)$ inside the fast rarefaction — the one smooth, non-constant part of this solution |
+| `density_dof<M>-it<n>.svg` | **one file per resolution**: every order that ran at $M$ degrees of freedom, against the reference, with the four zoom boxes. A sweep over 150, 300, 600 and 1200 DOFs leaves `density_dof150-it<n>.svg`, `density_dof300-it<n>.svg`, … side by side |
+| `density-it<n>.svg` | the same figure for the finest resolution in the store, under the plain name |
+| `convergence-it<n>.svg` | the layout of the paper's Fig. 1: the relative $L^1$, $L^2$ and $L^\infty$ error of $\rho$ against $1/\#\mathrm{DOFs}$ on log-log axes, one line per order, with slope guides and the measured rate in each legend entry |
+| `convergence_smooth-it<n>.svg` | the same, restricted to $x \in (0.33, 0.41)$ inside the fast rarefaction — the one smooth, non-constant part of this solution |
 
 The abscissa is $1/\#\mathrm{DOFs}$ because the problem is 1D and the mesh
 size is $h \propto 1/\#\mathrm{DOFs}$; the paper's $1/\sqrt{\#\mathrm{DOFs}}$
@@ -256,7 +270,7 @@ discretizations.
 ## Results
 
 Serial, 600 points, $\Delta t = 5\times10^{-5}$, 2000 steps: a few seconds
-of time stepping. At $t = 0.1$ (`density-it5.png`; `fields-it5.png` with
+of time stepping. At $t = 0.1$ (`density-it5.svg`; the per-variable figures with
 `:plot_user => false`):
 
 - every wave is where the reference and the paper's Fig. 2 put it: fast
@@ -267,7 +281,7 @@ of time stepping. At $t = 0.1$ (`density-it5.png`; `fields-it5.png` with
   $\approx 0.82$; the contact and the slow shock are 2–3 nodes wide, the
   paper's zoom boxes show the same smearing for its $\mathbb{P}_3$ solution;
   $p$, $B_y$, $u$, $v$ follow the reference to plotting accuracy;
-- the DynSGS coefficient (last panel of `fields-it5.png`) is at its floor,
+- the DynSGS coefficient (`mu_dsgs-it5.svg`) is at its floor,
   $\approx 1\times10^{-4}$, in the smooth regions, $2$–$4\times10^{-4}$ at the
   compound wave and the contact and $1\times10^{-3}$ at the slow shock, a
   third of its cap $C_{max}h(|u| + c_f) \approx 3\times10^{-3}$.
@@ -282,6 +296,6 @@ of time stepping. At $t = 0.1$ (`density-it5.png`; `fields-it5.png` with
 | `user_bc.jl` | Dirichlet ends |
 | `user_primitives.jl` | conserved variables as DynSGS primitives; `user_uout!` (ρ, u, v, p, By) |
 | `user_analytic.jl` | interpolates `reference_hll.dat` for the overlay at t = 0.1 |
-| `user_plot.jl` | the paper's Fig. 2 density figure with zoom boxes (`density-it<n>.png`) |
+| `user_plot.jl` | the paper's Fig. 2 density figure with zoom boxes (`density-it<n>.svg`), one figure per solution quantity, and the DynSGS coefficient figure |
 | `reference_hll.dat` | the reference solution |
 | `EQUATIONS.md` | the equations and the wave structure |
