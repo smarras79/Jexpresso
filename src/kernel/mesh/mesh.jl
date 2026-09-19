@@ -5352,6 +5352,9 @@ function build_dg_faces_2D!(mesh::St_mesh)
     empty!(mesh.dg_face_revR)
     empty!(mesh.dg_face_nx);  empty!(mesh.dg_face_ny); empty!(mesh.dg_face_Jf)
 
+    empty!(mesh.dg_bfac_e);  empty!(mesh.dg_bfac_lf); empty!(mesh.dg_bfac_tag)
+    empty!(mesh.dg_bfac_nx); empty!(mesh.dg_bfac_ny); empty!(mesh.dg_bfac_Jf)
+
     slice_ip(e, lfid, k) = lfid == 1 ? mesh.connijk[e, 1,   k] :
                            lfid == 2 ? mesh.connijk[e, ngl, k] :
                            lfid == 3 ? mesh.connijk[e, k,   1] :
@@ -5391,32 +5394,66 @@ function build_dg_faces_2D!(mesh::St_mesh)
         return (true, !fwd && rev)
     end
 
-    function push_face!(eL, lfL, eR, lfR, rev)
-        # normal from eL's slice tangent; sign chosen outward from eL
-        # (interior: toward eR; periodic: out of the domain, toward eR
-        # across the wrap — same convention either way).
-        ip1 = slice_ip(eL, lfL, 1); ipn = slice_ip(eL, lfL, ngl)
+    # Unit normal of slice (e, lf), signed OUTWARD from element e, and the
+    # face Jacobian (half the edge length on straight edges). Shared by the
+    # interior/periodic pair list and by the physical boundary list: on an
+    # interior face "outward from eL" is "toward eR", on a periodic face it
+    # is "out of the domain, toward eR across the wrap", and on a boundary
+    # face it is "out of the domain" — one convention, three uses.
+    function face_normal(e, lf)
+        ip1 = slice_ip(e, lf, 1); ipn = slice_ip(e, lf, ngl)
         tx = mesh.x[ipn] - mesh.x[ip1]; ty = mesh.y[ipn] - mesh.y[ip1]
         Lf = hypot(tx, ty)
         nx = ty / Lf; ny = -tx / Lf
         fcx = zero(TF); fcy = zero(TF)
         for k = 1:ngl
-            ip = slice_ip(eL, lfL, k)
+            ip = slice_ip(e, lf, k)
             fcx += mesh.x[ip] / ngl; fcy += mesh.y[ip] / ngl
         end
-        ecx, ecy = cent(eL)
+        ecx, ecy = cent(e)
         if nx * (fcx - ecx) + ny * (fcy - ecy) < 0
             nx = -nx; ny = -ny
         end
+        return nx, ny, Lf / 2
+    end
+
+    function push_face!(eL, lfL, eR, lfR, rev)
+        nx, ny, Jf = face_normal(eL, lfL)
         push!(mesh.dg_face_eL,  eL);  push!(mesh.dg_face_eR,  eR)
         push!(mesh.dg_face_lfL, lfL); push!(mesh.dg_face_lfR, lfR)
         push!(mesh.dg_face_revR, rev)
         push!(mesh.dg_face_nx, nx);   push!(mesh.dg_face_ny, ny)
-        push!(mesh.dg_face_Jf, Lf / 2)
+        push!(mesh.dg_face_Jf, Jf)
+    end
+
+    function push_bfac!(e, lf, tag)
+        nx, ny, Jf = face_normal(e, lf)
+        push!(mesh.dg_bfac_e,  e);  push!(mesh.dg_bfac_lf, lf)
+        push!(mesh.dg_bfac_nx, nx); push!(mesh.dg_bfac_ny, ny)
+        push!(mesh.dg_bfac_Jf, Jf); push!(mesh.dg_bfac_tag, tag)
     end
 
     # --- interior faces: facet_cell_ids entries with two cells --------------
-    conv_map = zeros(Int, 4)   # cell_face_ids position g → slice lfid (report once)
+    # cell_face_ids position g → slice lfid. Discovered from the interior
+    # faces, where both (e, lf) are known geometrically, and then USED to
+    # place the physical boundary faces below — a boundary facet touches one
+    # element, so there is no second slice to match it against, and the
+    # coordinate route is closed under DG (poin_in_bdy_edge carries CG point
+    # ids, and mesh.x has been renumbered). The map is well defined because
+    # every element's (i,j) lattice is laid out from the same corner slot
+    # map; that is asserted below rather than assumed, since the boundary
+    # list now depends on it.
+    conv_map = zeros(Int, 4)
+    function note_conv!(e, f, lf)
+        length(mesh.cell_face_ids) >= e && length(mesh.cell_face_ids[e]) == 4 || return
+        g = findfirst(==(f), mesh.cell_face_ids[e])
+        g === nothing && return
+        if conv_map[g] == 0
+            conv_map[g] = lf
+        elseif conv_map[g] != lf
+            error("build_dg_faces_2D!: cell_face_ids position $g maps to slice $(conv_map[g]) on one element and $lf on element $e — the local facet order is not uniform, so the physical boundary faces cannot be placed from it")
+        end
+    end
     n_int = 0
     for f = 1:length(mesh.facet_cell_ids)
         cells = mesh.facet_cell_ids[f]
@@ -5433,15 +5470,19 @@ function build_dg_faces_2D!(mesh::St_mesh)
         found == 1 || error("build_dg_faces_2D!: facet $f (elements $a, $b) matched $found slice pairs, expected exactly 1 — numbering/geometry inconsistency")
         push_face!(a, mla, b, mlb, mrev)
         n_int += 1
-        # optional cross-check: discover Gridap's local edge order empirically
-        if length(mesh.cell_face_ids) >= a && length(mesh.cell_face_ids[a]) == 4
-            g = findfirst(==(f), mesh.cell_face_ids[a])
-            if g !== nothing && conv_map[g] == 0
-                conv_map[g] = mla
-            end
-        end
+        # Discover Gridap's local edge order empirically. Learned from BOTH
+        # sides of the face: facet_cell_ids lists the lower element first, so
+        # a facet is always a's x-max or y-max slice and never its x-min or
+        # y-min one. Learning only from a leaves positions 1 and 3 of the map
+        # at 0 forever (measured on hexa_TFI_10x20_periodic: [0, 2, 0, 3]),
+        # and the boundary list below cannot place a facet on an element's
+        # x-min or y-min side — which is every left and bottom wall there is.
+        note_conv!(a, f, mla)
+        note_conv!(b, f, mlb)
     end
     println(" # build_dg_faces_2D!: cell_face_ids order → slice lfid map (1=x-min, 2=x-max, 3=y-min, 4=y-max; 0 = never observed): ", conv_map)
+    sort(conv_map) == [1, 2, 3, 4] ||
+        println(" # build_dg_faces_2D!: WARNING — the map is not a permutation of 1:4; a physical boundary facet on an unobserved side will be refused below")
 
     # --- periodic pairs: upstream's centroid match, filter inverted ---------
     function periodic_pairs!(tag::String)
@@ -5551,6 +5592,58 @@ function build_dg_faces_2D!(mesh::St_mesh)
 
     println(" # build_dg_faces_2D!: ", n_int, " interior + ", n_per, " periodic = ",
             length(mesh.dg_face_eL), " faces")
+
+    # --- physical boundary faces: facet_cell_ids entries with ONE cell -----
+    #
+    # Everything the gmsh file tags that is not a periodic pair: the faces
+    # where the domain ends. They are a separate list because they have no
+    # second trace — surface_rhs_el! builds that trace from the case's
+    # user_bc_dirichlet! (see dg_boundary_ghost!) and then runs the same
+    # numerical flux as an interior face. Without this list a DG run on a
+    # walled domain has no boundary term at all: the elements on the rim
+    # keep the raw volume flux, mass leaves through the wall, and nothing
+    # reports it.
+    n_bdy = 0
+    n_per_facets = 0
+    n_untagged = 0
+    for f = 1:length(mesh.facet_cell_ids)
+        cells = mesh.facet_cell_ids[f]
+        length(cells) == 1 || continue
+        e   = cells[1]
+        tag = f <= length(mesh.edge_type) ? mesh.edge_type[f] : nothing
+        # Periodic edges are already rows of the interior list (periodic_pairs!);
+        # "periodicy" is the 2D synonym of "periodicz" that the bdy_edge_type
+        # remap normalizes but edge_type keeps verbatim, so match by prefix.
+        if tag !== nothing && startswith(String(tag), "periodic")
+            n_per_facets += 1
+            continue
+        end
+        # An untagged boundary facet has no user routine to ask, so it gets
+        # no row and therefore no correction — which IS a boundary condition:
+        # F* = F_int, i.e. free/transmissive. Counted and printed rather than
+        # skipped in silence, because on a domain meant to be closed it is
+        # the difference between a wall and an open side, and the run would
+        # otherwise look healthy while draining.
+        if tag === nothing
+            n_untagged += 1
+            continue
+        end
+        String(tag) == "Laguerre" &&
+            error("build_dg_faces_2D!: facet $f is tagged \"Laguerre\" — semi-infinite elements are not supported under :AD => DiscGal()")
+        length(mesh.cell_face_ids) >= e && length(mesh.cell_face_ids[e]) == 4 ||
+            error("build_dg_faces_2D!: element $e has no 4-entry cell_face_ids row — cannot place boundary facet $f")
+        g = findfirst(==(f), mesh.cell_face_ids[e])
+        g === nothing &&
+            error("build_dg_faces_2D!: boundary facet $f is not listed among element $e's facets — topology inconsistency")
+        lf = conv_map[g]
+        lf == 0 &&
+            error("build_dg_faces_2D!: cell_face_ids position $g was never observed on an interior face, so boundary facet $f cannot be placed. The mesh is one element wide in one direction; DG needs at least two elements across each direction")
+        push_bfac!(e, lf, String(tag))
+        n_bdy += 1
+    end
+    println(" # build_dg_faces_2D!: ", n_bdy, " physical boundary faces (",
+            n_per_facets, " periodic facets already paired above, ",
+            n_untagged, " untagged => free/transmissive)")
 end
 
 function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D, elm2pelm)

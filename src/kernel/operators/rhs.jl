@@ -888,7 +888,7 @@ function _build_rhs!(RHS, u, params, time)
 
     if AD == DiscGal()
         @timeit_debug JEXPRESSO_TIMER "surface_rhs" surface_rhs_el!(
-            params, params.uaux, params.mesh.connijk, params.qp.qe, params.mesh,
+            params, params.uaux, params.mesh.connijk, params.qp.qe, params.mesh, time,
             nelem, ngl, neqs, CL, params.SOL_VARS_TYPE, params.inputs[:numerical_flux], SD)
     end
     
