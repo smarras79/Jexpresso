@@ -89,17 +89,21 @@ mutable struct PositivityStats
     first_x ::Float64    # where the first intervention happened
     first_y ::Float64
     first_t ::Float64
+    first_call::Int      # the RHS call the first intervention happened on, so
+                         # the report can pick the GLOBALLY earliest one across
+                         # ranks instead of announcing rank 0's local view
     nreported::Int       # how many powers of ten have been announced
 end
 
 PositivityStats() = PositivityStats(0, 0, 0, 0, 0.0, 0.0,
-                                    Inf, Inf, NaN, NaN, NaN, 0)
+                                    Inf, Inf, NaN, NaN, NaN, typemax(Int), 0)
 
 function positivity_reset!(s::PositivityStats)
     s.ncalls = 0; s.nrho = 0; s.nmom = 0; s.nenergy = 0
     s.dmass = 0.0; s.denergy = 0.0
     s.rho_min = Inf; s.p_min = Inf
     s.first_x = NaN; s.first_y = NaN; s.first_t = NaN
+    s.first_call = typemax(Int)
     s.nreported = 0
     return s
 end
@@ -136,6 +140,7 @@ end
         s.first_x = ok ? Float64(coords[1, ip]) : NaN
         s.first_y = ok ? Float64(coords[2, ip]) : NaN
         s.first_t = Float64(t)
+        s.first_call = s.ncalls
     end
     return nothing
 end

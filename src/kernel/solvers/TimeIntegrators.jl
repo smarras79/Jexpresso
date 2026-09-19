@@ -671,14 +671,40 @@ function time_loop!(inputs, params, u, args...)
         function mpi_unstable_check(dt_, u_, p_, t_)
             bad = !all(isfinite, u_)
             if bad
+                #
+                # HOW MANY, not just where. "first at node 1" on every rank
+                # was read twice on the Mach-7.7 ramp as if it located the
+                # failure; it does not. Local node 1 comes out of findfirst
+                # whenever the whole local field is already non-finite, and
+                # the low global indices in a gmsh mesh are the geometry
+                # points and boundary curves, so the coordinate looks
+                # meaningful — an inflow plane, an outflow plane, a block
+                # junction — while carrying no information at all.
+                #
+                # nbad against the local total is what distinguishes the two
+                # cases, so it is printed first and the coordinate is only
+                # offered when it can still mean something.
+                #
+                nbad = count(x -> !isfinite(x), u_)
                 k    = findfirst(x -> !isfinite(x), u_)
                 np   = p_.mesh.npoin
                 ip   = (k - 1) % np + 1
                 ieq  = (k - 1) ÷ np + 1
-                xs   = p_.mesh.x[ip]
-                ys   = p_.mesh.y[ip]
-                println(" # rank ", rank, ": non-finite solution at t = ", t_,
-                        " (first in field ", ieq, " at node ", ip, ", x = ", xs, ", y = ", ys, "); aborting on all ranks")
+                xs   = p_.mesh.coords[1, ip]
+                ys   = p_.mesh.coords[2, ip]
+                frac = 100.0*nbad/length(u_)
+                print(" # rank ", rank, ": non-finite solution at t = ", t_,
+                      " — ", nbad, " of ", length(u_), " local entries (",
+                      round(frac, digits=1), "%)")
+                if frac > 50.0
+                    println("; the local field is GONE, so no node locates the"
+                            * " cause — read the positivity report's GLOBAL"
+                            * " first repair instead. Aborting on all ranks")
+                else
+                    println("; earliest local entry is field ", ieq,
+                            " node ", ip, " at (x, y) = (", xs, ", ", ys,
+                            "). Aborting on all ranks")
+                end
                 flush(stdout)
             end
             return MPI.Allreduce(bad, MPI.LOR, comm)

@@ -360,9 +360,23 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         q.qe[ip,end] = p∞
     end
 
+    #
+    # GLOBAL, not rank-local. On 32 ranks this printed "laminar BL on 0 of
+    # 56333 nodes" and read like the starting field had no boundary layer at
+    # all; in fact rank 0's partition simply holds no near-wall nodes. The
+    # same rank-0 blind spot sent the positivity report's first-repair
+    # coordinate to the outflow plane. A count that reads global must BE
+    # global.
+    #
+    # Both sums count shared interface nodes once per owning rank, so npo_g
+    # slightly exceeds the true node count -- but nbl_g is summed the same
+    # way, so the ratio is right and that is what the line is for.
+    #
+    nbl_g = MPI.Allreduce(nbl,         MPI.SUM, comm)
+    npo_g = MPI.Allreduce(mesh.npoin,  MPI.SUM, comm)
     if rank == 0
-        @printf("    starting field: laminar BL on %d of %d nodes, T_aw = %.0f K\n",
-                nbl, mesh.npoin, Taw)
+        @printf("    starting field: laminar BL on %d of %d nodes (global; %d of %d on rank 0), T_aw = %.0f K\n",
+                nbl_g, npo_g, nbl, mesh.npoin, Taw)
     end
 
     if rank == 0

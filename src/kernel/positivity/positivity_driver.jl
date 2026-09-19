@@ -139,6 +139,33 @@ function apply_positivity!(u, params, SD)
         mins = MPI.Allreduce([POSITIVITY_STATS.rho_min,
                               POSITIVITY_STATS.p_min], MPI.MIN, comm)
 
+        #
+        # WHERE THE FIRST REPAIR HAPPENED, GLOBALLY.
+        #
+        # This used to print POSITIVITY_STATS.first_x/y from rank 0 and label
+        # it "first on THIS rank". It cost two wrong diagnoses on the Mach-7.7
+        # ramp: rank 0's partition holds no near-wall nodes, so it reported the
+        # outflow plane while a 1-rank run of the same case put the true first
+        # repair at the leading edge, 0.7 mm from the origin. A rank-local
+        # coordinate that READS like a global one is worse than no coordinate.
+        #
+        # So: reduce on the RHS-call index of each rank's first intervention,
+        # find the earliest, let the lowest-numbered rank holding it win the
+        # tie, and broadcast its coordinate. Every rank reaches all three
+        # collectives because the trigger above is the call count, which is
+        # identical everywhere.
+        #
+        myrank    = MPI.Comm_rank(comm)
+        mycall    = Float64(POSITIVITY_STATS.first_call)      # typemax if never
+        firstcall = MPI.Allreduce(mycall, MPI.MIN, comm)
+        owner     = MPI.Allreduce(mycall == firstcall ? Float64(myrank) : Inf,
+                                  MPI.MIN, comm)
+        where_    = [POSITIVITY_STATS.first_x, POSITIVITY_STATS.first_y,
+                     POSITIVITY_STATS.first_t]
+        if isfinite(owner)
+            MPI.Bcast!(where_, Int(owner), comm)
+        end
+
         total  = sums[1] + sums[2] + sums[3]
         decade = total > 0.0 ? floor(Int, log10(total)) + 1 : 0
         if decade > POSITIVITY_STATS.nreported
@@ -148,9 +175,10 @@ function apply_positivity!(u, params, SD)
                                                               sums[4], sums[5],
                                                               mins[1], mins[2],
                                                               POSITIVITY_STATS.ncalls), "\n",
-                                " #   first on THIS rank at (x, y) = (",
-                                POSITIVITY_STATS.first_x, ", ",
-                                POSITIVITY_STATS.first_y, ")\n",
+                                " #   GLOBAL first repair at (x, y) = (",
+                                where_[1], ", ", where_[2],
+                                ")  on RHS call ", Int(firstcall),
+                                ", rank ", Int(owner), "\n",
                                 " #   A few node-visits near a shock is the repair doing its job.\n",
                                 " #   Engagement growing without bound, or anywhere inside the\n",
                                 " #   boundary layer, means the ANSWER is wrong and the repair is\n",
