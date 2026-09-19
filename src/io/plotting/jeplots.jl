@@ -251,7 +251,7 @@ function plot_results!(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPU
                            show = false)
         end
 
-        xs = mesh.x[1:mesh.npoin_original]
+        xs = view(mesh.coords,1,1:mesh.npoin_original)
         qs = q[idx+1:(ivar-1)*npoin+mesh.npoin_original]
         sidx = sortperm(xs)
         Plots.plot!(fig, xs[sidx], qs[sidx]; line = (color, 2), label = "")
@@ -317,7 +317,7 @@ function plot_1d_grid(mesh::St_mesh)
 
     plt = Plots.plot() #Clear plot
     for i=1:mesh.npoin
-        display(Plots.scatter(mesh.x[1:mesh.npoin], zeros(mesh.npoin),
+        display(Plots.scatter(view(mesh.coords,1,1:mesh.npoin), zeros(mesh.npoin),
                              markersize = 4,
                              color = :blue,
                              legend = false))
@@ -548,8 +548,8 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
     # partitions appear twice, which the nearest-neighbour raster below does
     # not mind.
     #
-    xn = collect(view(mesh.x, 1:npoin))
-    yn = collect(view(mesh.y, 1:npoin))
+    xn = collect(view(@view(mesh.coords[1,:]), 1:npoin))
+    yn = collect(view(@view(mesh.coords[2,:]), 1:npoin))
     qv = [collect(view(q, (ivar - 1)*npoin + 1:ivar*npoin)) for ivar = 1:nvar]
     μv = [collect(view(μ_nodes, 1:npoin, ieq)) for ieq = 1:nμ]
     if mpisize > 1
@@ -874,8 +874,8 @@ function plot_triangulation(SD::NSD_3D, mesh::St_mesh, q::Array, title::String, 
 
 function plot_surf3d(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1, smoothing_factor=1e-3, varnames=nothing)
 
-    xmin = minimum(mesh.x); xmax = maximum(mesh.x);
-    ymin = minimum(mesh.y); ymax = maximum(mesh.y);
+    xmin = minimum(@view(mesh.coords[1,:])); xmax = maximum(@view(mesh.coords[1,:]));
+    ymin = minimum(@view(mesh.coords[2,:])); ymax = maximum(@view(mesh.coords[2,:]));
 
     comm    = get_mpi_comm()
     rank    = MPI.Comm_rank(comm)
@@ -892,7 +892,7 @@ function plot_surf3d(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_
         fout_name = string(OUTPUT_DIR, "/", var, piece, "-it", iout, ".png")
 
         #Spline2d
-        spl = Spline2D(mesh.x[1:npoin], mesh.y[1:npoin], q[idx+1:idx+npoin]; kx=4, ky=4, s=smoothing_factor)
+        spl = Spline2D(view(mesh.coords,1,1:npoin), view(mesh.coords,2,1:npoin), q[idx+1:idx+npoin]; kx=4, ky=4, s=smoothing_factor)
         xg = LinRange(xmin, xmax, nxi); yg = LinRange(ymin, ymax, nyi);
         zspl = evalgrid(spl, xg, yg);
         #End spline2d

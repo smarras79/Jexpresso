@@ -2275,7 +2275,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     mesh.x      = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
     mesh.y      = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
     mesh.z      = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
-    mesh.coords = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.nsd), Int64(mesh.npoin))
+    mesh.coords = KernelAbstractions.zeros(backend, TFloat, 3, Int64(mesh.npoin))   # 3 rows always — see the note at the gmsh fill
     
     mesh.ip2gip    = KernelAbstractions.zeros(backend, TInt, Int64(mesh.npoin))
     mesh.gip2owner = KernelAbstractions.ones(backend, TInt, Int64(mesh.npoin))*local_views(parts).item_ref[]
@@ -5505,7 +5505,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
         mesh.x = x
         #mesh.coords[1, :] = x[:]
     end 
-    mesh.coords = KernelAbstractions.zeros(CPU(), TFloat, Int64(mesh.nsd), Int64(mesh.npoin))
+    mesh.coords = KernelAbstractions.zeros(CPU(), TFloat, 3, Int64(mesh.npoin))     # 3 rows always — see the note at the gmsh fill
     mesh.coords[1, :] = mesh.x[:]
     #plot_1d_grid(mesh)
     resize!(mesh.y, (mesh.npoin))
@@ -5768,17 +5768,29 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
         end
 
 
-        # WARNING: this will be removed when x,y,z is fulyl replaced by coords
-        # A 2D manifold needs three columns even though nsd == 2.
-        ncoord = mesh.lmanifold ? 3 : Int64(mesh.nsd)
+        #
+        # coords ALWAYS HAS THREE ROWS, whatever nsd is.
+        #
+        # It used to be (nsd, npoin), except for a 2D manifold which needed
+        # three. That made coords a NON-drop-in replacement for the deprecated
+        # mesh.x/y/z: those are zero arrays in the unused directions, so
+        # mesh.z[ip] reads 0.0 on a 2D grid, while coords[3,ip] was a
+        # BoundsError. Every consumer migrated off x/y/z then had to know the
+        # dimension to stay in bounds, and one that did not — squall_line_2D,
+        # which read an unused z — turned into a crash on the first node.
+        #
+        # Three rows costs one extra Float64 column per node on a 2D grid and
+        # removes that entire class of hazard. Nothing infers the dimension
+        # from size(coords, 1); mesh.nsd is what says how many are meaningful.
+        #
+        ncoord = 3
         mesh.coords = KernelAbstractions.zeros(CPU(), TFloat, ncoord, Int64(mesh.npoin))
-        mesh.coords[1, :] = mesh.x[:]
-        if ncoord > 1
-            mesh.coords[2, :] = mesh.y[:]
-            if ncoord > 2
-                mesh.coords[3, :] = mesh.z[:]
-            end
-        end
+        # Guard on the SOURCE arrays, not on ncoord: a 1D or 2D grid leaves
+        # mesh.y/mesh.z short or empty, and the unfilled rows stay zero, which
+        # is exactly what mesh.y/mesh.z read as there.
+        length(mesh.x) >= mesh.npoin && (mesh.coords[1, :] = mesh.x[1:mesh.npoin])
+        length(mesh.y) >= mesh.npoin && (mesh.coords[2, :] = mesh.y[1:mesh.npoin])
+        length(mesh.z) >= mesh.npoin && (mesh.coords[3, :] = mesh.z[1:mesh.npoin])
         
         println_rank(" # Read gmsh grid and populate with high-order points ........................ DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
         
@@ -5791,7 +5803,7 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
             
             if (inputs[:nsd]==1)
                 println(" # ... build 1D grid ")
-                mesh = St_mesh{TInt,TFloat, CPU()}(coords = KernelAbstractions.zeros(CPU(),TFloat, 1, Int64(inputs[:npx])),
+                mesh = St_mesh{TInt,TFloat, CPU()}(coords = KernelAbstractions.zeros(CPU(),TFloat, 3, Int64(inputs[:npx])),
                                                    x = KernelAbstractions.zeros(CPU(),TFloat,Int64(inputs[:npx])),
                                                    npx  = TInt(inputs[:npx]),
                                                    xmin = TFloat(inputs[:xmin]), xmax = TFloat(inputs[:xmax]),
