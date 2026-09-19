@@ -21,7 +21,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
                  neqs=length(qvars), qoutvars=qoutvars)
 
     for ip = 1:mesh.npoin
-        x, y = mesh.x[ip], mesh.y[ip]
+        x, y = mesh.coords[1,ip], mesh.coords[2,ip]
         s = elastic_plane_wave_state(x, y, 0.0)
 
         q.qn[ip, 1] = s.ρu

@@ -60,7 +60,46 @@ seen anywhere, and **where and when the first repair happened**:
 If repairs appear away from the first few startup steps, **the run is
 wrong**. Do not raise the floors to silence it — the message is the finding.
 
-## Starting-field fix (measured on a 1-rank run)
+## Starting-field fix 2: the free stream was tilted 15° (the big one)
+
+`ramp_profile_at` returns `su = 1` for every node **outside** the layer, and
+the old line
+
+```julia
+u, v = su*u∞*cα, su*u∞*sα        # for every node with x > L
+```
+
+therefore turned the **undisturbed free stream** by 15° over the whole of
+block B — up to the top boundary 60 mm above the ramp, where nothing turns
+the flow before the shock exists. At t = 0 that made two things true:
+
+- along the entire line `x = 0.1`, from the wall to `y = 60 mm`, `v` jumped
+  `0 → u∞·sin15° = 446.4 m/s`;
+- along the entire **top** boundary of block B, `user_bc.jl` prescribes the
+  free stream (`v = 0`) while the node one LGL interval below carried
+  446.4 m/s.
+
+A 446 m/s shear across 2.58e-5 m, held open by a Dirichlet condition — the
+same illegal starting field this case's header warns about for the no-slip
+wall, at the top of the domain instead.
+
+**Measured.** The global first positivity repair was at
+`(x, y) = (0.10036588, 0.06007220)` on **RHS call 180** — 0.37 mm past the
+ramp corner, **2.5836e-5 m below the top boundary (exactly one LGL
+interval)**, on step 36, when the fastest signal had travelled 0.07 mm and
+the wall was 60 mm away. Nothing propagated there; the line put it there.
+
+Now the direction turns as `θ(n) = α·(1 − su)`: wall-tangent where `su = 0`,
+horizontal where `su = 1`. Continuous in `n`, reduces to the old plate
+behaviour at `α = 0`, and outside the layer it is the exact free stream — so
+it agrees with the inflow and top Dirichlet conditions to the last bit
+instead of fighting them.
+
+> **The original `rampCaoEtAl2021` carries this bug too.** It is left alone
+> here on purpose, as the untouched reference; port the two lines if you want
+> it fixed.
+
+## Starting-field fix 1 (measured on a 1-rank run)
 
 A 1-rank run named the first negative pressure in the **whole domain** at
 `(x, y) = (7.103784e-4, 1.496259e-4)` — the mid-LGL node of streamwise

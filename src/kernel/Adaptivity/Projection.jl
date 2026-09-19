@@ -882,9 +882,10 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
     #
     # Resize as needed
     #
-    mesh.x = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
-    mesh.y = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
-    mesh.z = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
+    # These three lines used to REBIND mesh.x/y/z to fresh arrays after npoin
+    # changed. coords is one array, so the equivalent is one reallocation --
+    # and it must stay three rows, which is what every consumer now indexes.
+    mesh.coords = KernelAbstractions.zeros(backend, TFloat, 3, Int64(mesh.npoin))
 
     mesh.ip2gip = KernelAbstractions.zeros(backend, TInt, Int64(mesh.npoin))
     mesh.gip2owner = KernelAbstractions.ones(backend, TInt, Int64(mesh.npoin))*local_views(parts).item_ref[]
@@ -991,12 +992,12 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
             node_coords = get_node_coordinates(get_grid(model))
             for ip = 1:mesh.npoin_linear
 
-                mesh.x[ip] = node_coords[ip][1]
-                mesh.y[ip] = node_coords[ip][2]
+                mesh.coords[1,ip] = node_coords[ip][1]
+                mesh.coords[2,ip] = node_coords[ip][2]
 
                 mesh.ip2gip[ip] = point2ppoint[ip]
                 # mesh.gip2owner[ip] = 1
-                @printf(f, " %.6f %.6f 0.000000 %d %d\n", mesh.x[ip],  mesh.y[ip], ip, point2ppoint[ip])
+                @printf(f, " %.6f %.6f 0.000000 %d %d\n", mesh.coords[1,ip],  mesh.coords[2,ip], ip, point2ppoint[ip])
             end
         end #f
 
@@ -1061,12 +1062,12 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
             # PERF: hoist Gridap accessor once instead of per-node.
             node_coords = get_node_coordinates(get_grid(model))
             for ip = 1:mesh.npoin_linear
-                mesh.x[ip] = node_coords[ip][1]
-                mesh.y[ip] = node_coords[ip][2]
-                mesh.z[ip] = node_coords[ip][3]
+                mesh.coords[1,ip] = node_coords[ip][1]
+                mesh.coords[2,ip] = node_coords[ip][2]
+                mesh.coords[3,ip] = node_coords[ip][3]
                 mesh.ip2gip[ip] = point2ppoint[ip]
                 # mesh.gip2owner[ip] = 1
-                @printf(f, " %.6f %.6f %.6f %d %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip, point2ppoint[ip])
+                @printf(f, " %.6f %.6f %.6f %d %d\n", mesh.coords[1,ip],  mesh.coords[2,ip], mesh.coords[3,ip], ip, point2ppoint[ip])
             end
         end #f
     end
@@ -1103,26 +1104,26 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
     mesh.gip2owner = find_gip_owner(mesh.ip2gip)
     
     for ip = mesh.npoin_linear+1:mesh.npoin
-        mesh.x[ip] = mesh.x_ho[ip]
-        mesh.y[ip] = mesh.y_ho[ip]
-        mesh.z[ip] = 0.0
+        mesh.coords[1,ip] = mesh.x_ho[ip]
+        mesh.coords[2,ip] = mesh.y_ho[ip]
+        mesh.coords[3,ip] = 0.0
         if (mesh.nsd > 2)
-            mesh.z[ip] = mesh.z_ho[ip]
+            mesh.coords[3,ip] = mesh.z_ho[ip]
         end
     end
     
-    mesh.xmax = maximum(mesh.x)
-    mesh.xmin = minimum(mesh.x)
-    mesh.ymax = maximum(mesh.y)
-    mesh.ymin = minimum(mesh.y)
+    mesh.xmax = maximum(@view(mesh.coords[1,:]))
+    mesh.xmin = minimum(@view(mesh.coords[1,:]))
+    mesh.ymax = maximum(@view(mesh.coords[2,:]))
+    mesh.ymin = minimum(@view(mesh.coords[2,:]))
     if (mesh.nsd > 2)
-        mesh.zmax = maximum(mesh.z)
-        mesh.zmin = minimum(mesh.z)
+        mesh.zmax = maximum(@view(mesh.coords[3,:]))
+        mesh.zmin = minimum(@view(mesh.coords[3,:]))
     end
 
     for ip = 1: mesh.npoin
         if mesh.gip2owner[ip] != rank+1
-            # @info mesh.x[ip], mesh.y[ip], mesh.gip2owner[ip], rank+1
+            # @info mesh.coords[1,ip], mesh.coords[2,ip], mesh.gip2owner[ip], rank+1
         end
     end
 
@@ -1160,7 +1161,7 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
         for iedge = 1:mesh.nedges #total nedges
             if isboundary_edge[iedge] == true
                 # if rank == 1
-                #     @info mesh.x[mesh.poin_in_edge[iedge, 1]], mesh.y[mesh.poin_in_edge[iedge, 1]]
+                #     @info mesh.coords[1,mesh.poin_in_edge[iedge, 1]], mesh.coords[2,mesh.poin_in_edge[iedge, 1]]
                 # end
                 for igl = 1:mesh.ngl
                     mesh.poin_in_bdy_edge[iedge_bdy, igl] = mesh.poin_in_edge[iedge, igl]
@@ -1191,8 +1192,8 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
             iter = mesh.npoin + 1
             x_new = KernelAbstractions.zeros(backend, TFloat, mesh.npoin + n_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)+mesh.ngr-1)
             y_new = KernelAbstractions.zeros(backend, TFloat, mesh.npoin + n_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)+mesh.ngr-1)
-            x_new[1:mesh.npoin] .= mesh.x[:]
-            y_new[1:mesh.npoin] .= mesh.y[:]
+            x_new[1:mesh.npoin] .= @view(mesh.coords[1,:])
+            y_new[1:mesh.npoin] .= @view(mesh.coords[2,:])
             for iedge = 1:size(mesh.bdy_edge_type,1)
                 if (mesh.bdy_edge_type[iedge] == "Laguerre") 
                     iel = mesh.bdy_edge_in_elem[iedge]
@@ -1200,10 +1201,10 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
                     ip = mesh.poin_in_bdy_edge[iedge,1]
                     ip1 = mesh.poin_in_bdy_edge[iedge,2]
                     #tangent vector 
-                    x = mesh.x[ip]
-                    x1 = mesh.x[ip1]
-                    y = mesh.y[ip]
-                    y1 = mesh.y[ip1]
+                    x = mesh.coords[1,ip]
+                    x1 = mesh.coords[1,ip1]
+                    y = mesh.coords[2,ip]
+                    y1 = mesh.coords[2,ip1]
                     tan = [x-x1, y-y1]
                     # deduce normal vector components
                     if (tan[2] > 1e-7)
@@ -1241,7 +1242,7 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
                     else
                         ip2 = mesh.connijk[iel,l,3]
                     end
-                    v = [mesh.x[ip2]-x, mesh.y[ip2]-y]
+                    v = [mesh.coords[1,ip2]-x, mesh.coords[2,ip2]-y]
                     if (dot(v,nor) > 0.0)
                         nor .= -nor
                     end
@@ -1252,14 +1253,14 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
                         mesh.connijk_lag[e_iter,i,1] = ip
                         for j=2:mesh.ngr
 			                if (inputs[:xscale]==1.0)
-                                x_temp = mesh.x[ip] + nor[1]*gr.ξ[j]*factorx
+                                x_temp = mesh.coords[1,ip] + nor[1]*gr.ξ[j]*factorx
                             else
-                                x_temp = mesh.x[ip] + nor[1]*gr.ξ[j]*factorx/(inputs[:xscale] * 0.5)
+                                x_temp = mesh.coords[1,ip] + nor[1]*gr.ξ[j]*factorx/(inputs[:xscale] * 0.5)
 			                end
                             if (inputs[:yscale] == 1.0)
-			                    y_temp = mesh.y[ip] + nor[2]*gr.ξ[j]*factory
+			                    y_temp = mesh.coords[2,ip] + nor[2]*gr.ξ[j]*factory
 			                else 
-                                y_temp = mesh.y[ip] + nor[2]*gr.ξ[j]*factory/(inputs[:yscale] * 0.5)
+                                y_temp = mesh.coords[2,ip] + nor[2]*gr.ξ[j]*factory/(inputs[:yscale] * 0.5)
                             end
 			                matched = 0
                             if (i == mesh.ngl || i == 1)
@@ -1281,20 +1282,20 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
                                     iter_end = 1
                                 end    
                             else
-                                x_new[iter] = x_temp#mesh.x[ip] + nor[1]*gr.ξ[j]*factorx
-                                y_new[iter] = y_temp#mesh.y[ip] + nor[2]*gr.ξ[j]*factory
+                                x_new[iter] = x_temp#mesh.coords[1,ip] + nor[1]*gr.ξ[j]*factorx
+                                y_new[iter] = y_temp#mesh.coords[2,ip] + nor[2]*gr.ξ[j]*factory
                                 mesh.connijk_lag[e_iter,i,j] = iter
                                 iter += 1
                                 matched = 1
                             end
                             if (matched == 0)
-                                x_new[iter] = x_temp#mesh.x[ip] + nor[1]*gr.ξ[j]*factorx
-                                y_new[iter] = y_temp#mesh.y[ip] + nor[2]*gr.ξ[j]*factory
+                                x_new[iter] = x_temp#mesh.coords[1,ip] + nor[1]*gr.ξ[j]*factorx
+                                y_new[iter] = y_temp#mesh.coords[2,ip] + nor[2]*gr.ξ[j]*factory
                                 mesh.connijk_lag[e_iter,i,j] = iter
                                 iter += 1 
                             end
                             
-                            #@info nor[1],nor[2],x_new[iter],y_new[iter], mesh.x[ip],mesh.y[ip]
+                            #@info nor[1],nor[2],x_new[iter],y_new[iter], mesh.coords[1,ip],mesh.coords[2,ip]
                         end
                     end
                     e_iter += 1
@@ -1303,9 +1304,13 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
             #@info mesh.npoin, iter - 1, mesh.ngr, n_semi_inf, e_iter - 1
             mesh.npoin_original = mesh.npoin
             mesh.npoin = iter -1
-            mesh.x = x_new
-            mesh.y = y_new
-            mesh.z = KernelAbstractions.zeros(backend, TFloat, mesh.npoin)
+            # Rebind, not element-write: mesh.npoin has just changed, so the
+            # array is reallocated at the new size and the (possibly longer)
+            # x_new/y_new are copied into its first mesh.npoin columns. Row 3
+            # stays zero, as the z array it replaces was here.
+            mesh.coords = KernelAbstractions.zeros(backend, TFloat, 3, Int64(mesh.npoin))
+            @views mesh.coords[1,1:mesh.npoin] .= x_new[1:mesh.npoin]
+            @views mesh.coords[2,1:mesh.npoin] .= y_new[1:mesh.npoin]
             mesh.nelem_semi_inf = n_semi_inf
         end
 
@@ -1352,7 +1357,7 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
             for i=1:mesh.ngl
                 for j=1:mesh.ngl
                     ip = mesh.poin_in_bdy_face[iface,i,j]
-                    @info "bdy points coords", mesh.x[ip],mesh.y[ip],mesh.z[ip]
+                    @info "bdy points coords", mesh.coords[1,ip],mesh.coords[2,ip],mesh.coords[3,ip]
                 end
             end
         end=#
@@ -2300,7 +2305,7 @@ function DSS_nc_gather_mass!(M, mesh, SD::NSD_3D, QT::Inexact, Mel::AbstractArra
     # # @info "gip_gather_owner", rank, gip_gather_owner
     M_local = send_and_receive(M_gather_ghost, gip_gather_owner, comm)[1]
     gip_local = send_and_receive(gip_gather_ghost, gip_gather_owner, comm)[1]
-    # @info "M_local", rank, [(mesh.x[gip2ip[gip]], mesh.y[gip2ip[gip]], gip) for gip in gip_local]
+    # @info "M_local", rank, [(mesh.coords[1,gip2ip[gip]], mesh.coords[2,gip2ip[gip]], gip) for gip in gip_local]
 
     # println("[DBG mass R$(rank)] pgip_ghost=$(collect(gip_gather_ghost))")
     # println("[DBG mass R$(rank)] pgip_owner=$(collect(gip_gather_owner))")

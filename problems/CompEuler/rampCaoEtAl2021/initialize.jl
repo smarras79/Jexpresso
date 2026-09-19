@@ -228,11 +228,38 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     zt, yyt = ramp_profile_table(T∞, Tw, Taw)
 
     δref, sref = 1.38e-3, 0.059                       # Section 2.2
-    δfloor     = 1.4e-4                               # ~3 wall elements
+    #
+    # delta(s) IS SMOOTH AND THE FLOOR IS RESOLVABLE.  Two defects met in one
+    # cell, and a 1-rank run of rampCaoEtAl2021_M7 named it exactly: the
+    # global first negative pressure was at (x, y) = (7.103784e-4,
+    # 1.496259e-4), the mid-LGL node of streamwise element 2, at the top of
+    # the first wall element, y/delta = 0.988.
+    #
+    # (1) max(delta_floor, delta_ref*sqrt(s/sref)) has a SLOPE DISCONTINUITY
+    #     where the branches cross, at s = sref*(delta_floor/delta_ref)^2 =
+    #     6.0723e-4 m -- 28% of the way along that same element. A
+    #     C0-but-not-C1 field inside a spectral element is a Gibbs generator,
+    #     and at M = 7.7 the internal energy is 5.7% of the total, so the
+    #     ringing reaches p amplified 17.5x. sqrt(delta_floor^2 +
+    #     delta_ref^2*s/sref) has the same two asymptotes with no kink.
+    #
+    # (2) 1.4e-4 was ONE element height (0.06/401 = 1.496e-4) on
+    #     ramp15_uniform.msh, so the whole starting boundary layer was five
+    #     LGL nodes thick there against twelve elements at x = 100 mm -- the
+    #     leading edge was 12x less resolved than the rest of the plate. The
+    #     old comment claimed "~3 wall elements" while setting one.
+    #
+    # 6.0e-4 is four element heights, and it dominates over the first
+    # sref*(6.0e-4/1.38e-3)^2 = 1.115e-2 m = 11 mm of plate. Separation is at
+    # 59 mm, so the flow this case exists to compute is untouched; what is
+    # smeared is the sharp-leading-edge singularity, which no starting field
+    # on any grid resolves anyway.
+    #
+    δfloor     = 6.0e-4                               # 4 element heights (0.06/401)
 
     nbl = 0
     for ip = 1:mesh.npoin
-        # mesh.x/mesh.y are deprecated; the node coordinates live in
+        # @view(mesh.coords[1,:])/@view(mesh.coords[2,:]) are deprecated; the node coordinates live in
         # mesh.coords[dim, ip] (3 x npoin) on the current kernel.
         x, y = mesh.coords[1,ip], mesh.coords[2,ip]
 
@@ -249,15 +276,47 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         if s_wall <= 0.0 || n_wall <= 0.0
             u, v, T = u∞, v∞, T∞                      # free stream
         else
-            δ  = max(δref*sqrt(s_wall/sref), δfloor)
+            δ  = sqrt(δfloor*δfloor + δref*δref*(s_wall/sref))   # smooth: no kink
             su, T = ramp_profile_at(n_wall, δ, zt, yyt, T∞, Tw, Taw)
             n_wall < δ && (nbl += 1)
-            # the velocity follows the wall, so it turns with the ramp
-            if x <= L
-                u, v = su*u∞, 0.0
-            else
-                u, v = su*u∞*cα, su*u∞*sα
-            end
+            #-------------------------------------------------------------------
+            # DIRECTION: wall-tangent at the wall, HORIZONTAL at the edge of
+            # the layer.  The turn belongs to the boundary layer, not to the
+            # free stream.
+            #
+            # THE BUG THIS REPLACES.  ramp_profile_at returns su = 1 for every
+            # node OUTSIDE the layer, so
+            #
+            #     u, v = su*u∞*cα, su*u∞*sα        for every node with x > L
+            #
+            # turned the UNDISTURBED FREE STREAM by 15 degrees over the whole
+            # block above the ramp -- up to the top boundary 60 mm away, where
+            # nothing turns the flow before the shock exists.  At t = 0:
+            #
+            #   * along the entire vertical line x = 0.1, from the wall to
+            #     y = 60 mm, v jumped 0 -> u∞ sin15 = 446.4 m/s; and
+            #   * along the entire "top" boundary above the ramp, user_bc.jl
+            #     prescribes the free stream, v = 0, while the node one LGL
+            #     interval below it carried 446.4 m/s.
+            #
+            # A 446 m/s shear across 2.58e-5 m held open by a Dirichlet
+            # condition -- the same illegal starting field this file's header
+            # warns about for the no-slip wall, at the TOP of the domain.
+            # MEASURED on rampCaoEtAl2021_M7: the global first positivity
+            # repair was at (x, y) = (0.10036588, 0.06007220) on RHS call 180,
+            # i.e. 0.37 mm past the ramp corner and exactly one LGL interval
+            # below the top boundary, on step 36 -- when the fastest signal
+            # had travelled 0.07 mm and the wall was 60 mm away.  Nothing
+            # propagated there; this line put it there.
+            #
+            # theta(n) = alpha*(1 - su) is wall-tangent where su = 0 and
+            # horizontal where su = 1.  Continuous in n, reduces to the old
+            # plate behaviour at alpha = 0, and outside the layer it is the
+            # EXACT free stream, so it agrees with the inflow and top
+            # Dirichlet conditions instead of fighting them.
+            #-------------------------------------------------------------------
+            θ    = (x <= L) ? 0.0 : α*(1.0 - su)
+            u, v = su*u∞*cos(θ), su*u∞*sin(θ)
         end
 
         # Boundary-layer approximation: p is constant across the layer.
@@ -282,9 +341,19 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         q.qe[ip,end] = p∞
     end
 
+    #
+    # GLOBAL, not rank-local.  The rank-local form printed "laminar BL on 0 of
+    # 56333 nodes" on 32 ranks, which reads as "this starting field has no
+    # boundary layer"; in fact rank 0's partition holds no near-wall nodes.
+    # Both sums count shared interface nodes once per owning rank, so npo_g
+    # slightly exceeds the true node count -- but nbl_g is summed the same
+    # way, so the ratio is right and that is what the line is for.
+    #
+    nbl_g = MPI.Allreduce(nbl,        MPI.SUM, comm)
+    npo_g = MPI.Allreduce(mesh.npoin, MPI.SUM, comm)
     if rank == 0
-        @printf("    starting field: laminar BL on %d of %d nodes, T_aw = %.0f K\n",
-                nbl, mesh.npoin, Taw)
+        @printf("    starting field: laminar BL on %d of %d nodes (global; %d of %d on rank 0), T_aw = %.0f K\n",
+                nbl_g, npo_g, nbl, mesh.npoin, Taw)
     end
 
     if rank == 0

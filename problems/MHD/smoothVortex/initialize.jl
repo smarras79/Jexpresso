@@ -92,8 +92,8 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
 
     ch_local = 0.0
     for ip = 1:mesh.npoin
-        xr = sv_wrap(mesh.x[ip] - SV_XC, Lx)
-        yr = sv_wrap(mesh.y[ip] - SV_YC, Ly)
+        xr = sv_wrap(mesh.coords[1,ip] - SV_XC, Lx)
+        yr = sv_wrap(mesh.coords[2,ip] - SV_YC, Ly)
         s  = sv_state(xr, yr, γ)
         for ieq = 1:length(qvars)
             q.qn[ip,ieq] = s[ieq]

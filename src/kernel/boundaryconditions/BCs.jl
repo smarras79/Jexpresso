@@ -329,7 +329,7 @@ function build_custom_bcs_dirichlet!(::NSD_2D, t,
 
                     for ieq =1:neqs
                         if bc_value_changed(qbdy[ieq], uaux[ip,ieq], qe[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
-                            #@info mesh.x[ip],mesh.y[ip],ieq,qbdy[ieq]
+                            #@info mesh.coords[1,ip],mesh.coords[2,ip],ieq,qbdy[ieq]
                             uaux[ip,ieq] = qbdy[ieq]
                             RHS[ip, ieq] = 0.0
                         end

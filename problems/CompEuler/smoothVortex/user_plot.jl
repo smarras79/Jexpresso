@@ -139,8 +139,8 @@ function _ev_velocity_error(mesh, q, t, outvar, inputs, Minv)
     s1 = 0.0; s2 = 0.0; si = 0.0
     r1 = 0.0; r2 = 0.0; ri = 0.0
     for ip = 1:npoin
-        xr = ev_wrap(mesh.x[ip] - EV_XC - EV_U0*t, Lx)
-        yr = ev_wrap(mesh.y[ip] - EV_YC - EV_V0*t, Ly)
+        xr = ev_wrap(mesh.coords[1,ip] - EV_XC - EV_U0*t, Lx)
+        yr = ev_wrap(mesh.coords[2,ip] - EV_YC - EV_V0*t, Ly)
         se = ev_state(xr, yr, γ, β)
         ue = se[2]/se[1]; ve = se[3]/se[1]
         uh = q[(iu - 1)*npoin + ip]
