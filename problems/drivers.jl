@@ -15,7 +15,7 @@ function driver(nparts,
                 TFloat;
                 world      = nothing,
                 is_coupled::Bool = false)
-
+    
     comm = distribute.comm
     rank = MPI.Comm_rank(comm)
 
@@ -246,7 +246,7 @@ function driver(nparts,
 
             return
         end
-
+        
         qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
         if rank == 0
             @printf("DONE (%.2f s)\n", (time_ns() - _t_init) / 1e9)
