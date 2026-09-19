@@ -27,8 +27,8 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         #---------------------------------------------------------------------------------
         # Get domain size from the actual mesh
         #---------------------------------------------------------------------------------
-        Lx = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm) - MPI.Allreduce(minimum(mesh.x), MPI.MIN, comm)
-        Ly = MPI.Allreduce(maximum(mesh.y), MPI.MAX, comm) - MPI.Allreduce(minimum(mesh.y), MPI.MIN, comm)
+        Lx = MPI.Allreduce(maximum(@view(mesh.coords[1,:])), MPI.MAX, comm) - MPI.Allreduce(minimum(@view(mesh.coords[1,:])), MPI.MIN, comm)
+        Ly = MPI.Allreduce(maximum(@view(mesh.coords[2,:])), MPI.MAX, comm) - MPI.Allreduce(minimum(@view(mesh.coords[2,:])), MPI.MIN, comm)
 
         if rank == 0
             println("  Domain size: Lx = $Lx m, Ly = $Ly m")

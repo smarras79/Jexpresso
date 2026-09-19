@@ -23,7 +23,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         end
     else
         k = initialize_gpu!(inputs[:backend])
-        k(q.qn, q.qe, mesh.x, mesh.y; ndrange = mesh.npoin)
+        k(q.qn, q.qe, @view(mesh.coords[1,:]), @view(mesh.coords[2,:]); ndrange = mesh.npoin)
     end
     
     println(" Initialize fields for 2D Helmholtz equation ........................ DONE ")

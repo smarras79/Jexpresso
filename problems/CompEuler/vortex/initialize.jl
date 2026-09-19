@@ -137,7 +137,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             
         elseif mycase=="the"
 
-            xc = (maximum(mesh.x) + minimum(mesh.x))/2
+            xc = (maximum(@view(mesh.coords[1,:])) + minimum(@view(mesh.coords[1,:])))/2
             yc = 0.0 #m
             r0 = 2.0 #m
             

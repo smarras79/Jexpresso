@@ -35,7 +35,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
     end
     
     for ivar=1:length(qvars)
-        plot_initial(SD, mesh.x, q.qn[:,ivar], ivar, OUTPUT_DIR)
+        plot_initial(SD, @view(mesh.coords[1,:]), q.qn[:,ivar], ivar, OUTPUT_DIR)
     end
     
     println(" Initialize fields for 1D adv diff ........................ DONE ")

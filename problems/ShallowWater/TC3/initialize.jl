@@ -27,10 +27,10 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         #---------------------------------------------------------------------------------
         # Get domain size from the actual mesh
         #---------------------------------------------------------------------------------
-        xmax_g = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
-        xmin_g = MPI.Allreduce(minimum(mesh.x), MPI.MIN, comm)
-        ymax_g = MPI.Allreduce(maximum(mesh.y), MPI.MAX, comm)
-        ymin_g = MPI.Allreduce(minimum(mesh.y), MPI.MIN, comm)
+        xmax_g = MPI.Allreduce(maximum(@view(mesh.coords[1,:])), MPI.MAX, comm)
+        xmin_g = MPI.Allreduce(minimum(@view(mesh.coords[1,:])), MPI.MIN, comm)
+        ymax_g = MPI.Allreduce(maximum(@view(mesh.coords[2,:])), MPI.MAX, comm)
+        ymin_g = MPI.Allreduce(minimum(@view(mesh.coords[2,:])), MPI.MIN, comm)
         Lx = xmax_g - xmin_g
         Ly = ymax_g - ymin_g
 

@@ -310,7 +310,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
 
     nbl = 0
     for ip = 1:mesh.npoin
-        # mesh.x/mesh.y are deprecated; the node coordinates live in
+        # @view(mesh.coords[1,:])/@view(mesh.coords[2,:]) are deprecated; the node coordinates live in
         # mesh.coords[dim, ip] (3 x npoin) on the current kernel.
         x, y = mesh.coords[1,ip], mesh.coords[2,ip]
 

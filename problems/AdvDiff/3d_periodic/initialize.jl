@@ -42,8 +42,8 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             #
             # INITIAL STATE from scratch:
             #
-            xc = 0.0#(maximum(mesh.x) + minimum(mesh.x))/2
-            yc = 0.0#(maximum(mesh.y) + minimum(mesh.y))/2
+            xc = 0.0#(maximum(@view(mesh.coords[1,:])) + minimum(@view(mesh.coords[1,:])))/2
+            yc = 0.0#(maximum(@view(mesh.coords[2,:])) + minimum(@view(mesh.coords[2,:])))/2
             zc = 0.0
             rc = 0.5 #m
         

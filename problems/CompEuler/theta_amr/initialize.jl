@@ -47,8 +47,8 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             # INITIAL STATE from scratch:
             #
             comm = MPI.COMM_WORLD
-            max_x = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
-            min_x = MPI.Allreduce(minimum(mesh.x), MPI.MIN, comm)
+            max_x = MPI.Allreduce(maximum(@view(mesh.coords[1,:])), MPI.MAX, comm)
+            min_x = MPI.Allreduce(minimum(@view(mesh.coords[1,:])), MPI.MIN, comm)
             xc = (max_x + min_x)/2
             yc = 2500.0 #m
             r0 = 2000.0 #m
@@ -129,14 +129,14 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             lpert = false
         end
         PhysConst = PhysicalConst{TFloat}()
-        xc = TFloat((maximum(mesh.x) + minimum(mesh.x))/2)
+        xc = TFloat((maximum(@view(mesh.coords[1,:])) + minimum(@view(mesh.coords[1,:])))/2)
         yc = TFloat(2500.0) #m
         rθ = TFloat(2000.0) #m
 
         θref = TFloat(300.0) #K
         θc   =   TFloat(2.0) #K
         k = initialize_gpu!(inputs[:backend])
-        k(q.qn, q.qe, mesh.x, mesh.y, xc, rθ, yc, θref, θc, PhysConst,lpert; ndrange = (mesh.npoin))
+        k(q.qn, q.qe, @view(mesh.coords[1,:]), @view(mesh.coords[2,:]), xc, rθ, yc, θref, θc, PhysConst,lpert; ndrange = (mesh.npoin))
     end
     if rank == 0
         @info " Initialize fields for 2D CompEuler with θ equation ........................ DONE "
@@ -232,7 +232,7 @@ end
 # mesh spans x ∈ [-5000, 5000], y ∈ [0, 10000] (hexa_TFI_10x10.msh), so the
 # domain center is (xc, yc) = (0, 5000); the box below is a fixed fraction
 # of the domain half-extents around that center. Runs before initialize(),
-# so it can only see geometry (mesh.x/mesh.y), not the solution.
+# so it can only see geometry (@view(mesh.coords[1,:])/@view(mesh.coords[2,:])), not the solution.
 function user_get_preadapt_flags!(adapt_flags, inputs, mesh, old_ad_lvl, connijk, nelem, ngl, max_level)
     xc = 0.0
     yc = 5000.0

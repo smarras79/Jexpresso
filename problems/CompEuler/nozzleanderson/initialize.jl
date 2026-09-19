@@ -105,7 +105,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
     end
     for ivar=1:length(varsout)
         ivarname = varsout[ivar]
-        plot_initial(SD, mesh.x, qout[:,ivar], ivarname, OUTPUT_DIR)
+        plot_initial(SD, @view(mesh.coords[1,:]), qout[:,ivar], ivarname, OUTPUT_DIR)
     end
     
     println(" Initialize fields for 2D CompEuler with θ equation ........................ DONE ")

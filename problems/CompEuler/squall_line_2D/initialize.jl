@@ -50,14 +50,19 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             rx = 10000.0
             rz = 1500.0
             data       = read_sounding(inputs[:sounding_file])
-            background = interpolate_sounding(inputs[:backend],mesh.npoin,mesh.y,data) 
+            background = interpolate_sounding(inputs[:backend],mesh.npoin,@view(mesh.coords[2,:]),data) 
             balanced   = zeros(mesh.npoin,1)
             #rebalance hydrostatic state
             diff = 100000.0
             niter = 0
             for ip = 1:mesh.npoin
             
-                x, y, z = mesh.coords[1,ip], mesh.coords[2,ip], mesh.coords[3,ip]
+                # mesh.coords is (nsd, npoin), so a 2D mesh HAS NO ROW 3.
+                # This line used to read the deprecated z array into an unused
+                # `z`; on the
+                # coords array that is a BoundsError, and z was never used --
+                # the vertical here is y, as (y - zc)^2/rz^2 below shows.
+                x, y = mesh.coords[1,ip], mesh.coords[2,ip]
             
                 r = sqrt( (x - xc)^2/(rx^2) + (y - zc)^2/(rz^2) )
             
@@ -157,16 +162,26 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             lpert = false
         end
         data = read_sounding(inputs[:sounding_file])
-        background = interpolate_sounding(inputs[:backend],mesh.npoin,mesh.z,data)
+        #
+        # PRE-EXISTING INCONSISTENCY, surfaced by the coords migration. This
+        # GPU branch used @view(mesh.coords[3,:]) as the vertical while the CPU branch above
+        # uses y -- a leftover from the 3D case this file was copied from
+        # (its own DONE message still says "3D"). On a 2D mesh coords has no
+        # row 3 at all, so the migration cannot preserve the old expression;
+        # row 2 is the only choice consistent with the CPU branch. If this
+        # GPU path ever produced a sensible sounding before, it did so by
+        # accident. UNTESTED: no GPU here.
+        #
+        background = interpolate_sounding(inputs[:backend],mesh.npoin,@view(mesh.coords[2,:]),data)
         PhysConst = PhysicalConst{TFloat}()
-        xc = TFloat((maximum(mesh.x) + minimum(mesh.x))/2)
+        xc = TFloat((maximum(@view(mesh.coords[1,:])) + minimum(@view(mesh.coords[1,:])))/2)
         zc = TFloat(2000.0) #m
         rz = TFloat(1500.0) #m
         rx = TFloat(10000.0)
         θref = TFloat(300.0) #K
         θc   =   TFloat(2.0) #K
         k = initialize_gpu!(inputs[:backend])
-        k(q.qn, q.qe, background, mesh.x, mesh.y, mesh.z, xc, rx, rz, zc, θc, PhysConst, lpert; ndrange = (mesh.npoin))
+        k(q.qn, q.qe, background, @view(mesh.coords[1,:]), @view(mesh.coords[2,:]), @view(mesh.coords[2,:]), xc, rx, rz, zc, θc, PhysConst, lpert; ndrange = (mesh.npoin))
     end
     println(maximum(q.qe[:,end]), minimum(q.qe[:,end]))
     println(" Initialize fields for 3D CompEuler with θ equation ........................ DONE ")

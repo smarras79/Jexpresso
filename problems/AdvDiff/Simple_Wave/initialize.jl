@@ -32,7 +32,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
         z0 = TFloat(10)
         sigma = TFloat(3.0)
         k = initialize_gpu!(inputs[:backend])
-        k(q.qn, q.qe, mesh.x, z0, sigma; ndrange = (mesh.npoin))
+        k(q.qn, q.qe, @view(mesh.coords[1,:]), z0, sigma; ndrange = (mesh.npoin))
     end
     println(" Initialize fields for 1D adv diff ........................ DONE ")
     

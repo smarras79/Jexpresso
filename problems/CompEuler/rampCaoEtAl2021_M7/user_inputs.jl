@@ -35,7 +35,7 @@ function user_inputs()
         #       genuinely one line.
         #
         # And one deprecation fix: initialize.jl reads mesh.coords[dim,ip]
-        # instead of mesh.x[ip]/mesh.y[ip].
+        # instead of the deprecated per-axis node arrays.
         #
         # WHAT IS DELIBERATELY UNCHANGED: every DynSGS setting.  :dsgs_sensor
         # stays "legacy", :dsgs_Cmax stays 0.1, :mu stays [1,1,1,1],

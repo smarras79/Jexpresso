@@ -10,7 +10,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs, OUTPUT_DIR
     
     if (inputs[:case] === "rtb")
 
-        xc = (maximum(mesh.x) + minimum(mesh.x))/2
+        xc = (maximum(@view(mesh.coords[1,:])) + minimum(@view(mesh.coords[1,:])))/2
         yc = 2500.0 #m
         r0 = 2000.0 #m
         

@@ -42,7 +42,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             #
             # INITIAL STATE from scratch:
             #
-            xc = (maximum(mesh.x) + minimum(mesh.x))/2
+            xc = (maximum(@view(mesh.coords[1,:])) + minimum(@view(mesh.coords[1,:])))/2
             zc = 2500.0 #m
             r0 = 2000.0 #m
         
@@ -137,14 +137,14 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             lpert = false
         end
         PhysConst = PhysicalConst{TFloat}()
-        xc = TFloat((maximum(mesh.x) + minimum(mesh.x))/2)
+        xc = TFloat((maximum(@view(mesh.coords[1,:])) + minimum(@view(mesh.coords[1,:])))/2)
         zc = TFloat(2500.0) #m
         rθ = TFloat(2000.0) #m
 
         θref = TFloat(300.0) #K
         θc   =   TFloat(2.0) #K
         k = initialize_gpu!(inputs[:backend])
-        k(q.qn, q.qe, mesh.x, mesh.y, mesh.z, xc, rθ, zc, θref, θc, PhysConst, lpert; ndrange = (mesh.npoin))
+        k(q.qn, q.qe, @view(mesh.coords[1,:]), @view(mesh.coords[2,:]), @view(mesh.coords[3,:]), xc, rθ, zc, θref, θc, PhysConst, lpert; ndrange = (mesh.npoin))
     end
     println(" Initialize fields for 3D CompEuler with θ equation ........................ DONE ")
     

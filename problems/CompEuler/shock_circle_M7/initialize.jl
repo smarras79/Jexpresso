@@ -134,7 +134,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
 
     for ip = 1:mesh.npoin
 
-        # mesh.coords[dim, ip] — the per-axis mesh.x/mesh.y are deprecated.
+        # mesh.coords[dim, ip] — the per-axis @view(mesh.coords[1,:])/@view(mesh.coords[2,:]) are deprecated.
         n  = sqrt((mesh.coords[1,ip] - xc)^2 + (mesh.coords[2,ip] - yc)^2) - R
         ζ  = clamp(n/δ₀, 0.0, 1.0)
         su = 2.0*ζ - 2.0*ζ^3 + ζ^4        # 0 at the wall, 1 and smooth at δ₀

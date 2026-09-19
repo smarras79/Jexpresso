@@ -262,10 +262,10 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     # the absorbing layer.
     #
     npoin = mesh.npoin
-    xmin_g = MPI.Allreduce(minimum(view(mesh.x, 1:npoin)), MPI.MIN, comm)
-    xmax_g = MPI.Allreduce(maximum(view(mesh.x, 1:npoin)), MPI.MAX, comm)
-    ymin_g = MPI.Allreduce(minimum(view(mesh.y, 1:npoin)), MPI.MIN, comm)
-    ymax_g = MPI.Allreduce(maximum(view(mesh.y, 1:npoin)), MPI.MAX, comm)
+    xmin_g = MPI.Allreduce(minimum(view(mesh.coords, 1, 1:npoin)), MPI.MIN, comm)
+    xmax_g = MPI.Allreduce(maximum(view(mesh.coords, 1, 1:npoin)), MPI.MAX, comm)
+    ymin_g = MPI.Allreduce(minimum(view(mesh.coords, 2, 1:npoin)), MPI.MIN, comm)
+    ymax_g = MPI.Allreduce(maximum(view(mesh.coords, 2, 1:npoin)), MPI.MAX, comm)
     if rank == 0 && (abs(xmin_g) > 1e-8 || abs(xmax_g - fe_Xmax) > 1e-6 || abs(ymin_g) > 1e-8 || abs(ymax_g - fe_Zmax) > 1e-6)
         @warn " problems/MHD/fluxEmergenceSon2025: the mesh spans [$(xmin_g), $(xmax_g)] × [$(ymin_g), $(ymax_g)] but the paper's domain is [0, $(fe_Xmax)] × [0, $(fe_Zmax)]. The perturbation is centered on x = $(0.5*fe_Xmax)."
     end
