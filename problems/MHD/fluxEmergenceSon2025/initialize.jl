@@ -278,7 +278,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
 
     for ip = 1:npoin
 
-        x, z = mesh.x[ip], mesh.y[ip]
+        x, z = mesh.coords[1,ip], mesh.coords[2,ip]
 
         p  = fe_interp(ztab, ptab, z)
         ρ  = fe_interp(ztab, ρtab, z)
@@ -353,8 +353,8 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             ja = mesh.connijk[iel, 1,   i]
             jb = mesh.connijk[iel, 1,   i+1]
             dh_local = min(dh_local,
-                           sqrt((mesh.x[ib] - mesh.x[ia])^2 + (mesh.y[ib] - mesh.y[ia])^2),
-                           sqrt((mesh.x[jb] - mesh.x[ja])^2 + (mesh.y[jb] - mesh.y[ja])^2))
+                           sqrt((mesh.coords[1,ib] - mesh.coords[1,ia])^2 + (mesh.coords[2,ib] - mesh.coords[2,ia])^2),
+                           sqrt((mesh.coords[1,jb] - mesh.coords[1,ja])^2 + (mesh.coords[2,jb] - mesh.coords[2,ja])^2))
         end
     end
     glm_dh_mhd[] = MPI.Allreduce(dh_local, MPI.MIN, comm)
@@ -367,9 +367,9 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     if fe_well_balanced[]
         ngl  = mesh.ngl
         # the local index that runs along y
-        y11 = mesh.y[mesh.connijk[1,1,1]]
-        jdir_is_j = abs(mesh.y[mesh.connijk[1,1,2]] - y11) > abs(mesh.y[mesh.connijk[1,2,1]] - y11)
-        ycol = [jdir_is_j ? mesh.y[mesh.connijk[1,1,j]] : mesh.y[mesh.connijk[1,j,1]] for j = 1:ngl]
+        y11 = mesh.coords[2,mesh.connijk[1,1,1]]
+        jdir_is_j = abs(mesh.coords[2,mesh.connijk[1,1,2]] - y11) > abs(mesh.coords[2,mesh.connijk[1,2,1]] - y11)
+        ycol = [jdir_is_j ? mesh.coords[2,mesh.connijk[1,1,j]] : mesh.coords[2,mesh.connijk[1,j,1]] for j = 1:ngl]
         ylo, yhi = extrema(ycol)
         Δy_el = yhi - ylo
         ξ     = sort((2.0 .* (ycol .- ylo) ./ Δy_el) .- 1.0)

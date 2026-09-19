@@ -127,8 +127,8 @@ function _sv_velocity_error(mesh, q, t, outvar, inputs, Minv)
     s1 = 0.0; s2 = 0.0; si = 0.0
     r1 = 0.0; r2 = 0.0; ri = 0.0
     for ip = 1:npoin
-        xr = sv_wrap(mesh.x[ip] - SV_XC - SV_U0*t, Lx)
-        yr = sv_wrap(mesh.y[ip] - SV_YC - SV_V0*t, Ly)
+        xr = sv_wrap(mesh.coords[1,ip] - SV_XC - SV_U0*t, Lx)
+        yr = sv_wrap(mesh.coords[2,ip] - SV_YC - SV_V0*t, Ly)
         se = sv_state(xr, yr, γ)
         ue = se[2]/se[1]; ve = se[3]/se[1]
         uh = q[(iu - 1)*npoin + ip]

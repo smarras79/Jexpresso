@@ -24,7 +24,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             for j=1:mesh.ngl, i=1:mesh.ngl
             
                 ip = mesh.connijk[iel_g,i,j]
-                x, y = mesh.x[ip], mesh.y[ip]
+                x, y = mesh.coords[1,ip], mesh.coords[2,ip]
             
                 a1 = -((x - xc)/sx)^2
                 a2 = -((y - yc)/sy)^2

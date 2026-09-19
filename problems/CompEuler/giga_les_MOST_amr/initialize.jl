@@ -27,7 +27,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             PhysConst = PhysicalConst{Float64}()
         
             for ip=1:mesh.npoin
-                z = mesh.z[ip]
+                z = mesh.coords[3,ip]
                 if inputs[:SOL_VARS_TYPE] == PERT()
                     ρ  = q.qn[ip,1] + q.qe[ip,1]
                     hl = (q.qn[ip,5] + q.qe[ip,5]) / ρ
@@ -88,21 +88,21 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
 
             #for ip = 1:mesh.npoin
 
-             #   z = mesh.z[ip]
+             #   z = mesh.coords[3,ip]
 
              #   rand_noise = 0.0
              #   if z < 300.0
              #       s = 0.0
              #       for m = 1:n_modes
-             #           s += cos(grf_kx[m]*mesh.x[ip] + grf_ky[m]*mesh.y[ip] +
-             #                    grf_kz[m]*mesh.z[ip] + grf_phase[m])
+             #           s += cos(grf_kx[m]*mesh.coords[1,ip] + grf_ky[m]*mesh.coords[2,ip] +
+             #                    grf_kz[m]*mesh.coords[3,ip] + grf_phase[m])
              #       end
              #       rand_noise = grf_norm * s
              #   end
 
             for ip = 1:mesh.npoin
             
-                x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
+                x, y, z = mesh.coords[1,ip], mesh.coords[2,ip], mesh.coords[3,ip]
 
                 rand_noise = 0.0 #K
                 if z < 300.0 # change to 300m later to be consistent to the ref paper
@@ -365,9 +365,9 @@ function user_get_preadapt_flags!(adapt_flags, inputs, mesh, old_ad_lvl, connijk
             ips = connijk[iel, i, j, k]
             
             # GEOMETRY HERE
-            x = mesh.x[ips]
-            y = mesh.y[ips]
-            z = mesh.z[ips]
+            x = mesh.coords[1,ips]
+            y = mesh.coords[2,ips]
+            z = mesh.coords[3,ips]
             
             if z < 6000.0 && old_ad_lvl[iel] < max_level
                 adapt_flags[iel] = refine_flag

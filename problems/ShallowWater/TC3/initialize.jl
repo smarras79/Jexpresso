@@ -56,8 +56,8 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         y0 = (ymax_g + ymin_g) / 2.0
 
         for ip = 1:mesh.npoin
-            x = mesh.x[ip]
-            y = mesh.y[ip]
+            x = mesh.coords[1,ip]
+            y = mesh.coords[2,ip]
 
             # Gaussian perturbation
             gauss = exp(-((x - x0)^2 / (2.0 * Rx^2) + (y - y0)^2 / (2.0 * Ry^2)))

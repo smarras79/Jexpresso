@@ -26,7 +26,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             PhysConst = PhysicalConst{Float64}()
         
             for ip=1:mesh.npoin
-                z = mesh.z[ip]
+                z = mesh.coords[3,ip]
                 ρ  = q.qn[ip,1]
                 hl = q.qn[ip,5] / ρ
                 qv = q.qn[ip,6] / ρ
@@ -65,7 +65,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
 
             for ip = 1:mesh.npoin
             
-                x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
+                x, y, z = mesh.coords[1,ip], mesh.coords[2,ip], mesh.coords[3,ip]
 
                 rand_noise = 0.0 #K
                 T_ref  = background[ip,2] + 273.15

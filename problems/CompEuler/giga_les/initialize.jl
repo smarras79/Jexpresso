@@ -82,13 +82,13 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
                                 end
                                 if (k > 1 && k < mesh.ngl)
                                     ip2 = mesh.connijk[e,i,j,k-1]
-                                    dz = (abs(mesh.z[ip] - mesh.z[ip1]) + abs(mesh.z[ip] -mesh.z[ip2]))/2
+                                    dz = (abs(mesh.coords[3,ip] - mesh.coords[3,ip1]) + abs(mesh.coords[3,ip] -mesh.coords[3,ip2]))/2
                                     balanced[ip] = abs((-2*background[ip,5] + background[ip2,5] + background[ip1,5]))/(2*dz*PhysConst.g)
                                 else
                                     if (balanced[ip] == 0)
-                                        balanced[ip] = abs(background[ip,5] - background[ip1,5])/(PhysConst.g *abs(mesh.z[ip]-mesh.z[ip1]))
+                                        balanced[ip] = abs(background[ip,5] - background[ip1,5])/(PhysConst.g *abs(mesh.coords[3,ip]-mesh.coords[3,ip1]))
                                     else
-                                        balanced[ip] = (abs(background[ip,5] - background[ip1,5])/(PhysConst.g *abs(mesh.z[ip]-mesh.z[ip1])) + balanced[ip])/2
+                                        balanced[ip] = (abs(background[ip,5] - background[ip1,5])/(PhysConst.g *abs(mesh.coords[3,ip]-mesh.coords[3,ip1])) + balanced[ip])/2
                                     end
                                 end
                             end
@@ -97,7 +97,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
                 end
                 println(maximum(balanced), minimum(balanced))
                 for ip=1:mesh.nelem
-                    if (mesh.z[ip] < 24000.0 -1)
+                    if (mesh.coords[3,ip] < 24000.0 -1)
                     T = background[ip,1] / (PhysConst.pref/background[ip,5])^(PhysConst.Rair/PhysConst.cp)
                     old = background[ip,5]
                     background[ip,5] = balanced[ip]*PhysConst.Rair*T
@@ -114,7 +114,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             println(diff) =#
             for ip = 1:mesh.npoin
             
-                x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
+                x, y, z = mesh.coords[1,ip], mesh.coords[2,ip], mesh.coords[3,ip]
             
                 r = sqrt( (x - xc)^2/(rx^2) + (z - zc)^2/(rz^2) )
             

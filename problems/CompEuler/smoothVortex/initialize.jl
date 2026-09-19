@@ -82,8 +82,8 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     Ly = mesh.ymax - mesh.ymin
 
     for ip = 1:mesh.npoin
-        xr = ev_wrap(mesh.x[ip] - EV_XC, Lx)
-        yr = ev_wrap(mesh.y[ip] - EV_YC, Ly)
+        xr = ev_wrap(mesh.coords[1,ip] - EV_XC, Lx)
+        yr = ev_wrap(mesh.coords[2,ip] - EV_YC, Ly)
         s  = ev_state(xr, yr, γ, β)
         for ieq = 1:length(qvars)
             q.qn[ip,ieq] = s[ieq]

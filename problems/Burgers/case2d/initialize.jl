@@ -31,8 +31,8 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         for j = 1:mesh.ngl, i = 1:mesh.ngl
 
             ip = mesh.connijk[iel_g, i, j]
-            x  = mesh.x[ip]
-            y  = mesh.y[ip]
+            x  = mesh.coords[1,ip]
+            y  = mesh.coords[2,ip]
 
             if x < x_mid && y > y_mid
                 q.qn[ip,1] = -0.2

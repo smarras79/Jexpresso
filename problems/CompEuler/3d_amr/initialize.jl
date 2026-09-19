@@ -68,7 +68,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             θc   =   2.0 #K
             for ip = 1:mesh.npoin
             
-                x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
+                x, y, z = mesh.coords[1,ip], mesh.coords[2,ip], mesh.coords[3,ip]
             
                 r = sqrt( (x - xc)^2 + (z - zc)^2 ) #+ (y-yc)^2 )
             
@@ -272,8 +272,8 @@ function user_get_preadapt_flags!(adapt_flags, inputs, mesh, old_ad_lvl, connijk
             for j = 1:ngl
                 for k = 1:ngl
                     ips = connijk[iel, i, j, k]
-                    x = mesh.x[ips]
-                    z = mesh.z[ips]
+                    x = mesh.coords[1,ips]
+                    z = mesh.coords[3,ips]
 
                     if abs(x - xc) < hx && abs(z - zc) < hz && old_ad_lvl[iel] < max_level
                         adapt_flags[iel] = refine_flag

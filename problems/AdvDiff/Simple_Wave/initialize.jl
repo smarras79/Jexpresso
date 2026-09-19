@@ -19,7 +19,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
         for ip=1:mesh.npoin
              z0 = 10
              sigma = 3.0
-             q.qn[ip,1] =exp(-((mesh.x[ip]-z0)^2)/(2*sigma^2))
+             q.qn[ip,1] =exp(-((mesh.coords[1,ip]-z0)^2)/(2*sigma^2))
 
             #Store initial background state for plotting and analysis of pertuebations
              q.qe[ip,1] = 0.0

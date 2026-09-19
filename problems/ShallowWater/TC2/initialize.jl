@@ -67,8 +67,8 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         end
 
         for ip = 1:mesh.npoin
-            x = mesh.x[ip]
-            y = mesh.y[ip]
+            x = mesh.coords[1,ip]
+            y = mesh.coords[2,ip]
 
             # Mode 1 at t=t0
             θ1 = kx1 * x + ky1 * y - ω1 * t0

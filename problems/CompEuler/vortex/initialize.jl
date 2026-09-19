@@ -103,8 +103,8 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             
             for ip = 1:mesh.npoin
                 
-                x = mesh.x[ip]
-                y = mesh.y[ip]
+                x = mesh.coords[1,ip]
+                y = mesh.coords[2,ip]
                 
                 f  = Const*( (x - xc)^2 +  (y - yc)^2 )
                 Ω  = β*exp(f)
@@ -146,7 +146,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             ##
             for ip = 1:mesh.npoin
             
-                x, y = mesh.x[ip], mesh.y[ip]
+                x, y = mesh.coords[1,ip], mesh.coords[2,ip]
                 r = sqrt( (x - xc)^2 + (y - yc)^2 )
             
                 Δθ = 0.0 #K
