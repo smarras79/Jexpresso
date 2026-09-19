@@ -330,12 +330,53 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             δ  = sqrt(δfloor*δfloor + δref*δref*(s_wall/sref))   # smooth: no kink
             su, T = ramp_profile_at(n_wall, δ, zt, yyt, T∞, Tw, Taw)
             n_wall < δ && (nbl += 1)
-            # the velocity follows the wall, so it turns with the ramp
-            if x <= L
-                u, v = su*u∞, 0.0
-            else
-                u, v = su*u∞*cα, su*u∞*sα
-            end
+            #-------------------------------------------------------------------
+            # DIRECTION: wall-tangent at the wall, HORIZONTAL at the edge of
+            # the layer. The turn belongs to the boundary layer, not to the
+            # free stream.
+            #
+            # THE BUG THIS REPLACES, and it is the one that has been killing
+            # this case. The old line was
+            #
+            #     u, v = su*u∞*cα, su*u∞*sα        for every node with x > L
+            #
+            # and ramp_profile_at returns su = 1 for every node OUTSIDE the
+            # layer. So the starting field turned the UNDISTURBED FREE STREAM
+            # by 15 degrees over the whole of block B -- all the way up to the
+            # top boundary 60 mm above the ramp, where nothing physical had
+            # happened and nothing ever turns the flow before the shock exists.
+            #
+            # Two things were then true at t = 0:
+            #
+            #   * along the entire vertical line x = 0.1, from the wall to
+            #     y = 60 mm, v jumped 0 -> u∞ sin15 = 446.4 m/s; and
+            #   * along the entire "top" boundary of block B, user_bc.jl
+            #     prescribes the free stream, v = 0, while the node one LGL
+            #     interval below it carried v = 446.4 m/s.
+            #
+            # That second one is a 446 m/s shear across 2.58e-5 m held open by
+            # a Dirichlet condition -- the same illegal starting field this
+            # file's own header warns about for the no-slip wall, only at the
+            # top of the domain instead. MEASURED: the positivity repair's
+            # first intervention in the whole domain was at
+            #
+            #     (x, y) = (0.10036588, 0.06007220)   on RHS call 180
+            #
+            # i.e. 0.37 mm past the ramp corner and 2.5836e-5 m below the top
+            # boundary -- exactly one LGL interval, exactly that shear -- on
+            # step 36, when the fastest signal had travelled 0.07 mm and the
+            # wall was 60 mm away. Nothing propagated there. It was put there
+            # by this line.
+            #
+            # THE REPLACEMENT. Turn the direction by theta(n) = alpha*(1 - su):
+            # wall-tangent where su = 0, horizontal where su = 1. It is
+            # continuous in n, it reduces to the old plate behaviour when
+            # alpha = 0, and outside the layer it is the exact free stream, so
+            # it agrees with the inflow and top Dirichlet conditions to the
+            # last bit instead of fighting them.
+            #-------------------------------------------------------------------
+            θ    = (x <= L) ? 0.0 : α*(1.0 - su)
+            u, v = su*u∞*cos(θ), su*u∞*sin(θ)
         end
 
         # Boundary-layer approximation: p is constant across the layer.
