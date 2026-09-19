@@ -28,7 +28,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 DIR=problems/MHD/smoothVortex
-NELX=${SV_NELX:-"4 8 16 32"}
+NELX=${SV_NELX:-"16 32 64 128 256"}
 L=${SV_L:-20}
 GMSH=${GMSH:-gmsh}
 

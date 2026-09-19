@@ -5,8 +5,16 @@
 # multi-panel figure of the 1D plotter. Written as density-it<n>.png at every
 # output time; the reference and the insets appear at the final time only,
 # when user_analytic.jl supplies the reference. Set :plot_user => false in
-# user_inputs.jl to get the generic fields-it<n>.png with every output
-# variable and the DynSGS coefficient panel instead.
+# user_inputs.jl to get the generic panels of the 1D plotter instead.
+#
+# Written at EVERY output time, beside the density figure:
+#
+#   fields-it<n>.png    one panel per solution quantity (ρ, u, v, w, p, Bx,
+#                       By, Bz), each against the reference where
+#                       user_analytic.jl has one
+#   mu_dsgs-it<n>.png   the structure of the DynSGS coefficient: ρ and By on
+#                       top, ν per equation slot below, so that where the
+#                       coefficient fires can be read against the waves
 #
 # ORDER COMPARISON AND CONVERGENCE HISTORY. At the final time the run stores
 # its density profile in `curves/nop<N>_dof<M>_<form>.dat` in this case
@@ -341,7 +349,7 @@ function _bw_plot_convergence(rows, OUTPUT_DIR, iout; smooth::Bool)
         pl = Plots.plot(; xscale = :log10, yscale = :log10,
                         xlabel = LaTeXStrings.L"1/\#\mathrm{DOFs}",
                         ylabel = LaTeXStrings.latexstring(string(
-                            "\\|\\rho_h-\\rho_{ref}\\|_{", nm, "}\\ /\\ \\|\\rho_{ref}\\|_{", nm, "}")),
+                            "\\Vert\\rho_h-\\rho_{ref}\\Vert_{", nm, "}\\ /\\ \\Vert\\rho_{ref}\\Vert_{", nm, "}")),
                         framestyle = :box, grid = true,
                         legend = :bottomright, legendfontsize = 8,
                         titlefontsize = 13, guidefontsize = 11, tickfontsize = 10,
@@ -468,6 +476,148 @@ function _bw_plot_density(curves, xs, href, inputs, OUTPUT_DIR, iout, tag)
     return nothing
 end
 
+# ---------------------------------------------------------------------------
+# EVERY SOLUTION QUANTITY, one panel each: fields-it<n>.png
+#
+# The density figure above is the paper's; this is the one that says whether
+# the rest of the state is right. The reference of user_analytic.jl carries
+# rho, u, v, w, p, By, Bz, so each of those panels gets its dashed reference;
+# Bx has none because it is a constant of the 1D system (d_x Bx = 0), and its
+# panel is the check that the discretization keeps it at 0.75.
+# ---------------------------------------------------------------------------
+function _bw_plot_fields(xs, qs, qrefs, outvar, inputs, OUTPUT_DIR, iout, t)
+    names  = string.(outvar)
+    nvar   = length(names)
+    panels = Plots.Plot[]
+    midx   = _bw_marker_idx(length(xs), 1, 1, inputs)
+    for ivar = 1:nvar
+        y  = @view qs[:, ivar]
+        # A quantity that is constant by construction (w, Bx, Bz here) would
+        # otherwise be auto-scaled to an arbitrary window and the panel would
+        # say nothing about whether the constant is KEPT. Center it and put
+        # the spread in the title, so the panel reads as the check it is.
+        lo, hi = extrema(y)
+        mid    = 0.5*(lo + hi)
+        ttl    = names[ivar]
+        ylim   = nothing
+        if hi - lo <= 1.0e-8*max(1.0, abs(mid))
+            d    = max(hi - lo, 1.0e-12*max(1.0, abs(mid)))
+            ylim = (mid - 5d, mid + 5d)
+            ttl  = string(names[ivar], @sprintf("  (const, spread %.1e)", hi - lo))
+        end
+        pl = Plots.plot(xs, y; line = (:blue, 1.6), label = "Jexpresso",
+                        title = ttl, xlabel = "x",
+                        titlefontsize = 13, guidefontsize = 10, tickfontsize = 9,
+                        legendfontsize = 8, legend = (ivar == 1 ? :best : false),
+                        show = false)
+        ylim === nothing || Plots.ylims!(pl, ylim)
+        isempty(midx) || Plots.scatter!(pl, xs[midx], y[midx];
+                                        marker = (:circle, 2.5, :blue),
+                                        markerstrokewidth = 0, label = "")
+        if qrefs !== nothing && any(isfinite, @view(qrefs[:, ivar]))
+            Plots.plot!(pl, xs, @view(qrefs[:, ivar]); line = (:black, 1.6, :dash),
+                        label = ivar == 1 ? "Reference solution" : "")
+        end
+        push!(panels, pl)
+    end
+    ncol = nvar <= 4 ? 2 : 4
+    nrow = cld(nvar, ncol)
+    plt  = Plots.plot(panels...; layout = (nrow, ncol),
+                      size = (380*ncol, 300*nrow),
+                      plot_title = @sprintf("Brio-Wu, t = %.4f", t === nothing ? NaN : t),
+                      plot_titlefontsize = 15,
+                      left_margin = 5Plots.mm, bottom_margin = 5Plots.mm, show = false)
+    _savefig_silent(plt, string(OUTPUT_DIR, "/fields-it", iout, ".png"))
+    return nothing
+end
+
+# ---------------------------------------------------------------------------
+# THE STRUCTURE OF THE DynSGS COEFFICIENT: mu_dsgs-it<n>.png
+#
+# Two panels on one x axis. The top one carries rho and By, which is where
+# this solution's five waves are; the bottom one carries nu, so the figure
+# answers the question the coefficient exists to answer -- WHERE it fires and
+# by how much -- rather than showing a curve with nothing to read it against.
+#
+# nu is drawn per equation slot. This deck runs the conserved form
+# (:dsgs_conserved => true) with :mu = ones(8), so every slot carries the same
+# kinematic nu and the eight curves coincide; slots whose curve is identical
+# to one already drawn are therefore folded into a single entry rather than
+# overplotted eight deep. A deck that scales the slots apart (:mu != ones, or
+# Nazarov's kappa on the energy slot) shows them as separate curves with no
+# change here.
+#
+# The y axis is log10 when nu spans more than two decades, which it does at
+# the cap-to-floor contrast of a shock tube; nu = 0 is then dropped rather
+# than clipped, and the caption says how many nodes that was. The element
+# form (:ldsgs_nodal => false, the default) gives the staircase of a
+# per-element coefficient broadcast to its nodes; the nodal form gives a
+# continuous curve. Both are drawn as they are, markers at the nodes, so the
+# figure never smooths over which one produced it.
+# ---------------------------------------------------------------------------
+const BW_MU_EQNAMES = ["ρ", "ρu", "ρv", "E", "ρw", "Bx", "By", "Bz", "ψ"]
+
+function _bw_plot_mu(xs, qs, μs, outvar, inputs, OUTPUT_DIR, iout, t)
+    names = string.(outvar)
+    nμ    = size(μs, 2)
+
+    # Fold slots whose coefficient is the same curve into one legend entry.
+    groups = Tuple{Vector{Int}, Vector{Float64}}[]
+    for ieq = 1:nμ
+        col = collect(@view μs[:, ieq])
+        all(iszero, col) && continue
+        k = findfirst(g -> g[2] == col, groups)
+        k === nothing ? push!(groups, ([ieq], col)) : push!(groups[k][1], ieq)
+    end
+
+    μmax = maximum(maximum(g[2]) for g in groups; init = 0.0)
+    if isempty(groups) || μmax <= 0.0
+        println(" #   brioWu1d: the DynSGS coefficient is identically zero at this output time; no mu_dsgs figure.")
+        return nothing
+    end
+    μpos  = minimum(minimum(filter(>(0), g[2]); init = μmax) for g in groups)
+    llog  = μmax/max(μpos, eps()) > 100.0
+    nzero = count(iszero, groups[1][2])
+
+    # Top: where the waves are.
+    top = Plots.plot(; xlabel = "", ylabel = "", legend = :best,
+                     titlefontsize = 13, guidefontsize = 10, tickfontsize = 9,
+                     legendfontsize = 8, show = false,
+                     title = @sprintf("Brio-Wu, t = %.4f", t === nothing ? NaN : t))
+    for (nm, st) in (("ρ", (:black, 1.6, :solid)), ("By", (:steelblue, 1.6, :dash)))
+        j = findfirst(==(nm), names)
+        j === nothing || Plots.plot!(top, xs, @view(qs[:, j]); line = st, label = nm)
+    end
+
+    # Bottom: the coefficient itself.
+    form = _bw_form(inputs)
+    ylab = llog ? "log10 ν" : "ν"
+    bot  = Plots.plot(; xlabel = "x", ylabel = ylab, legend = :best,
+                      guidefontsize = 10, tickfontsize = 9, legendfontsize = 8,
+                      titlefontsize = 12, show = false,
+                      title = string("DynSGS coefficient (", form, " form), max ν = ",
+                                     @sprintf("%.3e", μmax)))
+    cols = [:red, :darkorange, :seagreen, :purple, :teal, :magenta, :brown, :navy, :gray]
+    midx = _bw_marker_idx(length(xs), 1, 1, inputs)
+    for (k, (eqs, col)) in enumerate(groups)
+        lab = join(getindex.(Ref(BW_MU_EQNAMES), eqs), ", ")
+        c   = cols[mod1(k, length(cols))]
+        y   = llog ? [v > 0 ? log10(v) : NaN for v in col] : col
+        Plots.plot!(bot, xs, y; line = (c, 1.6), label = lab)
+        isempty(midx) || Plots.scatter!(bot, xs[midx], y[midx];
+                                        marker = (:circle, 2.5, c),
+                                        markerstrokewidth = 0, label = "")
+    end
+    llog && nzero > 0 &&
+        println(" #   brioWu1d: mu_dsgs on a log axis; ν = 0 at ", nzero, " of ",
+                length(xs), " nodes (not drawn).")
+
+    plt = Plots.plot(top, bot; layout = (2, 1), size = (900, 700), link = :x,
+                     left_margin = 7Plots.mm, bottom_margin = 5Plots.mm, show = false)
+    _savefig_silent(plt, string(OUTPUT_DIR, "/mu_dsgs-it", iout, ".png"))
+    return nothing
+end
+
 function user_plot_1d(x, q, qref, μ_nodes, t, outvar, inputs, OUTPUT_DIR, iout)
     iρ = findfirst(==("ρ"), string.(outvar))
     iρ === nothing && error("user_plot_1d (brioWu1d): no ρ among the output variables")
@@ -475,6 +625,26 @@ function user_plot_1d(x, q, qref, μ_nodes, t, outvar, inputs, OUTPUT_DIR, iout)
     xs  = x[idx]
     ρs  = q[idx, iρ]
     href = (qref !== nothing && any(isfinite, @view(qref[:, iρ]))) ? qref[idx, iρ] : nothing
+
+    # Every solution quantity, and the structure of the coefficient that
+    # stabilized them, at EVERY output time. The density figure below is the
+    # paper's comparison and stays the headline; these two are the state of
+    # the run. They are independent of the curve store, so they are drawn
+    # before it and a failure in either cannot cost the density figure.
+    qs = q[idx, :]
+    try
+        _bw_plot_fields(xs, qs, qref === nothing ? nothing : qref[idx, :],
+                        outvar, inputs, OUTPUT_DIR, iout, t)
+    catch err
+        @warn "brioWu1d: the fields figure failed; the density figure is unaffected." exception=err
+    end
+    if μ_nodes !== nothing && size(μ_nodes, 1) == length(x)
+        try
+            _bw_plot_mu(xs, qs, μ_nodes[idx, :], outvar, inputs, OUTPUT_DIR, iout, t)
+        catch err
+            @warn "brioWu1d: the DynSGS coefficient figure failed." exception=err
+        end
+    end
 
     nop   = Int(get(inputs, :nop, 0))
     Cmin  = Float64(get(inputs, :dsgs_Cmin, 0.0))

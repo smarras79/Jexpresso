@@ -200,6 +200,46 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     # the default on Linux too. Users who need a different partition
     # strategy can still opt out by setting `:lxy_partition => false`
     # in their user_inputs.jl.
+    #
+    # WHAT THIS FLAG ALSO DOES, AND WHY THE DEFAULT IS STILL `true`.
+    # The `true` branch does not only choose the READ strategy above; it
+    # also imposes a COLUMNAR x-y CELL PARTITION, because
+    # _compute_xy_partition (mesh.jl) bins cells into a uniform nx × ny
+    # grid by centroid so each rank owns a rectangular block of the
+    # bounding box. That partition is what a 1D-implicit scheme (IMEX,
+    # HEVI) needs, since a vertical column has to live on one rank, and
+    # it is the only thing it is for.
+    #
+    # A uniform geometric bin only balances a UNIFORM mesh. Running the
+    # same algorithm over three meshes in this repo, max load / ideal:
+    #
+    #                                        16      32      64 ranks
+    #   ffs_step_M7        uniform h        1.19x   1.19x   1.27x
+    #   ffs_step_M7_round  unstructured     1.27x   1.31x   1.36x
+    #   shock_circle_M7    2.2 mm wall,
+    #                      77 mm far field  5.68x   6.66x   7.55x
+    #
+    # i.e. on a wall-clustered grid at 64 ranks one rank owns 1687 cells
+    # against an ideal 223 and every other rank waits for it. Any graded
+    # mesh has that problem — a boundary layer, a refined shock region,
+    # AMR — and the more graded the grid, the worse it gets. A deck on
+    # such a mesh should set `:lxy_partition => false`; CompEuler/
+    # shock_circle_M7 and CompEuler/rampCaoEtAl2021 do.
+    #
+    # It ought to be false by DEFAULT — a column partition is a
+    # column-solver choice, not a global one — and it is not, only
+    # because the flag currently carries the read strategy with it.
+    # Flipping it today would move all 123 gmsh-reading decks onto the
+    # distributed constructor, i.e. onto the nparts × parse cost and the
+    # Apple Silicon SIGBUS, and would change the answers of the decks
+    # whose DynSGS norms are partition-dependent (`:dsgs_norms =>
+    # "rank"`: MHD/smoothVortex, ShallowWater/SoliWaveIslandDSGS).
+    #
+    # The fix is to split the two concerns: keep the rank-0 read + bcast
+    # on BOTH branches and let :lxy_partition decide only the
+    # cell_to_part map — which is exactly what the CAVEAT already
+    # standing in the `false` branch of mod_mesh_read_gmsh! proposes.
+    # Once that is done this default should become false.
     if(!haskey(inputs, :lxy_partition))
         inputs[:lxy_partition] = true
     end
@@ -413,6 +453,29 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:yfac_laguerre] = 1.0
     end
      
+    # Node-wise realizability repair (src/kernel/positivity/). OFF by default,
+    # so no existing case changes. The two floors are ABSOLUTE and have no safe
+    # default — a deck that turns the repair on must state them from its own
+    # scales, and positivity_validate errors if it does not.
+    if(!haskey(inputs, :lpositivity))
+        inputs[:lpositivity] = false
+    end
+    if(!haskey(inputs, :positivity_rho_min))
+        inputs[:positivity_rho_min] = 0.0
+    end
+    if(!haskey(inputs, :positivity_p_min))
+        inputs[:positivity_p_min] = 0.0
+    end
+    if(!haskey(inputs, :positivity_report))
+        inputs[:positivity_report] = true
+    end
+    # How often (in RHS calls) the ranks meet to reduce the audit counters.
+    # The trigger must be identical on every rank — it is a collective — so it
+    # is a call count, not an engagement count.
+    if(!haskey(inputs, :positivity_report_every))
+        inputs[:positivity_report_every] = 1000
+    end
+
     if(!haskey(inputs,:lfilter))
         inputs[:lfilter] = false
     end
@@ -1198,6 +1261,25 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #                      sensor's normalized score is above any usable
     #                      threshold even though the initial condition is
     #                      smooth and fully resolved.
+    #
+    #                      0 TURNS THE HOLD OFF, and a shock case with an
+    #                      impulsive start needs that. The hold exists because
+    #                      the sensor read a SMOOTH, fully resolved initial
+    #                      condition as unresolved everywhere and pinned nu at
+    #                      its cap on step one. Where the initial condition is
+    #                      genuinely violent — CompEuler/ffs_step starts a
+    #                      Mach-3 stream against a forward-facing step, with
+    #                      the whole transient at the step face and the convex
+    #                      corner — those first steps are the ones that most
+    #                      need the viscosity, and integrating them at nu = 0
+    #                      plants an oscillation at the corner that the rest of
+    #                      the run carries. ffs_step is reported to run to
+    #                      t = 8e-3 on sm/newmaster, which predates the hold
+    #                      and so never holds; on this branch, with the hold
+    #                      on, it dies at t = 1.46e-3 in exactly that corner.
+    #                      That pair also differs in Dt (1.0e-7 there, 1.25e-7
+    #                      here), so the hold is the leading suspect, not a
+    #                      one-variable measurement.
     if(!haskey(inputs, :dsgs_hold_steps))
         inputs[:dsgs_hold_steps] = 2
     end
@@ -1268,6 +1350,30 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     
     if(!haskey(inputs, :lrichardson))
         inputs[:lrichardson] = false #Default is artificial viscosity with constant coefficient
+    end
+
+    #
+    # Molecular (laminar) viscosity from Sutherland's law, added on top of
+    # the DynSGS coefficient by _viscous_rhs_el_2d_dsgs! (rhs.jl). Off by
+    # default: a shock-capturing-only case such as CompEuler/ffs_step wants
+    # nothing here, a viscous one such as CompEuler/rampCaoEtAl2021 cannot
+    # do without it. See the header of that function for which slot gets
+    # what. Currently 2D, total-energy form only.
+    #
+    if(!haskey(inputs, :lsutherland))
+        inputs[:lsutherland] = false
+    end
+    if(!haskey(inputs, :sutherland_muref))
+        inputs[:sutherland_muref] = 1.716e-5   # Pa.s, air
+    end
+    if(!haskey(inputs, :sutherland_Tref))
+        inputs[:sutherland_Tref]  = 273.15     # K
+    end
+    if(!haskey(inputs, :sutherland_S))
+        inputs[:sutherland_S]     = 110.4      # K
+    end
+    if(!haskey(inputs, :Pr_lam))
+        inputs[:Pr_lam]           = 0.71       # molecular Prandtl number
     end
 
     #

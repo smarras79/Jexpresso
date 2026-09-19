@@ -120,7 +120,7 @@ function precompile_warmup_run!(inputs, params, u,
 
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
-    rank == 0 && (print(" # Precompile warm-up (1 step solve) ......... "); flush(stdout))
+    rank == 0 && (print(" # Precompile warm-up ......... "); flush(stdout))
     t0 = time_ns()
 
     # Snapshot mutable state that the warm-up step would advance.
@@ -133,12 +133,32 @@ function precompile_warmup_run!(inputs, params, u,
     dsgs_qnm1_snapshot = copy(params.dsgs_qnm1)
     dsgs_qnm2_snapshot = copy(params.dsgs_qnm2)
     dsgs_thist_snapshot = params.dsgs_thist[]
+    # nhist counts the step-cadenced rotations and gates the startup hold
+    # (rhs.jl, _dsgs_hold_steps). It was NOT restored, so the warm-up silently
+    # spent part of the real run's hold.
+    dsgs_nhist_snapshot = params.dsgs_nhist[]
 
-    # 1-step problem; same params and same FullSpecialize as the real
-    # solve, so the compiled code is reused.
+    # HOW MANY STEPS, AND WHY IT IS NOT ONE UNDER DynSGS.
+    #
+    # dsgs_first_step_check below reads the coefficient this warm-up leaves in
+    # μ_dsgs_pnode and warns when ν·Δt/Δx_min² is past what an explicit step
+    # can carry. But DynSGS holds ν at exactly zero for the first
+    # :dsgs_hold_steps steps (rhs.jl, _dsgs_hold_steps, default 2 → the
+    # coefficient is live from the third rotation), so a ONE-step warm-up
+    # always sampled ν = 0 and the check could not fire on any case. It was
+    # added in September 2026 and the startup hold landed three days later:
+    # from then until here it warned about nothing. CompEuler/thetaTracers ran
+    # into a DomainError on (ρθ)^γ with no diagnostic in front of it, which is
+    # the failure this check exists to name.
+    #
+    # Warming up past the hold costs a few steps of one extra solve and makes
+    # the number the check reads the one the run will actually carry.
     Δt_warmup    = Float32(inputs[:Δt])
     t0_warmup    = params.tspan[1]
-    warmup_tspan = (t0_warmup, t0_warmup + Δt_warmup)
+    ldsgs_warmup = (params.VT == DSGS() || params.VT == DSGS_MHD() || params.VT == DSGS_SW()) &&
+                   get(inputs, :lvisc, false) == true
+    nstep_warmup = ldsgs_warmup ? max(1, _dsgs_hold_steps(params) + 1) : 1
+    warmup_tspan = (t0_warmup, t0_warmup + nstep_warmup*Δt_warmup)
     warmup_prob  = ODEProblem{true, FullSpecialize}(rhs!, u, warmup_tspan, params)
 
     # Silence all log output during the warm-up step. Also silences the
@@ -182,6 +202,10 @@ function precompile_warmup_run!(inputs, params, u,
     # the first step; warn now if the explicit step cannot carry it
     # (soundSpeed.jl), before the real solve dies on it.
     dsgs_first_step_check(params, inputs, params.SD)
+
+    # restored only now: the check above has to read the coefficient the
+    # warm-up produced, and that is only live once nhist is past the hold.
+    params.dsgs_nhist[] = dsgs_nhist_snapshot
 
     # Reset JEXPRESSO_TIMER so the alloc summary table only reflects
     # steady-state allocations from the real solve. The
@@ -647,14 +671,40 @@ function time_loop!(inputs, params, u, args...)
         function mpi_unstable_check(dt_, u_, p_, t_)
             bad = !all(isfinite, u_)
             if bad
+                #
+                # HOW MANY, not just where. "first at node 1" on every rank
+                # was read twice on the Mach-7.7 ramp as if it located the
+                # failure; it does not. Local node 1 comes out of findfirst
+                # whenever the whole local field is already non-finite, and
+                # the low global indices in a gmsh mesh are the geometry
+                # points and boundary curves, so the coordinate looks
+                # meaningful — an inflow plane, an outflow plane, a block
+                # junction — while carrying no information at all.
+                #
+                # nbad against the local total is what distinguishes the two
+                # cases, so it is printed first and the coordinate is only
+                # offered when it can still mean something.
+                #
+                nbad = count(x -> !isfinite(x), u_)
                 k    = findfirst(x -> !isfinite(x), u_)
                 np   = p_.mesh.npoin
                 ip   = (k - 1) % np + 1
                 ieq  = (k - 1) ÷ np + 1
-                xs   = p_.mesh.x[ip]
-                ys   = p_.mesh.y[ip]
-                println(" # rank ", rank, ": non-finite solution at t = ", t_,
-                        " (first in field ", ieq, " at node ", ip, ", x = ", xs, ", y = ", ys, "); aborting on all ranks")
+                xs   = p_.mesh.coords[1, ip]
+                ys   = p_.mesh.coords[2, ip]
+                frac = 100.0*nbad/length(u_)
+                print(" # rank ", rank, ": non-finite solution at t = ", t_,
+                      " — ", nbad, " of ", length(u_), " local entries (",
+                      round(frac, digits=1), "%)")
+                if frac > 50.0
+                    println("; the local field is GONE, so no node locates the"
+                            * " cause — read the positivity report's GLOBAL"
+                            * " first repair instead. Aborting on all ranks")
+                else
+                    println("; earliest local entry is field ", ieq,
+                            " node ", ip, " at (x, y) = (", xs, ", ", ys,
+                            "). Aborting on all ranks")
+                end
                 flush(stdout)
             end
             return MPI.Allreduce(bad, MPI.LOR, comm)

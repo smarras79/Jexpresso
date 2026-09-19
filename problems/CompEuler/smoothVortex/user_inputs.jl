@@ -42,6 +42,43 @@ _ev_nop()   = something(tryparse(Int,     get(ENV, "JEXPRESSO_EV_NOP",   "")), E
 _ev_nelx()  = something(tryparse(Int,     get(ENV, "JEXPRESSO_EV_NELX",  "")), EV_NELX_DEFAULT)
 _ev_tend()  = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_TEND",  "")), 1.0)
 _ev_beta()  = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_BETA",  "")), EV_BETA_DEFAULT)
+
+#---------------------------------------------------------------------------------
+# Positivity floors for the realizability repair, DERIVED FROM THE VORTEX BEING
+# RUN rather than from the free stream. This is not fussiness — a fixed floor
+# would silently clip the exact solution at high β.
+#
+# The isentropic vortex has its minimum at r = 0, where
+#
+#     T_c = 1 - (γ-1)β²e/(8γπ²),   ρ_c = T_c^(1/(γ-1)),   p_c = ρ_c^γ
+#
+# and that minimum collapses fast with β (γ = cp/cv = 1.3983):
+#
+#     β =  5 (default)   ρ_c = 4.94e-1   p_c = 3.73e-1
+#     β =  7             ρ_c = 1.93e-1   p_c = 1.00e-1
+#     β = 10             ρ_c = 4.96e-5   p_c = 9.58e-7   <-- BELOW a 1e-6 floor
+#
+# So a floor of "1e-6 of the free stream", which is right for every other case
+# here because their free stream IS their scale, would at β = 10 fire in the
+# middle of the EXACT SOLUTION and quietly corrupt a convergence study. The
+# floors below are 1e-6 of the exact CORE instead, so they sit six orders under
+# the true minimum whatever β is asked for, and the repair can never touch the
+# vortex.
+#
+# On this case it must never engage at all. That is the point of running it:
+# a smooth, well-resolved, exactly-known solution is the negative control for
+# the repair. IF IT REPORTS ANY ENGAGEMENT HERE, or if any stored convergence
+# number moves, stop and treat it as a bug in the repair — not in the vortex.
+#---------------------------------------------------------------------------------
+function _ev_positivity_floors()
+    γ  = PhysicalConst{Float64}().γ
+    β  = _ev_beta()
+    δT = -(γ - 1.0)*β*β*exp(1.0)/(8.0*γ*π*π)      # the r = 0 minimum
+    T  = 1.0 + δT
+    T <= 0.0 && return (1.0e-14, 1.0e-14)         # β past the vacuum limit
+    ρc = T^(1.0/(γ - 1.0))
+    return (1.0e-6*ρc, 1.0e-6*ρc^γ)
+end
 _ev_cmin()  = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_CMIN",  "")), 0.0)
 _ev_cr()    = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_CR",    "")), 1.0)
 _ev_cmax()  = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_CMAX",  "")), 0.5)
@@ -106,6 +143,16 @@ function user_inputs()
         :lrestart             => false,
         :lsource              => false,   # the vortex is an exact solution, unforced
         :SOL_VARS_TYPE        => TOTAL(),
+        # Realizability repair (src/kernel/positivity/), ON AS A TEST. This case
+        # is the NEGATIVE control: smooth, well resolved, exact solution known,
+        # and fast. It must report zero engagements. A run that never engages is
+        # bit-identical to :lpositivity => false, because the driver skips the
+        # write-back when nothing was repaired — so the convergence study is
+        # safe unless the repair fires, and if it fires you want to know.
+        # Floors scale with β: see _ev_positivity_floors above.
+        :lpositivity          => true,
+        :positivity_rho_min   => _ev_positivity_floors()[1],
+        :positivity_p_min     => _ev_positivity_floors()[2],
         :ode_adaptive_solver  => false,
         #---------------------------------------------------------------------------
         :interpolation_nodes => "lgl",

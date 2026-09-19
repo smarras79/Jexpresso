@@ -41,6 +41,13 @@
 # SV_SOLVER=vern9 brings it back; the honest check on any sweep is to re-run
 # its FINEST case at half SV_DT and see that the error does not move.
 #
+# SV_CUTOFF=<x> and SV_HOLD=<n> pass the DynSGS smoothness cutoff and the
+# startup hold (the number of steps at the beginning of a run over which the
+# viscosity is held off, default 2) down to the deck. Either one makes the run
+# a different experiment, so its records are tagged dsgs_cut / dsgs_hold and
+# appear as their own curve beside the default DynSGS one instead of
+# overwriting it.
+#
 # THE ERROR STORE IS CLEARED FIRST (SV_KEEP=1 to add to it instead): every run
 # redraws the figures from the whole store, so a leftover sweep would appear
 # on the comparison of this one.
@@ -154,6 +161,7 @@ run_one() {   # $1 visc  $2 nop  $3 nelx
         JEXPRESSO_${PFX}_SOLVER="$SOLVER" JEXPRESSO_${PFX}_TEND="$TEND" \
         JEXPRESSO_${PFX}_L="$LBOX" \
         ${SV_CUTOFF:+JEXPRESSO_${PFX}_CUTOFF="$SV_CUTOFF"} \
+        ${SV_HOLD:+JEXPRESSO_${PFX}_HOLD="$SV_HOLD"} \
         ${PLOT_NOPS:+JEXPRESSO_${PFX}_PLOT_NOPS="$PLOT_NOPS"} \
         $launcher "$JULIA" --project=. src/Jexpresso.jl "$EQNS" "$CNAME" \
         > "$log" 2>&1
@@ -176,10 +184,14 @@ run_one() {   # $1 visc  $2 nop  $3 nelx
 # strength (nop4_nelx8_b1_dsgs.dat), the MHD deck does not (nop4_nelx8_dsgs.dat),
 # so match either and report the plain name when nothing is there yet.
 # What the deck will call this run's record: a run with the smoothness cutoff
-# on is its own experiment and stores its own curve (SV_CUTOFF > 0).
+# on is its own experiment and stores its own curve (SV_CUTOFF > 0), and so is
+# one with a startup hold other than the default 2 steps (SV_HOLD). The order
+# of the tests here MUST match _sv_tag in the deck's user_plot.jl, or the
+# resume check below looks for a file the run will not write.
 _tag_of() {
     [ "$1" = none ] && { echo galerkin; return 0; }
-    case "${SV_CUTOFF:-0}" in 0|0.0|"") echo dsgs ;; *) echo dsgs_cut ;; esac
+    case "${SV_CUTOFF:-0}" in 0|0.0|"") ;; *) echo dsgs_cut; return 0 ;; esac
+    case "${SV_HOLD:-2}" in 2|"") echo dsgs ;; *) echo dsgs_hold ;; esac
 }
 
 err_file() {
