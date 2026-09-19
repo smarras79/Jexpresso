@@ -87,7 +87,11 @@ function user_inputs()
     # 0.25 = the 64x64x60 deck's 0.5 halved because h_x halved. AN ESTIMATE.
     # Replace it with 65-70% of the "wedge neutral up to" figure the run
     # prints at t = 0 -- see the header.
-    dt_imex     = parse(Float64, get(ENV, "DBG_DT",        "0.5"))
+    # 0.2, not 0.5: measured on 8 nodes x 128 ranks, dt 0.5 is 52 Krylov
+    # iterations/stage and 12.1 s/step (72 h to 10800 s); dt 0.2 is 18 and
+    # 4.1 s/step (62 h). Iterations fall faster than linearly with the
+    # horizontal acoustic CFL, and 0.2 is the intercomparison protocol's dt.
+    dt_imex     = parse(Float64, get(ENV, "DBG_DT",        "0.2"))
     rtol        = parse(Float64, get(ENV, "DBG_RTOL",      "1.0e-6"))
     # Krylov basis costs (restart+4)*npoin*nvar*8 B/rank: ~19 MB on the scalar
     # Schur system, ~95 MB on the five-field one (npoin/rank ~ 70k at 256 ranks).
@@ -458,8 +462,14 @@ function user_inputs()
         # do not "restore" it. DBG_FILTER=1 turns it on for a one-off A/B.
         #---------------------------------------------------------------------------
         :lfilter             => true, #parse(Bool, get(ENV, "DBG_FILTER", "false")),
-        :mu_x                => 0.05,
-        :mu_y                => 0.05,
+        # 0.15, not 0.05: at 160 m elements the initial wall shear layer rolls
+        # up from t ~ 450 s and cannot break into 3D turbulence; at 0.05 it
+        # grew to 18 m/s by 700 s and the run died (job 1295872). The 16x16x60
+        # probe at this resolution saturates at 13 m/s and recovers with 0.15;
+        # larger initial perturbations or a log-law initial wind do not save
+        # it. The 30x30 deck at 80 m elements runs at 0.05. DBG_MU overrides.
+        :mu_x                => parse(Float64, get(ENV, "DBG_MU", "0.15")),
+        :mu_y                => parse(Float64, get(ENV, "DBG_MU", "0.15")),
 	:mu_z                => 0.1,
         :filter_type         => "erf",
         #---------------------------------------------------------------------------

@@ -77,14 +77,17 @@
 #  it is a three-line change and nothing else in the deck moves.
 #-----------------------------------------------------------------------------
 #SBATCH --exclusive
-#SBATCH --nodes=16
-#SBATCH --ntasks-per-node=64
-#SBATCH --cpus-per-task=2
-# 64x64x60 at 1024 ranks: 2 x 2 columns and ~15.5k points per rank, the same
-# load as the 30x30x60-80m validation run (10.5 s/step at 120 Krylov
-# iterations/stage). 160 m elements halve the horizontal acoustic CFL, so
-# expect fewer iterations and ~6-9 s/step: 21,600 steps at dt = 0.5 is
-# 36-54 h. DBG_RESTART_VTK=true on a resubmit continues from the last dump.
+#SBATCH --nodes=8
+#SBATCH --ntasks-per-node=128
+#SBATCH --cpus-per-task=1
+# 64x64x60 at 1024 ranks, 2 x 2 columns and ~15.5k points per rank. MEASURED:
+# 8 x 128 is the fastest layout on this network -- 16 x 64 failed in the OFI
+# endpoint setup twice (MR pool), 32 x 32 was 18.5 s/step because the 310
+# Allreduces/step of the Krylov orthogonalisation went from intra-node to
+# 32-node. At dt 0.2 (the deck default now) it is 18 Krylov/stage and
+# 4.1 s/step: 54,000 steps = 62 h, one segment. DBG_RESTART_VTK=true on a
+# resubmit continues from the last dump; restart from the t = 9000 dump if
+# the statistics window has to be re-run in one piece.
 #SBATCH --time=71:59:00
 #SBATCH --mem-per-cpu=4000M
 #
