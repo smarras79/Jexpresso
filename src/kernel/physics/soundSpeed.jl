@@ -397,14 +397,18 @@ function dsgs_first_step_check(params, inputs, SD::Union{NSD_2D, NSD_3D})
     ldsgs = (params.VT == DSGS() || params.VT == DSGS_MHD() || params.VT == DSGS_SW()) &&
             size(params.μ_dsgs_pnode, 1) == params.mesh.npoin
     ldsgs || return nothing
-    comm  = get_mpi_comm()
-    νmax  = MPI.Allreduce(local_max_diffusivity(params.mesh.npoin, params, inputs[:μ]), MPI.MAX, comm)
-    Δnode = Float64(params.mesh.Δnode_s)
-    Δ     = (isfinite(Δnode) && Δnode > 0.0) ? Δnode : Float64(params.mesh.Δeffective_s)
-    pnum  = νmax*Float64(inputs[:Δt])/(Δ*Δ)
+    comm    = get_mpi_comm()
+    # Per-node, like computeCFL: max_i(ν_i/Δ_i²), not max(ν)/min(Δ)². On a
+    # graded mesh the old pairing took ν from the coarse far field and Δ from
+    # the wall and overstated the number by the square of the grading.
+    Δnode_v = nodal_length_scale(params.mesh, SD)
+    νmax_l, parab_dt_l = local_max_diffusivity(params.mesh.npoin, params, inputs[:μ], Δnode_v)
+    buf     = MPI.Allreduce([νmax_l, parab_dt_l], MPI.MAX, comm)
+    νmax, parab_dt = buf[1], buf[2]
+    pnum    = parab_dt*Float64(inputs[:Δt])
     if pnum > 0.5 && MPI.Comm_rank(comm) == 0
-        @warn @sprintf("DynSGS after the first step: max ν = %.3e m²/s, ν·Δt/Δx_min² = %.2f (Δx_min = %.1f m, Δt = %g s). Above ~0.5 the explicit step cannot carry the diffusion and the run blows up: reduce :Δt (or the :μ multipliers of the slots that carry the largest coefficient).",
-                       νmax, pnum, Δ, Float64(inputs[:Δt]))
+        @warn @sprintf("DynSGS after the first step: max ν = %.3e m²/s, max(ν·Δt/Δx²) over the nodes = %.2f (Δt = %g s). Above ~0.5 the explicit step cannot carry the diffusion and the run blows up: reduce :Δt (or the :μ multipliers of the slots that carry the largest coefficient).",
+                       νmax, pnum, Float64(inputs[:Δt]))
     end
     return nothing
 end
