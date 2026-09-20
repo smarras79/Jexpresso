@@ -7,6 +7,9 @@ function user_bc_dirichlet!(q,
                             ymin, ymax,
                             zmin, zmax,
                             qe, ::TOTAL)
+    # if tag ∈ ("periodicx", "periodicy", "periodicz")
+    #     return
+    # end
 
     qnl = nx*q[2] + ny*q[3] + nz*q[4]
     qbdy[2] = (q[2] - qnl*nx) 
@@ -34,11 +37,11 @@ end
 
 function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, coords, τ_f, wθ, CL)
 
-    if (tag == "bottom")
-        F_edge[4] = 0.0
-    elseif (tag == "top")
-        F_edge[4] = 0.0
-    end
+    # if (tag == "bottom")
+    #     F_edge[4] = 0.0
+    # elseif (tag == "top")
+    #     F_edge[4] = 0.0
+    # end
 end
 
 function user_bc_dirichlet_gpu(q,qe,coords,t,nx,ny,nz,qbdy,lpert)

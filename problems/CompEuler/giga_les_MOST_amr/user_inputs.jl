@@ -1,0 +1,125 @@
+function user_inputs()
+    inputs = Dict(
+        #---------------------------------------------------------------------------
+        # User define your inputs below: the order doesn't matter
+        #---------------------------------------------------------------------------
+        :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
+        :Δt                   => 0.3,
+        :tinit                => 0,
+        # :tend                 => 100.0,
+        :tend                 => 43200,
+	:lrestart_amr             => true,
+	#:restart_vtk_iout     => 160, 
+	# :lrestart             => true,
+	#:restart_output_file_path => "",
+	# :restart_time         => 1000,
+	# :statistics_time      => 100,
+	#:diagnostics_at_times => (5:5:100),
+	:diagnostics_at_times => (0.1,100.0:100:43200...),
+	# :diagnostics_at_times => (0:4:40..., 100:500:600..., 610:10:700...,  800:100:1000.0...),
+        :lsource              => true,
+        :lmoist               => true,
+        :lprecip              => true,
+        :SOL_VARS_TYPE        => TOTAL(),
+        :LST                  => true,
+	:lsponge              => true,
+	:zsponge              => 19000.0,
+        :sounding_file        =>"./data_files/GIGALES_GATE_IDEAL_sounding.dat",
+        #---------------------------------------------------------------------------
+        #Integration and quadrature properties
+        #---------------------------------------------------------------------------
+        :interpolation_nodes  =>"lgl",
+        :nop                  => 4,      # Polynomial order
+        #---------------------------------------------------------------------------
+        # Physical parameters/constants:
+        #---------------------------------------------------------------------------
+        :lwall_model          => true,
+        :ifirst_wall_node_index=> 2, # This must be between 2 <= :first_wall_node_index <= nop+1
+        :bdy_fluxes           => true,
+        :lvisc                => true, #false by default
+        :visc_model           => SMAG(),
+        :μ                    => [0.0, 1.0, 1.0, 1.0, 3.0, 3.0, 0.0], #horizontal viscosity constant for momentum
+        # :visc_model           => AV(),
+        # :μ           => [0.0, 100.0, 100.0, 100.0, 200.0, 200.0, 200.0], #horizontal viscosity constant for momentum
+        :energy_equation      => "energy",
+        # :lrichardson          => true,
+        #---------------------------------------------------------------------------
+        # Mesh paramters and files:
+        #---------------------------------------------------------------------------
+	#:lwarmup          => true,
+        :lread_gmsh       => true, #If false, a 1D problem will be enforced
+        # :gmsh_filename_c    => "./meshes/gmsh_grids/LESICP_64x16x36_10kmX5kmX3dot5km.msh",
+        #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x16x18_10kmX5kmX3km.msh",
+	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x32x36_10kmX5kmX3km.msh",
+        #:gmsh_filename    => "./meshes/gmsh_grids/hexa_TFI_giga_les_30kmx12kmx25km.msh",
+        :gmsh_filename    => "./meshes/gmsh_grids/hexa_TFI_giga_les_10x4x30_60kmx24kmx25km.msh",
+	# :gmsh_filename    => "./meshes/gmsh_grids/hexa_TFI_giga_les_128kmx128kmx25km_1600m.msh",
+	# :gmsh_filename    => "./meshes/gmsh_grids/hexa_TFI_giga_les.msh",
+	
+        # Warping:
+        :lwarp => false,
+        :mount_type => "LESICP",
+        :h_mount => 1000.0,
+        :a_mount => 10240.0,
+	:z_transition_start => -1000.0,
+	:z_transition_end => 2200.0,
+
+        # Stretching factors:
+        :lstretch => false,
+        :stretch_factor => 1.15,
+        :stretch_type => "fixed_first_twoblocks_strong", #strong means that the top is constrained
+        :first_zelement_size => 10.0,
+        :zlevel_transition => 2000.0,
+        
+        #---------------------------------------------------------------------------
+        # Filter parameters
+        #---------------------------------------------------------------------------
+        :lfilter             => true,
+        :mu_x                => 0.1,
+        :mu_y                => 0.1,
+	:mu_z                => 0.1,
+        :filter_type         => "erf",
+        #---------------------------------------------------------------------------
+        # Plotting parameters
+        #---------------------------------------------------------------------------
+        :outformat           => "vtk",
+        :output_dir          => "/scratch/smarras/hw59/output/output_gigales_3lvl_quater_domain_amr_test_fisrt_step/",
+        #:output_dir          => "./output",
+        :loverwrite_output   => true,  #this is only implemented for VTK for now
+        :lwrite_initial      => true,
+        #---------------------------------------------------------------------------
+        # init_refinement
+        #---------------------------------------------------------------------------
+        :linitial_refine     => false,
+        :init_refine_lvl     => 1,
+        :lpreadapt           => true,
+        :preadapt_max_level       => 2,
+        #---------------------------------------------------------------------------
+        # AMR
+        #---------------------------------------------------------------------------
+        :lamr                 => true,
+        #---------------------------------------------------------------------------
+        # AMR parameters
+        #---------------------------------------------------------------------------
+        :amr_freq            => 125,
+        :amr_max_level       => 3,
+        :amr_start_time      => 0.0
+        #---------------------------------------------------------------------------
+        # LSTM AMR  (Gan et al. 2026, JGR Atmospheres)
+        #---------------------------------------------------------------------------
+        # :lstm_amr_mode  => :fallback,  # traditional RHi + composite score only
+        # :lstm_amr_mode  => :collect,   # as :fallback but saves training data
+        # :lstm_amr_mode  => :infer,     # use trained LSTM weights
+        # :lstm_amr_mode       => :fallback,
+        # :lstm_weight_file    => "./lstm_weights.jld2",
+        # # Training data output path (used in :collect mode):
+        # :lstm_data_file      => "./lstm_training_data.jld2"
+        #---------------------------------------------------------------------------
+    ) #Dict
+    #---------------------------------------------------------------------------
+    # END User define your inputs below: the order doesn't matter
+    #---------------------------------------------------------------------------
+
+    return inputs
+    
+end

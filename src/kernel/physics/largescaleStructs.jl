@@ -1,10 +1,10 @@
-Base.@kwdef mutable struct St_LargeScaleTendencies{T <: AbstractFloat, dims1, backend}
+Base.@kwdef mutable struct St_LargeScaleTendencies{T <: AbstractFloat, dims1, backend, VT}
 
     # WIP
 
-    Rad_cool      = KernelAbstractions.zeros(backend,  T, dims1)
-    T_adv         = KernelAbstractions.zeros(backend,  T, dims1)
-    q_adv         = KernelAbstractions.zeros(backend,  T, dims1)
+    Rad_cool::VT  = KernelAbstractions.zeros(backend,  T, dims1)
+    T_adv::VT     = KernelAbstractions.zeros(backend,  T, dims1)
+    q_adv::VT     = KernelAbstractions.zeros(backend,  T, dims1)
 
 end
 
@@ -16,8 +16,9 @@ function allocate_LargeScaleTendencies(npoin, mesh, inputs, T, backend; lLST=fal
         dims1 = (Int64(1))
     end
 
-    LST = St_LargeScaleTendencies{T, dims1, backend}()
-    if (lLST) 
+    VT  = typeof(KernelAbstractions.zeros(backend, T, dims1))
+    LST = St_LargeScaleTendencies{T, dims1, backend, VT}()
+    if (lLST)
         read_large_scale!(backend, inputs[:LST_files], LST, mesh)
     end
 

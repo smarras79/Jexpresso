@@ -25,13 +25,29 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lwall_model          => true,
-        :ifirst_wall_node_index=> 5, # This must be between 2 <= :first_wall_node_index <= nop+1
-        :bdy_fluxes           => true,
-        :lvisc                => true, #false by default
-        :visc_model           => SMAG(),
+#        :user_heatflux          => 0.12,
+        :lwall_model            => true,
+        :ifirst_wall_node_index => 5, # This must be between 2 <= :first_wall_node_index <= nop+1
+        :bdy_fluxes             => true,
+        :lvisc                  => true, #false by default
+        :visc_model             => SMAG(),
         #:visc_model           => AV(),
-        :μ                    => [0.0, 10, 10, 10, 10], #horizontal viscosity constant for momentum	
+        :μ                      => [0.0, 10, 10, 10, 10], #horizontal viscosity constant for momentum	
+        #---------------------------------------------------------------------------
+        #LES statistics
+        #---------------------------------------------------------------------------
+	:statistics_time      => (7200.0:10.0:10800.0),
+        :lesprofile_vars      => ["u_mean", "v_mean", "w_mean", "t_mean", "p_mean"],
+        :lesstress_vars       => ["upup_res", "upvp_res", "upwp_res", "vpvp_res", "vpwp_res", "wpwp_res",
+                                   "tptp_res", "uptp_res", "vptp_res", "wptp_res",
+                                   "upup_sfs", "upvp_sfs", "upwp_sfs", "vpvp_sfs", "vpwp_sfs", "wpwp_sfs",
+                                   "tptp_sfs", "uptp_sfs", "vptp_sfs", "wptp_sfs",
+                                   "uppp", "vppp", "wppp", "eps", "eps_t", "rho",
+                                   "upupup", "upupvp", "upupwp",
+                                   "vpvpup", "vpvpvp", "vpvpwp",
+                                   "wpwpup", "wpwpvp", "wpwpwp",
+                                   "upuptp", "vpvptp", "wpwptp"],
+        :lesspectra_vars      => [],
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------

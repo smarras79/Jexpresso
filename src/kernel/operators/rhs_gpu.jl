@@ -1,4 +1,4 @@
-@kernel function _build_rhs_gpu_v0!(RHS, u, uaux, qe, x, t, connijk, dψ, ω, Minv, flux, source, PhysConst, xmax, xmin, n_x, neq, lpert, lperiodic_1d, npoin_linear, npoin)
+@kernel function _build_rhs_gpu_v0!(RHS, u, uaux, qe, x, t, connijk, dψ, ω, Je, Minv, flux, source, PhysConst, xmax, xmin, n_x, neq, lpert, lperiodic_1d, npoin_linear, npoin)
     ie = @index(Group, Linear)
     i = @index(Local, Linear)
     ip = connijk[ie,i,1]
@@ -36,7 +36,13 @@
             dFdξ += dψ[k,i]*F[k]
         end
     ### Adding to rhs, DSS and division by the mass matrix can all be done in one combined step
-        KernelAbstractions.@atomic RHS[ip,ieq] -= ω[i]*(dFdξ - S[i])* Minv[ip]
+    ###
+    ### The source carries Je and the flux does not: Minv is 1/(Je*ω), the
+    ### flux term's own dξdx = 1/Je cancels the Je it would otherwise need,
+    ### and the source has nothing to cancel against. Same reasoning, and the
+    ### same 2D/3D kernels to compare against, as the CPU path — see the note
+    ### above _expansion_inviscid!(..., NSD_1D, ContGal) in rhs.jl.
+        KernelAbstractions.@atomic RHS[ip,ieq] -= ω[i]*(dFdξ - Je[ie,i]*S[i])* Minv[ip]
     end
 end
 

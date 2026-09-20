@@ -134,7 +134,7 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     # filter arrays
     #------------------------------------------------------------------------------------
-    filter = allocate_filter(sem.mesh.SD, sem.mesh.nelem, sem.mesh.npoin, sem.mesh.ngl, T, backend; neqs=qp.neqs, lfilter=inputs[:lfilter])
+    filter = allocate_filter(sem.mesh.SD, sem.mesh.nelem, sem.mesh.npoin, sem.mesh.ngl, T, backend; neqs=qp.neqs, lfilter=inputs[:lfilter], ladapt=inputs[:ladapt])
     fy_t   = transpose(sem.fy)
     fz_t   = transpose(sem.fz)
     q_t    = filter.q_t
@@ -246,6 +246,12 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     PhysConst = PhysicalConst{TFloat}()
     thermo_params = create_updated_TD_Parameters(PhysConst.potential_temperature_reference_pressure)
+    sgs        = allocate_SGS(sem.mesh.npoin, TFloat, backend, PhysConst, inputs[:visc_model])
+    if sgs isa AbstractSGSModel
+        sgs.lrichardson = get(inputs, :lrichardson, true)  # default true for SMAG/VREM
+        sgs.ltheta_eqn  = !(haskey(inputs, :energy_equation) && inputs[:energy_equation] == "energy")
+    end
+    sgs_stress = zeros(TFloat, Int64(sem.mesh.npoin), 12)
     
     #------------------------------------------------------------------------------------
     # Populate solution arrays
@@ -280,14 +286,15 @@ function params_setup(sem,
             println(" # end conformity4ncf_q!")
         end
     end
+    
     for i=1:qp.neqs
+
         idx = (i-1)*sem.mesh.npoin
         u[idx+1:i*sem.mesh.npoin] = @view qp.qn[:,i]
         qp.qnm1[:,i] = @view(qp.qn[:,i])
         qp.qnm2[:,i] = @view(qp.qn[:,i])
         
     end
-    
     deps  = KernelAbstractions.zeros(backend, T, 1,1)
     Δt    = inputs[:Δt]
     #if (backend == CPU())
@@ -296,7 +303,7 @@ function params_setup(sem,
     #        visc_coeff .= inputs[:μ]
     #    end
     #else
-   
+    
     if inputs[:lvisc]
         coeffs = zeros(TFloat, qp.neqs)
         if size(inputs[:μ]) > size(coeffs)
@@ -320,7 +327,9 @@ function params_setup(sem,
     #     [:,1] = ν_ρ (diagnostic, not applied)
     #     [:,2] = μ_ρu          [:,3] = μ_ρv
     #     [:,4] = κ_θ  (already scaled by Pr/(γ-1))
-    if inputs[:lvisc] == true && inputs[:visc_model] == DSGS()
+    ldsgs     = inputs[:lvisc] == true && inputs[:visc_model] == DSGS()
+    ldsgs_mhd = inputs[:lvisc] == true && (inputs[:visc_model] == DSGS_MHD() || inputs[:visc_model] == DSGS_SW())
+    if ldsgs || ldsgs_mhd
         μ_dsgs       = KernelAbstractions.zeros(backend, TFloat,
                                                 Int64(sem.mesh.nelem), Int64(qp.neqs))
         μ_dsgs_pnode = KernelAbstractions.zeros(backend, TFloat,
@@ -329,6 +338,87 @@ function params_setup(sem,
         μ_dsgs       = KernelAbstractions.zeros(backend, TFloat, 1, 1)
         μ_dsgs_pnode = KernelAbstractions.zeros(backend, TFloat, 1, 1)
     end
+
+    # DynSGS-MHD extras.
+    #
+    # dsgs_qn/qnm1/qnm2 are the history (qⁿ, qⁿ⁻¹, qⁿ⁻²) the residual's time
+    # derivative is built on (rhs.jl, _dsgs_stencil). They
+    # exist separately from qp.qnm1/qnm2 because those are advanced on
+    # every RK *stage* — fine as generic scratch, useless as a time
+    # derivative. rhs! advances this pair exactly once per time step, and
+    # dsgs_thist records when it last did. Both start at the initial state
+    # so the very first residual is identically zero rather than 3q/(2Δt).
+    #
+    # dsgs_avg / dsgs_denom are the per-equation domain-reduction scratch,
+    # preallocated so compute_dsgs_viscosity! stays allocation-free.
+    if ldsgs || ldsgs_mhd
+        # Shaped like qp.qn / uaux, NOT (npoin, neqs): uaux carries one
+        # extra trailing column (pressure) beyond the neqs solution slots,
+        # which is why qp.qnm1/qnm2 are allocated from dims1 too. Sizing
+        # these to neqs makes `dsgs_qnm2 .= uaux` a DimensionMismatch.
+        dsgs_qn   = KernelAbstractions.zeros(backend, TFloat,
+                                             Int64(size(qp.qn,1)), Int64(size(qp.qn,2)))
+        dsgs_qnm1 = KernelAbstractions.zeros(backend, TFloat,
+                                             Int64(size(qp.qn,1)), Int64(size(qp.qn,2)))
+        dsgs_qnm2 = KernelAbstractions.zeros(backend, TFloat,
+                                             Int64(size(qp.qn,1)), Int64(size(qp.qn,2)))
+        for i = 1:size(qp.qn,2)
+            dsgs_qn[:,i]   = @view(qp.qn[:,i])
+            dsgs_qnm1[:,i] = @view(qp.qn[:,i])
+            dsgs_qnm2[:,i] = @view(qp.qn[:,i])
+        end
+        dsgs_avg   = KernelAbstractions.zeros(backend, TFloat, Int64(qp.neqs))
+        dsgs_denom = KernelAbstractions.zeros(backend, TFloat, Int64(qp.neqs))
+        # Scratch of the kernels (allocation-free RHS): element mean/spread
+        # of the local norms, global min/max per equation, per-node local
+        # range and mesh function of the nodal form, and the element's nodal
+        # coefficients gathered for the viscous expansion.
+        dsgs_avg_e = KernelAbstractions.zeros(backend, TFloat, Int64(qp.neqs))
+        dsgs_den_e = KernelAbstractions.zeros(backend, TFloat, Int64(qp.neqs))
+        dsgs_qmin  = KernelAbstractions.zeros(backend, TFloat, Int64(qp.neqs))
+        dsgs_qmax  = KernelAbstractions.zeros(backend, TFloat, Int64(qp.neqs))
+        dsgs_nmin  = KernelAbstractions.zeros(backend, TFloat, Int64(sem.mesh.npoin), Int64(qp.neqs))
+        dsgs_nmax  = KernelAbstractions.zeros(backend, TFloat, Int64(sem.mesh.npoin), Int64(qp.neqs))
+        dsgs_hnod  = KernelAbstractions.zeros(backend, TFloat, Int64(sem.mesh.npoin))
+        dsgs_Rnod  = KernelAbstractions.zeros(backend, TFloat, Int64(sem.mesh.npoin), Int64(qp.neqs))
+        # reference element RHS (the residual is taken on the departure from qe)
+        dsgs_rhs_ref = KernelAbstractions.zeros(backend, TFloat, size(rhs.rhs_el)...)
+        dsgs_rhs_res = KernelAbstractions.zeros(backend, TFloat, size(rhs.rhs_el)...)
+        dsgs_qe_flat = KernelAbstractions.zeros(backend, TFloat, Int64(sem.mesh.npoin*qp.neqs))
+        dsgs_mnod  = KernelAbstractions.zeros(backend, TFloat, Int64(sem.mesh.npoin))
+        ngl_       = Int64(sem.mesh.ngl)
+        dsgs_μloc  = sem.mesh.SD == NSD_1D() ? KernelAbstractions.zeros(backend, TFloat, ngl_, Int64(qp.neqs)) :
+                     sem.mesh.SD == NSD_2D() ? KernelAbstractions.zeros(backend, TFloat, ngl_, ngl_, Int64(qp.neqs)) :
+                                               KernelAbstractions.zeros(backend, TFloat, ngl_, ngl_, ngl_, Int64(qp.neqs))
+    else
+        dsgs_qn    = KernelAbstractions.zeros(backend, TFloat, 1, 1)
+        dsgs_qnm1  = KernelAbstractions.zeros(backend, TFloat, 1, 1)
+        dsgs_qnm2  = KernelAbstractions.zeros(backend, TFloat, 1, 1)
+        dsgs_avg   = KernelAbstractions.zeros(backend, TFloat, 1)
+        dsgs_denom = KernelAbstractions.zeros(backend, TFloat, 1)
+        dsgs_avg_e = KernelAbstractions.zeros(backend, TFloat, 1)
+        dsgs_den_e = KernelAbstractions.zeros(backend, TFloat, 1)
+        dsgs_qmin  = KernelAbstractions.zeros(backend, TFloat, 1)
+        dsgs_qmax  = KernelAbstractions.zeros(backend, TFloat, 1)
+        dsgs_nmin  = KernelAbstractions.zeros(backend, TFloat, 1, 1)
+        dsgs_nmax  = KernelAbstractions.zeros(backend, TFloat, 1, 1)
+        dsgs_hnod  = KernelAbstractions.zeros(backend, TFloat, 1)
+        dsgs_Rnod  = KernelAbstractions.zeros(backend, TFloat, 1, 1)
+        dsgs_rhs_ref = KernelAbstractions.zeros(backend, TFloat, 1)
+        dsgs_rhs_res = KernelAbstractions.zeros(backend, TFloat, 1)
+        dsgs_qe_flat = KernelAbstractions.zeros(backend, TFloat, 1)
+        dsgs_mnod  = KernelAbstractions.zeros(backend, TFloat, 1)
+        dsgs_μloc  = KernelAbstractions.zeros(backend, TFloat, 1, 1)
+    end
+    dsgs_thist = Ref{Float64}(-1.0e30)
+    # stage stencil of the residual's time derivative (rhs.jl, _dsgs_stencil)
+    dsgs_wt    = Ref{NTuple{3,Float64}}((0.0, 0.0, 0.0))
+    dsgs_stage = Ref{Bool}(false)
+    dsgs_ref_done = Ref{Bool}(false)
+    dsgs_have_ref = Ref{Bool}(false)
+    dsgs_bdy_done  = Ref{Bool}(false)
+    dsgs_legacy    = Ref{Bool}(get(inputs, :dsgs_sensor, "residual") == "legacy")
+    dsgs_bdy_pairs = NTuple{3,Int}[]
 
     # Per-equation scratch the 2D DSGS path uses to pack the
     # per-element coefficient before calling _expansion_visc!:
@@ -343,8 +433,9 @@ function params_setup(sem,
     # LES statistics z-level cache (computed once, shared across timesteps)
     nprofiles        = length(inputs[:lesprofile_vars])
     nstress          = length(inputs[:lesstress_vars])
-    les_stat_cache   = build_les_stat_cache(sem.mesh, nprofiles, nstress, TFloat, backend)
-    les_cross_section = build_les_cross_section(sem.mesh, sem.basis, nprofiles, nstress, TFloat)
+    les_stat_cache    = build_les_stat_cache(sem.mesh, nprofiles, nstress, TFloat, backend)
+    les_cross_section = build_les_cross_section(sem.mesh, nprofiles, nstress, TFloat)
+    les_bottom_cache  = build_les_bottom_cache(sem.mesh, sem.metrics, inputs)
 
     #------------------------------------------------------------------------------------
     # Populate params tuple to carry global arrays and constants around
@@ -379,17 +470,23 @@ function params_setup(sem,
                   ω = sem.ω[1], ω_lag = sem.ω[2],
                   metrics = sem.metrics[1], metrics_lag = sem.metrics[2], 
                   inputs, VT = inputs[:visc_model], visc_coeff, μ_dsgs, μ_dsgs_pnode, visc_coeff_dsgs,
+                  dsgs_qn, dsgs_qnm1, dsgs_qnm2, dsgs_avg, dsgs_denom, dsgs_thist, dsgs_wt, dsgs_stage,
+                  dsgs_avg_e, dsgs_den_e, dsgs_qmin, dsgs_qmax, dsgs_nmin, dsgs_nmax, dsgs_hnod, dsgs_Rnod, dsgs_mnod, dsgs_μloc, dsgs_rhs_ref, dsgs_rhs_res, dsgs_qe_flat, dsgs_ref_done, dsgs_have_ref, dsgs_bdy_done, dsgs_bdy_pairs, dsgs_legacy,
                   WM,
                   sem.matrix.M, sem.matrix.Minv, g_dss_cache=g_dss_cache, tspan,
                   Δt, deps, xmax, xmin, ymax, ymin, zmin, zmax,
                   qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, sem.fz, fz_t, laguerre=true,
                   les_stat_cache,
                   les_cross_section,
+                  les_bottom_cache,
+                  sgs,
+                  sgs_stress,
                   timers,
                   coupling = coupling)
 
     else
         g_dss_cache = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
+        
         params = (backend,
                   T, inputs,
                   uaux, vaux, utmp, fluxaux,
@@ -412,13 +509,19 @@ function params_setup(sem,
                   sem.connijk_original, sem.poin_in_bdy_face_original, sem.x_original, sem.y_original, sem.z_original,
                   sem.basis, sem.ω, sem.mesh, sem.metrics,
                   thermo_params, VT = inputs[:visc_model], visc_coeff, μ_dsgs, μ_dsgs_pnode, visc_coeff_dsgs,
+                  dsgs_qn, dsgs_qnm1, dsgs_qnm2, dsgs_avg, dsgs_denom, dsgs_thist, dsgs_wt, dsgs_stage,
+                  dsgs_avg_e, dsgs_den_e, dsgs_qmin, dsgs_qmax, dsgs_nmin, dsgs_nmax, dsgs_hnod, dsgs_Rnod, dsgs_mnod, dsgs_μloc, dsgs_rhs_ref, dsgs_rhs_res, dsgs_qe_flat, dsgs_ref_done, dsgs_have_ref, dsgs_bdy_done, dsgs_bdy_pairs, dsgs_legacy,
                   sem.matrix.M, sem.matrix.Minv, g_dss_cache=g_dss_cache,
                   tspan, Δt, xmax, xmin, ymax, ymin, zmin, zmax,
                   WM,
                   phys_grid = sem.phys_grid,
+                  atmos_data = sem.atmos_data,
                   qp, mp, LST, sem.fx, sem.fy, fy_t, sem.fz, fz_t, laguerre=false,
                   les_stat_cache,
                   les_cross_section,
+                  les_bottom_cache,
+                  sgs,
+                  sgs_stress,
                   OUTPUT_DIR,
                   timers,
                   sem.interp, sem.project, sem.nparts, sem.distribute,

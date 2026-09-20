@@ -13,8 +13,1212 @@ export mod_mesh_read_gmsh!
 
 include("warping.jl")
 include("stretching.jl")
+include("exact_geometry.jl")
 
-# ─── Mesh topology cache helpers ──────────────────────────────────────────────
+function make_extra_mesh_1D(nelem, nop, θmin, θmax, backend, inputs, lper)
+    npoin = nelem*nop+1
+    dims1 = (npoin)
+    dims2 = (nelem,nop+1)
+    dims3 = (nelem)
+    dims4 = (nelem, 0, nop+1)
+    dims5 = (2,npoin)
+    extra_mesh = St_extra_mesh{TInt, TFloat, NSD_1D(), dims1, dims2, dims3, dims4, dims5, nelem, npoin, backend}()
+    Δθe = KernelAbstractions.zeros(backend, TFloat, nelem)
+    Δθe .= (θmax-θmin)/nelem
+    extra_mesh.extra_coords[1,1]      = θmin
+    extra_mesh.extra_connijk[1,1]     = 1
+    extra_mesh.extra_connijk[1,nop+1] = 2
+    extra_mesh.extra_coords[2]      = Δθe[1]
+    extra_mesh.extra_nop             .= nop
+    ip = 2
+    for e=2:nelem-1
+        extra_mesh.extra_connijk[e,1] = ip
+        extra_mesh.extra_connijk[e,nop+1] = ip+1
+        extra_mesh.extra_coords[ip+1] = θmin + Δθe[e]*e
+        ip +=1
+    end
+
+    extra_mesh.extra_connijk[nelem,1] = ip
+    extra_mesh.extra_connijk[nelem,nop+1] = ip+1
+    extra_mesh.extra_coords[ip+1] = θmax
+    ip += 1
+    ip_end = ip
+    lgl = basis_structs_ξ_ω!(LGL(), nop, backend)
+    extra_mesh.ωθ = lgl.ω
+    ip +=1
+
+    for e=1:nelem
+        ip1 = extra_mesh.extra_connijk[e,1]
+        ip2 = extra_mesh.extra_connijk[e,nop+1]
+        for i=2:nop
+            ξ = lgl.ξ[i]
+            extra_mesh.extra_coords[ip] = extra_mesh.extra_coords[ip1]*(1.0-ξ)*0.5+extra_mesh.extra_coords[ip2]*(1.0 + ξ)*0.5
+            extra_mesh.extra_connijk[e,i] = ip
+            ip += 1
+        end
+    end
+    metrics = allocate_metrics(NSD_1D(), nelem, 0, nop+1, TFloat, backend)
+
+    for iel = 1:nelem
+        for i = 1:nop+1
+            for k = 1:nop+1
+                metrics.dxdξ[iel, k, 1]  = Δθe[iel]/2
+                metrics.Je[iel, k, 1]   = metrics.dxdξ[iel, k, 1]
+                metrics.dξdx[iel, k, 1] = 1.0/metrics.Je[iel, k, 1]
+            end
+        end
+    end
+
+    extra_mesh.extra_metrics = metrics
+
+    if (lper)
+        ip_old = extra_mesh.extra_connijk[nelem,nop+1]
+        extra_mesh.extra_connijk[nelem,nop+1] = 1
+        for e=1:extra_mesh.extra_nelem
+            for i=1:extra_mesh.extra_nop[e]+1
+                ip = extra_mesh.extra_connijk[e,i]
+                if (ip >= ip_old)
+                    extra_mesh.extra_connijk[e,i] -= 1
+                end
+            end
+        end
+        for i = ip_old+1: extra_mesh.extra_npoin
+            extra_mesh.extra_coords[i-1] = extra_mesh.extra_coords[i]
+        end
+        extra_mesh.extra_npoin -= 1
+    end
+
+    basis = build_Interpolation_basis!(LagrangeBasis(), lgl.ξ, lgl.ξ, TFloat, inputs[:backend])
+    extra_mesh.ψ = basis.ψ
+    extra_mesh.dψ = basis.dψ
+    Me = KernelAbstractions.zeros(backend, TFloat, (nop+1)^2, Int64(nelem))
+    build_mass_matrix!(Me, NSD_1D(), Inexact(), basis.ψ, lgl.ω, nelem, metrics.Je, Δθe, nop, nop, TFloat)
+    M    = KernelAbstractions.zeros(backend, TFloat, Int64(npoin))
+    Minv = KernelAbstractions.zeros(backend, TFloat, Int64(npoin))
+    DSS_mass!(M, NSD_1D(), Inexact(), Me, extra_mesh.extra_connijk, nelem, npoin, nop, TFloat; llump=inputs[:llump])
+    Minv .= TFloat(1.0)./M
+    extra_mesh.Minv = Minv
+    return extra_mesh
+end
+
+function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, basis, backend, inputs, lper)
+    if (inputs[:lRT_problem] || inputs[:RT_atmos_coupling])
+        θmin, θmax = pole_shifted_theta_range(nelemθ, nop+1; pole_fraction=0.01)
+    end
+    @info "adjusted poles", θmin, θmax
+
+   if (inputs[:lcubed_sphere_angular_mesh])
+        ####### PERIODICITY STILL MISSING FOR CUBED SPHERE MESH
+        #build quadrant 1
+        #first point
+        npoin = 6*(nop+1)^2#(nelemθ*nop+1)*(nelemϕ*nop+1)
+        dims1 = (2,npoin)
+        dims2 = (6,nop+1,nop+1)
+        dims3 = (6)
+        dims4 = (6, 0, nop+1)
+        dims5 = (3,npoin)
+        extra_mesh = St_extra_mesh{TInt, TFloat, NSD_2D(), dims1, dims2, dims3, dims4, dims5, 6, npoin, backend}()
+        Δθe = (θmax-θmin)/nelemθ
+        Δϕe = (ϕmax-ϕmin)/nelemϕ
+        extra_mesh.extra_nop             .= nop
+        x = -1
+        y = -1
+        z = -1
+        r = sqrt(x^2 + y^2 + z^2)
+        x1 = x/r
+        y1 = -y/r
+        z1 = z/r
+        θ = asin(z1) + π/2
+        ϕ = atan(y1,x1) - 3*π/4
+        if (ϕ < 0)
+            ϕ = ϕ + 2*π
+        end
+        extra_mesh.extra_connijk[1,1,1] = 1
+        extra_mesh.extra_coords[1,1] = θ
+        extra_mesh.extra_coords[2,1] = ϕ
+        extra_mesh.extra_coords_cart[1,1] = x1
+        extra_mesh.extra_coords_cart[2,1] = -y1
+        extra_mesh.extra_coords_cart[3,1] = z1
+        #second point
+        x = -1
+        y = 1
+        z = -1
+        r = sqrt(x^2 + y^2 + z^2)
+        x1 = x/r
+        y1 = -y/r
+        z1 = z/r
+        θ = asin(z1) + π/2
+        ϕ = atan(y1,x1) - 3*π/4 
+        if (ϕ < 0)
+            ϕ = ϕ + 2*π
+        end 
+        extra_mesh.extra_connijk[1,nop+1,1] = 2
+        extra_mesh.extra_coords[1,2] = θ
+        extra_mesh.extra_coords[2,2] = ϕ
+        extra_mesh.extra_coords_cart[1,2] = x1
+        extra_mesh.extra_coords_cart[2,2] = -y1
+        extra_mesh.extra_coords_cart[3,2] = z1
+        #third point
+        x = -1
+        y = -1
+        z = 1
+        r = sqrt(x^2 + y^2 + z^2)
+        x1 = x/r
+        y1 = -y/r
+        z1 = z/r
+        θ = asin(z1) + π/2
+        ϕ = atan(y1,x1) - 3*π/4
+        if (ϕ < 0)
+            ϕ = ϕ + 2*π
+        end 
+        extra_mesh.extra_connijk[1,1,nop+1] = 3
+        extra_mesh.extra_coords[1,3] = θ
+        extra_mesh.extra_coords[2,3] = ϕ
+        extra_mesh.extra_coords_cart[1,3] = x1
+        extra_mesh.extra_coords_cart[2,3] = -y1
+        extra_mesh.extra_coords_cart[3,3] = z1
+        #fourth point
+        x = -1
+        y = 1
+        z = 1
+        r = sqrt(x^2 + y^2 + z^2)
+        x1 = x/r
+        y1 = -y/r
+        z1 = z/r
+        θ = asin(z1) + π/2
+        ϕ = atan(y1,x1) - 3*π/4
+        if (ϕ < 0)
+            ϕ = ϕ + 2*π
+        end 
+        extra_mesh.extra_connijk[1,nop+1,nop+1] = 4
+        extra_mesh.extra_coords[1,4] = θ
+        extra_mesh.extra_coords[2,4] = ϕ
+        extra_mesh.extra_coords_cart[1,4] = x1
+        extra_mesh.extra_coords_cart[2,4] = -y1
+        extra_mesh.extra_coords_cart[3,4] = z1
+        #build quadrant 2
+        #first point
+        extra_mesh.extra_connijk[2,1,1] = 2
+        #third point
+        extra_mesh.extra_connijk[2,1,nop+1] = 4
+        #second point
+        x = 1
+        y = 1
+        z = -1
+        r = sqrt(x^2 + y^2 + z^2)
+        x1 = -x/r
+        y1 = y/r
+        z1 = z/r
+        θ = asin(z1) + π/2
+        ϕ = atan(y1,x1) + π/4
+        extra_mesh.extra_connijk[2,nop+1,1] = 5
+        extra_mesh.extra_coords[1,5] = θ
+        extra_mesh.extra_coords[2,5] = ϕ
+        extra_mesh.extra_coords_cart[1,5] = -x1
+        extra_mesh.extra_coords_cart[2,5] = y1
+        extra_mesh.extra_coords_cart[3,5] = z1
+        #fourth point
+        x = 1
+        y = 1
+        z = 1
+        r = sqrt(x^2 + y^2 + z^2)
+        x1 = -x/r
+        y1 = y/r
+        z1 = z/r
+        θ = asin(z1) + π/2
+        ϕ = atan(y1,x1) +π/4
+        extra_mesh.extra_connijk[2,nop+1,nop+1] = 6
+        extra_mesh.extra_coords[1,6] = θ
+        extra_mesh.extra_coords[2,6] = ϕ
+        extra_mesh.extra_coords_cart[1,6] = -x1
+        extra_mesh.extra_coords_cart[2,6] = y1
+        extra_mesh.extra_coords_cart[3,6] = z1
+        #build quadrant 3
+        #first point
+        extra_mesh.extra_connijk[3,1,1] = 5
+        #third point
+        extra_mesh.extra_connijk[3,1,nop+1] = 6
+        #second point
+        x = 1
+        y = -1
+        z = -1
+        r = sqrt(x^2 + y^2 + z^2)
+        x1 = x/r
+        y1 = y/r
+        z1 = z/r
+        θ = asin(z1) + π/2
+        ϕ = atan(y1,x1) + 3*π/2 + π/4 
+        extra_mesh.extra_connijk[3,nop+1,1] = 7
+        extra_mesh.extra_coords[1,7] = θ
+        extra_mesh.extra_coords[2,7] = ϕ
+        extra_mesh.extra_coords_cart[1,7] = x1
+        extra_mesh.extra_coords_cart[2,7] = y1
+        extra_mesh.extra_coords_cart[3,7] = z1
+        #fourth point
+        x = 1
+        y = -1
+        z = 1
+        r = sqrt(x^2 + y^2 + z^2)
+        x1 = x/r
+        y1 = y/r
+        z1 = z/r
+        θ = asin(z1) + π/2
+        ϕ = atan(y1,x1) + 3*π/2 + π/4
+        extra_mesh.extra_connijk[3,nop+1,nop+1] = 8
+        extra_mesh.extra_coords[1,8] = θ
+        extra_mesh.extra_coords[2,8] = ϕ
+        extra_mesh.extra_coords_cart[1,8] = x1
+        extra_mesh.extra_coords_cart[2,8] = y1
+        extra_mesh.extra_coords_cart[3,8] = z1
+
+        #build quadrant 4
+        #second point
+        extra_mesh.extra_connijk[4,nop+1,1] = 1
+        #fourth point
+        extra_mesh.extra_connijk[4,nop+1,nop+1] = 3
+        #first point
+        extra_mesh.extra_connijk[4,1,1] = 7
+        #third point
+        extra_mesh.extra_connijk[4,1,nop+1] = 8
+        #build quadrant 5
+        #first point
+        extra_mesh.extra_connijk[5,1,1] = 3
+        #second point
+        extra_mesh.extra_connijk[5,nop+1,1] = 4
+        #third point
+        extra_mesh.extra_connijk[5,1,nop+1] = 8
+        #fourth point
+        extra_mesh.extra_connijk[5,nop+1,nop+1] = 6
+        #build quadrant 6
+        #third point
+        extra_mesh.extra_connijk[6,1,nop+1] = 1
+        #fourth point
+        extra_mesh.extra_connijk[6,nop+1,nop+1] = 2
+        #first point
+        extra_mesh.extra_connijk[6,1,1] = 7
+        #second point
+        extra_mesh.extra_connijk[6,nop+1,1] = 5
+        lgl = basis_structs_ξ_ω!(LGL(), nop, backend)
+        extra_mesh.ωθ = lgl.ω
+        extra_mesh.ωϕ = lgl.ω
+        #construct edge nodes
+        #first quadrant
+        ip = 9
+        #first edge
+        for i=2:nop
+            
+            y = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            z = -1#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
+            x = -1
+            r = sqrt(x^2 + y^2 + z^2)
+            x1 = x/r
+            y1 = -y/r
+            z1 = z/r
+            θ = asin(z1) + π/2
+            ϕ = atan(y1,x1) - 3*π/4
+            if (ϕ < 0)
+                ϕ = ϕ + 2*π
+            end 
+            extra_mesh.extra_connijk[1,i,1] = ip
+            extra_mesh.extra_coords[1,ip] = θ
+            extra_mesh.extra_coords[2,ip] = ϕ
+            extra_mesh.extra_coords_cart[1,ip] = x1
+            extra_mesh.extra_coords_cart[2,ip] = -y1
+            extra_mesh.extra_coords_cart[3,ip] = z1
+            ip += 1
+        end
+        #second edge
+        for i=2:nop
+
+            y = -1#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
+            z = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            x = -1
+            r = sqrt(x^2 + y^2 + z^2)
+            x1 = x/r
+            y1 = -y/r
+            z1 = z/r
+            θ = asin(z1) + π/2
+            ϕ = atan(y1,x1) - 3*π/4
+            if (ϕ < 0)
+                ϕ = ϕ + 2*π
+            end 
+            extra_mesh.extra_connijk[1,1,i] = ip
+            extra_mesh.extra_coords[1,ip] = θ
+            extra_mesh.extra_coords[2,ip] = ϕ
+            extra_mesh.extra_coords_cart[1,ip] = x1
+            extra_mesh.extra_coords_cart[2,ip] = -y1
+            extra_mesh.extra_coords_cart[3,ip] = z1
+            ip += 1
+        end
+        #third edge
+        for i=2:nop
+
+            y = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            z = (1)#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
+            x = -1
+            r = sqrt(x^2 + y^2 + z^2)
+            x1 = x/r
+            y1 = -y/r
+            z1 = z/r
+            θ = asin(z1) + π/2
+            ϕ = atan(y1,x1) - 3*π/4
+            if (ϕ < 0)
+                ϕ = ϕ + 2*π
+            end 
+            extra_mesh.extra_connijk[1,i,nop+1] = ip
+            extra_mesh.extra_coords[1,ip] = θ
+            extra_mesh.extra_coords[2,ip] = ϕ
+            extra_mesh.extra_coords_cart[1,ip] = x1
+            extra_mesh.extra_coords_cart[2,ip] = -y1
+            extra_mesh.extra_coords_cart[3,ip] = z1
+            ip += 1
+        end
+        #fourth edge
+        for i=2:nop
+
+            y = 1#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
+            z = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            x = -1
+            r = sqrt(x^2 + y^2 + z^2)
+            x1 = x/r
+            y1 = -y/r
+            z1 = z/r
+            θ = asin(z1) + π/2
+            ϕ = atan(y1,x1) - 3*π/4
+            if (ϕ < 0)
+                ϕ = ϕ + 2*π
+            end 
+            extra_mesh.extra_connijk[1,nop+1,i] = ip
+            extra_mesh.extra_coords[1,ip] = θ
+            extra_mesh.extra_coords[2,ip] = ϕ
+            extra_mesh.extra_coords_cart[1,ip] = x1
+            extra_mesh.extra_coords_cart[2,ip] = -y1
+            extra_mesh.extra_coords_cart[3,ip] = z1
+            ip += 1
+        end
+
+        #second quadrant
+        #first edge
+        for i=2:nop
+
+            y = 1#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
+            z = -1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            x = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            r = sqrt(x^2 + y^2 + z^2)
+            x1 = -x/r
+            y1 = y/r
+            z1 = z/r
+            θ = asin(z1) + π/2
+            ϕ = atan(y1,x1) +π/4
+            extra_mesh.extra_connijk[2,i,1] = ip
+            extra_mesh.extra_coords[1,ip] = θ
+            extra_mesh.extra_coords[2,ip] = ϕ
+            extra_mesh.extra_coords_cart[1,ip] = -x1
+            extra_mesh.extra_coords_cart[2,ip] = y1
+            extra_mesh.extra_coords_cart[3,ip] = z1
+            ip += 1
+        end
+        #second edge
+        for i=2:nop
+            extra_mesh.extra_connijk[2,1,i] = extra_mesh.extra_connijk[1,nop+1,i]
+        end
+        #third edge
+        for i=2:nop
+
+            y = 1#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
+            z = 1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            x = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            r = sqrt(x^2 + y^2 + z^2)
+            x1 = -x/r
+            y1 = y/r
+            z1 = z/r
+            θ = asin(z1) + π/2
+            ϕ = atan(y1,x1) +π/4
+            extra_mesh.extra_connijk[2,i,nop+1] = ip
+            extra_mesh.extra_coords[1,ip] = θ
+            extra_mesh.extra_coords[2,ip] = ϕ
+            extra_mesh.extra_coords_cart[1,ip] = -x1
+            extra_mesh.extra_coords_cart[2,ip] = y1
+            extra_mesh.extra_coords_cart[3,ip] = z1
+            ip += 1
+        end
+        #fourth edge
+        for i=2:nop
+
+            y = 1#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
+            z = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            x = 1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            r = sqrt(x^2 + y^2 + z^2)
+            x1 = -x/r
+            y1 = y/r
+            z1 = z/r
+            θ = asin(z1) + π/2
+            ϕ = atan(y1,x1) +π/4
+            extra_mesh.extra_connijk[2,nop+1,i] = ip
+            extra_mesh.extra_coords[1,ip] = θ
+            extra_mesh.extra_coords[2,ip] = ϕ
+            extra_mesh.extra_coords_cart[1,ip] = -x1
+            extra_mesh.extra_coords_cart[2,ip] = y1
+            extra_mesh.extra_coords_cart[3,ip] = z1
+            ip += 1
+        end
+        #third quadrant
+        #first edge
+        for i=2:nop
+            
+            y = (-1)*(1.0-lgl.ξ[nop+2-i])*0.5+(1)*(1.0 + lgl.ξ[nop+2-i])*0.5
+            z = -1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            x = 1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            r = sqrt(x^2 + y^2 + z^2)
+            x1 = x/r
+            y1 = y/r
+            z1 = z/r
+            θ = asin(z1) + π/2
+            ϕ = atan(y1,x1) + π + π/4
+            extra_mesh.extra_connijk[3,i,1] = ip
+            extra_mesh.extra_coords[1,ip] = θ
+            extra_mesh.extra_coords[2,ip] = ϕ
+            extra_mesh.extra_coords_cart[1,ip] = x1
+            extra_mesh.extra_coords_cart[2,ip] = y1
+            extra_mesh.extra_coords_cart[3,ip] = z1
+            ip += 1
+        end
+        # second edge
+        for i=2:nop
+
+            extra_mesh.extra_connijk[3,1,i] = extra_mesh.extra_connijk[2,nop+1,i]
+        end
+        #third edge
+        for i=2:nop
+
+            y = (-1)*(1.0-lgl.ξ[nop+2-i])*0.5+(1)*(1.0 + lgl.ξ[nop+2-i])*0.5
+            z = 1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            x = 1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            r = sqrt(x^2 + y^2 + z^2)
+            x1 = x/r
+            y1 = y/r
+            z1 = z/r
+            θ = asin(z1) + π/2
+            ϕ = atan(y1,x1) +π + π/4   
+            extra_mesh.extra_connijk[3,i,nop+1] = ip
+            extra_mesh.extra_coords[1,ip] = θ
+            extra_mesh.extra_coords[2,ip] = ϕ
+            extra_mesh.extra_coords_cart[1,ip] = x1
+            extra_mesh.extra_coords_cart[2,ip] = y1
+            extra_mesh.extra_coords_cart[3,ip] = z1
+            ip += 1
+        end
+        #fourth edge
+        for i=2:nop
+
+            y = -1#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
+            z = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            x = 1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            r = sqrt(x^2 + y^2 + z^2)
+            x1 = x/r
+            y1 = y/r
+            z1 = z/r
+            θ = asin(z1) + π/2
+            ϕ = atan(y1,x1) +3*π/2 + π/4
+            extra_mesh.extra_connijk[3,nop+1,i] = ip
+            extra_mesh.extra_coords[1,ip] = θ
+            extra_mesh.extra_coords[2,ip] = ϕ
+            extra_mesh.extra_coords_cart[1,ip] = x1
+            extra_mesh.extra_coords_cart[2,ip] = y1
+            extra_mesh.extra_coords_cart[3,ip] = z1
+            ip += 1
+        end
+        #fourth quadrant
+        #first edge
+        for i=2:nop
+
+            y = -1#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
+            z = -1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            x = (-1)*(1.0-lgl.ξ[nop+2-i])*0.5+(1)*(1.0 + lgl.ξ[nop+2-i])*0.5
+            r = sqrt(x^2 + y^2 + z^2)
+            x1 = x/r
+            y1 = y/r
+            z1 = z/r
+            θ = asin(z1) + π/2
+            ϕ = atan(y1,x1) + 2*π + π/4
+            extra_mesh.extra_connijk[4,i,1] = ip
+            extra_mesh.extra_coords[1,ip] = θ
+            extra_mesh.extra_coords[2,ip] = ϕ
+            extra_mesh.extra_coords_cart[1,ip] = x1
+            extra_mesh.extra_coords_cart[2,ip] = y1
+            extra_mesh.extra_coords_cart[3,ip] = z1
+            ip += 1
+        end
+        #second edge
+        for i=2:nop
+            extra_mesh.extra_connijk[4,1,i] = extra_mesh.extra_connijk[3,nop+1,i]
+        end
+        #third edge
+        for i=2:nop
+
+            y = -1#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
+            z = 1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            x = (-1)*(1.0-lgl.ξ[nop+2-i])*0.5+(1)*(1.0 + lgl.ξ[nop+2-i])*0.5
+            r = sqrt(x^2 + y^2 + z^2)
+            x1 = x/r
+            y1 = y/r
+            z1 = z/r
+            θ = asin(z1) + π/2
+            ϕ = atan(y1,x1) + 2*π + π/4
+            extra_mesh.extra_connijk[4,i,nop+1] = ip
+            extra_mesh.extra_coords[1,ip] = θ
+            extra_mesh.extra_coords[2,ip] = ϕ
+            extra_mesh.extra_coords_cart[1,ip] = x1
+            extra_mesh.extra_coords_cart[2,ip] = y1
+            extra_mesh.extra_coords_cart[3,ip] = z1
+            ip += 1
+        end
+        #fourth edge
+        for i=2:nop
+            extra_mesh.extra_connijk[4,nop+1,i] = extra_mesh.extra_connijk[1,1,i]
+        end
+        #fifth quadrant
+        #first edge
+        for i=2:nop
+            extra_mesh.extra_connijk[5,i,1] = extra_mesh.extra_connijk[1,i,nop+1]
+        end
+        #second edge
+        for i=2:nop
+            extra_mesh.extra_connijk[5,1,nop+2-i] = extra_mesh.extra_connijk[4,i,nop+1]
+        end
+        #third edge
+        for i=2:nop
+            extra_mesh.extra_connijk[5,nop+2-i,nop+1] = extra_mesh.extra_connijk[3,i,nop+1]
+        end
+        #fourth edge
+        for i=2:nop
+            extra_mesh.extra_connijk[5,nop+1,i] = extra_mesh.extra_connijk[2,i,nop+1]
+        end
+        #sixth quadrant
+        #first edge
+        for i=2:nop
+            extra_mesh.extra_connijk[6,nop+2-i,1] = extra_mesh.extra_connijk[3,i,1]
+        end
+        #second edge
+        for i=2:nop
+            extra_mesh.extra_connijk[6,1,i] = extra_mesh.extra_connijk[4,i,1]
+        end
+        #third edge
+        for i=2:nop
+            extra_mesh.extra_connijk[6,i,nop+1] = extra_mesh.extra_connijk[1,i,1]
+        end
+        #fourth edge
+        for i=2:nop
+            extra_mesh.extra_connijk[6,nop+1,nop+2-i] = extra_mesh.extra_connijk[2,i,1]
+        end
+        #finished with cubed sphere element edges, populate interior nodes next
+        #first quadrant
+        for i=2:nop
+            for j=2:nop
+                y = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+                z = (-1)*(1.0-lgl.ξ[j])*0.5+(1)*(1.0 + lgl.ξ[j])*0.5
+                x = -1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+                r = sqrt(x^2 + y^2 + z^2)
+                x1 = x/r
+                y1 = -y/r
+                z1 = z/r
+                θ = asin(z1) + π/2
+                ϕ = atan(y1,x1) - 3*π/4
+                if (ϕ < 0)
+                    ϕ = ϕ + 2*π
+                end 
+                extra_mesh.extra_connijk[1,i,j] = ip
+                extra_mesh.extra_coords[1,ip] = θ
+                extra_mesh.extra_coords[2,ip] = ϕ
+                extra_mesh.extra_coords_cart[1,ip] = x1
+                extra_mesh.extra_coords_cart[2,ip] = -y1
+                extra_mesh.extra_coords_cart[3,ip] = z1
+                ip += 1
+            end
+        end
+        #second quadrant
+        for i=2:nop
+            for j=2:nop
+                y = 1#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
+                z = (-1)*(1.0-lgl.ξ[j])*0.5+(1)*(1.0 + lgl.ξ[j])*0.5
+                x = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+                r = sqrt(x^2 + y^2 + z^2)
+                x1 = -x/r
+                y1 = y/r
+                z1 = z/r
+                θ = asin(z1) + π/2
+                ϕ = atan(y1,x1) + π/4
+
+                extra_mesh.extra_connijk[2,i,j] = ip
+                extra_mesh.extra_coords[1,ip] = θ
+                extra_mesh.extra_coords[2,ip] = ϕ
+                extra_mesh.extra_coords_cart[1,ip] = -x1
+                extra_mesh.extra_coords_cart[2,ip] = y1
+                extra_mesh.extra_coords_cart[3,ip] = z1
+                ip += 1
+            end
+        end
+        #third quadrant
+        for i=2:nop
+            for j=2:nop
+                y = (-1)*(1.0-lgl.ξ[nop+2-i])*0.5+(1)*(1.0 + lgl.ξ[nop+2-i])*0.5
+                z = (-1)*(1.0-lgl.ξ[j])*0.5+(1)*(1.0 + lgl.ξ[j])*0.5
+                x = 1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+                r = sqrt(x^2 + y^2 + z^2)
+                x1 = x/r
+                y1 = y/r
+                z1 = z/r
+                θ = asin(z1) + π/2
+                ϕ = atan(y1,x1) +π + π/4
+                extra_mesh.extra_connijk[3,i,j] = ip
+                extra_mesh.extra_coords[1,ip] = θ
+                extra_mesh.extra_coords[2,ip] = ϕ
+                extra_mesh.extra_coords_cart[1,ip] = x1
+                extra_mesh.extra_coords_cart[2,ip] = y1
+                extra_mesh.extra_coords_cart[3,ip] = z1
+                ip += 1
+            end
+        end
+        #fourth quadrant
+        for i=2:nop
+            for j=2:nop
+                y = -1#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
+                z = (-1)*(1.0-lgl.ξ[j])*0.5+(1)*(1.0 + lgl.ξ[j])*0.5
+                x = (-1)*(1.0-lgl.ξ[nop+2-i])*0.5+(1)*(1.0 + lgl.ξ[nop+2-i])*0.5
+                r = sqrt(x^2 + y^2 + z^2)
+                x1 = x/r
+                y1 = y/r
+                z1 = z/r
+                θ = asin(z1) + π/2
+                ϕ = atan(y1,x1) + 2*π + π/4
+                extra_mesh.extra_connijk[4,i,j] = ip
+                extra_mesh.extra_coords[1,ip] = θ
+                extra_mesh.extra_coords[2,ip] = ϕ
+                extra_mesh.extra_coords_cart[1,ip] = x1
+                extra_mesh.extra_coords_cart[2,ip] = y1
+                extra_mesh.extra_coords_cart[3,ip] = z1
+                ip += 1
+            end
+        end
+        #fifth quadrant
+        for i=2:nop
+            for j=2:nop
+                y = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+                z = 1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+                x = (-1)*(1.0-lgl.ξ[j])*0.5+(1)*(1.0 + lgl.ξ[j])*0.5
+                r = sqrt(x^2 + y^2 + z^2)
+                x1 = x/r
+                y1 = y/r
+                z1 = z/r
+                θ = asin(z1) + π/2
+                ϕ = atan(y1,x1) + π
+                #=if (ϕ == 7*π/4)
+                    ϕ = 3*π/4
+                elseif (ϕ == 3*π/4)
+                    ϕ = 7*π/4
+                end=#
+                extra_mesh.extra_connijk[5,i,j] = ip
+                extra_mesh.extra_coords[1,ip] = θ
+                extra_mesh.extra_coords[2,ip] = ϕ
+                extra_mesh.extra_coords_cart[1,ip] = x1
+                extra_mesh.extra_coords_cart[2,ip] = y1
+                extra_mesh.extra_coords_cart[3,ip] = z1
+                ip += 1
+            end
+        end
+        #sixth quadrant
+        for i=2:nop
+            for j=2:nop
+                y = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+                z = -1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+                x = (-1)*(1.0-lgl.ξ[nop+2-j])*0.5+(1)*(1.0 + lgl.ξ[nop+2-j])*0.5
+                r = sqrt(x^2 + y^2 + z^2)
+                x1 = -x/r
+                y1 = y/r
+                z1 = z/r
+                θ = asin(z1) + π/2
+                ϕ = atan(y1,x1) +π
+                #=if (ϕ == 3*π/4)
+                    ϕ = 7*π/4
+                elseif (ϕ == 7*π/4)
+                    ϕ = 3*π/4
+                end=#
+                extra_mesh.extra_connijk[6,i,j] = ip
+                extra_mesh.extra_coords[1,ip] = θ
+                extra_mesh.extra_coords[2,ip] = ϕ
+                extra_mesh.extra_coords_cart[1,ip] = -x1
+                extra_mesh.extra_coords_cart[2,ip] = y1
+                extra_mesh.extra_coords_cart[3,ip] = z1
+                ip += 1
+            end
+        end
+        extra_mesh.extra_npoin = ip - 1
+    else
+        npoin = (nelemθ*nop+1)*(nelemϕ*nop+1)
+        dims1 = (2,npoin)
+        dims2 = (nelemθ*nelemϕ, nop+1, nop+1)
+        dims3 = (nelemθ*nelemϕ)
+        dims4 = (nelemθ*nelemϕ, 0, nop+1)
+        dims5 = (3,npoin)
+        ip = 5
+        extra_mesh = St_extra_mesh{TInt, TFloat, NSD_2D(), dims1, dims2, dims3, dims4, dims5, nelemθ*nelemϕ, npoin, backend}()
+        Δθe = (θmax-θmin)/nelemθ
+        Δϕe = (ϕmax-ϕmin)/nelemϕ
+        extra_mesh.extra_nop             .= nop
+        extra_mesh.extra_connijk[1,1,1] = 1
+        extra_mesh.extra_connijk[1,nop+1,1] = 2
+        extra_mesh.extra_connijk[1,1,nop+1] = 3
+        extra_mesh.extra_connijk[1,nop+1,nop+1] = 4 
+        extra_mesh.extra_coords[1,1] = θmin
+        extra_mesh.extra_coords[2,1] = ϕmin
+        extra_mesh.extra_coords[1,2] = θmin + Δθe
+        extra_mesh.extra_coords[2,2] = ϕmin
+        extra_mesh.extra_coords[1,3] = θmin
+        extra_mesh.extra_coords[2,3] = ϕmin + Δϕe
+        extra_mesh.extra_coords[1,4] = θmin + Δθe
+        extra_mesh.extra_coords[2,4] = ϕmin + Δϕe
+        #construct linear mesh
+        for eθ=1:nelemθ
+            for eϕ=1:nelemϕ
+                if (eϕ > 1 || eθ > 1)
+                    e_left = eϕ + (eθ-1 - 1)*nelemϕ
+                    e_down = eϕ-1 + (eθ - 1)*nelemϕ
+                    e = eϕ + (eθ - 1)*nelemϕ
+                    if (eθ > 1 && eϕ > 1)
+                        extra_mesh.extra_connijk[e,1,1] = extra_mesh.extra_connijk[e_left,nop+1,1]
+                        extra_mesh.extra_connijk[e,1,nop+1] = extra_mesh.extra_connijk[e_left,nop+1,nop+1]
+                        extra_mesh.extra_connijk[e,nop+1,1] = extra_mesh.extra_connijk[e_down,nop+1,nop+1]
+                        extra_mesh.extra_connijk[e,nop+1,nop+1] = ip
+                        extra_mesh.extra_coords[1,ip] = θmin + eθ*Δθe 
+                        extra_mesh.extra_coords[2,ip] = ϕmin + eϕ*Δϕe
+                        ip += 1
+                    elseif (eθ > 1)
+                        extra_mesh.extra_connijk[e,1,1] = extra_mesh.extra_connijk[e_left,nop+1,1]
+                        extra_mesh.extra_connijk[e,1,nop+1] = extra_mesh.extra_connijk[e_left,nop+1,nop+1]
+                        extra_mesh.extra_connijk[e,nop+1,1] = ip
+                        extra_mesh.extra_coords[1,ip] = θmin + eθ*Δθe
+                        extra_mesh.extra_coords[2,ip] = ϕmin 
+                        ip += 1
+                        extra_mesh.extra_connijk[e,nop+1,nop+1] = ip
+                        extra_mesh.extra_coords[1,ip] = θmin + eθ*Δθe
+                        extra_mesh.extra_coords[2,ip] = ϕmin + Δϕe
+                        ip += 1
+                    elseif (eϕ > 1)
+                        extra_mesh.extra_connijk[e,1,1] = extra_mesh.extra_connijk[e_down,1,nop+1]
+                        extra_mesh.extra_connijk[e,nop+1,1] = extra_mesh.extra_connijk[e_down,nop+1,nop+1]
+                        extra_mesh.extra_connijk[e,1,nop+1] = ip
+                        extra_mesh.extra_coords[1,ip] = θmin 
+                        extra_mesh.extra_coords[2,ip] = ϕmin + eϕ*Δϕe
+                        ip += 1
+                        extra_mesh.extra_connijk[e,nop+1,nop+1] = ip
+                        extra_mesh.extra_coords[1,ip] = θmin + Δθe
+                        extra_mesh.extra_coords[2,ip] = ϕmin + eϕ*Δϕe
+                        ip += 1        
+                    end
+                end
+            end
+        end
+        ip_end = ip
+        ## construct high order nodes
+        lgl = basis_structs_ξ_ω!(LGL(), nop, backend)
+        extra_mesh.ωθ = lgl.ω
+        extra_mesh.ωϕ = lgl.ω
+        for e=1:nelemθ*nelemϕ
+       
+            ip1 = extra_mesh.extra_connijk[e,1,1]
+            ip2 = extra_mesh.extra_connijk[e,nop+1,1]
+            ip3 = extra_mesh.extra_connijk[e,1,nop+1]
+        
+            for i=1:nop+1
+                for j=1:nop+1
+                    c1 = ( (i == 1 || i == nop + 1)  && (j > 1 && j < nop+1))
+                    c2 = ( (j == 1 || j == nop + 1) && i > 1 && j < nop + 1) 
+                    c3 = ( i > 1 && j > 1 && i < nop + 1 && j < nop + 1)
+                    if ( (i == 1 || i == nop + 1)  && (j > 1 && j < nop+1)) || ( (j == 1 || j == nop + 1) && (i > 1 && i < nop + 1)) || ( i > 1 && j > 1 && i < nop + 1 && j < nop + 1)
+                        ξθ = lgl.ξ[i]
+                        ξϕ = lgl.ξ[j]
+                        θ = extra_mesh.extra_coords[1,ip1]*(1.0-ξθ)*0.5+extra_mesh.extra_coords[1,ip2]*(1.0 + ξθ)*0.5
+                        ϕ = extra_mesh.extra_coords[2,ip1]*(1.0-ξϕ)*0.5+extra_mesh.extra_coords[2,ip3]*(1.0 + ξϕ)*0.5
+                        iter = 1
+                        test = false
+                        while (test == false && iter < ip)
+                            if (AlmostEqual(extra_mesh.extra_coords[1,iter],θ) && AlmostEqual(extra_mesh.extra_coords[2,iter],ϕ))
+                                test = true
+                            end
+                            iter += 1
+                        end
+                        if (test == true)
+                            extra_mesh.extra_connijk[e,i,j] = iter - 1
+                        else
+                            extra_mesh.extra_coords[1,ip] = extra_mesh.extra_coords[1,ip1]*(1.0-ξθ)*0.5+extra_mesh.extra_coords[1,ip2]*(1.0 + ξθ)*0.5
+                            extra_mesh.extra_coords[2,ip] = extra_mesh.extra_coords[2,ip1]*(1.0-ξϕ)*0.5+extra_mesh.extra_coords[2,ip3]*(1.0 + ξϕ)*0.5
+                            extra_mesh.extra_connijk[e,i,j] = ip
+                            ip += 1
+                        end
+                    end
+                end
+            end
+        end
+        extra_mesh.extra_npoin = ip - 1
+    end
+   # build extra grid metrics
+   metrics = allocate_metrics(NSD_2D(), nelemθ*nelemϕ, 0, nop+1, TFloat, backend)
+   
+   ψ  = @view(basis.ψ[:,:])
+   dψ = @view(basis.dψ[:,:])
+        
+   xij = 0.0
+   yij = 0.0
+   if !(inputs[:lcubed_sphere_angular_mesh])
+        @inbounds for iel = 1:nelemθ*nelemϕ
+            for j = 1:nop+1
+                for i = 1:nop+1
+
+                    ip = extra_mesh.extra_connijk[iel, i, j]
+                    θij = extra_mesh.extra_coords[1,ip]
+                    ϕij = extra_mesh.extra_coords[2,ip]
+                
+                    @turbo for l=1:nop+1
+                        for k=1:nop+1
+        
+                            a = dψ[i,k]*ψ[j,l]
+                            b = ψ[i,k]*dψ[j,l]
+                            metrics.dxdξ[iel, k, l] += a * θij
+                            metrics.dxdη[iel, k, l] += b * θij
+
+                            metrics.dydξ[iel, k, l] += a * ϕij
+                            metrics.dydη[iel, k, l] += b * ϕij
+
+                            #@printf(" i,j=%d, %d. x,y=%f,%f \n",i,j,xij, yij)
+                        end
+                    end
+                end
+            end
+        
+            @inbounds for l = 1:nop+1
+                for k = 1:nop+1
+
+                    # Extract values from memory once per iteration
+                    dxdξ_val = metrics.dxdξ[iel, k, l]
+                    dydη_val = metrics.dydη[iel, k, l]
+                    dydξ_val = metrics.dydξ[iel, k, l]
+                    dxdη_val = metrics.dxdη[iel, k, l]
+                    ip = extra_mesh.extra_connijk[iel, k, l]
+                    θ = extra_mesh.extra_coords[1,ip]
+                    # Compute Je once and reuse its value
+                    metrics.Je[iel, k, l] = (dxdξ_val * dydη_val - dydξ_val * dxdη_val)
+                    if (inputs[:lRT_problem]) || (inputs[:RT_atmos_coupling])
+                        metrics.Je[iel, k, l] = metrics.Je[iel, k, l] * sin(θ)
+                    end
+                    # Use the precomputed Je value for the other calculations
+                    Jinv = 1.0/metrics.Je[iel, k, l]
+
+                    metrics.dξdx[iel, k, l] =  dydη_val * Jinv
+                    metrics.dξdy[iel, k, l] = -dxdη_val * Jinv
+                    metrics.dηdx[iel, k, l] = -dydξ_val * Jinv
+                    metrics.dηdy[iel, k, l] =  dxdξ_val * Jinv
+
+                end
+            end
+        end
+    else
+        lon = [0.0 90.0 180.0 270.0]
+        lat = [0.0 0.0 0.0 0.0 90.0 -90.0]
+        @inbounds for iel = 1:nelemθ*nelemϕ
+            xg = zeros(nop+1,nop+1)
+            yg = zeros(nop+1,nop+1)
+            xgs = zeros(nop+1,nop+1)
+            ygs = zeros(nop+1,nop+1)
+            dxgdξ = zeros(nop+1,nop+1)
+            dxgdη = zeros(nop+1,nop+1)
+            dygdξ = zeros(nop+1,nop+1)
+            dygdη = zeros(nop+1,nop+1)
+            dxgsdξ = zeros(nop+1,nop+1)
+            dxgsdη = zeros(nop+1,nop+1)
+            dygsdξ = zeros(nop+1,nop+1)
+            dygsdη = zeros(nop+1,nop+1)
+            dRdξ = zeros(nop+1,nop+1)
+            dRdη = zeros(nop+1,nop+1)
+            R = zeros(nop+1,nop+1)
+            Θ = zeros(nop+1,nop+1)
+            Φ = zeros(nop+1,nop+1)
+            irot = zeros(3,3)
+            for j = 1:nop+1
+                for i = 1:nop+1
+
+                    ip = extra_mesh.extra_connijk[iel, i, j]
+                    xij = extra_mesh.extra_coords_cart[1,ip]
+                    yij = extra_mesh.extra_coords_cart[2,ip]
+                    zij = extra_mesh.extra_coords_cart[3,ip]
+                    θij = extra_mesh.extra_coords[1,ip]
+                    ϕij = extra_mesh.extra_coords[2,ip]
+                    rot = zeros(3,3)
+                    if (iel < 5)
+                        θ = lon[iel]
+                        rot[1,1] = cos(θ)
+                        rot[1,2] = sin(θ)
+                        rot[2,1] = -sin(θ)
+                        rot[2,2] = cos(θ)
+                        rot[3,3] = 1.0
+                    else
+                        l = lat[iel]
+                        rot[1,1] = cos(θ)
+                        rot[1,3] = sin(θ)
+                        rot[2,2] = 1.0
+                        rot[3,1] = -sin(θ)
+                        rot[3,3] = cos(θ)
+                    end
+                    irot = inv(rot)       
+                    X = dot(rot[1,:],[xij, yij, zij])
+                    Y = dot(rot[2,:],[xij, yij, zij])
+                    Z = dot(rot[3,:],[xij, yij, zij])
+                    
+                    R[i,j] = sqrt(X^2 + Y^2 + Z^2)
+                    Θ[i,j] = asin(Z/R[i,j])
+                    Φ[i,j] = atan(Y,X+eps(Float64))
+
+                    xg[i,j] = tan(Φ[i,j])
+                    yg[i,j] = tan(Θ[i,j])/cos(Φ[i,j])
+               
+                    xgs[i,j] = atan(xg[i,j])
+                    ygs[i,j] = atan(yg[i,j])
+                    for l=1:nop+1
+                        for k = 1:nop+1
+                            a = dψ[i,k]*ψ[j,l]
+                            b = ψ[i,k]*dψ[j,l]
+                            dRdξ[k, l] += a * R[i,j]
+                            dxgdξ[k, l] += a * xg[i,j] 
+                            dygdξ[k, l] += a * yg[i,j]
+                            dxgsdξ[k, l] += a * xgs[i,j]
+                            dygsdξ[k, l] += a * ygs[i,j]
+
+                            dRdη[k, l] += b * R[i,j]
+                            dxgdη[k, l] += b * xg[i,j]
+                            dygdη[k, l] += b * yg[i,j]
+                            dxgsdη[k, l] += b * xgs[i,j]
+                            dygsdη[k, l] += b * ygs[i,j]
+                        end
+                    end
+
+                end
+            end
+
+            for j = 1:nop+1
+                for i = 1:nop+1
+
+                    dxdR = cos(Θ[i,j])*cos(Φ[i,j])
+                    dydR = cos(Θ[i,j])*sin(Φ[i,j])
+                    dzdR = sin(Φ[i,j])
+
+                    dxdΘ = -R[i,j]*sin(Θ[i,j])*cos(Φ[i,j])
+                    dydΘ = -R[i,j]*sin(Θ[i,j])*sin(Φ[i,j])
+                    dzdΘ = R[i,j]*cos(Φ[i,j])
+
+                    dxdΦ = -R[i,j]*cos(Θ[i,j])*sin(Φ[i,j])
+                    dydΦ = R[i,j]*cos(Θ[i,j])*cos(Φ[i,j])
+                    dzdΦ = 0.0
+
+                    dxdΦΘ = dot(irot[1,:],[dxdΦ dydΦ dzdΦ])
+                    dydΦΘ = dot(irot[2,:],[dxdΦ dydΦ dzdΦ])
+                    dzdΦΘ = dot(irot[3,:],[dxdΦ dydΦ dzdΦ])
+
+                    dxdΘΘ = dot(irot[1,:],[dxdΘ dydΘ dzdΘ])
+                    dydΘΘ = dot(irot[2,:],[dxdΘ dydΘ dzdΘ])
+                    dzdΘΘ = dot(irot[3,:],[dxdΘ dydΘ dzdΘ])
+
+                    dxdR = dot(irot[1,:],[dxdR dydR dzdR])
+                    dydR = dot(irot[2,:],[dxdR dydR dzdR])
+                    dzdR = dot(irot[3,:],[dxdR dydR dzdR])
+
+                    dxgdxgs = 1.0/(cos(xgs[i,j])^2)
+                    dxgdygs = 0.0
+                    dygdxgs = 0.0
+                    dygdygs = 1.0/(cos(ygs[i,j])^2)
+                    
+                    tmpx = dxgdxgs * dxgsdξ[i,j] + dxgdygs*dygsdξ[i,j]
+                    tmpy = dygdxgs * dxgsdξ[i,j] + dygdygs*dygsdξ[i,j]
+                    dxgdξ[i,j] = tmpx
+                    dygdξ[i,j] = tmpy
+                    
+                    tmpx = dxgdxgs * dxgsdη[i,j] + dxgdygs*dygsdη[i,j]
+                    tmpy = dygdxgs * dxgsdη[i,j] + dygdygs*dygsdη[i,j]
+                    dxgdη[i,j] = tmpx
+                    dygdη[i,j] = tmpy
+
+
+                    dΦΘdxg = 1.0/(1.0 + xg[i,j]^2)
+                    dΦΘdyg = 0.0
+                    dΘΘdxg = -yg[i,j]*sin(Φ[i,j])*dΦΘdxg/(1.0+(yg[i,j]*cos(Φ[i,j]))^2) 
+                    dΘΘdyg = cos(Φ[i,j])/(1.0+(yg[i,j]*cos(Φ[i,j]))^2)
+
+                    dΦΘdξ = dΦΘdxg*dxgdξ[i,j] + dΦΘdyg*dygdξ[i,j]
+                    dΦΘdη = dΦΘdxg*dxgdη[i,j] + dΦΘdyg*dygdη[i,j]
+
+                    dΘΘdξ = dΘΘdxg*dxgdξ[i,j] + dΘΘdyg*dygdξ[i,j]
+                    dΘΘdη = dΘΘdxg*dxgdη[i,j] + dΘΘdyg*dygdη[i,j]
+
+                    metrics.dxdξ[iel, i,j] = dxdR*dRdξ[i,j] + dxdΘΘ*dΘΘdξ + dxdΦΘ*dΦΘdξ
+                    metrics.dxdη[iel, i,j] = dxdR*dRdη[i,j] + dxdΘΘ*dΘΘdη + dxdΦΘ*dΦΘdη
+
+                    metrics.dydξ[iel, i,j] = dydR*dRdξ[i,j] + dydΘΘ*dΘΘdξ + dydΦΘ*dΦΘdξ
+                    metrics.dydη[iel, i,j] = dydR*dRdη[i,j] + dydΘΘ*dΘΘdη + dydΦΘ*dΦΘdη
+                    
+                    metrics.dzdξ[iel, i,j] = dzdR*dRdξ[i,j] + dzdΘΘ*dΘΘdξ + dzdΦΘ*dΦΘdξ
+                    metrics.dzdη[iel, i,j] = dzdR*dRdη[i,j] + dzdΘΘ*dΘΘdη + dzdΦΘ*dΦΘdη
+                end
+            end
+            @inbounds for l = 1:nop+1
+                for k = 1:nop+1
+
+                    # Extract values from memory once per iteration
+                    dxdξ_val = metrics.dxdξ[iel, k, l]
+                    dydη_val = metrics.dydη[iel, k, l]
+                    dydξ_val = metrics.dydξ[iel, k, l]
+                    dxdη_val = metrics.dxdη[iel, k, l]
+                    dzdξ_val = metrics.dzdξ[iel, k, l]
+                    dzdη_val = metrics.dzdη[iel, k, l]
+
+                    ip = extra_mesh.extra_connijk[iel, k, l]
+                    # Compute Je once and reuse its value
+                    col1 = [dxdξ_val, dydξ_val, dzdξ_val]
+                    col2 = [dxdη_val, dydη_val, dzdη_val]
+                    metrics.Je[iel, k, l] = norm(cross(col1, col2)) #dxdξ_val * dydη_val - dydξ_val * dxdη_val
+                    #metrics.Je[iel, k, l] 
+                    # Use the precomputed Je value for the other calculations
+                    Jinv = 1.0/metrics.Je[iel, k, l]
+
+                    metrics.dξdx[iel, k, l] =  (dydη_val - dzdη_val) * Jinv
+                    metrics.dξdy[iel, k, l] = (dzdη_val - dxdη_val) * Jinv
+                    metrics.dξdz[iel, k, l] = (dxdη_val - dydη_val) * Jinv
+                    metrics.dηdx[iel, k, l] = (dzdξ_val - dydξ_val) * Jinv
+                    metrics.dηdy[iel, k, l] = (dxdξ_val - dzdξ_val) * Jinv
+                    metrics.dηdz[iel, k ,l] = (dydξ_val - dxdξ_val) * Jinv
+                end
+            end      
+            #=for j = 1:nop+1
+                for i = 1:nop+1
+
+                    ip = extra_mesh.extra_connijk[iel, i, j]
+                    xij = extra_mesh.extra_coords_cart[1,ip]
+                    yij = extra_mesh.extra_coords_cart[2,ip]
+                    zij = extra_mesh.extra_coords_cart[3,ip]
+                    for l=1:nop+1
+                        for k=1:nop+1
+
+                            a = dψ[i,k]*ψ[j,l]
+                            b = ψ[i,k]*dψ[j,l]
+                            metrics.dxdξ[iel, k, l] += a * xij
+                            metrics.dxdη[iel, k, l] += b * xij
+                            metrics.dydξ[iel, k, l] += a * yij
+                            metrics.dydη[iel, k, l] += b * yij
+
+                            metrics.dzdξ[iel, k, l] += a * zij
+                            metrics.dzdη[iel, k, l] += b * zij
+                            #@printf(" i,j=%d, %d. x,y=%f,%f \n",i,j,xij, yij)
+                        end
+                    end
+                end
+            end
+            @inbounds for l = 1:nop+1
+                for k = 1:nop+1
+
+                    # Extract values from memory once per iteration
+                    dxdξ_val = metrics.dxdξ[iel, k, l]
+                    dydη_val = metrics.dydη[iel, k, l]
+                    dydξ_val = metrics.dydξ[iel, k, l]
+                    dxdη_val = metrics.dxdη[iel, k, l]
+                    dzdξ_val = metrics.dzdξ[iel, k, l]
+                    dzdη_val = metrics.dzdη[iel, k, l]
+
+                    ip = extra_mesh.extra_connijk[iel, k, l]
+                    # Compute Je once and reuse its value
+                    col1 = [dxdξ_val, dydξ_val, dzdξ_val]
+                    col2 = [dxdη_val, dydη_val, dzdη_val]
+                    metrics.Je[iel, k, l] = norm(cross(col1, col2)) #dxdξ_val * dydη_val - dydξ_val * dxdη_val
+                    #metrics.Je[iel, k, l] 
+                    # Use the precomputed Je value for the other calculations
+                    Jinv = 1.0/metrics.Je[iel, k, l]
+
+                    metrics.dξdx[iel, k, l] =  (dydη_val - dzdη_val) * Jinv
+                    metrics.dξdy[iel, k, l] = (dzdη_val - dxdη_val) * Jinv
+                    metrics.dξdz[iel, k, l] = (dxdη_val - dydη_val) * Jinv
+                    metrics.dηdx[iel, k, l] = (dzdξ_val - dydξ_val) * Jinv
+                    metrics.dηdy[iel, k, l] = (dxdξ_val - dzdξ_val) * Jinv
+                    metrics.dηdz[iel, k ,l] = (dydξ_val - dxdξ_val) * Jinv
+                end
+            end=#
+
+        end
+    end
+
+   extra_mesh.extra_metrics = metrics
+    
+    if !(inputs[:lcubed_sphere_angular_mesh])
+        for rep = 1:2
+            for iper=1:extra_mesh.extra_npoin
+                θ = extra_mesh.extra_coords[1,iper]
+                ϕ = extra_mesh.extra_coords[2,iper]
+                if (abs(ϕ/π - 2.0) <= eps(Float64))
+                    #found a periodic point
+                    iper1 = 1
+                    found = false
+                    while (iper1 <= extra_mesh.extra_npoin && found == false)
+                        θ1 = extra_mesh.extra_coords[1,iper1]
+                        ϕ1 = extra_mesh.extra_coords[2,iper1]
+                        if (ϕ1 <= eps(Float64) && abs(θ-θ1) <= eps(Float64))
+                            found = true
+                        end
+                        iper1 += 1
+                    end
+                    if (found)
+                        ip_old = iper
+                        ip_new = iper1-1
+                        for e=1:extra_mesh.extra_nelem
+                            for i=1:extra_mesh.extra_nop[e]+1
+                                for j=1:extra_mesh.extra_nop[e]+1
+                                    ip = extra_mesh.extra_connijk[e,i,j]
+                                    if (ip == ip_old)
+                                        extra_mesh.extra_connijk[e,i,j] = ip_new
+                                        extra_mesh.extra_coords[1,ip] = extra_mesh.extra_coords[1,ip_new]
+                                        extra_mesh.extra_coords[2,ip] = extra_mesh.extra_coords[2,ip_new]
+                                    end
+                                end
+                            end
+                        end
+                        for e=1:extra_mesh.extra_nelem
+                            for i=1:extra_mesh.extra_nop[e]+1
+                                for j=1:extra_mesh.extra_nop[e]+1
+                                    ip = extra_mesh.extra_connijk[e,i,j]
+                                    if (ip >= ip_old)
+                                        extra_mesh.extra_connijk[e,i,j] -= 1
+                                    end
+                                end
+                            end
+                        end
+                        for i = ip_old+1: extra_mesh.extra_npoin
+                            extra_mesh.extra_coords[1,i-1] = extra_mesh.extra_coords[1,i]
+                            extra_mesh.extra_coords[2,i-1] = extra_mesh.extra_coords[2,i]
+                        end
+                        extra_mesh.extra_npoin -= 1
+                    end
+                end
+            end
+        end
+    end
+   
+   basis = build_Interpolation_basis!(LagrangeBasis(), lgl.ξ, lgl.ξ, TFloat, inputs[:backend])
+   extra_mesh.ψ = basis.ψ
+   extra_mesh.dψ = basis.dψ
+   #=Me = KernelAbstractions.zeros(backend, TFloat, (nop+1)^2, (nop+1)^2, Int64(nelemθ*nelemϕ))
+   build_mass_matrix!(Me, NSD_2D(), Inexact(), basis.ψ, lgl.ω, nelemθ*nelemϕ, metrics.Je, Δϕe, nop, nop, TFloat)
+   M    = KernelAbstractions.zeros(backend, TFloat, Int64(npoin))
+   Minv = KernelAbstractions.zeros(backend, TFloat, Int64(npoin))
+   DSS_mass!(M, NSD_2D(), Inexact(), Me, extra_mesh.extra_connijk, nelemθ*nelemϕ, npoin, nop, TFloat; llump=inputs[:llump])
+   Minv = TFloat(1.0)./M
+   extra_mesh.Minv = Minv=#
+   return extra_mesh
+end
+
 # Cache the expensive result of mod_mesh_read_gmsh! (GmshDiscreteModel,
 # add_high_order_nodes_*, connectivity loops, ip2gip).  Only pure-array /
 # scalar fields are saved.  Skipped fields:
@@ -47,6 +1251,8 @@ _decode_optstrings(v) = Array{Union{Nothing,String}}(
 function _try_load_mesh_cache!(mesh, path::String, @nospecialize(distribute), nparts::Int;
                                 gmsh_path::String="", inputs=nothing)
     rank = MPI.Comm_rank(get_mpi_comm())
+    # An adaptive run does not execute on the mesh this cache describes.
+    _adaptive_mesh_run(inputs) && return false
     # Pre-load validity check: reads only the fingerprint Dict, so
     # it survives custom-struct shape changes that would crash
     # JLD2.load(). Deletes the file on mismatch so the next save
@@ -64,7 +1270,9 @@ function _try_load_mesh_cache!(mesh, path::String, @nospecialize(distribute), np
     try
         # Use pre-fetched data when available (populated by je_prefetch_caches!
         # before with_mpi to keep JLD2 JIT + disk I/O off the Alya-blocking path).
-        raw = JEXPRESSO_PREFETCHED_MESH_CACHE[] !== nothing ?
+        # Only when it was prefetched for THIS case: the Ref outlives a single
+        # run_case, so a second case in the same session must not inherit it.
+        raw = (JEXPRESSO_PREFETCHED_MESH_CACHE[] !== nothing && _prefetch_usable(inputs)) ?
               JEXPRESSO_PREFETCHED_MESH_CACHE[] : JLD2.load(path)
         haskey(raw, "mesh_fields") || begin
             rank == 0 && println(" # Mesh cache $path has old format — discarding and rebuilding")
@@ -84,6 +1292,21 @@ function _try_load_mesh_cache!(mesh, path::String, @nospecialize(distribute), np
             return false
         end
         flds = raw["mesh_fields"]
+        # Completeness gate. The copy loop below skips fields the cache does
+        # not carry, which silently leaves them at their St_mesh constructor
+        # defaults — a 1×2 `coords` on a mesh with npoin nodes, say. That is
+        # not a cache miss, it is a corrupt mesh, and it surfaces far away
+        # from here (a DimensionMismatch deep inside params_setup). A cache
+        # written before a field was added to St_mesh must be rebuilt, not
+        # partially applied.
+        missing_fields = [string(f) for f in fieldnames(typeof(mesh))
+                          if !(f ∈ _MESH_CACHE_SKIP_FIELDS) && !haskey(flds, string(f))]
+        if !isempty(missing_fields)
+            rank == 0 && println(" # Mesh cache $path predates St_mesh fields ",
+                                 join(missing_fields, ", "), " — discarding and rebuilding")
+            try; isfile(path) && rm(path; force=true); catch _; end
+            return false
+        end
         for f in fieldnames(typeof(mesh))
             f ∈ _MESH_CACHE_SKIP_FIELDS && continue
             haskey(flds, string(f)) || continue
@@ -149,6 +1372,350 @@ const get_d_to_face_to_parent_face = Gridap.Adaptivity.get_d_to_face_to_parent_f
 const get_glue_components = GridapDistributed.get_glue_components
 
 
+# GridapP4est/p4est is not manifold-aware: the OctreeDistributedDiscreteModel
+# constructor `@check`s that the coarse model's point/embedding dimension `Dp`
+# equals its cell dimension `Dc` (OctreeDistributedDiscreteModels.jl:325).
+# GridapGmsh, however, reports `Dp=3` for ANY .msh whose nodes carry a non-zero
+# z-coordinate — see GmshDiscreteModel's `_setup_point_dim`, which returns 3 as
+# soon as one node has `z !≈ 0`, with no keyword to override it. A logically-2D
+# mesh with a stray non-zero z therefore loads fine for non-AMR cases (plain
+# GridapDistributed assembles happily on a `Dc=2, Dp=3` embedded model) but
+# aborts every AMR run with `AssertionError: A check failed`.
+#
+# Project the coarse model down to `Dp=Dc` by dropping the trailing coordinate
+# component(s). Face/boundary numbering in Gridap is derived from cell
+# connectivity, not coordinates, so the rebuilt topology reproduces the exact
+# same face ordering and the original FaceLabeling (boundary tags) stays valid.
+# No-op when `Dp == Dc`, so 3D meshes and already-flat 2D meshes pass through
+# untouched.
+# True when the node cloud is NOT coplanar, i.e. the grid is genuinely a curved
+# surface rather than a flat patch with a constant (or stray) z. Uses the
+# smallest eigenvalue of the node-coordinate covariance: for a plane it is zero
+# up to round-off, for a shell it is O(extent²). Deciding this from the geometry
+# keeps `_flatten_model_to_cell_dim` free to squash the logically-2D meshes it
+# was written for, while a cubed sphere is recognised without a case input.
+function _is_curved_surface(node_coords; rtol = 1.0e-6)
+    n = length(node_coords)
+    n < 4 && return false
+    cx = sum(p[1] for p in node_coords)/n
+    cy = sum(p[2] for p in node_coords)/n
+    cz = sum(p[3] for p in node_coords)/n
+    C  = zeros(Float64, 3, 3)
+    for p in node_coords
+        d = (p[1] - cx, p[2] - cy, p[3] - cz)
+        for i = 1:3, j = 1:3
+            C[i,j] += d[i]*d[j]
+        end
+    end
+    C ./= n
+    λ = eigvals(Symmetric(C))          # ascending, all ≥ 0
+    return λ[1] > rtol*λ[3]
+end
+
+#---------------------------------------------------------------------------------
+# Snap every node of a spherical shell radially onto the sphere and fill
+# (lon, lat).
+#
+# The high-order LGL nodes are interpolated on the straight-sided element, so
+# they land on the chord — inside the sphere by O(h²). Pushing them back out
+# along the radius is all that is needed to make them conform to the shell: the
+# gnomonic/great-circle structure of the panels is already carried by the linear
+# vertices that gmsh placed on the sphere.
+#
+# The radius is taken from `:sphere_radius` when the case sets it (so a unit
+# sphere .msh can be blown up to the Earth) and otherwise measured from the
+# linear vertices, which is what the grid file itself says. A shell whose
+# vertices are not all at one radius is not a sphere, and is left alone rather
+# than silently deformed.
+#---------------------------------------------------------------------------------
+# NOTE this is the one place in the shell path that still writes mesh.x/y/z
+# rather than mesh.coords. It is deliberate: it runs inside the x/y/z
+# construction chain of mod_mesh_read_gmsh! (right after the high-order nodes
+# are copied back into x/y/z) and mesh.coords is not allocated until the end of
+# that function, where it is filled FROM x/y/z. The projection therefore
+# propagates into coords automatically. Everything downstream of the grid —
+# sphere_metrics.jl, sphere_rhs.jl, the VTK writer — reads mesh.coords.
+function project_nodes_to_shell!(mesh::St_mesh, inputs::Dict{Symbol,Any})
+
+    comm = get_mpi_comm()
+    rank = MPI.Comm_rank(comm)
+
+    rmin, rmax = Inf, 0.0
+    for ip = 1:mesh.npoin_linear
+        r = sqrt(mesh.x[ip]^2 + mesh.y[ip]^2 + mesh.z[ip]^2)
+        rmin = min(rmin, r); rmax = max(rmax, r)
+    end
+    rmin = MPI.Allreduce(rmin, MPI.MIN, comm)
+    rmax = MPI.Allreduce(rmax, MPI.MAX, comm)
+
+    if rmin <= 0.0 || (rmax - rmin) > 1.0e-6*rmax
+        # Not a sphere: an embedded surface of some other shape. Keep the
+        # interpolated coordinates and skip both the snap and (lon, lat).
+        println_rank(string(" #   embedded surface is not a sphere (r ∈ [", rmin, ", ", rmax,
+                            "]) — high-order nodes left on the element chords");
+                     msg_rank = rank, suppress = mesh.msg_suppress)
+        return nothing
+    end
+
+    R = get(inputs, :sphere_radius, nothing)
+    mesh.radius = (R === nothing) ? 0.5*(rmin + rmax) : TFloat(R)
+
+    lproject = get(inputs, :lproject_to_sphere, true)
+
+    mesh.lon = KernelAbstractions.zeros(CPU(), TFloat, Int64(mesh.npoin))
+    mesh.lat = KernelAbstractions.zeros(CPU(), TFloat, Int64(mesh.npoin))
+
+    dmax = 0.0
+    for ip = 1:mesh.npoin
+        r = sqrt(mesh.x[ip]^2 + mesh.y[ip]^2 + mesh.z[ip]^2)
+        r > 0.0 || continue
+        if lproject
+            s = mesh.radius/r
+            dmax = max(dmax, abs(r - mesh.radius))
+            mesh.x[ip] *= s; mesh.y[ip] *= s; mesh.z[ip] *= s
+        end
+        mesh.lon[ip] = atan(mesh.y[ip], mesh.x[ip])
+        mesh.lat[ip] = asin(clamp(mesh.z[ip]/mesh.radius, -1.0, 1.0))
+    end
+
+    if lproject
+        println_rank(string(" #   spherical shell R = ", mesh.radius,
+                            " ; largest radial correction applied to a node = ",
+                            MPI.Allreduce(dmax, MPI.MAX, comm));
+                     msg_rank = rank, suppress = mesh.msg_suppress)
+    end
+
+    return nothing
+end
+
+
+#---------------------------------------------------------------------------------
+# remap_cubed_sphere_nodes!(mesh, inputs)
+#
+# The entry point, called from mod_mesh_read_gmsh! immediately after
+# project_nodes_to_shell! has put every node on the sphere and filled
+# (lon, lat). Rewrites mesh.x/y/z in place and refreshes (lon, lat).
+#
+# ONE case input drives it:
+#
+#   :cubed_sphere_map   the map to move the nodes ONTO. :none (default) leaves
+#                       the grid exactly as read. The map they come FROM is
+#                       always the gnomonic one — see remap_direction in
+#                       cubed_sphere_maps.jl for why that is fixed and not a
+#                       second input.
+#
+# NOTE :cubed_sphere_map is in _CACHE_FINGERPRINT_KEYS (couplingStructs.jl).
+# It has to be: a cache hit returns from mod_mesh_read_gmsh! BEFORE this
+# function is reached, so without it in the fingerprint, changing the map and
+# re-running the same case would silently reuse the previous run's node
+# positions.
+#
+# Like project_nodes_to_shell! this writes mesh.x/y/z rather than mesh.coords:
+# it runs inside the x/y/z construction chain, before mesh.coords is filled from
+# them at the end of mod_mesh_read_gmsh!.
+#---------------------------------------------------------------------------------
+function remap_cubed_sphere_nodes!(mesh::St_mesh, inputs::Dict{Symbol,Any})
+
+    to = get(inputs, :cubed_sphere_map, :none)
+    (to === :none || to === nothing) && return nothing
+
+    to in CUBED_SPHERE_MAPS ||
+        error(" # ERROR mesh.jl: :cubed_sphere_map => ", to,
+              " is not one of ", CUBED_SPHERE_MAPS, ".")
+
+    comm   = get_mpi_comm()
+    rank   = MPI.Comm_rank(comm)
+    nparts = MPI.Comm_size(comm)
+
+    # radius is only set (and lon/lat only allocated) when
+    # project_nodes_to_shell! decided the grid really is a sphere.
+    if mesh.radius <= 0.0
+        println_rank(string(" #   :cubed_sphere_map => ", to,
+                            " ignored: the grid is not a sphere.");
+                     msg_rank = rank, suppress = mesh.msg_suppress)
+        return nothing
+    end
+
+    # The remap re-places every node BY DIRECTION, which necessarily puts it on
+    # the exact sphere. That is the opposite of what :lproject_to_sphere =>
+    # false asks for, so refuse rather than silently overriding it.
+    if get(inputs, :lproject_to_sphere, true) != true
+        error(" # ERROR mesh.jl: :cubed_sphere_map => " * string(to) *
+              " needs the nodes ON the sphere, but :lproject_to_sphere => false " *
+              "asks for them to be left on the element chords. Set one or the other.")
+    end
+
+    R = mesh.radius
+
+    #
+    # THE CONFORMAL MAP IS SINGULAR AT THE EIGHT CUBE CORNERS, and a grid with a
+    # node sitting on one cannot use it. There is no regularisation of it that a
+    # nodal scheme can use either — see "THE 120° CORNER" in cubed_sphere_maps.jl
+    # for the argument and the measurements. In short:
+    #
+    #   * three panels meet at a cube corner, so each opens 360°/3 = 120°. Any
+    #     map that is differentiable there with a non-singular differential A
+    #     sends the two grid lines to the two cube-edge arcs, so ∠(Ae₁, Ae₂) =
+    #     120°: a 90° corner is possible ONLY with det A = 0. RPM96 preserves the
+    #     90°, and pays with a Jacobian that vanishes like d^(1/3) (measured
+    #     |r_u|/|r_u|centre = 0.444, 0.206, 0.0957, 0.0444 at d = 1e-1 … 1e-4);
+    #
+    #   * cubed_sphere.geo puts a mesh vertex exactly on each of the eight
+    #     corners. What that costs, measured on the shipped 10-per-panel grid
+    #     remapped to the pure map: the surface Jacobian at a corner node comes
+    #     out POSITIVE but collapsing — 1/27, 1/51, 1/93 of the grid median at
+    #     nop = 3, 5, 8, falling as the nearest LGL node closes on the corner —
+    #     so build_sphere_metrics does not necessarily reject the element, it
+    #     just builds wrong metrics, and check_sphere_metrics fails: M6 = 0.10,
+    #     0.14, 0.17 (:radial) and 1.5, 1.8, 1.7 (:cross_product) at those same
+    #     orders, against a 5e-2 tolerance the equiangular grid meets with four
+    #     orders to spare. Either way the run is worthless; catch it here, where
+    #     the cause can be named;
+    #
+    #   * the corner-STRETCHED variant this file used to offer as :conformal did
+    #     make that Jacobian finite, and it still failed check_sphere_metrics by
+    #     O(1) (M6 = 0.41) at every nop from 3 to 7 and at every grid spacing
+    #     from n = 5 to 40, because forcing 90° with a non-zero Jacobian turns
+    #     the corner into a cone point and, being separable, blows |r_u| up along
+    #     the whole cube edge as (1-u)^(-1/4). It has been removed.
+    #
+    # This is why conformal cubed spheres are used by cell-centred finite-volume
+    # codes (Rančić's own model, CCAM) and not by nodal spectral elements: the
+    # singular point is a cell corner nobody evaluates at, rather than a solution
+    # node.
+    #
+    if to in CUBED_SPHERE_CORNER_SINGULAR_MAPS
+        ncorner = 0
+        for ip = 1:mesh.npoin
+            ax = abs(mesh.x[ip]); ay = abs(mesh.y[ip]); az = abs(mesh.z[ip])
+            hi = max(ax, ay, az); lo = min(ax, ay, az)
+            (hi > 0.1*R && (hi - lo) < 1.0e-6*R) && (ncorner += 1)
+        end
+        ncorner = MPI.Allreduce(ncorner, MPI.SUM, comm)
+        if ncorner > 0
+            error(" # ERROR mesh.jl: :cubed_sphere_map => " * string(to) * " cannot be used with " *
+                  "this grid.\n" *
+                  " #   It has " * string(ncorner) * " node(s) sitting exactly on a cube corner, " *
+                  "and the conformal\n" *
+                  " #   map of Rančić, Purser & Mesinger (1996) is SINGULAR there: its local " *
+                  "scale\n" *
+                  " #   goes as d^(1/3), so the surface Jacobian collapses at such a node — 1/27 " *
+                  "to\n" *
+                  " #   1/93 of the grid median at nop = 3 to 8, and smaller the finer the grid.\n" *
+                  " #   The metrics that come out fail check_sphere_metrics by O(1) (M6 = 0.1 to\n" *
+                  " #   1.8 against a 5e-2 tolerance), and a node landing on the singular point\n" *
+                  " #   exactly makes build_sphere_metrics reject the element outright.\n" *
+                  " #   That is a property of the map, not a bug — three panels meet at a cube\n" *
+                  " #   corner and each must open 120°, and a map that keeps the square's 90°\n" *
+                  " #   there can only do it by collapsing its derivative. Equally, a map that\n" *
+                  " #   keeps a non-zero Jacobian there MUST deviate 30° from orthogonal: there\n" *
+                  " #   is no third option, and the corner-stretched :conformal that used to be\n" *
+                  " #   offered here failed the shell metric checks by O(1) at every order and\n" *
+                  " #   every grid spacing (see THE 120° CORNER in cubed_sphere_maps.jl).\n" *
+                  " #   Use :equiangular, which attains that 30° minimum and is smooth, or run\n" *
+                  " #   the conformal map in a cell-centred code that never evaluates at a\n" *
+                  " #   corner.")
+        end
+    end
+
+
+    #
+    # MEASURE the map the grid already carries; do not assume it.
+    #
+    # This used to assume :gnomonic, "because that is what cubed_sphere.geo
+    # emits". It is not: gmsh spaces `Transfinite Line` points at equal ANGLE
+    # along a `Circle` arc, so the .geo produces the EQUIANGULAR grid — verified
+    # against tools/generate_cubed_sphere.jl, which reproduces the shipped
+    # cubed_sphere.msh to 2.2e-16 of R and differs from gnomonic by 535 km.
+    # Assuming gnomonic made `:cubed_sphere_map => :equiangular` apply the warp
+    # to an already-warped grid and cut the minimum element edge from 710 km to
+    # 562 km — a 21% loss of time step, silently.
+    #
+    # Only the LINEAR vertices lie on the panel lattice, so the fit uses those.
+    # It separates the candidates by ~14 orders of magnitude (2e-16 against
+    # 1e-1), so this is a measurement, not a guess.
+    #
+    # In parallel each rank holds only its share of the linear vertices, and the
+    # lattice size n comes from the GLOBAL count V = 6n²+2 — so count the
+    # vertices this rank OWNS (a vertex mirrored on two ranks must be counted
+    # once) and sum. The per-candidate residuals are local maxima over the
+    # vertices at hand and are reduced below, so every rank picks the same map.
+    nlin = Int(mesh.npoin_linear)
+    nvert = nlin
+    if nparts > 1
+        nown = 0
+        for ip = 1:nlin
+            mesh.gip2owner[ip] == rank && (nown += 1)
+        end
+        nvert = MPI.Allreduce(nown, MPI.SUM, comm)
+    end
+    from, resid = detect_cubed_sphere_map(@view(mesh.x[1:nlin]),
+                                          @view(mesh.y[1:nlin]),
+                                          @view(mesh.z[1:nlin]); nvert = nvert)
+    if nparts > 1
+        for k in keys(resid)
+            resid[k] = MPI.Allreduce(resid[k], MPI.MAX, comm)
+        end
+        from = argmin(resid)
+    end
+    if from === :unknown
+        error(" # ERROR mesh.jl: :cubed_sphere_map => " * string(to) *
+              " needs a structured cubed sphere, but this grid has " * string(nlin) *
+              " linear vertices,\n #   which is not 6n²+2 for any n. Remove the switch, " *
+              "or build the grid with tools/generate_cubed_sphere.jl.")
+    end
+    println_rank(string(" #   cubed-sphere grid detected as :", from,
+                        " (lattice residual ", @sprintf("%.1e", resid[from]), ")");
+                 msg_rank = rank, suppress = mesh.msg_suppress)
+
+    if to === from || (to in (:gnomonic, :equidistant) && from in (:gnomonic, :equidistant))
+        println_rank(string(" #   :cubed_sphere_map => ", to,
+                            " is the map the grid already carries — left as read.");
+                     msg_rank = rank, suppress = mesh.msg_suppress)
+        return nothing
+    end
+
+
+    dmax = 0.0
+    for ip = 1:mesh.npoin
+        x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
+        nx, ny, nz = remap_direction(x, y, z, from, to)
+        X, Y, Z = R*nx, R*ny, R*nz
+        dmax = max(dmax, sqrt((X-x)^2 + (Y-y)^2 + (Z-z)^2))
+        mesh.x[ip], mesh.y[ip], mesh.z[ip] = X, Y, Z
+        mesh.lon[ip] = atan(Y, X)
+        mesh.lat[ip] = asin(clamp(Z/R, -1.0, 1.0))
+    end
+
+    println_rank(string(" #   cubed-sphere remap: ", from, " → ", to,
+                        " ; largest node displacement = ",
+                        MPI.Allreduce(dmax, MPI.MAX, comm), " m");
+                 msg_rank = rank, suppress = mesh.msg_suppress)
+
+    return nothing
+end
+
+
+function _flatten_model_to_cell_dim(model::Gridap.Geometry.DiscreteModel{Dc,Dp}) where {Dc,Dp}
+    Dc == Dp && return model
+    # Squashing a curved surface would silently collapse it (a sphere onto its
+    # equatorial disc). Say so instead: AMR on a manifold is not supported.
+    if Dc == 2 && Dp == 3 && _is_curved_surface(get_node_coordinates(get_grid(model)))
+        error(" # ERROR mesh.jl: this grid is a curved 2D surface embedded in 3D, and AMR " *
+              "(:linitial_refine / :ladapt) would flatten it onto a plane. Run it without AMR.")
+    end
+    grid        = get_grid(model)
+    coords_flat = [Gridap.Point(ntuple(i -> p[i], Dc)...) for p in get_node_coordinates(grid)]
+    grid_flat   = Gridap.Geometry.UnstructuredGrid(coords_flat,
+                                                   get_cell_node_ids(grid),
+                                                   Gridap.Geometry.get_reffes(grid),
+                                                   Gridap.Geometry.get_cell_type(grid),
+                                                   Gridap.Geometry.OrientationStyle(grid))
+    topo_flat   = Gridap.Geometry.UnstructuredGridTopology(grid_flat)
+    return Gridap.Geometry.UnstructuredDiscreteModel(grid_flat, topo_flat, get_face_labeling(model))
+end
+
+
 # Partition cells into nparts by x-y centroid bins, ignoring z.
 # Returns a 1-indexed cell_to_part vector of length num_cells(model).
 function _compute_xy_partition(model, nparts)
@@ -211,7 +1778,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     # save, or rebuilding only some files), every rank rebuilds from
     # scratch. This prevents silent inconsistency where one rank loads a
     # stale partition and the others build a fresh one.
-    if isnothing(adapt_flags) && !ladaptive && !linitial_refine
+    if isnothing(adapt_flags) && !ladaptive && !linitial_refine && !_adaptive_mesh_run(inputs)
         _mesh_cache = _mesh_cache_path(inputs, nparts)
         gmsh_path   = get(inputs, :gmsh_filename, "")
         local_loaded = _try_load_mesh_cache!(mesh, _mesh_cache, distribute, nparts;
@@ -308,7 +1875,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             # first call to UniformlyRefinedForestOfOctreesDiscreteModel.
             _ensure_amr_loaded!()
             @outputrootonly begin
-                gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
+                gmodel = _flatten_model_to_cell_dim(GmshDiscreteModel(inputs[:gmsh_filename], renumber=true))
                 partitioned_model = UniformlyRefinedForestOfOctreesDiscreteModel(parts, gmodel, inputs[:init_refine_lvl])
             end
             cell_gids = local_views(partition(get_cell_gids(partitioned_model))).item_ref[]
@@ -317,7 +1884,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         elseif ladaptive == true && linitial_refine == false
             _ensure_amr_loaded!()
             @outputrootonly begin
-                gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
+                gmodel = _flatten_model_to_cell_dim(GmshDiscreteModel(inputs[:gmsh_filename], renumber=true))
                 partitioned_model_coarse = OctreeDistributedDiscreteModel(parts,gmodel)
             end
             function set_id_refined(flags, indices, target_gid)
@@ -402,7 +1969,33 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     end 
     topology      = get_grid_topology(model)
     mesh.nsd      = num_cell_dims(model)
-    
+
+    # A 2D grid whose nodes carry a genuine third coordinate is a 2D MANIFOLD
+    # embedded in 3D — a cubed sphere, a shell — and not a flat patch that
+    # happens to sit off the z = 0 plane. The distinction matters because the
+    # flat 2D path stores only (x,y) and interpolates only (x,y) when it adds
+    # the high-order points, which would collapse a shell onto its equatorial
+    # disc. It is decided here from the geometry alone (coplanar node cloud =
+    # flat patch, non-coplanar = manifold), so a spherical grid is read by this
+    # same ordinary gmsh path with no case input and no separate reader.
+    mesh.lmanifold = (mesh.nsd == 2) && (num_point_dims(model) == 3) &&
+                     _is_curved_surface(get_node_coordinates(get_grid(model)))
+    #
+    # ...and it is decided COLLECTIVELY. _is_curved_surface looks at the node
+    # cloud this rank holds, and a small enough piece of a shell is flat to
+    # within the coplanarity tolerance. One rank answering "flat" while the
+    # others answer "manifold" would put that rank on the flat 2D path — it
+    # would drop z, collapse its piece onto the equatorial disc, and the run
+    # would go quietly wrong. If ANY rank sees curvature, the grid is a manifold.
+    #
+    if mpi_size > 1
+        mesh.lmanifold = MPI.Allreduce(mesh.lmanifold ? 1 : 0, MPI.MAX, comm) == 1
+    end
+    if mesh.lmanifold
+        println_rank(string(" #   2D manifold embedded in 3D: keeping z and placing the LGL nodes on the surface");
+                     msg_rank = rank, suppress = mesh.msg_suppress)
+    end
+
     POIN_flg = 0
     EDGE_flg = 1
     FACE_flg = 2
@@ -639,6 +2232,16 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     
     #Update number of grid points from linear count to total high-order points
     mesh.npoin = tot_linear_poin + tot_edges_internal_nodes + tot_faces_internal_nodes + (mesh.nsd - 2)*tot_vol_internal_nodes
+    # DG (DiscGal): duplicated interface DOFs — every element owns its
+    # full ngl^2 point set, npoin = nelem*ngl^2. Set here, ahead of the
+    # "Resize as needed" block, so every downstream allocation (x/y/z/coords,
+    # ip2gip, ...) is sized for the DG point set. npoin_linear keeps its
+    # Gridap vertex meaning. The CG builders below still run for
+    # their side effects (poin_in_edge, conn, boundary lists) and connijk/
+    # coordinates are overwritten by the DG numbering block after them.
+    if inputs[:AD] == DiscGal() && mesh.nsd == 2
+        mesh.npoin = mesh.nelem * ngl * ngl
+    end
     
     if (mesh.nop > 1) && (!lamr_mesh)
         println_rank(" # GMSH HIGH-ORDER GRID PROPERTIES"; msg_rank = rank, suppress = mesh.msg_suppress)
@@ -682,11 +2285,12 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     mesh.x      = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
     mesh.y      = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
     mesh.z      = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
-    mesh.coords = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.nsd))
+    mesh.coords = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.nsd), Int64(mesh.npoin))
     
     mesh.ip2gip    = KernelAbstractions.zeros(backend, TInt, Int64(mesh.npoin))
     mesh.gip2owner = KernelAbstractions.ones(backend, TInt, Int64(mesh.npoin))*local_views(parts).item_ref[]
     
+    mesh.elem_to_edge              = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nelem), Int64(mesh.ngl), Int64(mesh.ngl), 2)
     mesh.conn_edge_el              = KernelAbstractions.zeros(backend, TInt, 2, Int64(mesh.NEDGES_EL), Int64(mesh.nelem))    
     mesh.conn_face_el              = KernelAbstractions.zeros(backend, TInt,  4, Int64(mesh.NFACES_EL), Int64(mesh.nelem))  
     mesh.bdy_edge_in_elem          = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy))  
@@ -783,6 +2387,11 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
 
                 mesh.x[ip] = node_coords[ip][1]
                 mesh.y[ip] = node_coords[ip][2]
+                # On a 2D manifold embedded in 3D the third coordinate is part
+                # of the geometry, not a stray offset — keep it.
+                if mesh.lmanifold
+                    mesh.z[ip] = node_coords[ip][3]
+                end
 
                 mesh.ip2gip[ip] = point2ppoint[ip]
                 # mesh.gip2owner[ip] = 1
@@ -886,14 +2495,38 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     #         
     add_high_order_nodes_volumes!(mesh, lgl, mesh.SD, elm2pelm)
 
-    
-    for ip = mesh.npoin_linear+1:mesh.npoin
-        mesh.x[ip] = mesh.x_ho[ip]
-        mesh.y[ip] = mesh.y_ho[ip]
-        mesh.z[ip] = 0.0
-        if (mesh.nsd > 2)
-            mesh.z[ip] = mesh.z_ho[ip]
+    # DG writes mesh.x/mesh.y for all nelem*ngl^2 points directly in
+    # add_high_order_nodes_2D_gmsh_dg! below; x_ho carries CG-numbered
+    # points, so the copy is skipped under DiscGal.
+    if !(inputs[:AD] == DiscGal() && mesh.nsd == 2)
+        for ip = mesh.npoin_linear+1:mesh.npoin
+            mesh.x[ip] = mesh.x_ho[ip]
+            mesh.y[ip] = mesh.y_ho[ip]
+            mesh.z[ip] = 0.0
+            if (mesh.nsd > 2 || mesh.lmanifold)
+                mesh.z[ip] = mesh.z_ho[ip]
+            end
         end
+    end
+
+    # The high-order nodes above were interpolated on the straight-sided
+    # element; on a shell that puts them on the chord, inside the sphere. Snap
+    # them back out and fill (lon, lat). Nothing here runs for a flat grid.
+    if mesh.lmanifold
+        project_nodes_to_shell!(mesh, inputs)
+        # Optionally slide the nodes along the shell onto a DIFFERENT
+        # cube-face → sphere map (equiangular, conformal). Connectivity and the
+        # panel decomposition are untouched; only where the nodes sit within
+        # each panel changes. No-op unless :cubed_sphere_map is set.
+        remap_cubed_sphere_nodes!(mesh, inputs)
+    end
+
+    # DG (DiscGal) numbering: must run after the CG builders (kept for side
+    # effects) and BEFORE the extrema Allreduce below, the IPc/IPp mortar
+    # lists, elem_to_edge, and the periodicity block — all consume connijk
+    # or coordinates.
+    if inputs[:AD] == DiscGal() && mesh.nsd == 2
+        add_high_order_nodes_2D_gmsh_dg!(mesh, lgl, model)
     end
 
     mesh.xmax = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
@@ -1415,6 +3048,46 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                 iedge_bdy += 1
             end
         end
+
+        # PERF: elem_to_edge by hash lookup, not by scanning.
+        #
+        # This used to be, for every one of the nelem*ngl^2 element nodes:
+        # `ip in mesh.poin_in_bdy_edge` — a linear scan of the WHOLE
+        # (nedges_bdy x ngl) matrix, paid in full even when the answer is false
+        # — and then a second scan of the same matrix to find the match. Cost
+        # nelem*ngl^2*nedges_bdy*ngl, i.e. quadratic in the grid size.
+        #
+        # Measured on the cubed sphere at nop=5: ~3e8 operations at 10 elements
+        # per panel (seconds), ~2.5e10 at 30 per panel — which is the "hang"
+        # after "spherical shell R = ..." with no further output. 
+        #
+        # Same answer, built by walking the boundary edges ONCE into a
+        # (node, element) -> (edge, position) map. The tie-breaking of the old
+        # code is preserved exactly: the `while` stopped at the FIRST iedge that
+        # matched, while the inner `for i1` ran to completion and so kept the
+        # LAST matching i1 within that edge.
+        _e2e = Dict{Tuple{TInt,TInt},Tuple{TInt,TInt}}()
+        for iedge = 1:mesh.nedges_bdy
+            e1 = mesh.bdy_edge_in_elem[iedge]
+            for i1 = 1:mesh.ngl
+                k = (mesh.poin_in_bdy_edge[iedge, i1], e1)
+                prev = get(_e2e, k, nothing)
+                # unseen, or still on the same edge -> later i1 wins, as before
+                (prev === nothing || prev[1] == iedge) && (_e2e[k] = (iedge, i1))
+            end
+        end
+        for e = 1:mesh.nelem
+            for j = 1:mesh.ngl
+                for i = 1:mesh.ngl
+                    hit = get(_e2e, (mesh.connijk[e, i, j], e), nothing)
+                    if hit !== nothing
+                        mesh.elem_to_edge[e,i,j,1] = hit[1]
+                        mesh.elem_to_edge[e,i,j,2] = hit[2]
+                    end
+                end
+            end
+        end
+
         n_semi_infg = MPI.Allreduce(n_semi_inf, MPI.SUM, comm)
         if (n_semi_infg > 0) 
             mesh.lLaguerre = true
@@ -1644,29 +3317,44 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             # end
         end
         
+        # PERF: elem_to_face by hash lookup, not by scanning. The 3D twin of the
+        # elem_to_edge rewrite in the mesh.nsd == 2 branch above, and the worse
+        # of the two: `ip in mesh.poin_in_bdy_face` scans the whole
+        # (nfaces_bdy x ngl x ngl) array for every one of the nelem*ngl^3
+        # element nodes — paid in full even when the answer is false — and the
+        # `while` then scans it again. That is nelem*ngl^3*nfaces_bdy*ngl^2, so
+        # ngl^5 sits inside the element loop.
+        #
+        # For CompEuler/3d at nop=4 (ngl=5) on hexa_TFI_10x10x10 that is
+        # 1000*125*600*25 ~ 1.9e9 operations for a 1000-element grid; it is what
+        # makes a large 3D read appear to hang after the spectral-node stage.
+        #
+        # Same answer, built by walking the boundary faces ONCE into a
+        # (node, element) -> (face, i, j) map. The old tie-breaking is preserved
+        # exactly: the `while` stopped at the FIRST iface that matched, while the
+        # inner j1/i1 loops ran to completion, so the LAST matching (i1, j1) in
+        # j1-outer/i1-inner order won.
+        _e2f = Dict{Tuple{TInt,TInt},Tuple{TInt,TInt,TInt}}()
+        for iface = 1:mesh.nfaces_bdy
+            e1 = mesh.bdy_face_in_elem[iface]
+            for j1 = 1:mesh.ngl
+                for i1 = 1:mesh.ngl
+                    key  = (mesh.poin_in_bdy_face[iface, i1, j1], e1)
+                    prev = get(_e2f, key, nothing)
+                    # unseen, or still on the same face -> later (i1,j1) wins
+                    (prev === nothing || prev[1] == iface) && (_e2f[key] = (iface, i1, j1))
+                end
+            end
+        end
         for e = 1:mesh.nelem
             for k=1:mesh.ngl
                 for j=1:mesh.ngl
                     for i = 1:mesh.ngl
-                        ip = mesh.connijk[e, i, j, k]
-                        if (ip in mesh.poin_in_bdy_face)
-                            found = false
-                            iface = 1
-                            while (iface <= mesh.nfaces_bdy && found == false)
-                                for j1 = 1:mesh.ngl
-                                    for i1 = 1:mesh.ngl
-                                        ip1 = mesh.poin_in_bdy_face[iface, i1, j1]
-                                        e1 = mesh.bdy_face_in_elem[iface]
-                                        if (ip1 == ip && e1 == e)
-                                            mesh.elem_to_face[e,i,j,k,1] = iface
-                                            mesh.elem_to_face[e,i,j,k,2] = i1
-                                            mesh.elem_to_face[e,i,j,k,3] = j1
-                                            found = true
-                                        end
-                                    end
-                                end
-                                iface += 1
-                            end
+                        hit = get(_e2f, (mesh.connijk[e, i, j, k], e), nothing)
+                        if hit !== nothing
+                            mesh.elem_to_face[e,i,j,k,1] = hit[1]
+                            mesh.elem_to_face[e,i,j,k,2] = hit[2]
+                            mesh.elem_to_face[e,i,j,k,3] = hit[3]
                         end
                     end
                 end
@@ -1808,8 +3496,25 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             println_rank(" # Periodic NCF parent elements detected: $(total_peri_ncf) (will be refined by amr_strategy!)"; msg_rank = rank, suppress = false)
         end
         MPI.Barrier(comm)
-        restructure4periodicity_2D(mesh, norx, "periodicx")
-        restructure4periodicity_2D(mesh, nory, "periodicz")
+        # DG (DiscGal) keeps duplicated interface DOFs: periodic coupling is
+        # carried by the numerical flux over a face-pair list, not by merging
+        # the two boundaries into shared points. restructure4periodicity_2D is
+        # a node merge with no :AD awareness (it also consumes ip2gip/gip2owner,
+        # which are CG shared-entity constructs), so under DiscGal it would weld
+        # both periodic boundaries -- the same defect the DiscGal guard in
+        # restructure4periodicity_1D! fixes at 1D, at 2D scale. Guarded at the
+        # call site rather than inside the function
+        # because restructure4periodicity_2D does not receive `inputs`.
+        if inputs[:AD] != DiscGal()
+            restructure4periodicity_2D(mesh, norx, "periodicx")
+            restructure4periodicity_2D(mesh, nory, "periodicz")
+        else
+            # DG: periodic coupling is a numerical flux over face pairs, not a
+            # node merge. Build the interior + periodic face list here — same
+            # inputs in scope, inside the cached region (its Gridap inputs are
+            # cache-skip-listed; its flat-array products are cached).
+            build_dg_faces_2D!(mesh)
+        end
         # restructure_el2gel_for_periodicity_2D!(mesh, norx, "periodicx")
         # restructure_el2gel_for_periodicity_2D!(mesh, nory, "periodicy")
         mesh.gel2owner = find_gip_owner(mesh.el2gel)
@@ -1998,7 +3703,60 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     #----------------------------------------------------------------------
     # END Extract boundary edges and faces nodes
     #----------------------------------------------------------------------
- 
+
+    # The high-order nodes were interpolated on the STRAIGHT-SIDED element, so
+    # a boundary that the .geo defined as a curve (a gmsh `Circle`, say) is a
+    # polygon as far as the solver is concerned, however large :nop is. Where
+    # the case deck names the exact geometry, snap the boundary nodes onto it
+    # and blend the correction into the element interiors. This is the 2D
+    # counterpart of project_nodes_to_shell! above; it needs the boundary-edge
+    # tables and connijk, which is why it runs here and not up with the
+    # add_high_order_nodes_* calls. No-op unless :exact_geometry is set.
+    snap_nodes_to_exact_geometry!(mesh, lgl, inputs, mesh.SD)
+
+    if (inputs[:extra_dimensions] > 0)
+        println(" # constructing extra grids for extra dimensions ...................... IN PROGRESS")
+        if (inputs[:adaptive_extra_meshes])
+            mesh.extra_mesh = Array{St_extra_mesh,1}(undef, Int64(mesh.nelem))
+
+            for iel = 1:mesh.nelem
+                if (inputs[:extra_dimensions] == 1)
+                    mesh.extra_mesh[iel] = make_extra_mesh_1D(inputs[:extra_dimensions_nelemx], inputs[:extra_dimensions_order], inputs[:extra_dimensions_xmin],
+                                                                           inputs[:extra_dimensions_xmax], backend, inputs, true)
+                elseif (inputs[:extra_dimensions] == 2)
+                    ξω  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], inputs[:extra_dimensions_order], inputs[:backend])
+                    basis = build_Interpolation_basis!(LagrangeBasis(), ξω.ξ, ξω.ξ, TFloat, inputs[:backend])
+                    mesh.extra_mesh[iel] = make_extra_mesh_2D(inputs[:extra_dimensions_nelemx], inputs[:extra_dimensions_nelemy], inputs[:extra_dimensions_order],
+                                                                          inputs[:extra_dimensions_xmin], inputs[:extra_dimensions_xmax], inputs[:extra_dimensions_ymin],
+                                                                          inputs[:extra_dimensions_ymax], basis, backend, inputs, true)
+
+                else
+                    println("Extra meshes of dimensions 1 or 2 only are currently supported")
+                end
+            end
+
+        else
+            if (inputs[:extra_dimensions] == 1)
+                mesh.extra_mesh = make_extra_mesh_1D(inputs[:extra_dimensions_nelemx], inputs[:extra_dimensions_order], inputs[:extra_dimensions_xmin],
+                                                                           inputs[:extra_dimensions_xmax], backend, inputs, true)
+            elseif (inputs[:extra_dimensions] == 2)
+                ξω  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], inputs[:extra_dimensions_order], inputs[:backend])
+                basis = build_Interpolation_basis!(LagrangeBasis(), ξω.ξ, ξω.ξ, TFloat, inputs[:backend])
+                mesh.extra_mesh = make_extra_mesh_2D(inputs[:extra_dimensions_nelemx], inputs[:extra_dimensions_nelemy], inputs[:extra_dimensions_order],
+                                                                          inputs[:extra_dimensions_xmin], inputs[:extra_dimensions_xmax], inputs[:extra_dimensions_ymin],
+                                                                          inputs[:extra_dimensions_ymax], basis, backend, inputs, true)
+
+                verify_pole_exclusion(mesh.extra_mesh)
+                θ_min = minimum(mesh.extra_mesh.extra_coords[1,:])
+                θ_max = maximum(mesh.extra_mesh.extra_coords[1,:])
+                check_solid_angle_with_pole_exclusion(mesh.extra_mesh, θ_min, θ_max)
+            end
+        end
+
+        println(" # constructing extra grids for extra dimensions ...................... DONE")
+
+    end
+
     #
     #
     # Free memory of obsolete arrays
@@ -2348,7 +4106,10 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
     mesh.npoin = mesh.npoin_linear + tot_vol_internal_nodes
     resize!(mesh.x, (mesh.npoin))
 
-    mesh.coords = copy(mesh.x)
+    # (nsd, npoin). This used to be `copy(mesh.x)`, which made coords a bare
+    # npoin-vector that only worked because the old [ip,1] indexing tolerated a
+    # trailing singleton dimension. It is filled in full below.
+    mesh.coords = KernelAbstractions.zeros(backend, TFloat, size(mesh.coords, 1), Int64(mesh.npoin))
     #mesh.coords = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.nsd))
     # SM here is the issue. COORDS is not being populated correctly at 1D grid generationS
     
@@ -2372,7 +4133,7 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
             ξ = lgl.ξ[l];
             
             mesh.x[ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
-            mesh.coords[ip,1] = mesh.x[ip]
+            mesh.coords[1, ip] = mesh.x[ip]
             
             mesh.conn[iel_g, l] = ip #OK
             mesh.connijk[iel_g, l, 1, 1] = ip #OK
@@ -2381,11 +4142,43 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
             ip = ip + 1
         end
     end
-    mesh.coords[:,1] = copy(mesh.x[:])
+    mesh.coords[1, :] = copy(mesh.x[:])
     println(" # POPULATE 1D GRID with SPECTRAL NODES ............................ DONE")
     return 
 end
 
+function add_high_order_nodes_1D_native_mesh_dg!(mesh::St_mesh, interpolation_nodes, backend)
+    # DG (DiscGal) 1D numbering: every element owns its own ngl nodes, so the
+    # interface DOFs are DUPLICATED (npoin = nelem*ngl) and the solution may
+    # jump across faces — coupling is supplied by the numerical flux, not by a
+    # shared node. Contrast add_high_order_nodes_1D_native_mesh! (ContGal),
+    # which shares the interface node (connijk[iel,ngl] == connijk[iel+1,1]).
+    lgl   = basis_structs_ξ_ω!(interpolation_nodes, mesh.nop, backend)
+    ngl   = mesh.nop + 1
+    nelem = mesh.nelem
+
+    mesh.npoin        = nelem * ngl
+    mesh.npoin_linear = mesh.npoin          # no linear/high-order split under DG
+    mesh.npoin_el     = ngl
+
+    resize!(mesh.x, mesh.npoin)
+        mesh.coords  = KernelAbstractions.zeros(backend, TFloat, size(mesh.coords, 1), Int64(mesh.npoin))
+    mesh.conn    = KernelAbstractions.zeros(backend, TInt, Int64(nelem), Int64(ngl))
+    mesh.connijk = KernelAbstractions.zeros(backend, TInt, Int64(nelem), Int64(ngl), 1, 1)
+
+    for iel = 1:nelem
+        x1 = mesh.xmin + (iel-1)*mesh.Δx[iel]        # element left vertex
+        for l = 1:ngl
+            ip = (iel-1)*ngl + l
+            ξ  = lgl.ξ[l]
+            mesh.x[ip]              = x1 + 0.5*(ξ + 1.0)*mesh.Δx[iel]
+            mesh.coords[1,ip]       = mesh.x[ip]
+            mesh.conn[iel,l]        = ip
+            mesh.connijk[iel,l,1,1] = ip
+        end
+    end
+    return
+end
 
 function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, edge2pedge)
     
@@ -2415,11 +4208,15 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, e
         #resize!(mesh.x_ho, (mesh.npoin))
         mesh.x_ho = KernelAbstractions.allocate(backend, TFloat, mesh.npoin)
     end
-    if length(mesh.y_ho) < mesh.npoin        
+    if length(mesh.y_ho) < mesh.npoin
         #resize!(mesh.y_ho, (mesh.npoin))
        mesh.y_ho = KernelAbstractions.allocate(backend, TFloat, mesh.npoin)
     end
-    
+    # z_ho is unused by a flat 2D grid; a manifold needs it like the 3D path does.
+    if mesh.lmanifold && length(mesh.z_ho) < mesh.npoin
+        mesh.z_ho = KernelAbstractions.allocate(backend, TFloat, mesh.npoin)
+    end
+
     #poin_in_edge::Array{TInt, 2}  = zeros(mesh.nedges, mesh.ngl)
     #open("./COORDS_HO_edges_$rank.dat", "w") do f
         #
@@ -2437,7 +4234,8 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, e
             
             x1, y1 = mesh.x[ip1], mesh.y[ip1]
             x2, y2 = mesh.x[ip2], mesh.y[ip2]
-            
+            z1, z2 = mesh.z[ip1], mesh.z[ip2]
+
             gip1, gip2 = mesh.ip2gip[ip1], mesh.ip2gip[ip2]
             if gip1 > gip2
                 gip = gtot_linear_poin + 1 + (edge2pedge[iedge_g] - 1) * (ngl - 2)
@@ -2453,7 +4251,13 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, e
                 
                 mesh.x_ho[ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
 	            mesh.y_ho[ip] = y1*(1.0 - ξ)*0.5 + y2*(1.0 + ξ)*0.5;
-                
+                # A manifold edge is a chord in 3D: carry z, then (for a shell)
+                # push the new node back out onto the surface — see
+                # project_nodes_to_shell! at the end of mod_mesh_read_gmsh!.
+                if mesh.lmanifold
+                    mesh.z_ho[ip] = z1*(1.0 - ξ)*0.5 + z2*(1.0 + ξ)*0.5;
+                end
+
                 mesh.poin_in_edge[iedge_g, l] = ip
                 mesh.ip2gip[ip] = gip
                 # mesh.gip2owner[ip] = 1
@@ -2936,6 +4740,9 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_2D, face2pface
     if length(mesh.y_ho) < mesh.npoin
         resize!(mesh.y_ho, (mesh.npoin))
     end
+    if mesh.lmanifold && length(mesh.z_ho) < mesh.npoin
+        resize!(mesh.z_ho, (mesh.npoin))
+    end
 
     #open("./COORDS_HO_faces.dat", "w") do f
         #
@@ -2965,22 +4772,33 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_2D, face2pface
             x2, y2 = mesh.x[ip2], mesh.y[ip2]
             x3, y3 = mesh.x[ip3], mesh.y[ip3]
             x4, y4 = mesh.x[ip4], mesh.y[ip4]
-            
+            z1, z2 = mesh.z[ip1], mesh.z[ip2]
+            z3, z4 = mesh.z[ip3], mesh.z[ip4]
+
             for l=2:ngl-1
                 ξ = lgl.ξ[l];
-                
+
                 for m=2:ngl-1
                     ζ = lgl.ξ[m];
-                    
+
                     mesh.x_ho[ip] = (x1*(1 - ξ)*(1 - ζ)*0.25
                                         + x2*(1 + ξ)*(1 - ζ)*0.25
-                                + x3*(1 + ξ)*(1 + ζ)*0.25			
+                                + x3*(1 + ξ)*(1 + ζ)*0.25
                                 + x4*(1 - ξ)*(1 + ζ)*0.25)
-                    
+
                     mesh.y_ho[ip] =  (y1*(1 - ξ)*(1 - ζ)*0.25
 		                      + y2*(1 + ξ)*(1 - ζ)*0.25
 		                      + y3*(1 + ξ)*(1 + ζ)*0.25
 		                      + y4*(1 - ξ)*(1 + ζ)*0.25)
+
+                    # Bilinear in 3D for a manifold element; the radial snap
+                    # onto the shell happens once, afterwards.
+                    if mesh.lmanifold
+                        mesh.z_ho[ip] = (z1*(1 - ξ)*(1 - ζ)*0.25
+                                       + z2*(1 + ξ)*(1 - ζ)*0.25
+                                       + z3*(1 + ξ)*(1 + ζ)*0.25
+                                       + z4*(1 - ξ)*(1 + ζ)*0.25)
+                    end
 
                     mesh.poin_in_face[iface_g, l, m] = ip
                     #NEW ORDERING
@@ -3458,6 +5276,283 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_2D, elm2pelm
     nothing
 end
 
+function add_high_order_nodes_2D_gmsh_dg!(mesh::St_mesh, lgl, model)
+    # DG numbering with duplicated interface DOFs, matching the 1D DG builder:
+    #   ip = (iel-1)*ngl^2 + (j-1)*ngl + i;  connijk[iel,i,j] = ip
+    # Tensor lattice matches the CG convention (i ascending in x, j in y),
+    # so compute_element_size! returns the same Delem and dt is unchanged.
+    # Corners via the same node_ids->slot map mod_mesh_read_gmsh! uses;
+    # interiors by bilinear interpolation over (lgl.ksi[i], lgl.ksi[j]).
+    # Coordinates written to mesh.x/mesh.y directly (npoin_linear keeps its
+    # Gridap vertex meaning). coords is written in the upstream (ndims × npoin) orientation 
+    # alongside x/y, so the planned x/y → coords migration reduces to deleting x/y writes. 
+    # Corner coords are read from Gridap node_coords,
+    # NOT mesh.x: DG ids overlap the vertex id range and mesh.x is being
+    # overwritten in this very loop.
+    # Re-assert the DG count: the CG builders recompute mesh.npoin from CG
+    # arithmetic internally (add_high_order_nodes_edges!/faces!), clobbering
+    # the pre-allocation override. This builder runs last, so this assignment
+    # is what every downstream consumer sees.
+    mesh.npoin = mesh.nelem * mesh.ngl * mesh.ngl
+    node_coords = get_node_coordinates(get_grid(model))
+    ngl = mesh.ngl
+    _cache_node_ids = array_cache(mesh.cell_node_ids)
+    for iel = 1:mesh.nelem
+        node_ids = getindex!(_cache_node_ids, mesh.cell_node_ids, iel)
+        x11, y11 = node_coords[node_ids[2]][1], node_coords[node_ids[2]][2]  # slot [1,1]
+        x1n, y1n = node_coords[node_ids[1]][1], node_coords[node_ids[1]][2]  # slot [1,ngl]
+        xnn, ynn = node_coords[node_ids[3]][1], node_coords[node_ids[3]][2]  # slot [ngl,ngl]
+        xn1, yn1 = node_coords[node_ids[4]][1], node_coords[node_ids[4]][2]  # slot [ngl,1]
+        for j = 1:ngl, i = 1:ngl
+            ip = (iel-1)*ngl*ngl + (j-1)*ngl + i
+            mesh.connijk[iel, i, j] = ip
+            # Serial DG global indexing: every duplicated DOF is its own
+            # global point, so ip2gip is the identity. This overwrites the
+            # CG shared-entity gids the builders wrote and keeps the
+            # gnpoin/gip2ip/gip2owner block downstream consistent without
+            # gating it. Real DG global indexing for MPI is deferred
+            # parallel work.
+            mesh.ip2gip[ip] = ip
+            ξ = lgl.ξ[i];  ζ = lgl.ξ[j]
+            w11 = (1-ξ)*(1-ζ)*0.25;  wn1 = (1+ξ)*(1-ζ)*0.25
+            w1n = (1-ξ)*(1+ζ)*0.25;  wnn = (1+ξ)*(1+ζ)*0.25
+            mesh.x[ip] = w11*x11 + wn1*xn1 + w1n*x1n + wnn*xnn
+            mesh.y[ip] = w11*y11 + wn1*yn1 + w1n*y1n + wnn*ynn
+            mesh.coords[1, ip] = mesh.x[ip]
+            mesh.coords[2, ip] = mesh.y[ip]
+        end
+    end
+    return nothing
+end
+
+#
+# DG (DiscGal) interior + periodic face list, 2D.
+#
+# Builds the flat face-pair arrays on St_mesh that surface_rhs_el!(::NSD_2D)
+# loops over. One list; periodic pairs are ordinary rows found by centroid
+# matching (the detect_periodic_ncf_parent_gels_2D! recipe with the filter
+# inverted: keep the conforming pairs it discards). Local facet ids use the
+# slice convention over the (i,j) lattice —
+#     1 → connijk[e, 1, :]     2 → connijk[e, ngl, :]
+#     3 → connijk[e, :, 1]     4 → connijk[e, :, ngl]
+# — determined GEOMETRICALLY per face (slice-coincidence test), never from
+# Gridap's cell_face_ids ordering: the Gridap reference-polytope edge order
+# and the p4est glue order need not agree, and this list depends on neither.
+# Must run inside the cached region of mod_mesh_read_gmsh! (its inputs
+# facet_cell_ids / bdy_edge_* are cache-skip-listed and do not survive a
+# cache hit; the flat-array products are cached). Serial semantics only for
+# now (parallel DG indexing is deferred).
+#
+function build_dg_faces_2D!(mesh::St_mesh)
+    ngl = mesh.ngl
+    TF  = eltype(mesh.dg_face_nx)
+
+    empty!(mesh.dg_face_eL);  empty!(mesh.dg_face_eR)
+    empty!(mesh.dg_face_lfL); empty!(mesh.dg_face_lfR)
+    empty!(mesh.dg_face_revR)
+    empty!(mesh.dg_face_nx);  empty!(mesh.dg_face_ny); empty!(mesh.dg_face_Jf)
+
+    slice_ip(e, lfid, k) = lfid == 1 ? mesh.connijk[e, 1,   k] :
+                           lfid == 2 ? mesh.connijk[e, ngl, k] :
+                           lfid == 3 ? mesh.connijk[e, k,   1] :
+                                       mesh.connijk[e, k, ngl]
+
+    function cent(e)
+        cx = zero(TF); cy = zero(TF)
+        for (a, b) in ((1, 1), (1, ngl), (ngl, ngl), (ngl, 1))
+            ip = mesh.connijk[e, a, b]
+            cx += mesh.x[ip] / 4; cy += mesh.y[ip] / 4
+        end
+        return (cx, cy)
+    end
+
+    # Do slices (a,la) and (b,lb) hold the same physical nodes, forward or
+    # reversed? usex/usey select which coordinates to compare (both for
+    # interior faces; tangential-only for periodic pairs).
+    function slices_match(a, la, b, lb; usex::Bool=true, usey::Bool=true)
+        ip1 = slice_ip(a, la, 1); ipn = slice_ip(a, la, ngl)
+        Lf  = hypot(mesh.x[ipn] - mesh.x[ip1], mesh.y[ipn] - mesh.y[ip1])
+        tol = 1.0e-8 * Lf
+        fwd = true; rev = true
+        for k = 1:ngl
+            ipa = slice_ip(a, la, k)
+            ipf = slice_ip(b, lb, k)
+            ipr = slice_ip(b, lb, ngl - k + 1)
+            if usex
+                fwd &= abs(mesh.x[ipa] - mesh.x[ipf]) <= tol
+                rev &= abs(mesh.x[ipa] - mesh.x[ipr]) <= tol
+            end
+            if usey
+                fwd &= abs(mesh.y[ipa] - mesh.y[ipf]) <= tol
+                rev &= abs(mesh.y[ipa] - mesh.y[ipr]) <= tol
+            end
+            (fwd || rev) || return (false, false)
+        end
+        return (true, !fwd && rev)
+    end
+
+    function push_face!(eL, lfL, eR, lfR, rev)
+        # normal from eL's slice tangent; sign chosen outward from eL
+        # (interior: toward eR; periodic: out of the domain, toward eR
+        # across the wrap — same convention either way).
+        ip1 = slice_ip(eL, lfL, 1); ipn = slice_ip(eL, lfL, ngl)
+        tx = mesh.x[ipn] - mesh.x[ip1]; ty = mesh.y[ipn] - mesh.y[ip1]
+        Lf = hypot(tx, ty)
+        nx = ty / Lf; ny = -tx / Lf
+        fcx = zero(TF); fcy = zero(TF)
+        for k = 1:ngl
+            ip = slice_ip(eL, lfL, k)
+            fcx += mesh.x[ip] / ngl; fcy += mesh.y[ip] / ngl
+        end
+        ecx, ecy = cent(eL)
+        if nx * (fcx - ecx) + ny * (fcy - ecy) < 0
+            nx = -nx; ny = -ny
+        end
+        push!(mesh.dg_face_eL,  eL);  push!(mesh.dg_face_eR,  eR)
+        push!(mesh.dg_face_lfL, lfL); push!(mesh.dg_face_lfR, lfR)
+        push!(mesh.dg_face_revR, rev)
+        push!(mesh.dg_face_nx, nx);   push!(mesh.dg_face_ny, ny)
+        push!(mesh.dg_face_Jf, Lf / 2)
+    end
+
+    # --- interior faces: facet_cell_ids entries with two cells --------------
+    conv_map = zeros(Int, 4)   # cell_face_ids position g → slice lfid (report once)
+    n_int = 0
+    for f = 1:length(mesh.facet_cell_ids)
+        cells = mesh.facet_cell_ids[f]
+        length(cells) == 2 || continue
+        a = cells[1]; b = cells[2]
+        a != b || error("build_dg_faces_2D!: facet $f joins element $a to itself — mesh is one element wide in a periodic direction; DG face pairing needs at least two elements across each periodic direction")
+        found = 0; mla = 0; mlb = 0; mrev = false
+        for la = 1:4, lb = 1:4
+            ok, rev = slices_match(a, la, b, lb)
+            if ok
+                found += 1; mla = la; mlb = lb; mrev = rev
+            end
+        end
+        found == 1 || error("build_dg_faces_2D!: facet $f (elements $a, $b) matched $found slice pairs, expected exactly 1 — numbering/geometry inconsistency")
+        push_face!(a, mla, b, mlb, mrev)
+        n_int += 1
+        # optional cross-check: discover Gridap's local edge order empirically
+        if length(mesh.cell_face_ids) >= a && length(mesh.cell_face_ids[a]) == 4
+            g = findfirst(==(f), mesh.cell_face_ids[a])
+            if g !== nothing && conv_map[g] == 0
+                conv_map[g] = mla
+            end
+        end
+    end
+    println(" # build_dg_faces_2D!: cell_face_ids order → slice lfid map (1=x-min, 2=x-max, 3=y-min, 4=y-max; 0 = never observed): ", conv_map)
+
+    # --- periodic pairs: upstream's centroid match, filter inverted ---------
+    function periodic_pairs!(tag::String)
+        # Which axis is NORMAL to this tag's faces? Never inferred from the
+        # tag's name — measured 2026-08-11 on hexa_TFI_10x20_periodic: the tag
+        # names the axis the edge RUNS ALONG ("periodicx" = bottom/top edges,
+        # y-normal; "periodicz" = left/right, x-normal — 2D remaps y→z),
+        # matching detect_periodic_ncf_parent_gels_2D!'s branch (x tangential
+        # for "periodicx"). Derived geometrically regardless: each tagged
+        # element votes for the axis on which it has a constant-coordinate
+        # slice at that axis's domain extremum; corner elements vote both,
+        # the rest disambiguate; a tie is a hard error.
+        xlo, xhi = extrema(mesh.x); ylo, yhi = extrema(mesh.y)
+        tolx = 1.0e-8 * (xhi - xlo); toly = 1.0e-8 * (yhi - ylo)
+        vx = 0; vy = 0
+        seen = Set{Int}()
+        for iedge_bdy = 1:length(mesh.bdy_edge_type)
+            mesh.bdy_edge_type[iedge_bdy] == tag || continue
+            e = mesh.bdy_edge_in_elem[iedge_bdy]
+            (e in seen) && continue
+            push!(seen, e)
+            for lf = 1:4
+                sxlo = TF(Inf); sxhi = TF(-Inf); sylo = TF(Inf); syhi = TF(-Inf)
+                for k = 1:ngl
+                    ip = slice_ip(e, lf, k)
+                    sxlo = min(sxlo, mesh.x[ip]); sxhi = max(sxhi, mesh.x[ip])
+                    sylo = min(sylo, mesh.y[ip]); syhi = max(syhi, mesh.y[ip])
+                end
+                if (sxhi - sxlo) <= tolx && (abs(sxlo - xlo) <= tolx || abs(sxhi - xhi) <= tolx)
+                    vx += 1
+                end
+                if (syhi - sylo) <= toly && (abs(sylo - ylo) <= toly || abs(syhi - yhi) <= toly)
+                    vy += 1
+                end
+            end
+        end
+        (vx + vy) == 0 && return 0                # tag absent from this mesh
+        vx == vy && error("build_dg_faces_2D!: cannot decide normal axis for tag $tag (votes x=$vx, y=$vy)")
+        xnormal = vx > vy
+        println(" # build_dg_faces_2D!: tag \"$tag\" → $(xnormal ? "x" : "y")-normal faces (votes x=$vx, y=$vy)")
+        nc(ip) = xnormal ? mesh.x[ip] : mesh.y[ip]
+        tc(ip) = xnormal ? mesh.y[ip] : mesh.x[ip]
+
+        els = Int[]; lfs = Int[]; ncm = TF[]; tcm = TF[]
+        for iedge_bdy = 1:length(mesh.bdy_edge_type)
+            mesh.bdy_edge_type[iedge_bdy] == tag || continue
+            e = mesh.bdy_edge_in_elem[iedge_bdy]
+            for lf = 1:4                           # normal-constant slices of e
+                ip1 = slice_ip(e, lf, 1); ipn = slice_ip(e, lf, ngl)
+                Lf  = hypot(mesh.x[ipn] - mesh.x[ip1], mesh.y[ipn] - mesh.y[ip1])
+                ncsum = zero(TF); tcsum = zero(TF); nclo = TF(Inf); nchi = TF(-Inf)
+                for k = 1:ngl
+                    ip = slice_ip(e, lf, k)
+                    ncsum += nc(ip) / ngl; tcsum += tc(ip) / ngl
+                    nclo = min(nclo, nc(ip)); nchi = max(nchi, nc(ip))
+                end
+                (nchi - nclo) <= 1.0e-8 * Lf || continue
+                push!(els, e); push!(lfs, lf); push!(ncm, ncsum); push!(tcm, tcsum)
+            end
+        end
+        isempty(els) && return 0
+        lo_val, hi_val = extrema(ncm)
+        span = hi_val - lo_val
+        span > 0 || error("build_dg_faces_2D!: $tag candidates all at one coordinate — mesh/tag inconsistency")
+        tolside = 1.0e-8 * span
+        lo = Int[]; hi = Int[]
+        for idx = 1:length(els)
+            if abs(ncm[idx] - lo_val) <= tolside
+                push!(lo, idx)
+            elseif abs(ncm[idx] - hi_val) <= tolside
+                push!(hi, idx)
+            end   # element-interior normal-constant slices fall through — correct
+        end
+        length(lo) == length(hi) || error("build_dg_faces_2D!: $tag side counts differ ($(length(lo)) vs $(length(hi)))")
+        # Pair by sorted tangential order — no float-keyed Dict. The former sigdigits=6
+        # key was RELATIVE rounding, which cannot collapse ~1e-12 arithmetic noise around
+        # a tangential centroid at exactly 0 (any domain-symmetric mesh, e.g. 5 elements
+        # on [-5,5]), so the two sides produced distinct keys and pairing failed.
+        # Sorted-order pairing needs no quantization; alignment is asserted per pair
+        # with an ABSOLUTE tolerance below.
+        sort!(lo; by = idx -> tcm[idx])
+        sort!(hi; by = idx -> tcm[idx])
+        tspan = length(lo) > 1 ?
+            max(Float64(tcm[lo[end]] - tcm[lo[1]]), Float64(tcm[hi[end]] - tcm[hi[1]])) : 0.0
+        tolt = 1.0e-6 * max(tspan, Float64(span))
+        for k = 2:length(lo)
+            (tcm[lo[k]] - tcm[lo[k-1]]) > tolt || error("build_dg_faces_2D!: duplicate $tag tangential key on the min side — degenerate/1-wide mesh")
+            (tcm[hi[k]] - tcm[hi[k-1]]) > tolt || error("build_dg_faces_2D!: duplicate $tag tangential key on the max side — degenerate/1-wide mesh")
+        end
+        n = 0
+        for k = 1:length(lo)
+            imin = lo[k]; imax = hi[k]
+            abs(tcm[imax] - tcm[imin]) <= tolt || error("build_dg_faces_2D!: $tag sorted-order pair mismatch at k=$k ($(tcm[imin]) vs $(tcm[imax])) — non-conforming periodic boundary?")
+            eL = els[imax]; lfL = lfs[imax]        # L = max side → outward normal points +direction
+            eR = els[imin]; lfR = lfs[imin]
+            eL != eR || error("build_dg_faces_2D!: $tag pairs element $eL with itself — 1-element-wide direction; DG face pairing needs at least two elements across each periodic direction")
+            ok, rev = xnormal ? slices_match(eL, lfL, eR, lfR; usex=false, usey=true) :
+                                slices_match(eL, lfL, eR, lfR; usex=true,  usey=false)
+            ok || error("build_dg_faces_2D!: $tag pair (elements $eL, $eR) does not align in either orientation — numbering inconsistency")
+            push_face!(eL, lfL, eR, lfR, rev)
+            n += 1
+        end
+        return n
+    end
+
+    n_per = periodic_pairs!("periodicx") + periodic_pairs!("periodicz")
+
+    println(" # build_dg_faces_2D!: ", n_int, " interior + ", n_per, " periodic = ",
+            length(mesh.dg_face_eL), " faces")
+end
+
 function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D, elm2pelm)
 
     if (mesh.nop < 2) return end
@@ -3675,11 +5770,11 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
     Δx = abs(mesh.xmax - mesh.xmin)/(mesh.nelem)
     mesh.npoin = mesh.npx
 
-    mesh.coords[1,1] = mesh.xmin
+    mesh.coords[1, 1] = mesh.xmin
     mesh.x[1] = mesh.xmin
     for i = 2:mesh.npx
         mesh.x[i] = mesh.x[i-1] + Δx
-        mesh.coords[i,1] = mesh.coords[i-1,1] + Δx
+        mesh.coords[1, i] = mesh.coords[1, i-1] + Δx
         mesh.Δx[i-1] = Δx #Constant for the sake of simplicity in 1D problems. This may change later
     end
     mesh.NNODES_EL  = 2
@@ -3707,7 +5802,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
     
     # Resize (using resize! from ElasticArrays) as needed
     resize!(mesh.x, (mesh.npoin))
-    resize!(mesh.coords[:,1], (mesh.npoin))
+    resize!(mesh.coords[1, :], (mesh.npoin))
     mesh.npoin_el = ngl
     #allocate mesh.conn and reshape it
     mesh.conn = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem), Int64(mesh.npoin_el))
@@ -3721,7 +5816,11 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
     end
     
     #Add high-order nodes
-    add_high_order_nodes_1D_native_mesh!(mesh, interpolation_nodes, backend)
+    if inputs[:AD] == DiscGal()
+        add_high_order_nodes_1D_native_mesh_dg!(mesh, interpolation_nodes, backend)
+    else
+        add_high_order_nodes_1D_native_mesh!(mesh, interpolation_nodes, backend)
+    end
 
     mesh.nelem_semi_inf = 0
     if (inputs[:llaguerre_1d_right]) mesh.nelem_semi_inf +=1 end 
@@ -3731,7 +5830,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
     mesh.npoin_original = mesh.npoin
     if (inputs[:llaguerre_1d_right])
         x = KernelAbstractions.zeros(backend, TFloat, mesh.npoin+mesh.ngr-1)      
-        x[1:mesh.npoin] .= mesh.coords[1:mesh.npoin,1]
+        x[1:mesh.npoin] .= mesh.coords[1, 1:mesh.npoin]
         gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta],backend)
         mesh.connijk_lag[1,1,1] = mesh.npoin_linear 
         for i=2:mesh.ngr
@@ -3741,7 +5840,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
         end    
         mesh.npoin = mesh.npoin + mesh.ngr-1
         mesh.x = x
-        #mesh.coords[:,1] = x[:]
+        #mesh.coords[1, :] = x[:]
     end
     if (inputs[:llaguerre_1d_left])
         e = min(2,mesh.nelem_semi_inf)
@@ -3756,10 +5855,10 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
         end
         mesh.npoin = mesh.npoin + mesh.ngr-1
         mesh.x = x
-        #mesh.coords[:,1] = x[:]
+        #mesh.coords[1, :] = x[:]
     end 
-    mesh.coords = KernelAbstractions.zeros(CPU(), TFloat, Int64(mesh.npoin), Int64(mesh.nsd))
-    mesh.coords[:,1] = mesh.x[:]
+    mesh.coords = KernelAbstractions.zeros(CPU(), TFloat, Int64(mesh.nsd), Int64(mesh.npoin))
+    mesh.coords[1, :] = mesh.x[:]
     #plot_1d_grid(mesh)
     resize!(mesh.y, (mesh.npoin))
     println(" # BUILD LINEAR CARTESIAN GRID ............................ DONE")
@@ -3768,24 +5867,34 @@ end
 
 
 """
-    read_ad_lvl_from_p4est(ptr_pXest) -> Vector{TInt}
+    read_ad_lvl_from_p4est(pXest_type, ptr_pXest) -> Vector{TInt}
 
-Walk the local trees of a p8est forest and return the level of every
+Walk the local trees of a p4est/p8est forest and return the level of every
 local leaf quadrant, in p4est ordering.  This ordering matches the
 Jexpresso mesh element ordering when the mesh is built directly from
 the same forest (e.g. after an AMR restart via `load_p4est_checkpoint_model`).
+
+Dispatches on 2D (`p4est_tree_t`/`p4est_quadrant_t`) vs 3D
+(`p8est_tree_t`/`p8est_quadrant_t`) — these have different memory layouts,
+so reading a 2D forest with the 3D struct types silently misreads garbage.
+Mirrors the same 2D/3D dispatch already used by write_p4est_checkpoint /
+load_p4est_checkpoint_model.
 """
-function read_ad_lvl_from_p4est(ptr_pXest)
+function read_ad_lvl_from_p4est(pXest_type, ptr_pXest)
+    TreeT, QuadT = pXest_type isa GridapP4est.P4estType ?
+        (P4est_wrapper.p4est_tree_t, P4est_wrapper.p4est_quadrant_t) :
+        (P4est_wrapper.p8est_tree_t, P4est_wrapper.p8est_quadrant_t)
+
     forest    = unsafe_load(ptr_pXest)
-    trees_arr = unsafe_load(forest.trees)          # sc_array_t of p8est_tree_t
+    trees_arr = unsafe_load(forest.trees)          # sc_array_t of {p4est,p8est}_tree_t
     levels    = TInt[]
     for t in forest.first_local_tree:forest.last_local_tree
-        tree_ptr = Ptr{P4est_wrapper.p8est_tree_t}(
+        tree_ptr = Ptr{TreeT}(
             trees_arr.array + t * trees_arr.elem_size)
         tree   = unsafe_load(tree_ptr)
         n_quads = Int(tree.quadrants.elem_count)
         for q in 0:n_quads-1
-            quad_ptr = Ptr{P4est_wrapper.p8est_quadrant_t}(
+            quad_ptr = Ptr{QuadT}(
                 tree.quadrants.array + q * tree.quadrants.elem_size)
             quad = unsafe_load(quad_ptr)
             push!(levels, TInt(quad.level))
@@ -3816,17 +5925,31 @@ function load_p4est_checkpoint_model(base_model, forest_file::String)
     pXest_type = base_model.pXest_type
     parts      = base_model.parts
 
-    # Load forest (MPI-collective). p8est_load also fills *connectivity_ref with
-    # a freshly allocated connectivity that we leave to be GCed — we use the
-    # Gridap-managed connectivity from base_model throughout.
-    connectivity_ref = Ref{Ptr{P4est_wrapper.p8est_connectivity_t}}()
-    loaded_ptr_pXest = P4est_wrapper.p8est_load(
-        forest_file,
-        get_mpi_comm(),
-        Csize_t(0),      # no per-quadrant data stored
-        Cint(0),         # do not read payload
-        C_NULL,
-        connectivity_ref)
+    # Load forest (MPI-collective). p4est_load/p8est_load also fill
+    # *connectivity_ref with a freshly allocated connectivity that we leave
+    # to be GCed — we use the Gridap-managed connectivity from base_model
+    # throughout.
+    # Dispatch on 2D (p4est_load) vs 3D (p8est_load) to avoid passing the
+    # wrong struct type — mirrors write_p4est_checkpoint's save-side dispatch.
+    if pXest_type isa GridapP4est.P4estType
+        connectivity_ref = Ref{Ptr{P4est_wrapper.p4est_connectivity_t}}()
+        loaded_ptr_pXest = P4est_wrapper.p4est_load(
+            forest_file,
+            get_mpi_comm(),
+            Csize_t(0),      # no per-quadrant data stored
+            Cint(0),         # do not read payload
+            C_NULL,
+            connectivity_ref)
+    else
+        connectivity_ref = Ref{Ptr{P4est_wrapper.p8est_connectivity_t}}()
+        loaded_ptr_pXest = P4est_wrapper.p8est_load(
+            forest_file,
+            get_mpi_comm(),
+            Csize_t(0),      # no per-quadrant data stored
+            Cint(0),         # do not read payload
+            C_NULL,
+            connectivity_ref)
+    end
 
     # Ghost layer and lnodes for a non-conforming (AMR) forest
     ptr_ghost  = GridapP4est.setup_pXest_ghost(pXest_type, loaded_ptr_pXest)
@@ -3939,9 +6062,12 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
             uaux    = args[end]
             project = args[end-1]
             interp  = args[end-2]
-            uaux_refined = KernelAbstractions.zeros(CPU(),  TFloat, (mesh_tmp.npoin, size(uaux, 2)))
-            if !get(inputs, :lrestart_amr, false)
-                p8est_transfer_q!(uaux_refined, uaux, omesh.ad_lvl, mesh_tmp.ad_lvl, mesh_tmp, omesh, n2o_ele_map_tmp, interp, project, mesh_tmp.SD)
+            uaux_refined = nothing
+            if !isnothing(uaux)
+                uaux_refined = KernelAbstractions.zeros(CPU(),  TFloat, (mesh_tmp.npoin, size(uaux, 2)))
+                if !get(inputs, :lrestart_amr, false)
+                    p8est_transfer_q!(uaux_refined, uaux, omesh.ad_lvl, mesh_tmp.ad_lvl, mesh_tmp, omesh, n2o_ele_map_tmp, interp, project, mesh_tmp.SD)
+                end
             end
 
             # If any periodic boundaries are non-conforming, mark the coarser-side
@@ -3966,15 +6092,17 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
                 partitioned_model_tmp, n2o_ele_map_tmp = mod_mesh_read_gmsh!(
                     mesh_tmp, inputs, nparts, distribute,
                     peri_conform_flags, partitioned_model_tmp, mesh_prev, interp, project, uaux_prev)
-                uaux_refined = KernelAbstractions.zeros(CPU(), TFloat, (mesh_tmp.npoin, size(uaux_prev, 2)))
-                p8est_transfer_q!(uaux_refined, uaux_prev,
-                                  mesh_prev.ad_lvl, mesh_tmp.ad_lvl,
-                                  mesh_tmp, mesh_prev,
-                                  n2o_ele_map_tmp, interp, project, mesh_tmp.SD)
+                if !isnothing(uaux_refined)
+                    uaux_refined = KernelAbstractions.zeros(CPU(), TFloat, (mesh_tmp.npoin, size(uaux_prev, 2)))
+                    p8est_transfer_q!(uaux_refined, uaux_prev,
+                                      mesh_prev.ad_lvl, mesh_tmp.ad_lvl,
+                                      mesh_tmp, mesh_prev,
+                                      n2o_ele_map_tmp, interp, project, mesh_tmp.SD)
+                end
                 total_peri_ncf = MPI.Allreduce(length(mesh_tmp.periodic_ncf_parent_gels), MPI.SUM, comm)
             end
 
-            if (mesh_tmp.lneed_redistribute)
+            if (mesh_tmp.lneed_redistribute && !isnothing(uaux))
                 # Initialize mesh struct: the arrays length will be increased in mod_mesh_read_gmsh
                 mesh = St_mesh{TInt,TFloat, CPU()}(nsd=TInt(inputs[:nsd]),
                                             nop=TInt(inputs[:nop]),
@@ -3993,12 +6121,14 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
 
 
         # WARNING: this will be removed when x,y,z is fulyl replaced by coords
-        mesh.coords = KernelAbstractions.zeros(CPU(), TFloat, Int64(mesh.npoin), Int64(mesh.nsd))
-        mesh.coords[:,1] = mesh.x[:]
-        if mesh.nsd > 1
-            mesh.coords[:,2] = mesh.y[:]
-            if mesh.nsd > 2
-                mesh.coords[:,3] = mesh.z[:]
+        # A 2D manifold needs three columns even though nsd == 2.
+        ncoord = mesh.lmanifold ? 3 : Int64(mesh.nsd)
+        mesh.coords = KernelAbstractions.zeros(CPU(), TFloat, ncoord, Int64(mesh.npoin))
+        mesh.coords[1, :] = mesh.x[:]
+        if ncoord > 1
+            mesh.coords[2, :] = mesh.y[:]
+            if ncoord > 2
+                mesh.coords[3, :] = mesh.z[:]
             end
         end
         
@@ -4013,7 +6143,7 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
             
             if (inputs[:nsd]==1)
                 println(" # ... build 1D grid ")
-                mesh = St_mesh{TInt,TFloat, CPU()}(coords = KernelAbstractions.zeros(CPU(),TFloat,Int64(inputs[:npx]), 1),
+                mesh = St_mesh{TInt,TFloat, CPU()}(coords = KernelAbstractions.zeros(CPU(),TFloat, 1, Int64(inputs[:npx])),
                                                    x = KernelAbstractions.zeros(CPU(),TFloat,Int64(inputs[:npx])),
                                                    npx  = TInt(inputs[:npx]),
                                                    xmin = TFloat(inputs[:xmin]), xmax = TFloat(inputs[:xmax]),
@@ -4040,7 +6170,7 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
                                                SD=NSD_1D())
         end
         mod_mesh_build_mesh!(mesh,  inputs[:interpolation_nodes], CPU())
-        #mesh.coords[:,1] .= mesh.x[:]
+        #mesh.coords[1, :] .= mesh.x[:]
         
         println(" # Build native grid ........................ DONE")
     end
@@ -4117,11 +6247,75 @@ function compute_element_size_driver(mesh::St_mesh, SD, T, backend)
     mesh.Δeffective_s = TFloat(mesh.Δelem_s/mesh.nop)
     mesh.Δeffective_l = TFloat(mesh.Δelem_l/mesh.nop)
 
+    # Δelem_s/nop is an EQUISPACED estimate of the nodal resolution and the
+    # LGL grid is not equispaced: the nodes crowd towards the element edges,
+    # so the smallest gap is smaller than Δelem/nop — by 1.45x at nop = 4, and
+    # by more as the order goes up (the clustering is O(1/nop²)). That gap,
+    # not Δelem/nop, is what an explicit time step has to resolve, so measure
+    # it directly and let computeCFL report against it. Same quantity, and the
+    # same reasoning, as the Δmin of kernel/mesh/sphere_metrics.jl.
+    Δnode_local  = compute_min_node_spacing(mesh, mesh.SD, T)
+    Δnode_global = MPI.Allreduce(Δnode_local, MPI.MIN, comm)
+    # Inf comes back from the 1D no-op (and from a run with no elements at
+    # all); store 0.0 = "not measured" so consumers take their fallback.
+    mesh.Δnode_s = isfinite(Δnode_global) ? TFloat(Δnode_global) : TFloat(0.0)
+
     println_rank(" # "; msg_rank = rank, suppress = false)
     println_rank(" # ELEMENT SIZES:"; msg_rank = rank, suppress = false)
     println_rank(" #   The smallest element has size: ", mesh.Δelem_s, " and effective resolution ", mesh.Δeffective_s; msg_rank = rank, suppress = false)
     println_rank(" #   The biggest  element has size: ", mesh.Δelem_l, " and effective resolution ", mesh.Δeffective_l; msg_rank = rank, suppress = false)
+    println_rank(" #   Smallest LGL node spacing:     ", mesh.Δnode_s, " (this is the CFL length scale)"; msg_rank = rank, suppress = false)
     println_rank(" # "; msg_rank = rank, suppress = false)
+end
+
+#------------------------------------------------------------------------------------
+# Smallest distance between two adjacent LGL nodes, taken along the element's
+# own ξ/η/ζ lines. Measured on the grid as it stands, so a refined mesh —
+# :linitial_refine or an adapted one — reports its own, smaller, spacing.
+#
+# Returns Inf on a rank that owns no elements; the caller MIN-reduces, and Inf
+# is the identity of MIN.
+#------------------------------------------------------------------------------------
+compute_min_node_spacing(mesh::St_mesh, SD::NSD_1D, T) = T(Inf)
+
+function compute_min_node_spacing(mesh::St_mesh, SD::NSD_2D, T)
+
+    ngl  = mesh.ngl
+    Δmin = T(Inf)
+    @inbounds for ie = 1:mesh.nelem
+        for j = 1:ngl, i = 1:ngl-1
+            ip = mesh.connijk[ie,i,j]; iq = mesh.connijk[ie,i+1,j]
+            Δmin = min(Δmin, sqrt((mesh.x[ip]-mesh.x[iq])^2 + (mesh.y[ip]-mesh.y[iq])^2))
+        end
+        for j = 1:ngl-1, i = 1:ngl
+            ip = mesh.connijk[ie,i,j]; iq = mesh.connijk[ie,i,j+1]
+            Δmin = min(Δmin, sqrt((mesh.x[ip]-mesh.x[iq])^2 + (mesh.y[ip]-mesh.y[iq])^2))
+        end
+    end
+
+    return Δmin
+end
+
+function compute_min_node_spacing(mesh::St_mesh, SD::NSD_3D, T)
+
+    ngl  = mesh.ngl
+    Δmin = T(Inf)
+    @inbounds for ie = 1:mesh.nelem
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl-1
+            ip = mesh.connijk[ie,i,j,k]; iq = mesh.connijk[ie,i+1,j,k]
+            Δmin = min(Δmin, sqrt((mesh.x[ip]-mesh.x[iq])^2 + (mesh.y[ip]-mesh.y[iq])^2 + (mesh.z[ip]-mesh.z[iq])^2))
+        end
+        for k = 1:ngl, j = 1:ngl-1, i = 1:ngl
+            ip = mesh.connijk[ie,i,j,k]; iq = mesh.connijk[ie,i,j+1,k]
+            Δmin = min(Δmin, sqrt((mesh.x[ip]-mesh.x[iq])^2 + (mesh.y[ip]-mesh.y[iq])^2 + (mesh.z[ip]-mesh.z[iq])^2))
+        end
+        for k = 1:ngl-1, j = 1:ngl, i = 1:ngl
+            ip = mesh.connijk[ie,i,j,k]; iq = mesh.connijk[ie,i,j,k+1]
+            Δmin = min(Δmin, sqrt((mesh.x[ip]-mesh.x[iq])^2 + (mesh.y[ip]-mesh.y[iq])^2 + (mesh.z[ip]-mesh.z[iq])^2))
+        end
+    end
+
+    return Δmin
 end
 
 #------------------------------------------------------------------------------------

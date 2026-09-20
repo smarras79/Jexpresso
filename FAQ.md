@@ -82,6 +82,430 @@ echo "127.0.0.1   $(hostname)"    | sudo tee -a /etc/hosts
 Full explanation:
 [INSTALL.md, Section 5.5](INSTALL.md#55-macos-hostname-fix-mpich-and-mpich_jll-only).
 
+### AMR (`theta_amr` and other `:lamr`/`:linitial_refine` cases) fails with `AssertionError: A check failed` in `OctreeDistributedDiscreteModel`
+
+**Q.** Loading a mesh into an AMR case fails with something like:
+
+```
+ERROR: LoadError: AssertionError: A check failed
+Stacktrace:
+  [1] macro expansion
+    @ ~/.julia/packages/Gridap/.../src/Helpers/Macros.jl:61 [inlined]
+  [2] GridapP4est.OctreeDistributedDiscreteModel(Dc::Int64, Dp::Int64, ...)
+    @ GridapP4est ~/.../GridapP4est.jl/src/OctreeDistributedDiscreteModels.jl:325
+```
+
+**A.** That `@check` is a **dimensional guard**, not a corruption symptom: line
+325 asserts that the coarse model's point/embedding dimension `Dp` equals its
+cell dimension `Dc`. p4est is not manifold-aware and requires `Dp == Dc`. The
+mismatch comes from GridapGmsh: its `GmshDiscreteModel` reports `Dp=3` for **any**
+`.msh` whose nodes carry a non-zero z-coordinate — see `_setup_point_dim`, which
+returns 3 the moment one node has `z !≈ 0`, with no keyword to override it. So a
+logically-2D mesh with a stray non-zero z reads back as `{Dc=2, Dp=3}`: it loads
+fine for a **non-AMR** case (e.g. `theta` — plain `GridapDistributed` assembles
+happily on a `Dc=2, Dp=3` embedded model) but every AMR run aborts here. Because
+the forest is 2D (the p4est log shows `121 = 11×11` nodes), the *cell* check
+passes and it is always the *point-dim* check that fires.
+
+**This is now handled in code.** `mod_mesh_read_gmsh!` projects the coarse Gmsh
+model down to `Dp=Dc` (`_flatten_model_to_cell_dim` in `src/kernel/mesh/mesh.jl`)
+before building the octree model, dropping the trailing coordinate component.
+Face/boundary numbering is derived from cell connectivity, not coordinates, so
+boundary tags are preserved; the flatten is a no-op when `Dp == Dc`. AMR cases
+on 2D-embedded-in-3D meshes therefore run without touching the `.msh`. If you
+still hit this after pulling, confirm you're running the patched
+`mod_mesh_read_gmsh!` and check what dimension your mesh reports:
+
+```bash
+julia --project=. -e '
+  using GridapGmsh
+  m = GmshDiscreteModel("path/to/your.msh")
+  println(typeof(m))   # {2,3,...} means Dp=3 (the flatten handles it);
+                        # {2,2,...} means Dp already equals Dc
+'
+```
+
+**Separately, on macOS you still need the patched `GridapP4est` fork** — not for
+*this* assertion (it fires before any p4est callback runs) but for the actual
+refinement steps that follow it: the registered `0.3.11` lacks ARM64
+`@cfunction` support and has a p4est-iterator struct-stride mismatch (ARM64 on
+Julia ≥ 1.11, x86_64 on Julia ≥ 1.12). The fork is now **pinned automatically**
+via a `[sources]` block in `Project.toml`, so a fresh `Pkg.instantiate()`
+resolves it. Verify with:
+
+```bash
+julia --project=. -e 'using Pkg; Pkg.status("GridapP4est")'
+# expected: "...#arm64-cfunction-fix"
+```
+
+See [INSTALL.md, Section 7](INSTALL.md#7-amr-on-macos-apple-silicon-the-patched-gridapp4est-fork)
+for details.
+
+The in-code flatten means you no longer *have* to fix the mesh, but if you'd
+rather remove the stray z at the source, regenerate it (or edit the `.geo`) so
+every `Point(...)` uses `0` for the extra coordinate rather than a nonzero
+constant — a common cause is a copy-paste bug where a mesh-spacing variable
+(e.g. `gridsize`) ends up in the z slot instead of `0`.
+
+### AMR fails with `could not load library "libp4est.4.dylib"` / `Library not loaded: @rpath/libmpi.12.dylib`
+
+**Q.** An AMR case (`theta_amr`, or anything with `:lamr`/`:linitial_refine`)
+aborts immediately after reading the mesh:
+
+```
+Info    : Done reading './meshes/gmsh_grids/hexa_TFI_10x10.msh'
+ERROR: LoadError: could not load library ".../artifacts/904c551e.../lib/libp4est.4.dylib"
+dlopen(...): Library not loaded: @rpath/libmpi.12.dylib
+  Reason: tried: '.../lib/./libmpi.12.dylib' (no such file),
+          '/Applications/Julia-1.11.app/Contents/Resources/julia/lib/libmpi.12.dylib' (no such file),
+          '/usr/local/lib/libmpi.12.dylib' (no such file),
+          '/usr/lib/libmpi.12.dylib' (no such file, not in dyld cache)
+Stacktrace:
+  [1] p4est_connectivity_new
+    @ ~/.julia/packages/P4est_wrapper/.../src/bindings/p4est_api.jl:361 [inlined]
+  [2] setup_pXest_connectivity_from_geometry(...)
+    @ GridapP4est ...
+```
+
+Non-AMR cases run fine on the same machine, and often the *same* case runs on a
+different machine.
+
+**A.** This is an **MPI binding mismatch**, not a p4est or mesh problem. Read the
+soname: `libmpi.12` is the **MPICH** ABI (OpenMPI is `libmpi.40`). `P4est_jll` is
+built against `MPICH_jll`, and the `MPICH_jll` artifact directory only lands on
+the loader's `@rpath` when `MPICH_jll` is *actually loaded* — which happens only
+when `MPI.jl` is bound to the JLL binary. If `MPIPreferences` points at a
+**system** MPI, `MPICH_jll` is never loaded, nothing supplies
+`libmpi.12.dylib`, and `dlopen` fails exactly as above. The dyld search list in
+the error is the giveaway: artifact dir, Julia's own lib dirs, `/usr/local/lib`,
+`/usr/lib` — no `MPICH_jll` artifact, no Homebrew prefix.
+
+Two things follow from this, and they explain the usual symptoms:
+
+- **Only AMR breaks.** `GridapP4est`/`P4est_wrapper` are the only packages that
+  dlopen `libp4est`. Every non-AMR case avoids p4est entirely and runs happily
+  on a system-MPI binding.
+- **It differs between your own machines.** `LocalPreferences.toml` — the file
+  that records the binding — is in `.gitignore`, so it is per-machine and never
+  travels with a clone. One laptop on `use_jll_binary()` and one desktop on
+  `use_system_binary()` is the common way to see this.
+
+First confirm the binding ([INSTALL.md §5.4](INSTALL.md#54-verify-the-binding)):
+
+```bash
+julia --project=. -e '
+  using MPIPreferences; println("binary  = ", MPIPreferences.binary)
+  using MPI;            println("impl    = ", MPI.identify_implementation())
+                        println("libmpi  = ", MPI.API.libmpi)'
+```
+
+If `binary` is anything other than `MPICH_jll`, that is the cause. Rebind with
+[INSTALL.md §5.2 Route C](INSTALL.md#route-c--mpich_jll-native) and rebuild —
+**the cache clearing is not optional**, or you keep the old library under the
+new preference:
+
+```bash
+rm -f LocalPreferences.toml
+julia --project=. -e 'using MPIPreferences; MPIPreferences.use_jll_binary()'
+julia --project=. -e 'using Pkg; Pkg.build("MPI"; verbose=true)'
+julia --project=. -e 'using Pkg; Pkg.precompile()'
+```
+
+If you must keep a system MPI on that machine (e.g. for coupled Alya runs, which
+need a system `mpif90` anyway), it has to be **MPICH**, not OpenMPI: Homebrew
+`mpich` provides `libmpi.12.dylib`, `open-mpi` provides `libmpi.40.dylib` and can
+never satisfy `P4est_jll`. Even with MPICH you will usually also need its lib
+directory on the loader path, since Homebrew's prefix is not in the list dyld
+searched above:
+
+```bash
+export DYLD_FALLBACK_LIBRARY_PATH="$(brew --prefix mpich)/lib:${DYLD_FALLBACK_LIBRARY_PATH:-}"
+```
+
+`bash tools/check_mpi_setup.sh` walks the whole binding end to end and reports
+which implementation each layer resolved to. See also
+[Which MPI route should I use](#which-mpi-route-should-i-use--openmpi-mpich-or-the-bundled-mpich_jll)
+and [I switched MPI and now things behave strangely](#i-switched-mpi-and-now-things-behave-strangely--wont-bind).
+
+<!--
+Paste these entries into FAQ.md, under the AMR / Run section.
+The heading text must stay as written: INSTALL.md links to the GitHub anchors
+generated from these exact titles.
+-->
+
+### AMR case segfaults in `_platform_memmove`, or aborts with "Attempting to use an MPI routine before initializing"
+
+**Symptoms** (macOS, any `:lamr` / `:lpreadapt` / `:linitial_refine` case such
+as `CompEuler/theta_amr`). Either of these, right after the gmsh mesh is read:
+
+```
+Info    : Done reading './meshes/gmsh_grids/hexa_TFI_10x10.msh'
+
+[72336] signal 11 (2): Segmentation fault: 11
+_platform_memmove at /usr/lib/system/libsystem_platform.dylib (unknown line)
+```
+
+with an `lldb` backtrace that is nothing but `dyld` frames, or, a little later:
+
+```
+Into p4est_new with min quadrants 0 level 0 uniform 1
+Attempting to use an MPI routine (internal_Comm_size) before initializing or after finalizing MPICH
+```
+
+**Cause.** Two copies of MPI are loaded in one Julia process. MPI.jl called
+`MPI_Init` on one of them; p4est is linked against the other, which was never
+initialised. The segfault is the same thing caught earlier, while `dyld` maps
+the second library.
+
+This happens because *three* things in the dependency tree are tied to a
+specific `libmpi`, and they are bound at different times:
+
+| Component | Bound when… | By… |
+|---|---|---|
+| `MPI` | `Pkg.build("MPI")` | `LocalPreferences.toml` (`MPIPreferences`) |
+| `P4est_jll` | the Manifest is **resolved** (`Pkg.instantiate()` on a missing `Manifest.toml`) | the MPI variant recorded in the Manifest |
+| `P4est_wrapper` | `Pkg.build("P4est_wrapper")` / first `Pkg.instantiate()` | whatever `mpicc` and `libp4est` it finds at build time |
+
+Typical ways to end up mismatched:
+
+- Ran `MPIPreferences.use_system_binary(...)` (Homebrew MPICH) *after* the
+  Manifest was resolved for a JLL MPI, or vice versa, and only rebuilt `MPI`.
+  `P4est_jll` stays on the old variant.
+- Ran `Pkg.instantiate()` or `Pkg.build` from a shell where `~/.zshrc` puts a
+  Homebrew MPI first on `PATH`, so `P4est_wrapper` linked Homebrew's
+  `libmpi` while MPI.jl uses `MPICH_jll`.
+- Used the bare `use_jll_binary()` (which selects `MPItrampoline_jll`) while
+  `P4est_jll` resolved to the `MPICH_jll` variant.
+
+**Confirm.** List every `libmpi` the process loads:
+
+```bash
+DYLD_PRINT_LIBRARIES=1 julia --project=. -e 'using Jexpresso' 2>&1 | grep -i 'libmpi\.'
+```
+
+Two different directories — e.g. `/opt/homebrew/Cellar/mpich/.../libmpi.12.dylib`
+*and* `~/.julia/artifacts/<hash>/lib/libmpi.12.dylib` — confirms the diagnosis.
+Also see what MPI.jl itself is bound to:
+
+```bash
+cat LocalPreferences.toml
+julia --project=. -e 'using MPI; println(MPI.API.libmpi)'
+```
+
+**Fix.** Rebind everything to one MPI, from a clean resolve. On Apple Silicon
+the only configuration verified to work without building p4est yourself is the
+bundled `MPICH_jll`, named explicitly. Set the preference **before** the fresh
+resolve, and clear the precompile caches of the MPI-linked chain so no stale
+artifact path survives:
+
+```bash
+cd Jexpresso
+which mpicc                                  # must print nothing (drop the Homebrew MPI PATH export from ~/.zshrc)
+
+rm -f LocalPreferences.toml
+julia --project=. -e 'using MPIPreferences; MPIPreferences.use_jll_binary("MPICH_jll")'
+
+rm -f Manifest.toml
+rm -rf ~/.julia/compiled/v1.11/P4est_jll ~/.julia/compiled/v1.11/P4est_wrapper ~/.julia/compiled/v1.11/GridapP4est ~/.julia/compiled/v1.11/MPI ~/.julia/compiled/v1.11/Jexpresso
+julia --project=. -e 'ENV["JULIA_PKG_PRECOMPILE_AUTO"]=0; using Pkg; Pkg.instantiate()'
+julia --project=. -e 'using Pkg; Pkg.status("GridapP4est")'   # fork URL must show
+
+julia --project=. -e 'using Pkg; Pkg.build("MPI"; verbose=true); Pkg.build("P4est_wrapper"; verbose=true); Pkg.build("GridapP4est"; verbose=true)'
+julia --project=. -e 'using Pkg; Pkg.precompile()'
+
+DYLD_PRINT_LIBRARIES=1 julia --project=. -e 'using Jexpresso' 2>&1 | grep -i 'libmpi\.'
+#   expect exactly one line: ~/.julia/artifacts/<hash>/lib/libmpi.12.dylib
+julia --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler","theta_amr")' 2>&1 | grep -n -A12 'ERROR'
+#   should print nothing
+```
+
+This is the same recipe as INSTALL.md §7.2. Parallel runs then use MPI.jl's
+launcher (`./jexp_mpich.sh` or `mpiexec()` from `using MPI`), **not**
+Homebrew's `mpiexec`.
+
+**What does not work on Apple Silicon, so you don't have to rediscover it:**
+
+- `use_jll_binary("OpenMPI_jll")` — MPI.jl binds fine, but no OpenMPI-linked
+  `P4est_jll` exists for `aarch64-apple-darwin`; you silently get the MPICH
+  build and the first AMR call fails with
+  `could not load library ".../libp4est.4.dylib" … Library not loaded: @rpath/libmpi.12.dylib`.
+- Homebrew MPICH or OpenMPI (`use_system_binary`) — `P4est_jll` picks the
+  matching JLL-built variant, and macOS `dyld` loads that artifact's `libmpi`
+  next to the system one (Linux dedupes by soname; macOS resolves `@rpath` by
+  path). To use a system MPI with AMR on a Mac you must build p4est yourself
+  against it and point `P4est_wrapper` at the install with `P4EST_ROOT_DIR`
+  before `Pkg.build("P4est_wrapper")`.
+- The bare `use_jll_binary()` — selects `MPItrampoline_jll`, a shim over
+  MPICH; has been seen to end with two copies loaded as well.
+
+Not every Mac hits this: a machine set up in the §7.1 order from a clean clone
+never does. It appears on machines whose MPI binding was changed after the
+first `instantiate`.
+
+**Rule of thumb.** Any change to `LocalPreferences.toml` that switches between
+a system MPI and a JLL MPI needs `rm -f Manifest.toml` + `Pkg.instantiate()`
+*before* the `Pkg.build`s; a change within the same route (e.g. Homebrew
+OpenMPI → Homebrew MPICH) needs only the builds. Either way, build in a shell
+where `which mpicc` prints nothing.
+
+---
+
+### AMR case fails with "cfunction: closures are not supported on this platform"
+
+**Symptom** (Apple Silicon):
+
+```
+ERROR: LoadError: cfunction: closures are not supported on this platform
+Stacktrace:
+  [1] (::GridapP4est.var"#83#89"{...})(topology::...)
+    @ GridapP4est ~/.julia/packages/GridapP4est/EIwhI/src/UniformlyRefinedForestOfOctreesDiscreteModels.jl:698
+```
+
+**Cause.** The *registry* `GridapP4est 0.3.11` is in use instead of the
+patched fork (`Hwang1229/GridapP4est.jl#arm64-cfunction-fix`) that fixes
+`@cfunction` closures on ARM64. The fork is selected by a `[sources]` block in
+`Project.toml`, and one of two things went wrong:
+
+1. The block is missing (a merge dropped it, or you are on a branch that never
+   had it).
+2. The block is present, but `Manifest.toml` was resolved before it was added.
+   `Pkg.instantiate()` reuses an existing Manifest and will not switch the
+   package source on its own.
+
+**Confirm.**
+
+```bash
+grep -A2 '^\[sources' Project.toml
+julia --project=. -e 'using Pkg; Pkg.status("GridapP4est")'
+```
+
+The `status` line must include the fork URL:
+
+```
+[c2c8e14b] GridapP4est v0.3.11 `https://github.com/Hwang1229/GridapP4est.jl#arm64-cfunction-fix`
+```
+
+Plain `GridapP4est v0.3.11` with no URL is the registry version.
+
+**Fix.** Ensure `Project.toml` ends with:
+
+```toml
+[sources]
+GridapP4est = {url = "https://github.com/Hwang1229/GridapP4est.jl", rev = "arm64-cfunction-fix"}
+```
+
+then force a fresh resolve and rebuild the MPI-linked pieces (a fresh Manifest
+also brings a fresh `P4est_jll`/`P4est_wrapper`):
+
+```bash
+which mpicc                                  # must print nothing
+rm -f Manifest.toml
+julia --project=. -e 'ENV["JULIA_PKG_PRECOMPILE_AUTO"]=0; using Pkg; Pkg.instantiate()'
+julia --project=. -e 'using Pkg; Pkg.status("GridapP4est")'     # URL must appear now
+julia --project=. -e 'using Pkg; Pkg.build("MPI"; verbose=true); Pkg.build("P4est_wrapper"; verbose=true); Pkg.build("GridapP4est"; verbose=true)'
+julia --project=. -e 'using Pkg; Pkg.precompile()'
+```
+
+`LocalPreferences.toml` can stay as it is; only the Manifest needs to go.
+
+---
+
+### "P4est_jll not found in current path" when I try to inspect it
+
+Not an error in your setup. `P4est_jll` and `P4est_wrapper` are indirect
+dependencies (via `GridapP4est`), so `using P4est_jll` from the project fails
+even though they are installed. Query them through the Manifest instead:
+
+```bash
+julia --project=. -e 'using Pkg; Pkg.status("P4est_jll"; mode=Pkg.PKGMODE_MANIFEST)'
+julia --project=. -e 'using Pkg; Pkg.status("P4est_wrapper"; mode=Pkg.PKGMODE_MANIFEST)'
+```
+
+`Pkg.build("P4est_wrapper")` works on indirect dependencies, which is why the
+INSTALL.md recipes can call it directly.
+
+Note also that `~/.julia/scratchspaces/44cfe95a-1eb2-52ea-b672-e2afdf69b78f/`
+is **Pkg.jl's own** scratchspace — it only holds `build.log` files for every
+package Pkg has built (P4est_wrapper, Pardiso, …). There is no separate
+`P4est_wrapper` shared library to inspect on macOS; to see which MPI the p4est
+stack actually loads, use the `DYLD_PRINT_LIBRARIES` check in the first entry
+above.
+
+### A package fails to precompile with a missing file inside a Julia artifact
+
+**Q.** `Pkg.instantiate()`/`Pkg.precompile()` (or a run that triggers a lazy
+precompile) fails with a missing file somewhere under `~/.julia/artifacts/`.
+Two examples seen in the wild:
+
+```
+ERROR: LoadError: could not load library ".../artifacts/.../lib/libp4est.4.dylib"
+dlopen(.../libp4est.4.dylib, 0x0001): Library not loaded: @rpath/libjansson.4.dylib
+  Referenced from: <...> .../libp4est.4.dylib
+  Reason: tried: '.../lib/./libjansson.4.dylib' (no such file), ...
+```
+
+```
+ERROR: LoadError: SystemError: opening file
+".../artifacts/.../lib/gmsh.jl": No such file or directory
+```
+
+The first is `P4est_jll` missing its `Jansson_jll` dependency's dylib; the
+second is `Gmsh_jll` (pulled in by `GridapGmsh`) missing its own bundled
+`gmsh.jl`. Different packages, same root cause — see below.
+
+**A.** This is a corrupted/incomplete Julia artifact on disk, not a code bug.
+Artifacts are content-addressed directories under `~/.julia/artifacts/<hash>/`
+that Pkg downloads once and then trusts are complete forever — if the
+download was interrupted, partial, or a file inside got deleted/modified
+after the fact, Pkg has no way to notice and will keep handing out the
+broken directory. On macOS specifically, Gatekeeper quarantining/stripping a
+freshly-downloaded artifact is a common trigger.
+
+Note Pkg.jl's live-updating progress bar can also *hide* which package
+actually failed and why — if you only see a generic "Failed to precompile
+X" with no real error above it, re-run that one package in isolation to see
+past the redraw, e.g. `julia --project=. -e 'using Pkg; Pkg.precompile("GridapGmsh")'`
+or just `julia --project=. -e 'using GridapGmsh'`.
+
+Fix, step by step:
+
+1. Quit any running Julia session first.
+2. Clear the artifact cache so Pkg redownloads everything cleanly (this
+   affects every Julia project on the machine, but is the most reliable
+   fix — artifacts are content-addressed and just redownload on demand):
+   ```bash
+   rm -rf ~/.julia/artifacts
+   ```
+3. From your Jexpresso project directory, reinstantiate:
+   ```bash
+   julia --project=. -e 'using Pkg; Pkg.instantiate()'
+   ```
+4. Rebuild the packages that link against native libraries:
+   ```bash
+   julia --project=. -e 'using Pkg; Pkg.build()'
+   ```
+5. Precompile:
+   ```bash
+   julia --project=. -e 'using Pkg; Pkg.precompile()'
+   ```
+6. Re-run whatever case failed originally.
+
+If the exact same error comes back immediately after step 2–3 (i.e. the
+redownloaded artifact is *still* missing the file), macOS Gatekeeper may be
+quarantining it. Check and clear the quarantine flag, then repeat steps 3–5:
+```bash
+xattr -lr ~/.julia/artifacts | grep -i quarantine   # check first
+xattr -dr com.apple.quarantine ~/.julia/artifacts   # clear if present
+```
+
+If you're on Apple Silicon and running an AMR case, the patched `GridapP4est`
+fork is already pinned for you via a `[sources]` block in `Project.toml` — see
+[INSTALL.md, Section 7](INSTALL.md#7-amr-on-macos-apple-silicon-the-patched-gridapp4est-fork).
+Its missing ARM64 `@cfunction`/struct-stride support is a separate issue from
+this artifact-corruption one, but both surface on the same machines, so verify
+`Pkg.status("GridapP4est")` shows the `#arm64-cfunction-fix` fork after
+reinstantiating.
+
 ### A run is "stuck" for ~30–60 s before the time loop advances
 
 **A.** That is the one-time JIT compilation cost (`sem_setup`, the SciML

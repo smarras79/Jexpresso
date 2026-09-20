@@ -1,186 +1,235 @@
-name: Classical Benchmarks
+#==============================================================================
+# Benchmarks — one GitHub Actions job per registered CI case.
+#
+# The job matrix is generated at run time from test/ci_cases.jl, so adding a
+# benchmark means adding one line to that file: a new job appears here
+# automatically, with its own timeout, its own log, its own output artifact
+# and its own row in the summary table.
+#
+# Each job
+#   1. runs the case with CI_MODE=true (inputs from test/CI-runs/<eqs>/<case>,
+#      HDF5 output into test/CI-runs/<eqs>/<case>/output/),
+#   2. compares that output against test/CI-ref/<eqs>/<case>/output/ with the
+#      tolerance declared in the registry,
+#   3. uploads the output and a small status file.
+#
+# A case with no committed reference solution is reported as SKIPPED, not
+# failed — run the `generate-ci-ref` workflow to create its reference.
+#
+# This workflow deliberately does NOT run on pull requests: CI.yml already
+# runs the same cases through `Pkg.test()` there, and these runs are
+# expensive. Uncomment the `pull_request:` trigger below if you want the
+# per-case table on every PR as well.
+#==============================================================================
+name: Benchmarks
 
 on:
   push:
     branches:
       - master
-  pull_request:
-    branches:
-      - master
+  # pull_request:
+  #   branches:
+  #     - master
   schedule:
-    - cron: '0 2 * * 0'   # Weekly on Sunday at 02:00 UTC
-  workflow_dispatch:       # Allow manual triggering
+    - cron: '0 2 * * 0'   # Weekly, Sunday 02:00 UTC
+  workflow_dispatch:
+    inputs:
+      cases:
+        description: 'Cases to run: "all" or a comma-separated list such as "CompEuler/theta,Burgers/case1"'
+        required: false
+        default: 'all'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 jobs:
-  benchmarks:
-    name: Classical Benchmarks
+  #----------------------------------------------------------------------------
+  # Turn test/ci_cases.jl into the job matrix.
+  #----------------------------------------------------------------------------
+  setup:
+    name: Build case matrix
     runs-on: ubuntu-latest
-    timeout-minutes: 300
-
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.cases.outputs.matrix }}
+      count:  ${{ steps.cases.outputs.count }}
     steps:
       - uses: actions/checkout@v4
 
-      - uses: julia-actions/setup-julia@v1
+      - uses: julia-actions/setup-julia@v2
         with:
-          version: '1.11.2'
+          version: '1.11'
+
+      - name: Validate registry
+        run: julia test/ci_cases.jl validate
+
+      - name: Select cases
+        id: cases
+        env:
+          # Quoted through the environment rather than interpolated into the
+          # command line, so a dispatch input cannot inject shell code.
+          CASES: ${{ github.event.inputs.cases || 'all' }}
+        run: |
+          matrix=$(julia test/ci_cases.jl matrix "$CASES")
+          count=$(julia test/ci_cases.jl count  "$CASES")
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "count=$count"   >> "$GITHUB_OUTPUT"
+          echo "Selected $count case(s): $matrix"
+
+  #----------------------------------------------------------------------------
+  # One job per case.
+  #----------------------------------------------------------------------------
+  benchmark:
+    name: ${{ matrix.name }}
+    needs: setup
+    if: needs.setup.outputs.count != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ matrix.job_timeout }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.11'
           arch: x64
 
-      - uses: actions/cache@v3
-        with:
-          path: ~/.julia/artifacts
-          key: ${{ runner.os }}-benchmarks-${{ hashFiles('**/Project.toml', '**/Manifest.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-benchmarks-
-            ${{ runner.os }}-
+      - uses: julia-actions/cache@v2
 
       - uses: julia-actions/julia-buildpkg@v1
 
-      # -----------------------------------------------------------------------
-      # Simulation steps — each benchmark runs as its own julia process so
-      # that a crash in one cannot affect the others.  CI_MODE=true makes
-      # Jexpresso load inputs from test/CI-runs/ (reduced tend, hdf5 output).
-      # Output .h5 files land in test/CI-runs/<EQ>/<CASE>/output/.
-      # continue-on-error lets all seven run even when one fails.
-      # -----------------------------------------------------------------------
-
-      - name: "Simulate: CompEuler/theta"
-        id: sim_compeuler_theta
+      - name: Simulate
+        id: sim
         continue-on-error: true
-        timeout-minutes: 40
+        timeout-minutes: ${{ matrix.timeout }}
+        env:
+          JEXPRESSO_EQS:  ${{ matrix.eqs }}
+          JEXPRESSO_CASE: ${{ matrix.case }}
         run: |
           julia --project=. -e '
-            push!(empty!(ARGS), "CompEuler", "theta", "true")
-            include("src/Jexpresso.jl")
+            using Jexpresso
+            Jexpresso.run_case(ENV["JEXPRESSO_EQS"], ENV["JEXPRESSO_CASE"];
+                               CI_MODE = true)
           '
 
-      - name: "Simulate: CompEuler/3d"
-        id: sim_compeuler_3d
-        continue-on-error: true
-        timeout-minutes: 40
-        run: |
-          julia --project=. -e '
-            push!(empty!(ARGS), "CompEuler", "3d", "true")
-            include("src/Jexpresso.jl")
-          '
-
-      - name: "Simulate: CompEuler/wave1d"
-        id: sim_compeuler_wave1d
-        continue-on-error: true
-        timeout-minutes: 20
-        run: |
-          julia --project=. -e '
-            push!(empty!(ARGS), "CompEuler", "wave1d", "true")
-            include("src/Jexpresso.jl")
-          '
-
-      - name: "Simulate: Burgers/case1"
-        id: sim_burgers_case1
-        continue-on-error: true
-        timeout-minutes: 20
-        run: |
-          julia --project=. -e '
-            push!(empty!(ARGS), "Burgers", "case1", "true")
-            include("src/Jexpresso.jl")
-          '
-
-      - name: "Simulate: Burgers/case2d"
-        id: sim_burgers_case2d
-        continue-on-error: true
-        timeout-minutes: 30
-        run: |
-          julia --project=. -e '
-            push!(empty!(ARGS), "Burgers", "case2d", "true")
-            include("src/Jexpresso.jl")
-          '
-
-      - name: "Simulate: Elliptic/2dlaplace"
-        id: sim_elliptic_2dlaplace
-        continue-on-error: true
-        timeout-minutes: 20
-        run: |
-          julia --project=. -e '
-            push!(empty!(ARGS), "Elliptic", "2dlaplace", "true")
-            include("src/Jexpresso.jl")
-          '
-
-      - name: "Simulate: ShallowWater/TC2"
-        id: sim_shallowwater_tc2
-        continue-on-error: true
-        timeout-minutes: 40
-        run: |
-          julia --project=. -e '
-            push!(empty!(ARGS), "ShallowWater", "TC2", "true")
-            include("src/Jexpresso.jl")
-          '
-
-      # -----------------------------------------------------------------------
-      # Comparison step — loads only HDF5.jl (fast) and checks every .h5 file
-      # in test/CI-runs/<EQ>/<CASE>/output/ against the committed reference in
-      # test/CI-ref/<EQ>/<CASE>/output/ using atol=1e-5.
-      # If no reference files exist yet, the benchmark is marked as skipped
-      # rather than failed (run the generate-ci-ref workflow to bootstrap).
-      # -----------------------------------------------------------------------
-      - name: Compare against reference solutions
+      - name: Compare against reference solution
         id: compare
         if: always()
         continue-on-error: true
-        run: julia --project=. test/compare_benchmarks.jl
+        env:
+          JEXPRESSO_CASE_NAME: ${{ matrix.name }}
+        run: julia --project=. test/compare_benchmarks.jl "$JEXPRESSO_CASE_NAME"
 
-      # -----------------------------------------------------------------------
-      # Markdown summary table shown on the workflow run page.
-      # -----------------------------------------------------------------------
-      - name: Benchmark report
+      - name: Upload run output
         if: always()
-        run: |
-          icon() { [ "$1" = "success" ] && echo "✅ Pass" || echo "❌ Fail"; }
+        uses: actions/upload-artifact@v4
+        with:
+          name: output-${{ matrix.slug }}
+          path: test/CI-runs/${{ matrix.eqs }}/${{ matrix.case }}/output/
+          if-no-files-found: warn
+          retention-days: 14
 
+      # One line per case, collected by the `report` job below into a single
+      # table. Written as an artifact because matrix jobs cannot share outputs.
+      - name: Record status
+        if: always()
+        env:
+          CASE_NAME: ${{ matrix.name }}
+          SIM:       ${{ steps.sim.outcome }}
+          COMPARE:   ${{ steps.compare.outcome }}
+        run: |
+          mkdir -p status
+          printf '%s|%s|%s\n' "$CASE_NAME" "$SIM" "$COMPARE" \
+            > "status/${{ matrix.slug }}.txt"
+
+      - name: Upload status
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: status-${{ matrix.slug }}
+          path: status/
+          retention-days: 14
+
+      - name: Fail the job if this case failed
+        if: always()
+        env:
+          SIM:     ${{ steps.sim.outcome }}
+          COMPARE: ${{ steps.compare.outcome }}
+        run: |
+          if [ "$SIM" != "success" ] || [ "$COMPARE" != "success" ]; then
+            echo "::error title=${{ matrix.name }}::simulation=$SIM comparison=$COMPARE"
+            exit 1
+          fi
+          echo "${{ matrix.name }}: simulation and comparison passed."
+
+  #----------------------------------------------------------------------------
+  # Aggregate every case into one table and one pass/fail check.
+  #----------------------------------------------------------------------------
+  report:
+    name: Benchmark report
+    needs: [setup, benchmark]
+    if: always() && needs.setup.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download statuses
+        uses: actions/download-artifact@v4
+        # Tolerate the pathological case where no matrix job got far enough to
+        # upload a status; the summary step reports that as a failure.
+        continue-on-error: true
+        with:
+          pattern: status-*
+          path: status
+          merge-multiple: true
+
+      - name: Write summary
+        id: summary
+        run: |
+          icon() {
+            case "$1" in
+              success) echo "✅ pass" ;;
+              skipped) echo "⏭️ skipped" ;;
+              *)       echo "❌ $1" ;;
+            esac
+          }
+
+          failed=0
           {
-            echo "## Classical Benchmark Results"
+            echo "## Benchmark results"
             echo ""
-            echo "### Simulation (did the code run?)"
-            echo ""
-            echo "| Benchmark | Result |"
-            echo "|-----------|--------|"
-            echo "| CompEuler/theta    | $(icon '${{ steps.sim_compeuler_theta.outcome }}') |"
-            echo "| CompEuler/3d       | $(icon '${{ steps.sim_compeuler_3d.outcome }}') |"
-            echo "| CompEuler/wave1d   | $(icon '${{ steps.sim_compeuler_wave1d.outcome }}') |"
-            echo "| Burgers/case1      | $(icon '${{ steps.sim_burgers_case1.outcome }}') |"
-            echo "| Burgers/case2d     | $(icon '${{ steps.sim_burgers_case2d.outcome }}') |"
-            echo "| Elliptic/2dlaplace | $(icon '${{ steps.sim_elliptic_2dlaplace.outcome }}') |"
-            echo "| ShallowWater/TC2   | $(icon '${{ steps.sim_shallowwater_tc2.outcome }}') |"
-            echo ""
-            echo "### Numerical comparison (do results match reference?)"
-            echo ""
-            echo "| Status |"
-            echo "|--------|"
-            echo "| $(icon '${{ steps.compare.outcome }}') (see Compare step log for per-benchmark detail) |"
-            echo ""
-            echo "> Reference files live in \`test/CI-ref/\`. "
-            echo "> If a benchmark shows **skipped**, run the **generate-ci-ref** workflow to create its reference."
+            echo "| Case | Simulation | Comparison vs reference |"
+            echo "|------|------------|-------------------------|"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # -----------------------------------------------------------------------
-      # Fail the overall job if any simulation or the comparison failed.
-      # -----------------------------------------------------------------------
-      - name: Fail if any benchmark failed
-        if: always()
-        run: |
-          outcomes=(
-            "${{ steps.sim_compeuler_theta.outcome }}"
-            "${{ steps.sim_compeuler_3d.outcome }}"
-            "${{ steps.sim_compeuler_wave1d.outcome }}"
-            "${{ steps.sim_burgers_case1.outcome }}"
-            "${{ steps.sim_burgers_case2d.outcome }}"
-            "${{ steps.sim_elliptic_2dlaplace.outcome }}"
-            "${{ steps.sim_shallowwater_tc2.outcome }}"
-            "${{ steps.compare.outcome }}"
-          )
-          failed=0
-          for o in "${outcomes[@]}"; do
-            [ "$o" = "failure" ] && failed=1
+          shopt -s nullglob
+          files=(status/*.txt)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "| _no cases ran_ | | |" >> "$GITHUB_STEP_SUMMARY"
+            failed=1
+          fi
+
+          for f in "${files[@]}"; do
+            IFS='|' read -r name sim compare < "$f"
+            echo "| \`$name\` | $(icon "$sim") | $(icon "$compare") |" \
+              >> "$GITHUB_STEP_SUMMARY"
+            [ "$sim" = "success" ] && [ "$compare" = "success" ] || failed=1
           done
-          if [ $failed -eq 1 ]; then
-            echo "One or more benchmarks failed. See the report above for details."
+
+          {
+            echo ""
+            echo "Cases come from \`test/ci_cases.jl\`; references from \`test/CI-ref/\`."
+            echo "A case whose comparison reports *no reference files* needs the"
+            echo "**generate-ci-ref** workflow to be run once."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ $failed -ne 0 ]; then
+            echo "One or more benchmarks failed — see the table above."
             exit 1
           fi
           echo "All benchmarks passed."

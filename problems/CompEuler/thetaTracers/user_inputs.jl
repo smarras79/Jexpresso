@@ -28,9 +28,7 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh", #for nop=4
         :gmsh_filename       => "./meshes/gmsh_grids/square_UNSTR_20el.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/square_UNSTR_5el.msh",
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------

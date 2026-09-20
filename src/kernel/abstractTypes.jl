@@ -71,6 +71,16 @@ struct DSMAG <: AbstractVT end
 struct VREM  <: AbstractVT end
 struct WALE  <: AbstractVT end
 struct DSGS  <: AbstractVT end
+# Marras-Nazarov residual-based Dynamic SGS for the 2D ideal GLM-MHD
+# system (9 fields). Kept as its own tag rather than folded into DSGS()
+# because the residual set, the equation-of-state and the wave speed all
+# differ from the Euler-theta system DSGS() is written for.
+struct DSGS_MHD <: AbstractVT end
+# Marras-Nazarov residual-based Dynamic SGS for the 2D non-linear
+# shallow-water system q = (H, Hu, Hv): residual of the three equations,
+# wave speed |v| + sqrt(g H), one kinematic coefficient on every slot
+# (problems/ShallowWater/SoliWaveIslandDSGS).
+struct DSGS_SW <: AbstractVT end
 
 
 abstract type AbstractVolumeFlux end
@@ -81,6 +91,14 @@ struct artiano_tec <: AbstractVolumeFlux end
 struct kennedy_gruber <: AbstractVolumeFlux end
 struct central_euler <: AbstractVolumeFlux end
 struct central_theta <: AbstractVolumeFlux end
+
+#
+# Numerical (interface) fluxes for DG
+#
+abstract type AbstractNumericalFlux end
+struct upwind_flux <: AbstractNumericalFlux end
+struct rusanov_flux <: AbstractNumericalFlux end
+
 #
 # Boundary flags/conditions
 #
@@ -98,3 +116,4 @@ struct ASCII <: AbstractOutFormat end
 struct VTK <: AbstractOutFormat end
 struct HDF5 <: AbstractOutFormat end
 struct NETCDF <: AbstractOutFormat end
+struct NONE <: AbstractOutFormat end

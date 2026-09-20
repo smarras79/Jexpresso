@@ -1,8 +1,13 @@
-function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
+function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
     """
 
             """
-    @info " Initialize fields for 2D CompEuler with θ equation ........................ "
+    
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    if rank == 0
+        println(" Initialize fields for 2D CompEuler with θ equation ........................ ")
+    end
     
     #---------------------------------------------------------------------------------
     # Solution variables:
@@ -11,8 +16,9 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     # defines neqs, which is the second dimension of q = define_q()
     # 
     #---------------------------------------------------------------------------------
-    qvars = ("ρ", "ρu", "ρv", "ρθ")
-    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars))
+    qvars    = ["ρ", "ρu", "ρv", "ρθ"]
+    qoutvars = ["ρ", "u", "w", "θ", "p"]
+    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
     #---------------------------------------------------------------------------------
     if (inputs[:backend] == CPU())    
         PhysConst = PhysicalConst{Float64}()
@@ -20,8 +26,8 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             #
             # READ RESTART HDF5:
             #
+            
             q.qn, q.qe = read_output(mesh.SD, inputs[:restart_input_file_path], inputs, mesh.npoin, HDF5(); nvar=length(qvars))
-            PhysConst = PhysicalConst{Float64}()
             for ip=1:mesh.npoin
                 ρ  = q.qn[ip,1]
                 ρθ = q.qn[ip,4]
@@ -40,7 +46,10 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             #
             # INITIAL STATE from scratch:
             #
-            xc = (maximum(mesh.x) + minimum(mesh.x))/2
+            comm = MPI.COMM_WORLD
+            max_x = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
+            min_x = MPI.Allreduce(minimum(mesh.x), MPI.MIN, comm)
+            xc = (max_x + min_x)/2
             yc = 2500.0 #m
             r0 = 2000.0 #m
         
@@ -68,7 +77,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                     q.qn[ip,1] = ρ - ρref
                     q.qn[ip,2] = ρ*u - ρref*u
                     q.qn[ip,3] = ρ*v - ρref*v
-                    q.qn[ip,4] = ρ*θ - ρref*θ
+                    q.qn[ip,4] = ρ*θ - ρref*θref
                     q.qn[ip,end] = p
                 
                     #Store initial background state for plotting and analysis of pertuebations
@@ -112,7 +121,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 q.qe[:,4] .= q.qe[:,4]./q.qe[:,1]
             end
         end
-        
+
     else
         if (inputs[:SOL_VARS_TYPE] == PERT())
             lpert = true
@@ -129,7 +138,9 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         k = initialize_gpu!(inputs[:backend])
         k(q.qn, q.qe, mesh.x, mesh.y, xc, rθ, yc, θref, θc, PhysConst,lpert; ndrange = (mesh.npoin))
     end
-    @info " Initialize fields for 2D CompEuler with θ equation ........................ DONE "
+    if rank == 0
+        println(" Initialize fields for 2D CompEuler with θ equation ........................ DONE ")
+    end
     
     return q
 end
@@ -174,4 +185,32 @@ end
     qe[ip,4] = ρref*θref
     qe[ip,end] = pref
 
+end
+
+
+function user_get_adapt_flags!(adapt_flags, inputs, old_ad_lvl, q, qe, connijk, nelem, ngl)
+    ips         = KernelAbstractions.zeros(CPU(), TInt, ngl * ngl)
+    tol         = 1.0
+    max_level   = inputs[:amr_max_level] 
+    
+    for iel = 1:nelem
+        m = 1
+        for i = 1:ngl
+            for j = 1:ngl
+                ips[m] = connijk[iel, i, j]
+                m += 1
+            end
+        end
+        # println(q[ips,4] - qe[ips,4])
+        theta      = q[ips, 4] ./ q[ips, 1]
+        theta_ref  = qe[ips, 4] ./ qe[ips, 1]
+        dtheta     = theta - theta_ref
+        # println(dtheta)
+        if any(dtheta .> tol) && (old_ad_lvl[iel] < max_level)
+            adapt_flags[iel] = refine_flag
+        end
+        if all(dtheta .< tol)
+            adapt_flags[iel] = coarsen_flag
+        end
+    end
 end

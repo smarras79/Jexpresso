@@ -8,13 +8,35 @@ module Jexpresso
 
 using QuadGK
 using MPI
+# Initialise MPI when this file is evaluated as a real module body — i.e. the
+# script form `julia src/Jexpresso.jl CompEuler theta`, where run.jl is included
+# at the bottom and expects a live MPI.
+#
+# NOT while generating precompile output. A precompile worker that calls
+# MPI.Init() also runs MPI.jl's atexit MPI_Finalize when it exits, and that
+# finalize can fail and take the whole precompilation with it — MPICH on a
+# machine with a VPN interface aborts there because libfabric selected the
+# tunnel as its NIC:
+#
+#   Fatal error in internal_Finalize: Other MPI error
+#   MPIDI_OFI_mpi_finalize_hook(861): flush_send(771): OFI call tsenddata
+#   failed (default nic=utun7: No such file or directory
+#
+# Nothing in this module body needs an initialised MPI at precompile time. The
+# opt-in @compile_workload at the bottom of this file goes through run.jl,
+# which initialises MPI itself (and pins FI_PROVIDER first), so that path is
+# unaffected. `using Jexpresso` from a cache never evaluates this body at all;
+# those callers get MPI.Init() from run.jl / je_init_mpi_and_split_comm.
+if ccall(:jl_generating_output, Cint, ()) == 0
+    MPI.Init()
+end
 using KernelAbstractions
 # PERF: the following five `using`s eagerly load big package binaries
 # on every MPI rank (Revise ~150 MB, BenchmarkTools, SnoopCompile,
 # UnicodePlots, Geodesy) and were not referenced anywhere in the source
 # tree. Removed to cut the per-rank baseline. Re-add at the REPL if
 # you need them interactively.
-# using Revise
+#using Revise
 # using BenchmarkTools
 using Dates
 using CSV, DataFrames
@@ -35,12 +57,13 @@ using StaticArrays
 using StaticArrays: SVector, MVector
 using OrdinaryDiffEq
 using OrdinaryDiffEq: solve
-# using SnoopCompile
+# using SnoopCompile  # incompatible with sysimage builds
 using LinearSolve
 using LinearSolve: solve
 using SciMLBase: CallbackSet, DiscreteCallback,
                  ODEProblem, ODESolution, ODEFunction,
-                 SplitODEProblem, FullSpecialize
+                 SplitODEProblem, FullSpecialize,
+                 successful_retcode
 # PERF: `using HDF5` moved into Jexpresso._ensure_hdf5_loaded!() —
 # only `write_hdf5`/`read_hdf5` in src/io/write_output.jl reference
 # h5* functions, and both call the loader before touching them. The
@@ -91,11 +114,10 @@ using Gridap.Adaptivity
 using GridapDistributed
 using PartitionedArrays
 using GridapGmsh
-# PERF: `using GridapP4est` (and its companion P4est_wrapper) moved
-# into Jexpresso._ensure_amr_loaded!(). They are only touched by AMR
-# / initial-refinement / restart-AMR code paths, all gated by
-# `inputs[:ladapt]`, `inputs[:linitial_refine]`, `inputs[:lamr]` or
-# `inputs[:lrestart_amr]`. city2d and other plain runs skip the load.
+
+import Jansson_jll
+using GridapP4est
+using P4est_wrapper
 
 using PrecompileTools
 
@@ -116,8 +138,6 @@ include(joinpath( "kernel", "abstractTypes.jl"))
 
 include(joinpath( "kernel", "mesh", "meshStructs.jl"))
 
-#include(joinpath( "kernel", "elementLearningStructs_new.jl"))
-#include(joinpath( "kernel", "elementLearningStructs_sparse.jl"))
 include(joinpath( "kernel", "elementLearningStructs.jl"))
 
 include(joinpath( "kernel", "globalStructs.jl"))
@@ -135,6 +155,7 @@ include(joinpath( "kernel", "physics", "microphysics.jl"))
 include(joinpath( "kernel", "physics", "saturation.jl"))
 
 include(joinpath( "kernel", "physics", "soundSpeed.jl"))
+include(joinpath( "kernel", "physics", "schlieren.jl"))
 
 include(joinpath( "kernel", "physics", "globalConstantsPhysics.jl"))
 
@@ -146,15 +167,39 @@ include(joinpath( "kernel", "physics", "largescaleStructs.jl"))
 
 include(joinpath( "kernel", "physics", "turbul.jl"))
 
+include(joinpath( "kernel", "physics", "sgsStructs.jl"))
+
 include(joinpath( "kernel", "physics", "SGS.jl"))
 
 include(joinpath( "kernel", "physics", "CM_MOST.jl"))
 
 include(joinpath( "kernel", "physics", "atmos_to_rad.jl"))
 
+include(joinpath( "kernel", "physics", "shortwave_rad.jl"))
+
+include(joinpath( "kernel", "physics", "longwave_rad.jl"))
+
+include(joinpath( "kernel", "physics", "radiative_heating.jl"))
+
+include(joinpath( "kernel", "physics", "optical_depth_integral.jl"))
+
 include(joinpath( "kernel", "mesh", "Geom.jl"))
 
 include(joinpath( "kernel", "mesh", "mesh.jl"))
+
+include(joinpath( "kernel", "mesh", "extra_mesh_spatial_amr.jl"))
+
+include(joinpath( "kernel", "mesh", "pole_handling.jl"))
+
+# High-order grid on a CLOSED spherical shell (2D manifold embedded in 3D).
+# Self-contained on purpose: the flat 2D reader in mesh.jl stores only (x,y).
+
+# Cube-face -> sphere maps (gnomonic / equiangular / conformal) and the
+# post-read node remap that switches a cubed-sphere grid from one to another.
+include(joinpath( "kernel", "mesh", "cubed_sphere_maps.jl"))
+
+# Metric terms of the 2D manifold + the diagonal mass matrix.
+include(joinpath( "kernel", "mesh", "sphere_metrics.jl"))
 
 include(joinpath( "kernel", "bases", "basis_structs.jl"))
 
@@ -178,7 +223,12 @@ include(joinpath( "kernel", "boundaryconditions", "BCs.jl"))
 
 include(joinpath( "kernel", "operators", "operators.jl"))
 
+include(joinpath( "kernel", "operators", "dg_fluxes.jl"))
+
 include(joinpath( "kernel", "operators", "rhs.jl"))
+
+# SEM right-hand side on the spherical shell (+ the modal filter).
+include(joinpath( "kernel", "operators", "sphere_rhs.jl"))
 
 include(joinpath( "kernel", "operators", "rhs_2point.jl"))
 
@@ -186,27 +236,35 @@ include(joinpath( "kernel", "operators", "rhs_gpu.jl"))
 
 include(joinpath( "kernel", "operators", "rhs_laguerre_gpu.jl"))
 
-include(joinpath( "kernel", "operators", "imex2d.jl"))
-
-include(joinpath( "kernel", "operators", "imex.jl"))
-
 include(joinpath( "kernel", "operators", "rhs_laguerre.jl"))
 
 include(joinpath( "kernel", "operators", "filter.jl"))
 
 include(joinpath( "kernel", "solvers", "TimeIntegrators.jl"))
 
+# SSP-RK3 time loop for the spherical shell, with the Lagrange projection
+# applied at every stage.
+include(joinpath( "kernel", "solvers", "sphere_time_loop.jl"))
+
 include(joinpath("kernel", "operators", "Axb_rad_mpi.jl"))
+
+include(joinpath("kernel", "operators", "asm_preconditioner.jl"))
 
 include(joinpath( "kernel", "solvers", "Axb.jl"))
 
-include(joinpath("kernel", "operators", "build_rad_2d.jl"))
-
-include(joinpath("kernel", "operators", "build_rad_3d.jl"))
+include(joinpath("kernel", "operators", "build_rad.jl"))
 
 include(joinpath( "kernel", "operators", "angular_comms.jl"))
 
+include(joinpath( "kernel", "operators", "spatial_amr_cache.jl"))
+
+include(joinpath( "kernel", "operators", "spatial_constraint_matrices.jl"))
+
+include(joinpath( "kernel", "operators", "spatial_ghost_comms.jl"))
+
 include(joinpath( "kernel", "operators", "extra_amr_matrices.jl"))
+
+include(joinpath( "kernel", "operators", "element_refinement_tracking.jl"))
 
 include(joinpath( "kernel", "operators", "debug_amr_parallel.jl"))
 
@@ -238,36 +296,20 @@ include(joinpath( "auxiliary", "auxiliary_functions.jl"))
 
 include(joinpath( "auxiliary", "checks.jl"))
 
-# PERF: only evaluate run.jl at module-body time when this file was
-# invoked as a Julia SCRIPT (`julia src/Jexpresso.jl CompEuler 3d`).
-# When the package is being precompiled the @compile_workload block at
-# the bottom of this file already includes run.jl with sod1d args, and
-# including it from here too would define `parse_commandline` twice
-# during precompile and violate Julia ≥ 1.10's no-method-overwrite
-# rule:
+# Record of which case's user_*.jl files are currently loaded in this
+# session (case dir + per-file mtimes). run.jl consults this to skip
+# re-`include`ing them when the SAME case is re-run unchanged. Re-including
+# redefines user_flux!/user_source!/… which invalidates the compiled rhs!,
+# forcing the RHS + SciML integrator to recompile inside the warm-up on
+# every run_case call (the ~30 s "Precompile warm-up" freeze on a re-run).
+# Skipping the redundant include keeps an unchanged re-run launch-cost-only;
+# switching cases or editing any user_*.jl bumps the check so changes still
+# take effect.
 #
-#   WARNING: Method definition parse_commandline() in module Jexpresso
-#   ... overwritten on the same line (check for duplicate calls to
-#   `include`).
-#   ERROR: Method overwriting is not permitted during Module
-#   precompilation.
-#
-# When the package is loaded via `using Jexpresso` (precompile cache
-# hit) the module body doesn't re-evaluate at all, so this branch is
-# moot — REPL users invoke `Jexpresso.run_case(eqs, eqs_case)` to
-# start a case (defined further down).
-#
-# The script-form `julia src/Jexpresso.jl CompEuler 3d` still works:
-# `abspath(PROGRAM_FILE)` matches this file's path AND
-# `jl_generating_output` returns 0 (we're not generating precompile
-# output), so the include fires and the historic auto-run path is
-# preserved.
-if abspath(PROGRAM_FILE) == abspath(@__FILE__) &&
-   ccall(:jl_generating_output, Cint, ()) == 0
-    include("./run.jl")
-end
-
-export @timers
+# Must be defined before the script-mode auto-run include below, since
+# run.jl (included at module-body time when invoked as a script) reads it.
+const _LOADED_CASE_DIR  = Ref{String}("")
+const _CASE_FILE_MTIMES = Dict{String,Float64}()
 
 # ──────────────────────────────────────────────────────────────────────
 # Lazy dependency loaders.
@@ -295,6 +337,12 @@ export @timers
 # are referenced this way at present; if a future caller needs e.g.
 # `Infiltrator.@exfiltrate` they must either eager-load it or wrap the
 # call in `@eval`.
+#
+# Must be defined before the script-mode auto-run include below, since
+# run.jl (included at module-body time when invoked as a script) calls
+# through to driver()/sem_setup synchronously and may reach any of
+# these loaders before this file's module body resumes past that
+# include.
 # ──────────────────────────────────────────────────────────────────────
 
 # ─── Radiative-transfer dependency tree ───────────────────────────────
@@ -312,9 +360,13 @@ into Jexpresso's namespace. No-op after the first call.
 """
 function _ensure_rt_loaded!()
     _RT_LOADED[] && return nothing
+    # Import ClimaComms first in its own @eval so that the @static macro
+    # expansion in the next @eval sees ClimaComms already in scope.
+    # (Macros expand across the full @eval begin...end block before any
+    # statement executes, so a combined block would fail with UndefVarError.)
+    @eval Jexpresso import ClimaComms
+    @eval Jexpresso @static pkgversion(ClimaComms) >= v"0.6" && ClimaComms.@import_required_backends
     @eval Jexpresso begin
-        import ClimaComms
-        @static pkgversion(ClimaComms) >= v"0.6" && ClimaComms.@import_required_backends
         using RRTMGP
         using RRTMGP.Vmrs
         using RRTMGP.LookUpTables
@@ -329,7 +381,17 @@ function _ensure_rt_loaded!()
         using RRTMGP.ArtifactPaths
         import RRTMGP.Parameters.RRTMGPParameters
         import RRTMGP: get_artifact_path
+        # LinearOperators: used by Axb_rad_mpi.jl (matvec wrappers)
         using LinearOperators
+        # Preconditioner stack: used by asm_preconditioner.jl
+        using KLU
+        using ILUZero
+        using IncompleteLU
+        using Krylov
+        using AMD
+        using MUMPS
+        # KrylovPreconditioners: used by the 2D RT solver in build_rad.jl
+        using KrylovPreconditioners
     end
     # NCDatasets is also touched from this code path (Dataset(...) in
     # compute_radiative_fluxes!), so pull it in via its dedicated loader.
@@ -368,12 +430,21 @@ const _HDF5_LOADED = Ref(false)
 """
     Jexpresso._ensure_hdf5_loaded!()
 
-Lazily `using HDF5`. Called from write_hdf5/read_hdf5 before the first
-`h5open`/`h5read`.
+Lazily bring HDF5.jl's entry points into scope. Called from
+write_hdf5/read_hdf5 before the first `h5open`/`h5read`.
+
+Only the functions are imported, never the package binding: `using HDF5`
+would bring in the name `HDF5`, which this module already uses for its own
+output-format dispatch tag (abstractTypes.jl), and Julia would print
+
+    WARNING: using HDF5.HDF5 in module Jexpresso conflicts with an existing
+    identifier.
+
+on the first HDF5 write of every run.
 """
 function _ensure_hdf5_loaded!()
     _HDF5_LOADED[] && return nothing
-    @eval Jexpresso using HDF5
+    @eval Jexpresso import HDF5: h5open, h5read, h5write
     _HDF5_LOADED[] = true
     return nothing
 end
@@ -387,23 +458,45 @@ end
 #   * TimeIntegrators.jl :: write_p4est_checkpoint
 # All gated by `inputs[:ladapt]`, `inputs[:linitial_refine]`,
 # `inputs[:lamr]`, or `inputs[:lrestart_amr]`.
-const _AMR_LOADED = Ref(false)
-"""
-    Jexpresso._ensure_amr_loaded!()
-
-Lazily bring GridapP4est and P4est_wrapper into Jexpresso's namespace.
-Called from every entry point that touches the p4est forest. No-op
-after the first call.
-"""
+const _AMR_LOADED = Ref(true)
+# GridapP4est and P4est_wrapper are loaded eagerly at module load time
+# (top of Jexpresso.jl) to avoid Julia world-age errors: the @eval lazy-
+# load approach bumped the world counter after mesh.jl was compiled,
+# making OctreeDistributedDiscreteModel inaccessible from compiled code.
 function _ensure_amr_loaded!()
-    _AMR_LOADED[] && return nothing
-    @eval Jexpresso begin
-        using GridapP4est
-        using P4est_wrapper
-    end
-    _AMR_LOADED[] = true
     return nothing
 end
+
+# PERF: only evaluate run.jl at module-body time when this file was
+# invoked as a Julia SCRIPT (`julia src/Jexpresso.jl CompEuler 3d`).
+# When the package is being precompiled the @compile_workload block at
+# the bottom of this file already includes run.jl with sod1d args, and
+# including it from here too would define `parse_commandline` twice
+# during precompile and violate Julia ≥ 1.10's no-method-overwrite
+# rule:
+#
+#   WARNING: Method definition parse_commandline() in module Jexpresso
+#   ... overwritten on the same line (check for duplicate calls to
+#   `include`).
+#   ERROR: Method overwriting is not permitted during Module
+#   precompilation.
+#
+# When the package is loaded via `using Jexpresso` (precompile cache
+# hit) the module body doesn't re-evaluate at all, so this branch is
+# moot — REPL users invoke `Jexpresso.run_case(eqs, eqs_case)` to
+# start a case (defined further down).
+#
+# The script-form `julia src/Jexpresso.jl CompEuler 3d` still works:
+# `abspath(PROGRAM_FILE)` matches this file's path AND
+# `jl_generating_output` returns 0 (we're not generating precompile
+# output), so the include fires and the historic auto-run path is
+# preserved.
+if abspath(PROGRAM_FILE) == abspath(@__FILE__) &&
+   ccall(:jl_generating_output, Cint, ()) == 0
+    include("./run.jl")
+end
+
+export @timers
 
 # Run the test
 # test_create_2d_projection_matrices_numa2d()
@@ -433,7 +526,6 @@ end
 # CI_MODE=true points the case loader at test/CI-runs/<eqs>/<eqs_case>
 # instead of problems/<eqs>/<eqs_case>; matches the third positional
 # arg of the historical command-line form.
-# ──────────────────────────────────────────────────────────────────────
 """
     Jexpresso.run_case(eqs, eqs_case; CI_MODE=false)
 
@@ -501,9 +593,80 @@ end
             delete!(ENV, k)
         end
     end
+
+    # ── MPI-driven driver workload ──────────────────────────────────────
+    # Running the sod1d driver below bakes the hot-path JIT (RHS, the SciML
+    # integrator, the callback-specialized warm-up) into the precompile
+    # cache, so the first `run_case` in a fresh process is launch-cost-only
+    # instead of paying ~tens of seconds of JIT. The workload is kept *lean*
+    # — drivers.jl caps the run to 3 timesteps while `jl_generating_output`
+    # is set — so precompilation stays fast; a full 2000-step sod1d pass is
+    # NOT run here.
+    #
+    # The driver calls MPI.Init(), which on an InfiniBand cluster brings up
+    # the libfabric (OFI) fabric. On a login node that step is hostile:
+    #
+    #   * verbs/mlx5 (the IB default) tries to allocate an RDMA queue pair
+    #     and aborts — verbs are disabled / locked memory too low:
+    #         Failed to modify UD QP to INIT on mlx5_0: Operation not permitted
+    #         create_vni_context: Cannot allocate memory
+    #   * tcp enumerates every NIC (IPoIB, bonded, …) and does reverse-DNS
+    #     during MPI.Init — this can stall for many minutes.
+    #
+    # So for the single-process precompile worker we steer libfabric onto
+    # the shared-memory `shm` provider (unless the user pinned FI_PROVIDER),
+    # which needs no network and is the singleton-init happy path, and
+    # restore the previous state afterwards so nothing leaks past
+    # precompilation.
+    #
+    # The workload is OFF by default: on an InfiniBand login node MPI.Init
+    # cannot reliably bring up a fabric (verbs aborts, tcp/shm can stall for
+    # many minutes), and we will not let precompilation hang on that. The
+    # package still precompiles fully without it; you only lose the warm-up,
+    # so the first solve of a given problem shape pays its JIT at runtime.
+    #
+    # Opt in — only on a compute node where the fabric is healthy, or any
+    # machine where MPI.Init is cheap (e.g. a laptop) — with:
+    #
+    #     JEXPRESSO_PRECOMPILE_WORKLOAD=1   (also: true / yes / on)
+    #
+    # When opted in the run is lean (drivers.jl caps it to 3 steps while
+    # generating precompile output) and pins a cheap libfabric provider for the
+    # single-process worker.
+    #
+    # The provider is OS-dependent: libfabric's `shm` is LINUX-ONLY. Requesting
+    # it on macOS leaves libfabric with nothing to return and MPI_Init fails
+    # with `OFI call getinfo failed (default nic=(n/a))` — turning a
+    # precompilation that would have worked into a hard error. On macOS pin the
+    # tcp provider to loopback instead, which is equally network-free in
+    # practice and is a provider that actually exists there.
+    _run_workload = lowercase(get(ENV, "JEXPRESSO_PRECOMPILE_WORKLOAD", "0")) in
+                    ("1", "true", "yes", "on")
+    _fi_provider_was_set = haskey(ENV, "FI_PROVIDER")
+    _fi_provider_prev    = get(ENV, "FI_PROVIDER", "")
+    if _run_workload && !_fi_provider_was_set
+        # Linux: `shm` is the network-free happy path.
+        # macOS: `shm` does not exist there, and `tcp` needs an interface that
+        # can host an endpoint — loopback frequently cannot, failing with
+        # `ep_enable ... Bad file descriptor`. `sockets` needs no interface at
+        # all, so it is the one provider that is safe to pick blind. Anyone who
+        # has tuned FI_PROVIDER themselves keeps their setting (checked above).
+        ENV["FI_PROVIDER"] = Sys.islinux() ? "shm" : "sockets"
+    end
+
     @compile_workload begin
-        push!(empty!(ARGS), "CompEuler", "sod1d", "true")
-        include(joinpath(@__DIR__, "run.jl"))   # one full driver pass
+        if _run_workload
+            push!(empty!(ARGS), "CompEuler", "sod1d", "true")
+            include(joinpath(@__DIR__, "run.jl"))   # lean driver pass (3 steps)
+        end
+    end
+
+    # Undo the temporary FI_PROVIDER override (no-op if we never set it, or
+    # if the user had pinned it — we left theirs untouched above).
+    if _run_workload && !_fi_provider_was_set
+        delete!(ENV, "FI_PROVIDER")
+    elseif _run_workload
+        ENV["FI_PROVIDER"] = _fi_provider_prev
     end
 end
 end

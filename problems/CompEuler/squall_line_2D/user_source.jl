@@ -17,10 +17,10 @@ function user_source!(S, q, qe, npoin, ::CL,::TOTAL; neqs=1,x=0.0, y=0.0, ymin=0
     # SPONGE
     #--------------
     zmax = 24000.0
-    if inputs[:lsponge]
+    if (inputs[:lsponge]::Bool)   # type-asserted: a bare read of the global Dict boxes and allocates at every node
         z = y
         @info z
-        zs = inputs[:zsponge]
+        zs = inputs[:zsponge]::Float64
     	xr = 0.0
     	xl = 0.0
     	α  = 0.5
@@ -75,9 +75,9 @@ function user_source!(S,
     # SPONGE
     #--------------
     zmax = ymax
-    if inputs[:lsponge]
+    if (inputs[:lsponge]::Bool)   # type-asserted: a bare read of the global Dict boxes and allocates at every node
         z = y
-        zs = inputs[:zsponge]
+        zs = inputs[:zsponge]::Float64
     	xr = 0.0
     	xl = 0.0
     	α  = 0.5

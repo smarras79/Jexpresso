@@ -1,11 +1,31 @@
+export St_extra_mesh
 export St_mesh
+
+Base.@kwdef mutable struct St_extra_mesh{TInt, TFloat, NSD, dims1, dims2, dims3, dims4, dims5, nelem, npoin, backend}
+
+    extra_coords  = KernelAbstractions.zeros(backend,TFloat, dims1)
+    extra_coords_cart = KernelAbstractions.zeros(backend,TFloat, dims5)
+    extra_connijk = KernelAbstractions.zeros(backend,TInt, dims2)
+    extra_nelem::Union{TInt, Missing} = nelem
+    extra_npoin::Union{TInt, Missing} = npoin
+    extra_nop = KernelAbstractions.zeros(backend,TInt, dims3)
+    extra_metrics = allocate_metrics(NSD, dims4[1], dims4[2], dims4[3], TFloat, backend)
+    Minv = KernelAbstractions.zeros(backend,TFloat, npoin)
+    ωθ = KernelAbstractions.zeros(backend,TInt, 5)
+    ωϕ = KernelAbstractions.zeros(backend,TInt, 5)
+    ψ = KernelAbstractions.zeros(backend,TInt, 5,5)
+    dψ = KernelAbstractions.zeros(backend,TInt, 5,5)
+    ref_level = KernelAbstractions.zeros(backend,TInt,nelem)
+end
 
 Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
 
     x      = KernelAbstractions.zeros(backend, TFloat, 2)
     y      = KernelAbstractions.zeros(backend, TFloat, 2)
     z      = KernelAbstractions.zeros(backend, TFloat, 2)
-    coords = KernelAbstractions.zeros(backend, TFloat, 2, 1)
+    # LAYOUT: coords is (nsd, npoin) -- a node's coordinates are ADJACENT in
+    # memory, so touching a node costs one cache line instead of nsd of them.
+    coords = KernelAbstractions.zeros(backend, TFloat, 1, 2)
     
     x_ho = KernelAbstractions.zeros(backend, TFloat, 2)
     y_ho = KernelAbstractions.zeros(backend, TFloat, 2)
@@ -14,7 +34,26 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     Δx = KernelAbstractions.zeros(backend, TFloat, 2)
     Δy = KernelAbstractions.zeros(backend, TFloat, 2)
     Δz = KernelAbstractions.zeros(backend, TFloat, 2)
-    
+
+    # ---------------------------------------------------------------------
+    # Surface grids embedded in 3D: a 2D MANIFOLD (cell dimension 2, point
+    # dimension 3), e.g. a cubed sphere. Such a grid is read by the ordinary
+    # gmsh path like every other grid — mod_mesh_read_gmsh! sets `lmanifold`
+    # from the Gridap model itself, and it changes exactly two things: the
+    # linear nodes keep their z, and the high-order LGL nodes are interpolated
+    # in (x,y,z) instead of (x,y).
+    #
+    # `radius > 0` additionally snaps every node radially onto the shell, so
+    # the LGL points sit ON the sphere rather than on the chord of the linear
+    # element. `lon`/`lat` are then filled from (x,y,z); all four stay at their
+    # defaults for ordinary flat grids.
+    # ---------------------------------------------------------------------
+    lmanifold::Bool = false
+    radius::TFloat  = 0.0
+    lon = KernelAbstractions.zeros(backend, TFloat, 0)
+    lat = KernelAbstractions.zeros(backend, TFloat, 0)
+
+
     xmin::Union{TFloat, Missing} = -1.0;
     xmax::Union{TFloat, Missing} = +1.0;
     
@@ -123,17 +162,30 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     bdy_face_in_elem          = KernelAbstractions.zeros(backend, TInt, 0)
     poin_in_bdy_face          = KernelAbstractions.zeros(backend, TInt, 0, 0, 0)
     elem_to_face              = KernelAbstractions.zeros(backend, TInt, 0, 0, 0, 0, 0)
+    elem_to_edge              = KernelAbstractions.zeros(backend, TInt, 0, 0, 0, 0)
     edge_type                 = Array{Union{Nothing, String}}(nothing, 1)
     face_type                 = Array{Union{Nothing, String}}(nothing, 1)
     bdy_edge_type             = Array{Union{Nothing, String}}(nothing, 1)
     bdy_face_type             = Array{Union{Nothing, String}}(nothing, 1)
     bdy_edge_type_id          = KernelAbstractions.zeros(backend, TInt, 0)
 
-    Δelem                = KernelAbstractions.zeros(backend, TInt, 0)
+    # TFloat, not TInt: Δelem holds the shortest corner-to-corner distance in
+    # each element (mesh.jl fills it with a TFloat array), and SGS.jl consumes
+    # it as Δelem::AbstractVector{TT} with Δ = Δelem[ie]/ngl. The TInt default
+    # was the odd one out — Δelem_s/Δelem_l next to it are already 0.0.
+    Δelem                = KernelAbstractions.zeros(backend, TFloat, 0)
     Δelem_s              = 0.0
     Δelem_l              = 0.0
     Δeffective_s         = 0.0
     Δeffective_l::TFloat = 0.0
+    # Smallest distance between two ADJACENT LGL nodes anywhere in the mesh —
+    # the length scale the explicit time step actually has to resolve. It is
+    # NOT Δelem_s/nop: LGL points cluster towards the element edges like
+    # 1/nop², so the true gap is 0.69·Δelem/nop at nop = 4 and the ratio keeps
+    # growing with the order. Filled by compute_element_size_driver (mesh.jl)
+    # on the grid as it stands, so it already includes any AMR refinement.
+    # 0.0 means "not measured"; computeCFL falls back to Δeffective_s then.
+    Δnode_s              = 0.0
 
     SD::AbstractSpaceDimensions
 
@@ -194,5 +246,24 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     lneed_redistribute::Bool = false
 
     msg_suppress::Bool = false
+
+    extra_mesh = Array{St_extra_mesh}(undef, 0, 0)
+
+    # ------------------------------------------------------------------
+    # DG (DiscGal) interior + periodic face list — built by
+    # build_dg_faces_2D! (mesh.jl) inside mod_mesh_read_gmsh!'s cached
+    # region; consumed by surface_rhs_el!(::NSD_2D). Flat arrays so the
+    # mesh cache saves/restores them (nested containers are skip-listed).
+    # Empty under ContGal/FD. lfid slice convention over the (i,j)
+    # lattice: 1=x-min(i=1), 2=x-max(i=ngl), 3=y-min(j=1), 4=y-max(j=ngl).
+    # ------------------------------------------------------------------
+    dg_face_eL::Vector{TInt}    = TInt[]     # left element; unit normal points L→R
+    dg_face_eR::Vector{TInt}    = TInt[]     # right element
+    dg_face_lfL::Vector{TInt}   = TInt[]     # local facet id of the face in eL
+    dg_face_lfR::Vector{TInt}   = TInt[]     # local facet id of the face in eR
+    dg_face_revR::Vector{Bool}  = Bool[]     # reverse eR's trace to align with eL's
+    dg_face_nx::Vector{TFloat}  = TFloat[]   # unit normal (L→R), x component
+    dg_face_ny::Vector{TFloat}  = TFloat[]   # unit normal (L→R), y component
+    dg_face_Jf::Vector{TFloat}  = TFloat[]   # face Jacobian = edge length / 2 (straight edges)
 
 end

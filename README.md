@@ -4,7 +4,7 @@
 |:------------ |
  [![](https://img.shields.io/badge/docs-stable-blue.svg)](https://smarras79.github.io/Jexpresso/dev/) [![](https://img.shields.io/badge/docs-dev-blue.svg)](https://smarras79.github.io/Jexpresso/dev/) |
 |**Build Status** |
-| [![CI](https://github.com/smarras79/Jexpresso/actions/workflows/CI.yml/badge.svg?branch=master)](https://github.com/smarras79/Jexpresso/actions?query=workflow%3ACI)
+| [![CI](https://github.com/smarras79/Jexpresso/actions/workflows/CI.yml/badge.svg?branch=master&event=push)](https://github.com/smarras79/Jexpresso/actions/workflows/CI.yml?query=branch%3Amaster) [![Documentation](https://github.com/smarras79/Jexpresso/actions/workflows/Documentation.yml/badge.svg?branch=master&event=push)](https://github.com/smarras79/Jexpresso/actions/workflows/Documentation.yml?query=branch%3Amaster)
 | **Contacts**  |
 | [![Simone Marras](https://img.shields.io/badge/Simone%20Marras-smarras%40njit.edu-8e7cc3)](mailto:smarras@njit.edu) |
 | [![Yassine Tissaoui](https://img.shields.io/badge/Yassine%20Tissaoui-tissaoui%40wisc.edu-8e7cc3)](mailto:tissaoui@wisc.edu) |
@@ -15,7 +15,46 @@
 # JEXPRESSO
 A CPU and GPU research software for the numerical solution of a system of arbitrary conservation laws using **continuous spectral elements** and finite differences in **1D, 2D, 3D**. DISCLAIMER: this will always be WIP! Contact us to join the team of developers!
 
-Suggested Julia version: 1.11.2 or higher.
+Suggested Julia version: 1.11.9
+
+# A note about the use of AI
+Jexpresso has been developed by humans since 2021 and continues to be so. Since Spring 2026, AI has been assisting the developers for new problems additions, debugging, and code's documentation. As AI becomes more reliable, we foresee an increased use of it for code development under the direct supervision of a human expert. 
+The Jexpresso core team uses Claude whereas some external developers have been successfully using OpenAI's Codex for their own implementations.
+
+# Table of Contents
+
+- [Installation](#installation)
+- [Equations](#equations)
+  1. [1D wave equation](#1-1d-wave-equation)
+  2. [1D shallow water](#2-1d-shallow-water)
+  3. [2D Helmholtz](#3-2d-helmholtz)
+  4. [2D scalar advection-diffusion](#4-2d-scalar-advection-diffusion)
+  5. [2D Euler equations of compressible flows with gravity and passive chemicals](#5-2d-euler-equations-of-compressible-flows-with-gravity-and-passive-chemicals)
+  6. [3D Euler equations of compressible flows with gravity](#6-3d-euler-equations-of-compressible-flows-with-gravity)
+- [Showcase](#turbulent-abl)
+  - [Planet Saturn](#planet-saturn)
+  - [Turbulent ABL](#turbulent-abl)
+  - [Shallow cumuli](#shallow-cumuli)
+- [Examples available in this branch](#examples-available-in-this-branch)
+  - [1D shock tube with dynamic SGS (DynSGS) for shock capturing](#1d-shock-tube-with-dynamic-sgs-dynsgs-for-shock-capturing)
+  - [1D acoustic wave](#1d-acoustic-wave)
+  - [Flow at Mach 3 with forward-facing step](#flow-at-mach-3-with-forward-facing-step)
+  - [Kelvin-Helmholtz instability](#kelvin-helmholtz-instability)
+  - [Solid elasticicy](#Solid-elasticity)
+  - [MHD: magnetized Kelvin-Helmholtz instability](#magneto-hydrodynamics-mhd-magnetized-kelvin-helmholtz-instability)
+  - [MHD: Orszag-Tang vortex](#magneto-hydrodynamics-mhd-orszag-tang-vortex)
+  - [Cloud simulation: shallow cumuli with BOMEX conditions](#cloud-simulation-shallow-cumuli-with-bomex-conditions)
+  - [Shallow water on a spherical shell](#shallow-water-on-a-spherical-shell)
+  - [2D Euler equations with buoyancy and two passive tracers](#2d-euler-equations-with-buoyancy-and-two-passive-tracers)
+  - [3D Euler equations with buoyancy](#3d-euler-equations-with-buoyancy)
+  - [Laguerre semi-infinite element test suite](#laguerre-semi-infinite-element-test-suite)
+    - [Test 1: 1D wave equation with Laguerre absorbing layers](#test-1-1d-wave-equation-with-laguerre-semi-infinite-element-absorbing-layers)
+    - [Test 2: 1D wave train for linearized shallow water equations](#test-2-1d-wave-train-for-linearized-shallow-water-equations)
+    - [Test 3: 2D advection-diffusion equation](#test-3-2d-advection-diffusion-equation)
+    - [Test 4: 2D Helmholtz equation](#test-4-2d-helmholtz-equation)
+  - [Rising thermal bubble with semi-infinite Laguerre elements for outflows](#rising-thermal-bubble-with-semi-infinite-laguerre-elements-for-outflows)
+  - [Hydrostatic linear mountain waves with semi-infinite Laguerre elements for outflows](#hydrostatic-linear-mountain-waves-with-semi-infinite-laguerre-elements-for-outflows)
+  - [Non-hydrostatic mountain waves: comparison against WRF](#non-hydrostatic-mountain-waves-comparison-against-wrf)
 
 # Installation:
 Follow the instructins in [INSTALL.md](INSTALL.md)
@@ -59,9 +98,8 @@ The Julia package [DifferentialEquations.jl](https://docs.sciml.ai/DiffEqDocs/st
 
 In order, we provide tests and results for the following equations:
 
+### 1. 1D wave equation
 
-1. 1D wave equation:
-   
 $${\bf q}=\begin{bmatrix}
 u \\
 v
@@ -70,7 +108,7 @@ v\\
 u
 \end{bmatrix}$$
 
-2: 1D shallow water:
+### 2. 1D shallow water
 
 $${\bf q}=\begin{bmatrix}
 h \\
@@ -82,8 +120,8 @@ gh + Uu
 
 where $H$ and $U$ are a reference height and velocity, respectively.
 
-3. 2D Helmholtz:
-   
+### 3. 2D Helmholtz
+
 $${\bf S}=\begin{bmatrix}
 \alpha^2 u + f(x,z)
 \end{bmatrix}\quad \mu\nabla^2{\bf q}=\mu\begin{bmatrix}
@@ -92,7 +130,7 @@ u_{xx} + u_{zz}
 
 for a constant value of $\alpha$ and $\mu$, which are case-dependent.
 
-4. 2D scalar advection-diffusion:
+### 4. 2D scalar advection-diffusion
 
 $${\bf q}=\begin{bmatrix}
 q\\
@@ -104,7 +142,9 @@ qv\\
 q_{xx} + q_{zz}
 \end{bmatrix},$$
 
-5. 2D Euler equations of compressible flows with gravity and N passive chemicals $c_i, \forall i=1,...,N$ 
+### 5. 2D Euler equations of compressible flows with gravity and passive chemicals
+
+With $N$ passive chemicals $c_i, \forall i=1,...,N$:
 
 $${\bf q}=\begin{bmatrix}
 \rho \\
@@ -148,7 +188,7 @@ c1_{xx} + c1_{zz}\\
 cN_{xx} + cN_{zz}
 \end{bmatrix}.$$
 
-6. 3D Euler equations of compressible flows with gravity
+### 6. 3D Euler equations of compressible flows with gravity
 
 $${\bf q}=\begin{bmatrix}
 \rho \\
@@ -192,12 +232,22 @@ w_{xx} + w_{yy} + w_{zz}\\
 If you are interested in contributing, please get in touch:
 [Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:tissaoui@wisc.edu), [Hang Wang](mailto:hang.wang@njit.edu)
 
+## Planet Saturn:
+Example of a relatively coarse simulation of the atmosphere of planet Saturn during 500 days.
+
+Original test described by Scott and Polvani "Forced-Dissipative Shallow-Water Turbulence on the Sphere and the Atmospheric Circulation of the Giant Planets" J. Atmos. Sci. Vol 64, 2007
+
+<img src="assets/vorticity-grey-scale.gif"
+     alt="Markdown icon"
+     style="float: left; margin-right: 5px;" />
+
 ## Turbulent ABL:
 Example of coarse simulation of the turbulent atmospheric boundary layer. Domain size: 10240m X 10240m X 3000m using 64x64x24 spectral elements of order 4.
 Surface and SGS: Monin-Obukhov Similarity Theory model with Richardson-corrected Smagorinsky.
 <img src="assets/ABLfullDomain.gif"
      alt="Markdown icon"
      style="float: left; margin-right: 5px;" />
+
 
 ## Shallow cumuli:
 Example of shallow cumuli simulations (right) for the type of Barbados clouds shown on the left: (picture taken from [P. Blossey webpage](https://www.atmos.washington.edu/~bloss/) from U. Washington)
@@ -211,8 +261,10 @@ Below are just a few pre-packaged examples available in Jexpresso.
 To add your own new problem, see [ADD_A_NEW_TEST.md](ADD_A_NEW_TEST.md).
 
 
-## Example 1a: Shock tube with dynamic SGS for shock capturing:
-DynSGS by Marras et al. 2015 and later.
+## 1D shock tube with dynamic SGS (DynSGS) for shock capturing:
+Classical Sod's tube with shock and expansion.
+The DynSGS SGS model by Marras et al. 2015 and later is used to capture the shock.
+
 ```julia
 using Jexpresso
 Jexpresso.run_case("CompEuler", "sod1d")
@@ -222,7 +274,7 @@ Jexpresso.run_case("CompEuler", "sod1d")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
-## Example 1b: 1D acoustic wave:
+## 1D acoustic wave:
 ```julia
 using Jexpresso
 Jexpresso.run_case("CompEuler", "case1")
@@ -232,9 +284,167 @@ Jexpresso.run_case("CompEuler", "case1")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
+## Flow at Mach 3 with forward-facing step
+Classical flow at Mach 3 with DynSGS shock capturing
+```julia
+using Jexpresso
+Jexpresso.run_case("CompEuler", "ffs_step")
+```
+
+<img src="assets/shock-MrhoSchielern.jpg"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+## Flow at Mach 3 with airfoil
+Mach 3 flow over a (non-supersonic) airfoil with exact geometry (i.e. curved elements). DynSGS shock capturing.
+```julia
+using Jexpresso
+Jexpresso.run_case("CompEuler", "naca64A210")
+```
+
+<img src="assets/NACA64A210-TWOFIGS.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
 
 
-Example 2: to solve the 2D Euler equations with buoyancy and two passive tracers defined in `problems/equations/CompEuler/thetaTracers` you would do the following:
+## Kelvin-Helmholtz instability
+Classical shear-triggered instability test.
+
+```julia
+using Jexpresso
+Jexpresso.run_case("CompEuler", "kelvinHelmholtzChan2022")
+```
+
+<img src="assets/KH-EC-SGSsmag.jpg"
+     alt="Markdown icon"
+     style="float: left; margin-right: 3.5px;" />
+
+
+## Solid elasticity
+Timoshenko's model of elasticity
+
+```julia
+using Jexpresso
+Jexpresso.run_case("Elasticity", "beam2d")
+```
+
+https://github.com/user-attachments/assets/78872c85-e8b5-494f-b95a-4a94aeb5f07f
+
+<img src="assets/beam2d.jpeg"
+     alt="Markdown icon"
+     style="float: left; margin-right: 3.5px;" />
+
+
+
+## Magneto-Hydrodynamics (MHD), magnetized Kelvin-Helmholtz instability:
+
+The problem is defined in [`problems/equations/MHD/kelvinHelmholtzChan2022`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/MHD/kelvinHelmholtzChan2022).
+
+```julia
+using Jexpresso
+Jexpresso.run_case("MHD", "kelvinHelmholtzChan2022")
+```
+
+<img src="assets/MHD_By.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+## Magneto-Hydrodynamics (MHD), Orszag-Tang vortex:
+
+The classical 2D MHD benchmark, with the setup of Bormanis, Leon & Scheinker,
+*Phys. Plasmas* **31**, 012101 (2024): doubly periodic unit square, γ = 5/3,
+128×128 points, t ∈ [0, 1]. The problem is defined in
+[`problems/equations/MHD/orszagTangBormanis2024`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/MHD/orszagTangBormanis2024)
+(see its `README.md` and `EQUATIONS.md`).
+
+```julia
+using Jexpresso
+Jexpresso.run_case("MHD", "orszagTangBormanis2024")
+```
+
+Stabilized with **DynSGS** — the residual-based, parameter-free dynamic SGS
+model of Marras, Nazarov & Giraldo (see [DSGS.md](DSGS.md)).
+
+<img src="assets/MHD-OT-4plots.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+Top row: density at t = 0.5 s (left) and t = 1.0 s (right).
+Bottom row: residual viscosity. Simulation using 120 × 120 4th-order spectral elements in
+a unit square.
+
+## Magneto-Hydrodynamics (MHD), flux emergence in the solar atmosphere:
+
+The two-dimensional emergence of a horizontal magnetic flux sheet through a
+two-temperature (chromosphere + corona) stratified atmosphere — the nonlinear
+Parker instability of Shibata et al. (1989) — with the setup of Son, Jang &
+Magara, *ApJS* **277**:46 (2025): γ = 1.05, [0, 80 H₀] × [0, 35 H₀],
+t ∈ [0, 54 τ₀]. The problem is defined in
+[`problems/MHD/fluxEmergenceSon2025`](problems/MHD/fluxEmergenceSon2025)
+(see its `README.md` and `EQUATIONS.md`).
+
+```bash
+mpiexec -n 10 julia --project=. src/Jexpresso.jl MHD fluxEmergenceSon2025
+```
+
+Stabilized with **DynSGS**, integrated with Carpenter–Kennedy 2N54 on the
+coarsest N = 4 grid the problem admits (80×35 elements). The solver writes PNGs
+styled after the paper's figures (log₁₀ density on the paper's `jet` scale
+with magnetic field lines and velocity vectors; centerline profiles of the
+rise velocity, Alfvén speed, field and density on the axes of its Fig. 5)
+directly, gathered on one rank under MPI.
+
+[`problems/MHD/brioWu1d`](problems/MHD/brioWu1d) is the 1D Brio–Wu MHD
+shock tube (Dao & Nazarov 2022, §5.2), the MHD counterpart of `CompEuler/sod1d`:
+DynSGS in its conserved form with the 1D MHD kernel, 600 LGL points, the
+reference solution overlaid at t = 0.2.
+
+```bash
+julia --project=. src/Jexpresso.jl MHD brioWu1d
+```
+
+[`problems/ShallowWater/SoliWaveIslandDSGS`](problems/ShallowWater/SoliWaveIslandDSGS)
+is the solitary wave on a conical island of Marras et al. (2018, §5.5)
+stabilized by DynSGS for the shallow-water system (`DSGS_SW()`) instead of the
+constant viscosity of `ShallowWater/SoliWaveIsland`.
+
+```bash
+julia --project=. src/Jexpresso.jl ShallowWater SoliWaveIslandDSGS
+```
+
+[`problems/MHD/fluxEmergenceSon2025DSGS`](problems/MHD/fluxEmergenceSon2025DSGS)
+is the same problem with **DynSGS alone** keeping the solution admissible:
+no positivity limiter, the dissipation acting on the relative departure from
+the magnetostatic reference state (`:dsgs_ref_weight`, DSGS.md §4.5).
+
+```bash
+mpiexec -n 10 julia --project=. src/Jexpresso.jl MHD fluxEmergenceSon2025DSGS
+```
+
+## Cloud simulation: shallow cumuli with BOMEX conditions:
+
+```julia
+using Jexpresso
+Jexpresso.run_case("CompEuler", "3d_bomex")
+```
+<img src="assets/bomex.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 3.5px;" />
+
+## Shallow water on a spherical shell
+Benchmark: classical Galewki and Polvani's barotropic jet
+```julia
+using Jexpresso
+Jexpresso.run_case("ShallowWater", "SWsphere")
+```
+<img src="assets/SWsphere-Galewki-visc1e5-36x36.jpg"
+     alt="Markdown icon"
+     style="float: left; margin-right: 3.5px;" />
+
+
+
+## 2D Euler equations with buoyancy and two passive tracers
+The problem is defined in `problems/equations/CompEuler/thetaTracers`. To run it you would do the following:
 ```julia
 using Jexpresso
 Jexpresso.run_case("CompEuler", "thetaTracers")
@@ -245,7 +455,8 @@ Jexpresso.run_case("CompEuler", "thetaTracers")
      style="float: left; margin-right: 5px;" />
 
 
-Example 3: to solve the 3D Euler equations with buoyancy defined in `problems/equations/CompEuler/3d` you would do the following:
+## 3D Euler equations with buoyancy
+The problem is defined in `problems/equations/CompEuler/3d`. To run it you would do the following:
 ```julia
 using Jexpresso
 Jexpresso.run_case("CompEuler", "3d")
@@ -254,15 +465,6 @@ Jexpresso.run_case("CompEuler", "3d")
 <img src="assets/rtb3d.png"
      alt="Markdown icon"
      style="float: left; margin-right: 5px;" />
-
-For ready to run tests, there are the available equations names:
-
-* CompEuler (option with total energy and theta formulation)
-
-The code is designed to create any system of conservsation laws. See CompEuler/case1 to see an example of each file.
-Details will be given in the documentation (still WIP). Write us if you need help.
-
-More are already implemented but currently only in individual branches. They will be added to master after proper testing.
 
 ## Laguerre semi-infinite element test suite
 This section contains instructions to run all of the test cases presented in
@@ -278,7 +480,7 @@ This section contains instructions to run all of the test cases presented in
 }
 ```
 
-Test 1: 1D wave equation with Laguerre semi-infinite element absorbing layers
+### Test 1: 1D wave equation with Laguerre semi-infinite element absorbing layers
 
 The problem is defined in [`problems/CompEuler/wave1d_lag`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/wave1d_lag) and by default output will be written to `output/CompEuler/wave1d_lag`. To solve this problem run the following commands from the Julia command line:
 
@@ -291,7 +493,7 @@ Jexpresso.run_case("CompEuler", "wave1d_lag")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
-Test 2: 1D wave train for linearized shallow water equations
+### Test 2: 1D wave train for linearized shallow water equations
 
 The problem is defined in [`problems/equations/AdvDiff/Wave_Train`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/AdvDiff/Wave_Train) and by default output will be written to `output/AdvDiff/Wave_Train`. To solve this problem run the following commands from the Julia command line:
 
@@ -305,7 +507,7 @@ Jexpresso.run_case("AdvDiff", "Wave_Train")
      style="float: left; margin-right: 7px;" />
 
 
-Test 3: 2D advection-diffusion equation
+### Test 3: 2D advection-diffusion equation
 
 The problem is defined in [`problems/equations/AdvDiff/2D_laguerre`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/AdvDiff/2d_Laguerre) and by default output will be written to `output/AdvDiff/2D_laguerre`. To solve this problem run the following commands from the Julia command line:
 
@@ -318,7 +520,7 @@ Jexpresso.run_case("AdvDiff", "2D_laguerre")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
-Test 4: 2D Helmholtz equation
+### Test 4: 2D Helmholtz equation
 
 The problem is defined in [`problems/equations/Helmholtz/case1_laguerre`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/Helmholtz/case1_laguerre) and by default output will be written to `output/Helmholtz/case1_laguerre`. To solve this problem run the following commands from the Julia command line:
 
@@ -331,7 +533,7 @@ Jexpresso.run_case("Helmholtz", "case1_laguerre")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
-Test 5: Rising thermal bubble with semi-infinite Laguerre elements for outflows
+## Rising thermal bubble with semi-infinite Laguerre elements for outflows
 
 The problem is defined in [`problems/equations/CompEuler/theta_laguerre`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/theta_laguerre) and by default output will be written to `output/CompEuler/theta_laguerre`. To solve this problem run the following commands from the Julia command line:
 
@@ -344,7 +546,8 @@ Jexpresso.run_case("CompEuler", "theta_laguerre")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
-Test 6a: Hydrostatic linear mountain waves with semi-infinite Laguerre elements for outflows
+
+## Hydrostatic linear mountain waves with semi-infinite Laguerre elements for outflows
 
 The problem is defined in [`problems/equations/CompEuler/HSmount_Lag`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/HSmount_Lag) and by default output will be written to `output/CompEuler/HSmount_Lag`. To solve this problem run the following commands from the Julia command line:
 
@@ -357,19 +560,8 @@ Jexpresso.run_case("CompEuler", "HSmount_Lag")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
-Test 6b: Non-hydrostatic mountain waves: comparison against WRF
+## Non-hydrostatic mountain waves: comparison against WRF
 
 <img src="assets/NHjexpVSwrf.png"
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
-
-
-Test 7: Shallow cumuli simulation with BOMEX conditions:
-
-```julia
-using Jexpresso
-Jexpresso.run_case("CompEuler", "3d_bomex")
-```
-<img src="assets/bomex.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 3.5px;" />

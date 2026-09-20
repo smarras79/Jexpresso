@@ -12,8 +12,13 @@ include("../mesh/restructure_for_periodicity.jl")
 function _try_load_sem_cache(path::String; gmsh_path::String="",
                               inputs=nothing, nparts::Int=1)
     rank = MPI.Comm_rank(get_mpi_comm())
-    # Prefer the prefetched payload before any disk I/O.
-    if JEXPRESSO_PREFETCHED_SEM_CACHE[] !== nothing
+    # An adaptive run executes on a mesh these metrics were not built for.
+    # _preprocess_cache_path already returns "" for such runs; this second
+    # guard keeps the invariant if a caller passes a path of its own.
+    _adaptive_mesh_run(inputs) && return (nothing, nothing)
+    # Prefer the prefetched payload before any disk I/O — but only when it
+    # was prefetched for THIS case (the Ref outlives a single run_case).
+    if JEXPRESSO_PREFETCHED_SEM_CACHE[] !== nothing && _prefetch_usable(inputs)
         return JEXPRESSO_PREFETCHED_SEM_CACHE[]
     end
     # Pre-load validity check via fingerprint-only read. See
@@ -80,7 +85,36 @@ function _matrix_for_cache(matrix)
     return NamedTuple{keep}(map(k -> getproperty(matrix, k), keep))
 end
 
+# Does a loaded payload actually describe the mesh we are holding?
+#
+# Last line of defence: a cache that got past the path + fingerprint checks
+# but was built on a different mesh (different element count, different
+# quadrature order, a partition from another rank layout) must be rejected
+# HERE, where the message can say so — not several hundred lines later as a
+# DimensionMismatch inside params_setup.
+#
+# metrics is either a St_metrics or, for Laguerre runs, a (metrics1, metrics2)
+# tuple; only the first carries the CG element count. `Je` is allocated as
+# (nelem, Q+1, ...) and the mass matrix as npoin (or npoin × npoin when the
+# quadrature is exact and unlumped), which is all we need to compare.
+function _sem_cache_shape_ok(metrics, matrix, mesh, Qξ::Int)
+    try
+        m = metrics isa Tuple ? first(metrics) : metrics
+        Je = getproperty(m, :Je)
+        size(Je, 1) == Int64(mesh.nelem) || return false
+        size(Je, 2) == Int64(Qξ) + 1     || return false
+        if matrix isa NamedTuple && haskey(matrix, :Minv)
+            size(matrix.Minv, 1) == Int64(mesh.npoin) || return false
+        end
+    catch
+        # Anything unexpected in the payload's shape → do not trust it.
+        return false
+    end
+    return true
+end
+
 function _save_sem_cache(path::String, metrics, matrix; inputs=nothing, nparts::Int=1)
+    _adaptive_mesh_run(inputs) && return
     isempty(path) && return
     rank = MPI.Comm_rank(get_mpi_comm())
     try
@@ -101,14 +135,15 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
     rank = MPI.Comm_rank(comm)
     adapt_flags, partitioned_model_coarse, omesh = _handle_optional_args4amr(args...)
     
-    fx        = zeros(Float64,1,1)
-    fy        = zeros(Float64,1,1)
-    fz        = zeros(Float64,1,1)
-    fy_lag    = zeros(Float64,1,1)
-    phys_grid = zeros(Float64,1,1)
-    Nξ        = inputs[:nop]
-    AD        = inputs[:AD]
-    CL        = inputs[:CL]
+    fx         = zeros(Float64,1,1)
+    fy         = zeros(Float64,1,1)
+    fz         = zeros(Float64,1,1)
+    fy_lag     = zeros(Float64,1,1)
+    phys_grid  = zeros(Float64,1,1)
+    atmos_data = zeros(Float64,1,1)
+    Nξ         = inputs[:nop]
+    AD         = inputs[:AD]
+    CL         = inputs[:CL]
     
     lexact_integration = inputs[:lexact_integration]
     SOL_VARS_TYPE      = inputs[:SOL_VARS_TYPE]
@@ -162,10 +197,15 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
                 inputs, nparts, distribute,
                 nothing_flags, loaded_model, mesh,
                 interp_base, project_base, dummy_uaux)
-            # Restore ad_lvl from the loaded p4est forest.  The glue-propagation
-            # path inside mod_mesh_mesh_driver starts from the coarse mesh (ad_lvl=0)
-            # and cannot recover the true refinement levels of the checkpoint.
-            # mesh.ad_lvl = read_ad_lvl_from_p4est(partitioned_model.ptr_pXest)
+            # Restore ad_lvl from the loaded p4est forest. The glue-propagation
+            # path inside mod_mesh_mesh_driver starts from the coarse mesh
+            # (ad_lvl=0) and cannot recover the true refinement levels of the
+            # checkpoint — leaving ad_lvl wrong makes calculate_effective_delta
+            # (the CFL dt scaling in TimeIntegrators.jl) use dt for the wrong,
+            # coarser level: a silent CFL violation, not an immediate crash —
+            # it can take a few RK stages to surface as a DomainError deep in
+            # an equation-of-state call.
+            mesh.ad_lvl = read_ad_lvl_from_p4est(partitioned_model.pXest_type, partitioned_model.ptr_pXest)
         end
     else
         mesh, partitioned_model, uaux_new = mod_mesh_mesh_driver(inputs, nparts, distribute, args...)
@@ -177,8 +217,8 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
     elseif (inputs[:xdisp] != 0.0)
         mesh.x[:] .= (@view(mesh.x[:]) .+ TFloat(inputs[:xdisp]))
     end
-    # mesh.xmin = minimum(mesh.coords[:,1])
-    # mesh.xmax = maximum(mesh.coords[:,1])
+    # mesh.xmin = minimum(mesh.coords[1, :])
+    # mesh.xmax = maximum(mesh.coords[1, :])
     mesh.xmax = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
     mesh.xmin = MPI.Allreduce(minimum(mesh.x), MPI.MIN, comm)
     if (inputs[:yscale] != 1.0 && inputs[:ydisp] != 0.0)
@@ -244,20 +284,41 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
     # to one partition and another rank builds fresh metrics for a different
     # one.
     preprocess_cache = _preprocess_cache_path(inputs, Nξ, Qξ, nparts)
-    cached_metrics, cached_matrix = _try_load_sem_cache(preprocess_cache;
-                                                        gmsh_path=get(inputs, :gmsh_filename, ""),
-                                                        inputs=inputs, nparts=nparts)
-    local_loaded = !isnothing(cached_metrics)
-    loaded_from_cache = nparts > 1 ?
-        (MPI.Allreduce(local_loaded ? 1 : 0, MPI.MIN, comm) == 1) :
-        local_loaded
-    if loaded_from_cache
-        rank == 0 && println(" # Loaded SEM preprocess cache — skipping metric terms and matrix build: $preprocess_cache")
-    elseif local_loaded
-        # We had a usable local cache but some peer didn't — drop ours so
-        # downstream code doesn't accidentally use it.
+    # Skip the SEM cache entirely when the mesh is spatially adapted — both
+    # when this very call is the adapt pass (adapt_flags !== nothing) and when
+    # the DECK adapts at all (:lamr / :ladapt / :lpreadapt / :linitial_refine /
+    # :lrestart_amr). Cached metrics/matrices were built on the base
+    # (non-adapted) mesh and have the wrong dimensions for the refined one.
+    # The deck-level half of this test is what stops an AMR case from picking
+    # up the metrics of its own non-AMR twin.
+    if isnothing(adapt_flags) && !_adaptive_mesh_run(inputs)
+        cached_metrics, cached_matrix = _try_load_sem_cache(preprocess_cache;
+                                                            gmsh_path=get(inputs, :gmsh_filename, ""),
+                                                            inputs=inputs, nparts=nparts)
+        # Shape gate: reject a payload that does not describe THIS mesh, no
+        # matter how it got here (fingerprint hole, hand-passed path, stale
+        # prefetch). Cheaper to rebuild than to fail cryptically later.
+        if !isnothing(cached_metrics) && !_sem_cache_shape_ok(cached_metrics, cached_matrix, mesh, Qξ)
+            rank == 0 && println(" # SEM cache $preprocess_cache does not match the current mesh (nelem=$(mesh.nelem), npoin=$(mesh.npoin)) — discarding and rebuilding")
+            try; isempty(preprocess_cache) || rm(preprocess_cache; force=true); catch _; end
+            cached_metrics, cached_matrix = nothing, nothing
+        end
+        local_loaded = !isnothing(cached_metrics)
+        loaded_from_cache = nparts > 1 ?
+            (MPI.Allreduce(local_loaded ? 1 : 0, MPI.MIN, comm) == 1) :
+            local_loaded
+        if loaded_from_cache
+            rank == 0 && println(" # Loaded SEM preprocess cache — skipping metric terms and matrix build: $preprocess_cache")
+        elseif local_loaded
+            # We had a usable local cache but some peer didn't — drop ours so
+            # downstream code doesn't accidentally use it.
+            cached_metrics, cached_matrix = nothing, nothing
+            rank == 0 && println(" # SEM cache: some ranks failed to load — discarding all and rebuilding")
+        end
+    else
         cached_metrics, cached_matrix = nothing, nothing
-        rank == 0 && println(" # SEM cache: some ranks failed to load — discarding all and rebuilding")
+        loaded_from_cache = false
+        rank == 0 && println(" # SEM cache: skipped for adaptive run (:lamr/:ladapt/:lpreadapt/:linitial_refine/:lrestart_amr) — rebuilding metric terms")
     end
     # ─────────────────────────────────────────────────────────────────────────
 
@@ -323,7 +384,7 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
 
                 matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat;
                                                  ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
-                _save_sem_cache(preprocess_cache, metrics, matrix; inputs=inputs, nparts=nparts)
+                isnothing(adapt_flags) && _save_sem_cache(preprocess_cache, metrics, matrix; inputs=inputs, nparts=nparts)
             end
 
         else
@@ -372,6 +433,9 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
                 if (inputs[:lphysics_grid])
                     phys_grid = init_phys_grid(mesh, inputs,inputs[:nlay_pg],inputs[:nx_pg],inputs[:ny_pg],mesh.xmin,mesh.xmax,mesh.ymin,mesh.ymax,mesh.zmin,mesh.zmax,inputs[:backend])
                 end
+                if (inputs[:RT_atmos_coupling])
+                    atmos_data = Atmosphere_State{TFloat, mesh.npoin}()
+                end
             else
                 if (rank == 0) println(" # Build metrics ......") end
                 metrics = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Qξ, TFloat, inputs[:backend])
@@ -381,13 +445,16 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
                 if (inputs[:lphysics_grid])
                     phys_grid = init_phys_grid(mesh, inputs,inputs[:nlay_pg],inputs[:nx_pg],inputs[:ny_pg],mesh.xmin,mesh.xmax,mesh.ymin,mesh.ymax,mesh.zmin,mesh.zmax,inputs[:backend])
                 end
+                if (inputs[:RT_atmos_coupling])
+                    atmos_data = Atmosphere_State{TFloat, mesh.npoin}()
+                end
                 if (rank == 0) println(" # Build periodicity infrastructure ......") end
 
                 if (rank == 0) println(" # Matrix wrapper ......") end
                 matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace],
                             ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
                 if (rank == 0)  println(" # Matrix wrapper ...... END") end
-                _save_sem_cache(preprocess_cache, metrics, matrix; inputs=inputs, nparts=nparts)
+                isnothing(adapt_flags) && _save_sem_cache(preprocess_cache, metrics, matrix; inputs=inputs, nparts=nparts)
             end
         end
     else
@@ -419,7 +486,7 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
                 metrics = (metrics1, metrics2)
                 if (rank == 0) println(" # Build metrics ...... DONE") end
                 matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
-                _save_sem_cache(preprocess_cache, metrics, matrix; inputs=inputs, nparts=nparts)
+                isnothing(adapt_flags) && _save_sem_cache(preprocess_cache, metrics, matrix; inputs=inputs, nparts=nparts)
             end
         else
             basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat, inputs[:backend])
@@ -462,7 +529,7 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
                                         ldss_laplace=inputs[:ldss_laplace],
                                         ldss_differentiation=inputs[:ldss_differentiation],
                                         backend = inputs[:backend], interp)
-                _save_sem_cache(preprocess_cache, metrics, matrix; inputs=inputs, nparts=nparts)
+                isnothing(adapt_flags) && _save_sem_cache(preprocess_cache, metrics, matrix; inputs=inputs, nparts=nparts)
             end
         end
     end
@@ -489,10 +556,10 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
     # Build matrices
     #--------------------------------------------------------
     if isnothing(adapt_flags)
-        return (; QT, CL, AD, SOL_VARS_TYPE, volume_flux, mesh, metrics, basis, ξ, ω, matrix, fx, fy, fy_lag, fz, phys_grid,
+        return (; QT, CL, AD, SOL_VARS_TYPE, volume_flux, mesh, metrics, basis, ξ, ω, matrix, fx, fy, fy_lag, fz, phys_grid, atmos_data,
                 connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original, interp, project, nparts, distribute), partitioned_model
     else
-        return (; QT, CL, AD, SOL_VARS_TYPE, volume_flux, mesh, metrics, basis, ξ, ω, matrix, fx, fy, fy_lag, fz, phys_grid,
+        return (; QT, CL, AD, SOL_VARS_TYPE, volume_flux, mesh, metrics, basis, ξ, ω, matrix, fx, fy, fy_lag, fz, phys_grid, atmos_data,
                 connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original, interp, project, nparts, distribute), partitioned_model, uaux_new
     end
     

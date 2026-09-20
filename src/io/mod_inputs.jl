@@ -39,14 +39,28 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     
     if (inputs[:backend] != CPU())
         if (inputs[:backend] == CUDABackend())
-            global TInt = Int32
+            global TInt   = Int32
             global TFloat = Float32
-            global cpu = false
+            global cpu    = false
         else
-            global TInt = Int32
+            global TInt   = Int32
             global TFloat = Float32
-            global cpu = false
+            global cpu    = false
         end
+    end
+
+
+    if(!haskey(inputs, :RT_atmos_coupling))
+       inputs[:RT_atmos_coupling] = false
+    end
+
+    if (inputs[:RT_atmos_coupling])
+        inputs[:RT_radiative_heating] = true
+    end
+
+
+    if(!haskey(inputs, :RT_radiative_heating))
+       inputs[:RT_radiative_heating] = false
     end
 
     if(!haskey(inputs, :lmanufactured_solution))
@@ -64,6 +78,44 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :lRT_from_data))
        inputs[:lRT_from_data] = false
     end
+    if (inputs[:lRT_from_data])
+       if (!(haskey(inputs, :RT_shortwave)))
+            inputs[:RT_longwave] = true
+            inputs[:RT_shortwave] = false
+       elseif inputs[:RT_shortwave]
+            inputs[:RT_longwave] = false
+       else
+            inputs[:RT_longwave] = true
+       end
+
+    end
+
+    if (!(haskey(inputs, :RT_shortwave)))
+        inputs[:RT_shortwave] = false
+    end
+    
+    if (!(haskey(inputs, :RT_longwave)))
+        inputs[:RT_longwave] = false
+    end
+
+    if(!haskey(inputs, :RT_S0_flux))
+        inputs[:RT_S0_flux] = 1361.0
+    end
+    if(!haskey(inputs, :RT_μ0))
+        inputs[:RT_μ0] = 0.5
+    end
+    if(!haskey(inputs, :RT_ϕ0))
+        inputs[:RT_ϕ0] = 3*π/4
+    end
+    if(!haskey(inputs, :RT_δ_beam))
+        inputs[:RT_δ_beam] = 0.05
+    end
+    if(!haskey(inputs, :RT_ϵ_surface))
+        inputs[:RT_ϵ_surface] = 0.97
+    end
+    if(!haskey(inputs, :RT_T_space))
+        inputs[:RT_T_space] = 0.0
+    end
 
     if(!haskey(inputs, :RT_data_file))
        inputs[:RT_data_file] = ""
@@ -74,7 +126,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
 
     if(!haskey(inputs, :rad_HG_g))
-      inputs[:rad_HG_g] = 0
+      inputs[:rad_HG_g] = 0.0
     end
 
     if(!haskey(inputs, :extra_dimensions))
@@ -83,6 +135,22 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     
     if(!haskey(inputs, :adaptive_extra_meshes))
       inputs[:adaptive_extra_meshes] = false
+    end
+
+    if(!haskey(inputs, :RT_precond))
+      inputs[:RT_precond] = :global_lu
+    end
+
+    if(!haskey(inputs, :RT_gmres_tol))
+      inputs[:RT_gmres_tol] = 1e-4
+    end
+
+    if(!haskey(inputs, :RT_gmres_restart))
+      inputs[:RT_gmres_restart] = 100
+    end
+
+    if(!haskey(inputs, :RT_asm_ilu_tau))
+      inputs[:RT_asm_ilu_tau] = 0.1
     end
 
     if(!haskey(inputs, :extra_dimensions_order))
@@ -262,6 +330,41 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
       inputs[:plot_matrix] = true
     end
 
+    # 2D PNG writer extras (plot_triangulation in plotting/jeplots.jl):
+    # variable selection, log10 rendering, fixed color ranges, magnetic
+    # field-line and velocity-vector overlays, a vertical-profile figure.
+    # All optional; these defaults reproduce the plain behaviour. See
+    # problems/MHD/fluxEmergenceSon2025/user_inputs.jl for a full use.
+    for (key, val) in (
+        (:plot_vars,             nothing),            # names to render (nothing = all output variables)
+        (:plot_log10,            String[]),           # names rendered as log10(var) (PNG); VTK adds a log10_<var> field
+        (:plot_markers,          20),                 # 1D PNG: number of markers drawn along each curve (0 = lines only)
+        (:plot_clims,            Dict{String,Any}()), # name => (lo, hi) fixed color range
+        (:plot_fieldlines,       nothing),            # (Bx, By) names -> vector-potential isocontours
+        (:plot_fieldlines_levels, 40),
+        (:plot_vectors,          nothing),            # (u, v) names -> arrow overlay
+        (:plot_vectors_ref,      nothing),            # speed of the reference arrow (nothing = max)
+        (:plot_vectors_n,        (30, 13)),           # arrows per direction
+        (:plot_overlay_on,       nothing),            # panels that get the overlays (nothing = all)
+        (:plot_xlabel,           "x"),
+        (:plot_ylabel,           "y"),
+        (:plot_time_unit,        " s"),               # appended to "t = ..." in the titles
+        (:plot_user,             true),               # 1D: the case's user_plot_1d figure, if it ships one
+        (:plot_dsgs,             true),               # μ_dsgs panels of a DynSGS run
+        (:plot_dsgs_vars,        nothing),            # damped variables whose μ_dsgs panel is written (nothing = all)
+        (:plot_dsgs_log10,       false),              # log₁₀ μ_dsgs panels (PNG) / log10_mu_dsgs fields (VTK), floored at :plot_dsgs_floor
+        (:plot_dsgs_floor,       1.0e-6),
+        (:plot_raster_nmax,      400),                # raster points along the longer side
+        (:plot_profile_x,        nothing),            # x of the vertical-profile figure (nothing = none)
+        (:plot_profile_vars,     nothing),
+        (:plot_profile_log10,    String[]),
+        (:plot_profile_ylims,    Dict{String,Any}()),
+        (:plot_profile_vlines,   Float64[]))
+        if(!haskey(inputs, key))
+            inputs[key] = val
+        end
+    end
+
     if(!haskey(inputs, :plot_axis))
       inputs[:plot_axis] = "empty"
     end
@@ -418,18 +521,18 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     # Plotting parameters:
     #
     if(!haskey(inputs, :outformat))
-        inputs[:outformat] = ASCII()
+        inputs[:outformat] = NONE()
     else
         if lowercase(inputs[:outformat]) == "png"
             inputs[:outformat] = PNG()
-        elseif lowercase(inputs[:outformat]) == "ascii"
-            inputs[:outformat] = ASCII()
         elseif lowercase(inputs[:outformat]) == "vtk"
             inputs[:outformat] = VTK()
         elseif lowercase(inputs[:outformat]) == "hdf5" || lowercase(inputs[:outformat]) == "h5"
             inputs[:outformat] = HDF5()
         elseif lowercase(inputs[:outformat]) == "netcdf" || lowercase(inputs[:outformat]) == "netcdf"
             inputs[:outformat] = NETCDF()
+        else
+            inputs[:outformat] = NONE()
         end
     end
 
@@ -453,6 +556,15 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if (!haskey(inputs, :lrestart))
         inputs[:lrestart] = false
     end
+    
+    if (!haskey(inputs, :lrestart_vtk))
+        inputs[:lrestart_vtk] = false
+    end
+
+
+    if (!haskey(inputs, :lrestart_amr))
+        inputs[:lrestart_amr] = false
+    end
     #
     # Time:
     #
@@ -471,6 +583,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:restart_time] = 0.0
     end
 
+
     #mod_inputs_check(inputs, :Δt, Float64(0.1), "w") #Δt --> this will be computed from CFL later on
     if(!haskey(inputs, :tinit))
         inputs[:tinit] = 0.0  #Initial time is 0.0 by default
@@ -487,6 +600,37 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     else
         inputs[:ndiagnostics_outputs] = 0
     end
+
+
+
+    #---------------------------------------------------------------------------
+    #LES statistics
+    #---------------------------------------------------------------------------
+    if(!haskey(inputs, :statistics_time))
+        inputs[:statistics_time] = Float64[]
+    end
+
+    if(!haskey(inputs, :statistics_online_start))
+        inputs[:statistics_online_start] = Inf
+    end
+
+    if(!haskey(inputs, :statistics_online_interval))
+        inputs[:statistics_online_interval] = Float32(inputs[:Δt])
+    end
+
+    if(!haskey(inputs, :lesprofile_vars))
+        inputs[:lesprofile_vars] = []
+    end
+
+    if(!haskey(inputs, :lesstress_vars))
+        inputs[:lesstress_vars] = []
+    end
+
+
+    #---------------------------------------------------------------------------
+    #END LES statistics
+    #---------------------------------------------------------------------------
+
     
     if(!haskey(inputs, :lexact_integration))
         inputs[:lexact_integration] = false #Default integration rule is INEXACT
@@ -656,7 +800,150 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         
     end #lread_gmsh
 
-    
+    #
+    # Grid-only runs and the spherical-shell (2D manifold in 3D) grid.
+    #
+    #   :lspherical_shell  solve on a CLOSED quadrilateral shell: the manifold
+    #                      metrics, RHS and time loop replace the flat ones.
+    #                      The GRID itself is read by the ordinary gmsh path in
+    #                      mesh.jl, which detects a 2D manifold embedded in 3D
+    #                      from the model and keeps z (see `lmanifold` there).
+    #   :lgrid_only        build the grid, dump it to VTK, and STOP — no
+    #                      initial condition, no time integration. This is the
+    #                      switch a user flips while the equations for a new
+    #                      geometry are still being written.
+    #   :linit_only        one step further: build the grid AND the initial
+    #                      condition, write both, and STOP before the time
+    #                      integration. :lgrid_only wins if both are set.
+    #
+    if(!haskey(inputs, :lspherical_shell))
+        inputs[:lspherical_shell] = false
+    end
+    if(!haskey(inputs, :lgrid_only))
+        inputs[:lgrid_only] = false
+    end
+    if(!haskey(inputs, :linit_only))
+        inputs[:linit_only] = false
+    end
+    if(!haskey(inputs, :lcheck_grid))
+        inputs[:lcheck_grid] = true
+    end
+    if(!haskey(inputs, :lstop_on_bad_grid))
+        inputs[:lstop_on_bad_grid] = true
+    end
+    # NOTE :lmerge_coincident_nodes / :node_merge_tol are gone with the bespoke
+    # shell reader. A watertight gmsh grid carries one node per seam location
+    # already, and Gridap's topology is built from the node ids in the file, so
+    # there is nothing to merge. A grid that really does duplicate its seam
+    # nodes is a broken grid: fix it in gmsh (share the curves between panels)
+    # rather than stitching it back together at read time.
+    if(!haskey(inputs, :lproject_to_sphere))
+        inputs[:lproject_to_sphere] = true
+    end
+    #
+    #   :cubed_sphere_map         move the shell's nodes onto a different
+    #                             cube-face → sphere map after the grid is read.
+    #                             Connectivity, panel decomposition and panel
+    #                             boundaries are untouched — only where the
+    #                             nodes sit inside each panel changes. See
+    #                             src/kernel/mesh/cubed_sphere_maps.jl.
+    #
+    #     :none         (default) leave the grid exactly as the .msh has it.
+    #     :gnomonic     equidistant central projection, Sadourny (1972).
+    #                   (:equidistant is an accepted alias.)
+    #     :equiangular  central projection with the face coordinate measured as
+    #                   an angle, Ronchi, Iacono & Paolucci (1996). The most
+    #                   HOMOGENEOUS of the three: largest minimum grid distance,
+    #                   so the largest explicit time step.
+    #     :conformal    Rančić, Purser & Mesinger (1996). ORTHOGONAL AND ISOTROPIC
+    #                   everywhere, corner included — and REFUSED on any grid with
+    #                   a node on a cube corner, which is every structured panel
+    #                   grid, because its Jacobian is zero there. Three panels meet
+    #                   at a corner and each opens 120°, so a map that keeps the
+    #                   square's 90° can only do it by collapsing its derivative;
+    #                   there is no regularisation of it a nodal scheme can use
+    #                   (THE 120° CORNER in src/kernel/mesh/cubed_sphere_maps.jl
+    #                   has the argument and the measurements). Use :equiangular.
+    #                   (:conformal_exact is a deprecated alias.)
+    #
+    # The grid the remap starts FROM is MEASURED by detect_cubed_sphere_map, not
+    # assumed, so there is deliberately no input for it: a "source map" switch is
+    # a claim about the .msh that nothing can check, and getting it wrong silently
+    # produces a grid that is neither map. (It used to be assumed gnomonic, and
+    # that was wrong — gmsh spaces `Transfinite Line` points at equal ANGLE along
+    # a `Circle` arc, so cubed_sphere.geo emits the EQUIANGULAR grid.)
+    #
+    if(!haskey(inputs, :cubed_sphere_map))
+        inputs[:cubed_sphere_map] = :none
+    end
+    let _m = inputs[:cubed_sphere_map]
+        (_m === :none || _m in CUBED_SPHERE_MAPS) ||
+            error(string(" # ERROR mod_inputs.jl: :cubed_sphere_map => ", _m,
+                         " is not recognised. Use :none or one of ", CUBED_SPHERE_MAPS, "."))
+    end
+    #
+    #   :exact_geometry    2D ONLY. Curve the high-order nodes of the named
+    #                      boundaries onto the exact shape the .geo defined,
+    #                      instead of leaving them on the straight-sided chords
+    #                      gmsh wrote. See src/kernel/mesh/exact_geometry.jl for
+    #                      the construction (isoparametric boundary + Gordon-Hall
+    #                      blend) and why it is the one Kopriva (2006) sanctions.
+    #
+    #                      Absent (the default) nothing is curved and every case
+    #                      behaves exactly as before. Otherwise it is a Dict
+    #                      from gmsh `Physical Curve` name to shape:
+    #
+    #                        Dict("circle_boundary" => :circle)
+    #                                centre and radius FITTED from the boundary
+    #                                vertices the mesh file already carries, and
+    #                                refused if they do not lie on a circle.
+    #
+    #                        Dict("circle_boundary" => (:circle, 1.0, 0.0, 0.2))
+    #                                centre and radius stated outright.
+    #
+    #                      The grid must still resolve the curvature: an element
+    #                      thinner than the sagitta of its own boundary arc folds,
+    #                      and exact_geometry.jl stops the run rather than hand a
+    #                      negative Jacobian to the metrics.
+    #
+    if haskey(inputs, :exact_geometry)
+        _eg = inputs[:exact_geometry]
+        _eg isa AbstractDict ||
+            error(string(" # ERROR mod_inputs.jl: :exact_geometry must be a Dict of ",
+                         "\"boundary tag\" => shape, got ", typeof(_eg), "."))
+        for (_tag, _sh) in _eg
+            _ok = _sh === :circle ||
+                  (_sh isa Tuple && length(_sh) == 4 && _sh[1] === :circle &&
+                   all(v -> v isa Real, _sh[2:4]) && _sh[4] > 0)
+            _ok || error(string(" # ERROR mod_inputs.jl: :exact_geometry[\"", _tag,
+                                "\"] => ", _sh, " is not a shape I know. Use :circle ",
+                                "(fitted) or (:circle, xc, yc, r) with r > 0."))
+        end
+    end
+    #
+    #   :sphere_metrics    the 2D-manifold metric terms of build_sphere_metrics.
+    #                      Kopriva's curl-invariant form (J. Sci. Comput. 26(3),
+    #                      301, 2006, Eq. 15; Sec. 3.2.3 of Kelly, Alves,
+    #                      Eckermann et al., JCP 552, 2026, 114683) DEGENERATES
+    #                      on a surface: it fixes the in-surface metric terms
+    #                      only up to the direction v in which the surface is
+    #                      extended off itself, and both choices below are
+    #                      curl-invariant. See the header of sphere_metrics.jl.
+    #
+    #     :cross_product   (default) v = n̂, the discrete surface normal — which
+    #                      is what the textbook cross-product formulas give.
+    #                      Uniquely, its strong-form divergence annihilates a
+    #                      rigid rotation exactly.
+    #     :radial          v = x̂, the exact radial. ∇ₛ is then tangent to the
+    #                      TRUE sphere rather than to the interpolant of it, at
+    #                      the cost of the rigid-rotation property.
+    #                      (:curl_invariant is an accepted alias.)
+    #
+    if(!haskey(inputs, :sphere_metrics))
+        inputs[:sphere_metrics] = :cross_product
+    end
+
+
     if (!haskey(inputs, :lwarmup))
         inputs[:lwarmup] = false
     else
@@ -693,6 +980,183 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:Pr] = 0.7
     end
 
+    #
+    # Marras-Nazarov DynSGS (visc_model = DSGS_MHD()) parameters, named as
+    # in Dao & Nazarov (2022):
+    #   :dsgs_CR    C_R,   coefficient of the residual viscosity C_R·Δ²·‖R‖/‖q−⟨q⟩‖
+    #               (their eq. 4.10, typical range [0.1, 1], paper 1)
+    #   :dsgs_Cmax  C_max, coefficient of the first-order viscosity C_max·Δ·(|v|+c_f)
+    #               (their §4.2, typical range [0.15, 0.5], paper 0.5)
+    #   :dsgs_gamma ratio of specific heats used by the MHD EOS and the fast
+    #               magnetosonic speed (5/3 for the monatomic plasma cases;
+    #               deliberately NOT PhysConst.γ, which is air's 1.4)
+    #   :dsgs_Prt   turbulent Prandtl number for the energy slot
+    #
+    for (old, new) in ((:dsgs_C1, :dsgs_CR), (:dsgs_C2, :dsgs_Cmax), (:dsgs_C0, :dsgs_Cmin))
+        if haskey(inputs, old)
+            error(" user_inputs.jl: $(old) has been renamed $(new) (Dao & Nazarov's C_R, C_max; C_min is the background floor).")
+        end
+    end
+    if(!haskey(inputs, :dsgs_CR))
+        inputs[:dsgs_CR] = 1.0
+    end
+    if(!haskey(inputs, :dsgs_Cmax))
+        inputs[:dsgs_Cmax] = 0.5
+    end
+    if(!haskey(inputs, :dsgs_gamma))
+        inputs[:dsgs_gamma] = 5.0/3.0
+    end
+    if(!haskey(inputs, :dsgs_Prt))
+        inputs[:dsgs_Prt] = 0.7
+    end
+    # Scope of the DynSGS normalising scales ⟨q⟩ and ‖q−⟨q⟩‖.
+    #
+    #   false (default) : rank-local. No communication at all.
+    #   true            : the domain norms of Marras eq. (9) / Nazarov &
+    #                     Hoffman eq. (3.5). Costs 2-3 MPI Allreduce per RHS
+    #                     call — 10-15 per step under a five-stage RK — on
+    #                     every rank's critical path.
+    #
+    # These two quantities only set the SCALE the element residual is measured
+    # against, and a partition of a connected domain resolves that scale as
+    # well as the whole domain does, so "rank" costs nothing and changes the
+    # solution only at round-off level; "domain" makes μ reproducible across
+    # rank counts and is what the papers write, at a few small reductions
+    # per RHS. Serial runs are unaffected either way. See
+    # kernel/physics/SGS.jl (_dsgs_norm_scope) and ENVIRONMENT_VARIABLES.md.
+    #
+    # ONE user-facing key sets that scope, :dsgs_norms:
+    #   "domain"  (default) the whole domain — the paper's definition; under
+    #             MPI the mean and spread are reduced across the ranks
+    #   "rank"    this rank's part of the domain only (no reductions; the
+    #             solution then depends on the partition at round-off level)
+    #   "element" the element itself (DSGS_MHD only; :dsgs_local_rel floors
+    #             the element spread) — strongly stratified atmospheres
+    # The two booleans the kernels read, :dsgs_local_norms and
+    # :ldsgs_global_norms, are derived from it here and are not inputs.
+    if haskey(inputs, :ldsgs_global_norms) || haskey(inputs, :dsgs_local_norms)
+        error(" user_inputs.jl: :ldsgs_global_norms and :dsgs_local_norms have been replaced by the single key :dsgs_norms => \"domain\" | \"rank\" | \"element\".")
+    end
+    if(!haskey(inputs, :dsgs_norms))
+        inputs[:dsgs_norms] = "domain"
+    end
+    dsgs_norms = lowercase(string(inputs[:dsgs_norms]))
+    if !(dsgs_norms in ("domain", "rank", "element"))
+        error(" user_inputs.jl: :dsgs_norms must be \"domain\", \"rank\" or \"element\" (got $(inputs[:dsgs_norms])).")
+    end
+    inputs[:dsgs_norms]         = dsgs_norms
+    inputs[:ldsgs_global_norms] = (dsgs_norms == "domain")
+    inputs[:dsgs_local_norms]   = (dsgs_norms == "element")
+
+    # DSGS_MHD variants for strongly stratified atmospheres (see
+    # compute_dsgs_viscosity!(::DSGS_MHD) in kernel/physics/SGS.jl and
+    # problems/MHD/fluxEmergenceSon2025). Both default to the original model.
+    #   :dsgs_norms => "element" (above) normalizes each element's residual
+    #                      by the spread of the variable over that element
+    #                      instead of over the domain (otherwise the dense
+    #                      layers hide the corona from the sensor)
+    #   :dsgs_nodal_rho    dynamic coefficient ρ·μ with the density of the
+    #                      quadrature point instead of the element mean
+    #                      (otherwise the light side of a stratified element
+    #                      gets (ρ̄/ρ)·μ and breaks the viscous CFL)
+    #   :dsgs_local_rel    with :dsgs_norms => "element", the floor of the element
+    #                      spread as a fraction of the element's natural
+    #                      scales (ρ, ρc, ρc², √ρ c); 1 = the residual is
+    #                      measured against the local physical rate ρc/τ
+    if(!haskey(inputs, :dsgs_local_rel))
+        inputs[:dsgs_local_rel] = 1.0
+    end
+    if(!haskey(inputs, :dsgs_nodal_rho))
+        inputs[:dsgs_nodal_rho] = false
+    end
+    #   :dsgs_conserved    one kinematic coefficient on every slot and no
+    #                      τ·u term: with a user_primitives! that returns the
+    #                      conserved variables, a Laplacian on (ρ, ρv, E, B, ψ)
+    #                      — contacts diffuse consistently, p stays positive
+    if(!haskey(inputs, :dsgs_conserved))
+        inputs[:dsgs_conserved] = false
+    end
+    #   :dsgs_Cmin         C_min, background floor C_min·Δ·(|v|+c_f) on the
+    #                      coefficient (a fraction of the C_max first-order
+    #                      viscosity; not in Dao & Nazarov) for the
+    #                      node-to-node modes the residual cannot sense
+    if(!haskey(inputs, :dsgs_Cmin))
+        inputs[:dsgs_Cmin] = 0.0
+    end
+    #   :dsgs_ref_weight   with :dsgs_conserved, slots 1-5 diffuse the
+    #                      relative departure (q − q_e)/w with coefficient
+    #                      μ·w, w = the weight user_primitives! stores in
+    #                      uprimitive[neqs+1] (fluxEmergenceSon2025DSGS: ρ_e)
+    if(!haskey(inputs, :dsgs_ref_weight))
+        inputs[:dsgs_ref_weight] = false
+    end
+    #   :ldsgs_nodal       DynSGS coefficient per NODE (Dao & Nazarov 2022:
+    #                      ν at every node from the element residuals, a
+    #                      continuous field) instead of the default per
+    #                      ELEMENT (one ν per element, Marras's form). true
+    #                      implies the element form off. 1D and 2D kernels
+    #                      (DSGS and DSGS_MHD); there is no 3D DynSGS kernel.
+    #   :dsgs_Cl           its local-jump normalization constant C_l (their eq.
+    #                      4.7; 0 = classical global spread, the paper uses 0.4)
+    if(!haskey(inputs, :ldsgs_nodal))
+        inputs[:ldsgs_nodal] = false
+    end
+    if(!haskey(inputs, :dsgs_Cl))
+        inputs[:dsgs_Cl] = 0.0
+    end
+    #   :dsgs_nazarov_energy  heat conduction of the energy slot is Dao &
+    #                      Nazarov's κ = ρν/Pr (JSC 2022, §4.4) instead of
+    #                      the Fourier-law c_p ρν/Pr: ρν/Pr_t on ∇T in the
+    #                      physical form; in the conserved form the energy
+    #                      flux is split: ν on the non-thermal part of E,
+    #                      max(γ(γ−1)/Pr_t·ν_res, ν_floor) on p/(γ−1)
+    #                      (kernel/physics/SGS.jl, dsgs_split_energy;
+    #                      :dsgs_conserved_prandtl = alias)
+    if(!haskey(inputs, :dsgs_nazarov_energy))
+        inputs[:dsgs_nazarov_energy] = get(inputs, :dsgs_conserved_prandtl, false)
+    end
+    if(!haskey(inputs, :dsgs_conserved_prandtl))
+        inputs[:dsgs_conserved_prandtl] = false
+    end
+    #   :dsgs_swe_g, :dsgs_swe_hmin   DSGS_SW (2D shallow water): the gravity of
+    #                      the wave speed |v| + √(gH) and the depth below which
+    #                      the velocity Hu/H is desingularized (keep them equal
+    #                      to the case's g and wet/dry threshold)
+    if(!haskey(inputs, :dsgs_swe_g))
+        inputs[:dsgs_swe_g] = 9.81
+    end
+    if(!haskey(inputs, :dsgs_swe_hmin))
+        inputs[:dsgs_swe_hmin] = 1.0e-3
+    end
+    #   :dsgs_sensor       "residual" (default): the element-wise strong
+    #                      residual with the stage-consistent time stencil
+    #                      (rhs.jl, _dsgs_residual_rhs!, _dsgs_stencil;
+    #                      DSGS.md §1.2, §4.4). "legacy": the sensor of every
+    #                      DynSGS run before Sep 2026 — the assembled RHS
+    #                      against a fixed BDF2 of the stage state, which
+    #                      amounts to a |∂ₜq| gradient sensor — kept for the
+    #                      cases validated with it (their decks set it).
+    if(!haskey(inputs, :dsgs_sensor))
+        inputs[:dsgs_sensor] = "residual"
+    end
+    #   :dsgs_reference    with the "residual" sensor and TOTAL variables:
+    #                      subtract the element RHS of the reference state qe
+    #                      (evaluated once) so that the residual is that of the
+    #                      departure from it — for a hydrostatic atmosphere
+    #                      advanced in total variables (CompEuler theta cases),
+    #                      whose full-flux residual at rest is the
+    #                      interpolation error of the balance. Off by default:
+    #                      a shock tube's qe is its initial jump.
+    if(!haskey(inputs, :dsgs_reference))
+        inputs[:dsgs_reference] = false
+    end
+    if haskey(inputs, :dsgs_legacy_stencil)
+        error(" user_inputs.jl: :dsgs_legacy_stencil has been replaced by :dsgs_sensor => \"legacy\" | \"residual\".")
+    end
+    inputs[:dsgs_sensor] = lowercase(string(inputs[:dsgs_sensor]))
+    if !(inputs[:dsgs_sensor] in ("residual", "legacy"))
+        error(" user_inputs.jl: :dsgs_sensor must be \"residual\" or \"legacy\" (got $(inputs[:dsgs_sensor])).")
+    end
 
     #
     # Viscous models:
@@ -817,11 +1281,12 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :zsponge))
         inputs[:zsponge] = 14000.0
     end
-    if  inputs[:lsponge] == true
-        if(!haskey(inputs, :zsponge))
-            inputs[:zsponge] = 14000.0
-        end
-    end
+    # the case source terms read these at every node with a type assertion
+    # (inputs[:lsponge]::Bool, inputs[:zsponge]::Float64: a bare read of the
+    # global Dict boxes and allocates 176 bytes per node per stage), so the
+    # deck's values are normalized to those types here
+    inputs[:lsponge] = Bool(inputs[:lsponge])
+    inputs[:zsponge] = Float64(inputs[:zsponge])
 
     if(!haskey(inputs, :lmoist))
         inputs[:lmoist] = false
@@ -849,8 +1314,16 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :AD))
         inputs[:AD] = ContGal()
     else
-        if inputs[:AD] != ContGal() && inputs[:AD] != FD()
-            @mystop(" :AD can only be either ContGal() or FD() at the moment.")
+        if inputs[:AD] != ContGal() && inputs[:AD] != FD() && inputs[:AD] != DiscGal()
+            @mystop(" :AD can only be ContGal(), DiscGal(), or FD() at the moment.")
+        end
+    end
+
+    if(!haskey(inputs, :numerical_flux))
+        if inputs[:AD] == DiscGal()
+            inputs[:numerical_flux] = upwind_flux()
+        else
+            inputs[:numerical_flux] = nothing
         end
     end
     
@@ -885,9 +1358,19 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:ldss_laplace] = false
     end
 
-    # AMR    
+    # AMR
     if(!haskey(inputs, :lamr))
         inputs[:lamr] = false
+    end
+
+    # HDF5 solution restart (:lrestart/:restart_time) does not know about the
+    # p4est forest and cannot reconstruct the adapted mesh it was written
+    # against, so it's incompatible with AMR. Force it off rather than
+    # silently corrupting/erroring on a shape mismatch; use :lrestart_amr
+    # (VTK + p4est forest restart) for AMR restarts instead.
+    if inputs[:lamr] == true
+        inputs[:lrestart]     = false
+        inputs[:restart_time] = 0.0
     end
 
     # LES statistics defaults (used by giga_les TimeIntegrators.jl callbacks).
@@ -933,6 +1416,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:ladapt] = true
     end
 
+    if(!haskey(inputs, :amr_start_time))
+        inputs[:amr_start_time] = Float32(0.0)
+    end
+
     if(!haskey(inputs, :linitial_refine))
         inputs[:linitial_refine] = false
     end
@@ -966,6 +1453,14 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
 
     if inputs[:lpreadapt] == true
         inputs[:ladapt] = true
+    end
+    # DG with mesh adaptivity is not supported yet: the DG mass matrix and the
+    # interface fluxes are built for a conforming mesh only. Refuse the run
+    # rather than let it proceed -- the CG non-conforming projections would
+    # otherwise be applied to the DG assembly and produce plausible-looking
+    # wrong numbers without any error.
+    if inputs[:AD] == DiscGal() && inputs[:ladapt] == true
+        @mystop(" :AD => DiscGal() does not support mesh adaptivity yet: :lamr, :ladapt and :lpreadapt must all be false.")
     end
     #------------------------------------------------------------------------
     # The following quantities stored in the inputs[] dictionary are only
@@ -1026,6 +1521,17 @@ function mod_inputs_check(inputs, key, value, error_or_warning::String)
     end
 
 end
+
+function build_tspan(inputs, TFloat)
+    if get(inputs, :lamr, false) == true
+        amr_freq = inputs[:amr_freq]
+        Δt_amr   = amr_freq * inputs[:Δt]
+        [TFloat(inputs[:tinit]), TFloat(inputs[:tinit] + inputs[:amr_start_time] + Δt_amr)]
+    else
+        [TFloat(inputs[:tinit]), TFloat(inputs[:tend])]
+    end
+end
+
 
 function mod_inputs_print_welcome(rank = 0)
     if rank == 0

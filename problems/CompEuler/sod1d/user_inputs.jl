@@ -29,6 +29,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => true,
         :visc_model           => DSGS(),
+        :dsgs_sensor          => "residual",  # element-wise strong residual (DSGS.md §1.2)
         # Per-equation multiplier on the DSGS coefficient: 1.0 = Marras
         # value, 0.0 turns it off on that equation, in (0, 1) throttles.
         # Mass diffusion is kept on for 1D shock stabilization (Marras's

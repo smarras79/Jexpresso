@@ -28,17 +28,151 @@ function driver(nparts,
         print(" # driver() entered, calling sem_setup ......... ")
         flush(stdout)
     end
+
     _t_sem = time_ns()
 
     #---------------------------------------------------------
-    # Time span (shared by both standalone and coupled paths).
+    # Spherical shell (2D manifold embedded in 3D).
+    #
+    # The GRID is built by the ordinary gmsh path, exactly like every other
+    # case: mod_mesh_mesh_driver → mod_mesh_read_gmsh!. That reader recognises
+    # a 2D manifold embedded in 3D from the model itself (see `lmanifold` in
+    # src/kernel/mesh/mesh.jl), keeps z through the high-order node placement,
+    # and snaps the LGL points onto the shell. Gridap's topology already gives
+    # one entry per UNIQUE edge, so the panel seams of a watertight cubed
+    # sphere stitch together with no special handling.
+    #
+    # What stays specific to the manifold is downstream of the grid:
+    #
+    #   metrics (sphere_metrics.jl)  →  initial condition (the case's
+    #   initialize.jl)  →  the :ode_solver time loop (sphere_time_loop.jl), whose RHS
+    #   is the SEM surface divergence in sphere_rhs.jl fed by the case's
+    #   user_flux! / user_source!.
+    #
+    # Two early exits, for working on the grid or the initial state alone:
+    #
+    #   :lgrid_only => true   build the grid, write it, return.
+    #   :linit_only => true   build the grid AND the initial condition, write
+    #                         both (into ONE file: the fields ride on the grid),
+    #                         return without integrating.
+    #
+    # :lgrid_only wins if both are set.
     #---------------------------------------------------------
-    if inputs[:lamr] == true
-        amr_freq = inputs[:amr_freq]
-        Δt_amr   = amr_freq * inputs[:Δt]
-        tspan    = [TFloat(inputs[:tinit]), TFloat(inputs[:tinit] + Δt_amr)]
-    else
-        tspan    = [TFloat(inputs[:tinit]), TFloat(inputs[:tend])]
+    if get(inputs, :lspherical_shell, false) == true
+
+        #
+        # A live Julia session keeps the ALREADY-COMPILED Jexpresso module.
+        # run.jl re-includes THIS file on every run_case, but the src/ files are
+        # only evaluated when the module itself is (re)loaded. Pulling new code
+        # into a running session therefore leaves a fresh drivers.jl calling
+        # functions the stale module has never seen — which surfaces as a bare
+        # `UndefVarError: <name> not defined in Jexpresso` from the line below.
+        # Say what it actually means.
+        #
+        for _w in (:write_vtk_sphere_grid,
+                   :project_momentum_to_sphere!, :sphere_normal_momentum,
+                   :build_sphere_metrics, :build_sphere_params, :sphere_time_loop!)
+            isdefined(@__MODULE__, _w) && continue
+            error(" # ERROR drivers.jl: `", _w, "` is not defined in the loaded Jexpresso module.\n",
+                  " #   The module in this Julia session is older than the source tree on disk.\n",
+                  " #   Restart Julia and run the case in a fresh session:\n",
+                  " #     julia --project=.\n",
+                  " #     julia> using Jexpresso\n",
+                  " #     julia> Jexpresso.run_case(\"ShallowWater\", \"SWsphere\")")
+        end
+
+        if rank == 0
+            println()
+            println(" # :lspherical_shell => true — reading the shell grid through the ordinary gmsh path")
+            nparts > 1 && println(" #   running on ", nparts, " MPI ranks")
+            flush(stdout)
+        end
+
+        smesh, _ = mod_mesh_mesh_driver(inputs, nparts, distribute)
+
+        smesh.lmanifold || error(" # ERROR drivers.jl: :lspherical_shell => true but ",
+                                 inputs[:gmsh_filename], " is not a curved 2D surface embedded in 3D.")
+
+        # ONE file per run, as (ngl-1)² sub-elements per spectral element — the
+        # same convention as write_vtk_grid_only for the flat cases. When the
+        # initial condition has been built its fields ride on that same file.
+        if get(inputs, :lgrid_only, false) == true
+            # Every rank writes its own piece (one .vtu each plus rank 0's
+            # .pvtu); only rank 0 narrates.
+            write_vtk_sphere_grid(smesh, "sphere_grid_ho", OUTPUT_DIR; verbose = (rank == 0))
+            if rank == 0
+                println(" # :lgrid_only => true — grid built and written to ", abspath(OUTPUT_DIR), ". Stopping here.")
+            end
+            return smesh
+        end
+
+        #
+        # Metric terms of the manifold: the contravariant basis that turns the
+        # (F,G,H) of user_flux.jl into a SURFACE divergence, plus the diagonal
+        # mass matrix. This is what the flat 2D metric machinery cannot supply.
+        #
+        smetrics = build_sphere_metrics(smesh, inputs; verbose = (rank == 0))
+        if get(inputs, :lcheck_grid, true) == true
+            ok = check_sphere_metrics(smesh, smetrics; verbose = (rank == 0))
+            if !ok && get(inputs, :lstop_on_bad_grid, true) == true
+                error(" # ERROR drivers.jl: the spherical shell metrics failed their consistency checks.")
+            end
+        end
+
+        qsphere = initialize(smesh.SD, 0, smesh, inputs, OUTPUT_DIR, TFloat)
+
+        #
+        # Lagrange-multiplier projection, Marras/Kopera/Giraldo Eq. (9)-(11).
+        #
+        # In a real run this belongs at the end of every time step (or RK
+        # stage): it removes the momentum component NORMAL to the shell that
+        # the discrete operators accumulate, which is what keeps the fluid on
+        # the sphere. There is no time loop yet, so applying it here does two
+        # useful things instead — it reports how far off the manifold the
+        # initial state is (it should be at round-off, since the Galewsky jet
+        # is built from tangential unit vectors), and it guarantees that
+        # whatever is written to VTK is exactly tangential.
+        #
+        if get(inputs, :llagrange_projection, true) == true
+
+            drift = project_momentum_to_sphere!(qsphere.qn, smesh; ivar = 2)
+
+            # qout (the primitives written to VTK) was derived from qn BEFORE
+            # the projection, so refresh it through the case's own user_uout!
+            # rather than shipping output that disagrees with the state.
+            for ip = 1:smesh.npoin
+                user_uout!(ip, inputs[:SOL_VARS_TYPE],
+                           @view(qsphere.qout[ip, :]),
+                           @view(qsphere.qn[ip, :]),
+                           @view(qsphere.qe[ip, :]))
+            end
+
+            nparts > 1 && (drift = MPI.Allreduce(drift, MPI.MAX, comm))
+            if rank == 0
+                @printf(" # Lagrange projection P = I - xxᵀ/r²: removed max|(φu)·x̂| = %.3e\n", drift)
+            end
+        end
+
+        if get(inputs, :linit_only, false) == true
+            write_vtk_sphere_grid(smesh, "sphere_grid_ho", OUTPUT_DIR;
+                                  q = qsphere, verbose = (rank == 0))
+            if rank == 0
+                println(" # :linit_only => true — grid + initial condition written to ", abspath(OUTPUT_DIR), ". Stopping here.")
+            end
+            return smesh, qsphere
+        end
+
+        #
+        # Time integration. sphere_time_loop! writes the initial condition and
+        # then one VTK file per output time, and applies the Lagrange projection
+        # after every RK stage.
+        #
+        sparams = build_sphere_params(smesh, smetrics, inputs; neqs = qsphere.neqs)
+
+        @time tfinal = sphere_time_loop!(smesh, smetrics, sparams, qsphere,
+                                         inputs, OUTPUT_DIR; verbose = (rank == 0))
+
+        return smesh, qsphere, tfinal
     end
 
     #---------------------------------------------------------
@@ -54,9 +188,7 @@ function driver(nparts,
     coupling = nothing
     if is_coupled
         @assert world !== nothing "world communicator must be supplied when is_coupled=true"
-        coupling, sem, partitioned_model, qp =
-            setup_coupling_and_mesh(world, nparts, inputs, nparts,
-                                    distribute, rank, OUTPUT_DIR, TFloat)
+        coupling, sem, partitioned_model, qp = setup_coupling_and_mesh(world, nparts, inputs, nparts, distribute, rank, OUTPUT_DIR, TFloat)
     else
         if inputs[:lwarmup] == true
             if rank == 0 println(BLUE_FG(string(" # JIT pre-compilation of large problem ..."))) end
@@ -82,6 +214,22 @@ function driver(nparts,
 
         if rank == 0
             @printf("DONE (%.2f s)\n", (time_ns() - _t_sem) / 1e9)
+            flush(stdout)
+        end
+
+        # Grid-only run: dump the high-order grid and stop before the initial
+        # condition. Same switch as the spherical-shell branch above, for the
+        # cases that DO go through sem_setup.
+        if get(inputs, :lgrid_only, false) == true
+            write_vtk_grid_only(sem.mesh.SD, sem.mesh, "grid_ho", OUTPUT_DIR,
+                                distribute(LinearIndices((nparts,))), nparts)
+            if rank == 0
+                println(" # :lgrid_only => true — grid built and written to ", OUTPUT_DIR, ". Stopping here.")
+            end
+            return sem
+        end
+
+        if rank == 0
             print(" # initialize() ......... ")
             flush(stdout)
         end
@@ -94,35 +242,8 @@ function driver(nparts,
         # lRT_problem builds its own problem and exits early — it does not
         # use params_setup or time_loop!. Standalone-only branch.
         if inputs[:lRT_problem]
-            # PERF: bring RRTMGP + ClimaComms + LinearOperators +
-            # NCDatasets into scope. These were eagerly
-            # loaded at the top of src/Jexpresso.jl, costing every
-            # non-RT run (city2d, sod1d, …) ~tens of seconds of load
-            # time for code they never call. _ensure_rt_loaded!() is a
-            # cheap no-op once the first RT run has triggered it.
-            Jexpresso._ensure_rt_loaded!()
-            if sem.mesh.SD == NSD_2D()
-                build_radiative_transfer_problem(sem.mesh, inputs, 1, sem.mesh.ngl, sem.basis.dψ, sem.basis.ψ, sem.ω, sem.metrics.Je,
-                                                 sem.metrics.dξdx, sem.metrics.dξdy, sem.metrics.dηdx, sem.metrics.dηdy,
-                                                 sem.metrics.nx, sem.metrics.ny, sem.mesh.elem_to_edge, sem.mesh.extra_mesh, sem.QT, NSD_2D(), sem.AD)
-            else
-                κ = zeros(sem.mesh.npoin)
-                σ = zeros(sem.mesh.npoin)
-                if inputs[:lRT_from_data]
-                    @info "reading atmospheric data to build extinction and scattering coefficients"
-                    filename = inputs[:RT_data_file]
-                    data = read_atmospheric_data(filename)
-                    data_interp = interpolate_atmosphere_to_mesh(data, sem.mesh)
-                    κ, σ = atmos_to_rad(data_interp, sem.mesh.npoin)
-                end
+            build_rad!(sem, partitioned_model, inputs, nparts, distribute)
 
-                build_radiative_transfer_problem(sem.mesh, inputs, 1, sem.mesh.ngl, sem.basis.dψ, sem.basis.ψ, sem.ω, sem.metrics.Je,
-                                                 sem.metrics.dξdx, sem.metrics.dξdy, sem.metrics.dξdz,
-                                                 sem.metrics.dηdx, sem.metrics.dηdy, sem.metrics.dηdz,
-                                                 sem.metrics.dζdx, sem.metrics.dζdy, sem.metrics.dζdz,
-                                                 sem.metrics.nx, sem.metrics.ny, sem.metrics.nz,
-                                                 sem.mesh.elem_to_face, sem.mesh.extra_mesh, κ, σ, sem.QT, NSD_3D(), sem.AD)
-            end
             return
         end
 
@@ -132,14 +253,34 @@ function driver(nparts,
             flush(stdout)
         end
     end
+    #---------------------------------------------------------
+    # Time span (shared by both standalone and coupled paths).
+    #---------------------------------------------------------
+    # Build tspan after initialize() so VTK/HDF5 restarts that update inputs[:tinit] are reflected.
+    tspan = build_tspan(inputs, TFloat)
+
+    # PERF: during package precompilation (PrecompileTools @compile_workload)
+    # this driver runs only to bake the hot-path JIT — RHS, the SciML
+    # integrator, the callback-specialized warm-up — into the precompile
+    # cache. The actual time integration is throwaway there, so cap the run
+    # to a handful of steps. A full sod1d pass is 2000 steps (tend=0.2,
+    # Δt=1e-4); running all of them during precompile is what made it take
+    # minutes. The warm-up pre-pass plus the first few real steps still
+    # trigger every specialization we want cached, so cold runs stay fast
+    # without precompilation paying for a full simulation. `jl_generating_
+    # output` is 1 only while generating precompile output, so real runs are
+    # never shortened.
+    if ccall(:jl_generating_output, Cint, ()) == 1 && haskey(inputs, :Δt)
+        _dt_pc = TFloat(inputs[:Δt])
+        tspan  = [TFloat(inputs[:tinit]), TFloat(inputs[:tinit]) + 3 * _dt_pc]
+    end
 
     #---------------------------------------------------------
     # Parameters setup (shared).
     #---------------------------------------------------------
     if rank == 0 println(" # Params_setup ..................................") end
 
-    params, u = params_setup(sem, qp, inputs, OUTPUT_DIR, TFloat, tspan;
-                             coupling = coupling)
+    params, u = params_setup(sem, qp, inputs, OUTPUT_DIR, TFloat, tspan; coupling = coupling)
 
     if rank == 0 println(" # Params_setup .................................. DONE") end
 
@@ -173,277 +314,11 @@ function driver(nparts,
         #-----------------------------------------------------------------------------------
         # Problems that lead to Lx = RHS (standalone only).
         #-----------------------------------------------------------------------------------
-        @assert !is_coupled "the linsolve (Lx=RHS) path is not supported in coupled mode"
-
-        npoin          = sem.mesh.npoin
-        nelem          = sem.mesh.nelem
-        nelem_semi_inf = params.mesh.nelem_semi_inf
-        ngl            = sem.mesh.ngl
-        ngr            = sem.mesh.ngr
-
-        RHS   = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(npoin))
-        Mdiag = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(npoin))
-
         if (inputs[:backend] == CPU())
-
             if inputs[:lelementLearning]
-                if rank == 0 println(BLUE_FG(string(" # ALLOCATE FOR ELEMENT LEARNING ......."))) end
-
-
-                nelintpoints = (ngl - 2)^2
-                nelpoints    = ngl^2
-                elnbdypoints = nelpoints - nelintpoints
-
-                EL = @time allocate_elemLearning(nelem, ngl,
-                                                 sem.mesh.length∂O,
-                                                 sem.mesh.length∂τ,
-                                                 sem.mesh.lengthΓ,
-                                                 TFloat, inputs[:backend];
-                                                 Nsamp=inputs[:Nsamp],
-                                                 lEL_Sample=inputs[:lEL_Sample])
-
-                if rank == 0 println(BLUE_FG(string(" # ALLOCATE FOR ELEMENT LEARNING ....... DONE"))) end
-
-                BOΓg        = zeros(sem.mesh.length∂O)
-                gΓ          = zeros(sem.mesh.lengthΓ)
-                lvtk_sample = false
-
-                if EL.lEL_Sample
-                    #-----------------------------------------------------
-                    # 1. Sampling
-                    #-----------------------------------------------------
-                    bufferin  = Vector{Vector{Float64}}()
-                    bufferout = Vector{Vector{Float64}}()
-                    total_cols_writtenin  = 0
-                    total_cols_writtenout = 0
-
-                    if isfile("input_tensor.csv");  rm("input_tensor.csv");  end
-                    if isfile("output_tensor.csv"); rm("output_tensor.csv"); end
-
-                    # ── Allocate ONCE outside the loop ────────────────────────────────────────
-                    A       = sem.matrix.L
-                    A_∂τ∂τ  = A[sem.mesh.∂τ, sem.mesh.∂τ]
-                    avisc   = zeros(TFloat, 1, ngl^2)          # shape fixed, values change each iter
-                    nfeatures = size(avisc, 2)
-
-                    wbuf = EL_WorkBuffers(params.mesh, A, A_∂τ∂τ, nfeatures,
-                                          nelintpoints, elnbdypoints,
-                                          inputs[:NNfile])  # load_inference called ONCE here
-
-                    Nsamples = inputs[:Nsamp]
-                    for isamp = 1:Nsamples
-                        println(" # --- sample = $isamp")
-
-                        # avisc changes each sample — update values in-place, no reallocation
-                        ranvisc      = 0.5 + rand()
-                        avisc[1, :] .= ranvisc
-
-                        for ip = 1:npoin
-                            user_source!(RHS[ip], params.qp.qn[ip], params.qp.qe[ip],
-                                         npoin, inputs[:CL], inputs[:SOL_VARS_TYPE];
-                                         neqs=1, x=sem.mesh.x[ip], y=sem.mesh.y[ip],
-                                         xmax=sem.mesh.xmax, xmin=sem.mesh.xmin,
-                                         ymax=sem.mesh.ymax, ymin=sem.mesh.ymin)
-                        end
-                        RHS = sem.matrix.M .* RHS
-
-                        apply_boundary_conditions_lin_solve!(sem.matrix.L,
-                                                             0.0, params.qp.qe,
-                                                             params.mesh.coords,
-                                                             params.metrics.nx,
-                                                             params.metrics.ny,
-                                                             params.metrics.nz,
-                                                             npoin,
-                                                             params.mesh.npoin_linear,
-                                                             params.mesh.poin_in_bdy_edge,
-                                                             params.mesh.poin_in_bdy_face,
-                                                             params.mesh.nedges_bdy,
-                                                             params.mesh.nfaces_bdy,
-                                                             ngl, ngr,
-                                                             nelem_semi_inf,
-                                                             params.basis.ψ, params.basis.dψ,
-                                                             0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                                                             RHS, 0.0, params.ubdy,
-                                                             params.mesh.connijk_lag,
-                                                             params.mesh.bdy_edge_in_elem,
-                                                             params.mesh.bdy_edge_type,
-                                                             params.ω, qp.neqs,
-                                                             params.inputs, params.AD, sem.mesh.SD)
-
-                        # wbuf reused — no new allocations, no new ONNX sessions
-                        elementLearning_Axb!(params.qp.qn, params.uaux, sem.mesh,
-                                             A, RHS, EL,
-                                             avisc,
-                                             bufferin, bufferout,
-                                             BOΓg, gΓ, wbuf;
-                                             isamp=isamp,
-                                             total_cols_writtenin=total_cols_writtenin,
-                                             total_cols_writtenout=total_cols_writtenout)
-                    end # isamp loop
-
-                    total_cols_writtenin  = flush_MLtensor!(bufferin,  total_cols_writtenin,  "input_tensor.csv")
-                    total_cols_writtenout = flush_MLtensor!(bufferout, total_cols_writtenout, "output_tensor.csv")
-
-                    if rank == 0 println(BLUE_FG(" # EL SAMPLING .......... DONE")) end
-
-                else
-                    #-----------------------------------------------------
-                    # 2. Inference:
-                    #-----------------------------------------------------
-                    #
-                    # L*q = M*RHS   See algo 12.18 of Giraldo's book
-                    #
-                    # 2.a/b
-                    μ        = 1
-                    #â        = zeros(TFloat, ngl, ngl)
-                    avisc      = zeros(TFloat, 1, ngl^2)
-                    avisc[1,:].= 0.5 + rand() #Uniform distribution between 0.5 and 1.5
-                    nfeatures  = size(avisc, 2)
-                    #ψ        = sem.basis.ψ
-                    #expansion_2d!(â, ψ)
-
-                    for ip =1:npoin
-                        RHS[ip] = user_source!(RHS[ip],
-                                               params.qp.qn[ip],
-                                               params.qp.qe[ip],
-                                               npoin,
-                                               inputs[:CL], inputs[:SOL_VARS_TYPE];
-                                               neqs=1, x=sem.mesh.x[ip], y=sem.mesh.y[ip],
-                                               xmax=sem.mesh.xmax, xmin=sem.mesh.xmin,
-                                               ymax=sem.mesh.ymax, ymin=sem.mesh.ymin)
-                    end
-                    RHS = sem.matrix.M.*RHS
-
-                    apply_boundary_conditions_lin_solve!(sem.matrix.L,
-                                                         0.0, params.qp.qe,
-                                                         params.mesh.coords,
-                                                         params.metrics.nx,
-                                                         params.metrics.ny,
-                                                         params.metrics.nz,
-                                                         npoin,
-                                                         params.mesh.npoin_linear,
-                                                         params.mesh.poin_in_bdy_edge,
-                                                         params.mesh.poin_in_bdy_face,
-                                                         params.mesh.nedges_bdy,
-                                                         params.mesh.nfaces_bdy,
-                                                         ngl, ngr,
-                                                         nelem_semi_inf,
-                                                         params.basis.ψ, params.basis.dψ,
-                                                         0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                                                         RHS, 0.0, params.ubdy,
-                                                         params.mesh.connijk_lag,
-                                                         params.mesh.bdy_edge_in_elem,
-                                                         params.mesh.bdy_edge_type,
-                                                         params.ω, qp.neqs,
-                                                         params.inputs, params.AD, sem.mesh.SD)
-
-                    #-----------------------------------------------------
-                    # Element-learning infrastructure
-                    #-----------------------------------------------------
-                    nfeatures    = size(avisc, 2)
-                    A            = sem.matrix.L
-                    A_∂τ∂τ       = A[sem.mesh.∂τ, sem.mesh.∂τ]   # needed by EL_WorkBuffers constructor
-
-                    wbuf = EL_WorkBuffers(params.mesh, A, A_∂τ∂τ, nfeatures,
-                                          nelintpoints, elnbdypoints,
-                                          inputs[:NNfile])
-
-                    total_cols_writtenin  = 0
-                    total_cols_writtenout = 0
-
-                    println(GREEN_FG(string(" # INFERENCE: call to elementLearning_Axb! .......... ")))
-                    elementLearning_Axb!(params.qp.qn, params.uaux, sem.mesh,
-                                         A, RHS, EL,
-                                         avisc,
-                                         [0.0], [0.0],
-                                         BOΓg, gΓ, wbuf;
-                                         isamp=1,
-                                         total_cols_writtenin=total_cols_writtenin,
-                                         total_cols_writtenout=total_cols_writtenout)
-
-
-                    println(GREEN_FG(string(" # INFERENCE: call to elementLearning_Axb! .......... DONE")))
-                    usol = params.qp.qn
-                    neqs = params.qp.neqs
-                    args = (params.SD, usol, params.uaux, 1, 1,
-                            sem.mesh, nothing,
-                            nothing, nothing,
-                            0.0, 0.0, 0.0,
-                            OUTPUT_DIR, inputs,
-                            params.qp.qvars,
-                            params.qp.qoutvars,
-                            inputs[:outformat])
-
-                    write_output(args...; nvar=neqs, qexact=params.qp.qe)
-                    #-----------------------------------------------------
-                    # END Element-learning infrastructure
-                    #-----------------------------------------------------
-                end
-
+                element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat, rank)
             else
-
-                #-----------------------------------------------------
-                # L*q = M*RHS   See algo 12.18 of Giraldo's book
-                #-----------------------------------------------------
-                for ip =1:sem.mesh.npoin
-                    RHS[ip] = user_source!(RHS[ip],
-                                           params.qp.qn[ip],
-                                           params.qp.qe[ip],
-                                           sem.mesh.npoin,
-                                           inputs[:CL], inputs[:SOL_VARS_TYPE];
-                                           neqs=1, x=sem.mesh.x[ip], y=sem.mesh.y[ip],
-                                           xmax=sem.mesh.xmax, xmin=sem.mesh.xmin,
-                                           ymax=sem.mesh.ymax, ymin=sem.mesh.ymin)
-                end
-                RHS = sem.matrix.M.*RHS
-
-                if inputs[:lsparse] ==  false
-                    for ip = 1:sem.mesh.npoin
-                        sem.matrix.L[ip,ip] += inputs[:rconst][1]
-                    end
-                end
-
-                apply_boundary_conditions_lin_solve!(sem.matrix.L,
-                                                     0.0, params.qp.qe,
-                                                     params.mesh.coords,
-                                                     params.metrics.nx,
-                                                     params.metrics.ny,
-                                                     params.metrics.nz,
-                                                     sem.mesh.npoin,
-                                                     params.mesh.npoin_linear,
-                                                     params.mesh.poin_in_bdy_edge,
-                                                     params.mesh.poin_in_bdy_face,
-                                                     params.mesh.nedges_bdy,
-                                                     params.mesh.nfaces_bdy,
-                                                     params.mesh.ngl, params.mesh.ngr,
-                                                     params.mesh.nelem_semi_inf,
-                                                     params.basis.ψ, params.basis.dψ,
-                                                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                                                     RHS, 0.0, params.ubdy,
-                                                     params.mesh.connijk_lag,
-                                                     params.mesh.bdy_edge_in_elem,
-                                                     params.mesh.bdy_edge_type,
-                                                     params.ω, qp.neqs,
-                                                     params.inputs, params.AD, sem.mesh.SD)
-
-                println(YELLOW_FG(string(" # Solve x=inv(A)*b: sparse storage ..............")))
-
-                #solAxb = @btime solveAx($sem.matrix.L, $RHS, inputs[:ode_solver])
-                #sol = solAxb.u
-                solAxb = sem.matrix.L \ RHS
-                sol = solAxb
-
-                println(YELLOW_FG(string(" # Solve x=inv(A)*b: sparse storage .............. DONE")))
-                args = (params.SD, sol, params.uaux, 1, 1,
-                        sem.mesh, nothing,
-                        nothing, nothing,
-                        0.0, 0.0, 0.0,
-                        OUTPUT_DIR, inputs,
-                        params.qp.qvars,
-                        params.qp.qoutvars,
-                        inputs[:outformat])
-
-                write_output(args...; nvar=params.qp.neqs, qexact=params.qp.qe)
+                standard_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
             end
         else
             println( " ")
@@ -453,12 +328,4 @@ function driver(nparts,
             nothing
         end
     end
-end
-
-# Point evaluation: interpolate at a single point (ξ, η)
-function expansion_2d!(a::Matrix, ψ::Matrix)
-
-    # Tensor product form: ψᵀ * A * ψ
-    return dot(ψ, a * ψ)
-
 end

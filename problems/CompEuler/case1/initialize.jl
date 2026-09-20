@@ -17,7 +17,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
     for iel_g = 1:mesh.nelem
         for i = 1:mesh.ngl
             ip = mesh.connijk[iel_g, i, 1, 1]
-            x  = mesh.coords[ip, 1]
+            x  = mesh.coords[1, ip]
 
             ρ = 1.0
             u = 0.0
