@@ -230,6 +230,11 @@ include(joinpath( "kernel", "operators", "rhs.jl"))
 # SEM right-hand side on the spherical shell (+ the modal filter).
 include(joinpath( "kernel", "operators", "sphere_rhs.jl"))
 
+# Stochastic small-scale forcing and large-scale dissipation on the shell
+# (Scott & Polvani 2007). Needs St_sphere_params and the DSS helper from
+# sphere_rhs.jl, so it is included straight after it.
+include(joinpath( "kernel", "operators", "sphere_forcing.jl"))
+
 include(joinpath( "kernel", "operators", "rhs_2point.jl"))
 
 include(joinpath( "kernel", "operators", "rhs_gpu.jl"))

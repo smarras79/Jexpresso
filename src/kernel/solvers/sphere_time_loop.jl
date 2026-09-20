@@ -171,7 +171,7 @@ end
 # Any. This is the same function-barrier trick the shell kernels use, moved up
 # to the integrator boundary.
 #---------------------------------------------------------------------------------
-struct St_sphere_ode_params{TMesh, TMetrics, TParams, TQe, TSVT}
+struct St_sphere_ode_params{TMesh, TMetrics, TParams, TQe, TSVT, TForcing}
     mesh::TMesh
     metrics::TMetrics
     sp::TParams
@@ -179,6 +179,14 @@ struct St_sphere_ode_params{TMesh, TMetrics, TParams, TQe, TSVT}
     SVT::TSVT
     lproject::Bool
     driftmax::Base.RefValue{Float64}
+    #
+    # The Scott & Polvani stochastic forcing, or `nothing` — which is what every
+    # case but that one has. Parameterised rather than Union{Nothing,...} so the
+    # RHS and the step limiter specialise on it and a case without forcing pays
+    # nothing: sphere_forcing_apply!(..., ::Nothing, ...) inlines to a no-op.
+    # LAST, so the existing positional constructor calls stay readable.
+    #
+    forcing::TForcing
 end
 
 
@@ -187,6 +195,13 @@ end
 #
 function _sphere_ode_rhs!(du, u, p::St_sphere_ode_params, t)
     sphere_rhs!(du, u, p.qe, p.mesh, p.metrics, p.sp, p.SVT)
+    #
+    # The forcing and the large-scale dissipation are added to the ASSEMBLED
+    # tendency, after the DSS and the M⁻¹ scaling that sphere_rhs! ends with —
+    # they are nodal fields, not weak-form integrals. See sphere_forcing.jl.
+    # A no-op when the case asked for no forcing.
+    #
+    sphere_forcing_apply!(du, u, p.qe, p.forcing, Int(p.mesh.npoin))
     return nothing
 end
 
@@ -216,6 +231,13 @@ end
 function _sphere_step_limiter!(u, integrator, p::St_sphere_ode_params, t)
     sphere_filter!(u, p.mesh, p.metrics, p.sp)
     p.lproject && project_momentum_to_sphere!(u, p.mesh; ivar = 2)
+    #
+    # Redraw the forcing for the NEXT step, on the state this one just finished
+    # — which is the state the next one starts from, so the amplitude of Eq. (5)
+    # is normalised against exactly the u the forcing will act on. Once per
+    # step, deliberately: the RK stages must all see the same random field.
+    #
+    sphere_forcing_step!(p.forcing, u, p.mesh, p.metrics, p.sp)
     return nothing
 end
 
@@ -252,7 +274,7 @@ end
 # body is entered only on the ~35 print steps and 24 output steps instead of all
 # 6913 — the conditions themselves are the old hand-written loop's, unchanged.
 #---------------------------------------------------------------------------------
-mutable struct St_sphere_monitor{TQ, TMesh, TMetrics, TParams, TIn, TSVT, TPod}
+mutable struct St_sphere_monitor{TQ, TMesh, TMetrics, TParams, TIn, TSVT, TPod, TForcing}
     q::TQ
     mesh::TMesh
     metrics::TMetrics
@@ -280,6 +302,13 @@ mutable struct St_sphere_monitor{TQ, TMesh, TMetrics, TParams, TIn, TSVT, TPod}
     # reason to agree.
     #
     pod::TPod
+    #
+    # The stochastic forcing, or `nothing`. Read-only here: the monitor reports
+    # the energy input rate it realised, which is the one number that says
+    # whether the forcing is doing what the deck asked for. LAST field, after
+    # pod, so the positional constructor calls read in wiring order.
+    #
+    forcing::TForcing
 end
 
 #
@@ -333,9 +362,9 @@ function (mon::St_sphere_monitor)(integrator)
             dζ   = MPI.Allreduce(dζ,   MPI.MAX, comm)
         end
         if mon.verbose
-            @printf(" #   step %6d  t = %10.1f s (%6.3f d)  δmass/mass = %9.2e  δE/E = %9.2e  |(φu)·x̂| = %9.2e  max|ζ| = %9.3e  max|ζ-ζ₀| = %9.3e\n",
+            @printf(" #   step %6d  t = %10.1f s (%6.3f d)  δmass/mass = %9.2e  δE/E = %9.2e  |(φu)·x̂| = %9.2e  max|ζ| = %9.3e  max|ζ-ζ₀| = %9.3e%s\n",
                     istep, t, t/86400, (mass-mon.mass0)/mon.mass0, (ener-mon.ener0)/mon.ener0,
-                    drift, ζmax, dζ)
+                    drift, ζmax, dζ, sphere_forcing_report(mon.forcing))
             flush(stdout)
         end
         # mass is a reduced quantity, so this fires on every rank at once.
@@ -523,11 +552,26 @@ function _sphere_march!(mesh::St_mesh,
     # out of the decomposition — is not due yet and records nothing.
     pod_due(pod, t, Δt) && pod_record!(pod, q.qn, t, mesh; ζ = ζ)
 
-    params = St_sphere_ode_params(mesh, metrics, sp, q.qe, SVT, lproject, Ref(0.0))
+    #
+    # The stochastic forcing, if the deck asked for one. Built here because it
+    # normalises its amplitude over Δt (Eq. 5 of sphere_forcing.jl), which is
+    # only known once the CFL step above has been taken. `nothing` otherwise.
+    #
+    forcing = build_sphere_forcing(mesh, metrics, sp, inputs; Δt = Δt, verbose = verbose)
+
+    params = St_sphere_ode_params(mesh, metrics, sp, q.qe, SVT, lproject, Ref(0.0), forcing)
+
+    #
+    # Build the FIRST forcing field here. The step limiter prepares the field for
+    # the next step, so without this the first step would be forced by the zeros
+    # the struct was allocated with — on a case that starts from rest, a wasted
+    # step and a discontinuity in the injection rate at step 2.
+    #
+    sphere_forcing_step!(forcing, q.qn, mesh, metrics, sp)
 
     monitor = St_sphere_monitor(q, mesh, metrics, sp, inputs, SVT, OUTPUT_DIR,
                                 ζ, ζ0, mass0, ener0, npoin, nsteps, nprint,
-                                nout, outdt, t + outdt, 0, verbose, pod)
+                                nout, outdt, t + outdt, 0, verbose, pod, forcing)
 
     # save_positions = (false,false): the monitor only reads the state, so there
     # is no need to snapshot it around the callback.

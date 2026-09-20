@@ -2,22 +2,23 @@
 # SWsphere_ScottPolvani_POD — the Scott & Polvani case on the GALEWSKY GRID,
 # configured for Proper Orthogonal Decomposition.
 #
-#   *** THIS CASE NEEDS THE FORCING, WHICH IS NOT ON THIS BRANCH YET. ***
+# THE RUN LENGTH IS THE THING TO GET RIGHT HERE, so it is said first. This is a
+# forced-dissipative case: it starts AT REST and equilibrates on the timescale
+# of the LARGE-SCALE DISSIPATION, not of the forcing. With Rayleigh friction the
+# energy obeys dÊ/dt = f_up ε₀ - 2ν_l Ê, so it approaches
 #
-# user_source.jl of this case says the forcing "lives in
-# src/kernel/operators/sphere_forcing.jl and enters the RHS after assembly
-# (switched by :lsphere_forcing in the deck)". That file does not exist here,
-# and nothing under src/ reads :lsphere_forcing or :forcing_epsilon — so the
-# deck asks for a forcing that nothing applies, the fluid stays at rest, and
-# the decomposition has nothing to work on. MEASURED on this grid, 1012 steps
-# to 16.5 days: max|ζ| = 2.6e-17, i.e. machine zero, and the POD reports
-# Σλ = 8.4e-20 with "THE FIELD BARELY MOVED" against h. Nothing is broken; the
-# physics is simply absent.
+#   Ê_eq = f_up ε₀ / (2ν_l) = ½U²          with an e-folding time 1/(2ν_l),
 #
-# Until sphere_forcing.jl lands, this deck is a wired-up shell: the grid, the
-# planet, the timing and the POD block are right and the whole chain runs. See
-# the README next to this file for what it should produce once the forcing is
-# here.
+# and at the deck's ν_l = 1e-4 per rotation that time is 1/(2e-4) = 5000
+# ROTATIONS. A run of tens of rotations is still on the initial linear ramp of
+# the paper's Fig. 1 and has not made jets yet; :pod_tstart below exists so the
+# decomposition does not average the spin-up in with the equilibrium.
+#
+# MEASURED on this grid, Jupiter, serial:  Δt = 1413 s, ~25 steps per rotation,
+# ~0.13 s/step, so ~8 steps/s of wall clock. 50 rotations gave Ê = 13.8 m²/s²
+# and Ro = 2.1e-4 — a tenth of the target — and confirmed the realised input
+# rate is ε₀ to six figures at every step. The default below is the full run.
+# Shorten it with SP_NROT for a smoke test; do not read physics off a short one.
 #
 # WHAT IS DIFFERENT from problems/ShallowWater/SWsphere_ScottPolvani:
 #
@@ -184,7 +185,13 @@ function user_inputs()
     tau   = tau_nd*T                   # forcing decorrelation time         [s]
     μvisc = nu_nd*a^2*Ω                # artificial diffusion               [m²/s]
 
-    nrot  = parse(Float64, get(ENV, "SP_NROT", "20"))   # length of the run, in rotations
+    #
+    # The run length, in HALF-rotations: :tend is 2·nrot·T below. 2500 is 5000
+    # rotations, i.e. one e-folding time 1/(2ν_l) of the large-scale
+    # dissipation — see the note at the top of this file. SP_NROT overrides it;
+    # SP_NROT=25 is the 50-rotation smoke test the header quotes.
+    #
+    nrot  = parse(Float64, get(ENV, "SP_NROT", "2500"))   # length of the run, in half-rotations
 
     inputs = Dict(
         :lspherical_shell     => true,
@@ -266,7 +273,10 @@ function user_inputs()
         :lread_gmsh           => true,
         #:gmsh_filename        => "./problems/ShallowWater/SWsphere_ScottPolvani/cubed_sphere.msh",
         #:gmsh_filename        => "./problems/ShallowWater/SWsphere_ScottPolvani/cubed_sphere_32x32.msh",
-        :gmsh_filename        => "./problems/ShallowWater/SWsphere_ScottPolvani_POD/cubed_sphere.msh",
+        # SP_MESH in the environment points a run at another .msh without
+        # editing this line, like SP_PLANET and SP_NROT. The comments above
+        # have always said so; until now nothing read it.
+        :gmsh_filename        => get(ENV, "SP_MESH", "./problems/ShallowWater/SWsphere_ScottPolvani_POD/cubed_sphere.msh"),
         #---------------------------------------------------------------------------
         # Time integration. The paper integrates for 10⁴-10⁵ rotations; this deck
         # covers the spin-up (the energy grows linearly to t ≈ 500 rotations,
@@ -278,7 +288,7 @@ function user_inputs()
         :cfl                  => parse(Float64, get(ENV, "SP_CFL", "0.95")),   # SP_CFL overrides, like SP_NROT
         :tinit                => 0.0,
         :tend                 => 2*nrot*T,
-        :ndiagnostics_outputs => nrot,             # a VTK dump every nrot/50 rotations
+        :ndiagnostics_outputs => 50,               # 50 VTK dumps over the run, whatever its length
         :ndiagnostics_prints  => 500,            # steps between diagnostic lines
         :max_steps            => 15_000_000,
         :case                 => "swsphere_scottpolvani",
@@ -378,9 +388,13 @@ function user_inputs()
         # uniform sampling, and the two have no reason to agree. 60 intervals
         # over the default run is one snapshot every ~33 rotations.
         :pod_nsnapshots       => 60,
-        :pod_tstart           => 0.0,          # start of the POD window [s]
-        #:pod_tstart          => nrot*T,       # …the second half only, i.e. past
-                                               #    the linear spin-up of Fig. 1
+        # START THE WINDOW PAST THE SPIN-UP. The first e-folding time is a
+        # monotone ramp from rest, and a decomposition that includes it spends
+        # its leading mode describing "the flow got faster" — true, and not what
+        # the question is. Half the run leaves ~2500 rotations of settled flow,
+        # which is what the modes below are of. Set it to 0.0 to decompose the
+        # spin-up deliberately.
+        :pod_tstart           => 0.5*2*nrot*T, # start of the POD window [s]
         :pod_nmodes           => 24,           # 0 = every mode the snapshots support
         :pod_nmodes_plot      => 6,
         :pod_subtract_mean    => true,         # decompose the fluctuation, not the field

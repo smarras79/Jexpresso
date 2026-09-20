@@ -149,7 +149,17 @@ function user_inputs()
     tau   = tau_nd*T                   # forcing decorrelation time         [s]
     μvisc = nu_nd*a^2*Ω                # artificial diffusion               [m²/s]
 
-    nrot  = parse(Float64, get(ENV, "SP_NROT", "500"))   # length of the run, in rotations
+    #
+    # The run length, in HALF-rotations: :tend is 2·nrot·T below. This case
+    # starts AT REST and equilibrates on the timescale of the LARGE-SCALE
+    # dissipation, not of the forcing: dÊ/dt = f_up ε₀ - 2ν_l Ê approaches
+    # Ê_eq = f_up ε₀/(2ν_l) with an e-folding time 1/(2ν_l), which at
+    # ν_l = 1e-4 per rotation is 5000 ROTATIONS. 2500 here is that one
+    # e-folding time. A run of tens of rotations is still on the linear ramp of
+    # the paper's Fig. 1 and has made no jets; SP_NROT shortens it for a smoke
+    # test (SP_NROT=25 is 50 rotations, about 3 minutes serial on this grid).
+    #
+    nrot  = parse(Float64, get(ENV, "SP_NROT", "2500"))   # length of the run, in half-rotations
 
     inputs = Dict(
         :lspherical_shell     => true,
@@ -229,7 +239,10 @@ function user_inputs()
         # SP_MESH in the environment points a run at another .msh (a finer
         # cubed sphere, say) without editing this line, like SP_PLANET.
         :lread_gmsh           => true,
-        :gmsh_filename        => "./problems/ShallowWater/SWsphere_ScottPolvani/cubed_sphere.msh",
+        # SP_MESH in the environment points a run at another .msh without
+        # editing this line, like SP_PLANET and SP_NROT. The comments above
+        # have always said so; until now nothing read it.
+        :gmsh_filename        => get(ENV, "SP_MESH", "./problems/ShallowWater/SWsphere_ScottPolvani/cubed_sphere.msh"),
         #:gmsh_filename        => "./problems/ShallowWater/SWsphere_ScottPolvani/cubed_sphere_32x32.msh",
         #:gmsh_filename        => "./problems/ShallowWater/SWsphere_ScottPolvani/cubed_sphere_64x64.msh",
         #---------------------------------------------------------------------------
