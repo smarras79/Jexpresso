@@ -5,7 +5,7 @@ function params_setup(sem,
                       T,
                       tspan = [T(inputs[:tinit]), T(inputs[:tend])];
                       coupling = nothing)
-
+    
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     println_rank(" # Build arrays and params ................................ "; msg_rank = rank, suppress = sem.mesh.msg_suppress)
@@ -303,7 +303,6 @@ function params_setup(sem,
     #        visc_coeff .= inputs[:μ]
     #    end
     #else
-    
     if inputs[:lvisc]
         coeffs = zeros(TFloat, qp.neqs)
         if size(inputs[:μ]) > size(coeffs)

@@ -91,8 +91,8 @@ function user_inputs()
         :ode_solver           => SSPRK54(),
         :Δt                   => 0.01,
         :tinit                => 0.0,
-        :tend                 => 3.0,
-        :diagnostics_at_times => (0:0.25:3.0),
+        :tend                 => 25.0,
+        :diagnostics_at_times => (0:0.25:25.0),
         :case                 => "soliwave_island_dg",
         :lsource              => true,
         :SOL_VARS_TYPE        => TOTAL(),
@@ -117,7 +117,7 @@ function user_inputs()
         # method.
         #---------------------------------------------------------------------------
         :lvisc                => false,
-        :ivisc_equations      => [1, 2, 3],
+        :visc_model           => AV(),
         :μ                    => [0.0, 0.0, 0.0],
         #---------------------------------------------------------------------------
         # Filter: OFF, for the reason given in the CG deck -- the filter acts
