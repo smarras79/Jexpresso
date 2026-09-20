@@ -1854,10 +1854,21 @@ function _viscous_rhs_el_2d_dsgs!(uaux, qe, uprimitive,
     lsuth  = (get(inputs, :lsutherland, false) === true) &&
              (μloc !== nothing) && (neqs == 4) &&
              (get(inputs, :energy_equation, "energy") != "theta")
-    μ_ref  = TF(get(inputs, :sutherland_muref, 1.716e-5))
-    T_ref  = TF(get(inputs, :sutherland_Tref,  273.15))
-    S_suth = TF(get(inputs, :sutherland_S,     110.4))
-    Pr_lam = TF(get(inputs, :Pr_lam,           0.71))
+    # THE ::TF IS LORE-BEARING, DO NOT DROP IT.  `inputs` is a
+    # Dict{Symbol,Any}, so `get` returns Any, and `TF(::Any)` does NOT
+    # recover the type -- inference gives Any for the whole expression even
+    # though TF is a compile-time constant.  Without the assertion every
+    # scalar built from these four is boxed, and the per-node Sutherland
+    # loop below then allocates on EVERY line: measured on
+    # CompEuler/rampCaoEtAl2021_M7, viscous_rhs_el went from 464 B to
+    # 15.3 MiB per RHS call -- 99.8 % of the whole solver's allocation, and
+    # 1.6x the time in that kernel.  Tk on the next-but-one line is built
+    # from concrete constants and allocated nothing, which is how the four
+    # were identified.
+    μ_ref  = TF(get(inputs, :sutherland_muref, 1.716e-5))::TF
+    T_ref  = TF(get(inputs, :sutherland_Tref,  273.15))::TF
+    S_suth = TF(get(inputs, :sutherland_S,     110.4))::TF
+    Pr_lam = TF(get(inputs, :Pr_lam,           0.71))::TF
     κ_fac  = TF(PHYS_CONST.γ)/Pr_lam
     cv_inv = TF(PHYS_CONST.γm1/PHYS_CONST.Rair)          # 1/c_v, EOS-consistent
     Tfloor = TF(1.0)                                     # K, guards the transient
