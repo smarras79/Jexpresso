@@ -237,13 +237,22 @@ function user_inputs()
         # spherical shallow-water results are shown and the only projection that
         # adds nothing of its own to the picture.
         #---------------------------------------------------------------------------
+        # THIS LINE IS THE WHOLE MINIMUM. POD is a property of the framework and
+        # not of this case: :lpod => true on its own decomposes every solution
+        # variable over the whole run, sampled at the output cadence, and writes
+        # the modes, the spectrum, the coefficients and a .jld2 basis — here or
+        # in any other 1-D, 2-D, 3-D or manifold case. Everything below is an
+        # override. See problems/AdvDiff/PODbenchmark for the reference
+        # benchmark, whose POD is known in closed form.
         :lpod                 => true,
         # WHICH FIELDS. :vorticity is the one this test is judged on and the one
         # whose modes are worth looking at — h barely moves while the instability
-        # grows. Also available: :phi, :u, :v, :velocity (the horizontal velocity
-        # as ONE two-component target, decomposed jointly), and :state (the four
-        # conservative variables together, which is the basis a Galerkin ROM of
-        # this system would be projected onto).
+        # grows. A field may also be named directly ("phi", "phiu", …, or any of
+        # the case's output variables); :all is every solution variable, one
+        # target each, and :state is the four of them stacked into ONE vector
+        # target, which is the basis a Galerkin ROM of this system would be
+        # projected onto. On the shell, :u, :v and :velocity are the
+        # tangent-basis velocity components.
         :pod_fields           => [:vorticity, :h],
         # HOW MANY SNAPSHOTS, over what window. This has its own clock: it is
         # NOT tied to :ndiagnostics_outputs, because the VTK cadence is chosen to

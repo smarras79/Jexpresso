@@ -46,12 +46,13 @@ jobs:
       # test/ci_cases.jl must have its six user_*.jl files in test/CI-runs/.
       - name: Check test/ci_cases.jl against the repository
         run: julia test/ci_cases.jl validate
-      # Same idea: test/test_pod.jl checks the POD kernel and the
-      # equirectangular rasterizer against problems with closed-form answers,
-      # and both files were written free of Jexpresso types so that this needs
-      # no package instantiation either. Seconds, not minutes.
+      # Same idea: the POD kernel, the rasterizer and the closed-form reference
+      # benchmark are all checked by files written free of Jexpresso types, so
+      # they need no package instantiation either. Seconds, not minutes.
       - name: Unit-test the POD kernel
         run: julia test/test_pod.jl
+      - name: POD reference benchmark (closed-form)
+        run: julia test/test_pod_benchmark.jl
 
   test:
     name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }}

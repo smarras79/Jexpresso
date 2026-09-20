@@ -1,5 +1,36 @@
 #---------------------------------------------------------------------------------
-# equirectangular.jl — spherical (λ, φ) fields onto a plate-carrée raster.
+# mesh_raster.jl — a nodal field on a spectral element mesh onto a pixel raster,
+# for contour plots. Two coordinate planes, one algorithm:
+#
+#   plane_raster              (x, y)   — a flat 2-D mesh, or a slice of one
+#   equirectangular_raster    (λ, φ)   — a field on a spherical shell, in the
+#                                        plate-carrée projection
+#
+# THE ALGORITHM, and why it is not an interpolation of scattered points. The
+# nodes are the LGL nodes of a spectral element grid: they are NOT scattered —
+# they come with the element connectivity, which tiles the domain exactly.
+# Rasterizing that tiling (each (ngl-1)² sub-quad of each element split into two
+# triangles, filled by barycentric interpolation) is therefore a RENDERING of
+# the discrete field, not a re-interpolation of it:
+#
+#   * no smoothing parameter and no neighbour count to tune, hence nothing that
+#     can invent or erase a feature — the failure mode of inverse-distance or
+#     spline fits of the same data, which round off exactly the small-scale
+#     structure the higher POD modes consist of;
+#   * values are convex combinations of nodal values, so the raster cannot
+#     overshoot the data. A mode plotted this way has the same extrema as the
+#     mode itself, which is what makes the colour scale meaningful;
+#   * element and panel seams are invisible, because the triangles are drawn
+#     from the connectivity and meet exactly there.
+#
+# Written free of every Jexpresso type so that it can be included and tested on
+# its own (test/test_pod.jl does exactly that).
+#
+# S. Marras & contributors
+#---------------------------------------------------------------------------------
+
+#---------------------------------------------------------------------------------
+# THE SPHERE: (λ, φ) fields onto a plate-carrée raster.
 #
 # Everything this file draws lives on the SHELL, i.e. on a 2-D manifold whose
 # nodes carry (lon, lat) and nothing else. A contour plot of such a field needs
@@ -13,23 +44,6 @@
 # neither conformal nor equal-area; it is used because it is the identity map on
 # the coordinates the data already carries, so nothing in the picture is an
 # artefact of the projection.
-#
-# HOW THE RASTER IS BUILT, and why not by interpolation of scattered points.
-# The nodes are the LGL nodes of a spectral element grid: they are NOT scattered
-# — they come with the element connectivity, which tiles the sphere exactly.
-# Rasterizing that tiling (each (ngl-1)² sub-quad of each element split into two
-# triangles, filled by barycentric interpolation) is therefore a RENDERING of
-# the discrete solution, not a re-interpolation of it:
-#
-#   * no smoothing parameter and no neighbour count to tune, hence nothing that
-#     can invent or erase a feature — the failure mode of inverse-distance or
-#     spline fits of the same data, which round off exactly the small-scale
-#     structure the higher POD modes consist of;
-#   * values are convex combinations of nodal values, so the raster cannot
-#     overshoot the data. A mode plotted this way has the same extrema as the
-#     mode itself, which is what makes the colour scale meaningful;
-#   * the panel seams of the cubed sphere are invisible, because the triangles
-#     are drawn from the connectivity and meet exactly there.
 #
 # THE TWO PLACES THE PROJECTION IS SINGULAR are handled explicitly:
 #
@@ -50,10 +64,9 @@
 #     is no singularity), which is the one choice that cannot depend on the
 #     arbitrary λ of the polar node.
 #
-# S. Marras & contributors
 #---------------------------------------------------------------------------------
 
-export equirectangular_grid, equirectangular_raster
+export equirectangular_grid, equirectangular_raster, plane_raster
 
 
 """
@@ -68,7 +81,7 @@ arguments as the coordinates AT WHICH `F` is sampled.
 """
 function equirectangular_grid(nlon::Int, nlat::Int)
     nlon > 1 && nlat > 1 ||
-        error(" # ERROR equirectangular.jl: need nlon > 1 and nlat > 1, got ($nlon, $nlat).")
+        error(" # ERROR mesh_raster.jl: need nlon > 1 and nlat > 1, got ($nlon, $nlat).")
     dλ = 360.0/nlon
     dφ = 180.0/nlat
     λ  = [-180.0 + (i - 0.5)*dλ for i = 1:nlon]
@@ -109,7 +122,7 @@ function equirectangular_raster(f::AbstractVector, lon::AbstractVector, lat::Abs
                                 nfill_sample::Int = 4000)
 
     npoin = min(length(f), length(lon), length(lat))
-    npoin > 0 || error(" # ERROR equirectangular.jl: empty field handed to the rasterizer.")
+    npoin > 0 || error(" # ERROR mesh_raster.jl: empty field handed to the rasterizer.")
 
     λ, φ = equirectangular_grid(nlon, nlat)
     F    = fill(NaN, nlon, nlat)
@@ -304,4 +317,89 @@ function _fill_raster_gaps!(F::Matrix{Float64}, λ::Vector{Float64}, φ::Vector{
         end
     end
     return F
+end
+
+
+#---------------------------------------------------------------------------------
+# THE PLANE: a flat 2-D mesh onto an (x, y) raster.
+#
+# The same triangle rasterizer, with neither of the sphere's two complications:
+# nothing wraps, and there is no singular point. What it does have instead is a
+# domain that need not be a rectangle — an L-shape, a channel round an obstacle,
+# a mesh with a hole. Pixels outside it are left NaN, which `Plots` draws as
+# blank, and that is the honest picture: filling them from the nearest node
+# would paint the inside of the obstacle with the flow around it.
+#---------------------------------------------------------------------------------
+
+"""
+    plane_raster(f, x, y, connijk, nelem, ngl; kwargs...) -> (xg, yg, F)
+
+Render the nodal field `f` onto a regular `nx × ny` raster over the bounding box
+of the mesh (or over `xlims`/`ylims` when given). `F` is indexed `(x, y)`, so
+pass `F'` to `Plots.contourf`, as the flat-case plotters in jeplots.jl do with
+their own rasters. Pixels no element covers come back `NaN`.
+
+The default resolution is 400 × 400 and is capped by the caller, not here: a
+raster much finer than the grid costs time and shows nothing new, and one much
+coarser hides exactly the small scales a high POD mode consists of.
+"""
+function plane_raster(f::AbstractVector, x::AbstractVector, y::AbstractVector,
+                      connijk, nelem::Int, ngl::Int;
+                      nx::Int = 400, ny::Int = 400,
+                      xlims = nothing, ylims = nothing)
+
+    npoin = min(length(f), length(x), length(y))
+    npoin > 0 || error(" # ERROR mesh_raster.jl: empty field handed to the rasterizer.")
+    nx > 1 && ny > 1 ||
+        error(string(" # ERROR mesh_raster.jl: need nx > 1 and ny > 1, got (", nx, ", ", ny, ")."))
+
+    x0, x1 = xlims === nothing ? (minimum(@view x[1:npoin]), maximum(@view x[1:npoin])) :
+                                 (Float64(xlims[1]), Float64(xlims[2]))
+    y0, y1 = ylims === nothing ? (minimum(@view y[1:npoin]), maximum(@view y[1:npoin])) :
+                                 (Float64(ylims[1]), Float64(ylims[2]))
+    x1 > x0 || (x1 = x0 + 1.0)
+    y1 > y0 || (y1 = y0 + 1.0)
+
+    dx = (x1 - x0)/nx
+    dy = (y1 - y0)/ny
+    xg = [x0 + (i - 0.5)*dx for i = 1:nx]
+    yg = [y0 + (j - 0.5)*dy for j = 1:ny]
+    F  = fill(NaN, nx, ny)
+
+    @inbounds for iel = 1:nelem
+        for j = 1:ngl-1, i = 1:ngl-1
+
+            ip1 = connijk[iel, i,   j  ]
+            ip2 = connijk[iel, i+1, j  ]
+            ip3 = connijk[iel, i+1, j+1]
+            ip4 = connijk[iel, i,   j+1]
+            (ip1 in 1:npoin && ip2 in 1:npoin && ip3 in 1:npoin && ip4 in 1:npoin) || continue
+
+            v1, v2 = Float64(f[ip1]), Float64(f[ip2])
+            v3, v4 = Float64(f[ip3]), Float64(f[ip4])
+            (isfinite(v1) && isfinite(v2) && isfinite(v3) && isfinite(v4)) || continue
+
+            x1c, y1c = Float64(x[ip1]), Float64(y[ip1])
+            x2c, y2c = Float64(x[ip2]), Float64(y[ip2])
+            x3c, y3c = Float64(x[ip3]), Float64(y[ip3])
+            x4c, y4c = Float64(x[ip4]), Float64(y[ip4])
+
+            _raster_triangle!(F, x1c, y1c, v1, x2c, y2c, v2, x3c, y3c, v3,
+                              x0, y0, dx, dy, nx, ny)
+            _raster_triangle!(F, x1c, y1c, v1, x3c, y3c, v3, x4c, y4c, v4,
+                              x0, y0, dx, dy, nx, ny)
+        end
+    end
+
+    return xg, yg, F
+end
+
+
+#
+# Convenience overload. Untyped in `mesh` on purpose — see the note on the
+# spherical one.
+#
+function plane_raster(f::AbstractVector, mesh; kwargs...)
+    return plane_raster(f, mesh.x, mesh.y, mesh.connijk,
+                        Int(mesh.nelem), Int(mesh.ngl); kwargs...)
 end

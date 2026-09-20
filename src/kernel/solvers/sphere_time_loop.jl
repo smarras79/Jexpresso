@@ -361,7 +361,7 @@ function (mon::St_sphere_monitor)(integrator)
         # it has to be refreshed here even though the branches above may have
         # just done so — this step is not necessarily one of theirs.
         mon.pod.lvort && sphere_relative_vorticity!(mon.ζ, u, mon.mesh, mon.metrics, mon.sp)
-        pod_record!(mon.pod, u, mon.ζ, t, mon.mesh)
+        pod_record!(mon.pod, u, t, mon.mesh; ζ = mon.ζ)
     end
 
     return nothing
@@ -505,7 +505,10 @@ function _sphere_march!(mesh::St_mesh,
     # POD. `nothing` unless the deck sets :lpod => true, in which case this
     # allocates the snapshot buffers and reports what it will sample.
     #
-    pod = pod_recorder(inputs, mesh, t, tend; verbose = verbose, dt_step = Δt)
+    pod = pod_recorder(inputs, mesh, t, tend;
+                       verbose = verbose, dt_step = Δt,
+                       qvars = q.qvars, qoutvars = q.qoutvars, neqs = neqs,
+                       nsd = 2, lshell = true)
 
     # the initial condition
     sphere_relative_vorticity!(ζ, q.qn, mesh, metrics, sp)
@@ -518,7 +521,7 @@ function _sphere_march!(mesh::St_mesh,
     # callback only runs after a step. `pod_due` is what decides: a deck that
     # asked for a POD window starting later than :tinit — to leave a transient
     # out of the decomposition — is not due yet and records nothing.
-    pod_due(pod, t, Δt) && pod_record!(pod, q.qn, ζ, t, mesh)
+    pod_due(pod, t, Δt) && pod_record!(pod, q.qn, t, mesh; ζ = ζ)
 
     params = St_sphere_ode_params(mesh, metrics, sp, q.qe, SVT, lproject, Ref(0.0))
 
@@ -580,7 +583,7 @@ function _sphere_march!(mesh::St_mesh,
     # snapshot set that ends in whatever the blow-up looked like, and a POD of
     # that describes the failure rather than the flow.
     #
-    pod_finalize!(pod, mesh, metrics, OUTPUT_DIR; verbose = verbose)
+    pod_finalize!(pod, mesh, metrics.M, OUTPUT_DIR; verbose = verbose)
 
     # Collective, so outside the verbose gate: sphere_diagnostics reduces across
     # ranks and calling it on rank 0 alone would hang the others.

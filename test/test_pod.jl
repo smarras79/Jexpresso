@@ -1,7 +1,6 @@
 #---------------------------------------------------------------------------------
 # test/test_pod.jl — the POD kernel (src/kernel/rom/pod_core.jl) and the
-# equirectangular rasterizer its modes are drawn on
-# (src/io/plotting/equirectangular.jl).
+# rasterizer its modes are drawn on (src/io/plotting/mesh_raster.jl).
 #
 #   julia test/test_pod.jl
 #
@@ -50,7 +49,7 @@ using Random
 using Printf
 
 include(joinpath(@__DIR__, "..", "src", "kernel", "rom", "pod_core.jl"))
-include(joinpath(@__DIR__, "..", "src", "io", "plotting", "equirectangular.jl"))
+include(joinpath(@__DIR__, "..", "src", "io", "plotting", "mesh_raster.jl"))
 
 
 #

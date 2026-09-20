@@ -430,6 +430,47 @@ function time_loop!(inputs, params, u, args...)
             end
         end
     end
+    #------------------------------------------------------------------------
+    # POD.
+    #
+    # `nothing` unless the deck says :lpod => true, in which case this allocates
+    # the snapshot buffers and prints what it will sample. The recorder is built
+    # from what the CASE already declares — its variable names, its number of
+    # space dimensions, whether it lives on a manifold — so that a problem opts
+    # in with one line and supplies nothing else (src/kernel/rom/pod.jl).
+    #
+    # It carries its OWN sampling clock: the output cadence is chosen to keep a
+    # movie small, a decomposition wants dense uniform sampling, and the two have
+    # no reason to agree.
+    #------------------------------------------------------------------------
+    pod_rec = pod_recorder(inputs, params.mesh, inputs[:tinit], inputs[:tend];
+                           verbose  = (rank == 0),
+                           dt_step  = Float64(inputs[:Δt]),
+                           qvars    = params.qp.qvars,
+                           qoutvars = params.qp.qoutvars,
+                           neqs     = params.qp.neqs,
+                           nsd      = params.SD isa NSD_1D ? 1 :
+                                      params.SD isa NSD_2D ? 2 : 3,
+                           lshell   = get(inputs, :lspherical_shell, false) == true)
+    #
+    # The sampling times are added to `tstops` so that the integrator LANDS on
+    # them. Without that a snapshot is taken at the first step at or after the
+    # time asked for, which spreads the sample times by up to one Δt — harmless
+    # for a picture, but it is exactly what splits the degenerate pairs of a
+    # travelling structure, and those pairs are how such a structure is
+    # recognised (problems/AdvDiff/PODbenchmark makes the point quantitatively).
+    #
+    if pod_rec !== nothing
+        tstops_all = sort(unique(vcat(tstops_all,
+                                      [pod_rec.set.tstart + k*pod_rec.dt
+                                       for k = 0:pod_rec.nsnapmax-1])))
+    end
+
+    pod_condition(u, t, integrator) = pod_due(pod_rec, t, integrator.dt)
+    do_pod!(integrator)             = pod_record_flat!(pod_rec, integrator.u, integrator.t, integrator.p)
+    cb_pod = pod_rec === nothing ? nothing : DiscreteCallback(pod_condition, do_pod!;
+                                                              save_positions = (false, false))
+
     cb_les_stat    = DiscreteCallback(les_stat_condition, do_les_statistics!)
     cb_les_online  = DiscreteCallback(les_online_condition, do_les_online!)
 
@@ -506,6 +547,7 @@ function time_loop!(inputs, params, u, args...)
             nothing
 
         _cbs = Any[cb, cb_restart, cb_les_stat, cb_les_online]
+        cb_pod !== nothing                     && push!(_cbs, cb_pod)
         lrad                                  && push!(_cbs, cb_rad)
         is_coupled && cb_coupling !== nothing  && push!(_cbs, cb_coupling)
         cb_heartbeat !== nothing               && push!(_cbs, cb_heartbeat)
@@ -590,6 +632,24 @@ function time_loop!(inputs, params, u, args...)
             #rank == 0 && (print(YELLOW_FG(@sprintf("DONE (%.2f s)\n", (time_ns() - _t_wm) / 1e9))); flush(stdout))
         end
 
+        #
+        # POD: the first snapshot, taken HERE rather than in the callback,
+        # because a callback only runs after a step and the initial condition is
+        # part of the sample. After the warm-up, and after a reset, because the
+        # warm-up above runs a throw-away step with the REAL callback set — so
+        # without the reset the first snapshot would be the warm-up's and the
+        # sampling clock would already have advanced an interval.
+        #
+        # `pod_due` is what decides whether the initial time is sampled at all:
+        # a deck whose POD window starts later than :tinit — to leave a transient
+        # out of the decomposition — is not due yet and records nothing.
+        #
+        if pod_rec !== nothing
+            pod_reset!(pod_rec)
+            pod_due(pod_rec, inputs[:tinit], inputs[:Δt]) &&
+                pod_record_flat!(pod_rec, u, inputs[:tinit], params)
+        end
+
         if alloc_summary_enabled(inputs)
             rank == 0 && println(" # Simulation timing and allocations (steady state; compile warm-up excluded):")
         end
@@ -648,6 +708,13 @@ function time_loop!(inputs, params, u, args...)
         end
     end
     
+    #
+    # THE DECOMPOSITION, once the run is over and the snapshots are all in.
+    # Collective (the correlation matrix is reduced across ranks), so outside
+    # any rank gate.
+    #
+    pod_finalize!(pod_rec, params.mesh, params.M, inputs[:output_dir]; verbose = (rank == 0))
+
     MPI.Barrier(comm)
     report_all_timers(params.timers)
     MPI.Barrier(comm)

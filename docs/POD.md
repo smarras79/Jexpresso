@@ -6,20 +6,25 @@ Orthogonal Decomposition and leaves behind everything a reduced-order model
 and the projection/reconstruction operators that map between the full grid and
 the reduced coordinates.
 
-Two shipped cases have it switched on, and they are the two ends of what POD is
-used for:
+**It is a property of the framework, not of a case.** Any problem opts in with
+one line in its deck,
 
-* `problems/ShallowWater/SWsphere` — the barotropically unstable Galewsky,
-  Scott & Polvani (2004) jet. A single instability growing on a steady
-  background, so the decomposition has something definite to find and the
-  leading pair of modes *is* the unstable wave.
-* `problems/ShallowWater/SWsphere_ScottPolvani` — forced-dissipative
-  shallow-water turbulence with giant-planet parameters (Scott & Polvani 2007).
-  Broadband turbulence out of which jets and vortices organise themselves,
-  which is the setting POD was invented for.
+```julia
+:lpod => true,
+```
 
-Nothing in the implementation is specific to either beyond the list of
-extractable fields.
+and supplies nothing else: no `user_*.jl` is involved, the fields default to
+every variable of the solution vector whatever the case called them, and the
+outputs adapt to the geometry the case already declared — 1-D, 2-D, 3-D or a
+spherical manifold. Everything else is a `:pod_*` override (§3).
+
+Three shipped cases have it on:
+
+| case | why it is there |
+|:--|:--|
+| `problems/AdvDiff/PODbenchmark` | **the reference benchmark** (§7): a problem whose POD is known in closed form, so the implementation is checked against arithmetic |
+| `problems/ShallowWater/SWsphere` | the barotropically unstable Galewsky jet — one instability growing on a steady background, whose leading pair of modes *is* the unstable wave |
+| `problems/ShallowWater/SWsphere_ScottPolvani` | forced-dissipative turbulence with giant-planet parameters — broadband turbulence out of which jets and vortices organise themselves, which is the setting POD was invented for |
 
 ---
 
@@ -98,77 +103,106 @@ clock and the snapshots never touch the disk.
 
 ## 3. Switching it on
 
-Everything is driven from `user_inputs.jl`. Only `:lpod` is required.
+`:lpod => true` is the whole of the minimum. Everything below overrides a
+default that already works.
 
 | key | default | meaning |
 |:--|:--|:--|
 | `:lpod`                   | `false`                 | run the decomposition |
-| `:pod_fields`             | `[:vorticity, :h]`      | which fields (below) |
-| `:pod_nsnapshots`         | `:ndiagnostics_outputs` | sampling **intervals** over the window; one more snapshot than this |
-| `:pod_tstart`             | `:tinit`                | start of the POD window — set it past a transient |
+| `:pod_fields`             | `[:all]`                | which fields — see below |
+| `:pod_nsnapshots`         | the output cadence      | sampling **intervals** over the POD window; one more snapshot than this |
+| `:pod_tstart`             | `:tinit`                | start of the window — set it past a transient |
 | `:pod_tend`               | `:tend`                 | end of the window |
 | `:pod_nmodes`             | `0` (all)               | modes kept, saved and written |
 | `:pod_nmodes_plot`        | `6`                     | modes drawn in the mode figure |
 | `:pod_subtract_mean`      | `true`                  | decompose the fluctuation, not the field |
 | `:pod_method`             | `:auto`                 | `:svd` \| `:snapshot` (§6) |
-| `:pod_nlon`, `:pod_nlat`  | `720`, `360`            | equirectangular raster size |
-| `:pod_write_vtk`          | `true`                  | modes as point data on the sphere |
-| `:pod_write_png`          | `true`                  | the three standard figures |
-| `:pod_write_data`         | `true`                  | CSV spectrum/coefficients + `.jld2` basis |
-| `:pod_time_scale`         | `1/86400`               | multiplies `t` on the coefficient plots |
-| `:pod_time_label`         | `"t [days]"`            | its axis label |
+| `:pod_nlon`, `:pod_nlat`  | `720`, `360`            | equirectangular raster (manifold cases) |
+| `:pod_nx`, `:pod_ny`      | `400`, `400`            | (x,y) raster (2-D cases) |
+| `:pod_write_vtk/png/data` | `true`                  | which outputs to produce |
+| `:pod_write_snapshots`    | `false`                 | also dump the raw snapshots, for an offline re-run (§8) |
+| `:pod_time_scale`         | `1.0`                   | multiplies `t` on the coefficient plots |
+| `:pod_time_label`         | `"t"`                   | its axis label |
 | `:pod_cmap`               | `:balance`              | diverging colour map for the modes |
 | `:pod_max_memory_gb`      | `4.0`                   | refuse a snapshot set larger than this |
 
-### Fields that can be decomposed
+The default snapshot count is `:ndiagnostics_outputs`, or — for the many cases
+that ask for `:diagnostics_at_times` instead, which forces that key to zero —
+the number of output times they asked for, and failing both, 50.
 
-For the shallow water system on the shell (`q = [φ, φu, φv, φw]`, Cartesian
-momentum):
+### Which fields
+
+An entry of `:pod_fields` may be:
+
+| entry | meaning |
+|:--|:--|
+| `"rho"`, `:theta`, … | a variable **by name**, matched first against the case's solution variables and then against its output variables (the ones `user_uout!` derives). Case-insensitive. |
+| `3` | that column of the solution vector, for a case whose variables are unnamed |
+| `:all` | **the default** — one scalar target per solution variable |
+| `:allout` | one scalar target per output variable instead |
+| `:state` | every solution variable, stacked into ONE vector-valued target |
+
+A **vector-valued** target is decomposed jointly: its components share one set of
+temporal coefficients, so a mode is a state of the whole system rather than
+unrelated scalars, and the reported energy is the energy of the vector. That is
+what a Galerkin ROM of a coupled system is projected onto; decomposing the
+components separately answers a different — and for that purpose wrong —
+question.
+
+On a **spherical shell** four derived fields are available besides, for the
+shallow water system `q = [φ, φu, φv, φw]` with Cartesian momentum:
 
 | symbol | components | what it is |
 |:--|:--|:--|
-| `:vorticity` | `ζ`             | relative vorticity `n̂·(∇ₛ×u)` — what the Galewsky test is judged on |
-| `:h`         | `h`             | fluid depth `φ/g` |
-| `:phi`       | `φ`             | geopotential |
-| `:u`, `:v`   | `u_λ`, `u_φ`    | zonal, meridional velocity |
-| `:velocity`  | `u_λ, u_φ`      | the horizontal velocity as **one** two-component target |
-| `:state`     | `φ, φu, φv, φw` | the conservative state — the basis a Galerkin ROM is projected onto |
+| `:vorticity` | `ζ`          | relative vorticity `n̂·(∇ₛ×u)`, supplied by the time loop |
+| `:h`         | `h`          | fluid depth `φ/g` |
+| `:u`, `:v`   | `u_λ`, `u_φ` | zonal and meridional velocity |
+| `:velocity`  | `u_λ, u_φ`   | the horizontal velocity as ONE vector target |
 
-A vector-valued target is decomposed **jointly**: its components share one set of
-temporal coefficients, so a mode is a velocity field rather than two unrelated
-scalars, and the reported energy is the energy of the vector. Decomposing the
-components separately answers a different — and for a ROM, wrong — question.
-
-The velocity components are the **zonal and meridional** ones, projected onto
-the local tangent basis. The raw Cartesian components of a flow on a sphere are
-a property of the frame, not of the flow: their modes would show a rigid zonal
-jet as a dipole straddling the prime meridian.
+The velocity components are the **tangent-basis** ones. The raw Cartesian
+components of a flow on a sphere are a property of the frame, not of the flow:
+their modes would show a rigid zonal jet as a dipole straddling the prime
+meridian.
 
 ### Cost
 
 One `npoin × ncomp × nsnap` array of `Float64` per field, held for the run. On
 the shipped cubed sphere (`npoin = 15 002`), 101 snapshots of `ζ` and `h`
-together are 24 MB. The decomposition is `O(N K²)` and runs once, at the end:
-sub-second at these sizes. `:pod_max_memory_gb` refuses anything larger, with
-the arithmetic in the message.
+together are 24 MB; on the 64×64 one (`npoin ≈ 6.1e5`), 61 snapshots of `ζ` are
+300 MB. The decomposition is `O(N K²)` and runs once, at the end.
+`:pod_max_memory_gb` refuses anything larger, with the arithmetic in the message.
 
----
+### What it refuses
+
+`:lamr => true`. Adaptive refinement changes `npoin` between snapshots, so
+consecutive snapshots are vectors in different spaces and there is no
+correlation matrix to form. (A ROM on an adapting grid needs the snapshots
+interpolated onto a common reference mesh first — different machinery.)
 
 ## 4. What it writes
 
-For each field `<f>`, in `:output_dir`:
+For each field `<f>`, in `:output_dir`. The first group is the same in every
+dimension — it is a property of the decomposition, not of the grid:
 
 | file | contents |
 |:--|:--|
-| `pod_<f>.vtu` (`.pvtu` under MPI) | the mean and every retained mode as point data **on the sphere**, for ParaView |
-| `pod_<f>_modes.png`               | the leading modes as equirectangular maps, one panel each |
-| `pod_<f>_mode_001.png`, …         | the same modes one per file |
-| `pod_<f>_spectrum.png`            | the energy spectrum, and the cumulative energy |
-| `pod_<f>_coefficients.png`        | `a_i(t)`, and the `(a₁,a₂)` phase portrait |
-| `pod_<f>_mean.png`                | the temporal mean |
-| `pod_<f>_spectrum.csv`            | `λ_i`, `E_i`, `ΣE_i`, and the truncation error (3) |
-| `pod_<f>_coefficients.csv`        | `a_i(t_k)` |
-| `pod_<f>.jld2`                    | the basis itself — what a ROM reads back (§7) |
+| `pod_<f>_spectrum.png`     | the energy spectrum, and the cumulative energy |
+| `pod_<f>_coefficients.png` | `a_i(t)`, and the `(a₁,a₂)` phase portrait |
+| `pod_<f>_spectrum.csv`     | `λ_i`, `E_i`, `ΣE_i`, and the truncation error (3) |
+| `pod_<f>_coefficients.csv` | `a_i(t_k)` |
+| `pod_<f>.jld2`             | the basis itself — what a ROM reads back (§8) |
+
+The modes themselves are written in the form their geometry asks for:
+
+| geometry | modes |
+|:--|:--|
+| **1-D** | `pod_<f>_modes.csv` — a table of `x, mean, mode_001, …` sorted by `x` — and `pod_<f>_modes.png`, the modes as curves |
+| **2-D** | `pod_<f>.vtu`, the quads of the mesh with one point-data array per mode, and `pod_<f>_modes.png`, filled contours on an (x,y) raster |
+| **3-D** | `pod_<f>.vtu`, the hexahedra of the mesh. **No PNG**: a 3-D mode needs a slice or an isosurface, which is what ParaView is for, and any projection this code picked would be the wrong one |
+| **manifold** | `pod_<f>.vtu` on the shell itself, so the modes land on the geometry they were computed on, and `pod_<f>_modes.png`, an equirectangular map |
+
+plus `pod_<f>_mode_001.png`, … one per mode, and `pod_<f>_mean.png`, for
+everything but 3-D.
 
 ### Reading the figures
 
@@ -184,40 +218,41 @@ energy, a quarter wavelength apart. `λ₁ ≈ λ₂` in the spectrum and a **ci
 the `(a₁,a₂)` phase portrait are the signature; a pair of standing structures
 traces a line instead. For the Galewsky jet the radius of that circle grows
 exponentially and then saturates — that is the barotropic instability, read off
-two numbers per snapshot.
+two numbers per snapshot. §7 makes the same statement exactly.
 
-**The colour scale of a mode is symmetric about zero** and clipped at the
-99.8th percentile of `|φ_i|`. A mode has no preferred sign — (2) fixes it only
-up to `±1`, and the code picks "the largest-magnitude entry is positive" purely
-so that re-running a case does not invert the colours — so a scale that is not
-symmetric would invent structure that is not there.
+**The colour scale of a mode is symmetric about zero**, clipped at the 99.8th
+percentile of `|φ_i|`, and shared by all components of a vector mode. A mode has
+no preferred sign — (2) fixes it only up to `±1`, and the code picks "the
+largest-magnitude entry is positive" purely so that re-running a case does not
+invert the colours — so a scale that is not symmetric would invent structure
+that is not there.
 
-### The projection
+### The rasters
 
-Maps are drawn in the **equirectangular (plate carrée)** projection: longitude
-and latitude used directly as the plot axes. It is neither conformal nor
-equal-area; it is used because it is the identity map on the coordinates the
-data already carries, so nothing in the picture is an artefact of the projection.
+Maps are **rendered from the element tiling**, not interpolated from scattered
+points: every `(ngl-1)²` sub-quad of every element is split into two triangles
+and filled by barycentric interpolation (`src/io/plotting/mesh_raster.jl`).
+Consequences that matter for a POD mode: there is no smoothing parameter that
+could round off the small-scale structure the higher modes consist of; values
+are convex combinations of nodal values, so the raster cannot overshoot the data
+and the colour scale means what it says; and element and panel seams are
+invisible, because the triangles are drawn from the connectivity and meet
+exactly there.
 
-The raster is a **rendering of the element tiling**, not an interpolation of
-scattered points: every `(ngl-1)²` sub-quad of every element is split into two
-triangles and filled by barycentric interpolation
-(`src/io/plotting/equirectangular.jl`). Consequences that matter for a POD mode:
-there is no smoothing parameter that could round off the small-scale structure
-the higher modes consist of; values are convex combinations of nodal values, so
-the raster cannot overshoot the data and the colour scale means what it says;
-and the panel seams of the cubed sphere are invisible, because the triangles are
-drawn from the connectivity and meet exactly there. The dateline is handled by
+Spherical fields are drawn in the **equirectangular (plate carrée)** projection:
+longitude and latitude used directly as the plot axes. It is neither conformal
+nor equal-area; it is used because it is the identity map on the coordinates the
+data already carries, so nothing in the picture is an artefact of the
+projection. Its two singular places are handled explicitly — the dateline by
 unwrapping each quad's longitudes and drawing it at every 360° offset that
-touches the canvas; the polar caps, where the projection is genuinely
-degenerate, are filled from the nearest node **in 3-D**, where there is no
+touches the canvas, and the polar caps, where the projection is genuinely
+degenerate, by filling from the nearest node **in 3-D**, where there is no
 singularity.
 
-`plot_sphere_field(f, mesh, "out.png")` draws any nodal field on the shell the
-same way — a vorticity field at one output time, a reconstruction error, the
+`plot_mesh_field(f, mesh, rec, "out.png")` draws any nodal field the same way,
+and `plot_sphere_field(f, mesh, "out.png")` does it for a shell without a
+recorder to hand — a solution at one output time, a reconstruction error, the
 difference between two runs.
-
----
 
 ## 5. Using it from the REPL
 
@@ -262,13 +297,75 @@ q̂ = pod_reconstruct(P, a)    # reduced coordinates → full state
 Under MPI two further details keep the result independent of the rank count: a
 node shared by several ranks is counted by its **owner** only (`mesh.gip2owner`,
 exactly as `sphere_diagnostics` does for the conserved integrals), and the sign
-convention is resolved globally. PNG output is skipped under MPI — the
-equirectangular raster needs the whole sphere on one rank — and the `.vtu`
+convention is resolved globally. PNG output is skipped under MPI — the raster
+needs the whole domain on one rank — and the `.vtu` (or, in 1-D, the CSV)
 carries the same modes.
 
 ---
 
-## 7. From the basis to a reduced-order model
+## 7. The reference benchmark
+
+`problems/AdvDiff/PODbenchmark` and `test/test_pod_benchmark.jl` are the same
+problem: **linear advection of a multi-harmonic wave**, the standard test case of
+the transport-dominated model-reduction literature, chosen because its POD can be
+written down in closed form. The implementation is therefore checked against
+arithmetic rather than against another run.
+
+```
+∂u/∂t + c ∂u/∂x = 0 ,  x ∈ [0,L) periodic ,  u(x,0) = Σ_{j=1}^{J} A_j cos(2πj x/L + ϕ_j)
+```
+
+Averaging over one period of the translation gives a convolution kernel, so the
+eigenfunctions are the Fourier modes and each wavenumber contributes a
+**two-dimensional** eigenspace:
+
+```
+λ_{2j−1} = λ_{2j} = A_j² L/4 ,   span{ cos(2πjx/L), sin(2πjx/L) }            (B2)
+E_j = A_j²/(2 Σ_i A_i²) ,   Σλ = (L/2) Σ_j A_j² ,   ε(2m)² = Σ_{j>m}A_j²/Σ_j A_j²
+```
+
+With `A = (1, ½, ¼)` and `L = 2` the computed spectrum is, to every digit
+printed:
+
+| mode | λ computed | λ exact | E [%] | E exact [%] |
+|---:|---:|---:|---:|---:|
+| 1, 2 | 0.5000000000    | 0.5     | 38.0952 | 38.0952 |
+| 3, 4 | 0.1250000000    | 0.125   |  9.5238 |  9.5238 |
+| 5, 6 | 0.0312500000    | 0.03125 |  2.3810 |  2.3810 |
+
+`Σλ = 1.3125` exactly, and `max|ΦᵀMΦ − I| = 1.3e-15`.
+
+**What the benchmark checks that a spectrum alone would not:**
+
+1. the spectrum against (B2), to `1e-10` relative — a wrong normalisation, a
+   missing `1/K`, a mean that was not removed;
+2. the **eigenspaces**, not the modes: `λ_{2j−1} = λ_{2j}` exactly, so the two
+   members of a pair are defined only up to a rotation between them, and any
+   code claiming a particular pair there claims something the problem does not
+   determine. What *is* determined is the plane they span;
+3. **the inner product**, by running on a deliberately non-uniform
+   (Chebyshev–Lobatto) grid and asserting both that the mass-weighted answer is
+   right *and* that the unweighted one is measurably wrong. On a uniform grid
+   the two agree, so a uniform benchmark cannot tell a correct implementation
+   from one that silently dropped the mass matrix;
+4. **the ROM quantities**: the a-priori truncation error curve against the
+   measured reconstruction error at every rank, and the constant radius of each
+   pair's phase portrait;
+5. **the Kolmogorov n-width**. With every `A_j` equal the spectrum goes *flat*:
+   `2J` modes each carrying `1/(2J)`, and truncation buys nothing. That is the
+   known limitation of every linear reduced basis for transport, and it is the
+   most consequential thing a POD implementation can get wrong — a decaying
+   spectrum there would promise a reduced-order model that cannot exist.
+
+The deck ends its POD window one sampling interval short of `:tend`, which is
+the one subtlety worth carrying over to other cases: the degeneracy `λ₁ = λ₂` is
+a statement about averaging over a *whole* period, and sampling both ends of one
+period repeats the zero phase and splits every pair by `(K/2+1)/(K/2)` — 5 % at
+41 snapshots — for a reason that has nothing to do with the decomposition. The
+sampling times are added to the integrator's `tstops`, so the snapshots are
+taken *at* them rather than at the first step after.
+
+## 8. From the basis to a reduced-order model
 
 `pod_<f>.jld2` is the hand-off. It stores plain arrays rather than a serialised
 struct on purpose (the same reason `sem_setup.jl` gives for its metric cache: a
@@ -280,6 +377,16 @@ P = pod_load("output/pod_state.jld2")   # → St_pod, as the solver had it
 a0 = pod_project(P, w, q0)              # the ROM's initial condition
 # … march a₁…a_r in time …
 q  = pod_reconstruct(P, a)              # back to the grid, to plot or to restart
+```
+
+With `:pod_write_snapshots => true` the raw snapshot set and its quadrature
+weights are written out too, which is what lets a decomposition be **redone
+offline** — over a shorter window, about a different mean, with a different rank
+— without re-running the simulation, the expensive half of building a ROM:
+
+```julia
+d = JLD2.load("output/pod_u_snapshots.jld2")
+P = pod_from_snapshots(d["snapshots"], d["weights"], d["t"]; nmodes = 8)
 ```
 
 What is deliberately **not** here yet: the Galerkin projection of the shallow
@@ -299,14 +406,20 @@ statistically stationary flows.
 
 ---
 
-## 8. Tests
+## 9. Tests
 
 | file | what it covers | needs |
 |:--|:--|:--|
+| `test/test_pod_benchmark.jl` | **the reference benchmark** (§7): the closed-form POD of an advected multi-harmonic wave, to `1e-10` | `Test` only — no package instantiation |
 | `test/test_pod.jl` | the decomposition itself and the rasterizer, against problems with closed-form answers | `Test` only — no package instantiation |
 | `test/test_pod_sphere.jl` | the wiring: weights, extractors, recorder, writers, and the raster on the real cubed sphere | `using Jexpresso` |
 
 ```bash
+julia test/test_pod_benchmark.jl
 julia test/test_pod.jl
 julia --project=. test/test_pod_sphere.jl
 ```
+
+The first two need no package instantiation — both files under test are free of
+Jexpresso types by design — so they run in seconds in the CI registry job,
+before anything heavy is built.

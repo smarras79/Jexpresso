@@ -326,12 +326,17 @@ function user_inputs()
         # latitude used directly as the plot axes, which adds nothing of its own
         # to the picture and is how Fig. 14 is drawn.
         #---------------------------------------------------------------------------
+        # This line is the whole minimum — POD is a property of the framework,
+        # not of this case, and :lpod => true on its own decomposes every
+        # solution variable of any case. Everything below is an override, and on
+        # this grid the memory note above is why they are here.
         :lpod                 => true,
         # :vorticity is the field of Fig. 14 (d-f), and the one the structures
-        # are visible in. Also available: :h, :phi, :u, :v, :velocity (the
-        # horizontal velocity as ONE two-component target, decomposed jointly)
-        # and :state (all four conservative variables, which is the basis a
-        # Galerkin ROM of this system would be projected onto).
+        # are visible in. A field may also be named directly ("phi", "h", …);
+        # :all is every solution variable and :state is all four of them stacked
+        # into ONE vector target, which is the basis a Galerkin ROM of this
+        # system would be projected onto. On the shell, :u, :v and :velocity are
+        # the tangent-basis velocity components.
         :pod_fields           => [:vorticity],
         # Sampling INTERVALS over the POD window, on a clock of its own: the VTK
         # cadence is chosen to keep a movie small, a decomposition wants dense

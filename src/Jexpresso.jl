@@ -289,9 +289,10 @@ include(joinpath( "io", "mod_print_io.jl"))
 
 include(joinpath( "io", "write_output.jl"))
 
-# Spherical fields on a plate-carree canvas, and the POD figures drawn on it.
+# Nodal fields on a pixel raster (flat and spherical), and the POD figures
+# drawn on them.
 # After write_output.jl, which is what brings Plots into the module (jeplots.jl).
-include(joinpath( "io", "plotting", "equirectangular.jl"))
+include(joinpath( "io", "plotting", "mesh_raster.jl"))
 
 include(joinpath( "io", "plotting", "pod_plots.jl"))
 

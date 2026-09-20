@@ -37,7 +37,7 @@ using Test
 using Jexpresso
 using Jexpresso: mod_mesh_mesh_driver, build_sphere_metrics,
                  pod_settings, pod_recorder, pod_due, pod_record!, pod_finalize!,
-                 pod_weights, pod_target, pod_extract!, pod_from_snapshots,
+                 pod_weights, pod_target, pod_targets, pod_extract!, pod_from_snapshots,
                  pod_project, pod_reconstruct, pod_truncation_error,
                  pod_rank_for_energy, pod_save, pod_load,
                  equirectangular_raster, St_pod
@@ -103,7 +103,7 @@ with_mpi() do distribute
 
     #-----------------------------------------------------------------------------
     @testset "(1) the weights are the surface integral" begin
-        w = pod_weights(mesh, metrics)
+        w = pod_weights(metrics.M, mesh)
         @test length(w) == npoin
         @test all(>(0), w)                                   # serial: every node owned
         @test abs(sum(w) - 4π*R^2)/(4π*R^2) < 1.0e-6
@@ -120,32 +120,47 @@ with_mpi() do distribute
         d2 = zeros(npoin, 2)
         d4 = zeros(npoin, 4)
 
-        pod_extract!(d1, pod_target(:h), q, ζ, mesh, g)
+        SWVARS = ["phi", "phiu", "phiv", "phiw"]
+        SWOUT  = ["h", "u", "v", "w"]
+        tgt(f) = pod_targets([f], SWVARS, SWOUT, 4, true)[1]
+
+        pod_extract!(d1, tgt(:h), q, nothing, ζ, mesh, g)
         @test maximum(abs, d1[:,1] .- φ0/g) < 1e-9
 
-        pod_extract!(d1, pod_target(:phi), q, ζ, mesh, g)
+        # "phi" is a SOLUTION variable of this case, resolved by name
+        pod_extract!(d1, tgt("phi"), q, nothing, ζ, mesh, g)
         @test maximum(abs, d1[:,1] .- φ0) < 1e-9
 
-        pod_extract!(d1, pod_target(:vorticity), q, ζ, mesh, g)
+        pod_extract!(d1, tgt(:vorticity), q, nothing, ζ, mesh, g)
         @test d1[:,1] == ζ
 
-        pod_extract!(d4, pod_target(:state), q, ζ, mesh, g)
+        # :state stacks every solution variable into one vector target
+        st = tgt(:state)
+        @test st.ncomp == 4 && st.comps == SWVARS
+        pod_extract!(d4, st, q, nothing, ζ, mesh, g)
         @test d4 == q
 
         # a rigid rotation is purely zonal, with u_λ = ΩR cos φ
-        pod_extract!(d1, pod_target(:u), q, ζ, mesh, g)
+        pod_extract!(d1, tgt(:u), q, nothing, ζ, mesh, g)
         @test maximum(abs(d1[ip,1] - Ω*R*cos(mesh.lat[ip])) for ip = 1:npoin) < 1e-6*Ω*R
-        pod_extract!(d1, pod_target(:v), q, ζ, mesh, g)
+        pod_extract!(d1, tgt(:v), q, nothing, ζ, mesh, g)
         @test maximum(abs, d1[:,1]) < 1e-6*Ω*R
 
         # …and the vector target carries the two of them, in that order
-        pod_extract!(d2, pod_target(:velocity), q, ζ, mesh, g)
+        pod_extract!(d2, tgt(:velocity), q, nothing, ζ, mesh, g)
         @test maximum(abs(d2[ip,1] - Ω*R*cos(mesh.lat[ip])) for ip = 1:npoin) < 1e-6*Ω*R
         @test maximum(abs, d2[:,2]) < 1e-6*Ω*R
 
-        @test_throws ErrorException pod_target(:nonsense)
+        # an output variable the case derives, but does not integrate
+        @test tgt("h").src === :q                     # :h is the shell's own derived field…
+        @test tgt("w").src === :qout                  # …"w" is only an output variable
+        @test_throws ErrorException pod_extract!(d1, tgt("w"), q, nothing, ζ, mesh, g)
+
+        @test_throws ErrorException tgt(:nonsense)
+        # a shell field is not offered to a flat case
+        @test_throws ErrorException pod_targets([:vorticity], SWVARS, SWOUT, 4, false)
         # the vorticity target cannot be fed a run that never computed one
-        @test_throws ErrorException pod_extract!(d1, pod_target(:vorticity), q, nothing, mesh, g)
+        @test_throws ErrorException pod_extract!(d1, tgt(:vorticity), q, nothing, nothing, mesh, g)
     end
 
     #-----------------------------------------------------------------------------
@@ -167,7 +182,10 @@ with_mpi() do distribute
         set = pod_settings(pin, 0.0, T)
         @test set.lpod && set.fields == [:vorticity] && set.nsnap == nsnap
 
-        rec = pod_recorder(pin, mesh, 0.0, T; verbose = false)
+        rec = pod_recorder(pin, mesh, 0.0, T; verbose = false,
+                           qvars = ["phi","phiu","phiv","phiw"],
+                           qoutvars = ["h","u","v","w"], neqs = 4,
+                           nsd = 2, lshell = true)
         @test rec !== nothing
         @test rec.nsnapmax == nsnap + 1
         @test rec.lvort                                       # ζ is needed, and it says so
@@ -197,13 +215,13 @@ with_mpi() do distribute
                 ζ[ip] = cos(m*mesh.lon[ip] - θ)*cos(mesh.lat[ip])^2
             end
             @test pod_due(rec, t, Δt)
-            pod_record!(rec, q, ζ, t, mesh)
+            pod_record!(rec, q, t, mesh; ζ = ζ)
             @test !pod_due(rec, t, Δt)                        # …and not twice
         end
         @test rec.nsnap == nsnap + 1
         @test !pod_due(rec, 10T, Δt)                          # the buffer is full
 
-        Ps = pod_finalize!(rec, mesh, metrics, outdir; verbose = false)
+        Ps = pod_finalize!(rec, mesh, metrics.M, outdir; verbose = false)
         @test length(Ps) == 1
         P = Ps[1]
 
@@ -219,7 +237,7 @@ with_mpi() do distribute
         @test pod_truncation_error(P)[3] < 1e-6
 
         # the span reproduces the data it came from
-        w = pod_weights(mesh, metrics)
+        w = pod_weights(metrics.M, mesh)
         for k = 1:P.nsnap
             qk = pod_reconstruct(P, P.a[k,:])
             @test maximum(abs, qk[:,1] .- rec.X[1][:,1,k]) < 1e-9
@@ -253,7 +271,11 @@ with_mpi() do distribute
 
         #--- and the switch that turns all of it off
         @test pod_recorder(Dict{Symbol,Any}(), mesh, 0.0, T; verbose = false) === nothing
-        @test pod_finalize!(nothing, mesh, metrics, outdir; verbose = false) == St_pod{Float64}[]
+        @test pod_finalize!(nothing, mesh, metrics.M, outdir; verbose = false) == St_pod{Float64}[]
+        # …and POD refuses a run whose grid changes under it
+        @test_throws ErrorException pod_recorder(Dict{Symbol,Any}(:lpod => true, :lamr => true),
+                                                 mesh, 0.0, T; verbose = false,
+                                                 qvars = ["phi"], neqs = 1, nsd = 2, lshell = true)
         @test !pod_due(nothing, 0.0, 1.0)
 
         rm(outdir; recursive = true, force = true)
@@ -272,13 +294,16 @@ with_mpi() do distribute
                                   :pod_write_vtk  => false,
                                   :pod_write_png  => false,
                                   :pod_write_data => false)
-        rec = pod_recorder(pin, mesh, 0.0, 100.0; verbose = false)
+        rec = pod_recorder(pin, mesh, 0.0, 100.0; verbose = false,
+                           qvars = ["phi","phiu","phiv","phiw"],
+                           qoutvars = ["h","u","v","w"], neqs = 4,
+                           nsd = 2, lshell = true)
         q   = rigid_rotation_state(mesh, 0.0, 9.80616*10000.0)
         for k = 0:4
-            pod_record!(rec, q, nothing, k*rec.dt, mesh)
+            pod_record!(rec, q, k*rec.dt, mesh)
         end
         @test rec.nsnap == 5
-        @test pod_finalize!(rec, mesh, metrics, outdir; verbose = false) == St_pod{Float64}[]
+        @test pod_finalize!(rec, mesh, metrics.M, outdir; verbose = false) == St_pod{Float64}[]
         rm(outdir; recursive = true, force = true)
     end
 

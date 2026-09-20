@@ -445,9 +445,13 @@ Jexpresso.run_case("ShallowWater", "SWsphere")
 This case also ships with **Proper Orthogonal Decomposition** switched on: at
 the end of the run the code extracts the energy-ranked modes of the flow, draws
 them on an equirectangular map together with the energy spectrum and the
-temporal coefficients, and writes the basis out for a reduced-order model. See
-[`docs/POD.md`](docs/POD.md) and the `:pod_*` block of the case's
-`user_inputs.jl`.
+temporal coefficients, and writes the basis out for a reduced-order model.
+
+POD is a property of the framework rather than of this case: **any** problem
+turns it on with `:lpod => true` in its deck and supplies nothing else, in 1D,
+2D, 3D or on a manifold. `problems/AdvDiff/PODbenchmark` is the reference
+benchmark, a problem whose POD is known in closed form. See
+[`docs/POD.md`](docs/POD.md).
 
 
 

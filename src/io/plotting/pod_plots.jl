@@ -1,14 +1,18 @@
 #---------------------------------------------------------------------------------
-# pod_plots.jl — the standard POD figures, drawn on an equirectangular map.
+# pod_plots.jl — the standard POD figures, in whatever dimension the case lives.
 #
 # Three pictures, which together are what a POD is reported as:
 #
-#   pod_<field>_modes.png         the leading spatial modes φ_i(λ,φ), one panel
-#                                 each, on a diverging colour scale centred on
-#                                 zero and SYMMETRIC — a mode has no preferred
-#                                 sign (pod_core.jl only fixes it by convention),
-#                                 so a scale that is not symmetric about zero
-#                                 invents structure that is not there.
+#   pod_<field>_modes.png         the leading spatial modes φ_i, one panel each.
+#                                 In 1-D they are curves; in 2-D and on a shell
+#                                 they are filled contours, on a colour scale
+#                                 that is diverging and SYMMETRIC about zero — a
+#                                 mode has no preferred sign (pod_core.jl only
+#                                 fixes it by convention), so a scale that is not
+#                                 symmetric invents structure that is not there.
+#                                 In 3-D there is no figure: a mode needs a slice
+#                                 or an isosurface, and any projection this code
+#                                 picked would be the wrong one. The .vtu has it.
 #   pod_<field>_spectrum.png      the energy spectrum λ_i/Σλ on a logarithmic
 #                                 axis, and the cumulative energy beside it. This
 #                                 is the plot that says whether a reduced-order
@@ -19,17 +23,19 @@
 #   pod_<field>_coefficients.png  the temporal coefficients a_i(t), with the
 #                                 (a_1,a_2) phase portrait beside them. The
 #                                 portrait is there because the leading modes of
-#                                 a TRAVELLING structure — which is what a
-#                                 barotropically unstable jet produces — come in
-#                                 near-degenerate PAIRS with λ_1 ≈ λ_2, whose
-#                                 coefficients are in quadrature; the pair traces
-#                                 a circle, and that circle is the propagation.
-#                                 Two modes of a standing structure trace a line.
+#                                 a TRAVELLING structure come in near-degenerate
+#                                 PAIRS with λ_1 ≈ λ_2 whose coefficients are in
+#                                 quadrature; the pair traces a circle, and that
+#                                 circle is the propagation. Two modes of a
+#                                 standing structure trace a line.
 #
-# The maps are equirectangular (see equirectangular.jl). The rasterizer renders
-# the element tiling rather than interpolating scattered points, so what is drawn
-# is the discrete mode itself: the colour scale is the mode's own range, and no
-# small-scale structure has been smoothed away on the way to the picture.
+# The last two are properties of the decomposition and are drawn identically in
+# every dimension. Only the modes know about geometry.
+#
+# The maps are rendered from the element tiling (mesh_raster.jl) rather than
+# interpolated from scattered points, so what is drawn is the discrete mode
+# itself: the colour scale is the mode's own range, and no small-scale structure
+# has been smoothed away on the way to the picture.
 #
 # S. Marras & contributors
 #---------------------------------------------------------------------------------
@@ -37,75 +43,83 @@
 using Plots
 
 export pod_plot, plot_pod_modes, plot_pod_spectrum, plot_pod_coefficients
-export plot_sphere_field
+export plot_sphere_field, plot_mesh_field
 
 
 """
-    pod_plot(P, mesh, set, OUTPUT_DIR; verbose = true)
+    pod_plot(P, mesh, rec, OUTPUT_DIR; verbose = true)
 
-All three figures of one decomposition, plus the temporal mean when it was
-subtracted. Serial only: the raster needs the whole sphere on one rank.
+All the figures of one decomposition, plus the temporal mean when it was
+subtracted. Serial only: the raster needs the whole domain on one rank.
 """
-function pod_plot(P::St_pod, mesh, set::St_pod_settings, OUTPUT_DIR::String;
+function pod_plot(P::St_pod, mesh, rec::St_pod_recorder, OUTPUT_DIR::String;
                   verbose::Bool = true)
 
     isdir(OUTPUT_DIR) || mkpath(OUTPUT_DIR)
+    set = rec.set
 
-    plot_pod_modes(P, mesh, OUTPUT_DIR;
-                   nmodes = set.nmodes_plot, nlon = set.nlon, nlat = set.nlat,
-                   cmap = set.cmap)
     plot_pod_spectrum(P, OUTPUT_DIR)
     plot_pod_coefficients(P, OUTPUT_DIR;
                           nmodes = set.nmodes_plot, tscale = set.tscale, tlabel = set.tlabel)
 
-    if P.lmean
-        for c = 1:P.ncomp
-            cn = P.ncomp == 1 ? "" : string("_", P.comps[c])
-            plot_sphere_field(view(P.q̄, :, c), mesh,
-                              joinpath(OUTPUT_DIR, string("pod_", P.name, "_mean", cn, ".png"));
-                              title = string("temporal mean — ", P.comps[c]),
-                              nlon = set.nlon, nlat = set.nlat,
-                              cmap = :viridis, lsymmetric = false)
+    lmodes = !(rec.nsd == 3 && !rec.lshell)
+    if !lmodes
+        verbose && println(" #     PNG: modes not drawn in 3-D — slice or isosurface the .vtu instead.")
+    else
+        plot_pod_modes(P, mesh, rec, OUTPUT_DIR; nmodes = set.nmodes_plot)
+        if P.lmean
+            for c = 1:P.ncomp
+                cn = P.ncomp == 1 ? "" : string("_", P.comps[c])
+                plot_mesh_field(view(P.q̄, :, c), mesh, rec,
+                                joinpath(OUTPUT_DIR, string("pod_", P.name, "_mean", cn, ".png"));
+                                title = string("temporal mean — ", P.comps[c]),
+                                cmap = :viridis, lsymmetric = false)
+            end
         end
     end
 
-    verbose && @printf(" #     %s{_modes,_spectrum,_coefficients}.png\n",
-                       joinpath(abspath(OUTPUT_DIR), string("pod_", P.name)))
+    verbose && @printf(" #     %s{%s_spectrum,_coefficients}.png\n",
+                       joinpath(abspath(OUTPUT_DIR), string("pod_", P.name)),
+                       lmodes ? "_modes," : "")
     return nothing
 end
 
 
 """
-    plot_pod_modes(P, mesh, OUTPUT_DIR; kwargs...)
+    plot_pod_modes(P, mesh, rec, OUTPUT_DIR; nmodes = 6, ncols = 2)
 
-The leading `nmodes` spatial modes as equirectangular maps: one multi-panel
-figure per component (`pod_<field>_modes.png`), and one PNG per mode beside it
-for when a single mode has to go into a paper.
+The leading `nmodes` spatial modes: one multi-panel figure per component
+(`pod_<field>_modes.png`), and one PNG per mode beside it for when a single mode
+has to go into a paper.
 """
-function plot_pod_modes(P::St_pod, mesh, OUTPUT_DIR::String;
-                        nmodes::Int = 6, nlon::Int = 720, nlat::Int = 360,
-                        cmap::Symbol = :balance, ncols::Int = 2,
-                        lindividual::Bool = true)
+function plot_pod_modes(P::St_pod, mesh, rec::St_pod_recorder, OUTPUT_DIR::String;
+                        nmodes::Int = 6, ncols::Int = 2, lindividual::Bool = true)
 
     r = min(nmodes <= 0 ? length(P.λ) : nmodes, length(P.λ))
     r >= 1 || return nothing
-    grad = _pod_cgrad(cmap)
+    grad = _pod_cgrad(rec.set.cmap)
 
     for c = 1:P.ncomp
-        cn    = P.ncomp == 1 ? "" : string("_", P.comps[c])
-        plts  = Any[]
+        cn   = P.ncomp == 1 ? "" : string("_", P.comps[c])
+        plts = Any[]
 
         for i = 1:r
-            λg, φg, F = equirectangular_raster(view(P.Φ, :, c, i), mesh; nlon = nlon, nlat = nlat)
-            m    = _robust_extreme(F)
-            ttl  = @sprintf("mode %d — E = %.2f %%", i, 100*P.energy[i])
-            plt  = _equirect_panel(λg, φg, F, ttl, grad, (-m, m))
-            push!(plts, plt)
-
+            f   = view(P.Φ, :, c, i)
+            ttl = @sprintf("mode %d — E = %.2f %%", i, 100*P.energy[i])
+            #
+            # ONE colour range per MODE, taken over all its components, not one
+            # per panel. A vector mode's components are then comparable at a
+            # glance — and, more importantly, a component that is identically
+            # zero (a vertical velocity in a horizontal mode, say) is drawn as
+            # the blank it is instead of having its colour scale stretched
+            # around 1e-16 of round-off.
+            #
+            m  = _robust_extreme(view(P.Φ, :, :, i))
+            cl = (-m, m)
+            push!(plts, _pod_panel(f, mesh, rec, ttl, grad; wide = false, clims = cl))
             if lindividual
-                single = _equirect_panel(λg, φg, F,
-                                         string(P.name, cn, "  ", ttl), grad, (-m, m);
-                                         wide = true)
+                single = _pod_panel(f, mesh, rec, string(P.name, cn, "  ", ttl), grad;
+                                    wide = true, clims = cl)
                 _savefig_silent(single,
                                 joinpath(OUTPUT_DIR, @sprintf("pod_%s%s_mode_%03d.png", P.name, cn, i)))
             end
@@ -231,14 +245,33 @@ end
 
 
 """
-    plot_sphere_field(f, mesh, fout_name; kwargs...)
+    plot_mesh_field(f, mesh, rec, fout_name; kwargs...)
 
-One nodal field on an equirectangular map. Used here for the POD mean, and
-usable on its own for any field on the shell — the vorticity at a given output
-time, a reconstruction error, the difference between two runs.
+One nodal field, drawn the way the case's geometry asks for: a curve in 1-D, a
+filled contour on an (x,y) raster in 2-D, an equirectangular map on a shell.
+Used here for the POD mean, and usable on its own for any nodal field — a
+solution at one output time, a reconstruction error, the difference between two
+runs.
 
 `lsymmetric = true` centres the colour scale on zero, which is what a signed
 anomaly wants and what a positive-definite field (a depth, a speed) does not.
+"""
+function plot_mesh_field(f::AbstractVector, mesh, rec::St_pod_recorder, fout_name::String;
+                         title::String = "", cmap::Symbol = :viridis,
+                         lsymmetric::Bool = true, clims = nothing)
+    grad = _pod_cgrad(cmap)
+    plt  = _pod_panel(f, mesh, rec, title, grad;
+                      wide = true, lsymmetric = lsymmetric, clims = clims)
+    _savefig_silent(plt, fout_name)
+    return nothing
+end
+
+
+"""
+    plot_sphere_field(f, mesh, fout_name; kwargs...)
+
+One nodal field on a spherical shell, on an equirectangular map, without a
+recorder to hand. The manifold special case of [`plot_mesh_field`](@ref).
 """
 function plot_sphere_field(f::AbstractVector, mesh, fout_name::String;
                            title::String = "", nlon::Int = 720, nlat::Int = 360,
@@ -246,19 +279,11 @@ function plot_sphere_field(f::AbstractVector, mesh, fout_name::String;
                            clims = nothing)
 
     λg, φg, F = equirectangular_raster(f, mesh; nlon = nlon, nlat = nlat)
-    grad = _pod_cgrad(cmap)
-
-    cl = if clims !== nothing
-        (Float64(clims[1]), Float64(clims[2]))
-    elseif lsymmetric
-        m = _robust_extreme(F); (-m, m)
-    else
-        finite = filter(isfinite, F)
-        lo, hi = isempty(finite) ? (0.0, 1.0) : (minimum(finite), maximum(finite))
-        hi > lo ? (lo, hi) : (lo - 0.5, hi + 0.5)
-    end
-
-    plt = _equirect_panel(λg, φg, F, title, grad, cl; wide = true)
+    plt = _pod_contour_panel(λg, φg, F, title, _pod_cgrad(cmap),
+                             _pod_clims(F, lsymmetric, clims);
+                             wide = true, xlab = "longitude [deg]", ylab = "latitude [deg]",
+                             xlims = (-180, 180), ylims = (-90, 90),
+                             xticks = -180:60:180, yticks = -90:30:90)
     _savefig_silent(plt, fout_name)
     return nothing
 end
@@ -268,21 +293,59 @@ end
 # helpers
 #---------------------------------------------------------------------------------
 #
-# One map panel. Ticks every 60° in longitude and 30° in latitude, equal aspect
-# so the canvas is the 2:1 rectangle a plate-carrée map is, and the data clamped
-# to the colour range so that a value outside it takes the end colour instead of
-# being drawn as a hole (the same convention as the flat-case plotter).
+# One panel of one nodal field, in the geometry the recorder carries.
 #
-function _equirect_panel(λg, φg, F, ttl::String, grad, clims; wide::Bool = false)
+function _pod_panel(f, mesh, rec::St_pod_recorder, ttl::String, grad;
+                    wide::Bool = false, lsymmetric::Bool = true, clims = nothing)
+
+    set = rec.set
+
+    if rec.nsd == 1
+        x    = [Float64(mesh.x[ip]) for ip = 1:min(length(f), Int(mesh.npoin))]
+        perm = sortperm(x)
+        v    = [Float64(f[ip]) for ip in perm]
+        return Plots.plot(x[perm], v;
+                          line = (:solid, 2), color = :black, legend = false,
+                          framestyle = :box, xlabel = "x", ylabel = "φ(x)",
+                          title = ttl, titlefontsize = wide ? 14 : 12,
+                          guidefontsize = 10, tickfontsize = 9,
+                          size = wide ? (900, 420) : (700, 380),
+                          left_margin   = wide ? 5Plots.mm : 0Plots.mm,
+                          bottom_margin = wide ? 5Plots.mm : 0Plots.mm,
+                          show = false)
+
+    elseif rec.lshell
+        λg, φg, F = equirectangular_raster(f, mesh; nlon = set.nlon, nlat = set.nlat)
+        return _pod_contour_panel(λg, φg, F, ttl, grad, _pod_clims(F, lsymmetric, clims);
+                                  wide = wide,
+                                  xlab = "longitude [deg]", ylab = "latitude [deg]",
+                                  xlims = (-180, 180), ylims = (-90, 90),
+                                  xticks = -180:60:180, yticks = -90:30:90)
+
+    else
+        xg, yg, F = plane_raster(f, mesh; nx = set.nx, ny = set.ny)
+        return _pod_contour_panel(xg, yg, F, ttl, grad, _pod_clims(F, lsymmetric, clims);
+                                  wide = wide, xlab = "x", ylab = "y",
+                                  xlims = (xg[1], xg[end]), ylims = (yg[1], yg[end]),
+                                  xticks = :auto, yticks = :auto)
+    end
+end
+
+#
+# One filled-contour panel. The data is clamped to the colour range so that a
+# value outside it takes the end colour instead of being drawn as a hole (the
+# same convention as the flat-case plotter in jeplots.jl).
+#
+function _pod_contour_panel(xg, yg, F, ttl::String, grad, clims;
+                            wide::Bool = false, xlab = "x", ylab = "y",
+                            xlims = :auto, ylims = :auto, xticks = :auto, yticks = :auto)
     Fc = clamp.(F, clims[1], clims[2])
-    return Plots.contourf(λg, φg, Fc';
+    return Plots.contourf(xg, yg, Fc';
                           color = grad, clims = clims, levels = 31, linewidth = 0,
                           colorbar = true, legend = false,
                           aspect_ratio = :equal,
-                          xlims = (-180, 180), ylims = (-90, 90),
-                          xticks = -180:60:180, yticks = -90:30:90,
-                          framestyle = :box,
-                          xlabel = "longitude [deg]", ylabel = "latitude [deg]",
+                          xlims = xlims, ylims = ylims, xticks = xticks, yticks = yticks,
+                          framestyle = :box, xlabel = xlab, ylabel = ylab,
                           title = ttl, titlefontsize = wide ? 14 : 12,
                           guidefontsize = 10, tickfontsize = 9,
                           size = wide ? (960, 480) : (700, 380),
@@ -294,6 +357,17 @@ function _equirect_panel(λg, φg, F, ttl::String, grad, clims; wide::Bool = fal
                           right_margin  = wide ? 10Plots.mm : 0Plots.mm,
                           bottom_margin = wide ? 5Plots.mm : 0Plots.mm,
                           show = false)
+end
+
+function _pod_clims(F, lsymmetric::Bool, clims)
+    clims !== nothing && return (Float64(clims[1]), Float64(clims[2]))
+    if lsymmetric
+        m = _robust_extreme(F)
+        return (-m, m)
+    end
+    finite = filter(isfinite, F)
+    lo, hi = isempty(finite) ? (0.0, 1.0) : (minimum(finite), maximum(finite))
+    return hi > lo ? (lo, hi) : (lo - 0.5, hi + 0.5)
 end
 
 #
