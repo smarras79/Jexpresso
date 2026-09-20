@@ -76,6 +76,7 @@
 #  1219979. If 8 GB/rank still dies in the mesh read, go to the 32-node row:
 #  it is a three-line change and nothing else in the deck moves.
 #-----------------------------------------------------------------------------
+#SBATCH --exclusive
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=64
 #SBATCH --cpus-per-task=1
@@ -264,6 +265,16 @@ export DBG_VDIFF="${DBG_VDIFF:-1}"
 # One BLAS/Julia thread per rank: the ranks already fill the node, and nested
 # threading oversubscribes it.
 export JULIA_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1
+
+# OFI/PSM3 QUEUE DEPTH. The libfabric provider this MPICH uses on Wulver's
+# mlx5 HCAs creates one UD queue pair per rank with 4080 send / 4095 receive
+# work-queue entries. At 64-128 ranks per node the HCA runs out of QP/MR
+# resources and MPI_Init dies with "Unable to alloc send buffer MR on mlx5_0"
+# or "Unable to create UD QP ... Requested TX depth was 4081 and RX depth was
+# 4095" (jobs 1295262/64, 1299459/81, 1300834 -- five different nodes). A
+# quarter of the default depth is far more than any rank here queues.
+export PSM3_NUM_SEND_WQES="${PSM3_NUM_SEND_WQES:-1024}"
+export PSM3_NUM_RECV_WQES="${PSM3_NUM_RECV_WQES:-1024}"
 
 #-- 3. serial setup, before any rank is launched --------------------------
 # Each step here fails cheaply and says why. Compiling inside the parallel
