@@ -242,6 +242,13 @@ include(joinpath( "kernel", "operators", "filter.jl"))
 
 include(joinpath( "kernel", "solvers", "TimeIntegrators.jl"))
 
+# Proper Orthogonal Decomposition and the reduced-order-model basis it builds.
+# pod_core.jl is the decomposition itself and depends on nothing in Jexpresso;
+# pod.jl is what samples a running case and writes the result out. Included
+# BEFORE the time loop, which records snapshots through them.
+include(joinpath( "kernel", "rom", "pod_core.jl"))
+include(joinpath( "kernel", "rom", "pod.jl"))
+
 # SSP-RK3 time loop for the spherical shell, with the Lagrange projection
 # applied at every stage.
 include(joinpath( "kernel", "solvers", "sphere_time_loop.jl"))
@@ -281,6 +288,12 @@ include(joinpath( "io", "les_statistics.jl"))
 include(joinpath( "io", "mod_print_io.jl"))
 
 include(joinpath( "io", "write_output.jl"))
+
+# Spherical fields on a plate-carree canvas, and the POD figures drawn on it.
+# After write_output.jl, which is what brings Plots into the module (jeplots.jl).
+include(joinpath( "io", "plotting", "equirectangular.jl"))
+
+include(joinpath( "io", "plotting", "pod_plots.jl"))
 
 include(joinpath( "io", "diagnostics.jl"))
 

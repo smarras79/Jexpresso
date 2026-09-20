@@ -284,6 +284,77 @@ function user_inputs()
         :filter_order         => 8,
         :filter_kcut          => 2/3,
         #---------------------------------------------------------------------------
+        # POD — PROPER ORTHOGONAL DECOMPOSITION of the run, and the basis of a
+        # reduced-order model built on it.
+        #
+        # POD asks which single spatial structure captures, on average, the most
+        # of the flow; then which second one, among those orthogonal to the
+        # first. The answer is the eigenbasis of the two-point correlation of
+        # the snapshots, ordered by energy, and it is OPTIMAL: no other basis of
+        # the same size captures more of the flow in the mean square. The
+        # machinery is in src/kernel/rom/; the formulation, every :pod_* key,
+        # the file list and how to read each figure are in docs/POD.md.
+        #
+        # WHAT IT IS FOR HERE. Forced-dissipative turbulence is exactly the
+        # setting POD was invented for (Lumley 1967): the flow is a broadband
+        # mess out of which a few organised structures emerge, and the question
+        # is which ones and how much of the energy they carry. For this case
+        # that is the paper's own question asked quantitatively —
+        #
+        #   * the temporal MEAN is the zonal jet structure of Fig. 13, and it is
+        #     removed before the decomposition (:pod_subtract_mean), so the
+        #     modes describe what varies about the jets rather than the jets;
+        #   * the leading MODES are the coherent vortices and the jet
+        #     meanderings of Fig. 14; a structure that TRAVELS (a Rossby wave
+        #     riding a jet) appears as a PAIR of modes of nearly equal energy in
+        #     quadrature — λᵢ ≈ λᵢ₊₁ in the spectrum, a circle in the (a₁,a₂)
+        #     phase portrait;
+        #   * the SPECTRUM says how many degrees of freedom the equilibrated
+        #     flow really has. A turbulent flow's spectrum decays slowly, and
+        #     how slowly is the measurement — it is the number a reduced-order
+        #     model of this regime would have to live with.
+        #
+        # WHAT IT COSTS, and it is not nothing on this grid. One
+        # npoin × ncomp × nsnap array of Float64 per field, held for the run:
+        # the 64×64 cubed sphere carries npoin ≈ 6.1e5, so 61 snapshots of the
+        # vorticity alone are 300 MB. Hence ONE field and 60 intervals below.
+        # Add :h, or raise :pod_nsnapshots, only with that arithmetic in mind —
+        # :pod_max_memory_gb refuses anything past 4 GB and prints the sum.
+        # On the 10×10 grid (npoin ≈ 1.5e4) the same settings cost 7 MB.
+        #
+        # The plots are equirectangular (plate carrée) maps: longitude and
+        # latitude used directly as the plot axes, which adds nothing of its own
+        # to the picture and is how Fig. 14 is drawn.
+        #---------------------------------------------------------------------------
+        :lpod                 => true,
+        # :vorticity is the field of Fig. 14 (d-f), and the one the structures
+        # are visible in. Also available: :h, :phi, :u, :v, :velocity (the
+        # horizontal velocity as ONE two-component target, decomposed jointly)
+        # and :state (all four conservative variables, which is the basis a
+        # Galerkin ROM of this system would be projected onto).
+        :pod_fields           => [:vorticity],
+        # Sampling INTERVALS over the POD window, on a clock of its own: the VTK
+        # cadence is chosen to keep a movie small, a decomposition wants dense
+        # uniform sampling, and the two have no reason to agree. 60 intervals
+        # over the default run is one snapshot every ~33 rotations.
+        :pod_nsnapshots       => 60,
+        :pod_tstart           => 0.0,          # start of the POD window [s]
+        #:pod_tstart          => nrot*T,       # …the second half only, i.e. past
+                                               #    the linear spin-up of Fig. 1
+        :pod_nmodes           => 24,           # 0 = every mode the snapshots support
+        :pod_nmodes_plot      => 6,
+        :pod_subtract_mean    => true,         # decompose the fluctuation, not the field
+        :pod_method           => :auto,        # SVD in serial, correlation matrix under MPI
+        :pod_nlon             => 1440,         # ¼° raster, for a 64×64 grid
+        :pod_nlat             => 720,
+        :pod_write_vtk        => true,         # modes as point data on the sphere
+        :pod_write_png        => true,         # the three standard figures
+        :pod_write_data       => true,         # CSV spectrum/coefficients + .jld2 basis
+        # The paper's time unit is the rotation period, so the coefficient plots
+        # use it too.
+        :pod_time_scale       => 1.0/T,
+        :pod_time_label       => "t [rotations]",
+        #---------------------------------------------------------------------------
         # Output: VTK with h, (u_zonal, v_merid, w_radial), ζ (Fig. 14 d-f), the
         # potential vorticity q = (ζ + f)/h (Fig. 14 a-c) and the vorticity
         # forcing; plus the paper's other diagnostic — the ZONAL-MEAN zonal

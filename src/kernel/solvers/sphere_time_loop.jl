@@ -252,7 +252,7 @@ end
 # body is entered only on the ~35 print steps and 24 output steps instead of all
 # 6913 — the conditions themselves are the old hand-written loop's, unchanged.
 #---------------------------------------------------------------------------------
-mutable struct St_sphere_monitor{TQ, TMesh, TMetrics, TParams, TIn, TSVT}
+mutable struct St_sphere_monitor{TQ, TMesh, TMetrics, TParams, TIn, TSVT, TPod}
     q::TQ
     mesh::TMesh
     metrics::TMetrics
@@ -272,6 +272,14 @@ mutable struct St_sphere_monitor{TQ, TMesh, TMetrics, TParams, TIn, TSVT}
     tnext::Float64
     iout::Int
     verbose::Bool
+    #
+    # The POD snapshot recorder, or `nothing` when :lpod is off. It carries its
+    # OWN sampling clock (src/kernel/rom/pod.jl): the VTK cadence is chosen to
+    # keep a movie small, while a decomposition wants snapshots spaced uniformly
+    # and densely enough to resolve what it is decomposing, and the two have no
+    # reason to agree.
+    #
+    pod::TPod
 end
 
 #
@@ -295,7 +303,8 @@ function (due::St_sphere_monitor_due)(u, t, integrator)
     mon   = due.mon
     istep = integrator.stats.naccept
     return (istep % mon.nprint == 0 || istep >= mon.nsteps) ||
-           (mon.iout < mon.nout && t >= mon.tnext - 1.0e-9*integrator.dt)
+           (mon.iout < mon.nout && t >= mon.tnext - 1.0e-9*integrator.dt) ||
+           pod_due(mon.pod, t, integrator.dt)
 end
 
 function (mon::St_sphere_monitor)(integrator)
@@ -343,6 +352,16 @@ function (mon::St_sphere_monitor)(integrator)
         _sphere_write!(mon.q, mon.mesh, mon.inputs, mon.OUTPUT_DIR, mon.iout, t, mon.SVT;
                        verbose = mon.verbose, extra = ("vorticity" => mon.ζ,))
         mon.tnext += mon.outdt
+    end
+
+    #--- POD snapshot. Nothing is written: the snapshots are held in memory and
+    #    decomposed once, after the last step (pod_finalize! below).
+    if mon.pod !== nothing && pod_due(mon.pod, t, integrator.dt)
+        # mon.ζ holds the vorticity of whichever earlier step last needed it, so
+        # it has to be refreshed here even though the branches above may have
+        # just done so — this step is not necessarily one of theirs.
+        mon.pod.lvort && sphere_relative_vorticity!(mon.ζ, u, mon.mesh, mon.metrics, mon.sp)
+        pod_record!(mon.pod, u, mon.ζ, t, mon.mesh)
     end
 
     return nothing
@@ -482,6 +501,12 @@ function _sphere_march!(mesh::St_mesh,
 
     mass0, ener0, _ = sphere_diagnostics(q.qn, mesh, metrics)
 
+    #
+    # POD. `nothing` unless the deck sets :lpod => true, in which case this
+    # allocates the snapshot buffers and reports what it will sample.
+    #
+    pod = pod_recorder(inputs, mesh, t, tend; verbose = verbose, dt_step = Δt)
+
     # the initial condition
     sphere_relative_vorticity!(ζ, q.qn, mesh, metrics, sp)
     copyto!(ζ0, ζ)
@@ -489,11 +514,17 @@ function _sphere_march!(mesh::St_mesh,
                    lwrite = get(inputs, :lwrite_initial, true) == true,
                    extra = ("vorticity" => ζ,))
 
+    # The first snapshot, taken here rather than in the callback because the
+    # callback only runs after a step. `pod_due` is what decides: a deck that
+    # asked for a POD window starting later than :tinit — to leave a transient
+    # out of the decomposition — is not due yet and records nothing.
+    pod_due(pod, t, Δt) && pod_record!(pod, q.qn, ζ, t, mesh)
+
     params = St_sphere_ode_params(mesh, metrics, sp, q.qe, SVT, lproject, Ref(0.0))
 
     monitor = St_sphere_monitor(q, mesh, metrics, sp, inputs, SVT, OUTPUT_DIR,
                                 ζ, ζ0, mass0, ener0, npoin, nsteps, nprint,
-                                nout, outdt, t + outdt, 0, verbose)
+                                nout, outdt, t + outdt, 0, verbose, pod)
 
     # save_positions = (false,false): the monitor only reads the state, so there
     # is no need to snapshot it around the callback.
@@ -542,6 +573,14 @@ function _sphere_march!(mesh::St_mesh,
                      " #       has no upwinding to supply any;\n",
                      " #     * a larger :μ, or a smaller :cfl if the step really is the problem."))
     end
+
+    #
+    # THE DECOMPOSITION, once the run is over and the snapshots are all in.
+    # After the retcode check above on purpose: a run that blew up has a
+    # snapshot set that ends in whatever the blow-up looked like, and a POD of
+    # that describes the failure rather than the flow.
+    #
+    pod_finalize!(pod, mesh, metrics, OUTPUT_DIR; verbose = verbose)
 
     # Collective, so outside the verbose gate: sphere_diagnostics reduces across
     # ranks and calling it on rank 0 alone would hang the others.

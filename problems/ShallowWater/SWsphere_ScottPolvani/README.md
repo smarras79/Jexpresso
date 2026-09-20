@@ -240,6 +240,33 @@ Output, in `problems/ShallowWater/SWsphere_ScottPolvani/output/`:
 In parallel the `.vtu` become `.pvtu`, as for `SWsphere`; the `.dat` is written
 by rank 0 from globally reduced sums.
 
+### The POD of the run
+
+The deck also ships with **Proper Orthogonal Decomposition** switched on
+(`:lpod => true`). At the end of the run the code decomposes the snapshots it
+collected into the orthonormal basis that captures the most of the flow per
+mode, and writes:
+
+| file | what it is |
+|---|---|
+| `pod_vorticity_modes.png` | the leading modes, as equirectangular maps — the coherent structures of Fig. 14, ranked by how much of the variance each carries |
+| `pod_vorticity_spectrum.png` | the energy spectrum and its cumulative sum: **how many degrees of freedom the equilibrated flow actually has** |
+| `pod_vorticity_coefficients.png` | `aᵢ(t)` in rotations, and the `(a₁,a₂)` phase portrait — a circle there means the leading pair is one *travelling* structure, a Rossby wave riding a jet, rather than two standing ones |
+| `pod_vorticity_mean.png` | the temporal mean, i.e. the jet structure of Fig. 13 |
+| `pod_vorticity.vtu` | mean + modes as point data on the sphere |
+| `pod_vorticity_spectrum.csv`, `pod_vorticity_coefficients.csv` | the numbers behind the figures |
+| `pod_vorticity.jld2` | the basis itself, for a reduced-order model |
+
+The mean is subtracted before the decomposition, so the modes describe what
+varies *about* the jets rather than the jets. The decomposition happens inside
+the run and not afterwards from the `.vtu` files, because POD is only optimal
+under the `L²` inner product — which needs the SEM mass matrix of the run that
+produced the data, and that is in no output file.
+
+On the default 64×64 grid the snapshots cost ~300 MB of memory, held for the
+run; the arithmetic and every `:pod_*` key are in the deck and in
+[`docs/POD.md`](../../../docs/POD.md). `:lpod => false` turns all of it off.
+
 ## The switches
 
 `src/kernel/operators/sphere_forcing.jl` reads, all in SI units:

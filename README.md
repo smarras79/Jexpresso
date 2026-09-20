@@ -442,6 +442,14 @@ Jexpresso.run_case("ShallowWater", "SWsphere")
      style="float: left; margin-right: 3.5px;" />
 
 
+This case also ships with **Proper Orthogonal Decomposition** switched on: at
+the end of the run the code extracts the energy-ranked modes of the flow, draws
+them on an equirectangular map together with the energy spectrum and the
+temporal coefficients, and writes the basis out for a reduced-order model. See
+[`docs/POD.md`](docs/POD.md) and the `:pod_*` block of the case's
+`user_inputs.jl`.
+
+
 
 ## 2D Euler equations with buoyancy and two passive tracers
 The problem is defined in `problems/equations/CompEuler/thetaTracers`. To run it you would do the following:
