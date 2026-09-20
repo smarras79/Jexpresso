@@ -213,6 +213,15 @@ The **viscous** limit is not the binding one. DynSGS cannot exceed its own cap
 `1.8e-6`, nine times again. Raising `:dsgs_Cmax` or `:μ` changes that ratio, so
 move them and `Δt` together.
 
+The physical **surface must be named `"domain"`** — see the note in `AJ.geo`.
+`Geom.jl:163` strips exactly that string from the face labeling, and it has to,
+because Gridap propagates a surface group to every edge *interior* to the surface
+(4700 of the 4900 edges of the 40×60 mesh). Under any other name every interior
+edge is flagged as a boundary edge, which overruns `poin_in_bdy_edge` and — worse
+— makes `_dsgs_boundary_pairs!` zero the DynSGS residual over the whole mesh,
+turning the shock capturing off silently. Measured on both shipped meshes: with
+`"domain"` the flagged set is exactly the 200 / 500 geometric boundary edges.
+
 Both `.msh` files ship with the case, so nothing needs gmsh installed. They were
 written directly, with the same entity/node/element layout gmsh produces for
 `AJ.geo`, by
@@ -530,3 +539,49 @@ And the two arithmetic checks from §3 and §6: the head should be near
 The equation set itself is documented in
 [`../orszagTangBormanis2024/EQUATIONS.md`](../orszagTangBormanis2024/EQUATIONS.md) —
 it is the same nine-field ideal GLM-MHD system, at a different `γ`.
+
+---
+
+## 9. What has been verified, and what has not
+
+The case has **never been integrated in time** — no Jexpresso run exists. What
+was checked, with Julia 1.11.9:
+
+| checked | how |
+|---|---|
+| all six `user_*.jl` / `initialize.jl` parse | `Meta.parseall`, walked for `:error`/`:incomplete` |
+| all six **execute**, in `run.jl`'s include order | stub stand-ins for the Jexpresso types; every hook called |
+| `user_inputs()` returns the intended 49 keys | `Δt`, `tend`, `nop`, the DynSGS block, the mesh path, the 21 output times incl. `1e-3, 1.5e-3, 2e-3` |
+| the deck's `:dsgs_gamma` equals `γ_mhd` | asserted against the constant in `user_flux.jl` |
+| `p = 1` in **both** states; beam sound speed exactly `1`; Mach exactly `800` | from the conserved 9-tuples through `pressure_mhd` |
+| `c_f` = 37.9285 / 11.9940, `c_h` = 811.9940, `β_a` = 1e-2, beam `ρE` = 448102.5, `p/(γ-1)/ρE` = 5.579e-6 | `aj_wave_speed`, `initialize` |
+| `initialize` fills all 9 slots + the pressure slot, sets `qe`, sets `c_h` | on a stub mesh |
+| a wrong-domain mesh **warns** | `@test_logs (:warn,)` |
+| `user_flux!` values | `G = [1120, 0, 895901, 3.58403e8, 0, 0, 0, 0, 11483.3]`, checked term by term |
+| the flux stays **finite** on a `p < 0` state | half the beam energy, `p_floor_mhd` active |
+| `user_source!` damps only `ψ`, at `c_h/c_r = 4511` | |
+| `user_primitives!` is the conserved form, spare slots untouched | |
+| `user_uout!` writes all 14 fields; `log10p` saturates at `-300` on a bad node | |
+| `user_bc_dirichlet!` prescribes all 9 slots for `\|x\| ≤ 0.05` **including the lip nodes at the mesh's own ±0.05±4e-17**, and nothing at all on `top`/`left`/`right` or on the bottom outside the nozzle | against the `4325789.0` sentinel |
+| both `PERT()` paths error rather than silently misbehave | |
+| lip smoothing keeps `p = 1` at `φ = 1` **and** `φ = ½` | the reason it blends primitives, not conserved variables |
+| both meshes load through **GridapGmsh**, the real reader | quad cells, extents, `\|Ω\| = 1.5`, tags `bottom/right/top/left/domain` |
+| the boundary edge set is **exactly** the geometric boundary (200 / 500 edges) | Jexpresso's own `get_boundary_faces` + label loop, replayed verbatim |
+| `41` / `101` nodes on `y = 0`, of which `5` / `11` in the nozzle | `= 2·(0.05·nx) + 1`, so the lip is a node |
+| `gmsh -2 AJ.geo` reproduces the shipped `AJ_40x60.msh` | same cells, nodes, tags; node coordinates agree to `2.9e-12` |
+
+**Not** checked, and the honest gaps:
+
+1. **No time integration.** The full dependency set (≈100 packages, MUMPS,
+   Pardiso, ONNXRunTime, P4est) was not installable here, so nothing exercised
+   `rhs!`, the DSGS kernel, the RK stages or the VTK writer on this case.
+2. **This is the first 2D MHD case to pair `:dsgs_conserved => true` with
+   genuinely conserved primitives.** `brioWu1d` does it in 1D;
+   `fluxEmergenceSon2025DSGS` does it in 2D but with `:dsgs_ref_weight` and the
+   split energy on top. (`MHD/smoothVortex` sets `:dsgs_conserved => true` while
+   its `user_primitives!` returns the *physical* set `ρ, u, v, T, w, B, ψ` — so
+   it is not a precedent for this pairing.) The code path was traced
+   branch by branch and every flag it depends on is guarded, but it has not
+   been run.
+3. **Whether DynSGS alone carries the Mach 800 beam is the open question** —
+   that is §6, and it is what the run is for.

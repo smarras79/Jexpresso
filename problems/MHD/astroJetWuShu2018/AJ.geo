@@ -28,6 +28,23 @@
 // [0, 0.5] x [0, 1.5] on 200 x 600 cells, i.e. Δ = 2.5e-3, and 100 x 150
 // elements at nop = 4 give the same nodal spacing over the full width.
 //
+// THE SURFACE MUST BE NAMED "domain". This is not cosmetic and it is not
+// optional. kernel/mesh/Geom.jl:163 (get_boundary_faces) does
+//
+//     Base.filter!(x -> !(x in ["domain", "hanging"]), labels.tag_to_name)
+//
+// which MUTATES the labeling, and it runs (mesh.jl:2177) before the loop that
+// tags boundary edges from the remaining physical names (mesh.jl:3001). Gridap
+// propagates a surface physical group to every edge INTERIOR to that surface --
+// measured: 4700 of the 4900 edges of the 40x60 mesh -- so if the group is
+// called anything else, that filter misses it and every interior edge is
+// flagged as a boundary edge. Two things then go wrong: the loop writes past
+// mesh.poin_in_bdy_edge, which is allocated with nedges_bdy rows; and
+// _dsgs_boundary_pairs! (rhs.jl) zeroes the DynSGS residual at every node it
+// considers a boundary node, i.e. over the whole mesh, which silently turns the
+// shock capturing off. Verified on this mesh: with the name "domain" the
+// flagged set is exactly the 200 (resp. 500) geometric boundary edges.
+//
 // Boundary tags (the strings that reach user_bc_dirichlet!):
 //   "bottom"  y = 0      the nozzle for |x| <= 0.05, outflow outside it
 //   "right"   x = +0.5   outflow
