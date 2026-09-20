@@ -190,7 +190,7 @@ dimension — it is a property of the decomposition, not of the grid:
 | `pod_<f>_coefficients.png` | `a_i(t)`, and the `(a₁,a₂)` phase portrait |
 | `pod_<f>_spectrum.csv`     | `λ_i`, `E_i`, `ΣE_i`, and the truncation error (3) |
 | `pod_<f>_coefficients.csv` | `a_i(t_k)` |
-| `pod_<f>.jld2`             | the basis itself — what a ROM reads back (§8) |
+| `pod_<f>.jld2`             | the basis itself — what a ROM reads back (§8). **Under MPI: one file per rank**, `pod_<f>_rank0000.jld2`, … (§6) |
 
 The modes themselves are written in the form their geometry asks for:
 
@@ -297,9 +297,23 @@ q̂ = pod_reconstruct(P, a)    # reduced coordinates → full state
 Under MPI two further details keep the result independent of the rank count: a
 node shared by several ranks is counted by its **owner** only (`mesh.gip2owner`,
 exactly as `sphere_diagnostics` does for the conserved integrals), and the sign
-convention is resolved globally. PNG output is skipped under MPI — the raster
-needs the whole domain on one rank — and the `.vtu` (or, in 1-D, the CSV)
-carries the same modes.
+convention is resolved globally — the sign of a mode is fixed by its
+largest-magnitude entry, which sits on one rank, and a rank deciding locally
+would hand back a mode negated with respect to its neighbours, i.e. a
+discontinuity straight through the partition seam.
+
+### What is global, and what is a piece
+
+| quantity | under MPI |
+|:--|:--|
+| the spectrum `λ`, `E`, `Σλ`, the coefficients `a_i(t)` | **global** — they come out of a correlation matrix summed across ranks, and every rank holds the same numbers. Rank 0 writes the two CSVs once. |
+| the modes `Φ` and the mean `q̄` | **partitioned** — each rank holds the slice living on its own nodes, and nothing is gathered. That is what makes the decomposition scale. |
+| `pod_<f>.pvtu` | **complete**: every rank writes its piece and ParaView reassembles them, so the picture of the modes is whole. |
+| `pod_<f>_rank0000.jld2`, … | **one per rank**, each with its slice plus `ip2gip` (the global node numbers, for stitching) and `rank`/`nparts`. `pod_load` says which piece it got, so a partition can never be mistaken for the whole. A parallel ROM restarted on the same partition reads its own file and stitches nothing. |
+| PNGs | **not written**: the raster needs the whole domain on one rank. The `.pvtu` (or, in 1-D, the CSV) carries the same modes. |
+
+The per-step cost is nothing but the snapshot copy; the one collective sequence
+is at the end of the run, and it moves `K²` numbers per field, not `N`.
 
 ---
 

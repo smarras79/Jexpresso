@@ -361,10 +361,14 @@ with_mpi() do distribute
         #-------------------------------------------------------------------------
         MPI.Barrier(comm)
         if rank == 0
+            # The spectrum and the coefficients are global, so rank 0 writes
+            # them once; the modes are partitioned, so the basis is one file per
+            # rank (see pod_write_data).
+            basis = nparts > 1 ? "pod_vorticity_rank0000.jld2" : "pod_vorticity.jld2"
             files = String["pod_vorticity" * (nparts > 1 ? ".pvtu" : ".vtu"),
                            "pod_vorticity_spectrum.csv",
                            "pod_vorticity_coefficients.csv",
-                           "pod_vorticity.jld2"]
+                           basis]
             nparts == 1 && append!(files, ["pod_vorticity_modes.png",
                                            "pod_vorticity_spectrum.png",
                                            "pod_vorticity_coefficients.png",
@@ -380,7 +384,7 @@ with_mpi() do distribute
             @test length(readlines(joinpath(outdir, "pod_vorticity_coefficients.csv"))) == 2 + P.nsnap
 
             #--- the round trip a ROM depends on
-            Q = pod_load(joinpath(outdir, "pod_vorticity.jld2"))
+            Q = pod_load(joinpath(outdir, basis); verbose = false)
             @test Q isa St_pod
             @test Q.name == P.name && Q.comps == P.comps
             @test Q.λ == P.λ && Q.a == P.a && Q.total == P.total

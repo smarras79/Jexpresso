@@ -733,10 +733,8 @@ function pod_finalize!(rec::St_pod_recorder, mesh, M, OUTPUT_DIR::String;
         verbose && _pod_report(P)
 
         rec.set.lvtk  && pod_write_modes(P, rec, mesh, OUTPUT_DIR; verbose = verbose)
-        rec.set.ldata && rank0 && pod_write_data(P, OUTPUT_DIR; verbose = verbose)
-        if rec.set.lsnapshots && rank0
-            pod_write_snapshots(P, X, w, OUTPUT_DIR; verbose = verbose)
-        end
+        rec.set.ldata && pod_write_data(P, OUTPUT_DIR, mesh; verbose = verbose)
+        rec.set.lsnapshots && pod_write_snapshots(P, X, w, OUTPUT_DIR, mesh; verbose = verbose)
 
         if rec.set.lpng
             if lserial
@@ -945,7 +943,7 @@ end
 
 
 """
-    pod_write_data(P, OUTPUT_DIR; verbose = true)
+    pod_write_data(P, OUTPUT_DIR, mesh; verbose = true)
 
 The numbers behind the pictures: the spectrum and the truncation error as CSV,
 the temporal coefficients as CSV, and the basis itself as JLD2.
@@ -955,12 +953,45 @@ arrays rather than as a serialised `St_pod` on purpose — the same reason
 sem_setup.jl gives for its metric cache: a stored struct stops loading the day
 its definition changes, and a basis is worth more than the struct that held it.
 Read it back with [`pod_load`](@ref).
+
+WHAT IS GLOBAL AND WHAT IS NOT, which is the whole of the difference between a
+serial and a parallel run here. The SPECTRUM and the TEMPORAL COEFFICIENTS are
+global: they come out of a correlation matrix that was summed across ranks, and
+every rank holds the same numbers, so rank 0 writes the two CSVs once. The MODES
+are not: each rank holds the slice of every mode that lives on its own nodes,
+and nothing is gathered (that is what makes the decomposition scale). So under
+MPI the basis is written as ONE FILE PER RANK,
+
+    pod_<field>_rank0000.jld2 , pod_<field>_rank0001.jld2 , …
+
+each carrying its own slice plus the global node numbering (`ip2gip`) needed to
+stitch them, and `rank`/`nparts` so that a piece can never be mistaken for the
+whole — `pod_load` says which it got. A parallel ROM restarted on the same
+partition reads its own file and needs no stitching at all.
 """
-function pod_write_data(P::St_pod, OUTPUT_DIR::String; verbose::Bool = true)
+function pod_write_data(P::St_pod, OUTPUT_DIR::String, mesh = nothing; verbose::Bool = true)
+
+    comm   = get_mpi_comm()
+    nparts = MPI.Comm_size(comm)
+    rank   = MPI.Comm_rank(comm)
 
     isdir(OUTPUT_DIR) || mkpath(OUTPUT_DIR)
     r = length(P.λ)
     e = pod_truncation_error(P)
+
+    #--- the basis: one file per rank, and every rank writes its own
+    gip = (mesh !== nothing && hasproperty(mesh, :ip2gip) && length(mesh.ip2gip) >= P.npoin) ?
+          collect(Int64, @view mesh.ip2gip[1:P.npoin]) : Int64[]
+    fbas = nparts > 1 ?
+           joinpath(OUTPUT_DIR, @sprintf("pod_%s_rank%04d.jld2", P.name, rank)) :
+           joinpath(OUTPUT_DIR, string("pod_", P.name, ".jld2"))
+    pod_save(P, fbas; rank = rank, nparts = nparts, gip = gip)
+
+    #--- the CSVs: global, so once
+    if rank != 0
+        verbose && @printf(" #     %s\n", abspath(fbas))
+        return nothing
+    end
 
     fspec = joinpath(OUTPUT_DIR, string("pod_", P.name, "_spectrum.csv"))
     open(fspec, "w") do io
@@ -987,10 +1018,10 @@ function pod_write_data(P::St_pod, OUTPUT_DIR::String; verbose::Bool = true)
         end
     end
 
-    pod_save(P, joinpath(OUTPUT_DIR, string("pod_", P.name, ".jld2")))
-
-    verbose && @printf(" #     %s{_spectrum.csv,_coefficients.csv,.jld2}\n",
-                       joinpath(abspath(OUTPUT_DIR), string("pod_", P.name)))
+    verbose && @printf(" #     %s{_spectrum.csv,_coefficients.csv}  +  %s\n",
+                       joinpath(abspath(OUTPUT_DIR), string("pod_", P.name)),
+                       nparts > 1 ? @sprintf("pod_%s_rank*.jld2 (%d)", P.name, nparts) :
+                                    string("pod_", P.name, ".jld2"))
     return nothing
 end
 
@@ -1006,12 +1037,24 @@ which is the expensive half of building a reduced-order model:
     d = JLD2.load("output/pod_<field>_snapshots.jld2")
     P = pod_from_snapshots(d["snapshots"], d["weights"], d["t"]; nmodes = 8)
 """
-function pod_write_snapshots(P::St_pod, X, w, OUTPUT_DIR::String; verbose::Bool = true)
-    fout = joinpath(OUTPUT_DIR, string("pod_", P.name, "_snapshots.jld2"))
+function pod_write_snapshots(P::St_pod, X, w, OUTPUT_DIR::String, mesh = nothing;
+                             verbose::Bool = true)
+    comm   = get_mpi_comm()
+    nparts = MPI.Comm_size(comm)
+    rank   = MPI.Comm_rank(comm)
+
+    # Snapshots are nodal fields, so they are partitioned exactly as the modes
+    # are: one file per rank, carrying its own nodes and the global numbering.
+    fout = nparts > 1 ?
+           joinpath(OUTPUT_DIR, @sprintf("pod_%s_snapshots_rank%04d.jld2", P.name, rank)) :
+           joinpath(OUTPUT_DIR, string("pod_", P.name, "_snapshots.jld2"))
+    gip = (mesh !== nothing && hasproperty(mesh, :ip2gip) && length(mesh.ip2gip) >= P.npoin) ?
+          collect(Int64, @view mesh.ip2gip[1:P.npoin]) : Int64[]
     JLD2.jldsave(fout;
                  name = P.name, comps = P.comps,
                  snapshots = Array{Float64}(X), weights = Vector{Float64}(w),
-                 t = P.t, format = "jexpresso-pod-snapshots-1")
+                 t = P.t, rank = rank, nparts = nparts, ip2gip = gip,
+                 format = "jexpresso-pod-snapshots-1")
     verbose && @printf(" #     %s   %d snapshots, raw\n", abspath(fout), P.nsnap)
     return nothing
 end
@@ -1024,7 +1067,8 @@ Round-trip a basis through JLD2. `pod_load` is the entry point of a reduced-orde
 model built on a decomposition computed by an earlier run: it returns the same
 `St_pod` the solver had, so `pod_project`/`pod_reconstruct` work unchanged.
 """
-function pod_save(P::St_pod, path::String)
+function pod_save(P::St_pod, path::String;
+                  rank::Int = 0, nparts::Int = 1, gip = Int64[])
     dir = dirname(path)
     isempty(dir) || isdir(dir) || mkpath(dir)
     JLD2.jldsave(path;
@@ -1033,16 +1077,32 @@ function pod_save(P::St_pod, path::String)
                  t = P.t, mean = P.q̄, modes = P.Φ, lambda = P.λ, coefficients = P.a,
                  energy = P.energy, cumenergy = P.cumenergy, total = P.total,
                  lmean = P.lmean, method = String(P.method), orthoerr = P.orthoerr,
+                 rank = rank, nparts = nparts, ip2gip = collect(Int64, gip),
                  format = "jexpresso-pod-1")
     return path
 end
 
-function pod_load(path::String)
+"""
+    pod_load(path; verbose = true) -> St_pod
+
+Read a basis back. When the file is one PIECE of a partitioned run it says so
+rather than handing back a partial basis that looks whole — `nparts` and `rank`
+are stored with it, and `ip2gip` is there to stitch the pieces by global node
+number if a serial reconstruction is what is wanted.
+"""
+function pod_load(path::String; verbose::Bool = true)
     isfile(path) || error(string(" # ERROR pod.jl: no POD basis at ", path, "."))
     d = JLD2.load(path)
     get(d, "format", "") == "jexpresso-pod-1" ||
         error(string(" # ERROR pod.jl: ", path, " is not a Jexpresso POD basis (format = ",
                      get(d, "format", "absent"), ")."))
+    np = Int(get(d, "nparts", 1))
+    if np > 1 && verbose
+        @info string("POD basis \"", d["name"], "\" is piece ", Int(get(d, "rank", 0)) + 1,
+                     " of ", np, ": the spectrum and the coefficients are global, the ",
+                     "modes cover this rank's ", d["npoin"], " nodes only. \"ip2gip\" in ",
+                     "the file gives their global numbers.")
+    end
     return St_pod{Float64}(d["name"], d["comps"], d["npoin"], d["ncomp"], d["nsnap"],
                            d["t"], d["mean"], d["modes"], d["lambda"], d["coefficients"],
                            d["energy"], d["cumenergy"], d["total"], d["lmean"],
