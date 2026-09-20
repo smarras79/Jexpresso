@@ -71,7 +71,18 @@ function user_inputs()
     # Read into a local rather than inline because two keys below have to agree
     # about it -- switching it on also switches the linearisation to :PS,
     # without which the implicit operator would carry no diffusion at all.
-    _vdiff = parse(Bool, get(ENV, "DBG_VDIFF", "true"))
+    # EXPLICIT vertical diffusion, i.e. the scalar Schur stage solve (Np unknowns
+    # in P = beta*Theta, back-substitute the other four) instead of GMRES on all
+    # five fields. Measured on this deck, 1024 ranks, dt 0.2, developed turbulence:
+    #     5-field + implicit vdiff   18.8 Krylov/stage   4.9 s/step
+    #     Schur   + explicit vdiff   10.7 Krylov/stage   1.5 s/step
+    # and the two solutions agree to 1e-4 (4x4x60, same seed, t = 300). Implicit
+    # vdiff was only ever needed because the wall node carried the undamped
+    # (C_s*Delta)^2 = 537 m^2/s, whose explicit limit at h_z = 6.9 m is 0.04 s;
+    # with the :lwall_damping floor the wall-node nu_t is 1-3 m^2/s and the
+    # explicit limit is 1.8 s in turbulence (CFL 0.11 at dt 0.2). DBG_VDIFF=1
+    # restores the five-field path; it is also what to use above dt ~ 1 s.
+    _vdiff = parse(Bool, get(ENV, "DBG_VDIFF", "false"))
 
     #---------------------------------------------------------------------------
     # TWO INDEPENDENT SWITCHES: the first picks the INTEGRATOR, the second only
