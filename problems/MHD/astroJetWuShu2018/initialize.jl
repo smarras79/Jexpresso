@@ -98,6 +98,53 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     c_h_mhd[] = MPI.Allreduce(ch_local, MPI.MAX, comm)
 
     #
+    # NOZZLE-LIP SMOOTHING, resolved here because it is the mesh that decides it.
+    # aj_smooth[] < 0 is the AUTO sentinel (user_flux.jl): the transition
+    # half-width becomes ONE element, so the transition 2s spans TWO elements.
+    #
+    # WHY ONE ELEMENT AND NOT LESS OR MORE. The quantity to control is how much
+    # the datum varies WITHIN a single element, because that is what the element's
+    # P4 polynomial has to represent; it is not the node-to-node step, which barely
+    # responds to s at all (measured: the worst node-to-node ρE step falls only
+    # from 2.1x to 2.3x better than the top hat's going from s = h/2 to s = h,
+    # because ρE ~ ρ(φ)·(φu)² is intrinsically steep near φ = 1 whatever the
+    # width). At s = h/2 the whole smootherstep lives inside ONE element; at
+    # s = h each element sees half of it. Beyond s ≈ 2h the full-strength core
+    # |x| <= x0 - s vanishes and the beam is no longer the paper's beam.
+    #
+    # The injected flux width is preserved either way: ∫φ dx = x0 to 5 digits for
+    # every s, because the profile is antisymmetric about the lip. So this changes
+    # the beam's shoulder shape, not how much mass or momentum enters.
+    #
+    # THE ELEMENT SIZE MUST COME FROM mesh.Δelem_s, not from mesh.nelem. Δelem_s
+    # is MPI.Allreduce(minimum(Δelem), MIN) — the globally smallest element, the
+    # same quantity the CFL report prints — so every rank resolves the SAME width.
+    # mesh.nelem is RANK-LOCAL: on the 64-rank run that produced the diagnosis it
+    # is ~37 instead of 2400, which would have given each rank a different
+    # smoothing width, all of them ~8x too wide, and a boundary datum that
+    # disagrees across partition seams. (Δelem[ie] is the shortest corner-to-corner
+    # distance in an element, so on the uniform square meshes here Δelem_s is
+    # exactly h: 0.025 and 0.01. On a graded mesh it is the smallest, which makes
+    # the transition narrower rather than wider — the safe direction.)
+    #
+    # Why it is on by default: the paper's top hat is a 4400x jump between a
+    # CLAMPED node and a FREE one inside a single spectral element, and it was
+    # measured to put the first realizability repair of the run at (-0.075, 0) on
+    # RHS call 3 — on the boundary, one element outside the lip, before anything
+    # could propagate there. See the header of user_bc.jl.
+    #
+    if aj_smooth[] < 0.0
+        h_elem = Float64(mesh.Δelem_s)
+        if !(isfinite(h_elem) && h_elem > 0.0)
+            error(string(" problems/MHD/astroJetWuShu2018: mesh.Δelem_s = ", mesh.Δelem_s,
+                         " — cannot resolve the automatic nozzle-lip smoothing width. ",
+                         "Set JEXPRESSO_AJ_SMOOTH explicitly (half an element is the intent), ",
+                         "or 0 for the paper's exact top hat."))
+        end
+        aj_smooth[] = h_elem
+    end
+
+    #
     # The initial and boundary conditions above are written for the paper's
     # domain [-0.5,0.5] x [0,1.5]: the nozzle half-width 0.05 and the outflow
     # boundaries are absolute positions, not fractions, so a mesh spanning
@@ -137,7 +184,13 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         @info @sprintf(" beam ρE = %.8g, of which p/(γ-1) = %.4g (%.3e of the total): a relative error of that order in ρE gives p < 0",
                        ρE_j, AJ_P_JET/(γ_mhd - 1.0), (AJ_P_JET/(γ_mhd - 1.0))/ρE_j)
         if aj_smooth[] > 0.0
-            @info @sprintf(" nozzle lip SMOOTHED over w = %.4g (JEXPRESSO_AJ_SMOOTH); the paper's condition is the sharp top hat w = 0", aj_smooth[])
+            @info @sprintf(" nozzle lip SMOOTHED: transition half-width s = %.4g, Dirichlet patch |x| <= %.4g (the paper's nozzle is %.4g). JEXPRESSO_AJ_SMOOTH=0 restores the exact top hat, which does not run.",
+                           aj_smooth[], AJ_XNOZZLE + aj_smooth[], AJ_XNOZZLE)
+        else
+            @warn string(" problems/MHD/astroJetWuShu2018: JEXPRESSO_AJ_SMOOTH=0 — the paper's EXACT top-hat inflow. ",
+                         "This is the faithful condition and it has been measured NOT to run: the clamped/free ",
+                         "interface at the lip is a 4400x jump inside one spectral element, and it put the first ",
+                         "realizability repair at (-0.075, 0) on RHS call 3. Expect an abort. See README.md §10-11.")
         end
         @info " Initialize fields for 2D ideal GLM-MHD (magnetized astrophysical jet) ........... DONE"
     end

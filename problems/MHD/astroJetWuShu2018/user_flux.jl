@@ -195,8 +195,9 @@ end
 # the Refs):
 #   JEXPRESSO_AJ_BA2    B_a SQUARED, as the paper quotes it (default 200)
 #   JEXPRESSO_AJ_UJET   injection speed = beam Mach number (default 800)
-#   JEXPRESSO_AJ_SMOOTH nozzle-lip smoothing length w (default 0 = the
-#                       paper's sharp top hat; see user_bc.jl)
+#   JEXPRESSO_AJ_SMOOTH nozzle-lip transition HALF-WIDTH s (default: half an
+#                       element, resolved from the mesh; 0 = the paper's exact
+#                       top hat, which does not run — see user_bc.jl)
 #---------------------------------------------------------------------------------
 if !@isdefined(AJ_XNOZZLE)
     const AJ_XNOZZLE = 0.05             # nozzle half-width
@@ -208,7 +209,11 @@ end
 if !@isdefined(aj_Ba)
     const aj_Ba     = Ref{Float64}(sqrt(something(tryparse(Float64, get(ENV, "JEXPRESSO_AJ_BA2",   "")), 200.0)))
     const aj_ujet   = Ref{Float64}(     something(tryparse(Float64, get(ENV, "JEXPRESSO_AJ_UJET",  "")), 800.0))
-    const aj_smooth = Ref{Float64}(     something(tryparse(Float64, get(ENV, "JEXPRESSO_AJ_SMOOTH", "")), 0.0))
+    # -1 is the AUTO sentinel: initialize.jl resolves it to ONE element from the
+    # mesh it was actually given, so the transition spans two elements. An explicit
+    # JEXPRESSO_AJ_SMOOTH=0 means the paper's exact top hat, which is measured not
+    # to run — see user_bc.jl and README.md §10-11.
+    const aj_smooth = Ref{Float64}(     something(tryparse(Float64, get(ENV, "JEXPRESSO_AJ_SMOOTH", "")), -1.0))
 end
 
 # The two states of the problem, as CONSERVED 9-tuples in this case's slot

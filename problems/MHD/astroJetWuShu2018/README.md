@@ -438,12 +438,19 @@ integrated a shorter time or with a smaller step.
 
 | rung | `u_jet` | `B_a²` | `p/(γ-1)` ÷ `ρE` | `c_h` | `v_head` | `TEND` | `DT` |
 |---|---|---|---|---|---|---|---|
+| **B** | 800 | **2** | `5.6e-6` | `802` | `608` | `2e-3` | `5e-7` |
 | 1 | 20  | 200   | `6.5e-3` | `37.9` | `15.2` | `8e-2` | `1e-5` |
 | 2 | 80  | 200   | `5.5e-4` | `92.0` | `60.8` | `2e-2` | `4e-6` |
 | 3 | 250 | 200   | `5.7e-5` | `262`  | `190`  | `6.3e-3` | `1.5e-6` |
 | **4** | **800** | **200** | **`5.6e-6`** | **`812`** | **`608`** | **`2e-3`** | **`5e-7`** |
 | 5 | 800 | 2000  | `5.6e-6` | `838` | `608` | `2e-3` | `5e-7` |
 | 6 | 800 | 20000 | `5.5e-6` | `920` | `608` | `2e-3` | `5e-7` |
+
+**Rung B is the one to run first if the failures are in the ambient gas**, and §11
+explains why: it keeps the Mach 800 beam exactly but takes `β_a` from `1e-2` to
+`1`, which lifts the *ambient* thermal margin from 2.4 % to 71 %. If the run
+survives rung B but not rung 4, the difficulty is the **field**, not the beam; if
+it dies on rung B too, it is the beam and the shock.
 
 Rung 4 is the deck's default (the paper's case (i)); rungs 5 and 6 are the
 paper's cases (ii) and (iii). So, for example, rung 2 is
@@ -656,13 +663,15 @@ per-equation maximum normalized residual, `ν_max`, **the cap**, and whether the
 argmax node sits on an element edge. That last pair settles which knob matters,
 and it is not the obvious one:
 
-> `ν = min(C_max·Δ·λ, C_R·Δ²·R)`. If the debug line shows `ν_max` **below** the
-> cap, then `C_R` is binding and **raising `C_max` does literally nothing** — it
-> only lifts a ceiling the sensor is not reaching. Rough estimate at the beam
-> front on the default mesh puts the normalized ratio near `3e4` against a
-> cap-reaching `8e4`, i.e. `ν` at ~40 % of its cap, so `JEXPRESSO_AJ_CR=4` is
-> likely the first dissipation lever and `JEXPRESSO_AJ_CMAX` the second. The debug
-> line replaces that estimate with a measurement — use it.
+> `ν = min(C_max·Δ·λ, C_R·Δ²·R)`. Whichever term is smaller is the only one
+> that matters: if `ν_max` is **below** the cap then `C_R` is binding and raising
+> `C_max` does nothing, and if `ν_max` **is** the cap then the reverse holds.
+>
+> **Measured, run 2: `ν_max = 2.1013 = C_max·Δ·λ` exactly at `λ = 840.5`
+> (`C_max = 0.5`, `Δ = h/5 = 5e-3`). DynSGS is pinned at its cap.** So `C_R` is
+> *not* the lever — raising it changes nothing — and `C_max` is. (An earlier
+> estimate here said the opposite; the measurement overturned it. This is what the
+> debug line is for.)
 
 Also worth knowing while debugging: `JEXPRESSO_AJ_NORMS=element` makes the DynSGS
 normalization element-local, which removes the two Allreduce and therefore removes
@@ -670,3 +679,120 @@ the mechanism that turned one bad node into a global `NaN`. It changes the model
 (the residual is then measured against each element's own spread, not the
 domain's), so it is a **diagnostic**, not a fix — but it keeps a failure local and
 visible, which is what a first bisection needs.
+
+---
+
+## 11. Run 2: the diagnosis, and the thermal margin nobody warns you about
+
+With the GLM-MHD repair and the front-loaded frames, run 2 got **7× further**:
+`t = 3.735e-4`, step 747 of 4000 (18.7 % of the target), and fast. It still
+aborted the same way — 100 % non-finite on every rank — but this time the report
+said where and why.
+
+```
+repaired 103193 node-visits in 1350 RHS calls
+  [ρ-floor 191, momentum-scaled 30078, energy-RAISED 72924]
+  injected: mass 0.173, energy 2.2158e6
+  GLOBAL min ρ -0.005275, GLOBAL min p -6.5139e7
+GLOBAL first repair at (x, y) = (-0.075, 0.0)  on RHS call 3, rank 24
+```
+
+Three findings, all quantitative.
+
+### (a) The nozzle lip. Confirmed, and it is the clamped/free interface
+
+`(x, y) = (-0.075, 0)` is on the **bottom boundary, one element outside the lip**,
+and `RHS call 3` is inside the **first time step**. The fastest signal travels
+`c_h·Δt = 4e-4` in a step — 1.6 % of an element — so **nothing propagated there.
+The boundary condition put it there**, exactly as a 446 m/s shear held open by a
+Dirichlet condition put `rampCaoEtAl2021_M7`'s first repair one LGL interval below
+its top boundary.
+
+The mechanism is not the lip coordinate, it is that a top-hat datum imposed
+*strongly* pins nodes at `ρE = 4.48e5` next to a **free** node the scheme wants to
+leave at `102.5` — a 4400× jump inside one spectral element, `∂(ρE)/∂x ≈ 1.8e7`.
+The Gibbs response is the size of the jump, so a node whose `ρE` is 102.5 takes an
+excursion of `O(1e5)`.
+
+**Fixed** (§3): the blend is now a compactly supported smootherstep centred on the
+lip, with the Dirichlet patch widened to `|x| ≤ x0 + s` so that `φ` reaches
+**exactly** zero at the outermost clamped node — which therefore holds precisely
+the ambient state, the same thing its free neighbour holds. There is no
+clamped/free jump left. The previous `tanh` version could not do this: it only
+decays, and 0.02 % of the beam's `ρE` is 100, which is the *entire* ambient `ρE`.
+`s` defaults to one element, from `mesh.Δelem_s` — the globally MPI-reduced
+smallest element, **not** `mesh.nelem`, which is rank-local and on this 64-rank run
+would have given every rank a different width, all ~8× too wide.
+
+Note the patch edge now sits at `|x| = 0.075` — the very node that failed.
+
+### (b) DynSGS is saturated. `C_R` is not the lever; `C_max` is
+
+`max ν = 2.1013`, and `C_max·Δ·λ = 0.5 × 5e-3 × 840.5 = 2.1013`. **Exactly the
+cap.** So the residual sensor is asking for more dissipation than its own
+first-order-upwind bound allows, and raising `C_R` changes nothing at all. §10's
+earlier estimate said the opposite and was wrong.
+
+The viscous CFL was `0.045–0.059`, so there is real headroom: it scales linearly
+with `C_max`, so **`C_max` can go to ≈ 3.5 before the viscous limit binds at the
+current `Δt`**. `JEXPRESSO_AJ_CMAX=1.0` (twice first-order-upwind) is the honest
+first step, and it is the point at which this stops being the parameter-free
+method — say so in any write-up.
+
+### (c) The ambient medium has a 2.4 % thermal margin — this is the real difficulty
+
+This is the one that is not in §6, and it changes how to think about the case.
+In the **undisturbed ambient gas**:
+
+```
+ρE = p/(γ-1) + ½|B|² = 2.5 + 100 = 102.5     at β_a = 1e-2
+                       ↑        ↑
+                    2.44%    97.56%
+```
+
+So an oscillation of **2.4 % in `ρE`, in gas that is doing nothing**, gives `p < 0`.
+Not 5.6 ppm as in the beam — but the beam is 0.1 wide and the ambient is the whole
+domain. And it gets worse with the paper's other two configurations:
+
+| | `β_a` | ambient `ρE` | thermal margin |
+|---|---|---|---|
+| (i)   | `1e-2` | 102.5   | **2.44 %** |
+| (ii)  | `1e-3` | 1002.5  | 0.249 % |
+| (iii) | `1e-4` | 10002.5 | 0.025 % |
+
+That is why **branch 2b dominated 72924 to 30078**: 2b fires when
+`ρE − ½|B|² − ½ψ² ≤ e_min`, i.e. when the total energy dips below the magnetic
+energy — and in this ambient that is only 2.4 % down. The injected energy
+averages `2.2158e6 / 72924 = 30.4` per engagement, so `ρE` had collapsed to about
+`70` from `102.5`: a −32 % excursion, not a ripple.
+
+**And 2.2158e6 is 14412× the whole domain's initial total energy** (`102.5 × 1.5 =
+153.75`). The repair was not repairing, it was writing the solution. Per its own
+README that means the answer is meaningless — which is exactly what the audit
+trail is for, and why it is worth having even on a run that fails.
+
+`min p = -6.5e7` says the same thing from the other side: `p = 0.4(ρE − ke − 100)`,
+so `ke` exceeded `ρE` by `1.6e8`, i.e. `|v| ≈ 4.8e4` — sixty times the beam speed.
+There is a genuine instability, not only ambient ripple.
+
+### What to run next, in order
+
+1. **Just rerun.** The lip fix addresses the *first* cause, at step 1, and nothing
+   downstream can be judged until it is gone.
+   ```
+   JEXPRESSO_DSGS_DEBUG=1 julia --project=. src/Jexpresso.jl MHD astroJetWuShu2018
+   ```
+   Then read the first-repair coordinate again. If it has moved off the boundary
+   and into the jet head or the beam/cocoon interface, (a) is fixed and the
+   remaining problem is shock resolution.
+2. **`JEXPRESSO_AJ_BA2=2`** (rung B of §6). Mach 800 beam, `β_a = 1`, ambient
+   margin 71 %. This separates "the field is the problem" from "the beam is the
+   problem" in one run, and finding (c) says it is the single most informative
+   knob on this case.
+3. **`JEXPRESSO_AJ_CMAX=1.0`**, now that the cap is known to be binding.
+4. **`JEXPRESSO_AJ_MESH=100x150`**, which reduces the absolute overshoot at a
+   given feature even though it does not change the dissipation-to-jump ratio.
+
+What **not** to do: raise `C_R` (the cap, not the sensor, is binding), or lower
+`Δt` alone (CFL 0.09 and viscous 0.06 were both comfortable — `Δt` was not the
+constraint).
