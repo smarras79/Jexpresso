@@ -844,9 +844,29 @@ function pod_write_modes(P::St_pod, rec::St_pod_recorder, mesh, OUTPUT_DIR::Stri
         _pod_write_vtk(mesh, rec.nsd, fname, OUTPUT_DIR, fields)
     end
 
-    verbose && @printf(" #     %s%s   mean + %d modes\n",
-                       joinpath(abspath(OUTPUT_DIR), fname),
-                       MPI.Comm_size(get_mpi_comm()) > 1 ? ".pvtu" : ".vtu", length(P.λ))
+    #
+    # Under MPI, SAY WHICH FILE. pvtk_grid writes the complete dataset as
+    # <name>.pvtu and the per-rank pieces as <name>/<name>_1.vtu, <name>_2.vtu,
+    # … — and that piece numbering is indistinguishable, to a viewer, from the
+    # sphere_0001, sphere_0002, … numbering of a TIME SERIES. VisIt duly offers
+    # the pieces as "cycles", so opening the directory shows one rank's slab per
+    # "step": a sixth of the sphere, labelled step 6. The data is not wrong and
+    # the modes are not time-dependent; the wrong file is open. This is the one
+    # place to warn about it.
+    #
+    nparts = MPI.Comm_size(get_mpi_comm())
+    if verbose
+        @printf(" #     %s%s   mean + %d modes\n",
+                joinpath(abspath(OUTPUT_DIR), fname), nparts > 1 ? ".pvtu" : ".vtu",
+                length(P.λ))
+        if nparts > 1
+            @printf(" #       ^ OPEN THIS ONE. The %s/ directory beside it holds the %d pieces\n",
+                    fname, nparts)
+            println(" #         of it, one per rank. They are PARTITIONS, NOT TIME STEPS — a viewer")
+            println(" #         that reads the trailing number as a cycle will show one rank's")
+            println(" #         slab per \"step\". The modes carry no time: they are a basis.")
+        end
+    end
     return nothing
 end
 

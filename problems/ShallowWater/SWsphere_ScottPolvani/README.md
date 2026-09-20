@@ -253,7 +253,7 @@ mode, and writes:
 | `pod_vorticity_spectrum.png` | the energy spectrum and its cumulative sum: **how many degrees of freedom the equilibrated flow actually has** |
 | `pod_vorticity_coefficients.png` | `aᵢ(t)` in rotations, and the `(a₁,a₂)` phase portrait — a circle there means the leading pair is one *travelling* structure, a Rossby wave riding a jet, rather than two standing ones |
 | `pod_vorticity_mean.png` | the temporal mean, i.e. the jet structure of Fig. 13 |
-| `pod_vorticity.vtu` | mean + modes as point data on the sphere |
+| `pod_vorticity.vtu` | mean + modes as point data on the sphere. **Under MPI this is `pod_vorticity.pvtu`** — open that one. The `pod_vorticity/` directory beside it holds `pod_vorticity_1.vtu … _N.vtu`, one piece per rank; those are partitions, not time steps, and VisIt will otherwise offer them as "cycles" and show you a sixth of the sphere labelled step 6 |
 | `pod_vorticity_spectrum.csv`, `pod_vorticity_coefficients.csv` | the numbers behind the figures |
 | `pod_vorticity.jld2` | the basis itself, for a reduced-order model |
 

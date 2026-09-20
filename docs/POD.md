@@ -308,7 +308,8 @@ discontinuity straight through the partition seam.
 |:--|:--|
 | the spectrum `λ`, `E`, `Σλ`, the coefficients `a_i(t)` | **global** — they come out of a correlation matrix summed across ranks, and every rank holds the same numbers. Rank 0 writes the two CSVs once. |
 | the modes `Φ` and the mean `q̄` | **partitioned** — each rank holds the slice living on its own nodes, and nothing is gathered. That is what makes the decomposition scale. |
-| `pod_<f>.pvtu` | **complete**: every rank writes its piece and ParaView reassembles them, so the picture of the modes is whole. |
+| `pod_<f>.pvtu` | **complete**: every rank writes its piece and the viewer reassembles them, so the picture of the modes is whole. **This is the file to open.** |
+| `pod_<f>/pod_<f>_1.vtu`, … | the pieces of it, one per rank. They are PARTITIONS, NOT TIME STEPS — the numbering is WriteVTK's, and it is indistinguishable from the `sphere_0001, sphere_0002, …` of a time series, so a viewer that reads the trailing number as a cycle (VisIt does) will offer them as "cycles" and show one rank's slab per step. The modes carry no time: they are a basis. |
 | `pod_<f>_rank0000.jld2`, … | **one per rank**, each with its slice plus `ip2gip` (the global node numbers, for stitching) and `rank`/`nparts`. `pod_load` says which piece it got, so a partition can never be mistaken for the whole. A parallel ROM restarted on the same partition reads its own file and stitches nothing. |
 | PNGs | **not written**: the raster needs the whole domain on one rank. The `.pvtu` (or, in 1-D, the CSV) carries the same modes. |
 
