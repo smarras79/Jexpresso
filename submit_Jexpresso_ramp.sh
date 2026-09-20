@@ -5,9 +5,9 @@
 #SBATCH --partition=general
 #SBATCH --qos=standard
 #SBATCH --account=smarras
-#SBATCH --nodes=2
-#SBATCH --ntasks-per-node=128
-#SBATCH --time=71:59:00
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=32
+#SBATCH --time=10:59:00
 #SBATCH --mem-per-cpu=4000M
 
 module load Julia/1.11.9
@@ -32,6 +32,6 @@ echo "--- Setup complete, launching ---"
 export JULIA_PKG_PRECOMPILE_AUTO=0  # ranks must never attempt to precompile
 
 #mpirun -np 64 julia --project=. src/Jexpresso.jl CompEuler ffs_step_M7_round
-#mpirun -np 32 julia --project=. src/Jexpresso.jl CompEuler rampCaoEtAl2021_M7
-mpirun -np 32 julia --project=. src/Jexpresso.jl CompEuler rampFreeStreamTest
+mpirun -np 32 julia --project=. src/Jexpresso.jl CompEuler rampCaoEtAl2021_M7
+#mpirun -np 32 julia --project=. src/Jexpresso.jl CompEuler rampFreeStreamTest
 #mpirun -np 256 julia --project=. src/Jexpresso.jl CompEuler shock_circle_M7
