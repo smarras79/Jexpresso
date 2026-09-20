@@ -90,6 +90,7 @@ struct St_pod_settings
     tlabel      ::String
     cmap        ::Symbol
     maxmem      ::Float64
+    formats     ::Vector{String}
 end
 
 
@@ -178,7 +179,11 @@ function pod_settings(inputs, tinit::Real, tend::Real)
                            Float64(get(inputs, :pod_time_scale, 1.0)),
                            String(get(inputs, :pod_time_label, "t")),
                            Symbol(get(inputs, :pod_cmap, :balance)),
-                           Float64(get(inputs, :pod_max_memory_gb, 4.0)))
+                           Float64(get(inputs, :pod_max_memory_gb, 4.0)),
+                           String[lowercase(String(f)) for f in
+                                  (let ff = get(inputs, :pod_figure_formats, ["png", "pdf"])
+                                       ff isa AbstractVector ? ff : [ff]
+                                   end)])
 end
 
 
@@ -687,6 +692,11 @@ function pod_finalize!(rec::St_pod_recorder, mesh, M, OUTPUT_DIR::String;
     red! = _pod_reducer(comm)
     sgn  = _pod_signreduce(comm)
 
+    # The measure of the domain, Σ M over OWNED nodes across all ranks: 4πR² on
+    # a shell, the volume elsewhere. It is what turns an eigenvalue back into
+    # the units of the field — see _pod_report.
+    area = MPI.Comm_size(comm) > 1 ? MPI.Allreduce(sum(w), MPI.SUM, comm) : sum(w)
+
     if verbose
         println(" # ")
         println(" # POD ..........................................................")
@@ -712,7 +722,8 @@ function pod_finalize!(rec::St_pod_recorder, mesh, M, OUTPUT_DIR::String;
         # a constant. Say so and move on to the next field rather than killing a
         # run that was otherwise fine.
         #
-        if _pod_is_constant(X, comm)
+        dev, mag = _pod_variation(X, comm)
+        if dev <= 1.0e-14*max(mag, 1.0e-300)
             verbose && @warn string("POD: ", tg.name, " does not vary over the snapshots ",
                                     "(every one equals the mean to round-off), so there is ",
                                     "nothing to decompose. Skipping it.")
@@ -730,20 +741,18 @@ function pod_finalize!(rec::St_pod_recorder, mesh, M, OUTPUT_DIR::String;
                                signreduce = sgn)
         push!(out, P)
 
-        verbose && _pod_report(P)
+        verbose && _pod_report(P, area, dev, mag)
 
         rec.set.lvtk  && pod_write_modes(P, rec, mesh, OUTPUT_DIR; verbose = verbose)
         rec.set.ldata && pod_write_data(P, OUTPUT_DIR, mesh; verbose = verbose)
         rec.set.lsnapshots && pod_write_snapshots(P, X, w, OUTPUT_DIR, mesh; verbose = verbose)
 
-        if rec.set.lpng
-            if lserial
-                pod_plot(P, mesh, rec, OUTPUT_DIR; verbose = verbose)
-            elseif verbose
-                println(" #   PNG: skipped — the raster needs the whole domain on one rank.")
-                println(" #        The .vtu carries the same modes; re-run on one rank for the maps.")
-            end
-        end
+        #
+        # COLLECTIVE: the maps are rendered by every rank onto one canvas and
+        # reduced (see _pod_raster), so every rank has to enter. Only rank 0
+        # writes the files.
+        #
+        rec.set.lpng && pod_plot(P, mesh, rec, OUTPUT_DIR; verbose = verbose)
     end
 
     if verbose
@@ -756,11 +765,19 @@ end
 
 
 #
-# Does this field move at all? Measured as the largest deviation from the FIRST
-# snapshot, relative to the largest value the field takes — a scale-free test,
-# so that it means the same for a geopotential of 1e5 and a vorticity of 1e-5.
+# DID THIS FIELD MOVE AT ALL, and by how much? The largest deviation from the
+# FIRST snapshot, and the largest value the field takes, both reduced across
+# ranks. Their ratio is scale-free, so it means the same for a geopotential of
+# 1e5 and a vorticity of 1e-5.
 #
-function _pod_is_constant(X::AbstractArray{<:Real,3}, comm; rtol = 1.0e-14)
+# This is reported, not only tested, because "is the decomposition being fed the
+# same state over and over?" is the first question asked of any POD that comes
+# out looking like the initial condition — and it is a question the run can
+# answer about itself in one line. A ratio at round-off means the snapshots are
+# copies of one state; a ratio of order 1 means the field genuinely evolved over
+# the sampling window, whatever the modes then look like.
+#
+function _pod_variation(X::AbstractArray{<:Real,3}, comm)
     npoin, ncomp, nsnap = size(X)
     dev = 0.0
     mag = 0.0
@@ -773,24 +790,54 @@ function _pod_is_constant(X::AbstractArray{<:Real,3}, comm; rtol = 1.0e-14)
         dev = MPI.Allreduce(dev, MPI.MAX, comm)
         mag = MPI.Allreduce(mag, MPI.MAX, comm)
     end
-    return dev <= rtol*max(mag, 1.0e-300)
+    return dev, mag
 end
+
+_pod_is_constant(X, comm; rtol = 1.0e-14) =
+    ((dev, mag) = _pod_variation(X, comm); dev <= rtol*max(mag, 1.0e-300))
 
 
 #
 # The spectrum, as a table. This is the thing to read first: how many modes the
 # flow actually has, and therefore how big a ROM has to be.
 #
-function _pod_report(P::St_pod)
+# THE LAST COLUMN IS THE ONE TO SANITY-CHECK AGAINST PHYSICS, and it is here
+# because the modes themselves cannot be. Φ is normalised so that ∫Φ² dΩ = 1, so
+# EVERY mode has magnitude ~1/√(area) whatever the flow is doing — on a planet
+# of Jupiter's radius that is ~1e-8, for a vorticity of 1e-4 and for one of
+# 1e-20 alike. Reading an amplitude off a plot of a mode is therefore
+# meaningless. The amplitude lives in the coefficients, and
+#
+#     rms_i = √(λ_i / area)
+#
+# is mode i's contribution to the root-mean-square of the FIELD, in the field's
+# own units. Compare it with the max|ζ| (or max|h|, …) the diagnostics print: a
+# leading mode whose rms is fifteen orders below that is a decomposition of
+# round-off, and no amount of structure in its picture makes it otherwise.
+#
+function _pod_report(P::St_pod, area::Float64, dev::Float64, mag::Float64)
     r = length(P.λ)
     println(" # ")
     @printf(" #   %s: %d modes from %d snapshots (%s), Σλ = %.6e\n",
             P.name, r, P.nsnap, P.method, P.total)
     @printf(" #     orthonormality  max|ΦᵀMΦ - I| = %.2e\n", P.orthoerr)
-    println(" #     mode        λ            E [%]      ΣE [%]")
+    #
+    # Did the field move? max|q_k - q_1| over the snapshot set, against the size
+    # of the field itself. At round-off the snapshots are copies of one state —
+    # which is what a POD that looks like the initial condition means — and the
+    # modes below describe the differences between copies.
+    #
+    @printf(" #     snapshots       max|q_k - q_1| = %.3e ,  max|q| = %.3e ,  ratio = %.2e%s\n",
+            dev, mag, dev/max(mag, 1.0e-300),
+            dev <= 1.0e-10*max(mag, 1.0e-300) ?
+            "   <-- THE FIELD BARELY MOVED: the modes below are of the differences" : "")
+    @printf(" #     field rms       √(Σλ/area) = %.6e  (area = %.6e)\n",
+            sqrt(max(P.total, 0.0)/max(area, 1.0e-300)), area)
+    println(" #     mode        λ            E [%]      ΣE [%]      rms_i = √(λ_i/area)")
     for i = 1:min(r, 10)
-        @printf(" #     %4d   %12.5e   %8.3f   %8.3f\n",
-                i, P.λ[i], 100*P.energy[i], 100*P.cumenergy[i])
+        @printf(" #     %4d   %12.5e   %8.3f   %8.3f   %14.6e\n",
+                i, P.λ[i], 100*P.energy[i], 100*P.cumenergy[i],
+                sqrt(max(P.λ[i], 0.0)/max(area, 1.0e-300)))
     end
     r > 10 && @printf(" #     …  (%d more)\n", r - 10)
     for frac in (0.90, 0.99)

@@ -369,16 +369,20 @@ with_mpi() do distribute
                            "pod_vorticity_spectrum.csv",
                            "pod_vorticity_coefficients.csv",
                            basis]
-            nparts == 1 && append!(files, ["pod_vorticity_modes.png",
-                                           "pod_vorticity_spectrum.png",
-                                           "pod_vorticity_coefficients.png",
-                                           "pod_vorticity_mean.png",
-                                           "pod_vorticity_mode_001.png"])
+            # The maps are produced at ANY rank count: each rank renders its
+            # own elements onto the shared canvas and the canvas is reduced
+            # (_pod_raster), so nothing of the mesh is gathered and the figure
+            # is of the whole sphere. Both formats, png to look at and pdf for
+            # a paper.
+            for f in ("pod_vorticity_modes", "pod_vorticity_spectrum",
+                      "pod_vorticity_coefficients", "pod_vorticity_mean",
+                      "pod_vorticity_mode_001")
+                append!(files, [f * ".png", f * ".pdf"])
+            end
             for f in files
                 @test isfile(joinpath(outdir, f))
                 @test filesize(joinpath(outdir, f)) > 0
             end
-            nparts > 1 && @test !isfile(joinpath(outdir, "pod_vorticity_modes.png"))
             # one data row per mode, plus the three comment lines and the header
             @test length(readlines(joinpath(outdir, "pod_vorticity_spectrum.csv"))) == 4 + length(P.λ)
             @test length(readlines(joinpath(outdir, "pod_vorticity_coefficients.csv"))) == 2 + P.nsnap

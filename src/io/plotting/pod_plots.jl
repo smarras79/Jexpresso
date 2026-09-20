@@ -46,6 +46,25 @@ export pod_plot, plot_pod_modes, plot_pod_spectrum, plot_pod_coefficients
 export plot_sphere_field, plot_mesh_field
 
 
+#
+# Write one figure, in every format the deck asked for, from RANK 0 ONLY.
+#
+# `base` carries no extension: the formats supply it. The default pair is
+# png + pdf, because the two are wanted for different things — the png to look
+# at, the pdf because a filled contour plot that will go into a paper should be
+# VECTOR, so that it survives being scaled and does not carry the raster's pixel
+# grid into the typesetting. (The raster here is the contour data, not the
+# figure: GR draws those contours as paths, so the pdf is true vector output.)
+#
+function _pod_savefig(plt, base::String, rec::St_pod_recorder)
+    MPI.Comm_rank(get_mpi_comm()) == 0 || return nothing
+    for fmt in rec.set.formats
+        _savefig_silent(plt, string(base, ".", fmt))
+    end
+    return nothing
+end
+
+
 """
     pod_plot(P, mesh, rec, OUTPUT_DIR; verbose = true)
 
@@ -55,32 +74,45 @@ subtracted. Serial only: the raster needs the whole domain on one rank.
 function pod_plot(P::St_pod, mesh, rec::St_pod_recorder, OUTPUT_DIR::String;
                   verbose::Bool = true)
 
-    isdir(OUTPUT_DIR) || mkpath(OUTPUT_DIR)
+    comm   = get_mpi_comm()
+    rank   = MPI.Comm_rank(comm)
+    nparts = MPI.Comm_size(comm)
+    rank == 0 && (isdir(OUTPUT_DIR) || mkpath(OUTPUT_DIR))
+    nparts > 1 && MPI.Barrier(comm)
     set = rec.set
 
-    plot_pod_spectrum(P, OUTPUT_DIR)
-    plot_pod_coefficients(P, OUTPUT_DIR;
-                          nmodes = set.nmodes_plot, tscale = set.tscale, tlabel = set.tlabel)
+    # The spectrum and the coefficients are global numbers already on every
+    # rank, and drawing them touches no mesh — rank 0 alone, no collectives.
+    if rank == 0
+        plot_pod_spectrum(P, rec, OUTPUT_DIR)
+        plot_pod_coefficients(P, rec, OUTPUT_DIR;
+                              nmodes = set.nmodes_plot, tscale = set.tscale, tlabel = set.tlabel)
+    end
 
-    lmodes = !(rec.nsd == 3 && !rec.lshell)
+    # The maps are collective (every rank renders its own elements onto the
+    # shared canvas), so every rank enters what follows.
+    lmodes = !(rec.nsd == 3 && !rec.lshell) && !(rec.nsd == 1 && nparts > 1)
     if !lmodes
-        verbose && println(" #     PNG: modes not drawn in 3-D — slice or isosurface the .vtu instead.")
+        if verbose
+            rec.nsd == 3 && println(" #     figures: modes not drawn in 3-D — slice or isosurface the .vtu instead.")
+            rec.nsd == 1 && println(" #     figures: the 1-D curves are serial only; the modes CSV has the same numbers.")
+        end
     else
         plot_pod_modes(P, mesh, rec, OUTPUT_DIR; nmodes = set.nmodes_plot)
         if P.lmean
             for c = 1:P.ncomp
                 cn = P.ncomp == 1 ? "" : string("_", P.comps[c])
                 plot_mesh_field(view(P.q̄, :, c), mesh, rec,
-                                joinpath(OUTPUT_DIR, string("pod_", P.name, "_mean", cn, ".png"));
+                                joinpath(OUTPUT_DIR, string("pod_", P.name, "_mean", cn));
                                 title = string("temporal mean — ", P.comps[c]),
                                 cmap = :viridis, lsymmetric = false)
             end
         end
     end
 
-    verbose && @printf(" #     %s{%s_spectrum,_coefficients}.png\n",
+    verbose && @printf(" #     %s{%s_spectrum,_coefficients}.{%s}\n",
                        joinpath(abspath(OUTPUT_DIR), string("pod_", P.name)),
-                       lmodes ? "_modes," : "")
+                       lmodes ? "_modes," : "", join(set.formats, ","))
     return nothing
 end
 
@@ -115,13 +147,18 @@ function plot_pod_modes(P::St_pod, mesh, rec::St_pod_recorder, OUTPUT_DIR::Strin
             # around 1e-16 of round-off.
             #
             m  = _robust_extreme(view(P.Φ, :, :, i))
+            # …and it has to be the SAME on every rank, or each would clamp its
+            # own piece differently and the reduced canvas would carry a colour
+            # discontinuity along the partition seams.
+            MPI.Comm_size(get_mpi_comm()) > 1 &&
+                (m = MPI.Allreduce(m, MPI.MAX, get_mpi_comm()))
             cl = (-m, m)
             push!(plts, _pod_panel(f, mesh, rec, ttl, grad; wide = false, clims = cl))
             if lindividual
                 single = _pod_panel(f, mesh, rec, string(P.name, cn, "  ", ttl), grad;
                                     wide = true, clims = cl)
-                _savefig_silent(single,
-                                joinpath(OUTPUT_DIR, @sprintf("pod_%s%s_mode_%03d.png", P.name, cn, i)))
+                _pod_savefig(single,
+                             joinpath(OUTPUT_DIR, @sprintf("pod_%s%s_mode_%03d", P.name, cn, i)), rec)
             end
         end
 
@@ -136,7 +173,7 @@ function plot_pod_modes(P::St_pod, mesh, rec::St_pod_recorder, OUTPUT_DIR::Strin
                            # default margins of a grid layout clip them
                            left_margin = 8Plots.mm, bottom_margin = 6Plots.mm,
                            top_margin = 3Plots.mm)
-        _savefig_silent(fig, joinpath(OUTPUT_DIR, string("pod_", P.name, cn, "_modes.png")))
+        _pod_savefig(fig, joinpath(OUTPUT_DIR, string("pod_", P.name, cn, "_modes")), rec)
     end
     return nothing
 end
@@ -149,7 +186,7 @@ Energy per mode (log axis) and cumulative energy, side by side — the two curve
 a truncation is chosen from. The 90 % and 99 % lines are drawn because those are
 the thresholds a ROM order is normally quoted against.
 """
-function plot_pod_spectrum(P::St_pod, OUTPUT_DIR::String)
+function plot_pod_spectrum(P::St_pod, rec::St_pod_recorder, OUTPUT_DIR::String)
 
     r = length(P.λ)
     r >= 1 || return nothing
@@ -194,7 +231,7 @@ function plot_pod_spectrum(P::St_pod, OUTPUT_DIR::String)
                                          @sprintf("  (%d snapshots)", P.nsnap)),
                      plot_titlefontsize = 15,
                      bottom_margin = 6Plots.mm, left_margin = 6Plots.mm)
-    _savefig_silent(fig, joinpath(OUTPUT_DIR, string("pod_", P.name, "_spectrum.png")))
+    _pod_savefig(fig, joinpath(OUTPUT_DIR, string("pod_", P.name, "_spectrum")), rec)
     return nothing
 end
 
@@ -205,7 +242,7 @@ end
 `a_i(t)` for the leading modes, and the `(a_1,a_2)` phase portrait. See the
 header on why the portrait is part of the standard set.
 """
-function plot_pod_coefficients(P::St_pod, OUTPUT_DIR::String;
+function plot_pod_coefficients(P::St_pod, rec::St_pod_recorder, OUTPUT_DIR::String;
                                nmodes::Int = 6, tscale::Float64 = 1.0,
                                tlabel::String = "t")
 
@@ -239,7 +276,7 @@ function plot_pod_coefficients(P::St_pod, OUTPUT_DIR::String;
                      plot_title = string("POD coefficients — ", P.name),
                      plot_titlefontsize = 15,
                      bottom_margin = 6Plots.mm, left_margin = 6Plots.mm)
-    _savefig_silent(fig, joinpath(OUTPUT_DIR, string("pod_", P.name, "_coefficients.png")))
+    _pod_savefig(fig, joinpath(OUTPUT_DIR, string("pod_", P.name, "_coefficients")), rec)
     return nothing
 end
 
@@ -262,7 +299,11 @@ function plot_mesh_field(f::AbstractVector, mesh, rec::St_pod_recorder, fout_nam
     grad = _pod_cgrad(cmap)
     plt  = _pod_panel(f, mesh, rec, title, grad;
                       wide = true, lsymmetric = lsymmetric, clims = clims)
-    _savefig_silent(plt, fout_name)
+    # `fout_name` may or may not carry an extension; strip a known one so the
+    # deck's formats decide.
+    base = any(endswith(fout_name, "." * f) for f in rec.set.formats) ?
+           fout_name[1:findlast('.', fout_name)-1] : fout_name
+    _pod_savefig(plt, base, rec)
     return nothing
 end
 
@@ -295,6 +336,97 @@ end
 #
 # One panel of one nodal field, in the geometry the recorder carries.
 #
+#
+# THE RASTER, UNDER MPI. A rank holds a piece of the domain, so a map of a piece
+# is not a map — which is why the figures used to be skipped in parallel. They
+# need not be: rasterizing is a linear scatter of nodal values onto a FIXED
+# canvas, so every rank can render its own elements into the global canvas,
+# leaving NaN where it has nothing to say, and the canvas can then be reduced.
+#
+# Nothing of the mesh is gathered — not the coordinates, not the connectivity,
+# not the modes. What crosses the network is two pixel arrays, 720×360 by
+# default, i.e. 4 MB per figure however large the grid is, once at the end of
+# the run.
+#
+# The reduction sums values and coverage counts and divides. A pixel is rendered
+# by exactly one rank except on a partition seam, where the triangles of both
+# sides can claim it — and there both wrote the same value, so the average is
+# that value.
+#
+function _pod_reduce_raster!(F::Matrix{Float64}, comm)
+    MPI.Comm_size(comm) > 1 || return F
+    n = length(F)
+    S = Vector{Float64}(undef, n)
+    C = Vector{Float64}(undef, n)
+    @inbounds for k = 1:n
+        v = F[k]
+        if isfinite(v); S[k] = v;   C[k] = 1.0
+        else;           S[k] = 0.0; C[k] = 0.0
+        end
+    end
+    MPI.Allreduce!(S, MPI.SUM, comm)
+    MPI.Allreduce!(C, MPI.SUM, comm)
+    @inbounds for k = 1:n
+        F[k] = C[k] > 0 ? S[k]/C[k] : NaN
+    end
+    return F
+end
+
+#
+# The polar caps of a REDUCED canvas, which cannot be filled from the nearest
+# node the way a serial raster is (no rank holds them all). Filled instead from
+# the nearest covered pixel of the same meridian — the caps are whole rows, so
+# that is the nearest covered point on the sphere, and it needs no mesh.
+#
+function _pod_fill_raster_caps!(F::Matrix{Float64})
+    nx, ny = size(F)
+    @inbounds for i = 1:nx
+        jf = findfirst(j -> isfinite(F[i,j]), 1:ny)
+        jf === nothing && continue
+        jl = findlast(j -> isfinite(F[i,j]), 1:ny)
+        for j = 1:jf-1;  F[i,j] = F[i,jf]; end
+        for j = jl+1:ny; F[i,j] = F[i,jl]; end
+    end
+    return F
+end
+
+#
+# The raster of one nodal field, complete on every rank.
+#
+function _pod_raster(f, mesh, rec::St_pod_recorder)
+    set    = rec.set
+    comm   = get_mpi_comm()
+    nparts = MPI.Comm_size(comm)
+
+    if rec.lshell
+        # lfill_gaps only in serial: on a piece of the sphere the nearest-node
+        # fill would paint the whole canvas from this rank's nodes.
+        λg, φg, F = equirectangular_raster(f, mesh; nlon = set.nlon, nlat = set.nlat,
+                                           lfill_gaps = (nparts == 1))
+        if nparts > 1
+            _pod_reduce_raster!(F, comm)
+            _pod_fill_raster_caps!(F)
+        end
+        return λg, φg, F
+    end
+
+    # A flat 2-D mesh: the canvas has to be the GLOBAL bounding box, or each
+    # rank would render onto a different one and the reduction would be
+    # meaningless.
+    npoin = Int(mesh.npoin)
+    xlo, xhi = minimum(@view mesh.x[1:npoin]), maximum(@view mesh.x[1:npoin])
+    ylo, yhi = minimum(@view mesh.y[1:npoin]), maximum(@view mesh.y[1:npoin])
+    if nparts > 1
+        xlo = MPI.Allreduce(xlo, MPI.MIN, comm); xhi = MPI.Allreduce(xhi, MPI.MAX, comm)
+        ylo = MPI.Allreduce(ylo, MPI.MIN, comm); yhi = MPI.Allreduce(yhi, MPI.MAX, comm)
+    end
+    xg, yg, F = plane_raster(f, mesh; nx = set.nx, ny = set.ny,
+                             xlims = (xlo, xhi), ylims = (ylo, yhi))
+    nparts > 1 && _pod_reduce_raster!(F, comm)
+    return xg, yg, F
+end
+
+
 function _pod_panel(f, mesh, rec::St_pod_recorder, ttl::String, grad;
                     wide::Bool = false, lsymmetric::Bool = true, clims = nothing)
 
@@ -315,7 +447,7 @@ function _pod_panel(f, mesh, rec::St_pod_recorder, ttl::String, grad;
                           show = false)
 
     elseif rec.lshell
-        λg, φg, F = equirectangular_raster(f, mesh; nlon = set.nlon, nlat = set.nlat)
+        λg, φg, F = _pod_raster(f, mesh, rec)
         return _pod_contour_panel(λg, φg, F, ttl, grad, _pod_clims(F, lsymmetric, clims);
                                   wide = wide,
                                   xlab = "longitude [deg]", ylab = "latitude [deg]",
@@ -323,7 +455,7 @@ function _pod_panel(f, mesh, rec::St_pod_recorder, ttl::String, grad;
                                   xticks = -180:60:180, yticks = -90:30:90)
 
     else
-        xg, yg, F = plane_raster(f, mesh; nx = set.nx, ny = set.ny)
+        xg, yg, F = _pod_raster(f, mesh, rec)
         return _pod_contour_panel(xg, yg, F, ttl, grad, _pod_clims(F, lsymmetric, clims);
                                   wide = wide, xlab = "x", ylab = "y",
                                   xlims = (xg[1], xg[end]), ylims = (yg[1], yg[end]),

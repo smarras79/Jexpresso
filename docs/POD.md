@@ -124,6 +124,7 @@ default that already works.
 | `:pod_time_scale`         | `1.0`                   | multiplies `t` on the coefficient plots |
 | `:pod_time_label`         | `"t"`                   | its axis label |
 | `:pod_cmap`               | `:balance`              | diverging colour map for the modes |
+| `:pod_figure_formats`     | `["png", "pdf"]`        | every figure is written in each; `pdf` (or `svg`) is vector, for a paper |
 | `:pod_max_memory_gb`      | `4.0`                   | refuse a snapshot set larger than this |
 
 The default snapshot count is `:ndiagnostics_outputs`, or — for the many cases
@@ -201,8 +202,15 @@ The modes themselves are written in the form their geometry asks for:
 | **3-D** | `pod_<f>.vtu`, the hexahedra of the mesh. **No PNG**: a 3-D mode needs a slice or an isosurface, which is what ParaView is for, and any projection this code picked would be the wrong one |
 | **manifold** | `pod_<f>.vtu` on the shell itself, so the modes land on the geometry they were computed on, and `pod_<f>_modes.png`, an equirectangular map |
 
-plus `pod_<f>_mode_001.png`, … one per mode, and `pod_<f>_mean.png`, for
-everything but 3-D.
+plus `pod_<f>_mode_001`, … one per mode, and `pod_<f>_mean`, for everything but
+3-D.
+
+Every figure is written once per entry of `:pod_figure_formats`, `["png","pdf"]`
+by default. **The pdf is true vector output** — GR draws the filled contours as
+paths, so there is no raster image inside it and the figure survives being
+scaled into a paper. The contour resolution (`:pod_nlon`/`:pod_nlat`, or
+`:pod_nx`/`:pod_ny`) is what sets the file size: a 720×360 map at 31 levels is a
+few hundred kB of paths.
 
 ### Reading the figures
 
@@ -219,6 +227,20 @@ the `(a₁,a₂)` phase portrait are the signature; a pair of standing structure
 traces a line instead. For the Galewsky jet the radius of that circle grows
 exponentially and then saturates — that is the barotropic instability, read off
 two numbers per snapshot. §7 makes the same statement exactly.
+
+**A MODE'S MAGNITUDE MEANS NOTHING ON ITS OWN.** `Φ` is normalised so that
+`∫Φ² dΩ = 1`, so every mode has magnitude ~`1/√(area)` whatever the flow is
+doing — on a sphere of Jupiter's radius that is ~1e-8, for a vorticity of 1e-4
+and for one of 1e-20 alike. The amplitude lives in the coefficients. The run
+therefore prints, per mode, `rms_i = √(λ_i/area)`: mode `i`'s contribution to
+the root-mean-square of the FIELD, in the field's own units, which is the number
+to compare against the `max|ζ|` the diagnostics report. A leading mode whose
+`rms` is orders below that is a decomposition of round-off, however structured
+its picture looks.
+
+The report also prints `max|q_k − q_1|` over the snapshot set against `max|q|`.
+A ratio at round-off means the snapshots are copies of one state — the first
+thing to check whenever a POD comes out looking like the initial condition.
 
 **The colour scale of a mode is symmetric about zero**, clipped at the 99.8th
 percentile of `|φ_i|`, and shared by all components of a vector mode. A mode has
@@ -311,7 +333,7 @@ discontinuity straight through the partition seam.
 | `pod_<f>.pvtu` | **complete**: every rank writes its piece and the viewer reassembles them, so the picture of the modes is whole. **This is the file to open.** |
 | `pod_<f>/pod_<f>_1.vtu`, … | the pieces of it, one per rank. They are PARTITIONS, NOT TIME STEPS — the numbering is WriteVTK's, and it is indistinguishable from the `sphere_0001, sphere_0002, …` of a time series, so a viewer that reads the trailing number as a cycle (VisIt does) will offer them as "cycles" and show one rank's slab per step. The modes carry no time: they are a basis. |
 | `pod_<f>_rank0000.jld2`, … | **one per rank**, each with its slice plus `ip2gip` (the global node numbers, for stitching) and `rank`/`nparts`. `pod_load` says which piece it got, so a partition can never be mistaken for the whole. A parallel ROM restarted on the same partition reads its own file and stitches nothing. |
-| PNGs | **not written**: the raster needs the whole domain on one rank. The `.pvtu` (or, in 1-D, the CSV) carries the same modes. |
+| the figures | **written, at any rank count**. A raster is a scatter of nodal values onto a FIXED canvas, so each rank renders its own elements into the global canvas and the canvas is reduced (sum of values, sum of coverage, divide). Nothing of the mesh is gathered; what crosses the network is two pixel arrays — 4 MB per figure at the default 720×360, once at the end of the run, however large the grid. The polar caps, which a partitioned run cannot fill from the nearest node, are filled from the nearest covered pixel of the same meridian. |
 
 The per-step cost is nothing but the snapshot copy; the one collective sequence
 is at the end of the run, and it moves `K²` numbers per field, not `N`.
