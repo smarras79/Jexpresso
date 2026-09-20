@@ -103,6 +103,28 @@
 # boundary per side at the default s — and it is much smaller than the error of
 # imposing a datum the discretization cannot represent.
 #
+# THE SECOND STEP-1 DISCONTINUITY IS IN TIME (JEXPRESSO_AJ_TRAMP, on by default).
+# Fixing the lip moved the global first repair from (-0.075, 0) to (-0.05, 0.025)
+# — off the boundary, one element up — but it stayed on RHS call 3, so it was
+# still not something that propagated. The reason: at t = 0 the WHOLE domain
+# including y = 0 is the ambient medium, and at the first RHS evaluation the
+# boundary condition clamps the nozzle to the beam. That is the same 4400x jump in
+# rhoE, now across the first LGL GAP IN Y (4.3e-3 on the default mesh), and the
+# blend above cannot touch it because it only shapes the datum in x.
+#
+# So the beam is RAMPED ON, with the same smootherstep in time:
+#
+#     phi = phi_x(x) * phi_t(t),     phi_t(t) = smootherstep(t/tau), 1 for t >= tau
+#
+# One multiplicative factor through the same primitive blend, which buys the
+# property that matters: at t = 0 the imposed state is EXACTLY the ambient state,
+# i.e. exactly the initial condition, so the boundary datum and the interior agree
+# to the last bit instead of fighting each other. (That is the rampCaoEtAl2021_M7
+# lesson stated positively.) p stays 1 throughout, because both endpoints have
+# p = 1. tau defaults to 2h/u_jet = 125 steps on either shipped mesh.
+#
+# JEXPRESSO_AJ_TRAMP=0 restores the paper's impulsive start.
+#
 # s DEFAULTS TO ONE ELEMENT, resolved from the mesh by initialize.jl, so the
 # transition 2s spans two elements and each element's P4 polynomial sees half of
 # the smootherstep rather than all of it.
@@ -131,7 +153,20 @@ end
 # phi has already fallen to exactly 0 by the outermost clamped node.
 @inline aj_patch_halfwidth() = AJ_XNOZZLE + max(aj_smooth[], 0.0)
 
-# The blend factor. s <= 0 is the paper's top hat: 1 on the closed nozzle, 0 off it.
+# The C2 ramp used in both x and t: 0 at ξ = 0, 1 at ξ = 1, zero first AND second
+# derivative at both ends, so neither join is a kink a spectral element can ring on.
+@inline aj_smootherstep(ξ) = ξ*ξ*ξ*(10.0 + ξ*(-15.0 + 6.0*ξ))
+
+# Turn-on factor. τ <= 0 is the paper's impulsive start.
+@inline function aj_time_ramp(t)
+    τ = aj_tramp[]
+    τ <= 0.0 && return 1.0
+    t <= 0.0 && return 0.0
+    t >= τ  && return 1.0
+    return aj_smootherstep(t/τ)
+end
+
+# The blend factor in x. s <= 0 is the paper's top hat: 1 on the closed nozzle, 0 off it.
 @inline function aj_nozzle_phi(x)
     s  = aj_smooth[]
     ax = abs(x)
@@ -139,8 +174,7 @@ end
     ax <= AJ_XNOZZLE - s && return 1.0
     ax >= AJ_XNOZZLE + s && return 0.0
     ξ = (ax - (AJ_XNOZZLE - s))/(2.0*s)              # 0 .. 1 across the transition
-    # 1 - smootherstep(ξ): C2 at both ends, exactly 1 and exactly 0 there
-    return 1.0 - ξ*ξ*ξ*(10.0 + ξ*(-15.0 + 6.0*ξ))
+    return 1.0 - aj_smootherstep(ξ)                  # exactly 1 and exactly 0 at the ends
 end
 
 # The conserved state injected at a nozzle node of abscissa x.
@@ -149,9 +183,9 @@ end
 # Blending the conserved variables instead puts a spurious pressure spike on the
 # lip: at φ = ½ the kinetic energy of the mean momentum is not the mean of the
 # kinetic energies, and p would come out ≈ 8000 instead of 1.
-@inline function aj_nozzle_state(x)
+@inline function aj_nozzle_state(x, t)
     Ba = aj_Ba[]
-    φ  = aj_nozzle_phi(x)
+    φ  = aj_nozzle_phi(x)*aj_time_ramp(t)
 
     ρ = φ*AJ_RHO_JET + (1.0 - φ)*AJ_RHO_AMB
     v = φ*aj_ujet[]                                  # the ambient is at rest
@@ -162,11 +196,14 @@ end
     return (ρ, 0.0, ρ*v, ρE, 0.0, 0.0, Ba, 0.0, 0.0)
 end
 
+# The fully-on profile, for tests and for reading the steady datum.
+@inline aj_nozzle_state(x) = aj_nozzle_state(x, Inf)
+
 function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String,
                             qbdy::AbstractArray, nx, ny, qe, ::TOTAL)
 
     if tag == "bottom" && abs(coords[1]) <= aj_patch_halfwidth() + AJ_LIP_TOL
-        s = aj_nozzle_state(coords[1])
+        s = aj_nozzle_state(coords[1], t)
         for ieq = 1:9
             qbdy[ieq] = s[ieq]
         end

@@ -13,6 +13,24 @@ before you run it.** Every published solution of this test uses an explicit
 positivity-preserving limiter. Jexpresso has none: DynSGS is the whole of the
 stabilization here, and that is the experiment.
 
+### Two deliberate departures from the paper — state these in any write-up
+
+Both are at the **inlet boundary datum** and nowhere else. Neither touches the
+equations, the constants, the domain or the shock physics, and each is one
+environment variable from the paper's exact condition. Both were forced by
+measurement, not chosen: with either one off, the run aborts inside the first
+handful of steps, and §10–§12 give the coordinates and the call numbers.
+
+| | default | the paper | restore it with |
+|---|---|---|---|
+| nozzle lip, in `x` | smootherstep over `2s = 2h`, centred on `\|x\| = 0.05` | a top hat | `JEXPRESSO_AJ_SMOOTH=0` |
+| beam turn-on, in `t` | smootherstep over `τ = 2h/u_jet` (125 steps) | impulsive | `JEXPRESSO_AJ_TRAMP=0` |
+
+The injected flux is preserved: `∫φ dx = x0` to five digits, and the beam is at
+full strength from `t = τ = 3.1 %` of `tend` onward. What they buy is that the
+boundary datum **agrees with the initial condition at `t = 0` and with its free
+neighbours at every later time**, instead of fighting both.
+
 ---
 
 ## 1. Provenance
@@ -796,3 +814,91 @@ There is a genuine instability, not only ambient ripple.
 What **not** to do: raise `C_R` (the cap, not the sensor, is binding), or lower
 `Δt` alone (CFL 0.09 and viscous 0.06 were both comfortable — `Δt` was not the
 constraint).
+
+---
+
+## 12. Run 3: the lip fix worked, and the next discontinuity is in *time*
+
+```
+repaired 103384 node-visits in 1800 RHS calls
+  [ρ-floor 0, momentum-scaled 21718, energy-RAISED 81666]
+  injected: mass 0.0, energy 903446.6
+  GLOBAL min ρ 0.11003742612074623, GLOBAL min p -4428.894
+GLOBAL first repair at (x, y) = (-0.04999999999999999, 0.025)  on RHS call 3, rank 24
+```
+
+### The lip fix worked
+
+| | run 2 | run 3 |
+|---|---|---|
+| `ρ`-floor engagements | 191 | **0** |
+| `GLOBAL min ρ` | **−0.005275** | **+0.110037** (ambient 0.14, so −21 %: healthy) |
+| `GLOBAL min p` | −6.514e7 | **−4428.9** (four orders better) |
+| injected energy | 2.2158e6 | 9.0345e5 |
+| first repair | `(−0.075, 0.000)` — **on** the boundary | `(−0.050, 0.025)` — **off** it |
+
+Density never left the realizable set at all, and the pressure excursion fell by
+four orders of magnitude. The clamped/free jump in `x` was real and it is gone.
+
+### The new first repair is the impulsive start
+
+`(x, y) = (−0.05, 0.025)`: the lip abscissa, **one element above the boundary**,
+and again on **RHS call 3** — the first time step. A signal travels `c_h·Δt = 4e-4`
+in a step, 0.09 of an LGL gap, so once again nothing propagated there.
+
+What is there on step 1 is this: **at `t = 0` the whole domain including `y = 0` is
+the ambient medium, and at the first RHS evaluation the boundary condition clamps
+the nozzle to the beam.** That is the same 4400× jump in `ρE`, now across the first
+LGL gap in `y` (`4.3e-3`), and the lip blend cannot touch it because it only shapes
+the datum in `x`. Fixing a discontinuity in space left the one in time.
+
+**Fixed:** the beam is ramped on with the same C² smootherstep,
+
+```
+φ = φ_x(x) · φ_t(t),    φ_t(t) = smootherstep(t/τ),  1 for t ≥ τ
+```
+
+one multiplicative factor through the same primitive blend. `τ = 2h/u_jet`, which
+is **125 time steps on either shipped mesh** because `Δt` scales with `h`, and
+which spreads the beam front over `u_jet·τ = 2h` — **exactly the two elements the
+lip profile spans in `x`**. The two are matched on purpose: the datum is no steeper
+in `y` than in `x`. Measured: the worst change in `ρE` per step at the nozzle
+centre drops from 448000 to 9830, 46× smaller, and at `t = 0` the imposed state is
+the ambient state *bit for bit* at every clamped node.
+
+Cost: the beam is at full strength from `t = τ = 3.1 %` of `tend`, so the jet head
+is delayed by about `τ/2`, 1.6 % of the domain height at the final time.
+
+### What has not changed, and is now the main suspect
+
+`(c)` from §11 is untouched, and it is doing most of the damage:
+
+* **2b still dominates 81666 to 21718** and still injects `9.03e5` — **5876× the
+  domain's initial total energy** (`153.75`). The answer is still meaningless.
+* `min ρ` is healthy and `min p` is `−4429`, so this is no longer a density
+  collapse. It is the energy budget: `ρE` dipping below `½|B|² = 100` in a medium
+  whose `ρE` is only `102.5`.
+* 287 repairs per step, 0.75 % of the nodes — spread through the domain, not
+  concentrated in the beam.
+
+Every one of those is the signature of the **2.4 % ambient thermal margin**, not of
+the inlet. So:
+
+### What to run next
+
+1. **Rerun.** The time ramp removes the last step-1 discontinuity. Read the first
+   repair coordinate again: if it moves off `RHS call 3` to a later call, both
+   inlet problems are gone and whatever remains is physics, not a boundary datum.
+   ```
+   JEXPRESSO_DSGS_DEBUG=1 julia --project=. src/Jexpresso.jl MHD astroJetWuShu2018
+   ```
+2. **`JEXPRESSO_AJ_BA2=2`** — rung B of §6, and now the top suspect rather than a
+   curiosity. Mach 800 beam unchanged, `β_a = 1`, ambient thermal margin 71 %
+   instead of 2.4 %. If this survives to `t = 2e-3`, the difficulty is the field's
+   energy budget and the paper's `β_a = 1e-2` needs an invariant-domain-preserving
+   scheme, not a repair. If it dies too, the beam and the shock are the problem and
+   the field is a bystander.
+3. **`JEXPRESSO_AJ_CMAX=1.0`** — still valid from §11(b): `ν` is pinned at the cap,
+   and the viscous CFL of 0.055 leaves room to ≈3.5.
+4. **`JEXPRESSO_AJ_TRAMP`** = `4h/u_jet` (twice the default) if the first repair is
+   still on an early call but has moved off `y = h`.

@@ -195,9 +195,11 @@ end
 # the Refs):
 #   JEXPRESSO_AJ_BA2    B_a SQUARED, as the paper quotes it (default 200)
 #   JEXPRESSO_AJ_UJET   injection speed = beam Mach number (default 800)
-#   JEXPRESSO_AJ_SMOOTH nozzle-lip transition HALF-WIDTH s (default: half an
+#   JEXPRESSO_AJ_SMOOTH nozzle-lip transition HALF-WIDTH s (default: one
 #                       element, resolved from the mesh; 0 = the paper's exact
 #                       top hat, which does not run — see user_bc.jl)
+#   JEXPRESSO_AJ_TRAMP  inflow turn-on time τ (default 2h/u_jet = 125 steps;
+#                       0 = the impulsive start, which does not run either)
 #---------------------------------------------------------------------------------
 if !@isdefined(AJ_XNOZZLE)
     const AJ_XNOZZLE = 0.05             # nozzle half-width
@@ -214,6 +216,11 @@ if !@isdefined(aj_Ba)
     # JEXPRESSO_AJ_SMOOTH=0 means the paper's exact top hat, which is measured not
     # to run — see user_bc.jl and README.md §10-11.
     const aj_smooth = Ref{Float64}(     something(tryparse(Float64, get(ENV, "JEXPRESSO_AJ_SMOOTH", "")), -1.0))
+    # Inflow turn-on time. -1 is the AUTO sentinel, resolved by initialize.jl to
+    # 2h/u_jet — the time the beam needs to cross two elements, which is 125 time
+    # steps on either shipped mesh because Δt scales with h. 0 is the impulsive
+    # start of the paper, which is measured not to run: see user_bc.jl.
+    const aj_tramp  = Ref{Float64}(     something(tryparse(Float64, get(ENV, "JEXPRESSO_AJ_TRAMP",  "")), -1.0))
 end
 
 # The two states of the problem, as CONSERVED 9-tuples in this case's slot

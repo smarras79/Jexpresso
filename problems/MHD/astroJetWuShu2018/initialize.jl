@@ -145,6 +145,32 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     end
 
     #
+    # INFLOW TURN-ON TIME, likewise resolved from the mesh.
+    #
+    # THE SECOND STEP-1 DISCONTINUITY, and it is in TIME, not space. At t = 0 the
+    # whole domain INCLUDING y = 0 is the ambient medium; at the first RHS
+    # evaluation the boundary condition clamps the nozzle nodes to the beam. That
+    # is a 4400x jump in ρE across the FIRST LGL GAP in y — 4.3e-3 on the default
+    # mesh — and the lip smoothing of user_bc.jl does nothing about it, because it
+    # only shapes the datum in x.
+    #
+    # Measured: with the lip fixed, the global first repair moved from (-0.075, 0)
+    # to (-0.05, 0.025) — off the boundary, one element UP — still on RHS call 3,
+    # i.e. still the first step, so still nothing that propagated there.
+    #
+    # τ = 2h/u_jet is the time the beam needs to cross two elements. A signal
+    # crosses one LGL gap in ~11 steps at this Δt, so a turn-on over 125 steps
+    # lets the front establish itself as a RESOLVED structure spread over ~2
+    # elements instead of appearing as a jump at the boundary. It is 125 steps on
+    # either shipped mesh, since Δt scales with h. The cost is that the beam
+    # reaches full strength at t = τ = 3.1 % of tend, so the jet head is delayed by
+    # about τ/2 — 1.6 % of the domain height at the final time.
+    #
+    if aj_tramp[] < 0.0
+        aj_tramp[] = 2.0*Float64(mesh.Δelem_s)/max(aj_ujet[], 1.0e-12)
+    end
+
+    #
     # The initial and boundary conditions above are written for the paper's
     # domain [-0.5,0.5] x [0,1.5]: the nozzle half-width 0.05 and the outflow
     # boundaries are absolute positions, not fractions, so a mesh spanning
@@ -183,6 +209,15 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         # so a relative error of this size in ρE zeroes the pressure.
         @info @sprintf(" beam ρE = %.8g, of which p/(γ-1) = %.4g (%.3e of the total): a relative error of that order in ρE gives p < 0",
                        ρE_j, AJ_P_JET/(γ_mhd - 1.0), (AJ_P_JET/(γ_mhd - 1.0))/ρE_j)
+        if aj_tramp[] > 0.0
+            @info @sprintf(" inflow RAMPED ON over τ = %.4g (= %.0f steps of Δt = %.3g, %.2f %% of tend); the boundary datum equals the initial condition exactly at t = 0. JEXPRESSO_AJ_TRAMP=0 restores the impulsive start, which does not run.",
+                           aj_tramp[], aj_tramp[]/inputs[:Δt], inputs[:Δt], 100*aj_tramp[]/inputs[:tend])
+        else
+            @warn string(" problems/MHD/astroJetWuShu2018: JEXPRESSO_AJ_TRAMP=0 — the beam is switched on IMPULSIVELY. ",
+                         "That is a 4400x jump in ρE across the first LGL gap in y at t = 0+, and it was measured to ",
+                         "put the first realizability repair at (-0.05, 0.025) on RHS call 3. Expect an abort. ",
+                         "See README.md §12.")
+        end
         if aj_smooth[] > 0.0
             @info @sprintf(" nozzle lip SMOOTHED: transition half-width s = %.4g, Dirichlet patch |x| <= %.4g (the paper's nozzle is %.4g). JEXPRESSO_AJ_SMOOTH=0 restores the exact top hat, which does not run.",
                            aj_smooth[], AJ_XNOZZLE + aj_smooth[], AJ_XNOZZLE)
