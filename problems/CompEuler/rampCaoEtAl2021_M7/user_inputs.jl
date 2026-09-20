@@ -203,7 +203,19 @@ function user_inputs()
         # 5.0e-9 died at step 3 and 1.0e-9 ran 304 steps before dying at the
         # strip, which is the cell this deck no longer has.
         :Δt                   => 1.0e-9,
-        :diagnostics_at_times => (0:2.5e-5:2.0e-3),
+        # OUTPUT CADENCE IS FRONT-LOADED, and that is deliberate.
+        # (0:2.5e-5:2.0e-3) put the first output after t = 0 at t = 2.5e-5,
+        # which at :Δt => 1e-9 is 25,000 steps -- and the positivity repair
+        # on this case engages at RHS call 437 (~step 88) and is already
+        # unbounded by step 1,000.  The whole failure therefore happened
+        # between the initial condition and the first frame: there was
+        # nothing to look at.  The first block below writes every 100 steps
+        # so the leading-edge/wall region can be watched degrade frame by
+        # frame; the tail is the original cadence for a run that survives.
+        # ~117 frames in total, so this costs disk, not wall clock.
+        :diagnostics_at_times => vcat(0.0:1.0e-7:2.0e-6,     # every 100 steps
+                                      3.0e-6:1.0e-6:2.0e-5,  # every 1,000 steps
+                                      2.5e-5:2.5e-5:2.0e-3), # every 25,000 steps
         # Wall-clock note, not a setting: 2.0e-3 s at 1e-9 is 2,000,000
         # steps on 16,140 elements, about 380 core-hours (see README).
         # A long silence between the CFL/VTK lines is the run working, not a
@@ -315,7 +327,11 @@ function user_inputs()
         # prints if anything fired.  It is a collective, so every rank must
         # reach it: the trigger is the CALL COUNT, which is identical on all
         # ranks, never the repair count, which is not.
-        :positivity_report_every => 1000,
+        # Every 200 RHS calls (= 40 steps), not 1000: the report is SILENT
+        # when nothing was repaired, so a fine cadence costs nothing on a
+        # healthy run and is the difference between seeing the engagement
+        # curve and seeing four points on it.
+        :positivity_report_every => 200,
         #
         # Shock capturing — note (2).
         #
