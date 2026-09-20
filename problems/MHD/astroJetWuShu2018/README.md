@@ -464,6 +464,11 @@ integrated a shorter time or with a smaller step.
 | 5 | 800 | 2000  | `5.6e-6` | `838` | `608` | `2e-3` | `5e-7` |
 | 6 | 800 | 20000 | `5.5e-6` | `920` | `608` | `2e-3` | `5e-7` |
 
+On a cluster, `auxiliary/wulver/submit_astrojet.sh` takes the rung as one word —
+`sbatch --export=ALL,AJ_RUNG=B ...` — because rungs 1–3 need `TEND` and `DT` moved
+*together* with `u_jet`, and setting three variables by hand and getting one wrong
+produces a run that looks like a result.
+
 **Rung B is the one to run first if the failures are in the ambient gas**, and §11
 explains why: it keeps the Mach 800 beam exactly but takes `β_a` from `1e-2` to
 `1`, which lifts the *ambient* thermal margin from 2.4 % to 71 %. If the run
@@ -560,6 +565,7 @@ And the two arithmetic checks from §3 and §6: the head should be near
 | `AJ.geo` | the mesh definition, and the `0.05·nx ∈ ℤ` constraint |
 | `AJ_40x60.msh`, `AJ_100x150.msh` | the two shipped meshes |
 | `../../../tools/astro_jet_mesh.py` | regenerates them without gmsh |
+| `../../../auxiliary/wulver/submit_astrojet.sh` | SLURM submit script; `AJ_RUNG` selects a rung of §6 |
 
 The equation set itself is documented in
 [`../orszagTangBormanis2024/EQUATIONS.md`](../orszagTangBormanis2024/EQUATIONS.md) —
