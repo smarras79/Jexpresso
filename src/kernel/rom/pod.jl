@@ -741,7 +741,15 @@ function pod_finalize!(rec::St_pod_recorder, mesh, M, OUTPUT_DIR::String;
                                signreduce = sgn)
         push!(out, P)
 
-        verbose && _pod_report(P, area, dev, mag)
+        #
+        # The fluctuation of the LAST snapshot against the mean is what the
+        # decomposition is made of; mode 1 is what it returned. Comparing their
+        # sub-element content is what tells a faithful decomposition of a noisy
+        # field from a decomposition that has gone wrong.
+        #
+        gs_fluc = _pod_gridscale(view(X, :, 1, rec.nsnap) .- view(P.q̄, :, 1), mesh, rec.nsd, comm)
+        gs_mode = _pod_gridscale(view(P.Φ, :, 1, 1), mesh, rec.nsd, comm)
+        verbose && _pod_report(P, area, dev, mag, gs_fluc, gs_mode, tg.name)
 
         rec.set.lvtk  && pod_write_modes(P, rec, mesh, OUTPUT_DIR; verbose = verbose)
         rec.set.ldata && pod_write_data(P, OUTPUT_DIR, mesh; verbose = verbose)
@@ -798,6 +806,76 @@ _pod_is_constant(X, comm; rtol = 1.0e-14) =
 
 
 #
+# HOW MUCH OF A FIELD LIVES BELOW THE ELEMENT SCALE.
+#
+# Within a spectral element the field is a polynomial on the LGL nodes. Remove
+# the element's best LINEAR fit and what is left is sub-element structure; the
+# residual RMS over the total RMS is then a number between 0 (the field is
+# resolved by the element) and 1 (it is all grid-scale wiggle).
+#
+# It is reported for the FLUCTUATION — what POD actually decomposes — and for
+# the leading mode, because the two together answer the question a grid-scale
+# looking mode raises. If the mode matches the fluctuation, the decomposition is
+# reporting what it was fed. If it is far above, something is wrong in here.
+#
+# It is a diagnostic, not a physical quantity: the fit is done in the element's
+# index space, which is not the LGL spacing, so the absolute value is only
+# meaningful against another field on the SAME grid. That is exactly how it is
+# used.
+#
+function _pod_gridscale_sums(f, mesh, nsd::Int)
+    ngl   = Int(mesh.ngl)
+    nelem = Int(mesh.nelem)
+    conn  = mesh.connijk
+    npoin = Int(mesh.npoin)
+    nfit  = nsd + 1
+    num = 0.0; den = 0.0
+    A = zeros(nfit, nfit); b = zeros(nfit); c = zeros(nfit)
+    idx = nsd == 1 ? CartesianIndices((ngl,)) :
+          nsd == 2 ? CartesianIndices((ngl, ngl)) : CartesianIndices((ngl, ngl, ngl))
+    v = zeros(length(idx))
+    p = zeros(length(idx), nfit)
+    @inbounds for iel = 1:nelem
+        n = 0
+        for I in idx
+            n += 1
+            ip = nsd == 1 ? conn[iel, I[1], 1] :
+                 nsd == 2 ? conn[iel, I[1], I[2]] : conn[iel, I[1], I[2], I[3]]
+            (ip >= 1 && ip <= npoin) || return (0.0, 0.0)
+            v[n]   = Float64(f[ip])
+            p[n,1] = 1.0
+            for d = 1:nsd; p[n,d+1] = Float64(I[d]); end
+        end
+        fill!(A, 0.0); fill!(b, 0.0)
+        for r = 1:n, i = 1:nfit
+            b[i] += p[r,i]*v[r]
+            for j = 1:nfit; A[i,j] += p[r,i]*p[r,j]; end
+        end
+        m = sum(view(v, 1:n))/n
+        ok = true
+        try; c .= A \ b; catch; ok = false; end
+        ok || continue
+        for r = 1:n
+            fit = 0.0
+            for i = 1:nfit; fit += c[i]*p[r,i]; end
+            num += (v[r] - fit)^2
+            den += (v[r] - m)^2
+        end
+    end
+    return num, den
+end
+
+function _pod_gridscale(f, mesh, nsd::Int, comm)
+    num, den = _pod_gridscale_sums(f, mesh, nsd)
+    if MPI.Comm_size(comm) > 1
+        num = MPI.Allreduce(num, MPI.SUM, comm)
+        den = MPI.Allreduce(den, MPI.SUM, comm)
+    end
+    return den > 0 ? sqrt(num/den) : 0.0
+end
+
+
+#
 # The spectrum, as a table. This is the thing to read first: how many modes the
 # flow actually has, and therefore how big a ROM has to be.
 #
@@ -815,7 +893,8 @@ _pod_is_constant(X, comm; rtol = 1.0e-14) =
 # leading mode whose rms is fifteen orders below that is a decomposition of
 # round-off, and no amount of structure in its picture makes it otherwise.
 #
-function _pod_report(P::St_pod, area::Float64, dev::Float64, mag::Float64)
+function _pod_report(P::St_pod, area::Float64, dev::Float64, mag::Float64,
+                     gs_fluc::Float64, gs_mode::Float64, fieldname::String)
     r = length(P.λ)
     println(" # ")
     @printf(" #   %s: %d modes from %d snapshots (%s), Σλ = %.6e\n",
@@ -840,6 +919,25 @@ function _pod_report(P::St_pod, area::Float64, dev::Float64, mag::Float64)
                 sqrt(max(P.λ[i], 0.0)/max(area, 1.0e-300)))
     end
     r > 10 && @printf(" #     …  (%d more)\n", r - 10)
+    #
+    # …and whether any of that means anything. See _pod_gridscale.
+    #
+    @printf(" #     sub-element content   fluctuation %.3f , mode 1 %.3f   (1 = all grid-scale)\n",
+            gs_fluc, gs_mode)
+    if gs_mode > 0.8 && gs_mode <= 1.5*max(gs_fluc, 1.0e-300)
+        println(" #       ^ THE MODES ARE MOSTLY SUB-ELEMENT STRUCTURE, and they match the")
+        println(" #         fluctuation, so this is what the field contains — not a fault of the")
+        println(" #         decomposition. It is the usual outcome for a DERIVATIVE field (the")
+        println(" #         vorticity): its smooth part is nearly steady, so the mean absorbs it,")
+        println(" #         and what is left for the modes is grid-scale noise that ∇× amplifies.")
+        println(" #         Decompose a primitive field instead (:pod_fields => [\"h\", :velocity]),")
+        println(" #         sample a window over which the flow really changes, or switch on")
+        println(" #         :lfilter.")
+    elseif gs_mode > 1.5*max(gs_fluc, 1.0e-300)
+        @printf(" #       ^ the modes are FAR rougher than the fluctuation they came from (%.3f vs %.3f);\n",
+                gs_mode, gs_fluc)
+        println(" #         that is not something POD does to clean data. Please report it.")
+    end
     for frac in (0.90, 0.99)
         n = pod_rank_for_energy(P, frac)
         @printf(" #     %2.0f%% of the energy is in the first %d mode%s\n",
