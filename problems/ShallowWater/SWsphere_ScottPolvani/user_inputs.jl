@@ -229,9 +229,9 @@ function user_inputs()
         # SP_MESH in the environment points a run at another .msh (a finer
         # cubed sphere, say) without editing this line, like SP_PLANET.
         :lread_gmsh           => true,
-        #:gmsh_filename        => "./problems/ShallowWater/SWsphere_ScottPolvani/cubed_sphere.msh",
+        :gmsh_filename        => "./problems/ShallowWater/SWsphere_ScottPolvani/cubed_sphere.msh",
         #:gmsh_filename        => "./problems/ShallowWater/SWsphere_ScottPolvani/cubed_sphere_32x32.msh",
-        :gmsh_filename        => "./problems/ShallowWater/SWsphere_ScottPolvani/cubed_sphere_64x64.msh",
+        #:gmsh_filename        => "./problems/ShallowWater/SWsphere_ScottPolvani/cubed_sphere_64x64.msh",
         #---------------------------------------------------------------------------
         # Time integration. The paper integrates for 10⁴-10⁵ rotations; this deck
         # covers the spin-up (the energy grows linearly to t ≈ 500 rotations,
@@ -337,7 +337,8 @@ function user_inputs()
         # into ONE vector target, which is the basis a Galerkin ROM of this
         # system would be projected onto. On the shell, :u, :v and :velocity are
         # the tangent-basis velocity components.
-        :pod_fields           => [:vorticity],
+        :pod_fields            => [:vorticity, "h", :velocity],
+        
         # Sampling INTERVALS over the POD window, on a clock of its own: the VTK
         # cadence is chosen to keep a movie small, a decomposition wants dense
         # uniform sampling, and the two have no reason to agree. 60 intervals

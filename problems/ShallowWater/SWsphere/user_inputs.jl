@@ -155,7 +155,7 @@ function user_inputs()
         :lcfl_dt              => true,           # take Δt from the CFL condition
         :cfl                  => 1.0,
         :tinit                => 0.0,
-        :tend                 => 20*24*3600,       # 144 h = 6 days, as in the test
+        :tend                 => 6*24*3600,       # 144 h = 6 days, as in the test
         :ndiagnostics_outputs => 48,             # a VTK dump every 6 h
         :ndiagnostics_prints  => 200,            # steps between diagnostic lines
         :case                 => "swsphere",
@@ -184,7 +184,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => true,
         :ivisc_equations      => [2, 3, 4],
-        :μ                    => 1.0e5,      # set to 1.0e5 together with :lvisc => true
+        :μ                    => 1.5e5,      # set to 1.0e5 together with :lvisc => true
         #---------------------------------------------------------------------------
         # ... AND the modal filter, which is what actually keeps the run alive
         # here (see the table at the top). The two mechanisms compose, and the
@@ -194,7 +194,7 @@ function user_inputs()
         # at least 5e5 — that combination does complete 3 days. Just do not read
         # the vorticity off it: at 5e5 half of max|ζ| is gone by day 3.
         #---------------------------------------------------------------------------
-        :lfilter              => false,
+        :lfilter              => true,
         :filter_alpha         => 0.05,
         :filter_order         => 8,
         :filter_kcut          => 2/3,
@@ -253,7 +253,7 @@ function user_inputs()
         # target, which is the basis a Galerkin ROM of this system would be
         # projected onto. On the shell, :u, :v and :velocity are the
         # tangent-basis velocity components.
-        :pod_fields           => [:vorticity, :h],
+        :pod_fields           => [:vorticity, "h", :velocity],
         # HOW MANY SNAPSHOTS, over what window. This has its own clock: it is
         # NOT tied to :ndiagnostics_outputs, because the VTK cadence is chosen to
         # keep a movie small while a decomposition wants dense, uniform sampling.
