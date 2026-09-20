@@ -585,3 +585,88 @@ was checked, with Julia 1.11.9:
    been run.
 3. **Whether DynSGS alone carries the Mach 800 beam is the open question** —
    that is §6, and it is what the run is for.
+
+---
+
+## 10. Run 1: what happened, and what changed because of it
+
+The first run aborted at **t = 5.45e-5 — step 109 of 4000** — with
+
+```
+non-finite solution at t = 5.449999986240073e-5 — 6237 of 6237 local entries (100.0%)
+```
+
+on **every** rank, in the same step.
+
+### Reading the signature
+
+100 % of every rank at once is not a local blow-up; a local one shows a handful
+of nodes on one rank. It is a **global reduction carrying the damage**. With
+`:dsgs_norms => "domain"` every RHS call does `MPI.Allreduce!(avg, MPI.SUM)` and
+`MPI.Allreduce!(denom, MPI.MAX)` over the whole domain
+(`SGS.jl`, passes 1 and 2). One `Inf` anywhere makes `⟨q⟩` `NaN`, which makes
+every `denom` `NaN`, which makes the normalized residual `NaN`, which makes `ν`
+`NaN` on **every element of every rank** — and the next stage multiplies that
+into the whole field. So:
+
+> the failure was local and became global in one step, and the abort message is
+> right that the field can no longer locate it.
+
+Where did the `Inf` come from? The flux divided by `ρ` unguarded: `u = ρu/ρ`. A
+single node with `ρ → 0` gives `±Inf`, and `Inf − Inf` in the flux gives `NaN`.
+
+### What changed
+
+1. **`src/kernel/positivity/` now has a GLM-MHD branch** (`positivity_limit_mhd!`).
+   The abort message says to "read the positivity report's GLOBAL first repair" —
+   and there was none, because the repair errored on this nine-field state. There
+   is now: the same energy-conserving momentum rescale, with `½|B|² + ½ψ²` charged
+   against `ρE` and `B`/`ψ` never rescaled so `∇·B` is untouched. It is **on** in
+   this deck, floors `ρ_min = 1.4e-7` and `p_min = 1e-6` (1e-6 of the ambient
+   values), reporting every 50 RHS calls = 10 steps.
+2. **The output cadence is front-loaded.** The first frame after the initial
+   condition was at `t = 1e-4`; the run died at `5.45e-5`. There was no snapshot
+   of the failure at all. There are now ~14 frames before that time, the first at
+   `t = 2e-6` (4 steps).
+3. **The flux guards its divisions by `ρ`** (`ρ_floor_mhd = 1e-14`), so a local
+   defect stays local and locatable instead of being laundered into a global
+   `NaN` by the next reduction. Unreachable while `:lpositivity` is on; it is the
+   belt to that braces.
+
+### What to run next, and what each outcome means
+
+```
+julia --project=. src/Jexpresso.jl MHD astroJetWuShu2018
+```
+
+The `POSITIVITY REPAIR ENGAGED` line now answers the question the first run could
+not. Read it in this order:
+
+| what the report says | what it means | what to do |
+|---|---|---|
+| never engages, run still dies | the failure is **not** a realizability one — look at `ν` in the frames before it | `JEXPRESSO_DSGS_DEBUG=1` |
+| a few node-visits, run continues | the repair is doing its job; look at the beam profile | keep going |
+| **GLOBAL first repair at the nozzle lip** (`x = ±0.05`, `y` within an LGL interval of 0) | the boundary datum's corner is the source, as §3 predicted | `JEXPRESSO_AJ_SMOOTH=0.005` |
+| first repair at the jet head or the beam/cocoon interface | genuine under-resolution of the shock | more dissipation — see below |
+| `energy-RAISED` dominating | branch 2b: the field energy alone exceeds `ρE − e_min`. At `β_a = 1e-2` this can be the field, not a broken momentum — but a growing count means the state is badly broken, not marginally | lower `B_a` (rung 1–3 of §6) to separate the two |
+| engagement growing without bound | no limiter would have saved this; the field is globally wrong | drop to a lower rung of §6 |
+
+Run it with `JEXPRESSO_DSGS_DEBUG=1` the first time. It prints, per call, the
+per-equation maximum normalized residual, `ν_max`, **the cap**, and whether the
+argmax node sits on an element edge. That last pair settles which knob matters,
+and it is not the obvious one:
+
+> `ν = min(C_max·Δ·λ, C_R·Δ²·R)`. If the debug line shows `ν_max` **below** the
+> cap, then `C_R` is binding and **raising `C_max` does literally nothing** — it
+> only lifts a ceiling the sensor is not reaching. Rough estimate at the beam
+> front on the default mesh puts the normalized ratio near `3e4` against a
+> cap-reaching `8e4`, i.e. `ν` at ~40 % of its cap, so `JEXPRESSO_AJ_CR=4` is
+> likely the first dissipation lever and `JEXPRESSO_AJ_CMAX` the second. The debug
+> line replaces that estimate with a measurement — use it.
+
+Also worth knowing while debugging: `JEXPRESSO_AJ_NORMS=element` makes the DynSGS
+normalization element-local, which removes the two Allreduce and therefore removes
+the mechanism that turned one bad node into a global `NaN`. It changes the model
+(the residual is then measured against each element's own spread, not the
+domain's), so it is a **diagnostic**, not a fix — but it keeps a failure local and
+visible, which is what a first bisection needs.

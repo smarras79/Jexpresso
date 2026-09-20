@@ -71,7 +71,7 @@
 #---------------------------------------------------------------------------------
 module Positivity
 
-export PositivityStats, positivity_limit!, positivity_reset!,
+export PositivityStats, positivity_limit!, positivity_limit_mhd!, positivity_reset!,
        positivity_touched, positivity_should_report, positivity_summary
 
 #---------------------------------------------------------------------------------
@@ -211,6 +211,170 @@ function positivity_limit!(uaux::AbstractMatrix{T},
                 end
                 s.denergy += Float64(emin - ρE)
                 uaux[ip, ien] = emin
+                s.nenergy += 1
+                nrep      += 1
+            end
+        end
+    end
+
+    return nrep
+end
+
+#---------------------------------------------------------------------------------
+# positivity_limit_mhd!  —  the same repair for the nine-field ideal GLM-MHD
+# state (ρ, ρu, ρv, ρE, ρw, Bx, By, Bz, ψ).
+#
+# WHY IT IS A SEPARATE FUNCTION and not a flag on the one above. Two things
+# differ, and both are structural:
+#
+#   * THE SLOT MAP IS NOT CONTIGUOUS. The MHD cases of this code put the total
+#     energy in slot 4 and the out-of-plane momentum ρw in slot 5, because the
+#     shared 2D kernels assume the energy is slot 4 (see the header of
+#     problems/MHD/orszagTangBormanis2024/user_flux.jl). So momentum is slots
+#     (2, 3, 5), not 2:ien-1, and 6:8 and 9 carry B and ψ. The Euler loop's
+#     `for k = 2:(ien-1)` would scale Bx as if it were a momentum component.
+#
+#   * THE INTERNAL ENERGY IS NOT ρE − ke. It is
+#
+#         e = ρE − ke − ½|B|² − ½ψ²,        p = (γ−1) e
+#
+#     and ½|B|² is NOT reducible by the repair: rescaling B would break the
+#     discrete ∇·B = 0 that the GLM cleaning and the initial condition maintain,
+#     which is a worse defect than the one being repaired. The magnetic energy is
+#     therefore a FIXED charge against ρE here, and that changes which branch is
+#     reachable: on a low-β problem ½|B|² can exceed ρE − e_min all by itself, at
+#     which point no momentum scaling can restore p and branch 2b is the only
+#     option. That is worth knowing rather than discovering — it is exactly the
+#     regime of the magnetized jet (β_a = 10⁻², ½|B|² = 100 against an ambient
+#     ρE of 102.5), so on that case 2b firing is a statement about the field, not
+#     necessarily about a broken momentum.
+#
+# The repair, per node:
+#
+#   1. ρ < ρ_min  ->  ρ = ρ_min.                        Injects mass; recorded.
+#
+#   2. e = ρE − ke − me − ½ψ² < e_min = p_min/(γ−1), with me = ½|B|²:
+#
+#      a. if ρE − me − ½ψ² > e_min and ke > 0, scale the momentum (2, 3, 5) by
+#
+#             θ = sqrt( (ρE − me − ½ψ² − e_min) / ke )  ∈ [0,1)
+#
+#         which makes p = p_min exactly. ρE, B AND ψ ARE ALL UNTOUCHED, so TOTAL
+#         ENERGY IS CONSERVED EXACTLY and ∇·B is untouched: the repair converts
+#         kinetic energy into internal energy and nothing else. Dissipative,
+#         entropy-increasing, the right sign — a wrong answer here is locally
+#         over-damped, never locally energised.
+#
+#      b. only if ρE − me − ½ψ² ≤ e_min: zero the momentum and raise ρE to
+#         e_min + me + ½ψ². This DOES inject energy and is counted separately.
+#         B and ψ are still left alone, for the ∇·B reason above.
+#
+# NaN is left alone here too, and for the same reason: `e < e_min` is false for
+# NaN, so a dead node stays dead and the solver's non-finite check still fires.
+#
+# HOW SMALL p_min CAN USEFULLY BE, in double precision. p is recovered by
+# CANCELLATION against ρE, so no repair can place it more accurately than the
+# spacing of ρE itself: the achievable absolute accuracy on p is (γ−1)·eps(ρE),
+# and the relative accuracy on p_min is eps(ρE)/e_min. On the magnetized jet
+# ρE = 4.48e5 in the beam, so eps(ρE) = 5.8e-11 and
+#
+#     (γ−1)·eps(ρE) = 2.3e-11      <- p cannot be resolved below this AT ALL
+#     p_min = 1e-6                 <- 4.3e4 times above it: safe
+#     p lands on p_min to 2.3e-5 relative, not to machine precision
+#
+# So a deck must keep p_min several orders above (γ−1)·eps(ρE_max) or the repair
+# is chasing roundoff, and must not expect p == p_min afterwards to better than
+# eps(ρE)/e_min. That is a property of the STATE, not of this function: measured
+# on the jet, the same limit applies to any scheme that carries ρE and recovers p
+# from it.
+#
+# RETURNS the number of repairs made in this call, so the caller can skip the
+# write-back and keep a healthy run bit-identical to one with the repair off.
+#---------------------------------------------------------------------------------
+function positivity_limit_mhd!(uaux::AbstractMatrix{T},
+                               npoin::Integer,
+                               γm1::T, ρmin::T, pmin::T,
+                               s::PositivityStats;
+                               irho::Integer = 1,
+                               ien ::Integer = 4,
+                               imom::NTuple{3,Int} = (2, 3, 5),
+                               imag::NTuple{3,Int} = (6, 7, 8),
+                               ipsi::Integer = 9,
+                               coords::AbstractArray = zeros(T, 0, 0),
+                               t::Real = NaN) where {T<:AbstractFloat}
+
+    s.ncalls += 1
+    nrep = 0
+    emin = pmin/γm1
+    half = T(0.5)
+    nslots = size(uaux, 2)
+    lpsi   = ipsi >= 1 && ipsi <= nslots
+
+    @inbounds for ip = 1:npoin
+
+        ρ = uaux[ip, irho]
+        if isfinite(ρ) && Float64(ρ) < s.rho_min
+            s.rho_min = Float64(ρ)
+        end
+
+        # ---- 1. density floor -------------------------------------------------
+        if ρ < ρmin                       # false for NaN: left alone on purpose
+            _mark_first!(s, ip, coords, t)
+            s.dmass += Float64(ρmin - ρ)
+            s.nrho  += 1
+            nrep    += 1
+            ρ = ρmin
+            uaux[ip, irho] = ρ
+        end
+
+        # ---- 2. pressure / internal energy ------------------------------------
+        ke = zero(T)
+        for k in imom
+            m   = uaux[ip, k]
+            ke += m*m
+        end
+        ke *= half/ρ
+
+        me = zero(T)
+        for k in imag
+            b   = uaux[ip, k]
+            me += b*b
+        end
+        me *= half
+        if lpsi
+            ψ   = uaux[ip, ipsi]
+            me += half*ψ*ψ          # the GLM field's energy, carried by ρE too
+        end
+
+        ρE = uaux[ip, ien]
+        e  = ρE - ke - me           # internal energy per unit volume
+        if isfinite(e) && Float64(γm1*e) < s.p_min
+            s.p_min = Float64(γm1*e)
+        end
+
+        if e < emin                 # false for NaN: left alone on purpose
+
+            ρEfree = ρE - me        # what is left of ρE once the field is paid for
+
+            if ρEfree > emin && ke > zero(T)
+                # 2a. scale the momentum. ρE, B, ψ untouched -> total energy
+                #     conserved exactly and ∇·B unchanged.
+                θ = sqrt(max((ρEfree - emin)/ke, zero(T)))
+                _mark_first!(s, ip, coords, t)
+                for k in imom
+                    uaux[ip, k] *= θ
+                end
+                s.nmom += 1
+                nrep   += 1
+            else
+                # 2b. even with zero momentum the field energy leaves less than
+                #     e_min. Inject, and say so. B and ψ are NOT rescaled.
+                _mark_first!(s, ip, coords, t)
+                for k in imom
+                    uaux[ip, k] = zero(T)
+                end
+                s.denergy += Float64(emin + me - ρE)
+                uaux[ip, ien] = emin + me
                 s.nenergy += 1
                 nrep      += 1
             end

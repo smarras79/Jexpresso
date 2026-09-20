@@ -40,7 +40,9 @@
 #     JEXPRESSO_AJ_NOP      polynomial order (default 4)
 #     JEXPRESSO_AJ_DT       time step (default: per mesh, see _aj_dt below)
 #     JEXPRESSO_AJ_TEND     final time (default 2e-3, the paper's)
-#     JEXPRESSO_AJ_DTOUT    output interval (default tend/20 = 1e-4)
+#     JEXPRESSO_AJ_DTOUT    output interval of the uniform part (default tend/20)
+#     JEXPRESSO_AJ_UNIFORM  1 = drop the front-loaded early frames
+#     JEXPRESSO_AJ_RHOFLOOR flux-only density guard (default 1e-14)
 #
 #   DynSGS (this file)
 #     JEXPRESSO_AJ_SENSOR   "residual" (default) or "legacy"
@@ -57,11 +59,37 @@
 _aj_mesh()   = String(strip(get(ENV, "JEXPRESSO_AJ_MESH", "40x60")))
 _aj_nop()    = something(tryparse(Int,     get(ENV, "JEXPRESSO_AJ_NOP",    "")), 4)
 _aj_tend()   = something(tryparse(Float64, get(ENV, "JEXPRESSO_AJ_TEND",   "")), 2.0e-3)
-# Output interval. The default is tend/20, so that a run on one of the low-Mach
-# rungs of README.md §6 (which needs a proportionally longer tend) writes 21
-# snapshots and not 800. At the default tend = 2e-3 it is 1e-4, which includes
-# the paper's three output times 1e-3, 1.5e-3 and 2e-3.
+# Output interval for the UNIFORM part of the cadence. The default is tend/20, so
+# that a run on one of the low-Mach rungs of README.md §6 (which needs a
+# proportionally longer tend) writes 21 snapshots and not 800. At the default
+# tend = 2e-3 it is 1e-4, which includes the reference output times 1e-3, 1.5e-3
+# and 2e-3.
 _aj_dtout()  = something(tryparse(Float64, get(ENV, "JEXPRESSO_AJ_DTOUT",  "")), _aj_tend()/20.0)
+
+# THE CADENCE IS FRONT-LOADED, and that is a lesson paid for.
+#
+# The first run of this case died at t = 5.45e-5 — step 109 — and the first
+# output after the initial condition was at t = 1e-4. There was therefore NO
+# snapshot of the failure: nothing to look at, no ν field, no log10p, nothing.
+# (problems/CompEuler/rampCaoEtAl2021_M7 learned the same thing the same way; its
+# commit is literally "the failure happened before frame 1".)
+#
+# So the early part of the run, which is where an impulsively started Mach 800
+# beam either survives or does not, gets ~20 frames of its own: every 2e-6 to
+# t = 2e-5 (4 beam-element crossings at h = 0.025 take 1.2e-4, so this is inside
+# the first one), then every 1e-5 to t = 1e-4, then the uniform cadence. 1e-6 is
+# 2 steps at the default Δt, so the first frame is essentially the first step.
+#
+# JEXPRESSO_AJ_UNIFORM=1 drops the front-loading and gives the plain
+# 0 : dtout : tend, for a production run that is already known to survive.
+_aj_uniform() = lowercase(strip(get(ENV, "JEXPRESSO_AJ_UNIFORM", "false"))) in ("1", "true", "yes", "on")
+
+function _aj_outtimes(tend)
+    dt = _aj_dtout()
+    _aj_uniform() && return collect(0.0:dt:tend)
+    early = vcat(collect(0.0:2.0e-6:2.0e-5), collect(3.0e-5:1.0e-5:1.0e-4))
+    return sort(unique(vcat(filter(t -> t <= tend, early), collect(0.0:dt:tend))))
+end
 _aj_sensor() = String(lowercase(strip(get(ENV, "JEXPRESSO_AJ_SENSOR", "residual"))))
 _aj_CR()     = something(tryparse(Float64, get(ENV, "JEXPRESSO_AJ_CR",     "")), 1.0)
 _aj_Cmax()   = something(tryparse(Float64, get(ENV, "JEXPRESSO_AJ_CMAX",   "")), 0.5)
@@ -143,7 +171,7 @@ function user_inputs()
         :Δt                   => _aj_dt(),
         :tinit                => 0.0,
         :tend                 => tend,
-        :diagnostics_at_times => (0.0:_aj_dtout():tend),   # includes the references' t = 1e-3, 1.5e-3, 2e-3
+        :diagnostics_at_times => _aj_outtimes(tend),   # front-loaded; see _aj_outtimes above
         :restart_time         => 0.0,
         :lrestart             => false,
         :lsource              => true,   # GLM ψ-damping only (Dedner mixed cleaning; user_source.jl)
@@ -323,6 +351,57 @@ function user_inputs()
         # across a shock, so the Euler-θ system carries the wrong shock speed no
         # matter how it is stabilized.)
         :energy_equation  => "energy",
+        #---------------------------------------------------------------------------
+        # REALIZABILITY REPAIR (src/kernel/positivity/), ON.
+        #
+        # Not a positivity-preserving scheme — see that directory's README. It is
+        # the node-wise bound enforcement that sits under the eventual convex
+        # limiter, and it promises three things: the RHS is never evaluated on a
+        # non-realizable state, the repair is local and bounded, and EVERY
+        # intervention is counted and reported.
+        #
+        # The third is why it is on here. The first run of this case aborted at
+        # t = 5.45e-5 with 100 % of every rank's field non-finite, and the abort
+        # message itself says to "read the positivity report's GLOBAL first
+        # repair" — which did not exist, because the repair was scoped to
+        # neqs == nsd + 2 and errored on this nine-field state. It now has a
+        # GLM-MHD branch (Positivity.jl, positivity_limit_mhd!): the same
+        # energy-conserving momentum rescale, with ½|B|² + ½ψ² charged against
+        # ρE and B and ψ never rescaled, so ∇·B is untouched. γ comes from
+        # :dsgs_gamma, not from PhysicalConst (air's 1.4 is right for this case by
+        # coincidence and wrong for Orszag-Tang and flux emergence).
+        #
+        # It also stops a local defect from going global. An unguarded ρ → 0
+        # makes u = ρu/ρ infinite, and with :dsgs_norms => "domain" the next
+        # DynSGS Allreduce spreads that Inf into ⟨q⟩ and hence into ν on every
+        # element of every rank — which is exactly the "100.0 %, all ranks, one
+        # step" signature of that first run.
+        #
+        # THE FLOORS. Absolute, and from this case's own scales: 1e-6 of the
+        # ambient ρ = 0.14 and of the ambient p = 1. Both are far below anything
+        # the problem produces physically — the papers' log₁₀ρ and log₁₀p
+        # figures bottom out around 1e-3 and 1e-1 in the rarefied cocoon — so the
+        # repair can only engage OUTSIDE the realizable set. p_min also has a hard
+        # lower bound: p is recovered by cancellation against ρE = 4.48e5, so it
+        # cannot be resolved below (γ-1)·eps(ρE) = 2.3e-11 at all, and 1e-6 sits
+        # 4.3e4 above that. See the note in positivity_limit_mhd!.
+        #
+        # :positivity_report_every is 50 rather than the default 1000 because at
+        # Δt = 5e-7 and 5 RK stages, 1000 RHS calls is 200 steps — twice the life
+        # of the first run. 50 is 10 steps.
+        #
+        # HOW TO READ IT. A few node-visits at the jet head or the beam/cocoon
+        # interface is the repair doing its job. Engagement growing without bound,
+        # or a GLOBAL first repair at the nozzle lip (x = ±0.05, y within an LGL
+        # interval of 0), says the answer is wrong and the repair is only hiding
+        # it — and the "energy-RAISED" count is the one to watch, because that
+        # branch is the only one that injects energy.
+        #---------------------------------------------------------------------------
+        :lpositivity          => true,
+        :positivity_rho_min   => 1.4e-7,    # 1e-6 * ambient ρ = 0.1γ
+        :positivity_p_min     => 1.0e-6,    # 1e-6 * ambient p = 1
+        :positivity_report    => true,
+        :positivity_report_every => 50,     # 10 steps at 5 stages, not 200
         #---------------------------------------------------------------------------
         # No entropy-stable / kinetic-energy-preserving machinery:
         #---------------------------------------------------------------------------

@@ -15,11 +15,23 @@
 # the integrator's own registers. :lfilter already does exactly that
 # (filter.jl), so the pattern is the house one, but it is worth knowing.
 #
-# SCOPE, KEPT DELIBERATELY SMALL. 2D/3D CompEuler, TOTAL(), ρE in the energy
-# slot, CPU, and neqs == nsd + 2 exactly. Anything else is a clear error at the
-# first call rather than a silent wrong repair: the θ-form carries ρθ, which is
-# positive for a different reason, and the MHD system has a magnetic energy this
-# repair knows nothing about. Both deserve their own treatment, not this one.
+# SCOPE. Two state layouts, each with its own repair in Positivity.jl:
+#
+#   * 2D/3D CompEuler, neqs == nsd + 2 exactly  ->  positivity_limit!
+#   * 2D ideal GLM-MHD, the nine-field state
+#     (ρ, ρu, ρv, ρE, ρw, Bx, By, Bz, ψ)        ->  positivity_limit_mhd!
+#
+# both requiring TOTAL(), ρE in the energy slot and the CPU backend. The MHD
+# layout is recognised from the case's own qvars, not guessed from neqs: a
+# nine-equation system that is not this one must not be repaired as if it were.
+# It differs in two structural ways — a non-contiguous momentum slot map and an
+# internal energy that owes ½|B|² + ½ψ² to the field — so it is a separate
+# function; see its header. The MHD γ comes from :dsgs_gamma, NOT from
+# PhysicalConst: the MHD cases here run γ = 1.4, 5/3 and 1.05, and air's 1.4
+# would silently be wrong for two of the three.
+#
+# Anything else is a clear error at the first call rather than a silent wrong
+# repair: the θ-form carries ρθ, which is positive for a different reason.
 #
 # OFF BY DEFAULT (:lpositivity => false), so no existing case changes at all.
 #---------------------------------------------------------------------------------
@@ -35,9 +47,24 @@ const POSITIVITY_CHECKED = Ref(false)
 #---------------------------------------------------------------------------------
 # Configuration check. Runs once, on the first call, then never again.
 #---------------------------------------------------------------------------------
+#
+# Is this the nine-field ideal GLM-MHD state? Decided from the case's OWN
+# solution-variable names (initialize.jl's qvars), so it can only be true for
+# the state the MHD repair is actually written for. Slot 4 must be the energy
+# and 6:9 the field — exactly the ordering every MHD case in problems/MHD uses.
+#
+function positivity_is_mhd(params, neqs::Int)
+    neqs == 9 || return false
+    qv = params.qp.qvars
+    (qv isa AbstractVector && length(qv) >= 9) || return false
+    nm = String.(string.(qv[1:9]))
+    return nm == ["ρ", "ρu", "ρv", "ρE", "ρw", "Bx", "By", "Bz", "ψ"]
+end
+
 function positivity_validate(inputs, params, neqs::Int, ien::Int)
 
     why = String[]
+    lmhd = positivity_is_mhd(params, neqs)
 
     get(inputs, :energy_equation, "theta") == "energy" ||
         push!(why, "  :energy_equation must be \"energy\" (slot $(ien) must hold ρE, not ρθ)")
@@ -45,8 +72,17 @@ function positivity_validate(inputs, params, neqs::Int, ien::Int)
     params.SOL_VARS_TYPE == TOTAL() ||
         push!(why, "  :SOL_VARS_TYPE must be TOTAL() (a perturbation state has no realizable set of its own)")
 
-    neqs == ien ||
-        push!(why, "  neqs = $(neqs) but this repair is written for exactly nsd+2 = $(ien) equations")
+    if lmhd
+        # The MHD repair hard-codes the slot map of the problems/MHD state.
+        haskey(inputs, :dsgs_gamma) ||
+            push!(why, "  the GLM-MHD repair needs :dsgs_gamma, the γ of the MHD equation of state\n" *
+                       "     (PhysicalConst's 1.4 is air's and is wrong for an MHD case that is not γ = 1.4)")
+    else
+        neqs == ien ||
+            push!(why, "  neqs = $(neqs) but this repair is written for exactly nsd+2 = $(ien) equations,\n" *
+                       "     or for the nine-field GLM-MHD state (ρ, ρu, ρv, ρE, ρw, Bx, By, Bz, ψ) —\n" *
+                       "     and this case's qvars are not that either")
+    end
 
     get(inputs, :backend, CPU()) == CPU() ||
         push!(why, "  CPU backend only: the GPU path is not wired")
@@ -71,8 +107,10 @@ function positivity_validate(inputs, params, neqs::Int, ien::Int)
     # scripts split the streams (--output=%x.%j.out, --error=%x.%j.err), so the
     # audit trail landed in a file nobody reads while the CFL narration it has
     # to be compared against went to the other one.
-        println_rank(@sprintf(" # POSITIVITY REPAIR ON: ρ_min = %.3e, p_min = %.3e (absolute). This is a REPAIR, not a preserving scheme — every intervention is counted and reported.",
-                       ρmin, pmin); msg_rank = rank)
+        println_rank(@sprintf(" # POSITIVITY REPAIR ON (%s state): ρ_min = %.3e, p_min = %.3e (absolute), γ = %.6g. This is a REPAIR, not a preserving scheme — every intervention is counted and reported.",
+                       lmhd ? "9-field GLM-MHD" : "CompEuler", ρmin, pmin,
+                       lmhd ? Float64(inputs[:dsgs_gamma]) : PhysicalConst{Float64}().γ);
+                     msg_rank = rank)
     end
     return nothing
 end
@@ -99,14 +137,26 @@ function apply_positivity!(u, params, SD)
     end
 
     T    = eltype(params.uaux)
-    γm1  = T(PhysicalConst{Float64}().γm1)
+    lmhd = positivity_is_mhd(params, neqs)
+    # The MHD equation of state has its own γ (1.4 on the jet, 5/3 on
+    # Orszag-Tang, 1.05 on flux emergence); PhysicalConst's is air's.
+    γm1  = lmhd ? T(Float64(inputs[:dsgs_gamma]) - 1.0) : T(PhysicalConst{Float64}().γm1)
     ρmin = T(inputs[:positivity_rho_min])
     pmin = T(inputs[:positivity_p_min])
 
-    nrep = Positivity.positivity_limit!(@view(params.uaux[:, :]), npoin, ien,
-                                        γm1, ρmin, pmin, POSITIVITY_STATS;
-                                        coords = params.mesh.coords,   # [dim, ip]
-                                        t = NaN)
+    nrep = if lmhd
+        # Slot map of the problems/MHD state: energy in 4, momentum in (2,3,5),
+        # B in 6:8, ψ in 9. See the header of positivity_limit_mhd!.
+        Positivity.positivity_limit_mhd!(@view(params.uaux[:, :]), npoin,
+                                         γm1, ρmin, pmin, POSITIVITY_STATS;
+                                         coords = params.mesh.coords,   # [dim, ip]
+                                         t = NaN)
+    else
+        Positivity.positivity_limit!(@view(params.uaux[:, :]), npoin, ien,
+                                     γm1, ρmin, pmin, POSITIVITY_STATS;
+                                     coords = params.mesh.coords,   # [dim, ip]
+                                     t = NaN)
+    end
 
     # Only write back when something was actually repaired. A case that never
     # needs the repair is then BIT-IDENTICAL to running with :lpositivity off —

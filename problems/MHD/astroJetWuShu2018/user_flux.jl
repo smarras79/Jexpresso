@@ -81,9 +81,28 @@ if !@isdefined(p_floor_mhd)
         something(tryparse(Float64, get(ENV, "JEXPRESSO_AJ_PFLOOR", "")), 1.0e-6))
 end
 
+# Density guard for the DIVISIONS in the flux, u = ρu/ρ and ke = |ρv|²/(2ρ).
+#
+# With :lpositivity => true (this case's default) this is unreachable: the
+# realizability repair runs in rhs! before any flux is evaluated and leaves
+# ρ ≥ :positivity_rho_min = 1.4e-7 everywhere, six orders above this. It exists
+# for a run with the repair turned off, and it exists because an UNGUARDED
+# division is how a single bad node stops being a local defect: ρ → 0 gives
+# u = ±Inf, the flux goes Inf, and with :dsgs_norms => "domain" the very next
+# DynSGS reduction (an Allreduce over the whole domain) turns that Inf into a NaN
+# in ⟨q⟩ and hence in ν on EVERY element of EVERY rank. That is the mechanism
+# behind "100.0% of local entries non-finite" on all ranks in one step: the
+# failure is local, the reduction makes it global. This floor keeps the flux
+# finite so the failure stays local and locatable. It is not a positivity
+# guarantee and it is not conservative where it fires — the repair is.
+if !@isdefined(ρ_floor_mhd)
+    const ρ_floor_mhd = Ref{Float64}(
+        something(tryparse(Float64, get(ENV, "JEXPRESSO_AJ_RHOFLOOR", "")), 1.0e-14))
+end
+
 @inline function pressure_mhd(ρ, ρu, ρv, ρw, ρE, Bx, By, Bz, ψ)
     γm1 = γ_mhd - 1.0
-    ke  = 0.5*(ρu*ρu + ρv*ρv + ρw*ρw)/ρ
+    ke  = 0.5*(ρu*ρu + ρv*ρv + ρw*ρw)/max(ρ, ρ_floor_mhd[])
     me  = 0.5*(Bx*Bx + By*By + Bz*Bz)
     return γm1*(ρE - ke - me - 0.5*ψ*ψ)
 end
@@ -104,9 +123,11 @@ function user_flux!(F, G, SD::NSD_2D,
     Bz = q[8]
     ψ  = q[9]
 
-    u = ρu/ρ
-    v = ρv/ρ
-    w = ρw/ρ
+    # guarded: see ρ_floor_mhd above. Unreachable with :lpositivity => true.
+    ρg = max(ρ, ρ_floor_mhd[])
+    u = ρu/ρg
+    v = ρv/ρg
+    w = ρw/ρg
 
     c_h = c_h_mhd[]
 

@@ -89,10 +89,62 @@ is size-guarded so a missing coordinate can never cost a repair.
 
 ## Scope
 
-2D/3D CompEuler, `TOTAL()`, `:energy_equation => "energy"`, CPU, and
-`neqs == nsd + 2` exactly. Anything else is a clear error on the first call
-rather than a silent wrong repair: the θ-form carries ρθ, positive for a
-different reason, and MHD has a magnetic energy this knows nothing about.
+Two state layouts, each with its own function in `Positivity.jl`, both requiring
+`TOTAL()`, `:energy_equation => "energy"` and the CPU backend:
+
+| layout | | |
+|---|---|---|
+| 2D/3D CompEuler, `neqs == nsd + 2` exactly | `positivity_limit!` | |
+| 2D ideal GLM-MHD, `(ρ, ρu, ρv, ρE, ρw, Bx, By, Bz, ψ)` | `positivity_limit_mhd!` | γ from `:dsgs_gamma` |
+
+The θ-form is still a clear error on the first call rather than a silent wrong
+repair: it carries ρθ, which is positive for a different reason.
+
+### The GLM-MHD branch
+
+Recognised from the case's **own `qvars`**, not guessed from `neqs == 9`: a
+nine-equation system that is not this one must not be repaired as if it were.
+Two things differ structurally, which is why it is a separate function and not a
+flag:
+
+* **The momentum slot map is not contiguous.** These cases put ρE in slot 4 and
+  the out-of-plane momentum ρw in slot 5, so momentum is `(2, 3, 5)` — the Euler
+  loop's `for k = 2:(ien-1)` would scale `Bx` as a momentum component.
+* **The internal energy owes the field**: `e = ρE − ke − ½|B|² − ½ψ²`. And
+  `½|B|²` is **not reducible** — rescaling `B` would break the discrete
+  `∇·B = 0` that the GLM cleaning and the initial condition maintain, which is a
+  worse defect than the one being repaired. So the magnetic energy is a *fixed
+  charge* against ρE, and that changes which branch is reachable: on a low-β
+  problem `½|B|²` can exceed `ρE − e_min` on its own, and then no momentum
+  scaling can restore `p` and branch 2b is the only option. On the magnetized jet
+  (`β_a = 1e-2`, `½|B|² = 100` against an ambient `ρE` of 102.5) that is the
+  normal regime, so **2b firing there is a statement about the field, not
+  necessarily about a broken momentum.**
+
+Branch 2a still conserves total energy *exactly* (`ρE`, `B` and `ψ` are all
+untouched; only the momentum is scaled), so `∇·B` is unchanged by the repair.
+
+`γ` comes from `:dsgs_gamma`, **not** from `PhysicalConst`: the MHD cases in this
+tree run γ = 1.4, 5/3 and 1.05, and air's 1.4 would be silently wrong for two of
+the three.
+
+### How small `p_min` can usefully be
+
+`p` is recovered by cancellation against `ρE`, so no repair can place it more
+accurately than the spacing of `ρE` itself. The achievable *absolute* accuracy on
+`p` is `(γ−1)·eps(ρE)`; the *relative* accuracy on `p_min` is `eps(ρE)/e_min`.
+Measured on the magnetized jet, where `ρE = 4.48e5` in the beam:
+
+```
+(γ−1)·eps(ρE) = 2.3e-11     <- p cannot be resolved below this at all
+p_min         = 1.0e-6      <- 4.3e4 above it: safe
+p lands on p_min to 2.3e-5 relative, not to machine precision
+```
+
+So keep `p_min` several orders above `(γ−1)·eps(ρE_max)`, and do not expect
+`p == p_min` afterwards to better than `eps(ρE)/e_min`. This is a property of the
+state, not of the repair: the same limit binds any scheme that carries `ρE` and
+recovers `p` from it.
 
 ## Settings
 
