@@ -280,6 +280,11 @@ function user_inputs()
 	#:restart_time         => 9000.0,
         # DBG_RESTART_VTK=true continues from the last snapshot in the output dir.
         :lrestart_vtk         => parse(Bool, get(ENV, "DBG_RESTART_VTK", "false")),
+        # DBG_RESTART_IOUT=N restarts from iter_N instead of the last dump; the
+        # time comes from :diagnostics_at_times[N], so N must be the pvd's index
+        # for that time (iter_29 = 9000 s on this deck's cadence). Used to re-run
+        # the statistics window in one segment after the 9540 s crash.
+        (haskey(ENV, "DBG_RESTART_IOUT") ? (:restart_vtk_iout => parse(Int, ENV["DBG_RESTART_IOUT"]),) : ())...,
 	# EVERY range needs its own `...`; the third was missing one, which made this
 	# a tuple of 28 Floats followed by a StepRangeLen and killed the run in
 	# time_loop! (collect(Float64, ...) cannot convert a range to a Float64).
