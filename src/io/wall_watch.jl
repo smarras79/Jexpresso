@@ -86,6 +86,10 @@ function wall_watch_report(params, u, t, step; io = stdout, thresh = 12.0)
     g_u1   = MPI.Allreduce(max_u1, MPI.MAX, comm)
     g_w1   = MPI.Allreduce(max_w1, MPI.MAX, comm)
     g_ρθ   = MPI.Allreduce(min_ρθ, MPI.MIN, comm)
+    # Peak resident set size across ranks, in GB. mpirun-launched ranks are
+    # invisible to sacct, and job 1300883 died of std::bad_alloc at t = 9540
+    # with no record of how memory had grown; this is the record.
+    g_rss  = MPI.Allreduce(Float64(Sys.maxrss()) / 2^30, MPI.MAX, comm)
 
     if rank == owner && isfinite(gbest)
         uh1   = hypot(rec[5], rec[6])
@@ -99,8 +103,8 @@ function wall_watch_report(params, u, t, step; io = stdout, thresh = 12.0)
     end
     MPI.Barrier(comm)
     if rank == 0
-        @printf(io, " # wall-watch t=%.1f summary | wall nodes=%d, |uh|>%.0f: %d | mean|uh_wall-uh_node2|=%.3f | node2 layer max|uh|=%.2f max|w|=%.2f | min(rho*theta)=%.1f\n",
-                Float64(t), g_n, thresh, g_run, g_off / max(g_n,1), g_u1, g_w1, g_ρθ)
+        @printf(io, " # wall-watch t=%.1f summary | wall nodes=%d, |uh|>%.0f: %d | mean|uh_wall-uh_node2|=%.3f | node2 layer max|uh|=%.2f max|w|=%.2f | min(rho*theta)=%.1f | max RSS=%.2f GB\n",
+                Float64(t), g_n, thresh, g_run, g_off / max(g_n,1), g_u1, g_w1, g_ρθ, g_rss)
         flush(io)
     end
     return nothing
