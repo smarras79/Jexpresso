@@ -12,6 +12,24 @@
 # between the wall node and the node above, and the extrema on the layer
 # above. Meant to be pasted, not parsed.
 #
+
+# Live VmRSS and VmSize of this process in GB from /proc (Linux); NaN elsewhere.
+function _wall_watch_procmem()
+    rss = NaN; vsz = NaN
+    Sys.islinux() || return rss, vsz
+    try
+        for line in eachline("/proc/self/status")
+            if startswith(line, "VmRSS:")
+                rss = parse(Float64, split(line)[2]) / 2^20
+            elseif startswith(line, "VmSize:")
+                vsz = parse(Float64, split(line)[2]) / 2^20
+            end
+        end
+    catch
+    end
+    return rss, vsz
+end
+
 function wall_watch_report(params, u, t, step; io = stdout, thresh = 12.0)
     mesh   = params.mesh
     inputs = params.inputs
@@ -86,10 +104,17 @@ function wall_watch_report(params, u, t, step; io = stdout, thresh = 12.0)
     g_u1   = MPI.Allreduce(max_u1, MPI.MAX, comm)
     g_w1   = MPI.Allreduce(max_w1, MPI.MAX, comm)
     g_ρθ   = MPI.Allreduce(min_ρθ, MPI.MIN, comm)
-    # Peak resident set size across ranks, in GB. mpirun-launched ranks are
-    # invisible to sacct, and job 1300883 died of std::bad_alloc at t = 9540
-    # with no record of how memory had grown; this is the record.
+    # Memory across ranks, in GB. mpirun-launched ranks are invisible to sacct,
+    # and job 1300883 died of std::bad_alloc at t = 9540 with no record. A
+    # bad_alloc is malloc returning NULL, which under Linux overcommit means
+    # RLIMIT_AS (ulimit -v), not the cgroup (that would be a SIGKILL) -- so the
+    # VIRTUAL size is the number that matters, and it is far above the RSS for
+    # a Julia process with libfabric buffers registered. /proc gives the live
+    # values on Linux; elsewhere only the peak RSS is available.
+    rss_now, vsz_now = _wall_watch_procmem()
     g_rss  = MPI.Allreduce(Float64(Sys.maxrss()) / 2^30, MPI.MAX, comm)
+    g_rssn = MPI.Allreduce(rss_now, MPI.MAX, comm)
+    g_vsz  = MPI.Allreduce(vsz_now, MPI.MAX, comm)
 
     if rank == owner && isfinite(gbest)
         uh1   = hypot(rec[5], rec[6])
@@ -103,8 +128,8 @@ function wall_watch_report(params, u, t, step; io = stdout, thresh = 12.0)
     end
     MPI.Barrier(comm)
     if rank == 0
-        @printf(io, " # wall-watch t=%.1f summary | wall nodes=%d, |uh|>%.0f: %d | mean|uh_wall-uh_node2|=%.3f | node2 layer max|uh|=%.2f max|w|=%.2f | min(rho*theta)=%.1f | max RSS=%.2f GB\n",
-                Float64(t), g_n, thresh, g_run, g_off / max(g_n,1), g_u1, g_w1, g_ρθ, g_rss)
+        @printf(io, " # wall-watch t=%.1f summary | wall nodes=%d, |uh|>%.0f: %d | mean|uh_wall-uh_node2|=%.3f | node2 layer max|uh|=%.2f max|w|=%.2f | min(rho*theta)=%.1f | mem GB: peakRSS=%.2f RSS=%.2f VSZ=%.2f\n",
+                Float64(t), g_n, thresh, g_run, g_off / max(g_n,1), g_u1, g_w1, g_ρθ, g_rss, g_rssn, g_vsz)
         flush(io)
     end
     return nothing
