@@ -170,9 +170,18 @@ function plot_pod_modes(P::St_pod, mesh, rec::St_pod_recorder, OUTPUT_DIR::Strin
                                                P.ncomp == 1 ? "" : string(" (", P.comps[c], ")")),
                            plot_titlefontsize = 16,
                            # the panels carry axis labels of their own, and the
-                           # default margins of a grid layout clip them
+                           # default margins of a grid layout clip them.
+                           #
+                           # right_margin is the one that is easy to miss and is
+                           # visible in every figure: each panel draws a COLOUR
+                           # BAR to its right, which Plots lays out inside the
+                           # subplot's own cell. Without room reserved there the
+                           # bar's tick labels run straight over the next
+                           # column's "latitude [deg]", and the last column's
+                           # labels are clipped off at the figure edge — on a
+                           # mode figure, the one number a reader wants to check.
                            left_margin = 8Plots.mm, bottom_margin = 6Plots.mm,
-                           top_margin = 3Plots.mm)
+                           top_margin = 3Plots.mm, right_margin = 14Plots.mm)
         _pod_savefig(fig, joinpath(OUTPUT_DIR, string("pod_", P.name, cn, "_modes")), rec)
     end
     return nothing

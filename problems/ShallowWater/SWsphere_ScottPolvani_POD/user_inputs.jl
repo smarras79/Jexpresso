@@ -14,11 +14,29 @@
 # the paper's Fig. 1 and has not made jets yet; :pod_tstart below exists so the
 # decomposition does not average the spin-up in with the equilibrium.
 #
-# MEASURED on this grid, Jupiter, serial:  Δt = 1413 s, ~25 steps per rotation,
-# ~0.13 s/step, so ~8 steps/s of wall clock. 50 rotations gave Ê = 13.8 m²/s²
-# and Ro = 2.1e-4 — a tenth of the target — and confirmed the realised input
-# rate is ε₀ to six figures at every step. The default below is the full run.
-# Shorten it with SP_NROT for a smoke test; do not read physics off a short one.
+# MEASURED on this grid, Jupiter, serial: Δt = 1413 s, ~25 steps per rotation,
+# ~0.03 s/step; the full 5000-rotation default is 126 381 steps and about an
+# hour. The realised input rate held at 1.000 ε₀ for every one of those steps,
+# with δmass/mass = 1.2e-9.
+#
+#   rotations      Ê [m²/s²]      Ro
+#         100          22.0     2.64e-4
+#         500          41.0     3.60e-4
+#        5000          73.2     4.81e-4
+#
+# AND THAT IS FOUR TIMES SHORT OF THE TARGET Ro = 2e-3, which is worth being
+# plain about rather than discovering in a figure. The Rayleigh closure
+# predicts Ê_eq = f_up ε₀/(2ν_l) = 1264 m²/s²; the run equilibrates near 73,
+# i.e. an EFFECTIVE upscale fraction f_up_eff = 2ν_l Ê/ε₀ = 0.023 against the
+# 0.4 the closure assumes. The cause is the stabilisation, not the forcing:
+# the modal filter plus ν∇ₛ² standing in for the paper's ∇⁸ hyperdiffusion is
+# far less scale-selective, so it dissipates ~94 % of what would otherwise
+# have cascaded upscale. The flow that results is still recognisably the
+# paper's — zonally banded, organised well below n_f — but its Rossby number
+# is not the paper's, and any comparison has to say so. Lowering :μ (the
+# deck's ν) and raising :filter_kcut are the two knobs; neither was tuned to
+# close this gap, because a scale-selective hyperdiffusion is what the problem
+# actually wants.
 #
 # WHAT IS DIFFERENT from problems/ShallowWater/SWsphere_ScottPolvani:
 #
@@ -387,14 +405,47 @@ function user_inputs()
         # cadence is chosen to keep a movie small, a decomposition wants dense
         # uniform sampling, and the two have no reason to agree. 60 intervals
         # over the default run is one snapshot every ~33 rotations.
-        :pod_nsnapshots       => 60,
-        # START THE WINDOW PAST THE SPIN-UP. The first e-folding time is a
-        # monotone ramp from rest, and a decomposition that includes it spends
-        # its leading mode describing "the flow got faster" — true, and not what
-        # the question is. Half the run leaves ~2500 rotations of settled flow,
-        # which is what the modes below are of. Set it to 0.0 to decompose the
-        # spin-up deliberately.
-        :pod_tstart           => 0.5*2*nrot*T, # start of the POD window [s]
+        # HOW MANY SNAPSHOTS, AND OVER WHAT WINDOW. This is the one POD
+        # setting a forced-dissipative case gets wrong by default, so it is
+        # measured rather than guessed. The flow decorrelates on the eddy
+        # turnover time at the energy-containing scale, L/U with L = a/n_Rh,
+        # which here is ~5 ROTATIONS (the forcing's own τ is 10). Two things
+        # then have to hold at once, and they pull in opposite directions:
+        #
+        #   * the SPACING must be at or below that correlation time, or the
+        #     snapshots are independent draws and the spectrum collapses onto
+        #     the 1/K white-noise floor;
+        #   * the WINDOW must be long enough to sample the attractor, or the
+        #     leading modes are inflated by the few states that happened to be
+        #     in it.
+        #
+        # MEASURED, this grid, Jupiter, one 600-rotation trajectory decomposed
+        # four ways (mode 1 of the vorticity):
+        #
+        #   window  spacing    K     mode 1
+        #    100 r    0.5 r   201    26.5 %     ← window too short, inflated
+        #    400 r    2.0 r   201     9.8 %
+        #    500 r    1.0 r   501     8.2 %     ← K×2.5 at the same window:
+        #   2500 r   41.7 r    61     3.5 %       barely moves, so K is not
+        #                                         the limiter — the window is
+        #
+        # K at fixed window changes almost nothing (9.8 → 8.2 %), while the
+        # window changes everything. So the broad spectrum is REAL: this flow
+        # has no few dominant structures, which is the honest contrast with the
+        # Galewsky jet (3 modes for 90 % of the energy) and the reason a
+        # POD-Galerkin model of a turbulent attractor is expensive. Do not
+        # "improve" it by shortening the window.
+        #
+        # 500 snapshots over the last 1000 rotations is spacing 2 rotations —
+        # under the correlation time, ~200 turnovers of statistics, ~230 MB.
+        :pod_nsnapshots       => 500,
+        # START THE WINDOW PAST THE SPIN-UP, and make it the LAST 1000
+        # rotations so the spacing comes out at 2 rotations against the 500
+        # snapshots above — see the table there. The spin-up is a monotone ramp
+        # from rest, and a decomposition that includes it spends its leading
+        # mode describing "the flow got faster", which is true and not the
+        # question. max(0, …) keeps a short SP_NROT smoke test legal.
+        :pod_tstart           => max(0.0, 2*nrot*T - 1000*T),  # last 1000 rotations [s]
         :pod_nmodes           => 24,           # 0 = every mode the snapshots support
         :pod_nmodes_plot      => 6,
         :pod_subtract_mean    => true,         # decompose the fluctuation, not the field
