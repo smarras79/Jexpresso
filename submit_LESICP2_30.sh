@@ -361,7 +361,13 @@ else
 fi
 HEAP_MB=0
 if [ "$RANK_MB" -gt 0 ] && "${JULIA[@]}" --heap-size-hint=1G -e 'exit(0)' >/dev/null 2>&1; then
-    HEAP_MB=$(( RANK_MB * 85 / 100 ))
+    # 60%, not 85%. The hint is the JULIA heap's budget; the cgroup limit is the
+    # whole process, and MPI/libfabric registrations, LLVM and the code image
+    # take ~1 GB of that. At 85% of 4000M job 1300883 crossed the 4 GB cgroup
+    # once the statistics + 10 s dumps started at t = 9000, and died of
+    # std::bad_alloc (a C++ allocation, i.e. LLVM) 540 s later with no leak in
+    # sight -- the GC simply had no reason to run yet.
+    HEAP_MB=$(( RANK_MB * 60 / 100 ))
     JULIA_FLAGS+=(--heap-size-hint=${HEAP_MB}M)
 fi
 
