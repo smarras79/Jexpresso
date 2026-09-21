@@ -189,6 +189,12 @@ fi
 ulimit -l unlimited 2>/dev/null || true
 echo "--- Limits: locked memory (ulimit -l) = $(ulimit -l), hard = $(ulimit -H -l) ---"
 echo "--- Limits: virtual (ulimit -v) = $(ulimit -v), data (ulimit -d) = $(ulimit -d), stack = $(ulimit -s) -- a bad_alloc is malloc failing, i.e. -v, not the cgroup ---"
+# RLIMIT_AS is what turns a malloc into std::bad_alloc under overcommit (the
+# cgroup would SIGKILL instead). Julia + registered libfabric buffers sit at a
+# virtual size several times the RSS, so lift the soft limit as far as the
+# hard limit allows; if the hard limit is finite that is a ticket to the admins.
+ulimit -v unlimited 2>/dev/null || ulimit -v "$(ulimit -H -v)" 2>/dev/null || true
+echo "--- Limits after raise: virtual (ulimit -v) = $(ulimit -v), hard = $(ulimit -H -v) ---"
 
 for m in "${MODULES[@]}"; do module load "$m" || exit 1; done
 cd "$ROOT" || exit 1
