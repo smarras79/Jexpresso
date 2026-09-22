@@ -395,7 +395,9 @@ function user_inputs()
 	# `...` on only the first, this was ten Floats followed by a StepRangeLen,
 	# and collect(Float64, les_stat_t) in TimeIntegrators.jl cannot convert a
 	# range to a Float64.)
-	:statistics_time      => (9000.0:10:10800.0...,),
+	# DBG_STAT_EVERY overrides the 10 s cadence (2 s = 900 calls over the
+	# window; measured on the laptop, les_statistics does not grow memory).
+	:statistics_time      => (9000.0:parse(Float64, get(ENV, "DBG_STAT_EVERY", "10")):10800.0...,),
 	#:statistics_time      => (10.0:10.0:100),
         #:statistics_online_start    => 9000.0,
 	#:statistics_online_interval => 0.2,
