@@ -267,7 +267,10 @@ export JEXPRESSO_STEP_HEARTBEAT=1
 # A bare 0 here (as in the profile script) OVERRIDES the deck's own default of
 # true, so an sbatch would silently take the arm that blows up. `:-1` keeps
 # `DBG_VDIFF=0 sbatch ...` working for a deliberate A/B or a timing run.
-export DBG_VDIFF="${DBG_VDIFF:-1}"
+# DBG_VDIFF is NOT defaulted here: `export DBG_VDIFF="${DBG_VDIFF:-1}"` used to
+# force the five-field solve whenever the caller did not pass the variable,
+# overriding the 64x64 deck's Schur default (job 1305186 ran at 4.4 s/step
+# instead of 1.5). The deck owns the default; the environment overrides it.
 
 # One BLAS/Julia thread per rank: the ranks already fill the node, and nested
 # threading oversubscribes it.
