@@ -5609,8 +5609,111 @@ function build_dg_faces_2D!(mesh::St_mesh)
 
     n_per = periodic_pairs!("periodicx") + periodic_pairs!("periodicz")
 
+    # --- 2:1 mortar faces: from the p4est non-conforming glue ----------------
+    empty!(mesh.dg_ncf_c);   empty!(mesh.dg_ncf_p);   empty!(mesh.dg_ncf_half)
+    empty!(mesh.dg_ncf_lfc); empty!(mesh.dg_ncf_lfp)
+    empty!(mesh.dg_ncf_nx);  empty!(mesh.dg_ncf_ny)
+    empty!(mesh.dg_ncf_Jfc); empty!(mesh.dg_ncf_Jfp)
+    empty!(mesh.dg_ncfp_p);  empty!(mesh.dg_ncfp_lfp)
+    empty!(mesh.dg_ncfp_h1); empty!(mesh.dg_ncfp_h2)
+
+    # Which slice of element e holds exactly the point ids ips[1:ngl], in that
+    # order? Exact integer match against connijk — no tolerance, no coordinate
+    # test. A reversed match is reported separately so the caller can refuse it.
+    function slice_of(e, ips)
+        for lf = 1:4
+            fwd = true; rev = true
+            for k = 1:ngl
+                fwd &= slice_ip(e, lf, k) == ips[k]
+                rev &= slice_ip(e, lf, ngl - k + 1) == ips[k]
+            end
+            fwd && return (lf, false)
+            rev && return (lf, true)
+        end
+        return (0, false)
+    end
+
+    n_ncf = length(mesh.non_conforming_facets)
+    n_ncf == mesh.num_ncf || error("build_dg_faces_2D!: non_conforming_facets has $n_ncf entries but num_ncf = $(mesh.num_ncf)")
+    pface = Dict{Tuple{Int,Int},Int}()          # (p, lfp) → row in dg_ncfp_*
+    for idx = 1:n_ncf
+        c, p, _, half = mesh.non_conforming_facets[idx]
+        (half == 1 || half == 2) || error("build_dg_faces_2D!: mortar entry $idx has half = $half, expected 1 or 2")
+        mesh.ad_lvl[c] == mesh.ad_lvl[p] + 1 || error("build_dg_faces_2D!: mortar entry $idx (child $c level $(mesh.ad_lvl[c]), parent $p level $(mesh.ad_lvl[p])) is not a one-level 2:1 face")
+        ipc = @view mesh.IPc_list[:, idx]
+        ipp = @view mesh.IPp_list[:, idx]
+        lfc, revc = slice_of(c, ipc)
+        lfp, revp = slice_of(p, ipp)
+        lfc != 0 || error("build_dg_faces_2D!: child trace of mortar entry $idx (element $c) matches no slice of connijk")
+        lfp != 0 || error("build_dg_faces_2D!: parent trace of mortar entry $idx (element $p) matches no slice of connijk")
+        (revc || revp) && error("build_dg_faces_2D!: mortar entry $idx trace runs against the slice direction (child rev=$revc, parent rev=$revp) — the projection operators assume ascending traces")
+        # normal from the child slice tangent, oriented out of the child (= toward the parent)
+        tx = mesh.x[ipc[ngl]] - mesh.x[ipc[1]]; ty = mesh.y[ipc[ngl]] - mesh.y[ipc[1]]
+        Lc = hypot(tx, ty)
+        nx = ty / Lc; ny = -tx / Lc
+        fcx = zero(TF); fcy = zero(TF)
+        for k = 1:ngl
+            fcx += mesh.x[ipc[k]] / ngl; fcy += mesh.y[ipc[k]] / ngl
+        end
+        ecx, ecy = cent(c)
+        if nx * (fcx - ecx) + ny * (fcy - ecy) < 0
+            nx = -nx; ny = -ny
+        end
+        Lp = hypot(mesh.x[ipp[ngl]] - mesh.x[ipp[1]], mesh.y[ipp[ngl]] - mesh.y[ipp[1]])
+        push!(mesh.dg_ncf_c, c);        push!(mesh.dg_ncf_p, p)
+        push!(mesh.dg_ncf_half, half)
+        push!(mesh.dg_ncf_lfc, lfc);    push!(mesh.dg_ncf_lfp, lfp)
+        push!(mesh.dg_ncf_nx, nx);      push!(mesh.dg_ncf_ny, ny)
+        push!(mesh.dg_ncf_Jfc, Lc / 2); push!(mesh.dg_ncf_Jfp, Lp / 2)
+        row = get!(pface, (p, lfp)) do
+            push!(mesh.dg_ncfp_p, p); push!(mesh.dg_ncfp_lfp, lfp)
+            push!(mesh.dg_ncfp_h1, 0); push!(mesh.dg_ncfp_h2, 0)
+            length(mesh.dg_ncfp_p)
+        end
+        slot = half == 1 ? mesh.dg_ncfp_h1 : mesh.dg_ncfp_h2
+        slot[row] == 0 || error("build_dg_faces_2D!: parent face (element $p, slice $lfp) has two children claiming half $half")
+        slot[row] = idx
+    end
+    n_pf = length(mesh.dg_ncfp_p)
+    for r = 1:n_pf
+        (mesh.dg_ncfp_h1[r] != 0 && mesh.dg_ncfp_h2[r] != 0) || error("build_dg_faces_2D!: parent face (element $(mesh.dg_ncfp_p[r]), slice $(mesh.dg_ncfp_lfp[r])) is missing a child half")
+    end
+
+    # --- census: every element side claimed by exactly one face object -------
+    claimed = zeros(Int, mesh.nelem, 4)
+    for f = 1:length(mesh.dg_face_eL)
+        claimed[mesh.dg_face_eL[f], mesh.dg_face_lfL[f]] += 1
+        claimed[mesh.dg_face_eR[f], mesh.dg_face_lfR[f]] += 1
+    end
+    for idx = 1:n_ncf
+        claimed[mesh.dg_ncf_c[idx], mesh.dg_ncf_lfc[idx]] += 1
+    end
+    for r = 1:n_pf
+        claimed[mesh.dg_ncfp_p[r], mesh.dg_ncfp_lfp[r]] += 1
+    end
+    n_wall = 0
+    for iedge_bdy = 1:length(mesh.bdy_edge_type)
+        tag = mesh.bdy_edge_type[iedge_bdy]
+        (tag == "periodicx" || tag == "periodicz") && continue
+        e = mesh.bdy_edge_in_elem[iedge_bdy]
+        lf, _ = slice_of(e, @view mesh.poin_in_bdy_edge[iedge_bdy, 1:ngl])
+        lf != 0 || error("build_dg_faces_2D!: boundary edge $iedge_bdy (element $e, tag $tag) matches no slice of connijk")
+        claimed[e, lf] += 1
+        n_wall += 1
+    end
+    n_bad = 0
+    for e = 1:mesh.nelem, lf = 1:4
+        if claimed[e, lf] != 1
+            n_bad += 1
+            n_bad <= 10 && println(" # build_dg_faces_2D!: element $e slice $lf claimed $(claimed[e, lf]) times")
+        end
+    end
+    n_bad == 0 || error("build_dg_faces_2D!: face census failed — $n_bad element sides are not claimed exactly once (listed above); a missing or duplicated face would couple wrongly and silently")
+
     println(" # build_dg_faces_2D!: ", n_int, " interior + ", n_per, " periodic = ",
-            length(mesh.dg_face_eL), " faces")
+            length(mesh.dg_face_eL), " conforming faces; ", n_pf, " mortar parent faces (",
+            n_ncf, " child halves); ", n_wall, " wall sides; census ",
+            4 * mesh.nelem, "/", 4 * mesh.nelem, " element sides claimed once")
 end
 
 function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D, elm2pelm)

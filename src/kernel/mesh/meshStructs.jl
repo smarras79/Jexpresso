@@ -265,5 +265,31 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     dg_face_nx::Vector{TFloat}  = TFloat[]   # unit normal (L→R), x component
     dg_face_ny::Vector{TFloat}  = TFloat[]   # unit normal (L→R), y component
     dg_face_Jf::Vector{TFloat}  = TFloat[]   # face Jacobian = edge length / 2 (straight edges)
+    # ------------------------------------------------------------------
+    # DG (DiscGal) 2:1 mortar faces — built by build_dg_faces_2D! from the
+    # p4est non-conforming glue (non_conforming_facets + IPc_list/IPp_list),
+    # consumed by the mortar loop in surface_rhs_el!(::NSD_2D). Entries are
+    # indexed in non_conforming_facets order, so IPc_list[:, idx] /
+    # IPp_list[:, idx] are the child and parent trace point ids of entry idx
+    # (both ascending along the slice). Slice ids use the same lattice
+    # convention as dg_face_lf* and are found by matching the IP lists
+    # against connijk, never by translating the glue's facet numbering.
+    # Empty on conforming meshes and under ContGal/FD. Flat for the cache.
+    # ------------------------------------------------------------------
+    dg_ncf_c::Vector{TInt}      = TInt[]     # child element
+    dg_ncf_p::Vector{TInt}      = TInt[]     # parent element
+    dg_ncf_half::Vector{TInt}   = TInt[]     # 1 = upper half of the parent trace, 2 = lower
+    dg_ncf_lfc::Vector{TInt}    = TInt[]     # child's local facet id (slice convention)
+    dg_ncf_lfp::Vector{TInt}    = TInt[]     # parent's local facet id (slice convention)
+    dg_ncf_nx::Vector{TFloat}   = TFloat[]   # unit normal, child → parent, x component
+    dg_ncf_ny::Vector{TFloat}   = TFloat[]   # unit normal, child → parent, y component
+    dg_ncf_Jfc::Vector{TFloat}  = TFloat[]   # child face Jacobian = child edge length / 2
+    dg_ncf_Jfp::Vector{TFloat}  = TFloat[]   # parent face Jacobian = parent edge length / 2
+    # One row per mortar parent face (p, lfp): the dg_ncf_* entry indices of
+    # its two children, so the parent correction is assembled once per face.
+    dg_ncfp_p::Vector{TInt}     = TInt[]
+    dg_ncfp_lfp::Vector{TInt}   = TInt[]
+    dg_ncfp_h1::Vector{TInt}    = TInt[]     # entry index with half == 1
+    dg_ncfp_h2::Vector{TInt}    = TInt[]     # entry index with half == 2
 
 end
