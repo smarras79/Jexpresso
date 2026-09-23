@@ -7,6 +7,10 @@
 #
 # To add a case to this workflow, add one line to test/ci_cases.jl.
 # Nothing in this file has to change.
+#
+# The `registry` job also runs the standalone unit tests that need no package
+# instantiation (test/test_pod.jl), which is what keeps them cheap enough to be
+# a gate rather than a nightly.
 #==============================================================================
 name: CI
 
@@ -30,7 +34,7 @@ permissions:
 
 jobs:
   registry:
-    name: Validate CI registry
+    name: Validate CI registry + POD unit tests
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -42,6 +46,13 @@ jobs:
       # test/ci_cases.jl must have its six user_*.jl files in test/CI-runs/.
       - name: Check test/ci_cases.jl against the repository
         run: julia test/ci_cases.jl validate
+      # Same idea: the POD kernel, the rasterizer and the closed-form reference
+      # benchmark are all checked by files written free of Jexpresso types, so
+      # they need no package instantiation either. Seconds, not minutes.
+      - name: Unit-test the POD kernel
+        run: julia test/test_pod.jl
+      - name: POD reference benchmark (closed-form)
+        run: julia test/test_pod_benchmark.jl
 
   test:
     name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }}

@@ -432,8 +432,8 @@ end
 # makes μ_dsgs dimensionally a kinematic viscosity (m²/s) regardless of SD.
 #
 # Both numerators and denominators are L∞ norms over a region larger than
-# one element — the rank's subdomain by default, the whole domain under
-# :ldsgs_global_norms (see _dsgs_norm_scope below) — so the coefficient
+# one element — the whole domain by default, the rank's subdomain under
+# :dsgs_norms => "domain" (see _dsgs_norm_scope below) — so the coefficient
 # cannot be inlined into the (k,l) loop the way
 # SMAG/VREM are — it is precomputed once per RHS call into the
 # pre-allocated μ_dsgs[1:nelem] buffer. SGS_diffusion(::DSGS, ::SD)
@@ -602,24 +602,36 @@ end
 # — five times per step under CarpenterKennedy2N54, times two or three
 # reductions each.
 #
-# Default: RANK-LOCAL (`lglobal_norms = false`). These two quantities only set
-# the SCALE the residual indicator is measured against; what the model needs
-# from them is the order of magnitude of the solution's variation, and a
-# partition of a connected domain resolves that as well as the whole domain
-# does. μ is bounded by min(μ_res, μ_max) either way, so the flow solution
-# differs only at the level of the usual round-off divergence. No
-# communication at all.
+# Default: THE WHOLE DOMAIN (`lglobal_norms = true`, :dsgs_norms => "domain"
+# in mod_inputs.jl; every kernel below and every call site in rhs.jl takes
+# the same flag), which is what the papers write. Costs 2-3 Allreduce of a
+# few doubles per RHS call — nothing next to the RHS itself.
 #
-# Opt-in: the paper's domain norms, with
+# RANK-LOCAL (:dsgs_norms => "rank") was the default until September 2026, on
+# the argument that these quantities only set the SCALE the residual is
+# measured against and that a partition of a connected domain resolves that
+# scale as well as the whole domain does, so the solution would differ only
+# at round-off. THAT ARGUMENT IS WRONG, and the case it fails on is the
+# common one: a rank that holds none of the interesting flow sees only its
+# own quiet background, normalizes by that, and applies a different viscosity
+# to the same solution than its neighbour does. Measured on
+# problems/MHD/smoothVortex (nop 6, 32² elements, ck54, Δt = 3.3333e-4,
+# t = 1, absolute velocity L¹):
 #
-#     :ldsgs_global_norms => true      # in user_inputs.jl
+#     1-2 ranks     3.935e-07
+#     4, 8 ranks    7.155e-06     identical to each other, 18x worse
 #
-# threaded down from rhs.jl. Use it when you want μ reproducible across rank
-# counts — a regression test that compares fields bit-for-bit between a
-# 1-rank and an N-rank run — or when a subdomain genuinely cannot see the
-# solution's scale (a partition that lies entirely inside a uniform region
-# while the interesting structure lives on another rank). Costs 2-3
-# Allreduce per RHS call.
+# — an error floor that no mesh refinement goes below, and on a 2D field the
+# partition drawn into the coefficient as banding at the rank boundaries
+# (orszagTangBormanis2024, 120² elements over 128 ranks). It saturates
+# because the outcome is bimodal: ranks holding the structure normalize by
+# the structure, ranks holding nothing normalize by their floor, and more
+# ranks only changes how many of each there are.
+#
+# So "rank" is now opt-in, for cases whose subdomains are known to be
+# statistically alike and where the reductions have been measured to matter.
+# "element" (DSGS_MHD only) normalizes per element instead:
+# params.dsgs_local_norms, for strongly stratified atmospheres.
 #
 # The communicator is Jexpresso's own get_mpi_comm(), NOT MPI.COMM_WORLD:
 # under MPMD coupling COMM_WORLD also carries Alya's ranks, which never call
@@ -632,6 +644,107 @@ end
 # a hand-typed function barrier (concrete arrays, no params.* lookups)
 # so Julia can specialize and the inner loop is allocation-free.
 #
+# Normalizing scale of one equation's residual (Dao & Nazarov 2022, eq. 4.8:
+# the residual is divided by the spread ‖q_i − ⟨q_i⟩‖∞ of that variable).
+#
+# THE FLOOR IS THE VARIABLE'S OWN PHYSICAL SCALE, not a thousandth of it.
+# Some variable is always nearly uniform — ρ in an isentropic vortex (ρ ≡ 1),
+# Bx in a 1D shock tube (constant by construction), a tracer nobody has
+# released — and its spread is then tiny while its residual is ordinary
+# numerical error. Dividing by 1e-3·scale AMPLIFIED that error by up to 1000
+# and the max over the equations was taken over the one variable with nothing
+# to say. Measured on the smooth vortex, on the clean (viscosity-free)
+# solution: the ρ ratio came out 40-60x every other equation's at every
+# resolution, on its own enough to hold ν at the cap C_max·Δ·λ — an O(h)
+# viscosity, identical for every polynomial order, which is what flattened
+# that case to first order and what made the Brio-Wu orders indistinguishable.
+#
+# Flooring at the scale itself leaves the equation in the max (its residual
+# still counts, now measured against something physical) and costs nothing
+# where the variable genuinely varies, since the spread then wins: no shock
+# case measurably changed. Dropping such an equation from the max altogether
+# was tried first and is WRONG — the deviation of a should-be-constant
+# variable is a real oscillation detector, and without it Brio-Wu at nop 7
+# lost the dissipation that keeps it stable (measured: it aborts). The
+# thousandth is still available as :dsgs_rel => 1.0e-3.
+# How far below its own physical scale a variable's spread may fall before
+# the scale, and not the spread, normalizes that equation's residual.
+# `rel` inside the kernels is the OLD value, 1e-3; this multiplies it, so
+# 1000 (the default, :dsgs_rel => 1.0) makes the floor the physical scale
+# itself and 1 restores the pre-fix behaviour. Set from :dsgs_rel once per
+# RHS call in _dsgs_residual_rhs! (rhs.jl).
+const _DSGS_RELMUL = Ref(1000.0)
+
+@inline _dsgs_denom(spread::TT, fl::TT) where {TT<:AbstractFloat} =
+    max(spread, TT(_DSGS_RELMUL[])*fl)
+
+# :dsgs_cutoff — a smoothness cutoff on the NORMALIZED residual.
+#
+# On a smooth, resolved solution the sensor does not read zero: the residual
+# is formed element-locally, and where the flow is flat the element's own weak
+# RHS is dominated by the inter-element jump of a grid-scale residue that the
+# assembly cancels (measured on the smooth vortex: far from the vortex the
+# element term is 18x the assembled rate, and both halve when dt halves — so
+# nu inherits a floor proportional to dt). That floor is what caps a
+# high-order accuracy study at 2nd order once the spatial error drops under
+# it, while the plain Galerkin solution keeps design order.
+#
+# The cutoff removes it by SUBTRACTION rather than by a switch:
+#
+#     ratio -> max(0, ratio - cutoff)
+#
+# so nu is exactly zero below the cutoff, continuous across it (a hard on/off
+# on nu would flip element by element from step to step), and asymptotically
+# unchanged above it — at a shock the normalized ratio is O(10^2) and a cutoff
+# of 10^-3 changes it in the sixth digit. Measured ratios on the smooth vortex
+# at P6/32^2: 1.6e-6 in the far field, 1.9e-5 in the vortex core.
+#
+# 0 (the default) leaves the coefficient exactly as it was.
+@inline _dsgs_cut(ratio::TT, cut::TT) where {TT<:AbstractFloat} =
+    cut > zero(TT) ? max(ratio - cut, zero(TT)) : ratio
+
+# :dsgs_freeze_stage — the coefficient is computed ONCE PER TIME STEP, at the
+# stage that sits on tⁿ, and held for the rest of the step.
+#
+# Why it matters for accuracy. ν = C_R h² R̃, and R̃ is measured with a
+# three-point time difference across the RK stages (rhs.jl, _dsgs_stencil).
+# Those weights are second-order in the values they are GIVEN, but at an
+# intermediate stage one of those values is an RK internal stage, whose own
+# error is O(Δt) — explicit RK schemes have low stage order. So R̃ never
+# falls below O(Δt), no matter how smooth and how well resolved the solution
+# is, and ν stalls at C_R h²·O(Δt): on a smooth problem the RV solution then
+# departs from the Galerkin one by O(h²), which caps the measured order at 2
+# as soon as the spatial error drops under it (measured: P6 and P7 of the
+# smooth vortex bend to p = 2.4 and 2.1 exactly there).
+#
+# Computed at tⁿ instead, from step-level states only, R̃ is the BDF2
+# truncation error O(Δt²) and the floor drops by a factor Δt.
+#
+# Set from rhs.jl once per RHS call; when it is true the kernels below return
+# at once and leave μ_dsgs as the step's stage-zero value.
+const _DSGS_FROZEN = Ref(false)
+
+# JEXPRESSO_DSGS_RSPLIT=1 — record, per element, HOW the residual that sets ν
+# was made: the time term ∂ₜq of the three-level stencil, the space term
+# rhs_el/m_K, and the normalized ratio itself, all at the node where the ratio
+# is largest. R = |time − space|, and the two can be large and nearly
+# cancelling, or one can be zero. A ν that is large where the solution is flat
+# says one of those two is reading something the other is not, and the split
+# is what tells them apart. Written out beside the ν dump by write_output.
+const _DSGS_RSPLIT = Ref(false)
+const _DSGS_RT     = Float64[]     # |time term|  at the element's argmax node
+const _DSGS_RS     = Float64[]     # |space term| there
+const _DSGS_RR     = Float64[]     # the normalized ratio there
+
+@inline function _dsgs_rsplit_size!(nelem::Int)
+    _DSGS_RSPLIT[] || return nothing
+    if length(_DSGS_RT) != nelem
+        resize!(_DSGS_RT, nelem); resize!(_DSGS_RS, nelem); resize!(_DSGS_RR, nelem)
+        fill!(_DSGS_RT, 0.0); fill!(_DSGS_RS, 0.0); fill!(_DSGS_RR, 0.0)
+    end
+    return nothing
+end
+
 function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  ::DSGS, ::NSD_1D,
                                  q::AbstractMatrix{TT},
@@ -646,7 +759,10 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  connijk::AbstractArray{TI,4},
                                  Δx::AbstractVector{TT},
                                  nelem::Int, ngl::Int;
+                                 CR::TT=TT(1.0), Cmax::TT=TT(0.5), Cmin::TT=zero(TT),
+                                 cutoff::TT=zero(TT),
                                  lglobal_norms::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
+    _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
     # 1D CompEuler in total-energy form q = (ρ, ρu, ρE). Marras's
     # unified formula gives ONE residual-based coefficient per element;
@@ -659,8 +775,6 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
 
     invnp = one(TT)/(nelem*ngl)
     γ     = TT(1.4)
-    CR    = TT(1.0)
-    Cmax    = TT(0.5)
     eps   = Base.eps(TT)
     neqs  = size(μ_dsgs, 2)
 
@@ -733,9 +847,10 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
             uTmx = max(uTmx, abs(ul) + sqrt(γ*(γ - one(TT))*eint))
         end
 
-        μ_res = CR*Δ*Δ*max(n1/denom1, n2/denom2, n3/denom3)
+        μ_res = CR*Δ*Δ*_dsgs_cut(max(n1/denom1, n2/denom2, n3/denom3), cutoff)
         μ_max = Cmax*Δ*uTmx
-        μ     = max(zero(TT), min(μ_max, μ_res))
+        μ_fl  = Cmin > zero(TT) ? Cmin*Δ*uTmx : zero(TT)   # background floor, as ::DSGS_MHD
+        μ     = max(μ_fl, min(μ_max, μ_res))
 
         # Same coefficient on every equation (1D E-form, Marras eq. 10),
         # scaled per equation by the user-supplied inputs[:μ] vector.
@@ -786,13 +901,16 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  PhysConst::PhysicalConst{TT},
                                  Pr::TT,
                                  nelem::Int, ngl::Int;
+                                 CR::TT=TT(1.0), Cmax::TT=TT(0.5), Cmin::TT=zero(TT),
+                                 cutoff::TT=zero(TT),
                                  ltheta::Bool=true,
                                  lglobal_norms::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
+    _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
     if !ltheta
         _dsgs_2d_energy!(μ_dsgs, q, q1, q2, rhs_el, ω, Je, visc_coeff,
                          wt, connijk, Δelem, PhysConst, Pr, nelem, ngl,
-                         lglobal_norms)
+                         lglobal_norms; CR = CR, Cmax = Cmax, Cmin = Cmin, cutoff = cutoff)
         return nothing
     end
 
@@ -818,11 +936,10 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     # qe stays in the function-barrier signature so the rhs.jl
     # call site doesn't have to change, but they are unused here.
 
+    neqs  = size(μ_dsgs, 2)
     invnp = one(TT)/(nelem*ngl*ngl)
     γ     = PhysConst.γ
     C0    = PhysConst.C0
-    CR    = TT(1.0)
-    Cmax    = TT(0.5)
     γm1   = γ - one(TT)
     eps   = TT(1.0e-16)
 
@@ -936,9 +1053,10 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         end
         ρ_el /= TT(ngl*ngl)
 
-        μ_res = CR*Δ*Δ*max(n1/denom1, n2/denom2, n3/denom3, n4/denom4)
+        μ_res = CR*Δ*Δ*_dsgs_cut(max(n1/denom1, n2/denom2, n3/denom3, n4/denom4), cutoff)
         μ_max = Cmax*Δ*uTmx
-        μ     = max(zero(TT), min(μ_max, μ_res))   # kinematic, m²/s
+        μ_fl  = Cmin > zero(TT) ? Cmin*Δ*uTmx : zero(TT)   # background floor, as ::DSGS_MHD
+        μ     = max(μ_fl, min(μ_max, μ_res))   # kinematic, m²/s
 
         # μ above is KINEMATIC. _expansion_visc! applies visc_coeff·∇²(prim)
         # and user_primitives! hands this system (ρ, u, v, θ), so momentum
@@ -952,6 +1070,187 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         μ_dsgs[ie,2] = visc_coeff[2] * μ_dyn                # ρu (eq. 10a)
         μ_dsgs[ie,3] = visc_coeff[3] * μ_dyn                # ρv (eq. 10a)
         μ_dsgs[ie,4] = visc_coeff[4] * (Pr/γm1) * μ_dyn     # ρθ (eq. 10b)
+        # Passive tracers (slots 5..neqs, e.g. CompEuler/thetaTracers): the
+        # case transports them as un-weighted scalars (∂ₜq + ∇·(q u) = 0)
+        # and hands the scalar itself to _expansion_visc!, so the
+        # diffusivity is the KINEMATIC ν (m²/s), as the scalar branch of
+        # the Smagorinsky model (μ_turb/(ρ Sc_t)). Left unfilled before
+        # this, the tracers ran without any stabilization.
+        for ieq = 5:neqs
+            μ_dsgs[ie,ieq] = visc_coeff[ieq] * μ
+        end
+    end
+
+    return nothing
+end
+
+# ---------------- 3D --------------------------------------------------
+#
+# Conservation form q = (ρ, ρu, ρv, ρw, ρθ) for the Euler-θ system in
+# three dimensions — the same model as the 2D kernel above, node loop and
+# element scale extended to the third direction. Written because
+# `:visc_model => DSGS()` on a 3D case (problems/CompEuler/3d, the LES
+# cases) had no kernel to dispatch to at all: params.sgs is `nothing` for
+# every model but Smagorinsky and Vreman, so the 3D viscous assembly fell
+# through to its constant-coefficient branch and ran the deck's :μ as a
+# plain Laplacian coefficient in m²/s — a DynSGS run that was silently not
+# DynSGS, and, with :μ[1] ≠ 0, a mass diffusion the model never asks for.
+#
+# Same structure as the 2D θ kernel:
+#
+#     ν_K = max(0, min(C_max Δ λ_K, C_R Δ² R_K)),  Δ = Δ_K/(k+1)
+#
+# with the element residual of DSGS.md §1.2 and the slot split of Marras
+# et al. eq. (10). The primitives handed to the viscous operator are
+# (ρ, u, v, w, θ), so the momentum and θ slots carry the DYNAMIC ρ̄ν.
+#
+# The energy form (:energy_equation => "energy", q with ρE in the last
+# slot) has no 3D kernel: `ltheta = false` raises rather than silently
+# building a θ-form coefficient from a total-energy state.
+#
+function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
+                                 ::DSGS, ::NSD_3D,
+                                 q::AbstractMatrix{TT},
+                                 q1::AbstractMatrix{TT},
+                                 q2::AbstractMatrix{TT},
+                                 qe::AbstractMatrix{TT},
+                                 rhs_el::AbstractArray{TT},
+                                 ω::AbstractVector{TT},
+                                 Je::AbstractArray{TT},
+                                 visc_coeff::AbstractVector{TT},
+                                 wt::NTuple{3,TT},
+                                 connijk::AbstractArray{TI,4},
+                                 Δelem::AbstractVector{TT},
+                                 PhysConst::PhysicalConst{TT},
+                                 Pr::TT,
+                                 nelem::Int, ngl::Int;
+                                 CR::TT=TT(1.0), Cmax::TT=TT(0.5), Cmin::TT=zero(TT),
+                                 cutoff::TT=zero(TT),
+                                 ltheta::Bool=true,
+                                 lglobal_norms::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
+    _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
+
+    ltheta || error(" compute_dsgs_viscosity!(::DSGS, ::NSD_3D): only the θ form is implemented in 3D.\n" *
+                    "   Set :energy_equation => \"theta\", or use :visc_model => SMAG() / VREM() / AV().")
+
+    neqs  = size(μ_dsgs, 2)
+    invnp = one(TT)/(nelem*ngl*ngl*ngl)
+    γ     = PhysConst.γ
+    C0    = PhysConst.C0
+    γm1   = γ - one(TT)
+    eps   = TT(1.0e-16)
+
+    # --- Pass 1: averages of (ρ, ρu, ρv, ρw, ρθ) — see _dsgs_norm_scope --
+    ρ_avg  = zero(TT); ρu_avg = zero(TT); ρv_avg = zero(TT)
+    ρw_avg = zero(TT); ρθ_avg = zero(TT)
+    @inbounds for ie = 1:nelem
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            ip = connijk[ie,i,j,k]
+            ρ_avg  += q[ip,1]
+            ρu_avg += q[ip,2]
+            ρv_avg += q[ip,3]
+            ρw_avg += q[ip,4]
+            ρθ_avg += q[ip,5]
+        end
+    end
+    if lglobal_norms
+        sums = TT[ρ_avg, ρu_avg, ρv_avg, ρw_avg, ρθ_avg, TT(nelem*ngl*ngl*ngl)]
+        MPI.Allreduce!(sums, MPI.SUM, get_mpi_comm())
+        invnp_g = one(TT)/max(sums[6], one(TT))
+        ρ_avg  = sums[1]*invnp_g; ρu_avg = sums[2]*invnp_g; ρv_avg = sums[3]*invnp_g
+        ρw_avg = sums[4]*invnp_g; ρθ_avg = sums[5]*invnp_g
+    else
+        ρ_avg  *= invnp; ρu_avg *= invnp; ρv_avg *= invnp
+        ρw_avg *= invnp; ρθ_avg *= invnp
+    end
+
+    # --- Pass 2: L∞ norms of |q - ⟨q⟩| ---------------------------------
+    denom1 = zero(TT); denom2 = zero(TT); denom3 = zero(TT)
+    denom4 = zero(TT); denom5 = zero(TT)
+    @inbounds for ie = 1:nelem
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            ip = connijk[ie,i,j,k]
+            denom1 = max(denom1, abs(q[ip,1] - ρ_avg))
+            denom2 = max(denom2, abs(q[ip,2] - ρu_avg))
+            denom3 = max(denom3, abs(q[ip,3] - ρv_avg))
+            denom4 = max(denom4, abs(q[ip,4] - ρw_avg))
+            denom5 = max(denom5, abs(q[ip,5] - ρθ_avg))
+        end
+    end
+    if lglobal_norms
+        norms = TT[denom1, denom2, denom3, denom4, denom5]
+        MPI.Allreduce!(norms, MPI.MAX, get_mpi_comm())
+        denom1 = norms[1]; denom2 = norms[2]; denom3 = norms[3]
+        denom4 = norms[4]; denom5 = norms[5]
+    end
+    denom1 += eps; denom2 += eps; denom3 += eps
+    denom4 += eps; denom5 += eps
+
+    # Momentum floor, exactly as in 2D: the atmosphere starts globally at
+    # rest, so the three momentum spreads start at zero and only `eps`
+    # would separate the ratio from infinity — which pins ν at the
+    # wave-speed cap on the very first stage.
+    θ_avg  = ρθ_avg/max(abs(ρ_avg), eps)
+    p_avg  = C0*(max(ρ_avg*θ_avg, zero(TT)))^γ
+    c_avg  = sqrt(max(γ*p_avg/max(abs(ρ_avg), eps), zero(TT)))
+    mom_floor = TT(1.0e-3) * abs(ρ_avg) * c_avg
+    denom2 = max(denom2, mom_floor)
+    denom3 = max(denom3, mom_floor)
+    denom4 = max(denom4, mom_floor)
+
+    # --- Pass 3: per-element residual L∞, μ_max bound, μ_dsgs[ie] ------
+    @inbounds for ie = 1:nelem
+        Δ = Δelem[ie]/ngl
+
+        n1 = zero(TT); n2 = zero(TT); n3 = zero(TT)
+        n4 = zero(TT); n5 = zero(TT)
+        uTmx = zero(TT)
+        ρ_el = zero(TT)
+
+        for k = 1:ngl, j = 1:ngl
+            @simd for i = 1:ngl
+                ip  = connijk[ie,i,j,k]
+                imK = one(TT)/(ω[i]*ω[j]*ω[k]*Je[ie,i,j,k])  # element lumped mass at the node
+
+                R1 = abs((wt[1]*q[ip,1] + wt[2]*q1[ip,1] + wt[3]*q2[ip,1]) - imK*rhs_el[ie,i,j,k,1])
+                R2 = abs((wt[1]*q[ip,2] + wt[2]*q1[ip,2] + wt[3]*q2[ip,2]) - imK*rhs_el[ie,i,j,k,2])
+                R3 = abs((wt[1]*q[ip,3] + wt[2]*q1[ip,3] + wt[3]*q2[ip,3]) - imK*rhs_el[ie,i,j,k,3])
+                R4 = abs((wt[1]*q[ip,4] + wt[2]*q1[ip,4] + wt[3]*q2[ip,4]) - imK*rhs_el[ie,i,j,k,4])
+                R5 = abs((wt[1]*q[ip,5] + wt[2]*q1[ip,5] + wt[3]*q2[ip,5]) - imK*rhs_el[ie,i,j,k,5])
+                n1 = max(n1, R1); n2 = max(n2, R2); n3 = max(n3, R3)
+                n4 = max(n4, R4); n5 = max(n5, R5)
+
+                ρl = q[ip,1]
+                ul = q[ip,2]/ρl
+                vl = q[ip,3]/ρl
+                wl = q[ip,4]/ρl
+                θl = q[ip,5]/ρl
+                # p = C0·(ρθ)^γ  ⇒  c² = γp/ρ. ρθ is clamped at 0 so that a
+                # solution already going negative is reported by the flux,
+                # which says which equation broke, and not by a DomainError
+                # raised inside the viscosity kernel.
+                pl  = C0 * max(ρl*θl, zero(TT))^γ
+                c_l = sqrt(max(γ*pl/ρl, zero(TT)))
+                uTmx = max(uTmx, sqrt(ul*ul + vl*vl + wl*wl) + c_l)
+                ρ_el += ρl
+            end
+        end
+        ρ_el /= TT(ngl*ngl*ngl)
+
+        μ_res = CR*Δ*Δ*_dsgs_cut(max(n1/denom1, n2/denom2, n3/denom3, n4/denom4, n5/denom5), cutoff)
+        μ_max = Cmax*Δ*uTmx
+        μ_fl  = Cmin > zero(TT) ? Cmin*Δ*uTmx : zero(TT)   # background floor, as ::DSGS_MHD
+        μ     = max(μ_fl, min(μ_max, μ_res))   # kinematic, m²/s
+        μ_dyn = ρ_el*μ
+
+        μ_dsgs[ie,1] = zero(TT)                             # ρ : no mass diffusion
+        μ_dsgs[ie,2] = visc_coeff[2] * μ_dyn                # ρu (eq. 10a)
+        μ_dsgs[ie,3] = visc_coeff[3] * μ_dyn                # ρv (eq. 10a)
+        μ_dsgs[ie,4] = visc_coeff[4] * μ_dyn                # ρw (eq. 10a)
+        μ_dsgs[ie,5] = visc_coeff[5] * (Pr/γm1) * μ_dyn     # ρθ (eq. 10b)
+        for ieq = 6:neqs                                    # passive tracers: kinematic ν
+            μ_dsgs[ie,ieq] = visc_coeff[ieq] * μ
+        end
     end
 
     return nothing
@@ -1011,11 +1310,11 @@ end
 # jump from ringing. The user's inputs[:μ][1] multiplier scales it and
 # can switch it off with 0.0.
 #
-# ⟨q⟩ and ‖q−⟨q⟩‖ are rank-local unless :ldsgs_global_norms is set — see
-# _dsgs_norm_scope above. In the default (rank-local) mode everything in this
+# ⟨q⟩ and ‖q−⟨q⟩‖ are over the whole domain unless :dsgs_norms => "rank" —
+# see _dsgs_norm_scope above. In the rank-local mode everything in this
 # routine is allocation-free, same discipline as the other implementations
-# here; the global mode allocates the two small reduction buffers, once per
-# RHS call and not per node.
+# here; the domain mode (the default) allocates the two small reduction
+# buffers, once per RHS call and not per node.
 # ================================================================================
 function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
                           q::AbstractMatrix{TT},
@@ -1031,13 +1330,15 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
                           PhysConst::PhysicalConst{TT},
                           Pr::TT,
                           nelem::Int, ngl::Int,
-                          lglobal_norms::Bool) where {TT<:AbstractFloat, TI<:Integer}
+                          lglobal_norms::Bool;
+                          CR::TT=TT(1.0), Cmax::TT=TT(0.5), Cmin::TT=zero(TT),
+                          cutoff::TT=zero(TT)) where {TT<:AbstractFloat, TI<:Integer}
 
     γ    = PhysConst.γ
     γm1  = γ - one(TT)
-    CR   = TT(1.0)
-    Cmax   = TT(0.5)
+    neqs = size(μ_dsgs, 2)
     eps  = TT(1.0e-16)
+    _dsgs_rsplit_size!(nelem)
 
     # --- Pass 1: rank-local means ⟨ρ⟩, ⟨ρu⟩, ⟨ρv⟩, ⟨ρE⟩ ----------------
     ρ_avg = zero(TT); ρu_avg = zero(TT)
@@ -1100,9 +1401,9 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
     p_avg = γm1*max(ρE_avg - TT(0.5)*(ρu_avg*ρu_avg + ρv_avg*ρv_avg)/ρ_ref, zero(TT))
     c_avg = sqrt(max(γ*p_avg/ρ_ref, eps))
     rel   = TT(1.0e-3)
-    dρ = max(dρ, rel*ρ_ref)              + eps
-    dm = max(dm, rel*ρ_ref*c_avg)        + eps
-    dE = max(dE, rel*ρ_ref*c_avg*c_avg)  + eps
+    dρ = _dsgs_denom(dρ, rel*ρ_ref)              + eps
+    dm = _dsgs_denom(dm, rel*ρ_ref*c_avg)        + eps
+    dE = _dsgs_denom(dE, rel*ρ_ref*c_avg*c_avg)  + eps
 
     # --- Pass 3: per-element residual L∞, wave-speed cap, split --------
     @inbounds for ie = 1:nelem
@@ -1115,18 +1416,44 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
         wmax  = zero(TT)   # ‖ |u| + √(γT) ‖_{∞,K}
         ρmax  = zero(TT)   # ‖ρ‖_{∞,K}
 
+        rbest = zero(TT); tbest = zero(TT); sbest = zero(TT)   # the split, at the argmax
+
         for j = 1:ngl
             for i = 1:ngl
                 ip = connijk[ie,i,j,1]
                 imK = one(TT)/(ω[i]*ω[j]*Je[ie,i,j])   # element lumped mass at the node
 
-                Rρ  = abs((wt[1]*q[ip,1] + wt[2]*q1[ip,1] + wt[3]*q2[ip,1]) - imK*rhs_el[ie,i,j,1])
-                Rmu = (wt[1]*q[ip,2] + wt[2]*q1[ip,2] + wt[3]*q2[ip,2]) - imK*rhs_el[ie,i,j,2]
-                Rmv = (wt[1]*q[ip,3] + wt[2]*q1[ip,3] + wt[3]*q2[ip,3]) - imK*rhs_el[ie,i,j,3]
-                Rm  = sqrt(Rmu*Rmu + Rmv*Rmv)
-                RE  = abs((wt[1]*q[ip,4] + wt[2]*q1[ip,4] + wt[3]*q2[ip,4]) - imK*rhs_el[ie,i,j,4])
+                # each residual as its two halves: the three-level time
+                # difference, and this element's own weak RHS per unit mass
+                Tρ  = wt[1]*q[ip,1] + wt[2]*q1[ip,1] + wt[3]*q2[ip,1]
+                Sρ  = imK*rhs_el[ie,i,j,1]
+                Tmu = wt[1]*q[ip,2] + wt[2]*q1[ip,2] + wt[3]*q2[ip,2]
+                Smu = imK*rhs_el[ie,i,j,2]
+                Tmv = wt[1]*q[ip,3] + wt[2]*q1[ip,3] + wt[3]*q2[ip,3]
+                Smv = imK*rhs_el[ie,i,j,3]
+                TE  = wt[1]*q[ip,4] + wt[2]*q1[ip,4] + wt[3]*q2[ip,4]
+                SE  = imK*rhs_el[ie,i,j,4]
 
-                ratio = max(ratio, Rρ/dρ, Rm/dm, RE/dE)
+                Rρ  = abs(Tρ - Sρ)
+                Rmu = Tmu - Smu
+                Rmv = Tmv - Smv
+                Rm  = sqrt(Rmu*Rmu + Rmv*Rmv)
+                RE  = abs(TE - SE)
+
+                r1 = Rρ/dρ; r2 = Rm/dm; r3 = RE/dE
+                ratio = max(ratio, r1, r2, r3)
+                if _DSGS_RSPLIT[]
+                    if r1 >= rbest
+                        rbest = r1; tbest = abs(Tρ); sbest = abs(Sρ)
+                    end
+                    if r2 >= rbest
+                        rbest = r2
+                        tbest = sqrt(Tmu*Tmu + Tmv*Tmv); sbest = sqrt(Smu*Smu + Smv*Smv)
+                    end
+                    if r3 >= rbest
+                        rbest = r3; tbest = abs(TE); sbest = abs(SE)
+                    end
+                end
 
                 ρl = max(q[ip,1], eps)
                 ul = q[ip,2]/ρl
@@ -1140,15 +1467,23 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
             end
         end
 
+        if _DSGS_RSPLIT[]
+            _DSGS_RT[ie] = Float64(tbest); _DSGS_RS[ie] = Float64(sbest); _DSGS_RR[ie] = Float64(rbest)
+        end
+
         # eq. (3.5)-(3.7). Both branches carry a density, so μ is DYNAMIC.
-        μ_res = CR*h*h*dρ*ratio
+        μ_res = CR*h*h*dρ*_dsgs_cut(ratio, cutoff)
         μ_cap = Cmax*h*ρmax*wmax
-        μ     = max(zero(TT), min(μ_cap, μ_res))
+        μ_fl  = Cmin > zero(TT) ? Cmin*h*ρmax*wmax : zero(TT)   # background floor
+        μ     = max(μ_fl, min(μ_cap, μ_res))
 
         μ_dsgs[ie,1] = visc_coeff[1] * μ/max(ρmax, eps)   # β on ∇ρ
         μ_dsgs[ie,2] = visc_coeff[2] * μ                  # μ on ∇u
         μ_dsgs[ie,3] = visc_coeff[3] * μ                  # μ on ∇v
         μ_dsgs[ie,4] = visc_coeff[4] * (Pr/γm1) * μ       # κ on ∇T
+        for ieq = 5:neqs                                  # passive tracers: kinematic ν
+            μ_dsgs[ie,ieq] = visc_coeff[ieq] * μ/max(ρmax, eps)
+        end
     end
 
     return nothing
@@ -1240,14 +1575,14 @@ end
 # k = μ_dyn·cp/Pr_t. Rewriting in terms of T gives the coefficient
 # k/R = μ_dyn·γ/((γ−1)·Pr_t), since cp = γR/(γ−1).
 #
-# ⟨q⟩ and ‖q−⟨q⟩‖ are rank-local unless :ldsgs_global_norms is set — see
-# _dsgs_norm_scope above. `comm` is what the global mode reduces over.
+# ⟨q⟩ and ‖q−⟨q⟩‖ are over the whole domain unless :dsgs_norms => "rank" —
+# see _dsgs_norm_scope above. `comm` is what the domain mode reduces over.
 #
 # Stratified atmospheres (problems/MHD/fluxEmergenceSon2025, eight decades
 # of density between the photosphere and the corona) need two variants of
 # the above, both off by default:
 #
-#  *  llocal_norms (:dsgs_local_norms). The residual of equation i is
+#  *  llocal_norms (:dsgs_norms => "element"). The residual of equation i is
 #     normalized by the spread of q_i over the ELEMENT, ‖q_i − ⟨q_i⟩_e‖∞,e,
 #     floored at local_rel (:dsgs_local_rel, default 1) times the
 #     element-mean scales ρ_e, ρ_e c_e, ρ_e c_e², √ρ_e c_e, instead of the
@@ -1292,6 +1627,16 @@ end
 #     switches on there. The μ_dsgs output fields of slots 2-5 are then
 #     kinematic too.
 # ================================================================================
+# TEMPORARY DIAGNOSTIC (JEXPRESSO_DSGS_DEBUG=1): per-equation maximum of the
+# normalized residual, printed every 200 calls. Not for commit.
+const _DSGS_DBG   = Ref(false)
+const _DSGS_DBGN  = Ref(0)
+const _DSGS_DBGV  = zeros(Float64, 8)
+const _DSGS_DBGNU = Ref(0.0)
+const _DSGS_DBGCAP = Ref(0.0)
+const _DSGS_DBGLOC = zeros(Int, 4)     # (ie, i, j, ieq) of the largest ratio
+const _DSGS_DBGTOP = Ref(0.0)
+
 function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  ::DSGS_MHD, ::NSD_2D,
                                  q::AbstractMatrix{TT},
@@ -1317,11 +1662,19 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  lnodal_rho::Bool=false,
                                  lconserved::Bool=false,
                                  Cmin::TT=zero(TT),
+                                 cutoff::TT=zero(TT),
                                  lnazarov_energy::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
+    _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
     neqs = size(μ_dsgs, 2)
     NRES = min(neqs, 8)          # residual max excludes the ψ slot
     rel  = TT(1.0e-3)            # floor fraction of the physical scales
+    ldbg = get(ENV, "JEXPRESSO_DSGS_DEBUG", "") == "1"   # hoisted: no Ref read in the loops
+    _DSGS_DBG[] = ldbg
+    if ldbg
+        fill!(_DSGS_DBGV, 0.0); _DSGS_DBGNU[] = 0.0; _DSGS_DBGCAP[] = 0.0
+        _DSGS_DBGTOP[] = 0.0; fill!(_DSGS_DBGLOC, 0)
+    end
     # avg_e / den_e: preallocated element mean / spread scratch (llocal_norms)
     γm1  = γ - one(TT)
     eps  = TT(1.0e-16)
@@ -1375,15 +1728,15 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                     - TT(0.5)*(avg[6]*avg[6] + avg[7]*avg[7] + avg[8]*avg[8]), zero(TT))
     c_avg = sqrt(max(γ*p_avg/ρ_avg, eps))
     @inbounds begin
-        denom[1] = max(denom[1], rel*ρ_avg)                 # ρ
+        denom[1] = _dsgs_denom(denom[1], rel*ρ_avg)                 # ρ
         mom_fl   = rel*ρ_avg*c_avg
-        denom[2] = max(denom[2], mom_fl)                    # ρu
-        denom[3] = max(denom[3], mom_fl)                    # ρv
-        denom[4] = max(denom[4], rel*ρ_avg*c_avg*c_avg)     # E
-        if neqs >= 5; denom[5] = max(denom[5], mom_fl); end # ρw
+        denom[2] = _dsgs_denom(denom[2], mom_fl)                    # ρu
+        denom[3] = _dsgs_denom(denom[3], mom_fl)                    # ρv
+        denom[4] = _dsgs_denom(denom[4], rel*ρ_avg*c_avg*c_avg)     # E
+        if neqs >= 5; denom[5] = _dsgs_denom(denom[5], mom_fl); end # ρw
         b_fl = rel*sqrt(ρ_avg)*c_avg
         for ieq = 6:min(neqs,8)
-            denom[ieq] = max(denom[ieq], b_fl)              # B
+            denom[ieq] = _dsgs_denom(denom[ieq], b_fl)              # B
         end
         for ieq = 1:neqs
             denom[ieq] += eps
@@ -1464,6 +1817,14 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                     R = abs((wt[1]*q[ip,ieq] + wt[2]*q1[ip,ieq] + wt[3]*q2[ip,ieq]) - imK*rhs_el[ie,i,j,ieq])
                     r = R/den[ieq]
                     ratio = max(ratio, r)
+                    if ldbg
+                        _DSGS_DBGV[ieq] = max(_DSGS_DBGV[ieq], Float64(r))
+                        if Float64(r) > _DSGS_DBGTOP[]
+                            _DSGS_DBGTOP[] = Float64(r)
+                            _DSGS_DBGLOC[1] = ie; _DSGS_DBGLOC[2] = i
+                            _DSGS_DBGLOC[3] = j;  _DSGS_DBGLOC[4] = ieq
+                        end
+                    end
                 end
 
                 ρl = max(q[ip,1], eps)
@@ -1483,10 +1844,14 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         end
         ρ_el /= TT(ngl*ngl)
 
-        μ_res = CR*Δ*Δ*ratio
+        μ_res = CR*Δ*Δ*_dsgs_cut(ratio, cutoff)
         μ_max = Cmax*Δ*wmax
         μ_c   = max(zero(TT), min(μ_max, μ_res))    # kinematic, m²/s (residual, capped)
         μ     = μ_c
+        if ldbg
+            _DSGS_DBGNU[]  = max(_DSGS_DBGNU[],  Float64(μ_c))
+            _DSGS_DBGCAP[] = max(_DSGS_DBGCAP[], Float64(μ_max))
+        end
 
         # Background floor Cmin·Δ·(‖v‖+c_f), a fraction of the wave-speed cap
         # (Cmin = 0 by default: pure Marras). The residual sensor is blind to a
@@ -1561,6 +1926,18 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         end
     end
 
+    if ldbg
+        _DSGS_DBGN[] += 1
+        if _DSGS_DBGN[] <= 12 || _DSGS_DBGN[] % 200 == 0
+            edge = (_DSGS_DBGLOC[2] == 1 || _DSGS_DBGLOC[2] == ngl ||
+                    _DSGS_DBGLOC[3] == 1 || _DSGS_DBGLOC[3] == ngl) ? "EDGE" : "int "
+            @printf(" # DSGS dbg call %6d  nu_max=%.4e cap=%.4e  argmax: eq %d node (%d,%d) of %d %s  ratio by eq: %s   denom: %s\n",
+                    _DSGS_DBGN[], _DSGS_DBGNU[], _DSGS_DBGCAP[],
+                    _DSGS_DBGLOC[4], _DSGS_DBGLOC[2], _DSGS_DBGLOC[3], ngl, edge,
+                    join((@sprintf("%.2e", _DSGS_DBGV[k]) for k = 1:NRES), " "),
+                    join((@sprintf("%.2e", Float64(denom[k])) for k = 1:NRES), " "))
+        end
+    end
     return nothing
 end
 
@@ -1607,7 +1984,9 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  lnodal_rho::Bool=false,
                                  lconserved::Bool=false,
                                  Cmin::TT=zero(TT),
+                                 cutoff::TT=zero(TT),
                                  lnazarov_energy::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
+    _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
     neqs = size(μ_dsgs, 2)
     NRES = min(neqs, 8)
@@ -1653,15 +2032,15 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                  (neqs >= 6 ? avg[6] : zero(TT)), (neqs >= 7 ? avg[7] : zero(TT)), (neqs >= 8 ? avg[8] : zero(TT)))
     c_avg = sqrt(max(γ*p_avg/ρ_avg, eps))
     @inbounds begin
-        denom[1] = max(denom[1], rel*ρ_avg)
+        denom[1] = _dsgs_denom(denom[1], rel*ρ_avg)
         mom_fl   = rel*ρ_avg*c_avg
-        denom[2] = max(denom[2], mom_fl)
-        denom[3] = max(denom[3], mom_fl)
-        denom[4] = max(denom[4], rel*ρ_avg*c_avg*c_avg)
-        if neqs >= 5; denom[5] = max(denom[5], mom_fl); end
+        denom[2] = _dsgs_denom(denom[2], mom_fl)
+        denom[3] = _dsgs_denom(denom[3], mom_fl)
+        denom[4] = _dsgs_denom(denom[4], rel*ρ_avg*c_avg*c_avg)
+        if neqs >= 5; denom[5] = _dsgs_denom(denom[5], mom_fl); end
         b_fl = rel*sqrt(ρ_avg)*c_avg
         for ieq = 6:min(neqs,8)
-            denom[ieq] = max(denom[ieq], b_fl)
+            denom[ieq] = _dsgs_denom(denom[ieq], b_fl)
         end
         for ieq = 1:neqs
             denom[ieq] += eps
@@ -1740,7 +2119,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         end
         ρ_el /= TT(ngl)
 
-        μ_res = CR*Δ*Δ*ratio
+        μ_res = CR*Δ*Δ*_dsgs_cut(ratio, cutoff)
         μ_max = Cmax*Δ*wmax
         μ_c   = max(zero(TT), min(μ_max, μ_res))
         μ_fl  = Cmin > zero(TT) ? Cmin*Δ*wmax : zero(TT)
@@ -1820,7 +2199,9 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                                        lglobal_norms::Bool=false,
                                        lconserved::Bool=false,
                                        Cmin::TT=zero(TT),
+                                       cutoff::TT=zero(TT),
                                        lnazarov_energy::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
+    _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
     neqs = size(μ_dsgs, 2)
     NRES = min(neqs, 8)
@@ -1864,15 +2245,15 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                  (neqs >= 6 ? avg[6] : zero(TT)), (neqs >= 7 ? avg[7] : zero(TT)), (neqs >= 8 ? avg[8] : zero(TT)))
     c_avg = sqrt(max(γ*p_avg/ρ_avg, eps))
     @inbounds begin
-        denom[1] = max(denom[1], rel*ρ_avg)
+        denom[1] = _dsgs_denom(denom[1], rel*ρ_avg)
         mom_fl   = rel*ρ_avg*c_avg
-        denom[2] = max(denom[2], mom_fl)
-        denom[3] = max(denom[3], mom_fl)
-        denom[4] = max(denom[4], rel*ρ_avg*c_avg*c_avg)
-        if neqs >= 5; denom[5] = max(denom[5], mom_fl); end
+        denom[2] = _dsgs_denom(denom[2], mom_fl)
+        denom[3] = _dsgs_denom(denom[3], mom_fl)
+        denom[4] = _dsgs_denom(denom[4], rel*ρ_avg*c_avg*c_avg)
+        if neqs >= 5; denom[5] = _dsgs_denom(denom[5], mom_fl); end
         b_fl = rel*sqrt(ρ_avg)*c_avg
         for ieq = 6:min(neqs,8)
-            denom[ieq] = max(denom[ieq], b_fl)
+            denom[ieq] = _dsgs_denom(denom[ieq], b_fl)
         end
     end
 
@@ -1912,7 +2293,7 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
     # --- nodal viscosity ---------------------------------------------------
     _dsgs_nodal_residual_1d!(Rnod, mnod, q, q1, q2, wt, rhs_el, ω, Je, connijk, nelem, ngl, npoin, NRES)
     @inbounds for ip = 1:npoin
-        ratio = _dsgs_nodal_ratio(Rnod, ip, NRES, denom, qmin, qmax, nmin, nmax, Cl, eps)
+        ratio = _dsgs_cut(_dsgs_nodal_ratio(Rnod, ip, NRES, denom, qmin, qmax, nmin, nmax, Cl, eps), cutoff)
         ρl = max(q[ip,1], eps)
         ul = q[ip,2]/ρl
         vl = q[ip,3]/ρl
@@ -2189,7 +2570,9 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                                        lglobal_norms::Bool=false,
                                        lconserved::Bool=false,
                                        Cmin::TT=zero(TT),
+                                       cutoff::TT=zero(TT),
                                        lnazarov_energy::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
+    _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
     neqs = size(μ_dsgs, 2)
     NRES = min(neqs, 8)
@@ -2206,22 +2589,22 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                     - TT(0.5)*(avg[6]*avg[6] + avg[7]*avg[7] + avg[8]*avg[8]), zero(TT))
     c_avg = sqrt(max(γ*p_avg/ρ_avg, eps))
     @inbounds begin
-        denom[1] = max(denom[1], rel*ρ_avg)
+        denom[1] = _dsgs_denom(denom[1], rel*ρ_avg)
         mom_fl   = rel*ρ_avg*c_avg
-        denom[2] = max(denom[2], mom_fl)
-        denom[3] = max(denom[3], mom_fl)
-        denom[4] = max(denom[4], rel*ρ_avg*c_avg*c_avg)
-        if neqs >= 5; denom[5] = max(denom[5], mom_fl); end
+        denom[2] = _dsgs_denom(denom[2], mom_fl)
+        denom[3] = _dsgs_denom(denom[3], mom_fl)
+        denom[4] = _dsgs_denom(denom[4], rel*ρ_avg*c_avg*c_avg)
+        if neqs >= 5; denom[5] = _dsgs_denom(denom[5], mom_fl); end
         b_fl = rel*sqrt(ρ_avg)*c_avg
         for ieq = 6:min(neqs,8)
-            denom[ieq] = max(denom[ieq], b_fl)
+            denom[ieq] = _dsgs_denom(denom[ieq], b_fl)
         end
     end
 
     fE = lnazarov_energy ? γ*γm1/Pr_t : one(TT)
     _dsgs_nodal_residual_2d!(Rnod, mnod, q, q1, q2, wt, rhs_el, ω, Je, connijk, nelem, ngl, npoin, NRES)
     @inbounds for ip = 1:npoin
-        ratio = _dsgs_nodal_ratio(Rnod, ip, NRES, denom, qmin, qmax, nmin, nmax, Cl, eps)
+        ratio = _dsgs_cut(_dsgs_nodal_ratio(Rnod, ip, NRES, denom, qmin, qmax, nmin, nmax, Cl, eps), cutoff)
         ρl = max(q[ip,1], eps)
         ul = q[ip,2]/ρl
         vl = q[ip,3]/ρl
@@ -2299,7 +2682,9 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                                        nelem::Int, ngl::Int, npoin::Int;
                                        ltheta::Bool=true,
                                        lglobal_norms::Bool=false,
-                                       Cmin::TT=zero(TT)) where {TT<:AbstractFloat, TI<:Integer}
+                                       Cmin::TT=zero(TT),
+                                       cutoff::TT=zero(TT)) where {TT<:AbstractFloat, TI<:Integer}
+    _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
     neqs = size(μ_dsgs, 2)
     NRES = min(neqs, 4)
@@ -2322,15 +2707,15 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
     end
     c_avg = sqrt(max(γ*p_avg/ρ_avg, eps))
     @inbounds begin
-        denom[1] = max(denom[1], rel*ρ_avg)
-        denom[2] = max(denom[2], rel*ρ_avg*c_avg)
-        denom[3] = max(denom[3], rel*ρ_avg*c_avg)
-        denom[4] = max(denom[4], ltheta ? rel*abs(avg[4]) : rel*ρ_avg*c_avg*c_avg)
+        denom[1] = _dsgs_denom(denom[1], rel*ρ_avg)
+        denom[2] = _dsgs_denom(denom[2], rel*ρ_avg*c_avg)
+        denom[3] = _dsgs_denom(denom[3], rel*ρ_avg*c_avg)
+        denom[4] = _dsgs_denom(denom[4], ltheta ? rel*abs(avg[4]) : rel*ρ_avg*c_avg*c_avg)
     end
 
     _dsgs_nodal_residual_2d!(Rnod, mnod, q, q1, q2, wt, rhs_el, ω, Je, connijk, nelem, ngl, npoin, NRES)
     @inbounds for ip = 1:npoin
-        ratio = _dsgs_nodal_ratio(Rnod, ip, NRES, denom, qmin, qmax, nmin, nmax, Cl, eps)
+        ratio = _dsgs_cut(_dsgs_nodal_ratio(Rnod, ip, NRES, denom, qmin, qmax, nmin, nmax, Cl, eps), cutoff)
         ρl = max(q[ip,1], eps)
         ul = q[ip,2]/ρl
         vl = q[ip,3]/ρl
@@ -2358,8 +2743,8 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
             μ_pnode[ip,3] = visc_coeff[3]*μd
             μ_pnode[ip,4] = visc_coeff[4]*(Pr/γm1)*μd
         end
-        for ieq = 5:neqs
-            μ_pnode[ip,ieq] = visc_coeff[ieq]*μd
+        for ieq = 5:neqs                       # passive tracers: kinematic ν (as the element form)
+            μ_pnode[ip,ieq] = visc_coeff[ieq]*ν
         end
     end
     _dsgs_nodal_to_elements_2d!(μ_dsgs, μ_pnode, connijk, nelem, ngl)
@@ -2419,7 +2804,9 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  comm,
                                  nelem::Int, ngl::Int;
                                  lglobal_norms::Bool=false,
-                                 Cmin::TT=zero(TT)) where {TT<:AbstractFloat, TI<:Integer}
+                                 Cmin::TT=zero(TT),
+                                 cutoff::TT=zero(TT)) where {TT<:AbstractFloat, TI<:Integer}
+    _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
     neqs = size(μ_dsgs, 2)
     NRES = min(neqs, 3)
@@ -2465,9 +2852,9 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     end
     c_avg = sqrt(g*H_avg)
     @inbounds begin
-        denom[1] = max(denom[1], rel*H_avg) + eps
+        denom[1] = _dsgs_denom(denom[1], rel*H_avg) + eps
         for ieq = 2:NRES
-            denom[ieq] = max(denom[ieq], rel*H_avg*c_avg) + eps
+            denom[ieq] = _dsgs_denom(denom[ieq], rel*H_avg*c_avg) + eps
         end
     end
 
@@ -2489,7 +2876,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
             vl = q[ip,3]/Hd
             wmax = max(wmax, sqrt(ul*ul + vl*vl) + sqrt(g*Hc))
         end
-        ν_res = CR*Δ*Δ*ratio
+        ν_res = CR*Δ*Δ*_dsgs_cut(ratio, cutoff)
         ν_max = Cmax*Δ*wmax
         ν     = max(zero(TT), min(ν_max, ν_res))
         ν     = Cmin > zero(TT) ? max(ν, Cmin*Δ*wmax) : ν
@@ -2536,7 +2923,9 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                                        comm,
                                        nelem::Int, ngl::Int, npoin::Int;
                                        lglobal_norms::Bool=false,
-                                       Cmin::TT=zero(TT)) where {TT<:AbstractFloat, TI<:Integer}
+                                       Cmin::TT=zero(TT),
+                                       cutoff::TT=zero(TT)) where {TT<:AbstractFloat, TI<:Integer}
+    _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
     neqs = size(μ_dsgs, 2)
     NRES = min(neqs, 3)
@@ -2561,15 +2950,15 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
     H_avg = max(Hsum*inv_npts, hmin)
     c_avg = sqrt(g*H_avg)
     @inbounds begin
-        denom[1] = max(denom[1], rel*H_avg)
+        denom[1] = _dsgs_denom(denom[1], rel*H_avg)
         for ieq = 2:NRES
-            denom[ieq] = max(denom[ieq], rel*H_avg*c_avg)
+            denom[ieq] = _dsgs_denom(denom[ieq], rel*H_avg*c_avg)
         end
     end
 
     _dsgs_nodal_residual_2d!(Rnod, mnod, q, q1, q2, wt, rhs_el, ω, Je, connijk, nelem, ngl, npoin, NRES)
     @inbounds for ip = 1:npoin
-        ratio = _dsgs_nodal_ratio(Rnod, ip, NRES, denom, qmin, qmax, nmin, nmax, Cl, eps)
+        ratio = _dsgs_cut(_dsgs_nodal_ratio(Rnod, ip, NRES, denom, qmin, qmax, nmin, nmax, Cl, eps), cutoff)
         Hc = max(q[ip,1], zero(TT))
         Hd = max(q[ip,1], hmin)
         ul = q[ip,2]/Hd
@@ -2588,20 +2977,34 @@ end
 
 # Helper: expand the per-element, per-equation μ_dsgs[1:nelem,1:neqs]
 # onto every node so the per-equation coefficients can be written to
-# PNG / VTU like any other field. Shared (DSS) nodes get the value of
-# the last element they belong to — that's fine for visualization.
+# PNG / VTU like any other field. Output only — the solution never reads this
+# array unless the NODAL form is on, and then the nodal kernel fills it
+# instead of this.
+#
+# A shared (DSS) node gets the LARGEST of the values of the elements it
+# belongs to. It used to get the value of the last element written, and that
+# is not a harmless choice: the element loop runs in element order, which on a
+# structured mesh means the neighbour to the RIGHT wins at every vertical
+# interface while the neighbour a whole row later wins at every horizontal
+# one. The asymmetry draws a line of the right-hand element's value along
+# every vertical element boundary — a regular vertical striping of the
+# plotted coefficient, at the element spacing, that is in the picture and not
+# in the run (reported on Orszag-Tang at 120² elements, nop 4). The maximum
+# is symmetric, costs no storage, and does not under-report the dissipation a
+# node sits next to.
 function broadcast_dsgs_to_nodes!(μ_dsgs_pnode::AbstractMatrix{TT},
                                   μ_dsgs::AbstractMatrix{TT},
                                   connijk::AbstractArray{TI,4},
                                   nelem::Int, ngl::Int,
                                   SD::AbstractSpaceDimensions) where {TT,TI}
     neqs = size(μ_dsgs, 2)
+    fill!(μ_dsgs_pnode, zero(TT))
     if SD === NSD_1D()
         @inbounds for ie = 1:nelem
             for i = 1:ngl
                 ip = connijk[ie,i,1,1]
                 for ieq = 1:neqs
-                    μ_dsgs_pnode[ip, ieq] = μ_dsgs[ie, ieq]
+                    μ_dsgs_pnode[ip, ieq] = max(μ_dsgs_pnode[ip, ieq], μ_dsgs[ie, ieq])
                 end
             end
         end
@@ -2611,7 +3014,7 @@ function broadcast_dsgs_to_nodes!(μ_dsgs_pnode::AbstractMatrix{TT},
                 for i = 1:ngl
                     ip = connijk[ie,i,j,1]
                     for ieq = 1:neqs
-                        μ_dsgs_pnode[ip, ieq] = μ_dsgs[ie, ieq]
+                        μ_dsgs_pnode[ip, ieq] = max(μ_dsgs_pnode[ip, ieq], μ_dsgs[ie, ieq])
                     end
                 end
             end
@@ -2623,7 +3026,7 @@ function broadcast_dsgs_to_nodes!(μ_dsgs_pnode::AbstractMatrix{TT},
                     for i = 1:ngl
                         ip = connijk[ie,i,j,k]
                         for ieq = 1:neqs
-                            μ_dsgs_pnode[ip, ieq] = μ_dsgs[ie, ieq]
+                            μ_dsgs_pnode[ip, ieq] = max(μ_dsgs_pnode[ip, ieq], μ_dsgs[ie, ieq])
                         end
                     end
                 end

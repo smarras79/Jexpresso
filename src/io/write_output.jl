@@ -92,7 +92,8 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       varnames, outvarnames,
                       outformat::NONE;
                       nvar=1, qexact=zeros(1,nvar), case="",
-                      μ_dsgs_pnode=nothing, schlieren=nothing)
+                      μ_dsgs_pnode=nothing, schlieren=nothing,
+                      Minv=nothing)   # the 2D PNG path hands it to user_plot_2d; ignored elsewhere
     nothing
 end
 
@@ -111,7 +112,8 @@ function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       varnames, outvarnames,
                       outformat::PNG;
                       nvar=1, qexact=zeros(1,nvar), case="",
-                      μ_dsgs_pnode=nothing, schlieren=nothing)
+                      μ_dsgs_pnode=nothing, schlieren=nothing,
+                      Minv=nothing)   # the 2D PNG path hands it to user_plot_2d; ignored elsewhere
         
     #
     # 1D PNG of q(t) from dq/dt = RHS
@@ -174,7 +176,7 @@ function write_output(SD::NSD_2D, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       varnames, outvarnames,
                       outformat::PNG;
                       nvar=1, qexact=zeros(1,nvar), case="",
-                      μ_dsgs_pnode=nothing, schlieren=nothing)
+                      μ_dsgs_pnode=nothing, schlieren=nothing, Minv=nothing)
 
     #
     # 2D PNG of q(t): one colored map per variable and output time.
@@ -236,9 +238,11 @@ function write_output(SD::NSD_2D, sol, uaux, t, iout,  mesh::St_mesh, mp,
         # DSGS runs render the per-equation eddy viscosity as extra panels
         # of the same output time (the per-node broadcast is μ_dsgs_pnode).
         μ_nodes = (μ_dsgs_pnode !== nothing && inputs[:backend] == CPU()) ? μ_dsgs_pnode : nothing
+        _dump_mu_nodes(OUTPUT_DIR, mesh, μ_nodes, iout)
+        _dump_rsplit(OUTPUT_DIR, mesh, iout)
         plot_triangulation(SD, mesh, qplot, title, OUTPUT_DIR, inputs;
                            iout=iout, nvar=nplot, varnames=plotnames,
-                           μ_nodes=μ_nodes, μ_names=varnames)
+                           μ_nodes=μ_nodes, μ_names=varnames, Minv=Minv, t=t)
     end
 
     println_rank(string(" # writing ", OUTPUT_DIR, "/<var>-it", iout, ".png at t=", t, " s... DONE"); msg_rank = rank)
@@ -289,7 +293,8 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       varnames, outvarnames,
                       outformat::VTK;
                       nvar=1, qexact=zeros(1,nvar), case="",
-                      μ_dsgs_pnode=nothing, schlieren=nothing)
+                      μ_dsgs_pnode=nothing, schlieren=nothing,
+                      Minv=nothing)   # the 2D PNG path hands it to user_plot_2d; ignored elsewhere
 
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
@@ -323,7 +328,8 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                     varnames, outvarnames,
                     outformat::NETCDF;
                     nvar=1, qexact=zeros(1,nvar), case="",
-                    μ_dsgs_pnode=nothing, schlieren=nothing)
+                    μ_dsgs_pnode=nothing, schlieren=nothing,
+                    Minv=nothing)   # the 2D PNG path hands it to user_plot_2d; ignored elsewhere
 
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
@@ -357,6 +363,67 @@ end
 #------------
 # VTK writer
 #------------
+#
+# JEXPRESSO_DSGS_DUMP=1 writes the nodal DynSGS viscosity as plain numbers
+# beside the figures: x y mu_1 ... mu_neqs, one line per node, one file per
+# rank and output. A RENDERED field cannot separate an artefact of the data
+# from an artefact of the renderer (a raster that samples fewer pixels than
+# there are nodes, a ParaView interpolation of a per-element constant), and
+# a pattern that a picture suggests has to be measured in the numbers before
+# it is chased in the kernel.
+#
+# The companion of the nu dump: WHERE the residual that set nu came from.
+# One line per element — its centroid, the normalized ratio, and the two
+# halves of R at the node where that ratio peaked: the time difference and
+# this element's own weak RHS per unit mass.
+function _dump_rsplit(OUTPUT_DIR, mesh, iout)
+    (_DSGS_RSPLIT[] && length(_DSGS_RR) == mesh.nelem) || return nothing
+    try
+        mkpath(OUTPUT_DIR)
+        f = string(OUTPUT_DIR, "/rsplit-it", iout, "-rank",
+                   MPI.Comm_rank(get_mpi_comm()), ".txt")
+        ngl = mesh.ngl
+        open(f, "w") do io
+            println(io, "# xc yc ratio time_term space_term")
+            for ie = 1:mesh.nelem
+                xc = 0.0; yc = 0.0
+                for j = 1:ngl, i = 1:ngl
+                    ip = mesh.connijk[ie,i,j,1]
+                    xc += mesh.coords[1,ip]; yc += mesh.coords[2,ip]
+                end
+                xc /= ngl*ngl; yc /= ngl*ngl
+                println(io, xc, " ", yc, " ", _DSGS_RR[ie], " ", _DSGS_RT[ie], " ", _DSGS_RS[ie])
+            end
+        end
+        @info " wrote $f"
+    catch err
+        @warn "could not dump the DynSGS residual split" exception=err
+    end
+    return nothing
+end
+
+function _dump_mu_nodes(OUTPUT_DIR, mesh, μ_nodes, iout)
+    (μ_nodes !== nothing && get(ENV, "JEXPRESSO_DSGS_DUMP", "") == "1") || return nothing
+    try
+        mkpath(OUTPUT_DIR)
+        f = string(OUTPUT_DIR, "/mu_nodes-it", iout, "-rank",
+                   MPI.Comm_rank(get_mpi_comm()), ".txt")
+        npoin = min(mesh.npoin, size(μ_nodes, 1))
+        open(f, "w") do io
+            println(io, "# x y ", join(string.("mu_", 1:size(μ_nodes, 2)), " "))
+            for ip = 1:npoin
+                print(io, mesh.coords[1,ip], " ", mesh.coords[2,ip])
+                for ieq = 1:size(μ_nodes, 2); print(io, " ", μ_nodes[ip, ieq]); end
+                println(io)
+            end
+        end
+        @info " wrote $f"
+    catch err
+        @warn "could not dump the nodal DynSGS viscosity" exception=err
+    end
+    return nothing
+end
+
 function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                    connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                    t, title::String, OUTPUT_DIR::String, inputs, varnames, outvarnames;
@@ -368,7 +435,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     
     nvar     = size(varnames, 1)
     noutvar  = size(outvarnames,1) #max(nvar, size(outvarnames,1))
-    new_size = size(mesh.x,1)
+    new_size = size(@view(mesh.coords[1,:]),1)
 
     npoin          = mesh.npoin
     nelem          = mesh.nelem
@@ -476,6 +543,8 @@ cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, Int64[ip1, ip2, ip3, ip4])
         # flux-emergence cases) gives every slot the same kinematic μ, so
         # when all columns are identical one field, mu_dsgs, is written
         # instead of nine copies of it.
+        _dump_mu_nodes(OUTPUT_DIR, mesh, μ_dsgs_pnode, iout)
+        _dump_rsplit(OUTPUT_DIR, mesh, iout)
         if μ_dsgs_pnode !== nothing && size(μ_dsgs_pnode, 1) == npoin
             nμ = size(μ_dsgs_pnode, 2)
             # one field per DISTINCT coefficient: a slot identical to an
@@ -635,6 +704,8 @@ cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, Int64[ip1, ip2, ip3, ip4, ip
         # flux-emergence cases) gives every slot the same kinematic μ, so
         # when all columns are identical one field, mu_dsgs, is written
         # instead of nine copies of it.
+        _dump_mu_nodes(OUTPUT_DIR, mesh, μ_dsgs_pnode, iout)
+        _dump_rsplit(OUTPUT_DIR, mesh, iout)
         if μ_dsgs_pnode !== nothing && size(μ_dsgs_pnode, 1) == npoin
             nμ = size(μ_dsgs_pnode, 2)
             # one field per DISTINCT coefficient: a slot identical to an
@@ -712,7 +783,7 @@ cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, Int64[ip1, ip2, ip3, ip4])
     fout_name = string(OUTPUT_DIR, "/", file_name, ".vtu")
     
     vtkfile = map(parts) do part
-        vtkf = pvtk_grid(file_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells, compress=false;
+        vtkf = pvtk_grid(file_name, view(mesh.coords,1,1:mesh.npoin), view(mesh.coords,2,1:mesh.npoin), view(mesh.coords,2,1:mesh.npoin)*TFloat(0.0), cells, compress=false;
                         part=part, nparts=nparts, ismain=(part==1))
         vtkf["part", VTKCellData()] = ones(isel -1) * part
         vtkf
@@ -762,9 +833,9 @@ cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, Int64[ip1, ip2, ip3, ip4, ip
     #Reference values only (definied in initial conditions)
     fout_name = string(OUTPUT_DIR, "/", file_name, ".vtu")
     
-    # vtkfile = vtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells)
+    # vtkfile = vtk_grid(fout_name, view(mesh.coords,1,1:mesh.npoin), view(mesh.coords,2,1:mesh.npoin), view(mesh.coords,2,1:mesh.npoin)*TFloat(0.0), cells)
     vtkfile = map(parts) do part
-        vtkf = pvtk_grid(file_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.z[1:mesh.npoin], cells, compress=false;
+        vtkf = pvtk_grid(file_name, view(mesh.coords,1,1:mesh.npoin), view(mesh.coords,2,1:mesh.npoin), view(mesh.coords,3,1:mesh.npoin), cells, compress=false;
                         part=part, nparts=nparts, ismain=(part==1))
         vtkf["part", VTKCellData()] = ones(isel -1) * part
         vtkf
@@ -821,7 +892,7 @@ export write_vtk_sphere_grid
 # dominates, and its sign. 1..6 = +x, -x, +y, -y, +z, -z.
 function _cubed_sphere_panel(mesh::St_mesh, iel::Int)
     ngl = mesh.ngl
-    crd = mesh.coords          # (x,y,z); mesh.x/y/z are deprecated
+    crd = mesh.coords          # (x,y,z); @view(mesh.coords[1,:])/y/z are deprecated
     cx = cy = cz = 0.0
     @inbounds for j = 1:ngl, i = 1:ngl
         ip = mesh.connijk[iel, i, j]
@@ -1027,7 +1098,8 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       varnames, outvarnames,
                       outformat::HDF5;
                       nvar=1, qexact=zeros(1,nvar), case="",
-                      μ_dsgs_pnode=nothing, schlieren=nothing)
+                      μ_dsgs_pnode=nothing, schlieren=nothing,
+                      Minv=nothing)   # the 2D PNG path hands it to user_plot_2d; ignored elsewhere
     
     # println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ...  ") )
     iout = size(t,1)
@@ -1433,7 +1505,7 @@ function read_vtk_restart!(q, mesh, inputs, PhysConst; output_dir="")
 
     # Build a safe index map: vtk_ip = ip_map[mesh_ip]
     # Fast O(N) identity check; falls back to coordinate hash-map if ordering differs.
-    ip_map = vtk_to_mesh_ipmap(vars["__coords__"], mesh.x, mesh.y, mesh.z)
+    ip_map = vtk_to_mesh_ipmap(vars["__coords__"], @view(mesh.coords[1,:]), @view(mesh.coords[2,:]), @view(mesh.coords[3,:]))
 
     ρ_arr = vars["ρ"]
     u_arr = vars["u"]
@@ -1572,7 +1644,7 @@ user_read_vtu_point_data! not found. Define it in your problem's user_primitives
     npoin_vtk == mesh.npoin ||
         error("Rank $rank: VTK point count ($npoin_vtk) ≠ mesh.npoin ($(mesh.npoin)).")
 
-    ip_map = vtk_to_mesh_ipmap(vars["__coords__"], mesh.x, mesh.y, mesh.z)
+    ip_map = vtk_to_mesh_ipmap(vars["__coords__"], @view(mesh.coords[1,:]), @view(mesh.coords[2,:]), @view(mesh.coords[3,:]))
 
     user_read_vtu_point_data!(q, vars, ip_map, mesh)
 
@@ -1601,8 +1673,8 @@ function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
 
-    xx      = mesh.x
-    yy      = mesh.y
+    xx      = @view(mesh.coords[1,:])
+    yy      = @view(mesh.coords[2,:])
     nvar    = size(varnames, 1)
     noutvar = max(nvar, size(outvarnames,1))
 
@@ -1781,9 +1853,9 @@ function write_NetCDF(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
     # ----------------------------------------------------------------
     # local coordinates
     # ----------------------------------------------------------------
-    xx = copy(mesh.x)
-    yy = copy(mesh.y)
-    zz = copy(mesh.z)
+    xx = copy(@view(mesh.coords[1,:]))
+    yy = copy(@view(mesh.coords[2,:]))
+    zz = copy(@view(mesh.coords[3,:]))
 
     # ----------------------------------------------------------------
     # build local subelement connectivity using ip2gip for global node indices

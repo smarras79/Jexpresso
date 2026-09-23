@@ -251,7 +251,7 @@ function plot_results!(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPU
                            show = false)
         end
 
-        xs = mesh.x[1:mesh.npoin_original]
+        xs = view(mesh.coords,1,1:mesh.npoin_original)
         qs = q[idx+1:(ivar-1)*npoin+mesh.npoin_original]
         sidx = sortperm(xs)
         Plots.plot!(fig, xs[sidx], qs[sidx]; line = (color, 2), label = "")
@@ -317,7 +317,7 @@ function plot_1d_grid(mesh::St_mesh)
 
     plt = Plots.plot() #Clear plot
     for i=1:mesh.npoin
-        display(Plots.scatter(mesh.x[1:mesh.npoin], zeros(mesh.npoin),
+        display(Plots.scatter(view(mesh.coords,1,1:mesh.npoin), zeros(mesh.npoin),
                              markersize = 4,
                              color = :blue,
                              legend = false))
@@ -452,7 +452,7 @@ function _isolines(xg, yg, z, levels)
     return xs, ys
 end
 
-function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs; iout=1, nvar=1, varnames=nothing, μ_nodes=nothing, μ_names=nothing)
+function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs; iout=1, nvar=1, varnames=nothing, μ_nodes=nothing, μ_names=nothing, Minv=nothing, t=nothing)
 
     """
         Plot arbitrarily gridded unstructured 2D nodal data as filled
@@ -501,7 +501,45 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
     npoin = mesh.npoin
     names = [(varnames === nothing || length(varnames) < ivar) ?
                  string("ivar", ivar) : string(varnames[ivar]) for ivar = 1:nvar]
-    nμ    = μ_nodes === nothing ? 0 : size(μ_nodes, 2)
+
+    # Optional per-case figure, the 2D counterpart of the user_plot_1d hook
+    # above. A case may ship a user_plot.jl defining
+    #
+    #     user_plot_2d(mesh, q, t, outvar, inputs, OUTPUT_DIR, iout; Minv=...)
+    #
+    # (mesh: THIS rank's mesh, for the node coordinates, the connectivity and
+    # the extents; q: flat npoin*nvar vector of the output variables; t: the
+    # simulation time parsed back from `title`; Minv: the solver's assembled
+    # inverse lumped mass, so a case that measures an integral norm uses the
+    # SAME quadrature the solver does rather than a rule of its own) which
+    # writes its own extra figures — an accuracy history against an exact solution, say (see
+    # problems/MHD/smoothVortex). Unlike the 1D hook this one is ADDITIVE: it
+    # is called on every rank, before the gather, and the generic panels below
+    # are rendered as usual afterwards. A case that needs the whole domain
+    # reduces across ranks itself. :plot_user => false switches it off.
+    if get(inputs, :_has_user_plot, false) && get(inputs, :plot_user, true) &&
+        isdefined(@__MODULE__, :user_plot_2d)
+        try
+            # The TIME ITSELF, not the time read back out of the figure's
+            # label: the label is written with @sprintf("t = %.4f"), so
+            # parsing it back rounds the time to 1e-4. A case that measures
+            # its error against an exact solution that MOVES — the advected
+            # smooth vortex — then places that solution at the wrong instant,
+            # and |v₀|·δt is an additive error that no refinement removes:
+            # a convergence study floors out at ~1e-5 for every order and
+            # every mesh. `t` is passed down from write_output; the parsed
+            # label is only the fallback for a caller that has none.
+            t_ = t !== nothing ? Float64(t) :
+                 something(tryparse(Float64, replace(split(title, "=")[end], r"[^0-9eE.+-]" => "")), NaN)
+            user_plot_2d(mesh, q, t_, varnames, inputs, OUTPUT_DIR, iout; Minv = Minv)
+        catch err
+            @warn "user_plot_2d failed; continuing with the generic panels." exception=err
+        end
+    end
+    # A DSGS case run with :lvisc => false carries a 1x1 dummy instead of the
+    # npoin x neqs coefficient (params_setup only allocates the real one when
+    # :lvisc is on), so check the shape and not just `nothing`.
+    nμ    = (μ_nodes === nothing || size(μ_nodes, 1) < npoin) ? 0 : size(μ_nodes, 2)
     μnames = [(μ_names === nothing || length(μ_names) < ieq) ?
                   string("μ_dsgs_", ieq) : string("μ_dsgs_", μ_names[ieq]) for ieq = 1:nμ]
 
@@ -510,8 +548,8 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
     # partitions appear twice, which the nearest-neighbour raster below does
     # not mind.
     #
-    xn = collect(view(mesh.x, 1:npoin))
-    yn = collect(view(mesh.y, 1:npoin))
+    xn = collect(view(@view(mesh.coords[1,:]), 1:npoin))
+    yn = collect(view(@view(mesh.coords[2,:]), 1:npoin))
     qv = [collect(view(q, (ivar - 1)*npoin + 1:ivar*npoin)) for ivar = 1:nvar]
     μv = [collect(view(μ_nodes, 1:npoin, ieq)) for ieq = 1:nμ]
     if mpisize > 1
@@ -836,8 +874,8 @@ function plot_triangulation(SD::NSD_3D, mesh::St_mesh, q::Array, title::String, 
 
 function plot_surf3d(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1, smoothing_factor=1e-3, varnames=nothing)
 
-    xmin = minimum(mesh.x); xmax = maximum(mesh.x);
-    ymin = minimum(mesh.y); ymax = maximum(mesh.y);
+    xmin = minimum(@view(mesh.coords[1,:])); xmax = maximum(@view(mesh.coords[1,:]));
+    ymin = minimum(@view(mesh.coords[2,:])); ymax = maximum(@view(mesh.coords[2,:]));
 
     comm    = get_mpi_comm()
     rank    = MPI.Comm_rank(comm)
@@ -854,7 +892,7 @@ function plot_surf3d(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_
         fout_name = string(OUTPUT_DIR, "/", var, piece, "-it", iout, ".png")
 
         #Spline2d
-        spl = Spline2D(mesh.x[1:npoin], mesh.y[1:npoin], q[idx+1:idx+npoin]; kx=4, ky=4, s=smoothing_factor)
+        spl = Spline2D(view(mesh.coords,1,1:npoin), view(mesh.coords,2,1:npoin), q[idx+1:idx+npoin]; kx=4, ky=4, s=smoothing_factor)
         xg = LinRange(xmin, xmax, nxi); yg = LinRange(ymin, ymax, nyi);
         zspl = evalgrid(spl, xg, yg);
         #End spline2d

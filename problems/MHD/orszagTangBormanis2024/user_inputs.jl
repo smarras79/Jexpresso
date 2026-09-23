@@ -1,3 +1,14 @@
+_ot_tend() = something(tryparse(Float64, get(ENV, "JEXPRESSO_OT_TEND", "")), 1.0)
+_ot_dt()   = something(tryparse(Float64, get(ENV, "JEXPRESSO_OT_DT",   "")), 0.7e-5)
+# :dsgs_rel — how far below its own physical scale a variable's spread may
+# fall before that scale, and not the spread, normalizes its residual.
+# 1 is the current rule; 1e-3 is what the kernels used before September 2026,
+# which for this problem amplified the continuity-equation residual by up to
+# 1000 (ρ is uniform at t = 0, so the floor WAS its normalization).
+_ot_hold() = something(tryparse(Int, get(ENV, "JEXPRESSO_OT_HOLD", "")), 2)
+_ot_rel()  = something(tryparse(Float64, get(ENV, "JEXPRESSO_OT_REL",  "")), 1.0)
+_ot_norms() = lowercase(strip(get(ENV, "JEXPRESSO_OT_NORMS", "domain")))
+
 function user_inputs()
 
     inputs = Dict(
@@ -20,9 +31,13 @@ function user_inputs()
         # local wave speeds grow. The reference simulation of the paper used
         # Δt = 8e-4 on its 128² finite-volume grid.
         :Δt                   => 1.5e-4,
+        #:Δt                   => _ot_dt(),
         :tinit                => 0.0,
+        # JEXPRESSO_OT_TEND shortens the run without editing the deck — a
+        # smoke test of a change to the model is one short run, not 143 000
+        # steps.
         :tend                 => 1.0,   # the paper's t ∈ [0, 1] interval
-        :diagnostics_at_times => (0.0:0.05:1.0),
+        :diagnostics_at_times => (0.0:0.25:1.0),
         :restart_time         => 0.0,
         :lrestart             => false,
         :lsource              => true,   # GLM ψ-damping source (Dedner mixed cleaning; see user_source.jl)
@@ -78,6 +93,21 @@ function user_inputs()
         # strong residual with the stage-consistent stencil, DSGS.md §1.2.
         :visc_model       => DSGS_MHD(),
         :dsgs_sensor      => "legacy",
+        :dsgs_rel         => _ot_rel(),
+        # Steps the coefficient is held at zero at the start (JEXPRESSO_OT_HOLD,
+        # :dsgs_hold_steps): what a longer hold costs on a case whose shocks
+        # form OUT of smooth data, as opposed to Brio-Wu's discontinuous start.
+        :dsgs_hold_steps  => _ot_hold(),
+        # NORMALIZATION SCOPE. The code-wide default is "rank": every rank
+        # normalizes the residual by ITS OWN subdomain's spread, so ν — and
+        # with it the solution — depends on how the domain was cut. On this
+        # case at 120² elements over 128 ranks that draws the partition into
+        # the coefficient as vertical banding; measured on the smooth vortex
+        # (nop 6, 32² elements): the error is 3.935e-7 on 2 ranks and 7.155e-6
+        # on 4, from nothing but the number of ranks. "domain" is two small
+        # Allreduces per RHS call and is what the method means by the norm
+        # over Ω. JEXPRESSO_OT_NORMS=rank restores the cheaper scope.
+        :dsgs_norms       => _ot_norms(),
         :dsgs_CR          => 1.0,
         :dsgs_Cmax        => 0.5,
         :dsgs_gamma       => 5.0/3.0,
@@ -104,6 +134,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lread_gmsh          => true,
         :gmsh_filename       => "./problems/MHD/orszagTangBormanis2024/OT_32x32_periodic.msh",
+        #:gmsh_filename       => "./problems/MHD/orszagTangBormanis2024/OT_56x56_periodic.msh",
         #---------------------------------------------------------------------------
         # Filter parameters.
         #
@@ -125,7 +156,8 @@ function user_inputs()
         :outformat           => "vtk",   # ParaView: the output variables plus the DynSGS coefficient fields
         :loverwrite_output   => false,
         :lwrite_initial      => true,
-        :output_dir          => "./output/",
+        :output_dir          => "/scratch/smarras/smarras/MHD/",
+        #:output_dir          => "./output/",
         :loutput_pert        => false,
         #---------------------------------------------------------------------------
         # AMR (off)
