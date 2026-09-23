@@ -38,8 +38,13 @@ function user_inputs()
         # CFL. The grid is h = 0.025 m with :nop => 4, so the tightest LGL
         # node spacing is ≈ 0.0043 m; against the free-stream wave speed
         # |u| + c ≈ 1372 m/s that puts the ADVECTIVE limit near 1.4e-6 s.
-        # With :init_refine_lvl => 2 below, every one of those numbers
-        # shrinks by 4 (element size) and the viscous one by 16 (Δx²).
+        # Those are the numbers for the RAW gmsh grid. :init_refine_lvl
+        # below halves the element size once per level, so every length
+        # above shrinks by 2^lvl and the viscous limit by 4^lvl. All the
+        # measured constants in this deck — the 14.95 cap, the 0.22, and
+        # the whole sweep below — are at :init_refine_lvl => 1, i.e.
+        # h = 0.0125 m, smallest LGL gap 0.00216 m, advective limit
+        # 1.6e-6 s. Re-measure them if you change the level.
         #
         # The binding constraint is NOT advective, it is VISCOUS. DynSGS
         # saturates its own μ_max bound at the step corner (measured: μ =
@@ -72,8 +77,48 @@ function user_inputs()
         # (the assembled RHS against a fixed BDF2 of the stage state, in
         # effect a |∂ₜq| sensor); "residual" (the default) = the element-wise
         # strong residual with the stage-consistent stencil, DSGS.md §1.2.
+        #---------------------------------------------------------------------------
+        # REALIZABILITY REPAIR (src/kernel/positivity/), ON AS A TEST.
+        #
+        # This case is the control: it is validated, it runs to t = 8e-3, and
+        # the repair should therefore report ZERO engagements. If it reports
+        # any, that is a finding about THIS case — it has been sitting closer
+        # to the edge of the realizable set than anyone knew — and not a
+        # licence to raise the floors.
+        #
+        # Leaving it on costs nothing measurable and nothing at all in the
+        # answer: positivity_limit! returns the number of repairs it made and
+        # the driver skips the write-back when that is zero, so a run that
+        # never engages is BIT-IDENTICAL to one with :lpositivity => false. It
+        # pays one read sweep per RHS call.
+        #
+        # Floors are 1e-6 of this case's own free stream (ρ∞ = 1.20494 kg/m³,
+        # p∞ = 101325 Pa), i.e. five to six orders below anything the Mach-3
+        # solution contains, including the expansion round the step corner.
+        :lpositivity          => true,
+        :positivity_rho_min   => 1.2e-6,          # 1e-6 * ρ∞
+        :positivity_p_min     => 1.0e-1,          # 1e-6 * p∞  (Pa)
+        #---------------------------------------------------------------------------
         :visc_model           => DSGS(),          # residual-based shock capturing
         :dsgs_sensor          => "legacy",
+        # Startup hold OFF — the single difference that this case cannot
+        # absorb. 7dd6f0c holds the coefficient at zero until the BDF2
+        # history is a time derivative (default 2 steps, 3 rotations),
+        # because the sensor was reading a SMOOTH initial condition as
+        # unresolved and pinning ν at its cap on step one. This initial
+        # condition is not smooth: a Mach-3 stream is started impulsively
+        # against the step, and the whole transient is at the step face and
+        # the convex corner. Holding ν at zero there integrates the most
+        # violent steps of the run with no dissipation at all, and the
+        # oscillation it plants at the corner is what the rest of the run
+        # has to carry. sm/newmaster predates the hold, never holds, and
+        # runs this case to t = 8e-3; with the hold on it dies at 1.46e-3,
+        # in that corner. 0 restores the older behaviour: the sensor fires
+        # from the first call on a history seeded from the initial
+        # condition, which reads 1.5x the forward difference of q — an
+        # over-estimate of the rate, which at an impulsive start is the
+        # side to err on.
+        :dsgs_hold_steps      => 0,
         # Per-equation multiplier on the DynSGS coefficient. The method is
         # parameter-free, so 1.0 is the paper's own setting; the ×4 on the
         # momentum and energy slots is this case's, and it is measured, not
@@ -97,7 +142,27 @@ function user_inputs()
         #   :μ [1,8,8,8]  Δt 5.0e-7   fails  <2e-4     ditto, worse
         #   :μ [0,1,1,1]  Δt 5.0e-7   fails  <2e-4     β∇ρ off — worst of all
         #   :μ [1,1,1,1]  Δt 5.0e-7   fails 6-8e-4     with :nop => 3
-        #   :μ [1,4,4,4]  Δt 1.25e-7  past 8e-4        <- what is set here
+        #   :μ [1,4,4,4]  Δt 1.25e-7  past 8e-4        <- the only row that
+        #                                                     survives; set here
+        #
+        # WHAT THE SWEEP WAS MEASURED UNDER, because two DynSGS defaults
+        # moved after it and neither is a setting of this deck:
+        #
+        #   * :dsgs_norms was rank-local; it defaults to "domain" since
+        #     10b177a (2026-09-12). The domain denominator is the spread
+        #     over the WHOLE field, which the bow shock sets, so it is
+        #     larger than the local spread on the rank holding the step
+        #     corner — the same :μ therefore buys LESS viscosity there
+        #     than it did in this table. Pinned explicitly below.
+        #   * the normalization floor rose from 1e-3 of each variable's
+        #     physical scale to the scale itself, 7dd6f0c (2026-09-11),
+        #     :dsgs_rel. It binds only where a variable is nearly
+        #     uniform, which here is the free stream at startup, not the
+        #     developed field.
+        #
+        # Both move ν DOWN relative to the rows above, so treat the
+        # survival times as optimistic and :μ [1,4,4,4] as the floor of
+        # what this case needs, not the ceiling.
         #
         # The pattern: dissipation helps only when Δt is cut to match, and
         # cutting Δt alone does nothing. If this case still fails downstream
@@ -109,12 +174,16 @@ function user_inputs()
         # Artificial Prandtl number P of eq. (3.7): κ = P/(γ-1)·μ. Nazarov &
         # Hoffman use P ≈ 0.1.
         :Pr                   => 0.1,
-        # Scope of the DynSGS normalising scales ⟨q⟩ and ‖q−⟨q⟩‖. Default
-        # false = rank-local, which costs no MPI communication. Uncomment for
-        # the paper's domain norms — 2 Allreduce per RHS call, 10 per step
-        # here — when μ has to be identical across rank counts. No effect on a
-        # serial run. See ENVIRONMENT_VARIABLES.md.
-        # :dsgs_norms => "domain",
+        # Scope of the DynSGS normalising scales ⟨q⟩ and ‖q−⟨q⟩‖ — the
+        # paper's Ω, i.e. the whole domain, which is also the default since
+        # 10b177a. Pinned rather than left implicit: this case is run on 64
+        # ranks and the sweep above was measured under the OLD rank-local
+        # default, so the scope has to be visible in the deck to be
+        # comparable. Costs 2 Allreduce of three doubles per RHS call, 10
+        # per step here; no effect on a serial run. "rank" reverts to the
+        # pre-September-2026 behaviour and makes the answer depend on the
+        # partition. See ENVIRONMENT_VARIABLES.md.
+        :dsgs_norms           => "domain",
         #---------------------------------------------------------------------------
         # Mesh
         #

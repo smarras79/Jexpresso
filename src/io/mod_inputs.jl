@@ -200,6 +200,46 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     # the default on Linux too. Users who need a different partition
     # strategy can still opt out by setting `:lxy_partition => false`
     # in their user_inputs.jl.
+    #
+    # WHAT THIS FLAG ALSO DOES, AND WHY THE DEFAULT IS STILL `true`.
+    # The `true` branch does not only choose the READ strategy above; it
+    # also imposes a COLUMNAR x-y CELL PARTITION, because
+    # _compute_xy_partition (mesh.jl) bins cells into a uniform nx × ny
+    # grid by centroid so each rank owns a rectangular block of the
+    # bounding box. That partition is what a 1D-implicit scheme (IMEX,
+    # HEVI) needs, since a vertical column has to live on one rank, and
+    # it is the only thing it is for.
+    #
+    # A uniform geometric bin only balances a UNIFORM mesh. Running the
+    # same algorithm over three meshes in this repo, max load / ideal:
+    #
+    #                                        16      32      64 ranks
+    #   ffs_step_M7        uniform h        1.19x   1.19x   1.27x
+    #   ffs_step_M7_round  unstructured     1.27x   1.31x   1.36x
+    #   shock_circle_M7    2.2 mm wall,
+    #                      77 mm far field  5.68x   6.66x   7.55x
+    #
+    # i.e. on a wall-clustered grid at 64 ranks one rank owns 1687 cells
+    # against an ideal 223 and every other rank waits for it. Any graded
+    # mesh has that problem — a boundary layer, a refined shock region,
+    # AMR — and the more graded the grid, the worse it gets. A deck on
+    # such a mesh should set `:lxy_partition => false`; CompEuler/
+    # shock_circle_M7 and CompEuler/rampCaoEtAl2021 do.
+    #
+    # It ought to be false by DEFAULT — a column partition is a
+    # column-solver choice, not a global one — and it is not, only
+    # because the flag currently carries the read strategy with it.
+    # Flipping it today would move all 123 gmsh-reading decks onto the
+    # distributed constructor, i.e. onto the nparts × parse cost and the
+    # Apple Silicon SIGBUS, and would change the answers of the decks
+    # whose DynSGS norms are partition-dependent (`:dsgs_norms =>
+    # "rank"`: MHD/smoothVortex, ShallowWater/SoliWaveIslandDSGS).
+    #
+    # The fix is to split the two concerns: keep the rank-0 read + bcast
+    # on BOTH branches and let :lxy_partition decide only the
+    # cell_to_part map — which is exactly what the CAVEAT already
+    # standing in the `false` branch of mod_mesh_read_gmsh! proposes.
+    # Once that is done this default should become false.
     if(!haskey(inputs, :lxy_partition))
         inputs[:lxy_partition] = true
     end
@@ -413,6 +453,29 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:yfac_laguerre] = 1.0
     end
      
+    # Node-wise realizability repair (src/kernel/positivity/). OFF by default,
+    # so no existing case changes. The two floors are ABSOLUTE and have no safe
+    # default — a deck that turns the repair on must state them from its own
+    # scales, and positivity_validate errors if it does not.
+    if(!haskey(inputs, :lpositivity))
+        inputs[:lpositivity] = false
+    end
+    if(!haskey(inputs, :positivity_rho_min))
+        inputs[:positivity_rho_min] = 0.0
+    end
+    if(!haskey(inputs, :positivity_p_min))
+        inputs[:positivity_p_min] = 0.0
+    end
+    if(!haskey(inputs, :positivity_report))
+        inputs[:positivity_report] = true
+    end
+    # How often (in RHS calls) the ranks meet to reduce the audit counters.
+    # The trigger must be identical on every rank — it is a collective — so it
+    # is a call count, not an engagement count.
+    if(!haskey(inputs, :positivity_report_every))
+        inputs[:positivity_report_every] = 1000
+    end
+
     if(!haskey(inputs,:lfilter))
         inputs[:lfilter] = false
     end
@@ -976,8 +1039,18 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :C2))
         inputs[:C2] = 0.0
     end
+    # :Pr is the ARTIFICIAL Prandtl number of the DynSGS Euler kernels
+    # (Nazarov & Hoffman 2013, Marras et al. 2015: κ = Pr/(γ-1)·μ on the
+    # energy/θ slot), read only there (rhs.jl, compute_dsgs_viscosity!(::DSGS,
+    # ::NSD_2D)). Its default is the references' P ≈ 0.1, the value every
+    # DSGS deck of the repository sets; the turbulent Prandtl number of the
+    # Smagorinsky/Vreman models is PhysConst.Pr_t, not this key. (Before
+    # September 2026 the default was 0.7: a deck that switched
+    # :visc_model to DSGS() without setting :Pr got a θ diffusivity 7×
+    # the references' — 3.5·ν with :μ[4] = 2 — and blew up at the first
+    # step, CompEuler/thetaTracers.)
     if(!haskey(inputs, :Pr))
-        inputs[:Pr] = 0.7
+        inputs[:Pr] = 0.1
     end
 
     #
@@ -1011,31 +1084,51 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
     # Scope of the DynSGS normalising scales ⟨q⟩ and ‖q−⟨q⟩‖.
     #
-    #   false (default) : rank-local. No communication at all.
-    #   true            : the domain norms of Marras eq. (9) / Nazarov &
-    #                     Hoffman eq. (3.5). Costs 2-3 MPI Allreduce per RHS
-    #                     call — 10-15 per step under a five-stage RK — on
-    #                     every rank's critical path.
+    #   true (default)  : the domain norms of Marras eq. (9) / Nazarov &
+    #                     Hoffman eq. (3.5). Costs 2-3 MPI Allreduce of a few
+    #                     doubles per RHS call — 10-15 per step under a
+    #                     five-stage RK, and negligible beside the RHS.
+    #   false           : rank-local. No communication, but the solution then
+    #                     depends on the partition (see below).
     #
-    # These two quantities only set the SCALE the element residual is measured
-    # against, and a partition of a connected domain resolves that scale as
-    # well as the whole domain does, so "rank" costs nothing and changes the
-    # solution only at round-off level; "domain" makes μ reproducible across
-    # rank counts and is what the papers write, at a few small reductions
-    # per RHS. Serial runs are unaffected either way. See
-    # kernel/physics/SGS.jl (_dsgs_norm_scope) and ENVIRONMENT_VARIABLES.md.
+    # These two quantities set the SCALE the element residual is measured
+    # against, and it was long assumed here that a partition of a connected
+    # domain resolves that scale as well as the whole domain does — that
+    # "rank" was free and changed the solution only at round-off. IT IS NOT.
+    # A rank that holds none of the interesting flow measures a spread that
+    # is only its own quiet background, normalizes by that, and applies a
+    # different viscosity to the same solution than its neighbour does.
+    # Measured on problems/MHD/smoothVortex (nop 6, 32² elements, ck54,
+    # Δt = 3.3333e-4, t = 1, absolute velocity L¹):
+    #
+    #     1-2 ranks     3.935e-07
+    #     4, 8 ranks    7.155e-06      identical to each other, 18x worse
+    #
+    # — an error floor no mesh refinement can go below, and on a 2D field it
+    # draws the partition into the coefficient as banding at the rank
+    # boundaries (seen on orszagTangBormanis2024 at 120² elements over 128
+    # ranks). The saturation is the shape of it: ranks holding the structure
+    # normalize by the structure, ranks holding nothing normalize by their
+    # floor, and adding more ranks only changes how many of each.
     #
     # ONE user-facing key sets that scope, :dsgs_norms:
-    #   "domain"  (default) the whole domain — the paper's definition; under
-    #             MPI the mean and spread are reduced across the ranks
-    #   "rank"    this rank's part of the domain only (no reductions; the
-    #             solution then depends on the partition at round-off level)
+    #   "domain"  (default) the whole domain — the papers' definition; under
+    #             MPI the mean and spread are Allreduce'd across the ranks
+    #             (2-3 collectives of a few doubles per RHS call, which is
+    #             nothing next to the RHS itself). The solution is then the
+    #             same however the domain is cut.
+    #   "rank"    this rank's part of the domain only: no reductions, but the
+    #             solution then depends on the partition — as above. Identical
+    #             to "domain" on one rank. Use it only where the subdomains
+    #             are known to be statistically alike.
     #   "element" the element itself (DSGS_MHD only; :dsgs_local_rel floors
     #             the element spread) — strongly stratified atmospheres
-    # The two booleans the kernels read, :dsgs_local_norms and
-    # :ldsgs_global_norms, are derived from it here and are not inputs.
+    # This is the only key: params_setup.jl turns it into the two typed
+    # Bools (params.dsgs_global_norms, params.dsgs_local_norms) the RHS
+    # call sites hand the kernels. The former deck keys :ldsgs_global_norms
+    # and :dsgs_local_norms are rejected.
     if haskey(inputs, :ldsgs_global_norms) || haskey(inputs, :dsgs_local_norms)
-        error(" user_inputs.jl: :ldsgs_global_norms and :dsgs_local_norms have been replaced by the single key :dsgs_norms => \"domain\" | \"rank\" | \"element\".")
+        error(" user_inputs.jl: :ldsgs_global_norms and :dsgs_local_norms have been replaced by the single key :dsgs_norms => \"rank\" | \"domain\" | \"element\".")
     end
     if(!haskey(inputs, :dsgs_norms))
         inputs[:dsgs_norms] = "domain"
@@ -1044,9 +1137,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if !(dsgs_norms in ("domain", "rank", "element"))
         error(" user_inputs.jl: :dsgs_norms must be \"domain\", \"rank\" or \"element\" (got $(inputs[:dsgs_norms])).")
     end
-    inputs[:dsgs_norms]         = dsgs_norms
-    inputs[:ldsgs_global_norms] = (dsgs_norms == "domain")
-    inputs[:dsgs_local_norms]   = (dsgs_norms == "element")
+    inputs[:dsgs_norms] = dsgs_norms
 
     # DSGS_MHD variants for strongly stratified atmospheres (see
     # compute_dsgs_viscosity!(::DSGS_MHD) in kernel/physics/SGS.jl and
@@ -1095,7 +1186,8 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #                      continuous field) instead of the default per
     #                      ELEMENT (one ν per element, Marras's form). true
     #                      implies the element form off. 1D and 2D kernels
-    #                      (DSGS and DSGS_MHD); there is no 3D DynSGS kernel.
+    #                      (DSGS and DSGS_MHD); the 3D DSGS kernel is
+    #                      element-form only.
     #   :dsgs_Cl           its local-jump normalization constant C_l (their eq.
     #                      4.7; 0 = classical global spread, the paper uses 0.4)
     if(!haskey(inputs, :ldsgs_nodal))
@@ -1103,6 +1195,93 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
     if(!haskey(inputs, :dsgs_Cl))
         inputs[:dsgs_Cl] = 0.0
+    end
+    #   :dsgs_freeze_stage  compute the coefficient ONCE PER TIME STEP, at the
+    #                      stage that sits on tⁿ, and hold it for the rest of
+    #                      the step (default false: it is computed at every
+    #                      stage).
+    #
+    #                      ν = C_R h² R̃, and R̃ is a three-point time
+    #                      difference across the stages. At an intermediate
+    #                      stage one of those three values is an RK internal
+    #                      stage, whose own error is O(Δt) — explicit RK
+    #                      schemes have low stage order — so R̃ never falls
+    #                      below O(Δt) however smooth and however well
+    #                      resolved the solution is. ν then stalls at
+    #                      C_R h²·O(Δt), the RV solution departs from the
+    #                      Galerkin one by O(h²), and the measured order of a
+    #                      smooth accuracy test is capped at 2 as soon as the
+    #                      spatial error drops under it — measured on the
+    #                      smooth vortex, where P6 and P7 bend to p = 2.4 and
+    #                      2.1 at 50k-200k DOFs while their Galerkin curves
+    #                      hold 5.7 and 9.8.
+    #
+    #                      At tⁿ the three values are step-level states, R̃ is
+    #                      the BDF2 truncation error O(Δt²), and the floor
+    #                      drops by a factor Δt. It also removes the stage
+    #                      cost of the sensor.
+    if(!haskey(inputs, :dsgs_freeze_stage))
+        inputs[:dsgs_freeze_stage] = false
+    end
+    #   :dsgs_cutoff       smoothness cutoff on the NORMALIZED residual:
+    #                      ratio -> max(0, ratio - cutoff), so nu is exactly
+    #                      zero below it, continuous across it, and unchanged
+    #                      above it (default 0: no cutoff).
+    #
+    #                      On a smooth, resolved solution the sensor does not
+    #                      read zero. The residual is element-local, and where
+    #                      the flow is flat the element's own weak RHS is
+    #                      dominated by the inter-element jump of a grid-scale
+    #                      residue that assembly cancels — measured on the
+    #                      smooth vortex at P6/32^2: far from the vortex the
+    #                      element term is 2.2e-6 against an assembled rate of
+    #                      1.2e-7, eighteen times larger, and BOTH halve when
+    #                      dt halves. nu therefore carries a floor
+    #                      proportional to dt, which caps the measured order of
+    #                      a smooth accuracy test at 2 (fixed dt) or 3 (dt ~ h)
+    #                      while the Galerkin solution keeps design order.
+    #
+    #                      Normalized ratios measured there: 1.6e-6 in the far
+    #                      field, 1.9e-5 in the vortex core. At a shock the
+    #                      ratio is O(10^2), so a cutoff of 1e-3 removes the
+    #                      floor and changes a shock's coefficient in the sixth
+    #                      digit. Validate on brioWu1d and orszagTang before
+    #                      using it on a case with discontinuities.
+    if(!haskey(inputs, :dsgs_cutoff))
+        inputs[:dsgs_cutoff] = 0.0
+    end
+    #   :dsgs_hold_steps   steps the coefficient is held at zero at the START
+    #                      of a run (default 2, the minimum the BDF2 history
+    #                      needs and the behaviour this code has always had).
+    #
+    #                      A probe beyond that. On the smooth vortex a cutoff
+    #                      removes every bit of nu that survives to the final
+    #                      time and STILL leaves most of the excess over
+    #                      Galerkin, so the dose is given early — while the
+    #                      sensor's normalized score is above any usable
+    #                      threshold even though the initial condition is
+    #                      smooth and fully resolved.
+    #
+    #                      0 TURNS THE HOLD OFF, and a shock case with an
+    #                      impulsive start needs that. The hold exists because
+    #                      the sensor read a SMOOTH, fully resolved initial
+    #                      condition as unresolved everywhere and pinned nu at
+    #                      its cap on step one. Where the initial condition is
+    #                      genuinely violent — CompEuler/ffs_step starts a
+    #                      Mach-3 stream against a forward-facing step, with
+    #                      the whole transient at the step face and the convex
+    #                      corner — those first steps are the ones that most
+    #                      need the viscosity, and integrating them at nu = 0
+    #                      plants an oscillation at the corner that the rest of
+    #                      the run carries. ffs_step is reported to run to
+    #                      t = 8e-3 on sm/newmaster, which predates the hold
+    #                      and so never holds; on this branch, with the hold
+    #                      on, it dies at t = 1.46e-3 in exactly that corner.
+    #                      That pair also differs in Dt (1.0e-7 there, 1.25e-7
+    #                      here), so the hold is the leading suspect, not a
+    #                      one-variable measurement.
+    if(!haskey(inputs, :dsgs_hold_steps))
+        inputs[:dsgs_hold_steps] = 2
     end
     #   :dsgs_nazarov_energy  heat conduction of the energy slot is Dao &
     #                      Nazarov's κ = ρν/Pr (JSC 2022, §4.4) instead of
@@ -1171,6 +1350,30 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     
     if(!haskey(inputs, :lrichardson))
         inputs[:lrichardson] = false #Default is artificial viscosity with constant coefficient
+    end
+
+    #
+    # Molecular (laminar) viscosity from Sutherland's law, added on top of
+    # the DynSGS coefficient by _viscous_rhs_el_2d_dsgs! (rhs.jl). Off by
+    # default: a shock-capturing-only case such as CompEuler/ffs_step wants
+    # nothing here, a viscous one such as CompEuler/rampCaoEtAl2021 cannot
+    # do without it. See the header of that function for which slot gets
+    # what. Currently 2D, total-energy form only.
+    #
+    if(!haskey(inputs, :lsutherland))
+        inputs[:lsutherland] = false
+    end
+    if(!haskey(inputs, :sutherland_muref))
+        inputs[:sutherland_muref] = 1.716e-5   # Pa.s, air
+    end
+    if(!haskey(inputs, :sutherland_Tref))
+        inputs[:sutherland_Tref]  = 273.15     # K
+    end
+    if(!haskey(inputs, :sutherland_S))
+        inputs[:sutherland_S]     = 110.4      # K
+    end
+    if(!haskey(inputs, :Pr_lam))
+        inputs[:Pr_lam]           = 0.71       # molecular Prandtl number
     end
 
     #

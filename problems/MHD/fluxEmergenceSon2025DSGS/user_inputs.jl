@@ -44,10 +44,10 @@ function user_inputs()
         # the late-time flows: the emerged loop reaches V_A ≈ 4-7 C_s and the
         # lateral downflows 4-5 C_s (paper Sec. 4.1), i.e. |v| + c_f ≈ 10 C_s
         # and CFL ≈ 0.15. The paper's own Courant number is 0.23.
-        :Δt                   => 7.5e-3,
+        :Δt                   => 5.0e-4,
         :tinit                => 0.0,
         :tend                 => 54.0,  # paper Fig. 5 runs to t = 54 τ₀ (snapshots of Fig. 2 at t = 51 τ₀)
-        :diagnostics_at_times => (0.0:1.0:54.0),
+        :diagnostics_at_times => (54.0), #(0.0:1.0:54.0),
         :restart_time         => 0.0,
         :lrestart             => false,
         :lsource              => true,   # gravity + GLM ψ damping + absorbing layer (user_source.jl)
@@ -180,7 +180,7 @@ function user_inputs()
         # :plot_dsgs_log10, their log10_mu_dsgs_<var> counterparts floored
         # at :plot_dsgs_floor.
         #---------------------------------------------------------------------------
-        :outformat           => "png", #"vtk",
+        :outformat           => "vtk",
         :plot_matrix         => false,        # silent per-variable PNGs, no GR window
         :plot_colormap       => :jet,         # the paper's colormap (Fig. 2)
         :plot_vars           => ["ρ", "v", "vA", "Bx", "p", "T", "β"],
@@ -217,7 +217,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # AMR (off)
         #---------------------------------------------------------------------------
-        :linitial_refine     => false,
+        :linitial_refine     => true,
+        :init_refine_lvl     => 1,
         :ladapt              => false,
         #---------------------------------------------------------------------------
     ) #Dict
