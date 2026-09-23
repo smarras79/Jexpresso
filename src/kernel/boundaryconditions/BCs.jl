@@ -55,6 +55,38 @@ function apply_boundary_conditions_dirichlet!(u, uaux, t,qe,
     end
 end
 
+#
+# DG (DiscGal): boundary conditions are FLUXES, not node values.
+#
+# The strong path above overwrites uaux/RHS at the points listed in
+# poin_in_bdy_edge. Under DiscGal that array is meaningless twice over: it
+# carries CG point ids, while mesh.x/connijk were renumbered to the
+# duplicated-DOF DG numbering (add_high_order_nodes_2D_gmsh_dg!), so the
+# writes would land on whatever DG node happens to share the index; and even
+# with correct ids, clamping a node value and zeroing its RHS is the CG way
+# of imposing a boundary condition, not the DG one. DG imposes it weakly,
+# through the numerical flux on the boundary faces built by
+# build_dg_faces_2D! and consumed by surface_rhs_el! (see dg_boundary_ghost!).
+#
+# This is a no-op rather than an error because it is also the right answer
+# for the periodic DG cases, whose boundary edges are all periodic tags that
+# the strong path skips anyway.
+#
+function apply_boundary_conditions_dirichlet!(u, uaux, t, qe,
+                                              coords,
+                                              nx, ny, nz,
+                                              npoin, npoin_linear,
+                                              poin_in_bdy_edge, poin_in_bdy_face,
+                                              nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ψ, dψ,
+                                              xmax, ymax, zmax, xmin, ymin, zmin, RHS, rhs_el, ubdy,
+                                              connijk_lag,
+                                              bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type,
+                                              connijk, Jef, S_face, S_flux, F_surf, M_surf_inv, M_edge_inv, M_inv,
+                                              Tabs, qn,
+                                              ω, neqs, inputs, AD::DiscGal, SD)
+    nothing
+end
+
 function apply_boundary_conditions_neumann!(u, uaux, t,qe,
                                             coords,
                                             nx, ny, nz,
@@ -85,6 +117,29 @@ function apply_boundary_conditions_neumann!(u, uaux, t,qe,
 end
 
 
+# DG (DiscGal): see the dirichlet method above. The surface integral of a
+# boundary flux is the DG boundary term itself, already applied in
+# surface_rhs_el!; the CG Neumann builder would add a second one, on
+# CG-numbered points.
+function apply_boundary_conditions_neumann!(u, uaux, t, qe,
+                                            coords,
+                                            nx, ny, nz,
+                                            npoin, npoin_linear,
+                                            poin_in_bdy_edge, poin_in_bdy_face,
+                                            nedges_bdy, nfaces_bdy,
+                                            ngl, ngr, nelem_semi_inf, ψ, dψ,
+                                            xmax, ymax, zmax, xmin, ymin, zmin,
+                                            RHS, rhs_el, ubdy,
+                                            connijk_lag, bdy_edge_in_elem,
+                                            bdy_edge_type, bdy_face_in_elem, bdy_face_type,
+                                            connijk, Jef,
+                                            S_face, S_flux, F_surf, M_surf_inv, M_edge_inv, M_inv,
+                                            τ_f, wθ, wqv,
+                                            Tabs, qn,
+                                            ω, neqs, inputs, AD::DiscGal, SD)
+    nothing
+end
+
 function apply_periodicity!(u, uaux, t, qe,
                             npoin_linear, ψ, dψ,
                             RHS, rhs_el, ubdy,
@@ -103,6 +158,13 @@ function apply_periodicity!(u, uaux, t,qe,
     nothing
 end
 
+function apply_periodicity!(u, uaux, t, qe,
+                            npoin_linear, ψ, dψ,
+                            RHS, rhs_el, ubdy,
+                            ω, neqs, inputs, AD::DiscGal, SD::NSD_1D)
+    # DG periodicity is a flux face (see surface_rhs_el!), not a node identification.
+    nothing
+end
 
 function apply_periodicity!(u, uaux, t,qe,
                             npoin_linear, ψ, dψ,
@@ -116,6 +178,18 @@ function apply_periodicity!(u, uaux, t,qe,
                             npoin_linear, ψ, dψ,
                             RHS, rhs_el, ubdy,
                             ω, neqs, inputs, AD::ContGal, SD::NSD_2D)
+    nothing
+end
+
+
+function apply_periodicity!(u, uaux, t,qe,
+                            npoin_linear, ψ, dψ,
+                            RHS, rhs_el, ubdy,
+                            ω, neqs, inputs, AD::DiscGal, SD::NSD_2D)
+    # DG periodicity is a flux face (see surface_rhs_el!), not a node identification.
+    # NOTE: currently unreachable in 2D — the single call site (this file, dirichlet
+    # wrapper) gates on lperiodic_1d && NSD_1D. Defensive, mirroring the ContGal
+    # 2D method above.
     nothing
 end
 
@@ -255,7 +329,7 @@ function build_custom_bcs_dirichlet!(::NSD_2D, t,
 
                     for ieq =1:neqs
                         if bc_value_changed(qbdy[ieq], uaux[ip,ieq], qe[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
-                            #@info mesh.x[ip],mesh.y[ip],ieq,qbdy[ieq]
+                            #@info mesh.coords[1,ip],mesh.coords[2,ip],ieq,qbdy[ieq]
                             uaux[ip,ieq] = qbdy[ieq]
                             RHS[ip, ieq] = 0.0
                         end

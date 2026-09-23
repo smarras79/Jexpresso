@@ -249,4 +249,40 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
 
     extra_mesh = Array{St_extra_mesh}(undef, 0, 0)
 
+    # ------------------------------------------------------------------
+    # DG (DiscGal) interior + periodic face list — built by
+    # build_dg_faces_2D! (mesh.jl) inside mod_mesh_read_gmsh!'s cached
+    # region; consumed by surface_rhs_el!(::NSD_2D). Flat arrays so the
+    # mesh cache saves/restores them (nested containers are skip-listed).
+    # Empty under ContGal/FD. lfid slice convention over the (i,j)
+    # lattice: 1=x-min(i=1), 2=x-max(i=ngl), 3=y-min(j=1), 4=y-max(j=ngl).
+    # ------------------------------------------------------------------
+    dg_face_eL::Vector{TInt}    = TInt[]     # left element; unit normal points L→R
+    dg_face_eR::Vector{TInt}    = TInt[]     # right element
+    dg_face_lfL::Vector{TInt}   = TInt[]     # local facet id of the face in eL
+    dg_face_lfR::Vector{TInt}   = TInt[]     # local facet id of the face in eR
+    dg_face_revR::Vector{Bool}  = Bool[]     # reverse eR's trace to align with eL's
+    dg_face_nx::Vector{TFloat}  = TFloat[]   # unit normal (L→R), x component
+    dg_face_ny::Vector{TFloat}  = TFloat[]   # unit normal (L→R), y component
+    dg_face_Jf::Vector{TFloat}  = TFloat[]   # face Jacobian = edge length / 2 (straight edges)
+
+    # ------------------------------------------------------------------
+    # DG (DiscGal) PHYSICAL boundary face list — the faces of the same
+    # build that have no partner element (everything tagged in the gmsh
+    # file that is not periodic). Under DG a boundary condition is a flux,
+    # not a node value: surface_rhs_el!(::NSD_2D) pairs the interior trace
+    # with a ghost state built from the case's user_bc_dirichlet! and
+    # sends the pair through the same numerical_flux! as an interior face.
+    # The strong (node-overwriting) CG path is switched off under DiscGal
+    # in BCs.jl — poin_in_bdy_edge carries CG point ids, which have no
+    # meaning in the duplicated-DOF numbering.
+    # Empty under ContGal/FD, and on a fully periodic DG mesh.
+    # ------------------------------------------------------------------
+    dg_bfac_e::Vector{TInt}     = TInt[]     # the one element owning the face
+    dg_bfac_lf::Vector{TInt}    = TInt[]     # its local facet id (same slice convention)
+    dg_bfac_nx::Vector{TFloat}  = TFloat[]   # unit normal, outward from the domain
+    dg_bfac_ny::Vector{TFloat}  = TFloat[]
+    dg_bfac_Jf::Vector{TFloat}  = TFloat[]   # face Jacobian = edge length / 2
+    dg_bfac_tag::Vector{String} = String[]   # gmsh physical tag, passed to user_bc_dirichlet!
+
 end

@@ -210,27 +210,41 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
     else
         mesh, partitioned_model, uaux_new = mod_mesh_mesh_driver(inputs, nparts, distribute, args...)
     end
-    if (inputs[:xscale] != 1.0 && inputs[:xdisp] != 0.0)
-        mesh.x .= (@view(mesh.x[:]) .+ TFloat(inputs[:xdisp])) .*TFloat(inputs[:xscale]*0.5)
-    elseif (inputs[:xscale] != 1.0)
-        mesh.x[:] = @view(mesh.x[:])*TFloat(inputs[:xscale]*0.5)
-    elseif (inputs[:xdisp] != 0.0)
-        mesh.x[:] .= (@view(mesh.x[:]) .+ TFloat(inputs[:xdisp]))
+    #
+    # :xscale / :xdisp and :yscale / :ydisp are applied to mesh.coords, the
+    # canonical node array, and MIRRORED into the deprecated mesh.x/mesh.y so
+    # that the mesh construction chain (mesh.jl and the files it calls, which
+    # still read them by design) stays consistent.
+    #
+    # THIS USED TO SCALE ONLY mesh.x/mesh.y AND LEAVE mesh.coords UNTOUCHED.
+    # Consumers that had already moved to coords -- the VTK writer,
+    # sphere_metrics -- therefore saw the UNSCALED grid while everything else
+    # saw the scaled one, silently, on any deck with :xscale != 1.0 or
+    # :xdisp != 0.0. The migration of the rest of the kernel onto coords would
+    # have turned that into scaling being ignored outright.
+    #
+    # (x + disp)*scale with disp = 0 / scale = 1 when the input is neutral
+    # reproduces all three branches of the elseif chain this replaces exactly.
+    #
+    if inputs[:xscale] != 1.0 || inputs[:xdisp] != 0.0
+        xsc = (inputs[:xscale] != 1.0) ? TFloat(inputs[:xscale]*0.5) : TFloat(1.0)
+        xdp = TFloat(inputs[:xdisp])
+        @views mesh.coords[1,:] .= (mesh.coords[1,:] .+ xdp) .* xsc
+        @views mesh.x[1:mesh.npoin] .= mesh.coords[1,:]
     end
     # mesh.xmin = minimum(mesh.coords[1, :])
     # mesh.xmax = maximum(mesh.coords[1, :])
-    mesh.xmax = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
-    mesh.xmin = MPI.Allreduce(minimum(mesh.x), MPI.MIN, comm)
-    if (inputs[:yscale] != 1.0 && inputs[:ydisp] != 0.0)
-        mesh.y[:] .= (mesh.y[:] .+ inputs[:ydisp]) .*inputs[:yscale] * 0.5
-    elseif(inputs[:yscale] != 1.0)
-        mesh.y[:] .= (mesh.y[:]) .*inputs[:yscale]*0.5
-    elseif(inputs[:ydisp] != 0.0)
-        mesh.y[:] .= (mesh.y[:] .+ inputs[:ydisp])
+    mesh.xmax = MPI.Allreduce(maximum(@view(mesh.coords[1,:])), MPI.MAX, comm)
+    mesh.xmin = MPI.Allreduce(minimum(@view(mesh.coords[1,:])), MPI.MIN, comm)
+    if (inputs[:yscale] != 1.0 || inputs[:ydisp] != 0.0) && mesh.nsd >= 2
+        ysc = (inputs[:yscale] != 1.0) ? TFloat(inputs[:yscale]*0.5) : TFloat(1.0)
+        ydp = TFloat(inputs[:ydisp])
+        @views mesh.coords[2,:] .= (mesh.coords[2,:] .+ ydp) .* ysc
+        @views mesh.y[1:mesh.npoin] .= mesh.coords[2,:]
     end
     if mesh.nsd == 2
-        mesh.ymax = MPI.Allreduce(maximum(mesh.y), MPI.MAX, comm)
-        mesh.ymin = MPI.Allreduce(minimum(mesh.y), MPI.MIN, comm)
+        mesh.ymax = MPI.Allreduce(maximum(@view(mesh.coords[2,:])), MPI.MAX, comm)
+        mesh.ymin = MPI.Allreduce(minimum(@view(mesh.coords[2,:])), MPI.MIN, comm)
     end
     
     #--------------------------------------------------------

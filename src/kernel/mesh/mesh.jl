@@ -2232,6 +2232,16 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     
     #Update number of grid points from linear count to total high-order points
     mesh.npoin = tot_linear_poin + tot_edges_internal_nodes + tot_faces_internal_nodes + (mesh.nsd - 2)*tot_vol_internal_nodes
+    # DG (DiscGal): duplicated interface DOFs — every element owns its
+    # full ngl^2 point set, npoin = nelem*ngl^2. Set here, ahead of the
+    # "Resize as needed" block, so every downstream allocation (x/y/z/coords,
+    # ip2gip, ...) is sized for the DG point set. npoin_linear keeps its
+    # Gridap vertex meaning. The CG builders below still run for
+    # their side effects (poin_in_edge, conn, boundary lists) and connijk/
+    # coordinates are overwritten by the DG numbering block after them.
+    if inputs[:AD] == DiscGal() && mesh.nsd == 2
+        mesh.npoin = mesh.nelem * ngl * ngl
+    end
     
     if (mesh.nop > 1) && (!lamr_mesh)
         println_rank(" # GMSH HIGH-ORDER GRID PROPERTIES"; msg_rank = rank, suppress = mesh.msg_suppress)
@@ -2275,7 +2285,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     mesh.x      = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
     mesh.y      = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
     mesh.z      = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
-    mesh.coords = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.nsd), Int64(mesh.npoin))
+    mesh.coords = KernelAbstractions.zeros(backend, TFloat, 3, Int64(mesh.npoin))   # 3 rows always — see the note at the gmsh fill
     
     mesh.ip2gip    = KernelAbstractions.zeros(backend, TInt, Int64(mesh.npoin))
     mesh.gip2owner = KernelAbstractions.ones(backend, TInt, Int64(mesh.npoin))*local_views(parts).item_ref[]
@@ -2485,13 +2495,17 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     #         
     add_high_order_nodes_volumes!(mesh, lgl, mesh.SD, elm2pelm)
 
-    
-    for ip = mesh.npoin_linear+1:mesh.npoin
-        mesh.x[ip] = mesh.x_ho[ip]
-        mesh.y[ip] = mesh.y_ho[ip]
-        mesh.z[ip] = 0.0
-        if (mesh.nsd > 2 || mesh.lmanifold)
-            mesh.z[ip] = mesh.z_ho[ip]
+    # DG writes mesh.x/mesh.y for all nelem*ngl^2 points directly in
+    # add_high_order_nodes_2D_gmsh_dg! below; x_ho carries CG-numbered
+    # points, so the copy is skipped under DiscGal.
+    if !(inputs[:AD] == DiscGal() && mesh.nsd == 2)
+        for ip = mesh.npoin_linear+1:mesh.npoin
+            mesh.x[ip] = mesh.x_ho[ip]
+            mesh.y[ip] = mesh.y_ho[ip]
+            mesh.z[ip] = 0.0
+            if (mesh.nsd > 2 || mesh.lmanifold)
+                mesh.z[ip] = mesh.z_ho[ip]
+            end
         end
     end
 
@@ -2505,6 +2519,14 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         # panel decomposition are untouched; only where the nodes sit within
         # each panel changes. No-op unless :cubed_sphere_map is set.
         remap_cubed_sphere_nodes!(mesh, inputs)
+    end
+
+    # DG (DiscGal) numbering: must run after the CG builders (kept for side
+    # effects) and BEFORE the extrema Allreduce below, the IPc/IPp mortar
+    # lists, elem_to_edge, and the periodicity block — all consume connijk
+    # or coordinates.
+    if inputs[:AD] == DiscGal() && mesh.nsd == 2
+        add_high_order_nodes_2D_gmsh_dg!(mesh, lgl, model)
     end
 
     mesh.xmax = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
@@ -3474,8 +3496,25 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             println_rank(" # Periodic NCF parent elements detected: $(total_peri_ncf) (will be refined by amr_strategy!)"; msg_rank = rank, suppress = false)
         end
         MPI.Barrier(comm)
-        restructure4periodicity_2D(mesh, norx, "periodicx")
-        restructure4periodicity_2D(mesh, nory, "periodicz")
+        # DG (DiscGal) keeps duplicated interface DOFs: periodic coupling is
+        # carried by the numerical flux over a face-pair list, not by merging
+        # the two boundaries into shared points. restructure4periodicity_2D is
+        # a node merge with no :AD awareness (it also consumes ip2gip/gip2owner,
+        # which are CG shared-entity constructs), so under DiscGal it would weld
+        # both periodic boundaries -- the same defect the DiscGal guard in
+        # restructure4periodicity_1D! fixes at 1D, at 2D scale. Guarded at the
+        # call site rather than inside the function
+        # because restructure4periodicity_2D does not receive `inputs`.
+        if inputs[:AD] != DiscGal()
+            restructure4periodicity_2D(mesh, norx, "periodicx")
+            restructure4periodicity_2D(mesh, nory, "periodicz")
+        else
+            # DG: periodic coupling is a numerical flux over face pairs, not a
+            # node merge. Build the interior + periodic face list here — same
+            # inputs in scope, inside the cached region (its Gridap inputs are
+            # cache-skip-listed; its flat-array products are cached).
+            build_dg_faces_2D!(mesh)
+        end
         # restructure_el2gel_for_periodicity_2D!(mesh, norx, "periodicx")
         # restructure_el2gel_for_periodicity_2D!(mesh, nory, "periodicy")
         mesh.gel2owner = find_gip_owner(mesh.el2gel)
@@ -4108,6 +4147,38 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
     return 
 end
 
+function add_high_order_nodes_1D_native_mesh_dg!(mesh::St_mesh, interpolation_nodes, backend)
+    # DG (DiscGal) 1D numbering: every element owns its own ngl nodes, so the
+    # interface DOFs are DUPLICATED (npoin = nelem*ngl) and the solution may
+    # jump across faces — coupling is supplied by the numerical flux, not by a
+    # shared node. Contrast add_high_order_nodes_1D_native_mesh! (ContGal),
+    # which shares the interface node (connijk[iel,ngl] == connijk[iel+1,1]).
+    lgl   = basis_structs_ξ_ω!(interpolation_nodes, mesh.nop, backend)
+    ngl   = mesh.nop + 1
+    nelem = mesh.nelem
+
+    mesh.npoin        = nelem * ngl
+    mesh.npoin_linear = mesh.npoin          # no linear/high-order split under DG
+    mesh.npoin_el     = ngl
+
+    resize!(mesh.x, mesh.npoin)
+        mesh.coords  = KernelAbstractions.zeros(backend, TFloat, size(mesh.coords, 1), Int64(mesh.npoin))
+    mesh.conn    = KernelAbstractions.zeros(backend, TInt, Int64(nelem), Int64(ngl))
+    mesh.connijk = KernelAbstractions.zeros(backend, TInt, Int64(nelem), Int64(ngl), 1, 1)
+
+    for iel = 1:nelem
+        x1 = mesh.xmin + (iel-1)*mesh.Δx[iel]        # element left vertex
+        for l = 1:ngl
+            ip = (iel-1)*ngl + l
+            ξ  = lgl.ξ[l]
+            mesh.x[ip]              = x1 + 0.5*(ξ + 1.0)*mesh.Δx[iel]
+            mesh.coords[1,ip]       = mesh.x[ip]
+            mesh.conn[iel,l]        = ip
+            mesh.connijk[iel,l,1,1] = ip
+        end
+    end
+    return
+end
 
 function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, edge2pedge)
     
@@ -5205,6 +5276,376 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_2D, elm2pelm
     nothing
 end
 
+function add_high_order_nodes_2D_gmsh_dg!(mesh::St_mesh, lgl, model)
+    # DG numbering with duplicated interface DOFs, matching the 1D DG builder:
+    #   ip = (iel-1)*ngl^2 + (j-1)*ngl + i;  connijk[iel,i,j] = ip
+    # Tensor lattice matches the CG convention (i ascending in x, j in y),
+    # so compute_element_size! returns the same Delem and dt is unchanged.
+    # Corners via the same node_ids->slot map mod_mesh_read_gmsh! uses;
+    # interiors by bilinear interpolation over (lgl.ksi[i], lgl.ksi[j]).
+    # Coordinates written to mesh.x/mesh.y directly (npoin_linear keeps its
+    # Gridap vertex meaning). coords is written in the upstream (ndims × npoin) orientation 
+    # alongside x/y, so the planned x/y → coords migration reduces to deleting x/y writes. 
+    # Corner coords are read from Gridap node_coords,
+    # NOT mesh.x: DG ids overlap the vertex id range and mesh.x is being
+    # overwritten in this very loop.
+    # Re-assert the DG count: the CG builders recompute mesh.npoin from CG
+    # arithmetic internally (add_high_order_nodes_edges!/faces!), clobbering
+    # the pre-allocation override. This builder runs last, so this assignment
+    # is what every downstream consumer sees.
+    mesh.npoin = mesh.nelem * mesh.ngl * mesh.ngl
+    node_coords = get_node_coordinates(get_grid(model))
+    ngl = mesh.ngl
+    _cache_node_ids = array_cache(mesh.cell_node_ids)
+    for iel = 1:mesh.nelem
+        node_ids = getindex!(_cache_node_ids, mesh.cell_node_ids, iel)
+        x11, y11 = node_coords[node_ids[2]][1], node_coords[node_ids[2]][2]  # slot [1,1]
+        x1n, y1n = node_coords[node_ids[1]][1], node_coords[node_ids[1]][2]  # slot [1,ngl]
+        xnn, ynn = node_coords[node_ids[3]][1], node_coords[node_ids[3]][2]  # slot [ngl,ngl]
+        xn1, yn1 = node_coords[node_ids[4]][1], node_coords[node_ids[4]][2]  # slot [ngl,1]
+        for j = 1:ngl, i = 1:ngl
+            ip = (iel-1)*ngl*ngl + (j-1)*ngl + i
+            mesh.connijk[iel, i, j] = ip
+            # Serial DG global indexing: every duplicated DOF is its own
+            # global point, so ip2gip is the identity. This overwrites the
+            # CG shared-entity gids the builders wrote and keeps the
+            # gnpoin/gip2ip/gip2owner block downstream consistent without
+            # gating it. Real DG global indexing for MPI is deferred
+            # parallel work.
+            mesh.ip2gip[ip] = ip
+            ξ = lgl.ξ[i];  ζ = lgl.ξ[j]
+            w11 = (1-ξ)*(1-ζ)*0.25;  wn1 = (1+ξ)*(1-ζ)*0.25
+            w1n = (1-ξ)*(1+ζ)*0.25;  wnn = (1+ξ)*(1+ζ)*0.25
+            mesh.x[ip] = w11*x11 + wn1*xn1 + w1n*x1n + wnn*xnn
+            mesh.y[ip] = w11*y11 + wn1*yn1 + w1n*y1n + wnn*ynn
+            mesh.coords[1, ip] = mesh.x[ip]
+            mesh.coords[2, ip] = mesh.y[ip]
+        end
+    end
+    return nothing
+end
+
+#
+# DG (DiscGal) interior + periodic face list, 2D.
+#
+# Builds the flat face-pair arrays on St_mesh that surface_rhs_el!(::NSD_2D)
+# loops over. One list; periodic pairs are ordinary rows found by centroid
+# matching (the detect_periodic_ncf_parent_gels_2D! recipe with the filter
+# inverted: keep the conforming pairs it discards). Local facet ids use the
+# slice convention over the (i,j) lattice —
+#     1 → connijk[e, 1, :]     2 → connijk[e, ngl, :]
+#     3 → connijk[e, :, 1]     4 → connijk[e, :, ngl]
+# — determined GEOMETRICALLY per face (slice-coincidence test), never from
+# Gridap's cell_face_ids ordering: the Gridap reference-polytope edge order
+# and the p4est glue order need not agree, and this list depends on neither.
+# Must run inside the cached region of mod_mesh_read_gmsh! (its inputs
+# facet_cell_ids / bdy_edge_* are cache-skip-listed and do not survive a
+# cache hit; the flat-array products are cached). Serial semantics only for
+# now (parallel DG indexing is deferred).
+#
+function build_dg_faces_2D!(mesh::St_mesh)
+    ngl = mesh.ngl
+    TF  = eltype(mesh.dg_face_nx)
+
+    empty!(mesh.dg_face_eL);  empty!(mesh.dg_face_eR)
+    empty!(mesh.dg_face_lfL); empty!(mesh.dg_face_lfR)
+    empty!(mesh.dg_face_revR)
+    empty!(mesh.dg_face_nx);  empty!(mesh.dg_face_ny); empty!(mesh.dg_face_Jf)
+
+    empty!(mesh.dg_bfac_e);  empty!(mesh.dg_bfac_lf); empty!(mesh.dg_bfac_tag)
+    empty!(mesh.dg_bfac_nx); empty!(mesh.dg_bfac_ny); empty!(mesh.dg_bfac_Jf)
+
+    slice_ip(e, lfid, k) = lfid == 1 ? mesh.connijk[e, 1,   k] :
+                           lfid == 2 ? mesh.connijk[e, ngl, k] :
+                           lfid == 3 ? mesh.connijk[e, k,   1] :
+                                       mesh.connijk[e, k, ngl]
+
+    function cent(e)
+        cx = zero(TF); cy = zero(TF)
+        for (a, b) in ((1, 1), (1, ngl), (ngl, ngl), (ngl, 1))
+            ip = mesh.connijk[e, a, b]
+            cx += mesh.x[ip] / 4; cy += mesh.y[ip] / 4
+        end
+        return (cx, cy)
+    end
+
+    # Do slices (a,la) and (b,lb) hold the same physical nodes, forward or
+    # reversed? usex/usey select which coordinates to compare (both for
+    # interior faces; tangential-only for periodic pairs).
+    function slices_match(a, la, b, lb; usex::Bool=true, usey::Bool=true)
+        ip1 = slice_ip(a, la, 1); ipn = slice_ip(a, la, ngl)
+        Lf  = hypot(mesh.x[ipn] - mesh.x[ip1], mesh.y[ipn] - mesh.y[ip1])
+        tol = 1.0e-8 * Lf
+        fwd = true; rev = true
+        for k = 1:ngl
+            ipa = slice_ip(a, la, k)
+            ipf = slice_ip(b, lb, k)
+            ipr = slice_ip(b, lb, ngl - k + 1)
+            if usex
+                fwd &= abs(mesh.x[ipa] - mesh.x[ipf]) <= tol
+                rev &= abs(mesh.x[ipa] - mesh.x[ipr]) <= tol
+            end
+            if usey
+                fwd &= abs(mesh.y[ipa] - mesh.y[ipf]) <= tol
+                rev &= abs(mesh.y[ipa] - mesh.y[ipr]) <= tol
+            end
+            (fwd || rev) || return (false, false)
+        end
+        return (true, !fwd && rev)
+    end
+
+    # Unit normal of slice (e, lf), signed OUTWARD from element e, and the
+    # face Jacobian (half the edge length on straight edges). Shared by the
+    # interior/periodic pair list and by the physical boundary list: on an
+    # interior face "outward from eL" is "toward eR", on a periodic face it
+    # is "out of the domain, toward eR across the wrap", and on a boundary
+    # face it is "out of the domain" — one convention, three uses.
+    function face_normal(e, lf)
+        ip1 = slice_ip(e, lf, 1); ipn = slice_ip(e, lf, ngl)
+        tx = mesh.x[ipn] - mesh.x[ip1]; ty = mesh.y[ipn] - mesh.y[ip1]
+        Lf = hypot(tx, ty)
+        nx = ty / Lf; ny = -tx / Lf
+        fcx = zero(TF); fcy = zero(TF)
+        for k = 1:ngl
+            ip = slice_ip(e, lf, k)
+            fcx += mesh.x[ip] / ngl; fcy += mesh.y[ip] / ngl
+        end
+        ecx, ecy = cent(e)
+        if nx * (fcx - ecx) + ny * (fcy - ecy) < 0
+            nx = -nx; ny = -ny
+        end
+        return nx, ny, Lf / 2
+    end
+
+    function push_face!(eL, lfL, eR, lfR, rev)
+        nx, ny, Jf = face_normal(eL, lfL)
+        push!(mesh.dg_face_eL,  eL);  push!(mesh.dg_face_eR,  eR)
+        push!(mesh.dg_face_lfL, lfL); push!(mesh.dg_face_lfR, lfR)
+        push!(mesh.dg_face_revR, rev)
+        push!(mesh.dg_face_nx, nx);   push!(mesh.dg_face_ny, ny)
+        push!(mesh.dg_face_Jf, Jf)
+    end
+
+    function push_bfac!(e, lf, tag)
+        nx, ny, Jf = face_normal(e, lf)
+        push!(mesh.dg_bfac_e,  e);  push!(mesh.dg_bfac_lf, lf)
+        push!(mesh.dg_bfac_nx, nx); push!(mesh.dg_bfac_ny, ny)
+        push!(mesh.dg_bfac_Jf, Jf); push!(mesh.dg_bfac_tag, tag)
+    end
+
+    # --- interior faces: facet_cell_ids entries with two cells --------------
+    # cell_face_ids position g → slice lfid. Discovered from the interior
+    # faces, where both (e, lf) are known geometrically, and then USED to
+    # place the physical boundary faces below — a boundary facet touches one
+    # element, so there is no second slice to match it against, and the
+    # coordinate route is closed under DG (poin_in_bdy_edge carries CG point
+    # ids, and mesh.x has been renumbered). The map is well defined because
+    # every element's (i,j) lattice is laid out from the same corner slot
+    # map; that is asserted below rather than assumed, since the boundary
+    # list now depends on it.
+    conv_map = zeros(Int, 4)
+    function note_conv!(e, f, lf)
+        length(mesh.cell_face_ids) >= e && length(mesh.cell_face_ids[e]) == 4 || return
+        g = findfirst(==(f), mesh.cell_face_ids[e])
+        g === nothing && return
+        if conv_map[g] == 0
+            conv_map[g] = lf
+        elseif conv_map[g] != lf
+            error("build_dg_faces_2D!: cell_face_ids position $g maps to slice $(conv_map[g]) on one element and $lf on element $e — the local facet order is not uniform, so the physical boundary faces cannot be placed from it")
+        end
+    end
+    n_int = 0
+    for f = 1:length(mesh.facet_cell_ids)
+        cells = mesh.facet_cell_ids[f]
+        length(cells) == 2 || continue
+        a = cells[1]; b = cells[2]
+        a != b || error("build_dg_faces_2D!: facet $f joins element $a to itself — mesh is one element wide in a periodic direction; DG face pairing needs at least two elements across each periodic direction")
+        found = 0; mla = 0; mlb = 0; mrev = false
+        for la = 1:4, lb = 1:4
+            ok, rev = slices_match(a, la, b, lb)
+            if ok
+                found += 1; mla = la; mlb = lb; mrev = rev
+            end
+        end
+        found == 1 || error("build_dg_faces_2D!: facet $f (elements $a, $b) matched $found slice pairs, expected exactly 1 — numbering/geometry inconsistency")
+        push_face!(a, mla, b, mlb, mrev)
+        n_int += 1
+        # Discover Gridap's local edge order empirically. Learned from BOTH
+        # sides of the face: facet_cell_ids lists the lower element first, so
+        # a facet is always a's x-max or y-max slice and never its x-min or
+        # y-min one. Learning only from a leaves positions 1 and 3 of the map
+        # at 0 forever (measured on hexa_TFI_10x20_periodic: [0, 2, 0, 3]),
+        # and the boundary list below cannot place a facet on an element's
+        # x-min or y-min side — which is every left and bottom wall there is.
+        note_conv!(a, f, mla)
+        note_conv!(b, f, mlb)
+    end
+    println(" # build_dg_faces_2D!: cell_face_ids order → slice lfid map (1=x-min, 2=x-max, 3=y-min, 4=y-max; 0 = never observed): ", conv_map)
+    sort(conv_map) == [1, 2, 3, 4] ||
+        println(" # build_dg_faces_2D!: WARNING — the map is not a permutation of 1:4; a physical boundary facet on an unobserved side will be refused below")
+
+    # --- periodic pairs: upstream's centroid match, filter inverted ---------
+    function periodic_pairs!(tag::String)
+        # Which axis is NORMAL to this tag's faces? Never inferred from the
+        # tag's name — measured 2026-08-11 on hexa_TFI_10x20_periodic: the tag
+        # names the axis the edge RUNS ALONG ("periodicx" = bottom/top edges,
+        # y-normal; "periodicz" = left/right, x-normal — 2D remaps y→z),
+        # matching detect_periodic_ncf_parent_gels_2D!'s branch (x tangential
+        # for "periodicx"). Derived geometrically regardless: each tagged
+        # element votes for the axis on which it has a constant-coordinate
+        # slice at that axis's domain extremum; corner elements vote both,
+        # the rest disambiguate; a tie is a hard error.
+        xlo, xhi = extrema(mesh.x); ylo, yhi = extrema(mesh.y)
+        tolx = 1.0e-8 * (xhi - xlo); toly = 1.0e-8 * (yhi - ylo)
+        vx = 0; vy = 0
+        seen = Set{Int}()
+        for iedge_bdy = 1:length(mesh.bdy_edge_type)
+            mesh.bdy_edge_type[iedge_bdy] == tag || continue
+            e = mesh.bdy_edge_in_elem[iedge_bdy]
+            (e in seen) && continue
+            push!(seen, e)
+            for lf = 1:4
+                sxlo = TF(Inf); sxhi = TF(-Inf); sylo = TF(Inf); syhi = TF(-Inf)
+                for k = 1:ngl
+                    ip = slice_ip(e, lf, k)
+                    sxlo = min(sxlo, mesh.x[ip]); sxhi = max(sxhi, mesh.x[ip])
+                    sylo = min(sylo, mesh.y[ip]); syhi = max(syhi, mesh.y[ip])
+                end
+                if (sxhi - sxlo) <= tolx && (abs(sxlo - xlo) <= tolx || abs(sxhi - xhi) <= tolx)
+                    vx += 1
+                end
+                if (syhi - sylo) <= toly && (abs(sylo - ylo) <= toly || abs(syhi - yhi) <= toly)
+                    vy += 1
+                end
+            end
+        end
+        (vx + vy) == 0 && return 0                # tag absent from this mesh
+        vx == vy && error("build_dg_faces_2D!: cannot decide normal axis for tag $tag (votes x=$vx, y=$vy)")
+        xnormal = vx > vy
+        println(" # build_dg_faces_2D!: tag \"$tag\" → $(xnormal ? "x" : "y")-normal faces (votes x=$vx, y=$vy)")
+        nc(ip) = xnormal ? mesh.x[ip] : mesh.y[ip]
+        tc(ip) = xnormal ? mesh.y[ip] : mesh.x[ip]
+
+        els = Int[]; lfs = Int[]; ncm = TF[]; tcm = TF[]
+        for iedge_bdy = 1:length(mesh.bdy_edge_type)
+            mesh.bdy_edge_type[iedge_bdy] == tag || continue
+            e = mesh.bdy_edge_in_elem[iedge_bdy]
+            for lf = 1:4                           # normal-constant slices of e
+                ip1 = slice_ip(e, lf, 1); ipn = slice_ip(e, lf, ngl)
+                Lf  = hypot(mesh.x[ipn] - mesh.x[ip1], mesh.y[ipn] - mesh.y[ip1])
+                ncsum = zero(TF); tcsum = zero(TF); nclo = TF(Inf); nchi = TF(-Inf)
+                for k = 1:ngl
+                    ip = slice_ip(e, lf, k)
+                    ncsum += nc(ip) / ngl; tcsum += tc(ip) / ngl
+                    nclo = min(nclo, nc(ip)); nchi = max(nchi, nc(ip))
+                end
+                (nchi - nclo) <= 1.0e-8 * Lf || continue
+                push!(els, e); push!(lfs, lf); push!(ncm, ncsum); push!(tcm, tcsum)
+            end
+        end
+        isempty(els) && return 0
+        lo_val, hi_val = extrema(ncm)
+        span = hi_val - lo_val
+        span > 0 || error("build_dg_faces_2D!: $tag candidates all at one coordinate — mesh/tag inconsistency")
+        tolside = 1.0e-8 * span
+        lo = Int[]; hi = Int[]
+        for idx = 1:length(els)
+            if abs(ncm[idx] - lo_val) <= tolside
+                push!(lo, idx)
+            elseif abs(ncm[idx] - hi_val) <= tolside
+                push!(hi, idx)
+            end   # element-interior normal-constant slices fall through — correct
+        end
+        length(lo) == length(hi) || error("build_dg_faces_2D!: $tag side counts differ ($(length(lo)) vs $(length(hi)))")
+        # Pair by sorted tangential order — no float-keyed Dict. The former sigdigits=6
+        # key was RELATIVE rounding, which cannot collapse ~1e-12 arithmetic noise around
+        # a tangential centroid at exactly 0 (any domain-symmetric mesh, e.g. 5 elements
+        # on [-5,5]), so the two sides produced distinct keys and pairing failed.
+        # Sorted-order pairing needs no quantization; alignment is asserted per pair
+        # with an ABSOLUTE tolerance below.
+        sort!(lo; by = idx -> tcm[idx])
+        sort!(hi; by = idx -> tcm[idx])
+        tspan = length(lo) > 1 ?
+            max(Float64(tcm[lo[end]] - tcm[lo[1]]), Float64(tcm[hi[end]] - tcm[hi[1]])) : 0.0
+        tolt = 1.0e-6 * max(tspan, Float64(span))
+        for k = 2:length(lo)
+            (tcm[lo[k]] - tcm[lo[k-1]]) > tolt || error("build_dg_faces_2D!: duplicate $tag tangential key on the min side — degenerate/1-wide mesh")
+            (tcm[hi[k]] - tcm[hi[k-1]]) > tolt || error("build_dg_faces_2D!: duplicate $tag tangential key on the max side — degenerate/1-wide mesh")
+        end
+        n = 0
+        for k = 1:length(lo)
+            imin = lo[k]; imax = hi[k]
+            abs(tcm[imax] - tcm[imin]) <= tolt || error("build_dg_faces_2D!: $tag sorted-order pair mismatch at k=$k ($(tcm[imin]) vs $(tcm[imax])) — non-conforming periodic boundary?")
+            eL = els[imax]; lfL = lfs[imax]        # L = max side → outward normal points +direction
+            eR = els[imin]; lfR = lfs[imin]
+            eL != eR || error("build_dg_faces_2D!: $tag pairs element $eL with itself — 1-element-wide direction; DG face pairing needs at least two elements across each periodic direction")
+            ok, rev = xnormal ? slices_match(eL, lfL, eR, lfR; usex=false, usey=true) :
+                                slices_match(eL, lfL, eR, lfR; usex=true,  usey=false)
+            ok || error("build_dg_faces_2D!: $tag pair (elements $eL, $eR) does not align in either orientation — numbering inconsistency")
+            push_face!(eL, lfL, eR, lfR, rev)
+            n += 1
+        end
+        return n
+    end
+
+    n_per = periodic_pairs!("periodicx") + periodic_pairs!("periodicz")
+
+    println(" # build_dg_faces_2D!: ", n_int, " interior + ", n_per, " periodic = ",
+            length(mesh.dg_face_eL), " faces")
+
+    # --- physical boundary faces: facet_cell_ids entries with ONE cell -----
+    #
+    # Everything the gmsh file tags that is not a periodic pair: the faces
+    # where the domain ends. They are a separate list because they have no
+    # second trace — surface_rhs_el! builds that trace from the case's
+    # user_bc_dirichlet! (see dg_boundary_ghost!) and then runs the same
+    # numerical flux as an interior face. Without this list a DG run on a
+    # walled domain has no boundary term at all: the elements on the rim
+    # keep the raw volume flux, mass leaves through the wall, and nothing
+    # reports it.
+    n_bdy = 0
+    n_per_facets = 0
+    n_untagged = 0
+    for f = 1:length(mesh.facet_cell_ids)
+        cells = mesh.facet_cell_ids[f]
+        length(cells) == 1 || continue
+        e   = cells[1]
+        tag = f <= length(mesh.edge_type) ? mesh.edge_type[f] : nothing
+        # Periodic edges are already rows of the interior list (periodic_pairs!);
+        # "periodicy" is the 2D synonym of "periodicz" that the bdy_edge_type
+        # remap normalizes but edge_type keeps verbatim, so match by prefix.
+        if tag !== nothing && startswith(String(tag), "periodic")
+            n_per_facets += 1
+            continue
+        end
+        # An untagged boundary facet has no user routine to ask, so it gets
+        # no row and therefore no correction — which IS a boundary condition:
+        # F* = F_int, i.e. free/transmissive. Counted and printed rather than
+        # skipped in silence, because on a domain meant to be closed it is
+        # the difference between a wall and an open side, and the run would
+        # otherwise look healthy while draining.
+        if tag === nothing
+            n_untagged += 1
+            continue
+        end
+        String(tag) == "Laguerre" &&
+            error("build_dg_faces_2D!: facet $f is tagged \"Laguerre\" — semi-infinite elements are not supported under :AD => DiscGal()")
+        length(mesh.cell_face_ids) >= e && length(mesh.cell_face_ids[e]) == 4 ||
+            error("build_dg_faces_2D!: element $e has no 4-entry cell_face_ids row — cannot place boundary facet $f")
+        g = findfirst(==(f), mesh.cell_face_ids[e])
+        g === nothing &&
+            error("build_dg_faces_2D!: boundary facet $f is not listed among element $e's facets — topology inconsistency")
+        lf = conv_map[g]
+        lf == 0 &&
+            error("build_dg_faces_2D!: cell_face_ids position $g was never observed on an interior face, so boundary facet $f cannot be placed. The mesh is one element wide in one direction; DG needs at least two elements across each direction")
+        push_bfac!(e, lf, String(tag))
+        n_bdy += 1
+    end
+    println(" # build_dg_faces_2D!: ", n_bdy, " physical boundary faces (",
+            n_per_facets, " periodic facets already paired above, ",
+            n_untagged, " untagged => free/transmissive)")
+end
+
 function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D, elm2pelm)
 
     if (mesh.nop < 2) return end
@@ -5468,7 +5909,11 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
     end
     
     #Add high-order nodes
-    add_high_order_nodes_1D_native_mesh!(mesh, interpolation_nodes, backend)
+    if inputs[:AD] == DiscGal()
+        add_high_order_nodes_1D_native_mesh_dg!(mesh, interpolation_nodes, backend)
+    else
+        add_high_order_nodes_1D_native_mesh!(mesh, interpolation_nodes, backend)
+    end
 
     mesh.nelem_semi_inf = 0
     if (inputs[:llaguerre_1d_right]) mesh.nelem_semi_inf +=1 end 
@@ -5505,7 +5950,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
         mesh.x = x
         #mesh.coords[1, :] = x[:]
     end 
-    mesh.coords = KernelAbstractions.zeros(CPU(), TFloat, Int64(mesh.nsd), Int64(mesh.npoin))
+    mesh.coords = KernelAbstractions.zeros(CPU(), TFloat, 3, Int64(mesh.npoin))     # 3 rows always — see the note at the gmsh fill
     mesh.coords[1, :] = mesh.x[:]
     #plot_1d_grid(mesh)
     resize!(mesh.y, (mesh.npoin))
@@ -5768,17 +6213,29 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
         end
 
 
-        # WARNING: this will be removed when x,y,z is fulyl replaced by coords
-        # A 2D manifold needs three columns even though nsd == 2.
-        ncoord = mesh.lmanifold ? 3 : Int64(mesh.nsd)
+        #
+        # coords ALWAYS HAS THREE ROWS, whatever nsd is.
+        #
+        # It used to be (nsd, npoin), except for a 2D manifold which needed
+        # three. That made coords a NON-drop-in replacement for the deprecated
+        # mesh.x/y/z: those are zero arrays in the unused directions, so
+        # mesh.z[ip] reads 0.0 on a 2D grid, while coords[3,ip] was a
+        # BoundsError. Every consumer migrated off x/y/z then had to know the
+        # dimension to stay in bounds, and one that did not — squall_line_2D,
+        # which read an unused z — turned into a crash on the first node.
+        #
+        # Three rows costs one extra Float64 column per node on a 2D grid and
+        # removes that entire class of hazard. Nothing infers the dimension
+        # from size(coords, 1); mesh.nsd is what says how many are meaningful.
+        #
+        ncoord = 3
         mesh.coords = KernelAbstractions.zeros(CPU(), TFloat, ncoord, Int64(mesh.npoin))
-        mesh.coords[1, :] = mesh.x[:]
-        if ncoord > 1
-            mesh.coords[2, :] = mesh.y[:]
-            if ncoord > 2
-                mesh.coords[3, :] = mesh.z[:]
-            end
-        end
+        # Guard on the SOURCE arrays, not on ncoord: a 1D or 2D grid leaves
+        # mesh.y/mesh.z short or empty, and the unfilled rows stay zero, which
+        # is exactly what mesh.y/mesh.z read as there.
+        length(mesh.x) >= mesh.npoin && (mesh.coords[1, :] = mesh.x[1:mesh.npoin])
+        length(mesh.y) >= mesh.npoin && (mesh.coords[2, :] = mesh.y[1:mesh.npoin])
+        length(mesh.z) >= mesh.npoin && (mesh.coords[3, :] = mesh.z[1:mesh.npoin])
         
         println_rank(" # Read gmsh grid and populate with high-order points ........................ DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
         
@@ -5791,7 +6248,7 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
             
             if (inputs[:nsd]==1)
                 println(" # ... build 1D grid ")
-                mesh = St_mesh{TInt,TFloat, CPU()}(coords = KernelAbstractions.zeros(CPU(),TFloat, 1, Int64(inputs[:npx])),
+                mesh = St_mesh{TInt,TFloat, CPU()}(coords = KernelAbstractions.zeros(CPU(),TFloat, 3, Int64(inputs[:npx])),
                                                    x = KernelAbstractions.zeros(CPU(),TFloat,Int64(inputs[:npx])),
                                                    npx  = TInt(inputs[:npx]),
                                                    xmin = TFloat(inputs[:xmin]), xmax = TFloat(inputs[:xmax]),

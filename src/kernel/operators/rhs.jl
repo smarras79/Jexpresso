@@ -161,7 +161,44 @@ end
 # first call and subtracted. Cases whose flux/source are already written on
 # the perturbation (the well-balanced MHD and shallow-water splits, PERT
 # variables) have a vanishing reference RHS and pass rhs_el through.
+# :dsgs_hold_steps — how many steps the coefficient is held at zero at the
+# start of a run. The BDF2 history needs two steps before it is a time
+# derivative at all, so 2 is the minimum and the default: it is the behaviour
+# this code has always had.
+#
+# Beyond that it is a probe. The smooth vortex shows that a cutoff removes the
+# viscosity that survives to the end of a run and still leaves most of the
+# excess over Galerkin, which says the dose is given EARLY — while the sensor's
+# normalized score is above any usable threshold even though the initial
+# condition is smooth and fully resolved. Holding ν at zero for longer tests
+# exactly that reading.
+# 0 disables the hold entirely: the sensor fires from the first RHS call, on a
+# BDF2 history still seeded from the initial condition, which makes the weights
+# (1.5/h, -2/h, 0.5/h) read 1.5x the forward difference of q. That is an
+# OVER-estimate of the rate, not a meaningless number, and on a case whose first
+# steps are the most violent of the run — a Mach-3 stream started impulsively
+# against a wall — the viscosity it buys at the impulsive start is load-bearing.
+# See :dsgs_hold_steps in mod_inputs.jl.
+@inline function _dsgs_hold_steps(params)
+    h = Int(get(params.inputs, :dsgs_hold_steps, 2))
+    h <= 0 && return 0          # never holds: nhist starts at 0
+    return max(2, h) + 1        # nhist counts rotations: < hold+1 means "hold steps of them"
+end
+
 function _dsgs_residual_rhs!(u, params, SD)
+    # How far below its physical scale a variable's spread may fall before
+    # that scale normalizes its residual (SGS.jl, _dsgs_denom). The kernels
+    # carry the old 1e-3 as `rel`, so this is the factor onto it.
+    _DSGS_RELMUL[] = 1.0e3*Float64(get(params.inputs, :dsgs_rel, 1.0))
+    # JEXPRESSO_DSGS_RSPLIT=1: record how each element's residual was made
+    # (SGS.jl, _DSGS_RSPLIT). Diagnostic only; off unless the variable is set.
+    _DSGS_RSPLIT[] = get(ENV, "JEXPRESSO_DSGS_RSPLIT", "") == "1"
+    # Startup: while the BDF2 history is still the initial condition the
+    # residual has no meaning (see the weights in rhs!). Hold it at zero.
+    if params.dsgs_nhist[] < _dsgs_hold_steps(params)
+        fill!(params.dsgs_rhs_res, zero(params.T))
+        return params.dsgs_rhs_res
+    end
     # :dsgs_sensor => "legacy": the pre-September-2026 sensor, the assembled
     # RHS divided by the lumped mass against the fixed BDF2 of the stage
     # state (set in rhs!). With a lumped mass matrix that difference is the
@@ -250,6 +287,14 @@ function _dsgs_legacy_fill!(res::AbstractArray{TT}, RHS::AbstractMatrix{TT}, Min
                 res[ie,i,ieq] = f*RHS[ip,ieq]
             end
         end
+    elseif SD == NSD_3D()
+        @inbounds for ie = 1:nelem, k = 1:ngl, j = 1:ngl, i = 1:ngl
+            ip = connijk[ie,i,j,k]
+            f  = ω[i]*ω[j]*ω[k]*Je[ie,i,j,k]*Minv[ip]
+            for ieq = 1:neqs
+                res[ie,i,j,k,ieq] = f*RHS[ip,ieq]
+            end
+        end
     else
         @inbounds for ie = 1:nelem, j = 1:ngl, i = 1:ngl
             ip = connijk[ie,i,j,1]
@@ -262,20 +307,28 @@ function _dsgs_legacy_fill!(res::AbstractArray{TT}, RHS::AbstractMatrix{TT}, Min
     return nothing
 end
 
-function _dsgs_bdy_zero!(res::AbstractArray{TT}, pairs::Vector{NTuple{3,Int}}, q::AbstractMatrix{TT},
+function _dsgs_bdy_zero!(res::AbstractArray{TT}, pairs::Vector{NTuple{4,Int}}, q::AbstractMatrix{TT},
                          qA::AbstractMatrix{TT}, qB::AbstractMatrix{TT}, wt::NTuple{3,TT},
                          ω::AbstractVector{TT}, Je::AbstractArray{TT}, connijk::AbstractArray{TI,4},
                          neqs::Int, SD) where {TT<:AbstractFloat, TI<:Integer}
     if SD == NSD_1D()
-        @inbounds for (ie, i, j) in pairs
+        @inbounds for (ie, i, j, k) in pairs
             ip = connijk[ie,i,1,1]
             m  = ω[i]*Je[ie,i]
             for ieq = 1:neqs
                 res[ie,i,ieq] = m*(wt[1]*q[ip,ieq] + wt[2]*qA[ip,ieq] + wt[3]*qB[ip,ieq])
             end
         end
+    elseif SD == NSD_3D()
+        @inbounds for (ie, i, j, k) in pairs
+            ip = connijk[ie,i,j,k]
+            m  = ω[i]*ω[j]*ω[k]*Je[ie,i,j,k]
+            for ieq = 1:neqs
+                res[ie,i,j,k,ieq] = m*(wt[1]*q[ip,ieq] + wt[2]*qA[ip,ieq] + wt[3]*qB[ip,ieq])
+            end
+        end
     else
-        @inbounds for (ie, i, j) in pairs
+        @inbounds for (ie, i, j, k) in pairs
             ip = connijk[ie,i,j,1]
             m  = ω[i]*ω[j]*Je[ie,i,j]
             for ieq = 1:neqs
@@ -286,7 +339,7 @@ function _dsgs_bdy_zero!(res::AbstractArray{TT}, pairs::Vector{NTuple{3,Int}}, q
     return nothing
 end
 
-# The (element, i, j) pairs of the Dirichlet boundary nodes, built once.
+# The (element, i, j, k) node addresses of the Dirichlet boundary nodes, built once.
 function _dsgs_boundary_pairs!(params, SD)
     mesh  = params.mesh
     npoin = mesh.npoin
@@ -298,7 +351,23 @@ function _dsgs_boundary_pairs!(params, SD)
         mask[mesh.npoin_linear] = true
         for ie = 1:nelem, i = 1:ngl
             ip = mesh.connijk[ie,i,1,1]
-            mask[ip] && push!(params.dsgs_bdy_pairs, (ie, i, 1))
+            mask[ip] && push!(params.dsgs_bdy_pairs, (ie, i, 1, 1))
+        end
+    elseif SD == NSD_3D()
+        # 3D: the constrained nodes are those of the non-periodic boundary
+        # FACES (mesh.poin_in_bdy_face) — the free-slip top and bottom of an
+        # atmospheric box; the periodic sides constrain nothing.
+        for iface = 1:mesh.nfaces_bdy
+            ft = mesh.bdy_face_type[iface]
+            (ft === nothing || startswith(string(ft), "periodic") || string(ft) == "Laguerre") && continue
+            for j = 1:ngl, i = 1:ngl
+                ip = mesh.poin_in_bdy_face[iface,i,j]
+                ip > 0 && (mask[ip] = true)
+            end
+        end
+        for ie = 1:nelem, k = 1:ngl, j = 1:ngl, i = 1:ngl
+            ip = mesh.connijk[ie,i,j,k]
+            mask[ip] && push!(params.dsgs_bdy_pairs, (ie, i, j, k))
         end
     else
         for iedge = 1:mesh.nedges_bdy
@@ -311,7 +380,7 @@ function _dsgs_boundary_pairs!(params, SD)
         end
         for ie = 1:nelem, j = 1:ngl, i = 1:ngl
             ip = mesh.connijk[ie,i,j,1]
-            mask[ip] && push!(params.dsgs_bdy_pairs, (ie, i, j))
+            mask[ip] && push!(params.dsgs_bdy_pairs, (ie, i, j, 1))
         end
     end
     return nothing
@@ -347,7 +416,7 @@ function rhs!(du, u, params, time)
                workgroupsize = (params.neqs))
 
             k = _build_rhs_gpu_v0!(backend,(Int64(params.mesh.ngl)))
-            k(params.RHS, u, params.uaux, params.qp.qe, params.mesh.x, TFloat(time),
+            k(params.RHS, u, params.uaux, params.qp.qe, @view(params.mesh.coords[1,:]), TFloat(time),
               params.mesh.connijk , params.basis.dψ, params.ω, params.metrics.Je, params.Minv, 
               params.flux_gpu, params.source_gpu, 
               PHYS_CONST, params.xmax, params.xmin, params.mesh.ngl, params.neqs,
@@ -357,7 +426,7 @@ function rhs!(du, u, params, time)
             if (params.laguerre)
                 params.RHS_lag .= TFloat(0.0)
                 k = _build_rhs_gpu_v0!(backend,(Int64(params.mesh.ngr)))
-                k(params.RHS, u, params.uaux, params.qp.qe, params.mesh.x, TFloat(time),
+                k(params.RHS, u, params.uaux, params.qp.qe, @view(params.mesh.coords[1,:]), TFloat(time),
                   params.mesh.connijk_lag , params.basis_lag.dψ, params.ω_lag, params.metrics_lag.Je, params.Minv, 
                   params.flux_lag_gpu, params.source_lag_gpu,
                   PHYS_CONST, params.xmax, params.xmin, params.mesh.ngr, params.neqs,
@@ -400,7 +469,7 @@ function rhs!(du, u, params, time)
             end
 
             k = apply_boundary_conditions_gpu_3D!(backend)
-            k(@view(params.uaux[:,:]), @view(u[:]), params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.z,
+            k(@view(params.uaux[:,:]), @view(u[:]), params.qp.qe, @view(params.mesh.coords[1,:]), @view(params.mesh.coords[2,:]), @view(params.mesh.coords[3,:]),
               TFloat(time),params.metrics.nx,params.metrics.ny, params.metrics.nz,
               params.mesh.poin_in_bdy_face,params.qbdy_gpu,params.mesh.ngl,TInt(params.neqs),
               params.mesh.npoin, lpert;
@@ -415,7 +484,7 @@ function rhs!(du, u, params, time)
                 k_moist = do_micro_physics_gpu_3D!(backend)
                 k_moist(@view(params.uaux[:,:]), params.qp.qe, params.mp.Tabs, params.mp.qn, params.mp.qi, params.mp.qc,
                         params.mp.qr, params.mp.qs, params.mp.qg, params.mp.Pr, params.mp.Ps, params.mp.Pg,
-                        params.mp.S_micro, PHYS_CONST, MicroConst, lpert, params.neqs, params.mesh.npoin, params.mesh.z,
+                        params.mp.S_micro, PHYS_CONST, MicroConst, lpert, params.neqs, params.mesh.npoin, @view(params.mesh.coords[3,:]),
                         params.adjusted, params.Pm; ndrange = (params.mesh.npoin))
                 
                 k_precip = _build_precipitation_rhs_gpu_3D_v0!(backend, (Int64(params.mesh.ngl),
@@ -423,7 +492,7 @@ function rhs!(du, u, params, time)
                                                                          Int64(params.mesh.ngl)))
                 
                 k_precip(params.RHS, @view(params.uaux[:,:]), params.qp.qe,
-                         params.mesh.x, params.mesh.y, params.mesh.z, params.mesh.connijk,
+                         @view(params.mesh.coords[1,:]), @view(params.mesh.coords[2,:]), @view(params.mesh.coords[3,:]), params.mesh.connijk,
                          params.metrics.dξdz, params.metrics.dηdz, params.metrics.dζdz, params.metrics.Je,
                          params.basis.dψ, params.ω, params.Minv, params.flux_micro, params.source_micro,
                          params.mesh.ngl, TInt(params.neqs), PHYS_CONST, params.mesh.xmax, params.mesh.xmin,
@@ -435,7 +504,7 @@ function rhs!(du, u, params, time)
             end
             KernelAbstractions.synchronize(backend)
             k = _build_rhs_gpu_3D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl),Int64(params.mesh.ngl)))
-            k(params.RHS, params.uaux, params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.z,
+            k(params.RHS, params.uaux, params.qp.qe, @view(params.mesh.coords[1,:]), @view(params.mesh.coords[2,:]), @view(params.mesh.coords[3,:]),
               params.mesh.connijk, params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz, params.metrics.dηdx, 
               params.metrics.dηdy, params.metrics.dηdz, params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz,
               params.metrics.Je,
@@ -446,7 +515,7 @@ function rhs!(du, u, params, time)
               workgroupsize = (params.mesh.ngl,params.mesh.ngl,params.mesh.ngl))
             if (params.inputs[:case] != "bomex")
                 k = _build_rhs_gpu_3D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl),Int64(params.mesh.ngl)))
-                k(params.RHS, params.uaux, params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.z,
+                k(params.RHS, params.uaux, params.qp.qe, @view(params.mesh.coords[1,:]), @view(params.mesh.coords[2,:]), @view(params.mesh.coords[3,:]),
                   params.mesh.connijk, params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz, params.metrics.dηdx, 
                   params.metrics.dηdy, params.metrics.dηdz, params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz,
                   params.metrics.Je,
@@ -457,7 +526,7 @@ function rhs!(du, u, params, time)
                   workgroupsize = (params.mesh.ngl,params.mesh.ngl,params.mesh.ngl))
             else
                 k = _build_rhs_gpu_3D_v1!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl),Int64(params.mesh.ngl)))
-                k(params.RHS, params.uaux, params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.z,
+                k(params.RHS, params.uaux, params.qp.qe, @view(params.mesh.coords[1,:]), @view(params.mesh.coords[2,:]), @view(params.mesh.coords[3,:]),
                   params.mesh.connijk, params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz, params.metrics.dηdx, 
                   params.metrics.dηdy, params.metrics.dηdz, params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz,
                   params.metrics.Je,
@@ -482,7 +551,7 @@ function rhs!(du, u, params, time)
                     k = _build_rhs_diff_gpu_3D_av!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl),Int64(params.mesh.ngl)))
                     k(params.RHS_visc, params.rhs_diffξ_el, params.rhs_diffη_el, params.rhs_diffζ_el,
                       params.uaux, params.qp.qe, params.source_gpu, 
-                      params.mesh.x, params.mesh.y, params.mesh.z, params.mesh.connijk, 
+                      @view(params.mesh.coords[1,:]), @view(params.mesh.coords[2,:]), @view(params.mesh.coords[3,:]), params.mesh.connijk, 
                       params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz,
                       params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz,
                       params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz,
@@ -497,7 +566,7 @@ function rhs!(du, u, params, time)
                     k = _build_rhs_diff_gpu_3D_smag!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl),Int64(params.mesh.ngl)))
                     k(params.RHS_visc, params.rhs_diffξ_el, params.rhs_diffη_el, params.rhs_diffζ_el,
                       params.uaux, params.qp.qe, params.source_gpu,
-                      params.mesh.x, params.mesh.y, params.mesh.z, params.mesh.connijk, 
+                      @view(params.mesh.coords[1,:]), @view(params.mesh.coords[2,:]), @view(params.mesh.coords[3,:]), params.mesh.connijk, 
                       params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz,
                       params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz,
                       params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz,
@@ -512,7 +581,7 @@ function rhs!(du, u, params, time)
                 if (params.inputs[:case] == "bomex")
                     # param_set = TP.ThermodynamicsParameters(TFloat)
                     k_sa = saturation_adjustment_gpu_3D!(backend)
-                    k_sa(params.uaux, params.qp.qe, params.mesh.z, params.mesh.connijk, TInt(params.neqs), params.thermo_params, lpert;
+                    k_sa(params.uaux, params.qp.qe, @view(params.mesh.coords[3,:]), params.mesh.connijk, TInt(params.neqs), params.thermo_params, lpert;
                          ndrange = (params.mesh.nelem*params.mesh.ngl,params.mesh.ngl,params.mesh.ngl),
                          workgroupsize = (params.mesh.ngl,params.mesh.ngl,params.mesh.ngl))
                     
@@ -577,7 +646,7 @@ function rhs!(du, u, params, time)
             end
             k = apply_boundary_conditions_gpu!(backend)
             k(@view(params.uaux[:,:]), @view(u[:]), params.qp.qe,
-              params.mesh.x, params.mesh.y, TFloat(time),
+              @view(params.mesh.coords[1,:]), @view(params.mesh.coords[2,:]), TFloat(time),
               params.metrics.nx, params.metrics.ny,
               params.mesh.poin_in_bdy_edge,params.qbdy_gpu,
               params.mesh.ngl, TInt(params.neqs), params.mesh.npoin,lpert;
@@ -589,7 +658,7 @@ function rhs!(du, u, params, time)
 
                 k = apply_boundary_conditions_lag_gpu!(backend)
                 k(@view(params.uaux[:,:]), @view(u[:]), params.qp.qe,
-                  params.mesh.x, params.mesh.y, TFloat(time),
+                  @view(params.mesh.coords[1,:]), @view(params.mesh.coords[2,:]), TFloat(time),
                   params.mesh.connijk_lag,
                   params.qbdy_lag_gpu,
                   params.mesh.ngl, params.mesh.ngr,
@@ -607,7 +676,7 @@ function rhs!(du, u, params, time)
             
             k = _build_rhs_gpu_2D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl)))
             
-            k(params.RHS, params.uaux, params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.connijk, 
+            k(params.RHS, params.uaux, params.qp.qe, @view(params.mesh.coords[1,:]), @view(params.mesh.coords[2,:]), params.mesh.connijk, 
               params.metrics.dξdx, params.metrics.dξdy,
               params.metrics.dηdx, params.metrics.dηdy,
               params.metrics.Je,
@@ -623,7 +692,7 @@ function rhs!(du, u, params, time)
                 
                 k_lag = _build_rhs_lag_gpu_2D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngr)))
                 k_lag(params.RHS_lag, params.uaux, params.qp.qe,
-                      params.mesh.x, params.mesh.y,
+                      @view(params.mesh.coords[1,:]), @view(params.mesh.coords[2,:]),
                       params.mesh.connijk_lag,
                       params.metrics_lag.dξdx, params.metrics_lag.dξdy,
                       params.metrics_lag.dηdx, params.metrics_lag.dηdy,
@@ -648,7 +717,7 @@ function rhs!(du, u, params, time)
                     k_diff_lag(params.RHS_visc_lag,
                                params.rhs_diffξ_el_lag, params.rhs_diffη_el_lag,
                                params.uaux, params.qp.qe, params.source_lag_gpu,
-                               params.mesh.x, params.mesh.y,
+                               @view(params.mesh.coords[1,:]), @view(params.mesh.coords[2,:]),
                                params.mesh.connijk_lag,
                                params.metrics_lag.dξdx, params.metrics_lag.dξdy,
                                params.metrics_lag.dηdx, params.metrics_lag.dηdy,
@@ -673,7 +742,7 @@ if (params.inputs[:lvisc])
     k = _build_rhs_diff_gpu_2D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl)))
     k(params.RHS_visc, params.rhs_diffξ_el, params.rhs_diffη_el,
       params.uaux, params.qp.qe, params.source_gpu,
-      params.mesh.x, params.mesh.y, params.mesh.connijk, 
+      @view(params.mesh.coords[1,:]), @view(params.mesh.coords[2,:]), params.mesh.connijk, 
       params.metrics.dξdx, params.metrics.dξdy,
       params.metrics.dηdx, params.metrics.dηdy,
       params.metrics.Je, params.basis.dψ, params.ω, params.Minv, 
@@ -743,6 +812,10 @@ function _build_rhs!(RHS, u, params, time)
     else
         @timeit_debug JEXPRESSO_TIMER "u2uaux" u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     end
+
+    # Realizability repair, BEFORE any flux sees the state. No-op unless the
+    # deck sets :lpositivity => true. See src/kernel/positivity/.
+    @timeit_debug JEXPRESSO_TIMER "positivity" apply_positivity!(u, params, SD)
 
     if (inputs[:ladapt] == true) && (params.inputs[:lfilter] == false)
         @timeit_debug JEXPRESSO_TIMER "conformity4ncf_q" conformity4ncf_q!(params.uaux, params.rhs_el_tmp, @view(params.utmp[:,1:neqs]), params.vaux,
@@ -824,6 +897,13 @@ function _build_rhs!(RHS, u, params, time)
                            params.mesh.pgip_local, ngl-1, neqs, params.interp)
 
     end
+
+    if AD == DiscGal()
+        @timeit_debug JEXPRESSO_TIMER "surface_rhs" surface_rhs_el!(
+            params, params.uaux, params.mesh.connijk, params.qp.qe, params.mesh, time,
+            nelem, ngl, neqs, CL, params.SOL_VARS_TYPE, params.inputs[:numerical_flux], SD)
+    end
+    
     @timeit_debug JEXPRESSO_TIMER "DSS_rhs" DSS_rhs!(params.RHS, params.rhs_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
 
     #-----------------------------------------------------------------------------------
@@ -850,12 +930,26 @@ function _build_rhs!(RHS, u, params, time)
             params.dsgs_qnm1 .= params.dsgs_qn
             params.dsgs_qn   .= params.uaux
             params.dsgs_thist[] = time
+            params.dsgs_nhist[] += 1
         end
         # Stage-consistent time-derivative stencil for the residual (see
         # _dsgs_stencil): the weights depend on the stage time τ = t − tⁿ.
         τ = time - params.dsgs_thist[]
         h = params.Δt
-        if params.dsgs_legacy[]
+        if params.dsgs_nhist[] < _dsgs_hold_steps(params)
+            # The history is still seeded from the initial condition, so the
+            # BDF2 is not a time derivative yet: 0 on the first step, 1.5·∂ₜq
+            # on the second. Left alone it makes the residual the WHOLE flux
+            # divergence on step one — the sensor then reads a smooth, fully
+            # resolved initial condition as unresolved everywhere and puts ν
+            # on its cap (measured on the smooth vortex: ν = the cap exactly
+            # at the first call, on a solution the same scheme integrates to
+            # seven digits without it). Zero weights, and a residual RHS held
+            # at zero in _dsgs_residual_rhs!, make R ≡ 0 for those two steps,
+            # so ν is the background floor and nothing else.
+            params.dsgs_stage[] = false
+            params.dsgs_wt[]    = (0.0, 0.0, 0.0)
+        elseif params.dsgs_legacy[]
             # the sensor of the runs before Sep 2026 (see _dsgs_residual_rhs!):
             # BDF2 on (q_stage, qⁿ, qⁿ⁻¹) at every stage, which is ∂ₜq only at
             # τ = Δt (−∂ₜq/2 at τ = 0), against the assembled RHS
@@ -868,6 +962,16 @@ function _build_rhs!(RHS, u, params, time)
             params.dsgs_stage[] = true
             params.dsgs_wt[]    = ((2τ + h)/(τ*(τ + h)), -(τ + h)/(τ*h), τ/(h*(τ + h)))
         end
+        # :dsgs_freeze_stage (SGS.jl, _DSGS_FROZEN): compute the coefficient
+        # only at the stage that sits on tⁿ and hold it for the rest of the
+        # step. The stage-consistent stencil above is second order in the
+        # values it is given, but at τ > 0 one of them is an RK internal
+        # stage, whose own error is O(Δt) — so the residual, and with it ν,
+        # stalls at O(Δt) however well resolved the solution is. At τ = 0 the
+        # three values are step-level states and the residual is the BDF2
+        # truncation error, O(Δt²).
+        _DSGS_FROZEN[] = get(params.inputs, :dsgs_freeze_stage, false) &&
+                         params.dsgs_nhist[] >= 3 && τ > 1.0e-8*h
     end
 
     #-----------------------------------------------------------------------------------
@@ -1273,7 +1377,11 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                 dsgs_wt,
                                 params.mesh.connijk, params.mesh.Δx,
                                 Int(nelem), Int(ngl);
-                                lglobal_norms = get(params.inputs, :ldsgs_global_norms, false))
+                                CR   = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_CR,   1.0)),
+                                Cmax = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_Cmax, 0.5)),
+                                Cmin = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_Cmin, 0.0)),
+                                cutoff = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_cutoff, 0.0)),
+                                lglobal_norms = params.dsgs_global_norms)
         broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
                                  params.mesh.connijk,
                                  Int(nelem), Int(ngl), SD)
@@ -1309,9 +1417,10 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                           TT(get(params.inputs, :dsgs_Cl,    0.0)),
                                           get_mpi_comm(),
                                           Int(nelem), Int(ngl), Int(params.mesh.npoin);
-                                          lglobal_norms = get(params.inputs, :ldsgs_global_norms, false),
+                                          lglobal_norms = params.dsgs_global_norms,
                                           lconserved    = get(params.inputs, :dsgs_conserved, false),
                                           Cmin            = TT(get(params.inputs, :dsgs_Cmin, 0.0)),
+                                          cutoff          = TT(get(params.inputs, :dsgs_cutoff, 0.0)),
                                           lnazarov_energy = get(params.inputs, :dsgs_nazarov_energy, false))
         else
             compute_dsgs_viscosity!(params.μ_dsgs, DSGS_MHD(), SD,
@@ -1327,12 +1436,13 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                     TT(get(params.inputs, :dsgs_Cmax,    0.5)),
                                     get_mpi_comm(),
                                     Int(nelem), Int(ngl);
-                                    lglobal_norms = get(params.inputs, :ldsgs_global_norms, false),
-                                    llocal_norms  = get(params.inputs, :dsgs_local_norms, false),
+                                    lglobal_norms = params.dsgs_global_norms,
+                                    llocal_norms  = params.dsgs_local_norms,
                                     local_rel     = TT(get(params.inputs, :dsgs_local_rel, 1.0)),
                                     lnodal_rho    = get(params.inputs, :dsgs_nodal_rho, false),
                                     lconserved    = get(params.inputs, :dsgs_conserved, false),
                                     Cmin            = TT(get(params.inputs, :dsgs_Cmin, 0.0)),
+                                    cutoff          = TT(get(params.inputs, :dsgs_cutoff, 0.0)),
                                     lnazarov_energy = get(params.inputs, :dsgs_nazarov_energy, false))
             broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
                                      params.mesh.connijk,
@@ -1401,8 +1511,11 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
 
     if params.VT == DSGS_MHD()
         TT = eltype(params.μ_dsgs)
-        dsgs_qA, dsgs_qB, dsgs_wt = _dsgs_stencil(params, TT)
-        dsgs_rhs = _dsgs_residual_rhs!(u, params, SD)
+        # TEMPORARY EXPERIMENT (JEXPRESSO_DSGS_FREEZE=1): evaluate the
+        # coefficient ONCE per step, at the step start (τ = 0, where the
+        # residual's time derivative is the BDF2 of committed states), and
+        # hold it through the RK stages. Not for commit.
+        _dsgs_recompute = !(get(ENV, "JEXPRESSO_DSGS_FREEZE", "") == "1" && params.dsgs_stage[])
 
         # Nodal-density scaling of the momentum/energy coefficients, read by
         # SGS_diffusion(::DSGS_MHD) inside the assembly below.
@@ -1417,6 +1530,9 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
             (get(params.inputs, :dsgs_nazarov_energy, false) || get(params.inputs, :dsgs_conserved_prandtl, false))
 
         lnodal_mhd2d = get(params.inputs, :ldsgs_nodal, false)
+        if _dsgs_recompute
+        dsgs_qA, dsgs_qB, dsgs_wt = _dsgs_stencil(params, TT)
+        dsgs_rhs = _dsgs_residual_rhs!(u, params, SD)
         if lnodal_mhd2d
             # Nodal (Dao & Nazarov) form: ν at every node (SGS.jl); the
             # element loop interpolates it, no broadcast.
@@ -1436,9 +1552,10 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                           TT(get(params.inputs, :dsgs_Cl,    0.0)),
                                           get_mpi_comm(),
                                           Int(params.mesh.nelem), Int(params.mesh.ngl), Int(params.mesh.npoin);
-                                          lglobal_norms = get(params.inputs, :ldsgs_global_norms, false),
+                                          lglobal_norms = params.dsgs_global_norms,
                                           lconserved    = get(params.inputs, :dsgs_conserved, false),
                                           Cmin            = TT(get(params.inputs, :dsgs_Cmin, 0.0)),
+                                          cutoff          = TT(get(params.inputs, :dsgs_cutoff, 0.0)),
                                           lnazarov_energy = get(params.inputs, :dsgs_nazarov_energy, false) ||
                                                             get(params.inputs, :dsgs_conserved_prandtl, false))
         else
@@ -1455,18 +1572,20 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                     TT(get(params.inputs, :dsgs_Cmax,    0.5)),
                                     get_mpi_comm(),
                                     Int(params.mesh.nelem), Int(params.mesh.ngl);
-                                    lglobal_norms = get(params.inputs, :ldsgs_global_norms, false),
-                                    llocal_norms  = get(params.inputs, :dsgs_local_norms, false),
+                                    lglobal_norms = params.dsgs_global_norms,
+                                    llocal_norms  = params.dsgs_local_norms,
                                     local_rel     = TT(get(params.inputs, :dsgs_local_rel, 1.0)),
                                     lnodal_rho    = get(params.inputs, :dsgs_nodal_rho, false),
                                     lconserved    = get(params.inputs, :dsgs_conserved, false),
                                     Cmin            = TT(get(params.inputs, :dsgs_Cmin, 0.0)),
+                                    cutoff          = TT(get(params.inputs, :dsgs_cutoff, 0.0)),
                                     lnazarov_energy = get(params.inputs, :dsgs_nazarov_energy, false) ||
                                                       get(params.inputs, :dsgs_conserved_prandtl, false))
             broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
                                      params.mesh.connijk,
                                      Int(params.mesh.nelem),
                                      Int(params.mesh.ngl), SD)
+        end
         end
 
         _viscous_rhs_el_2d_dsgs!(params.uaux, qe, params.uprimitive,
@@ -1517,8 +1636,9 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                           TT(get(params.inputs, :dsgs_Cl,   0.0)),
                                           get_mpi_comm(),
                                           Int(params.mesh.nelem), Int(params.mesh.ngl), Int(params.mesh.npoin);
-                                          lglobal_norms = get(params.inputs, :ldsgs_global_norms, false),
-                                          Cmin = TT(get(params.inputs, :dsgs_Cmin, 0.0)))
+                                          lglobal_norms = params.dsgs_global_norms,
+                                          Cmin = TT(get(params.inputs, :dsgs_Cmin, 0.0)),
+                                    cutoff = TT(get(params.inputs, :dsgs_cutoff, 0.0)))
         else
             compute_dsgs_viscosity!(params.μ_dsgs, DSGS_SW(), SD,
                                     params.uaux, dsgs_qA, dsgs_qB, params.qp.qe,
@@ -1531,8 +1651,9 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                     TT(get(params.inputs, :dsgs_Cmax, 0.5)),
                                     get_mpi_comm(),
                                     Int(params.mesh.nelem), Int(params.mesh.ngl);
-                                    lglobal_norms = get(params.inputs, :ldsgs_global_norms, false),
-                                    Cmin = TT(get(params.inputs, :dsgs_Cmin, 0.0)))
+                                    lglobal_norms = params.dsgs_global_norms,
+                                    Cmin = TT(get(params.inputs, :dsgs_Cmin, 0.0)),
+                                    cutoff = TT(get(params.inputs, :dsgs_cutoff, 0.0)))
             broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
                                      params.mesh.connijk,
                                      Int(params.mesh.nelem),
@@ -1588,8 +1709,9 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                           get_mpi_comm(),
                                           Int(params.mesh.nelem), Int(params.mesh.ngl), Int(params.mesh.npoin);
                                           ltheta = (params.inputs[:energy_equation] == "theta"),
-                                          lglobal_norms = get(params.inputs, :ldsgs_global_norms, false),
-                                          Cmin = TT(get(params.inputs, :dsgs_Cmin, 0.0)))
+                                          lglobal_norms = params.dsgs_global_norms,
+                                          Cmin = TT(get(params.inputs, :dsgs_Cmin, 0.0)),
+                                    cutoff = TT(get(params.inputs, :dsgs_cutoff, 0.0)))
         else
             compute_dsgs_viscosity!(params.μ_dsgs, DSGS(), SD,
                                     params.uaux, dsgs_qA, dsgs_qB,
@@ -1599,8 +1721,12 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                     params.mesh.connijk, params.mesh.Δelem,
                                     PHYS_CONST, Pr_TT,
                                     Int(params.mesh.nelem), Int(params.mesh.ngl);
+                                    CR   = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_CR,   1.0)),
+                                    Cmax = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_Cmax, 0.5)),
+                                    Cmin = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_Cmin, 0.0)),
+                                    cutoff = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_cutoff, 0.0)),
                                     ltheta = (params.inputs[:energy_equation] == "theta"),
-                                    lglobal_norms = get(params.inputs, :ldsgs_global_norms, false))
+                                    lglobal_norms = params.dsgs_global_norms)
 
             # Step 2 — broadcast μ_dsgs[iel,ieq] onto every node for VTU.
             broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
@@ -1678,6 +1804,76 @@ function _viscous_rhs_el_2d_dsgs!(uaux, qe, uprimitive,
                                   QT, AD, SOL_VARS_TYPE,
                                   VT = DSGS(); μ_pnode=nothing, μloc=nothing)
 
+    #
+    # MOLECULAR (LAMINAR) VISCOSITY ON TOP OF THE DynSGS COEFFICIENT.
+    #
+    # DynSGS is a residual sensor: it is ~0 wherever the solution is smooth
+    # and resolved. That is exactly right for an inviscid problem such as
+    # problems/CompEuler/ffs_step, and exactly wrong for a viscous one — a
+    # laminar boundary layer lives in the smooth region, so under DynSGS
+    # alone it never forms. Anything with a real Reynolds number needs the
+    # physical μ as well, and it has to be a function of temperature: over
+    # the boundary layer of problems/CompEuler/rampCaoEtAl2021, T runs from
+    # the 293 K wall to ~1200 K, a factor 5 in μ.
+    #
+    # :lsutherland => true (default false) adds Sutherland's law
+    #
+    #     μ(T) = μ_ref (T/T_ref)^(3/2) (T_ref + S)/(T + S)
+    #
+    # at every node, on top of whatever DynSGS asked for. The air defaults
+    # μ_ref = 1.716e-5 Pa·s, T_ref = 273.15 K, S = 110.4 K are
+    # :sutherland_muref, :sutherland_Tref and :sutherland_S.
+    #
+    # WHICH SLOT GETS WHAT. The 2D DynSGS assembly below is the real
+    # compressible Navier-Stokes viscous operator: _expansion_visc! builds
+    # the deviatoric stress τ_ij = μ(2S_ij − (2/3)δ_ij∇·u) on the two
+    # momentum slots and adds the viscous work τ·u to the energy slot, so
+    # μ enters slots 2 and 3 unchanged. Slot 4 multiplies ∇(uprimitive[4]),
+    # and on the total-energy path uprimitive[4] is the SPECIFIC INTERNAL
+    # ENERGY e = c_v T (Nazarov & Hoffman scale c_v = 1; see the header of
+    # problems/CompEuler/ffs_step/user_primitives.jl). Fourier's law −k∇T
+    # is therefore −(k/c_v)∇e, so the slot-4 addition is
+    #
+    #     k/c_v = μ c_p/(Pr c_v) = γ μ/Pr,        Pr = :Pr_lam (0.71).
+    #
+    # Slot 1 gets nothing: physical Navier-Stokes has no mass diffusion.
+    # The β∇ρ sitting there is DynSGS's own (Nazarov & Hoffman eq. 3.7).
+    #
+    # μ(T) is added RAW, not through the deck's :μ multipliers: those tune
+    # how much ARTIFICIAL dissipation the sensor is allowed, and scaling
+    # the molecular viscosity with them would silently change the case's
+    # Reynolds number. A deck that raises :μ[2:4] to hold a shock keeps
+    # the same physical μ underneath it.
+    #
+    # The per-node coefficient rides the SAME μloc buffer the nodal DynSGS
+    # form already uses, so the assembly needs no change: SGS_diffusion is
+    # bypassed and μnod[k,l,ieq] read instead. With :lsutherland => false
+    # nothing here runs and the path is bit-for-bit what it was.
+    #
+    TF     = eltype(μ_dsgs)
+    lsuth  = (get(inputs, :lsutherland, false) === true) &&
+             (μloc !== nothing) && (neqs == 4) &&
+             (get(inputs, :energy_equation, "energy") != "theta")
+    # THE ::TF IS LORE-BEARING, DO NOT DROP IT.  `inputs` is a
+    # Dict{Symbol,Any}, so `get` returns Any, and `TF(::Any)` does NOT
+    # recover the type -- inference gives Any for the whole expression even
+    # though TF is a compile-time constant.  Without the assertion every
+    # scalar built from these four is boxed, and the per-node Sutherland
+    # loop below then allocates on EVERY line: measured on
+    # CompEuler/rampCaoEtAl2021_M7, viscous_rhs_el went from 464 B to
+    # 15.3 MiB per RHS call -- 99.8 % of the whole solver's allocation, and
+    # 1.6x the time in that kernel.  Tk on the next-but-one line is built
+    # from concrete constants and allocated nothing, which is how the four
+    # were identified.
+    μ_ref  = TF(get(inputs, :sutherland_muref, 1.716e-5))::TF
+    T_ref  = TF(get(inputs, :sutherland_Tref,  273.15))::TF
+    S_suth = TF(get(inputs, :sutherland_S,     110.4))::TF
+    Pr_lam = TF(get(inputs, :Pr_lam,           0.71))::TF
+    κ_fac  = TF(PHYS_CONST.γ)/Pr_lam
+    cv_inv = TF(PHYS_CONST.γm1/PHYS_CONST.Rair)          # 1/c_v, EOS-consistent
+    Tfloor = TF(1.0)                                     # K, guards the transient
+    lnodal = lsuth || (μ_pnode !== nothing)
+
     for iel = 1:nelem
         # Slot 1 is whatever compute_dsgs_viscosity! decided: identically
         # zero for Marras eq. (10), β for Nazarov & Hoffman eq. (3.7).
@@ -1690,6 +1886,12 @@ function _viscous_rhs_el_2d_dsgs!(uaux, qe, uprimitive,
             for ieq = 1:neqs, j = 1:ngl, i = 1:ngl
                 μloc[i,j,ieq] = μ_pnode[connijk[iel,i,j], ieq]
             end
+        elseif lsuth
+            # Element-wise DynSGS, but μ still has to vary node by node
+            # because Sutherland's does: seed μloc with the element value.
+            for ieq = 1:neqs, j = 1:ngl, i = 1:ngl
+                μloc[i,j,ieq] = μ_dsgs[iel, ieq]
+            end
         end
 
         for j = 1:ngl, i = 1:ngl
@@ -1700,22 +1902,55 @@ function _viscous_rhs_el_2d_dsgs!(uaux, qe, uprimitive,
                              SOL_VARS_TYPE)
         end
 
-        for ieq = 1:neqs
-            _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
-                             uprimitive,
-                             visc_coeff_dsgs,
-                             ω,
-                             Tabs, qn_mp, qsatt,
-                             uaux,
-                             ngl,
-                             dψ, Je,
-                             dξdx, dξdy,
-                             dηdx, dηdy,
-                             connijk_mesh,
-                             inputs, rhs_el,
-                             iel, ieq,
-                             QT, VT, NSD_2D(), AD; Δ=Δ,
-                             μnod = (μ_pnode === nothing ? nothing : μloc))
+        if lsuth
+            for j = 1:ngl, i = 1:ngl
+                Tk  = max(uprimitive[i,j,4]*cv_inv, Tfloor)   # slot 4 is c_v·T
+                Tr  = Tk/T_ref
+                μ_l = μ_ref*Tr*sqrt(Tr)*(T_ref + S_suth)/(Tk + S_suth)
+                μloc[i,j,2] += μ_l
+                μloc[i,j,3] += μ_l
+                μloc[i,j,4] += κ_fac*μ_l
+            end
+        end
+
+        # WHY THIS IS TWO CALL SITES AND NOT A TERNARY.
+        #
+        # `μnod` decides, inside the hot loop of _expansion_visc!, whether the
+        # coefficient comes from SGS_diffusion or is read per node — a check
+        # made several times per quadrature point per equation. It has to be
+        # STATICALLY typed at the call site or that check becomes a runtime
+        # branch on a Union and the indexing stops being inferrable.
+        #
+        # This routine is called with μ_pnode::Nothing on every non-nodal
+        # case, and in that specialization the old
+        #     μnod = (μ_pnode === nothing ? nothing : μloc)
+        # folded to `nothing` at compile time. Writing it as
+        #     μnod = (lnodal ? μloc : nothing)
+        # does NOT: `lnodal` carries :lsutherland, which is a runtime Dict
+        # lookup, so μnod became Union{Nothing,Array} for every DSGS,
+        # DSGS_MHD and DSGS_SW case in 2D — measured as a large slowdown on
+        # MHD/orszagTangBormanis2024, which runs nine equations through here
+        # every stage. Branching at the call site gives each path its own
+        # specialization and restores the original code exactly when the
+        # nodal coefficient is not in use.
+        if lnodal
+            for ieq = 1:neqs
+                _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
+                                 uprimitive, visc_coeff_dsgs, ω,
+                                 Tabs, qn_mp, qsatt, uaux, ngl,
+                                 dψ, Je, dξdx, dξdy, dηdx, dηdy,
+                                 connijk_mesh, inputs, rhs_el, iel, ieq,
+                                 QT, VT, NSD_2D(), AD; Δ=Δ, μnod = μloc)
+            end
+        else
+            for ieq = 1:neqs
+                _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
+                                 uprimitive, visc_coeff_dsgs, ω,
+                                 Tabs, qn_mp, qsatt, uaux, ngl,
+                                 dψ, Je, dξdx, dξdy, dηdx, dηdy,
+                                 connijk_mesh, inputs, rhs_el, iel, ieq,
+                                 QT, VT, NSD_2D(), AD; Δ=Δ, μnod = nothing)
+            end
         end
     end
 
@@ -1842,6 +2077,59 @@ end
 
 
 function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}, SD::NSD_3D)
+    # Marras-style Dynamic SGS in 3D. Same three steps as the 2D branch of
+    # viscous_rhs_el!(NSD_2D): fill the per-element, per-equation μ_dsgs
+    # from the element residual, broadcast it to the nodes for the output,
+    # then assemble the viscous RHS with that coefficient instead of the
+    # deck's constant :μ.
+    #
+    # Before this existed a 3D case with :visc_model => DSGS() reached the
+    # constant-coefficient assembly below (params.sgs is `nothing` for every
+    # model but Smagorinsky and Vreman) and ran the deck's :μ as a plain
+    # Laplacian coefficient in m²/s — no residual, no sensor, and a mass
+    # diffusion whenever :μ[1] ≠ 0.
+    if params.VT == DSGS()
+        TT = eltype(params.μ_dsgs)
+        dsgs_qA, dsgs_qB, dsgs_wt = _dsgs_stencil(params, TT)
+        dsgs_rhs = _dsgs_residual_rhs!(u, params, SD)
+        Pr_TT    = TT(params.inputs[:Pr])
+
+        compute_dsgs_viscosity!(params.μ_dsgs, DSGS(), SD,
+                                params.uaux, dsgs_qA, dsgs_qB,
+                                params.qp.qe,
+                                dsgs_rhs, params.ω, params.metrics.Je, params.visc_coeff,
+                                dsgs_wt,
+                                params.mesh.connijk, params.mesh.Δelem,
+                                PHYS_CONST, Pr_TT,
+                                Int(params.mesh.nelem), Int(params.mesh.ngl);
+                                CR   = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_CR,   1.0)),
+                                Cmax = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_Cmax, 0.5)),
+                                Cmin = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_Cmin, 0.0)),
+                                cutoff = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_cutoff, 0.0)),
+                                ltheta = (params.inputs[:energy_equation] == "theta"),
+                                lglobal_norms = params.dsgs_global_norms)
+
+        broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
+                                 params.mesh.connijk,
+                                 Int(params.mesh.nelem),
+                                 Int(params.mesh.ngl), SD)
+
+        _viscous_rhs_el_3d_dsgs!(params.uaux, qe, params.uprimitive,
+                                 params.rhs_diffξ_el, params.rhs_diffη_el, params.rhs_diffζ_el,
+                                 params.rhs_diff_el,
+                                 params.visc_coeff_dsgs, params.μ_dsgs, params.ω,
+                                 Int64(params.mesh.ngl), params.basis.dψ, params.metrics.Je,
+                                 params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz,
+                                 params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz,
+                                 params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz,
+                                 params.rhs_el, params.mesh.connijk,
+                                 params.mesh.coords, params.mesh.poin_in_bdy_face,
+                                 params.mesh.elem_to_face, params.mesh.bdy_face_type,
+                                 Int64(params.mesh.nelem), Int64(params.neqs),
+                                 connijk, params.QT, params.AD, params.SOL_VARS_TYPE)
+        return
+    end
+
     # Typed function barrier (paired with FullSpecialize at the
     # ODEProblem construction site in TimeIntegrators.jl): pull every
     # params.* field used in the hot loop out into concretely-typed
@@ -1930,6 +2218,63 @@ function _viscous_rhs_el_3d!(uaux, qe, uprimitive,
     rhs_diff_el .= @views (rhs_diffξ_el .+ rhs_diffη_el .+ rhs_diffζ_el)
 end
 
+# Function barrier for the 3D DynSGS viscous assembly — the 3D twin of
+# _viscous_rhs_el_2d_dsgs!. μ_dsgs[iel, ieq] already carries the
+# per-equation coefficient compute_dsgs_viscosity!(::DSGS, ::NSD_3D) set:
+#   ieq = 1     : 0 (Marras eq. 10 drops mass diffusion)
+#   ieq = 2,3,4 : ρ̄ν on the three momenta
+#   ieq = 5     : ρ̄ν·Pr/(γ-1) on ρθ
+#   ieq ≥ 6     : ν on a passive tracer
+# so this loop unpacks the element's column into the visc_coeff_dsgs
+# scratch and hands it to the generic 3D _expansion_visc!, which applies
+# ∇·(coeff ∇q) slot by slot on the primitives of user_primitives!.
+function _viscous_rhs_el_3d_dsgs!(uaux, qe, uprimitive,
+                                  rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
+                                  rhs_diff_el,
+                                  visc_coeff_dsgs, μ_dsgs, ω,
+                                  ngl, dψ, Je,
+                                  dξdx, dξdy, dξdz,
+                                  dηdx, dηdy, dηdz,
+                                  dζdx, dζdy, dζdz,
+                                  rhs_el, connijk_mesh,
+                                  coords, poin_in_bdy_face,
+                                  elem_to_face, bdy_face_type,
+                                  nelem, neqs,
+                                  connijk, QT, AD, SOL_VARS_TYPE)
+
+    for iel = 1:nelem
+        for ieq = 1:neqs
+            visc_coeff_dsgs[ieq] = μ_dsgs[iel, ieq]
+        end
+
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            ip = connijk[iel,i,j,k]
+            user_primitives!(@view(uaux[ip,:]),
+                             @view(qe[ip,:]),
+                             @view(uprimitive[i,j,k,:]),
+                             SOL_VARS_TYPE)
+        end
+
+        for ieq = 1:neqs
+            _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
+                             uprimitive,
+                             visc_coeff_dsgs,
+                             ω,
+                             ngl, dψ, Je,
+                             dξdx, dξdy, dξdz,
+                             dηdx, dηdy, dηdz,
+                             dζdx, dζdy, dζdz,
+                             rhs_el, iel, ieq,
+                             connijk_mesh,
+                             coords,
+                             poin_in_bdy_face, elem_to_face, bdy_face_type,
+                             nothing,
+                             QT, DSGS(), NSD_3D(), AD)
+        end
+    end
+    rhs_diff_el .= @views (rhs_diffξ_el .+ rhs_diffη_el .+ rhs_diffζ_el)
+end
+
 
 function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_1D, AD::FD)
 
@@ -1993,6 +2338,22 @@ function _expansion_inviscid!(u, neqs, ngl,
     end
 end
 
+function _expansion_inviscid!(u, neqs, ngl,
+                              dψ, ω,
+                              F, S,
+                              Je,
+                              rhs_el,
+                              iel, ::CL, QT::Inexact, SD::NSD_1D, AD::DiscGal)
+    for ieq = 1:neqs
+        for i = 1:ngl
+            dFdξ = 0.0
+            for k = 1:ngl
+                dFdξ += dψ[k,i]*F[k,ieq]
+            end
+            rhs_el[iel,i,ieq] -= ω[i]*dFdξ - ω[i]*Je[iel,i]*S[i,ieq]  # identical to ContGal: volume weak form is discretization-agnostic
+        end
+    end
+end
 
 function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_2D, AD::FD) nothing end
 
@@ -2108,6 +2469,21 @@ function _expansion_inviscid_KEP!(u, neqs, ngl, dψ, ω,
             end
         end
     end
+end
+
+function _expansion_inviscid!(u, neqs, ngl, dψ, ω,
+                              F, G, S,
+                              Je,
+                              dξdx, dξdy,
+                              dηdx, dηdy,
+                              rhs_el, iel,
+                              CLT::CL, QT::Inexact, SD::NSD_2D, AD::DiscGal)
+    # The volume weak form is discretization-agnostic — delegate to the ContGal
+    # body rather than copying the ~110-line metric-terms kernel (same idiom as
+    # matrix_wrapper(::DiscGal)).
+    _expansion_inviscid!(u, neqs, ngl, dψ, ω, F, G, S, Je,
+                         dξdx, dξdy, dηdx, dηdy, rhs_el, iel,
+                         CLT, QT, SD, ContGal())
 end
 
 function _expansion_inviscid!(u, neqs, ngl, dψ, ω,

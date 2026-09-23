@@ -227,6 +227,210 @@ which implementation each layer resolved to. See also
 [Which MPI route should I use](#which-mpi-route-should-i-use--openmpi-mpich-or-the-bundled-mpich_jll)
 and [I switched MPI and now things behave strangely](#i-switched-mpi-and-now-things-behave-strangely--wont-bind).
 
+<!--
+Paste these entries into FAQ.md, under the AMR / Run section.
+The heading text must stay as written: INSTALL.md links to the GitHub anchors
+generated from these exact titles.
+-->
+
+### AMR case segfaults in `_platform_memmove`, or aborts with "Attempting to use an MPI routine before initializing"
+
+**Symptoms** (macOS, any `:lamr` / `:lpreadapt` / `:linitial_refine` case such
+as `CompEuler/theta_amr`). Either of these, right after the gmsh mesh is read:
+
+```
+Info    : Done reading './meshes/gmsh_grids/hexa_TFI_10x10.msh'
+
+[72336] signal 11 (2): Segmentation fault: 11
+_platform_memmove at /usr/lib/system/libsystem_platform.dylib (unknown line)
+```
+
+with an `lldb` backtrace that is nothing but `dyld` frames, or, a little later:
+
+```
+Into p4est_new with min quadrants 0 level 0 uniform 1
+Attempting to use an MPI routine (internal_Comm_size) before initializing or after finalizing MPICH
+```
+
+**Cause.** Two copies of MPI are loaded in one Julia process. MPI.jl called
+`MPI_Init` on one of them; p4est is linked against the other, which was never
+initialised. The segfault is the same thing caught earlier, while `dyld` maps
+the second library.
+
+This happens because *three* things in the dependency tree are tied to a
+specific `libmpi`, and they are bound at different times:
+
+| Component | Bound when… | By… |
+|---|---|---|
+| `MPI` | `Pkg.build("MPI")` | `LocalPreferences.toml` (`MPIPreferences`) |
+| `P4est_jll` | the Manifest is **resolved** (`Pkg.instantiate()` on a missing `Manifest.toml`) | the MPI variant recorded in the Manifest |
+| `P4est_wrapper` | `Pkg.build("P4est_wrapper")` / first `Pkg.instantiate()` | whatever `mpicc` and `libp4est` it finds at build time |
+
+Typical ways to end up mismatched:
+
+- Ran `MPIPreferences.use_system_binary(...)` (Homebrew MPICH) *after* the
+  Manifest was resolved for a JLL MPI, or vice versa, and only rebuilt `MPI`.
+  `P4est_jll` stays on the old variant.
+- Ran `Pkg.instantiate()` or `Pkg.build` from a shell where `~/.zshrc` puts a
+  Homebrew MPI first on `PATH`, so `P4est_wrapper` linked Homebrew's
+  `libmpi` while MPI.jl uses `MPICH_jll`.
+- Used the bare `use_jll_binary()` (which selects `MPItrampoline_jll`) while
+  `P4est_jll` resolved to the `MPICH_jll` variant.
+
+**Confirm.** List every `libmpi` the process loads:
+
+```bash
+DYLD_PRINT_LIBRARIES=1 julia --project=. -e 'using Jexpresso' 2>&1 | grep -i 'libmpi\.'
+```
+
+Two different directories — e.g. `/opt/homebrew/Cellar/mpich/.../libmpi.12.dylib`
+*and* `~/.julia/artifacts/<hash>/lib/libmpi.12.dylib` — confirms the diagnosis.
+Also see what MPI.jl itself is bound to:
+
+```bash
+cat LocalPreferences.toml
+julia --project=. -e 'using MPI; println(MPI.API.libmpi)'
+```
+
+**Fix.** Rebind everything to one MPI, from a clean resolve. On Apple Silicon
+the only configuration verified to work without building p4est yourself is the
+bundled `MPICH_jll`, named explicitly. Set the preference **before** the fresh
+resolve, and clear the precompile caches of the MPI-linked chain so no stale
+artifact path survives:
+
+```bash
+cd Jexpresso
+which mpicc                                  # must print nothing (drop the Homebrew MPI PATH export from ~/.zshrc)
+
+rm -f LocalPreferences.toml
+julia --project=. -e 'using MPIPreferences; MPIPreferences.use_jll_binary("MPICH_jll")'
+
+rm -f Manifest.toml
+rm -rf ~/.julia/compiled/v1.11/P4est_jll ~/.julia/compiled/v1.11/P4est_wrapper ~/.julia/compiled/v1.11/GridapP4est ~/.julia/compiled/v1.11/MPI ~/.julia/compiled/v1.11/Jexpresso
+julia --project=. -e 'ENV["JULIA_PKG_PRECOMPILE_AUTO"]=0; using Pkg; Pkg.instantiate()'
+julia --project=. -e 'using Pkg; Pkg.status("GridapP4est")'   # fork URL must show
+
+julia --project=. -e 'using Pkg; Pkg.build("MPI"; verbose=true); Pkg.build("P4est_wrapper"; verbose=true); Pkg.build("GridapP4est"; verbose=true)'
+julia --project=. -e 'using Pkg; Pkg.precompile()'
+
+DYLD_PRINT_LIBRARIES=1 julia --project=. -e 'using Jexpresso' 2>&1 | grep -i 'libmpi\.'
+#   expect exactly one line: ~/.julia/artifacts/<hash>/lib/libmpi.12.dylib
+julia --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler","theta_amr")' 2>&1 | grep -n -A12 'ERROR'
+#   should print nothing
+```
+
+This is the same recipe as INSTALL.md §7.2. Parallel runs then use MPI.jl's
+launcher (`./jexp_mpich.sh` or `mpiexec()` from `using MPI`), **not**
+Homebrew's `mpiexec`.
+
+**What does not work on Apple Silicon, so you don't have to rediscover it:**
+
+- `use_jll_binary("OpenMPI_jll")` — MPI.jl binds fine, but no OpenMPI-linked
+  `P4est_jll` exists for `aarch64-apple-darwin`; you silently get the MPICH
+  build and the first AMR call fails with
+  `could not load library ".../libp4est.4.dylib" … Library not loaded: @rpath/libmpi.12.dylib`.
+- Homebrew MPICH or OpenMPI (`use_system_binary`) — `P4est_jll` picks the
+  matching JLL-built variant, and macOS `dyld` loads that artifact's `libmpi`
+  next to the system one (Linux dedupes by soname; macOS resolves `@rpath` by
+  path). To use a system MPI with AMR on a Mac you must build p4est yourself
+  against it and point `P4est_wrapper` at the install with `P4EST_ROOT_DIR`
+  before `Pkg.build("P4est_wrapper")`.
+- The bare `use_jll_binary()` — selects `MPItrampoline_jll`, a shim over
+  MPICH; has been seen to end with two copies loaded as well.
+
+Not every Mac hits this: a machine set up in the §7.1 order from a clean clone
+never does. It appears on machines whose MPI binding was changed after the
+first `instantiate`.
+
+**Rule of thumb.** Any change to `LocalPreferences.toml` that switches between
+a system MPI and a JLL MPI needs `rm -f Manifest.toml` + `Pkg.instantiate()`
+*before* the `Pkg.build`s; a change within the same route (e.g. Homebrew
+OpenMPI → Homebrew MPICH) needs only the builds. Either way, build in a shell
+where `which mpicc` prints nothing.
+
+---
+
+### AMR case fails with "cfunction: closures are not supported on this platform"
+
+**Symptom** (Apple Silicon):
+
+```
+ERROR: LoadError: cfunction: closures are not supported on this platform
+Stacktrace:
+  [1] (::GridapP4est.var"#83#89"{...})(topology::...)
+    @ GridapP4est ~/.julia/packages/GridapP4est/EIwhI/src/UniformlyRefinedForestOfOctreesDiscreteModels.jl:698
+```
+
+**Cause.** The *registry* `GridapP4est 0.3.11` is in use instead of the
+patched fork (`Hwang1229/GridapP4est.jl#arm64-cfunction-fix`) that fixes
+`@cfunction` closures on ARM64. The fork is selected by a `[sources]` block in
+`Project.toml`, and one of two things went wrong:
+
+1. The block is missing (a merge dropped it, or you are on a branch that never
+   had it).
+2. The block is present, but `Manifest.toml` was resolved before it was added.
+   `Pkg.instantiate()` reuses an existing Manifest and will not switch the
+   package source on its own.
+
+**Confirm.**
+
+```bash
+grep -A2 '^\[sources' Project.toml
+julia --project=. -e 'using Pkg; Pkg.status("GridapP4est")'
+```
+
+The `status` line must include the fork URL:
+
+```
+[c2c8e14b] GridapP4est v0.3.11 `https://github.com/Hwang1229/GridapP4est.jl#arm64-cfunction-fix`
+```
+
+Plain `GridapP4est v0.3.11` with no URL is the registry version.
+
+**Fix.** Ensure `Project.toml` ends with:
+
+```toml
+[sources]
+GridapP4est = {url = "https://github.com/Hwang1229/GridapP4est.jl", rev = "arm64-cfunction-fix"}
+```
+
+then force a fresh resolve and rebuild the MPI-linked pieces (a fresh Manifest
+also brings a fresh `P4est_jll`/`P4est_wrapper`):
+
+```bash
+which mpicc                                  # must print nothing
+rm -f Manifest.toml
+julia --project=. -e 'ENV["JULIA_PKG_PRECOMPILE_AUTO"]=0; using Pkg; Pkg.instantiate()'
+julia --project=. -e 'using Pkg; Pkg.status("GridapP4est")'     # URL must appear now
+julia --project=. -e 'using Pkg; Pkg.build("MPI"; verbose=true); Pkg.build("P4est_wrapper"; verbose=true); Pkg.build("GridapP4est"; verbose=true)'
+julia --project=. -e 'using Pkg; Pkg.precompile()'
+```
+
+`LocalPreferences.toml` can stay as it is; only the Manifest needs to go.
+
+---
+
+### "P4est_jll not found in current path" when I try to inspect it
+
+Not an error in your setup. `P4est_jll` and `P4est_wrapper` are indirect
+dependencies (via `GridapP4est`), so `using P4est_jll` from the project fails
+even though they are installed. Query them through the Manifest instead:
+
+```bash
+julia --project=. -e 'using Pkg; Pkg.status("P4est_jll"; mode=Pkg.PKGMODE_MANIFEST)'
+julia --project=. -e 'using Pkg; Pkg.status("P4est_wrapper"; mode=Pkg.PKGMODE_MANIFEST)'
+```
+
+`Pkg.build("P4est_wrapper")` works on indirect dependencies, which is why the
+INSTALL.md recipes can call it directly.
+
+Note also that `~/.julia/scratchspaces/44cfe95a-1eb2-52ea-b672-e2afdf69b78f/`
+is **Pkg.jl's own** scratchspace — it only holds `build.log` files for every
+package Pkg has built (P4est_wrapper, Pardiso, …). There is no separate
+`P4est_wrapper` shared library to inspect on macOS; to see which MPI the p4est
+stack actually loads, use the `DYLD_PRINT_LIBRARIES` check in the first entry
+above.
+
 ### A package fails to precompile with a missing file inside a Julia artifact
 
 **Q.** `Pkg.instantiate()`/`Pkg.precompile()` (or a run that triggers a lazy

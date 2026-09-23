@@ -28,13 +28,20 @@ function user_primitives!(u, qe, uprimitive, ::PERT)
 end
 
 #---------------------------------------------------------------------------------
-# Output variables: qoutvars = ["ρ", "u", "v", "p", "By"]
+# Output variables: qoutvars = ["ρ", "u", "v", "w", "p", "Bx", "By", "Bz"]
+#
+# The whole state, so that the figures of user_plot.jl can show every solution
+# quantity. Bx is a constant of the 1D system (∂ₓBx = 0 with ∇·B = 0), so its
+# panel is a check on the discretization rather than a wave picture.
 #---------------------------------------------------------------------------------
 function user_uout!(ip, ET, uout, u, qe; kwargs...)
     ρ = u[1]
     uout[1] = ρ
     uout[2] = u[2]/ρ
     uout[3] = u[3]/ρ
-    uout[4] = pressure_mhd1d(ρ, u[2], u[3], u[5], u[4], u[6], u[7], u[8])
-    uout[5] = u[7]
+    uout[4] = u[5]/ρ
+    uout[5] = pressure_mhd1d(ρ, u[2], u[3], u[5], u[4], u[6], u[7], u[8])
+    uout[6] = u[6]
+    uout[7] = u[7]
+    uout[8] = u[8]
 end

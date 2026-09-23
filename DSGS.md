@@ -152,6 +152,28 @@ sod1d). Cases whose flux and source are already written on the perturbation
 (the well-balanced MHD and shallow-water splits, PERT variables) have a
 vanishing reference RHS and need nothing.
 
+A θ deck that runs DynSGS in place of a constant-coefficient model must also
+revisit its `:μ` vector, because the two models differ by orders of magnitude in
+what they put under those multipliers. Measured on `CompEuler/thetaTracers`
+(464 quads, Δx_min = 48.9 m, 3 ranks, Δt = 0.2, to t = 1000):
+
+| model / sensor | max ν over the run |
+|---|---|
+| `SMAG()` | 3.0 m²/s, flat |
+| `DSGS()`, `:dsgs_sensor => "legacy"` | 1.0×10² - 1.8×10³ m²/s |
+| `DSGS()`, `:dsgs_sensor => "residual"` | 2.8×10² - 2.0×10³ m²/s |
+| `DSGS()`, `"residual"` + `:dsgs_reference => true` | 4.0×10² - 9.6×10² m²/s |
+
+`:μ = [0, 1, 1, 2, 3, 1]`, tuned for the `SMAG()` row, means 6 and 9 m²/s there
+and 2-6×10³ m²/s under the residual sensor: that deck dies before t = 50 with a
+`DomainError` on ρθ < 0 in `p = C_0(ρθ)^γ`, while the same run at
+`:dsgs_sensor => "legacy"` completes 1000 s and the same run at Δt = 0.1
+completes as well. Note also what the third and fourth rows say about this
+case: subtracting the hydrostatic reference does NOT lower ν here, so on a
+mesh this coarse the residual is dominated by the bubble and not by the
+hydrostatic imbalance the paragraph above describes.
+
+
 **Dirichlet boundary nodes.** The boundary condition constrains the assembled
 rate at those nodes (free-slip wall: the normal momentum stays zero; a 1D end:
 the prescribed components stay put) while the element RHS carries the
@@ -250,8 +272,58 @@ $$
 \mu_{dsgs}[e,1] = 0,\quad
 \mu_{dsgs}[e,2] = \texttt{:μ}[2]\,\bar\rho\mu,\quad
 \mu_{dsgs}[e,3] = \texttt{:μ}[3]\,\bar\rho\mu,\quad
-\mu_{dsgs}[e,4] = \texttt{:μ}[4]\,\frac{Pr}{\gamma-1}\,\bar\rho\mu
+\mu_{dsgs}[e,4] = \texttt{:μ}[4]\,\frac{Pr}{\gamma-1}\,\bar\rho\mu,\quad
+\mu_{dsgs}[e,q] = \texttt{:μ}[q]\,\mu\ \ (q \ge 5)
 $$
+
+$Pr$ is `:Pr`, the **artificial** Prandtl number of Nazarov & Hoffman / Marras
+et al. (default 0.1, the value every DSGS deck of the repository sets; it is
+not the turbulent Prandtl number of the Smagorinsky model, which is
+`PhysConst.Pr_t`). Slots 5 and above are passive tracers
+(`CompEuler/thetaTracers`: $q_{tr}$, $q_{tr2}$, transported un-weighted as
+$\partial_t q + \nabla\cdot(q\mathbf{u}) = 0$ and handed to the viscous
+operator as the scalar itself), so they take the **kinematic** $\mu$, as the
+scalar branch of the Smagorinsky model does; they enter neither the residual
+nor the normalization. The same holds for the energy form ($\mu_K/\max_K\rho$)
+and for the nodal form ($\nu_i$).
+
+### 3.1 3D θ-form — `CompEuler/3d`, the LES cases
+
+`compute_dsgs_viscosity!(::DSGS, ::NSD_3D)`, the same model with
+$\mathbf{q} = (\rho, \rho u, \rho v, \rho w, \rho\theta)$ and the node loop
+over the three directions:
+
+- **Residual**: all five equations enter the max, element-wise as in §1.2,
+  with the lumped mass entry $m^K_i = \omega_i\omega_j\omega_k J_{K,ijk}$.
+- **Normalization**: the domain (or, by default, rank) spreads of §1.1, with
+  the momentum floor $10^{-3}\bar\rho\bar c$ on all three momenta — the
+  atmospheric cases start globally at rest, so those three spreads start at
+  exactly zero.
+- **Element scale**: $\Delta = \Delta_K/(k+1)$ from `mesh.Δelem`;
+  $\lambda_K = \max_{i\in K}(|\mathbf v_i| + c_i)$, $c$ from
+  $p = C_0(\rho\theta)^\gamma$.
+- **Split**: the primitives are $(\rho, u, v, w, \theta)$, so
+  $\mu[1] = 0$, $\mu[2{:}4] = \texttt{:μ}[2{:}4]\,\bar\rho\nu$,
+  $\mu[5] = \texttt{:μ}[5]\,\frac{Pr}{\gamma-1}\bar\rho\nu$, and
+  $\mu[q\ge6] = \texttt{:μ}[q]\,\nu$ for passive tracers.
+- **Boundary nodes**: the residual is zeroed on the nodes of the
+  non-periodic boundary *faces* (`mesh.poin_in_bdy_face`), the 3D
+  counterpart of the boundary-edge rule of §1.2.
+
+Only the θ form exists in 3D; `:energy_equation => "energy"` with
+`DSGS()` in 3D raises rather than building a θ-form coefficient from a
+total-energy state. The nodal form (`:ldsgs_nodal`) has no 3D counterpart
+either, and the 3D viscous operator is the per-slot Laplacian
+$\nabla\cdot(\mu_q\nabla q)$ rather than the 2D path's stress form.
+
+> Until September 2026 there was **no 3D kernel at all**, and this was
+> silent: `params.sgs` is `nothing` for every model but Smagorinsky and
+> Vreman, so a 3D case with `:visc_model => DSGS()` fell through to the
+> constant-coefficient branch of `_viscous_rhs_el_3d!` and ran the deck's
+> `:μ` as a plain Laplacian coefficient in m²/s. `CompEuler/3d` with
+> `:μ = [1,1,1,1,1]` then blew up at $t \approx 750$ s — identically to
+> the same deck with `:visc_model => AV()`, which is what it had in fact
+> been running, with a mass diffusion on top whenever `:μ[1] ≠ 0`.
 
 ---
 
@@ -301,18 +373,41 @@ reason unrelated to the sensor's purpose. $\psi$ still *receives* viscosity.
 Every field is uniform at $t=0$, and $\rho w$ and $B_z$ are identically zero for
 all time in this problem, so $\lVert q_i - \langle q_i\rangle\rVert_{\infty,\Omega}$
 is exactly zero for them. Each denominator is bounded from below ("floored":
-`denom = max(denom, a)`, so it can never be smaller than `a`) at $10^{-3}$ of that
-field's natural scale, built from the domain-mean state:
+`denom = max(denom, a)`, so it can never be smaller than `a`) at that field's
+natural scale, built from the domain-mean state:
 
 | slot | floor |
 |---|---|
-| $\rho$ | $10^{-3}\bar\rho$ |
-| $\rho u,\ \rho v,\ \rho w$ | $10^{-3}\bar\rho\,\bar c$ |
-| $E$ | $10^{-3}\bar\rho\,\bar c^2$ |
-| $B_x, B_y, B_z$ | $10^{-3}\sqrt{\bar\rho}\,\bar c$ |
+| $\rho$ | $c_{rel}\,\bar\rho$ |
+| $\rho u,\ \rho v,\ \rho w$ | $c_{rel}\,\bar\rho\,\bar c$ |
+| $E$ | $c_{rel}\,\bar\rho\,\bar c^2$ |
+| $B_x, B_y, B_z$ | $c_{rel}\sqrt{\bar\rho}\,\bar c$ |
 
-A degenerate field then contributes $0/\text{floor} = 0$ rather than
-$0/\texttt{eps} = $ garbage.
+with $c_{rel} = $ **`:dsgs_rel`, default 1**. A degenerate field then
+contributes $0/\text{floor} = 0$ rather than $0/\texttt{eps} = $ garbage.
+
+**Why the floor is the scale and not a thousandth of it.** $c_{rel}$ was
+$10^{-3}$ until the smooth-vortex test of `problems/MHD/smoothVortex` was
+built, and that is a very different thing from a guard against dividing by
+zero: *some* variable is always nearly uniform — $\rho$ in an isentropic
+vortex, $B_x$ in a 1D shock tube, a tracer nobody has released — and for it the
+floor **is** the normalization, so its ordinary numerical error was amplified
+by up to 1000 and the max over the equations, eq. 4.8, was taken over the one
+variable with nothing to say. Measured on the vortex, reading the sensor on
+the clean viscosity-free solution ($C_R = C_{max} = C_{min} = 0$), the $\rho$
+ratio came out 40–60× every other equation's at every resolution, on its own
+enough to hold $\nu$ at its cap $C_{max}\Delta\lambda$ — an $O(h)$ viscosity,
+identical for every polynomial order, which flattened that case's convergence
+to first order and made the Brio-Wu orders indistinguishable at equal DOFs.
+
+Where a variable genuinely varies the spread exceeds the scale and wins, so
+the change is invisible to the shock cases (`sod1d` and `brioWu1d` reproduce
+to the digit). Dropping a below-floor equation from the max **altogether** was
+tried first and is wrong: the deviation of a should-be-constant variable is a
+real oscillation detector — $B_x$ is exactly that in `brioWu1d` — and without
+it that case at `:nop => 7` loses the dissipation that keeps it stable and
+aborts. `:dsgs_rel => 1.0e-3` restores the old behaviour for a case that wants
+the hair trigger.
 
 ### 4.3 Per-equation split and units
 
@@ -368,8 +463,19 @@ end
 
 `time` sweeps $t^n + c_i\Delta t$ within a step, so the gate fires at the first
 stage of every step, where `uaux` is $q^n$. The three buffers are initialized
-to the initial state in `params_setup.jl`, so the first residual is identically
-zero. They are shaped from `size(qp.qn)`, not `(npoin, neqs)` — `uaux` carries
+to the initial state in `params_setup.jl`.
+
+**The first two steps.** With the history seeded from the initial condition the
+BDF2 returns $0$ on the first step and $1.5\,\partial_t q$ on the second: it is
+not a time derivative yet. A zero time term does **not** make the residual zero
+— it makes it $\lVert\nabla\cdot F\rVert$, the whole flux divergence, so the
+sensor reads a smooth, fully resolved initial condition as unresolved
+everywhere and puts $\nu$ on its cap at the very first call (measured on the
+smooth vortex: $\nu = $ the cap exactly, on a solution the same scheme
+integrates to seven digits without it). `params.dsgs_nhist` counts the
+committed states and `_dsgs_residual_rhs!` holds the residual at zero, weights
+included, until it reaches three, so those two steps carry the $C_{min}$
+background and nothing else. They are shaped from `size(qp.qn)`, not `(npoin, neqs)` — `uaux` carries
 one extra trailing column beyond the `neqs` solution slots.
 
 **The stencil at a stage.** The residual is evaluated at every RK stage with
@@ -564,9 +670,8 @@ total-energy forms) and `DSGS_MHD` alike (`compute_dsgs_viscosity_nodal!`):
 The whole path is allocation-free (`params.dsgs_qmin/qmax/nmin/nmax/hnod`
 are its scratch). The element form remains the default of every case,
 `brioWu1d` included (its deck carries the nodal switch commented out; with
-the $C_{min}$ floor both forms give the same profile). There is no 3D DynSGS kernel (the 3D viscous
-path dispatches the Smagorinsky/Vreman caches only), so the switch has no
-3D counterpart yet. Measured on the Brio–Wu tube: both forms give the same
+the $C_{min}$ floor both forms give the same profile). The 3D kernel
+(§3.1) is element-form only, so the switch has no 3D counterpart yet. Measured on the Brio–Wu tube: both forms give the same
 solution, and the element-scale ripples the compound wave radiates into
 the plateau behind it are damped by neither — the residual viscosity
 scales with their amplitude — and need the $C_{min}$ floor (3 % there, see the
@@ -575,9 +680,40 @@ case README).
 ### 4.8 MPI
 
 $\langle q_i\rangle$ and $\lVert q_i - \langle q_i\rangle\rVert_{\infty,\Omega}$
-are **domain** norms by definition, so both reductions are `MPI.Allreduce`d. A
-rank-local version would make the eddy viscosity depend on the partitioning. The
-cost is two small collectives per RHS call.
+are **domain** norms in the papers, and that is the default here
+(`:dsgs_norms => "domain"`): two or three `MPI.Allreduce` of a few doubles per
+RHS call, which is nothing next to the RHS itself, and the same answer however
+the domain is cut.
+
+`:dsgs_norms => "rank"` takes them over the rank's own elements and
+communicates nothing. It was the default until September 2026, on the argument
+that these quantities only set the scale the residual is measured against and
+that a partition of a connected domain resolves that scale as well as the
+whole domain does — so the viscosity would depend on the partition only at
+round-off. **That argument is wrong**, and it fails on the ordinary case: a
+rank holding none of the interesting flow sees only its own quiet background,
+normalizes by that, and applies a different viscosity to the same solution
+than its neighbour does. Measured on `problems/MHD/smoothVortex` (nop 6, 32²
+elements, `ck54`, $\Delta t = 3.3333\times10^{-4}$, $t = 1$, absolute velocity
+$L^1$):
+
+| ranks | error |
+|---|---|
+| 1–2 | 3.935e-07 |
+| 4 | 7.155e-06 |
+| 8 | 7.155e-06 |
+
+an 18× difference from nothing but the partition, and a floor no mesh
+refinement goes below — which is what made that case's convergence study look
+broken at every order past 32² elements. On a 2D field the same mechanism
+draws the partition into the coefficient: on Orszag–Tang at 120² elements over
+128 ranks, $\nu$ jumps at every rank boundary and `mu_SGS` bands vertically.
+It saturates in the rank count because the outcome is bimodal — ranks holding
+the structure normalize by the structure, ranks holding nothing normalize by
+their floor, and more ranks only changes how many of each there are.
+
+Use `"rank"` only where the subdomains are known to be statistically alike and
+the reductions have been measured to matter.
 
 ### 4.9 Measured effect
 
@@ -619,15 +755,65 @@ is `SoliWaveIsland` with it in place of `AV()`;
 [`problems/ShallowWater/SW_DSGS.md`](problems/ShallowWater/SW_DSGS.md) describes
 the kernel on its own.
 
+### 4.11 Molecular viscosity alongside the sensor: `:lsutherland`
+
+DynSGS is a **sensor**: $\mu$ is proportional to the residual, so it is
+$\approx 0$ wherever the solution is smooth and resolved. For an inviscid
+problem — `ffs_step`, `orszagTangBormanis2024` — that is the whole point. For a
+problem with a real Reynolds number it is a hole: a laminar boundary layer
+*is* the smooth, resolved region, so under DynSGS alone it never forms and the
+case degenerates to inviscid flow over the same geometry.
+
+`:lsutherland => true` (default `false`, 2D total-energy form only) adds the
+molecular viscosity of Sutherland's law
+
+$$\mu(T)=\mu_{ref}\left(\frac{T}{T_{ref}}\right)^{3/2}\frac{T_{ref}+S}{T+S}$$
+
+at every node, on top of whatever the sensor asked for. It has to be nodal:
+over the boundary layer of
+[`problems/CompEuler/rampCaoEtAl2021`](problems/CompEuler/rampCaoEtAl2021)
+$T$ runs from the 293 K wall to $\sim$1200 K, a factor 5 in $\mu$, which a
+per-element coefficient cannot carry. The air defaults
+$\mu_{ref} = 1.716\times10^{-5}$ Pa s, $T_{ref} = 273.15$ K, $S = 110.4$ K are
+`:sutherland_muref`, `:sutherland_Tref`, `:sutherland_S`.
+
+**Which slot gets what.** The 2D assembly this feeds is already the real
+Navier–Stokes viscous operator — `_expansion_visc!(::NSD_2D)` builds the
+deviatoric stress $\tau_{ij}=\mu(2S_{ij}-\tfrac23\delta_{ij}\nabla\!\cdot\mathbf u)$
+on the two momentum slots and adds the viscous work $\tau\!\cdot\!\mathbf u$ to
+the energy slot — so $\mu$ enters slots 2 and 3 unchanged. Slot 4 multiplies
+$\nabla(\texttt{uprimitive[4]})$, and on the total-energy path that is the
+**specific internal energy** $e = c_v T$ (§4.3; Nazarov & Hoffman scale
+$c_v = 1$). Fourier's law $-k\nabla T$ is therefore $-(k/c_v)\nabla e$, so the
+slot-4 addition is
+
+$$\frac{k}{c_v}=\frac{\mu c_p}{Pr\,c_v}=\frac{\gamma\mu}{Pr},\qquad Pr = \texttt{:Pr\_lam}\ (0.71).$$
+
+`:Pr_lam` is the **molecular** Prandtl number and is not `:Pr`, the artificial
+Prandtl number of eq. (3.7); the two coefficients are added on the same slot and
+are separately meaningful. Slot 1 gets nothing: physical Navier–Stokes has no
+mass diffusion, and the $\beta\nabla\rho$ sitting there is the sensor's own.
+
+$\mu(T)$ is added **raw**, not through the deck's `:μ` multipliers: those tune
+how much *artificial* dissipation the sensor is allowed, and scaling the
+molecular viscosity with them would silently change the case's Reynolds number.
+A deck that raises `:μ[2:4]` to hold a shock keeps the same physical $\mu$
+underneath it.
+
+The per-node coefficient rides the same `μloc` buffer the nodal form of §4.7
+uses, so the assembly is unchanged: `SGS_diffusion` is bypassed and
+`μnod[k,l,ieq]` read instead. With `:lsutherland => false` nothing runs and the
+path is bit-for-bit what it was.
+
 ## 5. Code map, inputs and output
 
 | file | contents |
 |---|---|
 | `src/kernel/abstractTypes.jl` | `struct DSGS`, `struct DSGS_MHD`, `struct DSGS_SW` |
-| `src/kernel/physics/SGS.jl` | `compute_dsgs_viscosity!` (1D, 2D-θ, 2D-MHD, 2D shallow water) and the nodal forms, `broadcast_dsgs_to_nodes!`, the `SGS_diffusion` accessors |
-| `src/kernel/operators/rhs.jl` | dispatch in `viscous_rhs_el!`, `_viscous_rhs_el_2d_dsgs!`, the step-cadenced history gate in `_build_rhs!` |
+| `src/kernel/physics/SGS.jl` | `compute_dsgs_viscosity!` (1D, 2D-θ, 3D-θ, 2D-MHD, 2D shallow water) and the nodal forms, `broadcast_dsgs_to_nodes!`, the `SGS_diffusion` accessors |
+| `src/kernel/operators/rhs.jl` | dispatch in `viscous_rhs_el!`, `_viscous_rhs_el_2d_dsgs!` / `_viscous_rhs_el_3d_dsgs!`, the step-cadenced history gate in `_build_rhs!` |
 | `src/kernel/infrastructure/params_setup.jl` | `μ_dsgs`, `μ_dsgs_pnode`, `visc_coeff_dsgs`, `dsgs_qnm1/2`, `dsgs_avg/denom`, `dsgs_thist` |
-| `src/io/mod_inputs.jl` | `:dsgs_CR`, `:dsgs_Cmax`, `:dsgs_gamma`, `:dsgs_Prt` defaults |
+| `src/io/mod_inputs.jl` | `:dsgs_CR`, `:dsgs_Cmax`, `:dsgs_gamma`, `:dsgs_Prt`, `:lsutherland`, `:sutherland_*`, `:Pr_lam` defaults |
 | `src/io/write_output.jl` | the `mu_dsgs_*` VTK fields |
 | `tools/plot_orszag_tang.jl` | off-line figures from a finished MHD run, including the viscosity map |
 | `tools/vtu_reader.jl` | the minimal `.pvtu`/`.vtu` reader that script uses |
@@ -636,7 +822,7 @@ the kernel on its own.
 
 ```julia
 :lvisc      => true,
-:visc_model => DSGS(),        # 1D CompEuler / 2D CompEuler θ
+:visc_model => DSGS(),        # 1D CompEuler / 2D and 3D CompEuler θ
 :visc_model => DSGS_MHD(),    # 2D ideal GLM-MHD
 :visc_model => DSGS_SW(),     # 2D non-linear shallow water
 :μ          => [0.0, 1.0, …], # per-equation multipliers, length neqs
@@ -644,6 +830,8 @@ the kernel on its own.
 :dsgs_Cmax    => 0.5,
 :dsgs_gamma => 5.0/3.0,
 :dsgs_Prt   => 0.7,
+:lsutherland => true,         # §4.11, molecular μ(T) on top of the sensor
+:Pr_lam      => 0.71,         # molecular Pr — NOT :Pr
 ```
 
 **Output.** The per-element coefficients are broadcast to nodes by
@@ -732,7 +920,39 @@ reasoning matters if the model is revisited.
    *Fixed*: the `dsgs_qnm1/qnm2` buffers built for `DSGS_MHD` (§4.4) are now
    allocated and used for `DSGS()` as well.
 
-5. **The 1D wave-speed cap used `sqrt(γ·e_int)`.** For a perfect gas
+5. **The normalization floor was $10^{-3}$ of the physical scale.** It was
+   meant as a guard against a degenerate spread, but for any variable that is
+   nearly uniform — and there always is one — it *is* the normalization, and
+   it amplified that variable's ordinary numerical error by up to 1000. The
+   max over the equations (eq. 4.8) was then taken over the variable with the
+   least to say, and it was enough on its own to hold $\nu$ at the cap
+   $C_{max}\Delta\lambda$: an $O(h)$ viscosity, the same for every polynomial
+   order. *Fixed* (§4.2): the floor is the scale itself, `:dsgs_rel` default 1.
+
+6. **The residual was evaluated before its time stencil existed.** With the
+   history seeded from the initial condition the BDF2 returns zero on the
+   first step, which makes the residual the whole flux divergence rather than
+   zero — $\nu$ went to the cap at the first call of every run, on smooth and
+   discontinuous initial conditions alike. *Fixed* (§4.4): held at zero until
+   three states are committed.
+
+   Together, 5 and 6 are why `problems/MHD/smoothVortex` converged at rate 1
+   with DynSGS and at 4–5.5 without it, and why the Brio-Wu orders were
+   indistinguishable at equal degrees of freedom. Measured after the fix, the
+   vortex at `:nop => 4` (velocity $L^1$ at $t = 1$, 4/8/16/32 elements per
+   side):
+
+   | | 4 | 8 | 16 | 32 | rate |
+   |---|---|---|---|---|---|
+   | DynSGS, before | 1.004e-2 | 5.240e-3 | 2.678e-3 | 1.142e-3 | 1.0 |
+   | DynSGS, after | 4.26e-3 | 5.220e-5 | 2.208e-6 | 1.639e-7 | 4.6, 3.8 |
+   | plain Galerkin | 1.570e-3 | 3.541e-5 | 2.039e-6 | 1.631e-7 | 4.1, 3.6 |
+
+   — the residual viscosity costs 0.5 % of the error at the finest mesh
+   instead of 7000×, and $\max\nu$ falls as $h^{5.6}$ instead of sitting on
+   the cap.
+
+7. **The 1D wave-speed cap used `sqrt(γ·e_int)`.** For a perfect gas
    $p = (\gamma-1)\rho e_{int}$, so $a^2 = \gamma(\gamma-1)e_{int}$; the cap was
    inflated by $1/\sqrt{\gamma-1} \approx 1.58$ at $\gamma = 1.4$, letting
    $\mu_{res}$ govern more often than the Marras bound intends. *Fixed.*
