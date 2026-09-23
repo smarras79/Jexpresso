@@ -115,6 +115,13 @@ function wall_watch_report(params, u, t, step; io = stdout, thresh = 12.0)
     g_rss  = MPI.Allreduce(Float64(Sys.maxrss()) / 2^30, MPI.MAX, comm)
     g_rssn = MPI.Allreduce(rss_now, MPI.MAX, comm)
     g_vsz  = MPI.Allreduce(vsz_now, MPI.MAX, comm)
+    # Split the RSS into the three places it can live, so a growth can be
+    # attributed instead of guessed: the live Julia heap (GC's problem), the
+    # LLVM code cache (malloc'd, never freed, and where job 1305251 threw its
+    # bad_alloc), and whatever is left -- MPI/libfabric registrations, glibc
+    # arenas, the code image.
+    g_heap = MPI.Allreduce(Float64(Base.gc_live_bytes()) / 2^30, MPI.MAX, comm)
+    g_jit  = MPI.Allreduce(Float64(Base.jit_total_bytes()) / 2^30, MPI.MAX, comm)
 
     if rank == owner && isfinite(gbest)
         uh1   = hypot(rec[5], rec[6])
@@ -128,8 +135,9 @@ function wall_watch_report(params, u, t, step; io = stdout, thresh = 12.0)
     end
     MPI.Barrier(comm)
     if rank == 0
-        @printf(io, " # wall-watch t=%.1f summary | wall nodes=%d, |uh|>%.0f: %d | mean|uh_wall-uh_node2|=%.3f | node2 layer max|uh|=%.2f max|w|=%.2f | min(rho*theta)=%.1f | mem GB: peakRSS=%.2f RSS=%.2f VSZ=%.2f\n",
-                Float64(t), g_n, thresh, g_run, g_off / max(g_n,1), g_u1, g_w1, g_ρθ, g_rss, g_rssn, g_vsz)
+        @printf(io, " # wall-watch t=%.1f summary | wall nodes=%d, |uh|>%.0f: %d | mean|uh_wall-uh_node2|=%.3f | node2 layer max|uh|=%.2f max|w|=%.2f | min(rho*theta)=%.1f | mem GB: RSS=%.2f VSZ=%.2f peak=%.2f | heap=%.2f jit=%.3f other=%.2f\n",
+                Float64(t), g_n, thresh, g_run, g_off / max(g_n,1), g_u1, g_w1, g_ρθ,
+                g_rssn, g_vsz, g_rss, g_heap, g_jit, g_rssn - g_heap - g_jit)
         flush(io)
     end
     return nothing
