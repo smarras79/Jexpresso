@@ -237,6 +237,11 @@ include(joinpath( "kernel", "operators", "rhs.jl"))
 # SEM right-hand side on the spherical shell (+ the modal filter).
 include(joinpath( "kernel", "operators", "sphere_rhs.jl"))
 
+# Stochastic small-scale forcing and large-scale dissipation on the shell
+# (Scott & Polvani 2007). Needs St_sphere_params and the DSS helper from
+# sphere_rhs.jl, so it is included straight after it.
+include(joinpath( "kernel", "operators", "sphere_forcing.jl"))
+
 include(joinpath( "kernel", "operators", "rhs_2point.jl"))
 
 include(joinpath( "kernel", "operators", "rhs_gpu.jl"))
@@ -248,6 +253,13 @@ include(joinpath( "kernel", "operators", "rhs_laguerre.jl"))
 include(joinpath( "kernel", "operators", "filter.jl"))
 
 include(joinpath( "kernel", "solvers", "TimeIntegrators.jl"))
+
+# Proper Orthogonal Decomposition and the reduced-order-model basis it builds.
+# pod_core.jl is the decomposition itself and depends on nothing in Jexpresso;
+# pod.jl is what samples a running case and writes the result out. Included
+# BEFORE the time loop, which records snapshots through them.
+include(joinpath( "kernel", "rom", "pod_core.jl"))
+include(joinpath( "kernel", "rom", "pod.jl"))
 
 # SSP-RK3 time loop for the spherical shell, with the Lagrange projection
 # applied at every stage.
@@ -288,6 +300,13 @@ include(joinpath( "io", "les_statistics.jl"))
 include(joinpath( "io", "mod_print_io.jl"))
 
 include(joinpath( "io", "write_output.jl"))
+
+# Nodal fields on a pixel raster (flat and spherical), and the POD figures
+# drawn on them.
+# After write_output.jl, which is what brings Plots into the module (jeplots.jl).
+include(joinpath( "io", "plotting", "mesh_raster.jl"))
+
+include(joinpath( "io", "plotting", "pod_plots.jl"))
 
 include(joinpath( "io", "diagnostics.jl"))
 

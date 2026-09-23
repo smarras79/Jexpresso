@@ -17,6 +17,10 @@ A CPU and GPU research software for the numerical solution of a system of arbitr
 
 Suggested Julia version: 1.11.9
 
+# A note about the use of AI
+Jexpresso has been developed by humans since 2021 and continues to be so. Since Spring 2026, AI has been assisting the developers for new problems additions, debugging, and code's documentation. As AI becomes more reliable, we foresee an increased use of it for code development under the direct supervision of a human expert. 
+The Jexpresso core team uses Claude whereas some external developers have been successfully using OpenAI's Codex for their own implementations.
+
 # Table of Contents
 
 - [Installation](#installation)
@@ -361,37 +365,61 @@ Jexpresso.run_case("MHD", "orszagTangBormanis2024")
 Stabilized with **DynSGS** — the residual-based, parameter-free dynamic SGS
 model of Marras, Nazarov & Giraldo (see [DSGS.md](DSGS.md)).
 
-Density at t = 0.7, 0.8, 0.9, 1.0, on the same 0.1-0.4 color scale as Fig. 3
-of the reference:
-
-<img src="assets/MHD_OT_rho.png"
+<img src="assets/MHD-OT-4plots.png"
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
-The y magnetic field at the same times, on a symmetric color scale shared by
-the four panels:
+Top row: density at t = 0.5 s (left) and t = 1.0 s (right).
+Bottom row: residual viscosity. Simulation using 120 × 120 4th-order spectral elements in
+a unit square.
 
-<img src="assets/MHD_OT_By.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
+## Magneto-Hydrodynamics (MHD), flux emergence in the solar atmosphere:
 
-And the DynSGS eddy viscosity applied to the By equation (log scale), with By
-isolines drawn on top. The coefficient spans 1.5–2.8 decades across the domain —
-a global Smagorinsky constant spans none — and its rank correlation with |∇By|
-is positive at every output time (0.26–0.64, strongest while the fronts are
-steepening). See the
-[case README](problems/MHD/orszagTangBormanis2024/README.md#figures) for the
-measured table, which the plotting script reprints on every run.
+The two-dimensional emergence of a horizontal magnetic flux sheet through a
+two-temperature (chromosphere + corona) stratified atmosphere — the nonlinear
+Parker instability of Shibata et al. (1989) — with the setup of Son, Jang &
+Magara, *ApJS* **277**:46 (2025): γ = 1.05, [0, 80 H₀] × [0, 35 H₀],
+t ∈ [0, 54 τ₀]. The problem is defined in
+[`problems/MHD/fluxEmergenceSon2025`](problems/MHD/fluxEmergenceSon2025)
+(see its `README.md` and `EQUATIONS.md`).
 
-<img src="assets/MHD_OT_mu_dsgs_By.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
+```bash
+mpiexec -n 10 julia --project=. src/Jexpresso.jl MHD fluxEmergenceSon2025
+```
 
-The solver writes VTK, not PNG. These three figures are rendered from a
-finished run by `julia --project=. tools/plot_orszag_tang.jl`; see the
-[case README](problems/MHD/orszagTangBormanis2024/README.md#figures).
+Stabilized with **DynSGS**, integrated with Carpenter–Kennedy 2N54 on the
+coarsest N = 4 grid the problem admits (80×35 elements). The solver writes PNGs
+styled after the paper's figures (log₁₀ density on the paper's `jet` scale
+with magnetic field lines and velocity vectors; centerline profiles of the
+rise velocity, Alfvén speed, field and density on the axes of its Fig. 5)
+directly, gathered on one rank under MPI.
 
+[`problems/MHD/brioWu1d`](problems/MHD/brioWu1d) is the 1D Brio–Wu MHD
+shock tube (Dao & Nazarov 2022, §5.2), the MHD counterpart of `CompEuler/sod1d`:
+DynSGS in its conserved form with the 1D MHD kernel, 600 LGL points, the
+reference solution overlaid at t = 0.2.
 
+```bash
+julia --project=. src/Jexpresso.jl MHD brioWu1d
+```
+
+[`problems/ShallowWater/SoliWaveIslandDSGS`](problems/ShallowWater/SoliWaveIslandDSGS)
+is the solitary wave on a conical island of Marras et al. (2018, §5.5)
+stabilized by DynSGS for the shallow-water system (`DSGS_SW()`) instead of the
+constant viscosity of `ShallowWater/SoliWaveIsland`.
+
+```bash
+julia --project=. src/Jexpresso.jl ShallowWater SoliWaveIslandDSGS
+```
+
+[`problems/MHD/fluxEmergenceSon2025DSGS`](problems/MHD/fluxEmergenceSon2025DSGS)
+is the same problem with **DynSGS alone** keeping the solution admissible:
+no positivity limiter, the dissipation acting on the relative departure from
+the magnetostatic reference state (`:dsgs_ref_weight`, DSGS.md §4.5).
+
+```bash
+mpiexec -n 10 julia --project=. src/Jexpresso.jl MHD fluxEmergenceSon2025DSGS
+```
 
 ## Magneto-Hydrodynamics (MHD), flux emergence in the solar atmosphere:
 
@@ -460,6 +488,18 @@ Jexpresso.run_case("ShallowWater", "SWsphere")
 <img src="assets/SWsphere-Galewki-visc1e5-36x36.jpg"
      alt="Markdown icon"
      style="float: left; margin-right: 3.5px;" />
+
+
+This case also ships with **Proper Orthogonal Decomposition** switched on: at
+the end of the run the code extracts the energy-ranked modes of the flow, draws
+them on an equirectangular map together with the energy spectrum and the
+temporal coefficients, and writes the basis out for a reduced-order model.
+
+POD is a property of the framework rather than of this case: **any** problem
+turns it on with `:lpod => true` in its deck and supplies nothing else, in 1D,
+2D, 3D or on a manifold. `problems/AdvDiff/PODbenchmark` is the reference
+benchmark, a problem whose POD is known in closed form. See
+[`docs/POD.md`](docs/POD.md).
 
 
 
