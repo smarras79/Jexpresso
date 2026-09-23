@@ -29,20 +29,27 @@ ust = load(sys.argv[3]) if len(sys.argv) > 3 and sys.argv[3].endswith('.dat') el
 out = sys.argv[-1] if sys.argv[-1].endswith('.png') else 'les_main4.png'
 ztop = float(os.environ.get('ZTOP','2000')); Q0 = float(os.environ.get('WTHETA_S','0.12'))
 elem = float(os.environ.get('ELEM','160'))
+# The theta zigzag has a 40 m period, not 160: that is the stretching block
+# (:first_zelement_size 10 m times ngl-1), and the LGL clustering inside it
+# shows up in a field whose gradient is ~0. Amplitude 0.02 K, irrelevant next
+# to the 4 K inversion, but it is grid noise and reads as such on a plot.
+elem_th = float(os.environ.get('ELEM_TH','40'))
 
 z = stat['z']
-def esmooth(v):
+def esmooth(v, e_size=None):
     """Element average placed at the element centre, then interpolated back onto
     the nodes. Replacing the nodes by their element mean instead would turn the
     zigzag into a staircase, which is not less wrong, only differently wrong."""
-    if elem <= 0: return v
-    idx = np.floor(z/elem + 1e-9).astype(int)
+    e_size = elem if e_size is None else e_size
+    if e_size <= 0: return v
+    idx = np.floor(z/e_size + 1e-9).astype(int)
     e   = np.unique(idx)
     zc  = np.array([z[idx == k].mean() for k in e])
     vc  = np.array([v[idx == k].mean() for k in e])
     return np.interp(z, zc, vc)
 
-th  = stat['t_mean']; u = stat['u_mean']; v = stat['v_mean']
+th_raw = stat['t_mean']
+th  = esmooth(th_raw, elem_th); u = stat['u_mean']; v = stat['v_mean']
 wth_r, wth_s = esmooth(strs['wptp_res']), esmooth(strs['wptp_sfs'])
 wth = wth_r + wth_s
 ww  = strs['wpwp_res'] + strs['wpwp_sfs']
@@ -62,7 +69,8 @@ a.set_xlim(300.8, 306); a.set_xlabel(r'$\langle\theta\rangle$  [K]'); a.set_ylab
 a.set_title(f'potential temperature\nmixed layer {th[ml].mean():.2f} K,  $z_i$ = {zi:.0f} m')
 ins = a.inset_axes([0.52, 0.08, 0.45, 0.42])
 b = (z > zi-180) & (z < zi+180)
-ins.plot(th[b], z[b], 'k.-', ms=3, lw=1.2); ins.axhline(zi, color='r', ls=':', lw=0.8)
+ins.plot(th_raw[b], z[b], '.', ms=2.5, color='0.6', label='nodes')
+ins.plot(th[b], z[b], 'k-', lw=1.2); ins.axhline(zi, color='r', ls=':', lw=0.8)
 ins.set_title('inversion', fontsize=8); ins.tick_params(labelsize=7); ins.grid(alpha=0.3)
 
 a = ax[1]
