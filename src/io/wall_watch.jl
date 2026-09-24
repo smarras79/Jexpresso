@@ -65,6 +65,10 @@ function wall_watch_report(params, u, t, step; io = stdout, thresh = 12.0)
     rec    = zeros(Float64, 14)     # x y u v u1 v1 w1 rho th th1 mu mu1 z1 rho1
     n_wall = 0; n_run = 0; sum_off = 0.0
     max_u1 = 0.0; max_w1 = 0.0; min_ρθ = Inf
+    # theta on the wall layer and its jump to the node above. The surface flux
+    # heats the wall node, so th_wall - th_node2 should be >= 0 everywhere; a
+    # large negative value is a 2-dz mode, not physics.
+    thw_max = -Inf; thw_min = Inf; dth_max = -Inf; dth_min = Inf
 
     for iface = 1:mesh.nfaces_bdy
         mesh.bdy_face_type[iface] == "MOST" || continue
@@ -82,6 +86,8 @@ function wall_watch_report(params, u, t, step; io = stdout, thresh = 12.0)
             max_u1 = max(max_u1, uh1)
             max_w1 = max(max_w1, abs(ww1))
             min_ρθ = min(min_ρθ, ρ*th, ρ1*th1)
+            thw_max = max(thw_max, th); thw_min = min(thw_min, th)
+            dth_max = max(dth_max, th - th1); dth_min = min(dth_min, th - th1)
             if uh > best
                 best = uh
                 rec[1]  = coords[1,ip];  rec[2]  = coords[2,ip]
@@ -104,6 +110,10 @@ function wall_watch_report(params, u, t, step; io = stdout, thresh = 12.0)
     g_u1   = MPI.Allreduce(max_u1, MPI.MAX, comm)
     g_w1   = MPI.Allreduce(max_w1, MPI.MAX, comm)
     g_ρθ   = MPI.Allreduce(min_ρθ, MPI.MIN, comm)
+    g_thwx = MPI.Allreduce(thw_max, MPI.MAX, comm)
+    g_thwn = MPI.Allreduce(thw_min, MPI.MIN, comm)
+    g_dthx = MPI.Allreduce(dth_max, MPI.MAX, comm)
+    g_dthn = MPI.Allreduce(dth_min, MPI.MIN, comm)
     # Memory across ranks, in GB. mpirun-launched ranks are invisible to sacct,
     # and job 1300883 died of std::bad_alloc at t = 9540 with no record. A
     # bad_alloc is malloc returning NULL, which under Linux overcommit means
@@ -138,6 +148,8 @@ function wall_watch_report(params, u, t, step; io = stdout, thresh = 12.0)
         @printf(io, " # wall-watch t=%.1f summary | wall nodes=%d, |uh|>%.0f: %d | mean|uh_wall-uh_node2|=%.3f | node2 layer max|uh|=%.2f max|w|=%.2f | min(rho*theta)=%.1f | mem GB: RSS=%.3f VSZ=%.3f peak=%.3f | heap=%.3f jit=%.4f other=%.3f\n",
                 Float64(t), g_n, thresh, g_run, g_off / max(g_n,1), g_u1, g_w1, g_ρθ,
                 g_rssn, g_vsz, g_rss, g_heap, g_jit, g_rssn - g_heap - g_jit)
+        @printf(io, " # wall-watch t=%.1f theta | wall th in [%.2f, %.2f] | th_wall-th_node2 in [%.2f, %.2f]\n",
+                Float64(t), g_thwn, g_thwx, g_dthn, g_dthx)
         flush(io)
     end
     return nothing

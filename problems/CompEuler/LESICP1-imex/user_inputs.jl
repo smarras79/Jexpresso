@@ -319,8 +319,13 @@ function user_inputs()
 	# which is 10 dumps instead of the parent deck's 28. The statistics window
 	# is where the fields are wanted, at DBG_DIAG_TAIL (60 s -> 31 dumps).
 	# DBG_RESTART_IOUT indexes this list: entry 10 is t = 9000 s.
-	:diagnostics_at_times => (0.0:1000.0:9000.0...,
-	                          9000.0:parse(Float64, get(ENV, "DBG_DIAG_TAIL", "60")):tend...),
+	# DBG_DIAG_EARLY="a:b:c" adds dumps at a:b:c for looking at a spin-up crash.
+	:diagnostics_at_times => (sort(unique(vcat(
+	                          (haskey(ENV, "DBG_DIAG_EARLY") ?
+	                               (r = parse.(Float64, split(ENV["DBG_DIAG_EARLY"], ':')); collect(r[1]:r[2]:r[3])) :
+	                               Float64[]),
+	                          collect(0.0:1000.0:9000.0),
+	                          collect(9000.0:parse(Float64, get(ENV, "DBG_DIAG_TAIL", "60")):tend))))...,),
 	:lsource              => true,
         :sounding_file        =>"./data_files/input_sounding_teamx_u00_flat_noheader.dat",
         #---------------------------------------------------------------------------
@@ -464,7 +469,9 @@ function user_inputs()
         :luse_mesh_cache  => parse(Bool, get(ENV, "JEXPRESSO_MESH_CACHE", "false")),
         :lread_gmsh       => true, #If false, a 1D problem will be enforce
 	:gmsh_filename    => "./problems/CompEuler/LESICP2-128x128x60-imex/LESICP_128x128x60_10240mX10240mX5000m.msh",
-        :gmsh_filename    => "./problems/CompEuler/LESICP2-64x64x60-imex/LESICP_64x64x60_10240mX10240mX5000m.msh",
+        # DBG_GMSH swaps the mesh for a small-box probe of the spin-up crash
+        # (e.g. the 2560 m LESICP2-16x16x60-imex mesh, same 160 m elements).
+        :gmsh_filename    => get(ENV, "DBG_GMSH", "./problems/CompEuler/LESICP2-64x64x60-imex/LESICP_64x64x60_10240mX10240mX5000m.msh"),
 		
         # Stretching. The .geo is UNIFORM in z (Progression 1.0); the vertical
         # grading is applied here, at read time, by stretching.jl.
