@@ -52,7 +52,7 @@ end
 # round-off — a periodic problem with ∫f ≠ 0 has no solution, so the solver
 # answers the projected problem -∇²u = f - mean(f).
 function _fft_solve_timed(F::Array{Float64}, Ls, inputs)
-    S = FFTPoissonSolver(size(F), Ls; flags = _fft_plan_flags(inputs))
+    S = jx_phase(() -> FFTPoissonSolver(size(F), Ls; flags = _fft_plan_flags(inputs)), :setup)
     u = similar(F)
     jx_robust_solve("FFT (FFTW) solve", () -> fft_poisson_solve!(u, S, F);
                     robust  = get(inputs, :lbenchmark_solve, true),
@@ -119,9 +119,13 @@ end
 # where lines[d][i]=min_d+(i-1)L_d/dims[d] and idxof[ip] is the node's lattice
 # index. Errors if the folded lines are not uniformly spaced (⇒ nop>1 or a
 # non-uniform mesh) or the nodes do not fill a tensor grid.
-function fft_grid_from_mesh(mesh, Ls::NTuple{ND,Float64}) where {ND}
-    npoin  = Int(mesh.npoin)
-    coords = ntuple(d -> @view(mesh.coords[d,:]), ND)
+# St_mesh fields are untyped: the work is done by a method that receives the
+# concrete coordinate array (function barrier).
+fft_grid_from_mesh(mesh, Ls::NTuple{ND,Float64}) where {ND} =
+    _fft_grid_from_coords(mesh.coords, Int(mesh.npoin), Ls)
+
+function _fft_grid_from_coords(X::AbstractMatrix, npoin::Int, Ls::NTuple{ND,Float64}) where {ND}
+    coords = ntuple(d -> @view(X[d,:]), ND)
     mins   = ntuple(d -> minimum(@view coords[d][1:npoin]), ND)
     dirs   = ("x", "y", "z")
     snap   = 5e-8                          # fold the period seam (φ≈1) back to 0
@@ -235,7 +239,7 @@ function fft_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
     println(YELLOW_FG(string(" # Solve -∇²u = f by FFT (FFTW): ",
                              N, "×", M, " synthetic periodic grid ..............")))
 
-    F = _fft_sample_rhs((x, y))
+    F = jx_phase(() -> _fft_sample_rhs((x, y)), :rhs)
     u = _fft_solve_timed(F, (Lx, Ly), inputs)
 
     println(YELLOW_FG(string(" # Solve -∇²u = f by FFT ............................................ DONE")))
@@ -243,9 +247,11 @@ function fft_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
     uex = nothing; err = nothing
     has_exact && ((uex, err) = fft_report_grid_error(u, (x, y), (Lx, Ly)))
 
-    vtkpath = joinpath(OUTPUT_DIR, "fft_laplace.vtk")
-    write_fft_vtk(vtkpath, x, y, u, uex, err)
-    println(string(" # FFT solution written to ", vtkpath))
+    if !(inputs[:outformat] isa NONE)          # :outformat => "none" skips the file
+        vtkpath = joinpath(OUTPUT_DIR, "fft_laplace.vtk")
+        write_fft_vtk(vtkpath, x, y, u, uex, err)
+        println(string(" # FFT solution written to ", vtkpath))
+    end
     return u
 end
 
@@ -270,7 +276,7 @@ function fft_linsolve_on_mesh!(sem, params, inputs, OUTPUT_DIR, has_exact)
                              join(dims, "×"), " periodic mesh grid ..............")))
 
     # RHS sampled on the canonical grid lines (periodic ⇒ seam value is unique)
-    F = _fft_sample_rhs(lines)
+    F = jx_phase(() -> _fft_sample_rhs(lines), :rhs)
     ugrid = _fft_solve_timed(F, Ls, inputs)
 
     println(YELLOW_FG(string(" # Solve -∇²u = f by FFT ............................................ DONE")))

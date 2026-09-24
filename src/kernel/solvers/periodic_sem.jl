@@ -31,7 +31,9 @@
       so the two return comparable solutions.
 
  periodic_sem_system builds (K, b, …) on its own so that other solvers of the
- SAME SEM system (AlgebraicMultigrid) reuse it unchanged.
+ SAME SEM system (AlgebraicMultigrid) reuse it unchanged. The direct solve is
+ split into a one-time sparse factorisation (periodic_sem_factorize, setup)
+ and the triangular solves (periodic_sem_direct_solve, the timed solve step).
 
  Scope: 2D, serial, every boundary edge periodic. A mesh that is periodic in
  one direction only (Dirichlet on the other boundary) is refused, not solved
@@ -100,16 +102,41 @@ function periodic_sem_system(sem, f_nodal::AbstractVector)
 end
 
 """
-    periodic_sem_direct_solve(K, b, w) -> u (per class)
+    periodic_sem_factorize(K) -> F
 
-Zero-mean (w-weighted) solution of the singular system K u = b (Σb = 0) by
-pinning the first unknown and a sparse direct solve of the rest.
+Sparse factorisation of the periodic system with its first unknown pinned
+(K[2:end, 2:end], symmetric positive definite): the one-time setup of the
+direct solve. `factorize` picks what `K \\ b` would use — a sparse Cholesky
+factorisation for this exactly symmetric matrix.
 """
-function periodic_sem_direct_solve(K, b, w)
+periodic_sem_factorize(K) = factorize(K[2:end, 2:end])
+
+"""
+    periodic_sem_direct_solve(F, b, w) -> u (per class)
+
+Zero-mean (w-weighted) solution of the singular system K u = b (Σb = 0) from
+the factorisation `F = periodic_sem_factorize(K)`: the pinned first unknown is
+0, the rest come from the triangular solves, then the w-weighted mean is
+removed.
+"""
+function periodic_sem_direct_solve(F, b, w)
     u = zeros(Float64, length(b))
-    u[2:end] = K[2:end, 2:end] \ b[2:end]
+    u[2:end] = F \ b[2:end]
     u .-= sum(w .* u) / sum(w)
     return u
+end
+
+# f at every local node, from the case's user_source! (function barrier: all
+# arguments arrive concretely typed, so the loop is compiled for them).
+function _periodic_sem_rhs(coords::AbstractMatrix, qn, qe, npoin::Int, CL, SV,
+                           xmin::Float64, xmax::Float64, ymin::Float64, ymax::Float64)
+    f = Vector{Float64}(undef, npoin)
+    for ip = 1:npoin
+        f[ip] = user_source!(0.0, qn[ip], qe[ip], npoin, CL, SV;
+                             neqs=1, x=coords[1,ip], y=coords[2,ip],
+                             xmax=xmax, xmin=xmin, ymax=ymax, ymin=ymin)
+    end
+    return f
 end
 
 function periodic_sem_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
@@ -119,19 +146,22 @@ function periodic_sem_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
     mesh  = sem.mesh
     npoin = Int(mesh.npoin)
 
-    f = Vector{Float64}(undef, npoin)
-    for ip = 1:npoin
-        f[ip] = user_source!(0.0,
-                             params.qp.qn[ip],
-                             params.qp.qe[ip],
-                             mesh.npoin,
-                             inputs[:CL], inputs[:SOL_VARS_TYPE];
-                             neqs=1, x=mesh.coords[1,ip], y=mesh.coords[2,ip],
-                             xmax=mesh.xmax, xmin=mesh.xmin,
-                             ymax=mesh.ymax, ymin=mesh.ymin)
+    f = jx_phase(:rhs) do
+        # St_mesh fields and the inputs Dict are untyped: hand the concrete
+        # values to the loop through a function barrier (_periodic_sem_rhs).
+        _periodic_sem_rhs(mesh.coords, params.qp.qn, params.qp.qe, npoin,
+                          inputs[:CL], inputs[:SOL_VARS_TYPE],
+                          Float64(mesh.xmin), Float64(mesh.xmax),
+                          Float64(mesh.ymin), Float64(mesh.ymax))
     end
 
-    sys = periodic_sem_system(sem, f)
+    # setup: the periodic reduction (which also forms b = M f) and the factorisation
+    sys = jx_phase(:setup) do
+        jx_phase(() -> periodic_sem_system(sem, f), :reduce)
+    end
+    F = jx_phase(:setup) do
+        jx_phase(() -> periodic_sem_factorize(sys.K), :factorize)
+    end
     println(YELLOW_FG(string(" # Periodic SEM system: ", npoin, " local nodes → ",
                              length(sys.b), " periodic unknowns (singular; zero-mean solution)")))
     if abs(sys.fmean) > 1e-10 * max(1.0, maximum(abs, f))
@@ -141,8 +171,8 @@ function periodic_sem_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
     end
 
     println(YELLOW_FG(string(" # Solve x=inv(A)*b: sparse storage ..............")))
-    uc = jx_robust_solve("direct SEM (Ax=b, periodic)",
-                         () -> periodic_sem_direct_solve(sys.K, sys.b, sys.w);
+    uc = jx_robust_solve("direct SEM (triangular solves, periodic)",
+                         () -> periodic_sem_direct_solve(F, sys.b, sys.w);
                          robust  = get(inputs, :lbenchmark_solve, true),
                          seconds = Float64(get(inputs, :EL_timing_seconds, 2.0)))
     println(YELLOW_FG(string(" # Solve x=inv(A)*b: sparse storage .............. DONE")))

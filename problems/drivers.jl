@@ -29,6 +29,7 @@ function driver(nparts,
         flush(stdout)
     end
 
+    empty!(JX_TIMINGS)          # per-phase wall-clock of THIS run (see Axb.jl)
     _t_sem = time_ns()
 
     #---------------------------------------------------------
@@ -211,6 +212,7 @@ function driver(nparts,
         end
 
         sem, partitioned_model = sem_setup(inputs, nparts, distribute)
+        JX_TIMINGS[:sem_setup] = (time_ns() - _t_sem) / 1e9
 
         if rank == 0
             @printf("DONE (%.2f s)\n", (time_ns() - _t_sem) / 1e9)
@@ -248,6 +250,7 @@ function driver(nparts,
         end
         
         qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
+        JX_TIMINGS[:initialize] = (time_ns() - _t_init) / 1e9
         if rank == 0
             @printf("DONE (%.2f s)\n", (time_ns() - _t_init) / 1e9)
             flush(stdout)

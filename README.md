@@ -488,7 +488,7 @@ The problem is defined in `problems/Elliptic/poisson_periodic_sem`: $-\nabla^2 u
 
 | solver | deck flag | discretisation | solve |
 |---|---|---|---|
-| SEM | (default) | 16×16 spectral elements of order N (`:nop`) | sparse direct (LU) on the periodic system |
+| SEM | (default) | 16×16 spectral elements of order N (`:nop`) | sparse direct (Cholesky) on the periodic system |
 | pseudo-spectral | `:lpseudospectral => true` | Fourier collocation on a uniform `:fft_N`² grid, Kopriva's derivative matrix (`FourierDerivativeMatrix`) | dense matrix diagonalisation, O(N³) |
 | FFT | `:lfft => true` | Fourier spectral on a uniform `:fft_N`² grid | FFTW, O(N² log N) |
 
@@ -497,45 +497,71 @@ To run it you would do the following:
 using Jexpresso
 Jexpresso.run_case("Elliptic", "poisson_periodic_sem")
 ```
-Increasing the polynomial order `:nop` on the same mesh reduces the SEM error exponentially: about ten orders of magnitude from N = 2 to N = 8. At N = 8 the L∞ error flattens near 10⁻¹¹, the round-off floor of the direct solve.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/sem_pconvergence_periodic_poisson-dark.svg">
-  <img src="assets/sem_pconvergence_periodic_poisson.svg" width="680"
-       alt="SEM error versus polynomial order for the doubly periodic Poisson problem: the L-infinity and relative L2 errors fall exponentially from about 3e-3 at N = 2 to about 2e-11 and 5e-12 at N = 8.">
-</picture>
-
-**SEM vs pseudo-spectral vs FFT at the same number of unknowns.** For each SEM order N the two Fourier solvers run on a 16N × 16N grid. Their error is at round-off at every size: this exact solution is a trigonometric polynomial, which a Fourier basis represents exactly once the grid resolves its highest mode, while the SEM has to approximate it with piecewise polynomials. The error curves therefore compare the bases on a problem that favours Fourier; the time curves compare the cost of the three solves. The pseudo-spectral and FFT solves compute the same discrete solution (they agree to ~10⁻¹³); the pseudo-spectral one does it with dense physical-space matrices, the FFT one with fast transforms.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/periodic_poisson_error_vs_unknowns-dark.svg">
-  <img src="assets/periodic_poisson_error_vs_unknowns.svg" width="680"
-       alt="L-infinity error versus unknowns: SEM falls exponentially from 3e-3 to 2e-11; pseudo-spectral and FFT stay at round-off, 1e-14 to 7e-13 and about 3e-15.">
-</picture>
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/periodic_poisson_time_vs_unknowns-dark.svg">
-  <img src="assets/periodic_poisson_time_vs_unknowns.svg" width="680"
-       alt="Solve time versus unknowns: SEM from 1.2 ms to 88 ms, pseudo-spectral from 5 microseconds to 0.25 ms, FFT from 2 to 53 microseconds.">
-</picture>
-
-| unknowns | SEM N | SEM ‖e‖∞ | SEM time | pseudo-spectral ‖e‖∞ | pseudo-spectral time (setup) | FFT ‖e‖∞ | FFT time (plan) |
-|---:|---:|---:|---:|---:|---:|---:|---:|
-| 1 024 (32²) | 2 | 3.1e-03 | 1.19 ms | 2.6e-14 | 4.67 µs (999 µs) | 2.3e-15 | 2.45 µs (25.4 µs) |
-| 2 304 (48²) | 3 | 1.1e-04 | 3.15 ms | 7.1e-14 | 15.5 µs (2.21 ms) | 2.2e-15 | 10 µs (106 µs) |
-| 4 096 (64²) | 4 | 4.0e-06 | 7.09 ms | 4.1e-13 | 33.6 µs (4.1 ms) | 2.6e-15 | 13.5 µs (78.5 µs) |
-| 6 400 (80²) | 5 | 1.2e-07 | 14.4 ms | 2.5e-13 | 56.3 µs (6.24 ms) | 2.7e-15 | 26 µs (183 µs) |
-| 9 216 (96²) | 6 | 3.6e-09 | 29.3 ms | 3.9e-13 | 89.3 µs (9.72 ms) | 2.7e-15 | 36.6 µs (116 µs) |
-| 12 544 (112²) | 7 | 9.6e-11 | 50 ms | 6.1e-13 | 196 µs (13.6 ms) | 3.1e-15 | 39.3 µs (142 µs) |
-| 16 384 (128²) | 8 | 2.3e-11 | 88.4 ms | 6.6e-13 | 249 µs (16.6 ms) | 2.6e-15 | 53 µs (140 µs) |
-
-Times are BenchmarkTools minima of each solver's solve. The SEM time includes the sparse LU factorisation of the periodic system; the pseudo-spectral and FFT times exclude their one-time setup (the eigen-decompositions of the 1-D collocation operators, the FFTW plan), shown in parentheses.
-
-To regenerate the data and the figures:
-```bash
-julia --project=. tools/sem_pconvergence/sweep.jl
-python3 tools/sem_pconvergence/plot.py
+### Benchmark: error and time-to-solution of the three solvers
+`tools/periodic_poisson_benchmark/pipeline.jl` runs all three solvers at the same number of unknowns, the SEM at orders N = 2…8 and the two Fourier solvers on 16N × 16N grids, and writes the table below and the figures. Run it from the REPL:
+```julia
+julia --project=.
+julia> using Jexpresso
+julia> include("tools/periodic_poisson_benchmark/pipeline.jl")
+julia> rows = run_periodic_poisson_benchmark()
 ```
+**Timing protocol.** Every configuration runs twice in the same Julia session and only the **second run** is recorded, so compilation never enters a number. Each time is a single wall-clock measurement of that run (no repetition, no minimum over samples). The mesh and SEM preprocess caches are switched off, so the SEM infrastructure is built, not loaded from disk, and output files are switched off.
+
+**What the columns mean.**
+- **solve**: the solve step alone (triangular solves for the SEM, four dense N×N products for pseudo-spectral, rfft/scale/brfft for the FFT).
+- **setup**: the solver's own infrastructure (periodic reduction plus sparse Cholesky factorisation; 1-D eigen-decompositions; FFTW plan).
+- **SEM infrastructure**: the mesh read and the SEM setup (basis, metrics, mass and Laplacian assembly). Only the SEM needs it.
+- **time-to-solution**: everything the method needs: SEM infrastructure + RHS + setup + solve for the SEM; RHS + setup + solve for the Fourier solvers.
+- **run_case wall-clock**: the whole second `run_case` call. For the Fourier solvers it still includes the SEM setup the driver performs before dispatching, which they do not use.
+
+**Reading the error curves.** The exact solution is a trigonometric polynomial, which a Fourier basis represents exactly once the grid resolves its highest mode, so the pseudo-spectral and FFT errors are at round-off at every size. The SEM has to approximate it with piecewise polynomials, and its error falls exponentially with the order. The error curves therefore compare the bases on a problem that favours Fourier; the time curves compare the cost of the solves. The pseudo-spectral and FFT solves compute the same discrete solution (they agree to ~10⁻¹³).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/ppb_error_vs_order-dark.svg">
+  <img src="assets/ppb_error_vs_order.svg" width="680" alt="L-infinity error versus SEM order N: the SEM falls exponentially from 3e-3 at N = 2 to 2e-11 at N = 8; the pseudo-spectral and FFT solvers at the same number of unknowns stay at round-off.">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/ppb_error_vs_dofs-dark.svg">
+  <img src="assets/ppb_error_vs_dofs.svg" width="680" alt="L-infinity error versus number of unknowns, 1024 to 16384, for the SEM, pseudo-spectral and FFT solvers.">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/ppb_error_vs_solve_time-dark.svg">
+  <img src="assets/ppb_error_vs_solve_time.svg" width="680" alt="L-infinity error versus the wall-clock of the solve step alone, second run, for the SEM, pseudo-spectral and FFT solvers.">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/ppb_error_vs_total_time-dark.svg">
+  <img src="assets/ppb_error_vs_total_time.svg" width="680" alt="L-infinity error versus time-to-solution including all the infrastructure each method needs, second run: the SEM near one second, dominated by the mesh read and SEM setup; the pseudo-spectral solver from 1 to 22 ms; the FFT below 1 ms.">
+</picture>
+
+| method | SEM order N | unknowns (grid) | ‖e‖∞ | relative ‖e‖₂ | solve | setup | RHS | SEM infrastructure | time-to-solution | run_case wall-clock |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| SEM | 2 | 1 024 (32²) | 3.1e-03 | 1.9e-03 | 125 µs | 3 ms | 78.6 µs | 954 ms | **957 ms** | 1.25 s |
+| SEM | 3 | 2 304 (48²) | 1.1e-04 | 7.3e-05 | 195 µs | 6.1 ms | 121 µs | 968 ms | **975 ms** | 1.29 s |
+| SEM | 4 | 4 096 (64²) | 4.0e-06 | 2.2e-06 | 441 µs | 14.6 ms | 544 µs | 993 ms | **1.01 s** | 1.33 s |
+| SEM | 5 | 6 400 (80²) | 1.2e-07 | 6.8e-08 | 729 µs | 23.9 ms | 233 µs | 1.08 s | **1.11 s** | 1.42 s |
+| SEM | 6 | 9 216 (96²) | 3.6e-09 | 2.0e-09 | 1.25 ms | 48.9 ms | 427 µs | 1.22 s | **1.27 s** | 1.55 s |
+| SEM | 7 | 12 544 (112²) | 9.6e-11 | 5.3e-11 | 1.92 ms | 115 ms | 405 µs | 1.38 s | **1.5 s** | 1.78 s |
+| SEM | 8 | 16 384 (128²) | 2.3e-11 | 5.1e-12 | 2.12 ms | 184 ms | 432 µs | 1.58 s | **1.77 s** | 2.07 s |
+| pseudo-spectral | — | 1 024 (32²) | 2.6e-14 | 1.4e-14 | 11.3 µs | 925 µs | 42.3 µs | — | **979 µs** | 1.24 s |
+| pseudo-spectral | — | 2 304 (48²) | 7.1e-14 | 3.5e-14 | 27.7 µs | 2.38 ms | 152 µs | — | **2.56 ms** | 1.27 s |
+| pseudo-spectral | — | 4 096 (64²) | 4.1e-13 | 1.9e-13 | 75.7 µs | 5.75 ms | 139 µs | — | **5.97 ms** | 1.37 s |
+| pseudo-spectral | — | 6 400 (80²) | 2.5e-13 | 1.5e-13 | 97 µs | 6.11 ms | 191 µs | — | **6.4 ms** | 1.32 s |
+| pseudo-spectral | — | 9 216 (96²) | 3.9e-13 | 1.7e-13 | 173 µs | 10.4 ms | 296 µs | — | **10.9 ms** | 1.45 s |
+| pseudo-spectral | — | 12 544 (112²) | 6.1e-13 | 3.4e-13 | 642 µs | 18.9 ms | 425 µs | — | **20 ms** | 1.65 s |
+| pseudo-spectral | — | 16 384 (128²) | 6.6e-13 | 3.4e-13 | 656 µs | 20.9 ms | 503 µs | — | **22 ms** | 2.07 s |
+| FFT | — | 1 024 (32²) | 2.3e-15 | 8.3e-16 | 17.8 µs | 124 µs | 50.7 µs | — | **192 µs** | 1.19 s |
+| FFT | — | 2 304 (48²) | 2.2e-15 | 6.2e-16 | 50.2 µs | 281 µs | 149 µs | — | **480 µs** | 1.38 s |
+| FFT | — | 4 096 (64²) | 2.7e-15 | 7.0e-16 | 35 µs | 185 µs | 132 µs | — | **353 µs** | 1.28 s |
+| FFT | — | 6 400 (80²) | 2.9e-15 | 8.7e-16 | 58.7 µs | 371 µs | 203 µs | — | **633 µs** | 1.39 s |
+| FFT | — | 9 216 (96²) | 2.7e-15 | 7.0e-16 | 81 µs | 323 µs | 321 µs | — | **725 µs** | 1.46 s |
+| FFT | — | 12 544 (112²) | 3.1e-15 | 8.3e-16 | 106 µs | 385 µs | 363 µs | — | **854 µs** | 1.65 s |
+| FFT | — | 16 384 (128²) | 2.6e-15 | 7.2e-16 | 139 µs | 265 µs | 487 µs | — | **891 µs** | 1.94 s |
+
+To regenerate the figures from an existing `results.csv`: `python3 tools/periodic_poisson_benchmark/plot.py`.
 
 ## Laguerre semi-infinite element test suite
 This section contains instructions to run all of the test cases presented in

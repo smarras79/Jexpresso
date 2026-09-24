@@ -175,6 +175,12 @@ inputs = Dict{}()
 je_clear_prefetched_caches!()
 
 inputs = user_inputs()
+# Overrides passed to run_case(...; inputs = ...) win over the deck.
+if JX_INPUT_OVERRIDES[] !== nothing
+    for (k, v) in JX_INPUT_OVERRIDES[]
+        inputs[k] = v
+    end
+end
 # Make the case directory available to the mesh/SEM cache helpers so cache
 # files live next to user_inputs.jl (per-case), not next to the shared
 # *.msh file.  This is what lets two cases that happen to point at the same

@@ -569,8 +569,12 @@ export @timers
 # CI_MODE=true points the case loader at test/CI-runs/<eqs>/<eqs_case>
 # instead of problems/<eqs>/<eqs_case>; matches the third positional
 # arg of the historical command-line form.
+# Deck overrides for the next run_case (see its `inputs` keyword): applied by
+# run.jl right after the case's user_inputs() is read, reset after the run.
+const JX_INPUT_OVERRIDES = Ref{Any}(nothing)
+
 """
-    Jexpresso.run_case(eqs, eqs_case; CI_MODE=false)
+    Jexpresso.run_case(eqs, eqs_case; CI_MODE=false, inputs=nothing)
 
 Run a single Jexpresso case from the REPL. `eqs` and `eqs_case` are
 the directory names under `problems/<eqs>/<eqs_case>/` (e.g.
@@ -581,16 +585,26 @@ re-defines the module on every call (the `WARNING: replacing module
 Jexpresso` you see) and discards the precompile cache for the
 orchestration layer. With `run_case`, `using Jexpresso` happens
 exactly once per session and the second case onward is launch-cost-only.
+
+`inputs`, when given, is a collection of `key => value` pairs that override
+the case deck's user_inputs() for this run only (the deck file is not
+touched), e.g. `run_case("Elliptic", "poisson_periodic_sem"; inputs =
+Dict(:nop => 6, :luse_mesh_cache => false))`.
 """
 function run_case(eqs::AbstractString, eqs_case::AbstractString;
-                  CI_MODE::Bool=false)
+                  CI_MODE::Bool=false, inputs=nothing)
     push!(empty!(ARGS), String(eqs), String(eqs_case), string(CI_MODE))
     # run.jl is a script — no `module …` declaration — so re-`include`ing
     # it from inside the already-loaded Jexpresso module just re-runs
     # the orchestration top-to-bottom in this module's scope. The
     # function/case-file redefinitions it performs are silent (only
     # module redefinitions print the WARNING).
-    Base.include(@__MODULE__, joinpath(@__DIR__, "run.jl"))
+    JX_INPUT_OVERRIDES[] = inputs
+    try
+        Base.include(@__MODULE__, joinpath(@__DIR__, "run.jl"))
+    finally
+        JX_INPUT_OVERRIDES[] = nothing
+    end
     return nothing
 end
 

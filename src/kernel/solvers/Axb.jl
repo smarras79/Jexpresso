@@ -36,11 +36,35 @@ const JX_EL_QUIET = Ref(false)
 # the Chebyshev block, print_solution_L2_error). Read by compare_laplace_solvers.
 const JX_LAST_SOLVE_ERR = Ref((linf = NaN, l2rel = NaN, npts = 0))
 
+# Wall-clock of each phase of the LAST run, in seconds, for the solver
+# benchmarks (tools/periodic_poisson_benchmark). The driver empties it at the
+# start of every run and records :sem_setup and :initialize; the linear
+# solvers record their own phases with jx_phase:
+#   :rhs     sampling / assembling the right-hand side
+#   :setup   solver infrastructure (periodic reduction and sparse factorisation,
+#            eigen-decompositions, FFTW plan)
+#   :solve   the solve step itself (jx_time_solve / jx_robust_solve)
+const JX_TIMINGS = Dict{Symbol, Float64}()
+
+"""
+    jx_phase(f, key) -> f()
+
+Run `f()` and record its wall-clock under `JX_TIMINGS[key]` (accumulating if
+the phase is entered more than once in a run).
+"""
+function jx_phase(f, key::Symbol)
+    t0  = time_ns()
+    val = f()
+    JX_TIMINGS[key] = get(JX_TIMINGS, key, 0.0) + (time_ns() - t0) / 1e9
+    return val
+end
+
 function jx_time_solve(label, f)
     t0  = time_ns()
     val = f()
     dt  = (time_ns() - t0) / 1e9
     JX_LAST_SOLVE_TIME[] = dt
+    JX_TIMINGS[:solve]   = dt
     println(GREEN_FG(string(" # SOLVER TIMING [", label, "]: ", round(dt; sigdigits = 6), " s")))
     return val
 end
@@ -141,6 +165,7 @@ function jx_robust_solve(label, f; robust::Bool = true, seconds::Real = 2.0)
     val = f()                                   # real result for the caller
     t   = jx_belapsed(f; seconds = seconds)     # stable @btime minimum
     JX_LAST_SOLVE_TIME[] = t
+    JX_TIMINGS[:solve]   = t
     println(GREEN_FG(string(" # SOLVER TIMING [", label, "]: ",
                             round(t; sigdigits = 6), " s  (@btime minimum, compilation excluded)")))
     return val

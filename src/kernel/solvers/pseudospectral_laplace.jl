@@ -44,8 +44,8 @@ function pseudospectral_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
     println(YELLOW_FG(string(" # Solve -∇²u = f by pseudo-spectral Fourier collocation: ",
                              N, "×", M, " periodic grid ..............")))
 
-    F = _fft_sample_rhs((x, y))
-    S = FourierCollocationPoissonSolver((N, M), (Lx, Ly))
+    F = jx_phase(() -> _fft_sample_rhs((x, y)), :rhs)
+    S = jx_phase(() -> FourierCollocationPoissonSolver((N, M), (Lx, Ly)), :setup)
     u = similar(F)
     jx_robust_solve("pseudo-spectral (Fourier collocation) solve",
                     () -> fourier_collocation_poisson_solve!(u, S, F);
@@ -63,8 +63,10 @@ function pseudospectral_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
     has_exact && ((uex, err) = fft_report_grid_error(u, (x, y), (Lx, Ly);
                                                      label = "pseudo-spectral solve"))
 
-    vtkpath = joinpath(OUTPUT_DIR, "pseudospectral_laplace.vtk")
-    write_fft_vtk(vtkpath, x, y, u, uex, err)
-    println(string(" # pseudo-spectral solution written to ", vtkpath))
+    if !(inputs[:outformat] isa NONE)          # :outformat => "none" skips the file
+        vtkpath = joinpath(OUTPUT_DIR, "pseudospectral_laplace.vtk")
+        write_fft_vtk(vtkpath, x, y, u, uex, err)
+        println(string(" # pseudo-spectral solution written to ", vtkpath))
+    end
     return u
 end
