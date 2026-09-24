@@ -358,7 +358,8 @@ function user_inputs()
         # roughly 30% of it. See sgs_mixing_length2 in kernel/physics/SGS.jl and
         # test/sgs/test_wall_damping.jl.
         :lwall_damping        => true,
-        :μ                    => [0.0, 1.0, 1.0, 1.0, 1.0],
+        # DBG_VISC_RHO puts nu_t/Sc_t on the continuity equation (spin-up probe).
+        :μ                    => [parse(Float64, get(ENV, "DBG_VISC_RHO", "0.0")), 1.0, 1.0, 1.0, 1.0],
         :les_filter_width     => :geometric,
         #---------------------------------------------------------------------------
         # MOST GUARD RAILS. Stated explicitly here rather than left to the
@@ -531,7 +532,7 @@ function user_inputs()
         # de-aliasing, which does not care whether there is a mean wind.
         :mu_x                => parse(Float64, get(ENV, "DBG_MU", "0.15")),
         :mu_y                => parse(Float64, get(ENV, "DBG_MU", "0.15")),
-	:mu_z                => 0.1,
+	:mu_z                => parse(Float64, get(ENV, "DBG_MUZ", "0.1")),
         :filter_type         => "erf",
         #---------------------------------------------------------------------------
         # Plotting parameters
