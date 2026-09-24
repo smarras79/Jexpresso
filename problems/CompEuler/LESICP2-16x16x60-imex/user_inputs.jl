@@ -393,7 +393,11 @@ function user_inputs()
 	# `...` on only the first, this was ten Floats followed by a StepRangeLen,
 	# and collect(Float64, les_stat_t) in TimeIntegrators.jl cannot convert a
 	# range to a Float64.)
-	:statistics_time      => (9000.0:10:10800.0...,),
+	# DBG_STAT_START/EVERY make the window reachable in a short probe run, so
+	# JEXPRESSO_STAT_LOOP can measure the per-call memory cost of les_statistics
+	# on the real platform (Linux/glibc, libfabric) in a few minutes.
+	:statistics_time      => (parse(Float64, get(ENV, "DBG_STAT_START", "9000")):
+	                          parse(Float64, get(ENV, "DBG_STAT_EVERY", "10")):tend...,),
 	#:statistics_time      => (10.0:10.0:100),
         #:statistics_online_start    => 9000.0,
 	#:statistics_online_interval => 0.2,
