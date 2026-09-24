@@ -553,11 +553,17 @@ function time_loop!(inputs, params, u, args...)
         # measured in one time step instead of inferred from a long run.
         # It accumulates into the averages N times, so the statistics of a
         # looped run are meaningless -- diagnosis only.
+        # JEXPRESSO_STAT_SKIP=1 keeps the callback and therefore the tstop, but
+        # does no work. A statistics time is a tstop, so the integrator truncates
+        # the step to land on it and the implicit operator is refactorised; that
+        # is a second difference between "statistics on" and "statistics off",
+        # and this switch is what separates the two.
+        get(ENV, "JEXPRESSO_STAT_SKIP", "0") == "1" && return
         nloop = parse(Int, get(ENV, "JEXPRESSO_STAT_LOOP", "1"))
         for k = 1:nloop
-            _alloc0 = Base.gc_num().allocd
+            _alloc0 = Base.gc_bytes()   # monotonic; gc_num().allocd resets at every GC
             les_statistics(integrator.u, integrator.p, integrator.t)
-            _allocd = (Base.gc_num().allocd - _alloc0) / 2^20
+            _allocd = (Base.gc_bytes() - _alloc0) / 2^20
             # JEXPRESSO_STAT_GC: collect right after the statistics instead of
             # leaving its garbage to interleave with the time loop's. The run
             # grows ~1.6 MB per call in situ while 500 calls back to back grow
