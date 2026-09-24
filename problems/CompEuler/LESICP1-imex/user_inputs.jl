@@ -315,11 +315,12 @@ function user_inputs()
 	# EVERY range needs its own `...`; the third was missing one, which made this
 	# a tuple of 28 Floats followed by a StepRangeLen and killed the run in
 	# time_loop! (collect(Float64, ...) cannot convert a range to a Float64).
-	# DBG_DIAG_TAIL is the dump cadence inside the statistics window; 1800 gives
-	# only t = 9000 and 10800. The first two ranges are fixed: DBG_RESTART_IOUT
-	# indexes this list (28 -> 9000 s).
-	:diagnostics_at_times => (0.0:100.0:1000.0..., 1000.0:500.0:9000.0...,
-	                          9000.0:parse(Float64, get(ENV, "DBG_DIAG_TAIL", "10")):tend...),
+	# Spin-up is not analysed, so it is dumped coarsely: 1000 s to t = 9000,
+	# which is 10 dumps instead of the parent deck's 28. The statistics window
+	# is where the fields are wanted, at DBG_DIAG_TAIL (60 s -> 31 dumps).
+	# DBG_RESTART_IOUT indexes this list: entry 10 is t = 9000 s.
+	:diagnostics_at_times => (0.0:1000.0:9000.0...,
+	                          9000.0:parse(Float64, get(ENV, "DBG_DIAG_TAIL", "60")):tend...),
 	:lsource              => true,
         :sounding_file        =>"./data_files/input_sounding_teamx_u00_flat_noheader.dat",
         #---------------------------------------------------------------------------
