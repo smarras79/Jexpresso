@@ -53,6 +53,7 @@ using LinearAlgebra
 # part of the radiative-transfer code path.
 using SpecialFunctions
 using SparseArrays
+import FFTW              # periodic Poisson solver (kernel/solvers/fft_poisson_core.jl)
 using StaticArrays
 using StaticArrays: SVector, MVector
 using OrdinaryDiffEq
@@ -272,6 +273,8 @@ include(joinpath("kernel", "operators", "Axb_rad_mpi.jl"))
 include(joinpath("kernel", "operators", "asm_preconditioner.jl"))
 
 include(joinpath( "kernel", "solvers", "Axb.jl"))
+
+include(joinpath( "kernel", "solvers", "fft_poisson_core.jl"))
 
 include(joinpath( "kernel", "solvers", "fft_laplace.jl"))
 

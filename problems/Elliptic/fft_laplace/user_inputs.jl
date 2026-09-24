@@ -4,8 +4,8 @@ function user_inputs()
         # Classical FFT (Fourier spectral) solver for the Laplace/Poisson equation
         #
         #   -∇²u = f   on a PERIODIC rectangle, solved by diagonalizing the
-        #   Laplacian with the FFT (Kopriva's FFT routines, see
-        #   src/kernel/infrastructure/Kopriva_functions.jl and
+        #   Laplacian with the FFT (FFTW, see
+        #   src/kernel/solvers/fft_poisson_core.jl and
         #   src/kernel/solvers/fft_laplace.jl).
         #
         # :lfft => true diverts the linear-solve branch in problems/drivers.jl to
@@ -16,7 +16,8 @@ function user_inputs()
         :llinsolve            => true,
         :lfft                 => true,
         #--- FFT grid / geometry (periodic) --------------------------------------
-        :fft_N                => 64,        # points per direction (power of 2)
+        :fft_N                => 64,        # points per direction (any size)
+        :fft_laplacian        => "spectral",# "spectral" (Fourier-exact) | "fd2" (2nd-order FD)
         :fft_Lx               => 2π,        # domain lengths
         :fft_Ly               => 2π,
         :fft_x0               => 0.0,       # lower-left corner

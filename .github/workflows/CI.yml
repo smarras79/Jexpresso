@@ -8,9 +8,10 @@
 # To add a case to this workflow, add one line to test/ci_cases.jl.
 # Nothing in this file has to change.
 #
-# The `registry` job also runs the standalone unit tests that need no package
-# instantiation (test/test_pod.jl), which is what keeps them cheap enough to be
-# a gate rather than a nightly.
+# The `registry` job also runs the standalone unit tests that need no Jexpresso
+# instantiation (test/test_pod.jl; test/poisson_periodic/ with its own small
+# environment), which is what keeps them cheap enough to be a gate rather than
+# a nightly.
 #==============================================================================
 name: CI
 
@@ -53,6 +54,13 @@ jobs:
         run: julia test/test_pod.jl
       - name: POD reference benchmark (closed-form)
         run: julia test/test_pod_benchmark.jl
+      # The periodic Poisson solvers are Jexpresso-free too, but need FFTW:
+      # a small environment of their own (test/poisson_periodic/Project.toml)
+      # instantiates in seconds, not the whole package.
+      - name: Periodic Poisson solvers (FFTW)
+        run: |
+          julia --project=test/poisson_periodic -e 'using Pkg; Pkg.instantiate()'
+          julia --project=test/poisson_periodic test/poisson_periodic/test_fft_poisson.jl
 
   test:
     name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }}

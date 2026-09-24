@@ -9,7 +9,7 @@ function user_inputs()
         # polynomial order :nop. The FFT uses its own uniform N×N grid over the
         # domain below (the natural collocation grid for the trigonometric basis
         # e^{i k·x}); the SEM/LGL nodal basis is not used by the solve. So pick
-        # :fft_N for the Fourier resolution you want (power of 2); set it to your
+        # :fft_N for the Fourier resolution you want (any size); set it to your
         # grid's resolution and the FFT grid coincides with your grid points.
         #
         # (:nop only affects how Jexpresso reads the mesh during setup — kept at a
@@ -24,8 +24,8 @@ function user_inputs()
         :lfft                 => true,
         :fft_use_mesh         => false,     # FFT on its own spectral grid (mesh-independent)
         # SAME DOF as the Chebyshev and EL cases: 64 points/dir = 4096 nodes.
-        # (The FFT needs a power of 2, so 64 is the shared count the other two match.)
-        :fft_N                => 64,        # Fourier resolution N (modes) — power of 2
+        :fft_N                => 64,        # Fourier resolution N (modes)
+        :fft_laplacian        => "spectral",# "spectral" (Fourier-exact) | "fd2" (2nd-order FD)
         :fft_x0               => -π,        # domain corner  (x ∈ [-π, π])
         :fft_y0               => -π,        # domain corner  (y ∈ [-π, π])
         :fft_Lx               => 2π,        # period in x
