@@ -95,7 +95,7 @@
 #SBATCH --partition=general
 #SBATCH --qos=standard
 #SBATCH --account=smarras
-#SBATCH --job-name=ICP2_64u00
+#SBATCH --job-name=ICP1_u00
 #SBATCH --output=%x.%j.out
 #SBATCH --error=%x.%j.err
 
@@ -103,7 +103,7 @@
 #  WHAT TO RUN.
 #-----------------------------------------------------------------------------
 EQS="CompEuler"
-CASE="LESICP2-64x64x60-u00-imex"
+CASE="LESICP1-imex"
 TEND="10800.0"
 MESH=""
 # ROOT: the repo checkout. Defaults to the directory you ran `sbatch` FROM,
