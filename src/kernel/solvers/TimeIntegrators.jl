@@ -559,6 +559,20 @@ function time_loop!(inputs, params, u, args...)
         # is a second difference between "statistics on" and "statistics off",
         # and this switch is what separates the two.
         get(ENV, "JEXPRESSO_STAT_SKIP", "0") == "1" && return
+        # JEXPRESSO_HEAP_SNAP="a,b" writes a heap snapshot on rank 0 after the
+        # a-th and b-th statistics call. Diffing the two says which objects are
+        # being retained, which is the only way to answer "what is growing"
+        # without guessing. Each snapshot is large (comparable to the heap) and
+        # takes seconds, so it is off unless asked for.
+        _snapspec = get(ENV, "JEXPRESSO_HEAP_SNAP", "")
+        _statcall[] += 1
+        if !isempty(_snapspec) && rank == 0 &&
+           _statcall[] in (parse.(Int, split(_snapspec, ","))...,)
+            _sf = joinpath(inputs[:output_dir], "heap_$(_statcall[]).heapsnapshot")
+            println_rank(" # heap snapshot -> ", _sf; msg_rank = rank)
+            GC.gc(true)
+            Profile.take_heap_snapshot(_sf)
+        end
         nloop = parse(Int, get(ENV, "JEXPRESSO_STAT_LOOP", "1"))
         for k = 1:nloop
             _alloc0 = Base.gc_bytes()   # monotonic; gc_num().allocd resets at every GC
@@ -883,6 +897,7 @@ function time_loop!(inputs, params, u, args...)
         # per call, see src/io/wall_watch.jl.
         #---------------------------------------------------------------------
         _ww_count = Ref{Int}(0)
+        _statcall = Ref{Int}(0)
         _env_ww   = strip(get(ENV, "JEXPRESSO_WALL_WATCH", ""))
         _ww_every = isempty(_env_ww) ? 0 : parse(Int, _env_ww)
         function wall_watch_condition(u, t, integrator)

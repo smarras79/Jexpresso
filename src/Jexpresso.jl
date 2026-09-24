@@ -135,6 +135,7 @@ TFloat = Float64
 cpu    = true
 
 using DocStringExtensions
+using Profile          # take_heap_snapshot, for the JEXPRESSO_HEAP_SNAP probe
 
 include(joinpath( "..", "problems", "AbstractEquations.jl"))
 
