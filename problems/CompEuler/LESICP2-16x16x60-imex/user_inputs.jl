@@ -319,7 +319,8 @@ function user_inputs()
         # roughly 30% of it. See sgs_mixing_length2 in kernel/physics/SGS.jl and
         # test/sgs/test_wall_damping.jl.
         :lwall_damping        => true,
-        :μ                    => [0.0, 1.0, 1.0, 1.0, 1.0],
+        # DBG_VISC_TH scales the theta diffusion (2.1 with Pr_t = 0.7 is kappa_t = 3 nu_t).
+        :μ                    => [0.0, 1.0, 1.0, 1.0, parse(Float64, get(ENV, "DBG_VISC_TH", "1.0"))],
         :les_filter_width     => :geometric,
         #---------------------------------------------------------------------------
         # MOST GUARD RAILS. Stated explicitly here rather than left to the
