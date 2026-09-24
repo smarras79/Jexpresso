@@ -349,7 +349,7 @@ function el_avisc_nonconstant!(avisc::AbstractMatrix, mesh, metrics,
             ix = metrics.dξdx[iel,i,j]; iy = metrics.dξdy[iel,i,j]
             nx = metrics.dηdx[iel,i,j]; ny = metrics.dηdy[iel,i,j]
             gid = mesh.connijk[iel, i, j, 1]
-            a   = afun(mesh.x[gid], mesh.y[gid])
+            a   = afun(mesh.coords[1,gid], mesh.coords[2,gid])
             c   = metrics.Je[iel,i,j] * a
             avisc[iel, 3m-2] = c*(ix*ix + iy*iy)   # â11
             avisc[iel, 3m-1] = c*(ix*nx + iy*ny)   # â12

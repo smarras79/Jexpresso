@@ -39,8 +39,12 @@ end
 
 function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx::AbstractFloat, ny::AbstractFloat,qe,::PERT)
 #    if (tag == "free_slip")
-      y = coords[:,2]
-if (y<=14950) #(abs(x) < 119500.0 && y<= 19950.0)
+      # `coords` is ONE node's coordinates (the caller passes @view(coords[:,ip])),
+      # so the height is coords[2]. coords[:,2] indexed a second dimension that a
+      # single node's coordinate vector does not have, and `y` then came out as an
+      # array, which the scalar comparison below cannot use either.
+      y = coords[2]
+      if (y<=14950) #(abs(x) < 119500.0 && y<= 19950.0)
         qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3])
         qbdy[2] = (q[2]+qe[2] - qnl*nx) - qe[2]
         qbdy[3] = (q[3]+qe[3] - qnl*ny) - qe[3]
@@ -72,6 +76,7 @@ function user_bc_dirichlet_gpu(q,qe,coords,t,nx,ny,qbdy,lpert)
     T = eltype(q)
     u = qbdy[2]
     v = qbdy[3]
+    y = coords[2]        # was never assigned here at all -> UndefVarError
     if (y<=T(14950) && abs(nx)<T(1)) #(abs(x) < 119500.0 && y<= 19950.0)
         qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3])
         u = (q[2]+qe[2] - qnl*nx) - qe[2]

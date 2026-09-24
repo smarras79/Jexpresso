@@ -5,7 +5,7 @@ using Parameters
     #Thermodynamic constants at T=300 K
     Rair::T     =  287.0   #J/kg.K
     cp::T       = 1004.0   #J/kg.K
-    cv::T       =  717.0   #J/kg.K
+    cv::T       =  718.0   #J/kg.K
     Lc::T       = 2.5104e6 #J/kg Latent heat of vaporization
     Ls::T       = 2.8440e6 #J/kg Latent heat of sublimation
     Lf::T       = 0.3336e6 #J/kg Latent heat of fusion
@@ -30,7 +30,7 @@ using Parameters
     Ri_crit::T  = 0.25                     #Critical Richardson number
     C_s::T      = 0.21                     #Smagorinsky constant
 
-    karman      = 0.4
+    karman::T   = 0.4
     
     #Gravity
     g::T = 9.80616 #m/s²
@@ -43,10 +43,14 @@ using Parameters
     μ::T  = E/(2*(1+ν))
 
     ## molar masses
-    Mol_mass_air   = 28.9647      #g/mol
-    Mol_mass_water = 18.02        #g/mol
+    Mol_mass_air::T   = T(28.9647) #g/mol
+    Mol_mass_water::T = T(18.02)  #g/mol
     # Reference pressure used in potential temperature definition... mainly for BMOEX case, very sensitive to pressure
     potential_temperature_reference_pressure::T = 101325.0 #Pa
+
+    # MOST (Monin-Obukhov) surface layer constants
+    ε_ratio::T     = 0.622        # Rd/Rv ratio (molecular weight ratio)
+    salt_factor::T = 0.98         # saturation reduction over seawater (1.0 for freshwater)
 end
 
 using Parameters
@@ -91,7 +95,7 @@ using Parameters
     N0_graupel::T = 4e6      #m^(-4) Intercept parameter for graupel
     Ka::T         = 2.4e-2   #J m K^(-1)/s Thermal conductivity of air at 0C
     qc0::T        = 1e-3     #kg/kg Threshold cloud water for autoconversion
-    qi0::T        = 1e-4     #kg/kg Threshold cloud ice for aggregation
+    qi0::T        = 1e-4     #kg/kg Threshold cloud ice for aggregation (1~5)*10-4 
     T0n::T        = 273.16   #K maximum temperature for cloud ice
     T0p::T        = 283.16   #K maximum temperature for snow/graupel
     T0g::T        = 283.16   #K maximum temperature graupel

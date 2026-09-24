@@ -31,7 +31,13 @@ function user_inputs()
         # Physical parameters / constants
         #---------------------------------------------------------------------------
         :lvisc                => true,
+        # DynSGS sensor: "legacy" = the sensor this case was validated with
+        # (the assembled RHS against a fixed BDF2 of the stage state, in
+        # effect a |∂ₜq| sensor); "residual" (the default) = the element-wise
+        # strong residual with the stage-consistent stencil, DSGS.md §1.2.
         :visc_model           => DSGS(),     # Marras et al. Dynamic SGS
+        :dsgs_sensor          => "legacy",
+        :dsgs_reference       => true,   # with :dsgs_sensor => "residual": residual of the departure from the hydrostatic qe
         :energy_equation      => "theta",
         # Per-equation multiplier on the DSGS coefficient. The Marras
         # paper value is 1.0; turn an equation off with 0.0; throttle a

@@ -1,8 +1,8 @@
-function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
+function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
     """
 
     """
-    @info " Initialize fields for 2D CompEuler with θ equation ........................ "
+    println(" Initialize fields for 2D CompEuler with θ equation ........................ ")
     
     #---------------------------------------------------------------------------------
     # Solution variables:
@@ -11,14 +11,17 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     # defines neqs, which is the second dimension of q = define_q()
     # 
     #---------------------------------------------------------------------------------
-    qvars = ("ρ", "ρu", "ρv", "ρθ", "qtr", "qtr2")
-    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars))
+    qvars    = ["ρ", "ρu", "ρv", "ρθ", "qtr", "qtr2"]
+    qoutvars = ["ρ", "u", "v", "θ", "qtr", "qtr2"]
+    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
     #---------------------------------------------------------------------------------
     if (inputs[:backend] == CPU())    
         PhysConst = PhysicalConst{Float64}()
         if (inputs[:case] === "rtb")
-        
-            xc = (maximum(mesh.x) + minimum(mesh.x))/2
+            comm = MPI.COMM_WORLD
+            max_x = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
+            min_x = MPI.Allreduce(minimum(mesh.x), MPI.MIN, comm)
+            xc = (max_x + min_x)/2
             yc = 2500.0 #m
             r0 = 2000.0 #m
 
@@ -26,7 +29,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             yc2   =  4000.0 #m
             r02   =  1000.0 #m
             qtrc2 =     1.0 #K
-        
+            
             θref = 300.0 #K
             θc   =   2.0 #K
             qtrref = 0.0 #K
@@ -139,7 +142,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         k = initialize_gpu!(inputs[:backend])
         k(q.qn, q.qe, mesh.x, mesh.y, xc, rθ, yc, θref, θc, PhysConst,lpert; ndrange = (mesh.npoin))
     end
-    @info " Initialize fields for 2D CompEuler with θ equation ........................ DONE "
+    println(" Initialize fields for 2D CompEuler with θ equation ........................ DONE ")
     
     return q
 end

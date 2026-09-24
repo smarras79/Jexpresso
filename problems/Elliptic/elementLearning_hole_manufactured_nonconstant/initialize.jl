@@ -18,8 +18,8 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
 
     if (inputs[:backend] == CPU())
         for ip =1:mesh.npoin
-            x=mesh.x[ip]
-            y=mesh.y[ip]
+            x=mesh.coords[1,ip]
+            y=mesh.coords[2,ip]
             # Zero initial guess; exact field qe = manufactured solution u_ex
             # (used for the error/convergence check); 0 in the non-MMS modes.
             q.qn[ip,1] = 0.0
@@ -27,7 +27,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         end
     else
         k = initialize_gpu!(inputs[:backend])
-        k(q.qn, q.qe, mesh.x, mesh.y; ndrange = mesh.npoin)
+        k(q.qn, q.qe, @view(mesh.coords[1,:]), @view(mesh.coords[2,:]); ndrange = mesh.npoin)
     end
         
     
@@ -60,8 +60,8 @@ function user_get_adapt_flags!(adapt_flags, inputs, mesh, old_ad_lvl, q, qe, con
                 ips = connijk[iel, i, j]
                 
                 # GEOMETRY HERE
-                x = mesh.coords[ips, 1]
-                y = mesh.coords[ips, 2]
+                x = mesh.coords[1, ips]
+                y = mesh.coords[2, ips]
                 
                 if x >= -0.75 && x <= 0.25 && y >= -0.75 && y <= 0.25 && old_ad_lvl[iel] < max_level
                     adapt_flags[iel] = refine_flag
@@ -82,8 +82,8 @@ function user_get_preadapt_flags!(adapt_flags, inputs, mesh, old_ad_lvl, connijk
                 ips = connijk[iel, i, j]
                 
                 # GEOMETRY HERE
-                x = mesh.coords[ips, 1]
-                y = mesh.coords[ips, 2]
+                x = mesh.coords[1, ips]
+                y = mesh.coords[2, ips]
                 
                 if x >= -0.9 && x <= -0.15 && y >= -0.95 && y <= -0.25 && old_ad_lvl[iel] < max_level
                     adapt_flags[iel] = refine_flag

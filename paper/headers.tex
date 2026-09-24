@@ -1,0 +1,95 @@
+%% headers.tex — minimal preamble so paper.tex compiles standalone.
+%%
+%% When the paper is submitted through the JOSS workflow the Open Journals
+%% bot supplies its own header/template and this file is ignored; it exists
+%% so that `pdflatex paper.tex` works locally for length checking.
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+% Asymmetric margins: the JOSS sidebar lives in a wide right margin,
+% so the text block is narrowed rather than the marginpar clipped.
+\usepackage[left=1.0in,right=2.05in,top=1.0in,bottom=1.0in,
+            marginparwidth=1.5in,marginparsep=0.14in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{authblk}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{fancyvrb}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{titlesec}
+% Tighter section spacing: the JOSS page budget is 3 pages and the heading
+% gaps of the stock article class cost the better part of one.
+\titlespacing*{\section}{0pt}{2.0ex plus .4ex minus .2ex}{1.0ex plus .2ex}
+\titlespacing*{\subsection}{0pt}{1.4ex plus .3ex}{0.7ex plus .2ex}
+\usepackage[colorlinks=true,allcolors=blue]{hyperref}
+
+\definecolor{linky}{RGB}{0,110,190}
+\definecolor{codebg}{RGB}{247,247,247}
+\definecolor{codekw}{RGB}{140,40,140}
+\definecolor{codecm}{RGB}{110,120,130}
+\definecolor{codestr}{RGB}{30,120,60}
+
+% "external link" glyph used in the JOSS margin block
+\newcommand{\ExternalLink}{%
+  \raisebox{-0.1ex}{\scriptsize$\nearrow$}}
+
+% shorthand used throughout the text
+\newcommand{\je}{\textsf{Jexpresso}}
+
+% author/affiliation spacing
+\renewcommand\Authfont{\normalsize}
+\renewcommand\Affilfont{\small\itshape}
+\setlength{\affilsep}{0.6em}
+
+% tighter lists
+\newcommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+
+% Julia code listings
+\lstdefinelanguage{Julia}{
+  morekeywords={function,end,for,if,else,elseif,return,using,import,
+                struct,mutable,const,module,in,where,let,do,begin},
+  sensitive=true,
+  morecomment=[l]{\#},
+  morestring=[b]",
+}
+\lstset{
+  language=Julia,
+  basicstyle=\ttfamily\scriptsize,
+  keywordstyle=\color{codekw}\bfseries,
+  commentstyle=\color{codecm}\itshape,
+  stringstyle=\color{codestr},
+  backgroundcolor=\color{codebg},
+  frame=single,
+  framerule=0pt,
+  xleftmargin=6pt,
+  framexleftmargin=6pt,
+  aboveskip=6pt,
+  belowskip=4pt,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  breaklines=true,
+}
+
+% Bibliography environment produced by the JOSS/pandoc CSL pipeline.
+% It must be a genuine list environment: the entries arrive as
+% \bibitem[\citeproctext]{ref-key}, and \bibitem expands to \item here.
+\newenvironment{CSLReferences}[2]{%
+  \footnotesize
+  \begin{list}{}{%
+    \setlength{\leftmargin}{1.5em}%
+    \setlength{\itemindent}{-1.5em}%
+    \setlength{\labelwidth}{0pt}%
+    \setlength{\labelsep}{0pt}%
+    \setlength{\listparindent}{0pt}%
+    \setlength{\itemsep}{0.15em}%
+    \setlength{\parsep}{0pt}%
+    \setlength{\topsep}{0.3em}%
+  }%
+}{\end{list}}
+\newcommand{\citeproctext}{}
+\renewcommand{\bibitem}[2][]{\item}

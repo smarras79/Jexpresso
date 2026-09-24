@@ -11,8 +11,8 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     #---------------------------------------------------------------------------------
     if (inputs[:backend] == CPU())
         for ip = 1:mesh.npoin
-            x = mesh.x[ip]
-            y = mesh.y[ip]
+            x = mesh.coords[1,ip]
+            y = mesh.coords[2,ip]
             # zero initial guess; exact field qe = manufactured solution u_ex
             # (used for the post-solve L2 error check in standard_linsolve!).
             q.qn[ip,1] = 0.0
@@ -20,7 +20,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         end
     else
         k = initialize_gpu!(inputs[:backend])
-        k(q.qn, q.qe, mesh.x, mesh.y; ndrange = mesh.npoin)
+        k(q.qn, q.qe, @view(mesh.coords[1,:]), @view(mesh.coords[2,:]); ndrange = mesh.npoin)
     end
 
     if rank == 0 println(" Initialize fields for the non-constant diffusivity test .............. DONE ") end

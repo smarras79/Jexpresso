@@ -133,7 +133,7 @@ end
 # non-uniform mesh) or any axis count is not a power of two.
 function fft_grid_from_mesh(mesh, Ls::NTuple{ND,Float64}) where {ND}
     npoin  = Int(mesh.npoin)
-    coords = ND == 3 ? (mesh.x, mesh.y, mesh.z) : (mesh.x, mesh.y)
+    coords = ntuple(d -> @view(mesh.coords[d,:]), ND)
     mins   = ntuple(d -> minimum(@view coords[d][1:npoin]), ND)
     dirs   = ("x", "y", "z")
     snap   = 5e-8                          # fold the period seam (φ≈1) back to 0

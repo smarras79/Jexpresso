@@ -16,6 +16,7 @@ macro mystop(message=" MY STOP HERE")
 end
 
 
+
 """
     @outputrootonly expr
 
@@ -30,21 +31,8 @@ model = @outputrootonly GmshDiscreteModel(parts, filename, renumber=true)
 macro outputrootonly(expr)
     quote
         if $(esc(:rank)) != 0
-            # Use a fresh per-call sink instead of the global Base.devnull:
-            # 88438d9 swapped open("/dev/null","w") -> devnull for
-            # portability, but on macOS arm64 with Open MPI 5 + Gridap +
-            # GridapGmsh the shared devnull stream interacts badly with
-            # Gmsh's C-level stdout buffering inside the parallel
-            # GmshDiscreteModel collective, triggering a Bus error 10
-            # in _platform_memmove right after "Done reading *.msh". Going
-            # back to a fresh IOStream sink avoids the shared-handle issue.
-            local _sink = open("/dev/null", "w")
-            try
-                redirect_stdout(_sink) do
-                    $(esc(expr))
-                end
-            finally
-                close(_sink)
+            redirect_stdout(open("/dev/null", "w")) do
+                $(esc(expr))
             end
         else
             $(esc(expr))
@@ -52,7 +40,17 @@ macro outputrootonly(expr)
     end
 end
 
+"""
+    @mpi_time expr
 
+Drop-in replacement for `@time` in MPI code. Prints max wall time, allocations,
+and bytes only from rank 0. Requires `comm` and `rank` in scope.
+
+# Example
+```julia
+@mpi_time prob, partitioned_model = amr_strategy!(...)
+```
+"""
 macro mpi_time(expr)
     label = string(expr)
     quote

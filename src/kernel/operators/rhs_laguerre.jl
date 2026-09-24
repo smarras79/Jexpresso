@@ -40,7 +40,7 @@ function _build_rhs_laguerre!(RHS, u, params, time)
     
     #filter!(u, params, SD)
      
-    inviscid_rhs_el_laguerre!(u, params, params.mesh.connijk_lag, params.qp.qe, params.mesh.x, params.mesh.y, lsource, SD)
+    inviscid_rhs_el_laguerre!(u, params, params.mesh.connijk_lag, params.qp.qe, @view(params.mesh.coords[1,:]), @view(params.mesh.coords[2,:]), lsource, SD)
     DSS_rhs_laguerre!(params.RHS_lag, params.rhs_el_lag, params.mesh.connijk_lag, params.mesh.nelem_semi_inf, ngl, params.mesh.ngr, neqs, SD, params.AD)
     #@info params.rhs_el_lag[1,1,2,2], params.mesh.connijk_lag[1,1,2]
     #@info params.rhs_el_lag[20,5,2,2], params.mesh.connijk_lag[20,5,2]
@@ -159,7 +159,16 @@ function _expansion_inviscid_laguerre!(u, neqs, ngr, dψ_lag, ω_lag, F_lag, S_l
             for k = 1:ngr
                 dFdξ += dψ_lag[k,i]*F_lag[k,ieq]
             end
-            rhs_el_lag[iel,i,ieq] -= dFdξ*Je[iel,i]*dξdx[iel,i]*ω_lag[i]  - ω_lag[i]*S_lag[i,ieq]
+            #
+            # Both terms are weighted by ω*Je, because what leaves here is
+            # divided by the Laguerre lumped mass matrix Je*ω
+            # (build_mass_matrix_Laguerre!, NSD_1D). The flux carries its own
+            # dξdx = ±1/Je, so Je*dξdx = ±1 and its Je cancels; the source has
+            # nothing to cancel against and needs Je explicitly. It was missing
+            # here, which scaled every 1D Laguerre source by 1/Je — see the
+            # note above _expansion_inviscid!(..., NSD_1D, ContGal) in rhs.jl.
+            #
+            rhs_el_lag[iel,i,ieq] -= dFdξ*Je[iel,i]*dξdx[iel,i]*ω_lag[i]  - ω_lag[i]*Je[iel,i]*S_lag[i,ieq]
         end
     end
 end
