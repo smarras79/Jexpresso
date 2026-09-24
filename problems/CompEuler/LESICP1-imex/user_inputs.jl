@@ -344,7 +344,7 @@ function user_inputs()
         :lvisc                => true, #false by default
         :visc_model           => SMAG(),
         :C_s                  => 0.18,
-        :lrichardson          => true,
+        :lrichardson          => parse(Bool, get(ENV, "DBG_RICH", "true")),
         # NOW ACTUALLY DAMPS AT THE WALL. The guard used to read
         # `(lwall_damping && z > 0.0) || return CsD2`, and zwall is built as
         # max(z - zmin, 0) -- so every node ON the lower boundary carried
@@ -358,8 +358,8 @@ function user_inputs()
         # roughly 30% of it. See sgs_mixing_length2 in kernel/physics/SGS.jl and
         # test/sgs/test_wall_damping.jl.
         :lwall_damping        => true,
-        # DBG_VISC_RHO puts nu_t/Sc_t on the continuity equation (spin-up probe).
-        :μ                    => [parse(Float64, get(ENV, "DBG_VISC_RHO", "0.0")), 1.0, 1.0, 1.0, 1.0],
+        # DBG_VISC_TH scales the theta diffusion (spin-up probe).
+        :μ                    => [0.0, 1.0, 1.0, 1.0, parse(Float64, get(ENV, "DBG_VISC_TH", "1.0"))],
         :les_filter_width     => :geometric,
         #---------------------------------------------------------------------------
         # MOST GUARD RAILS. Stated explicitly here rather than left to the
