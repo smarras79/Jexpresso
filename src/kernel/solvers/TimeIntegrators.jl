@@ -548,7 +548,24 @@ function time_loop!(inputs, params, u, args...)
     end
     function do_les_statistics!(integrator)
         println_rank(" # LES Statistics at t=", integrator.t; msg_rank = rank)
-        les_statistics(integrator.u, integrator.p, integrator.t)
+        # MEMORY PROBE. JEXPRESSO_STAT_LOOP=N calls les_statistics N times in
+        # place and reports where the memory goes, so a per-call growth is
+        # measured in one time step instead of inferred from a long run.
+        # It accumulates into the averages N times, so the statistics of a
+        # looped run are meaningless -- diagnosis only.
+        nloop = parse(Int, get(ENV, "JEXPRESSO_STAT_LOOP", "1"))
+        for k = 1:nloop
+            les_statistics(integrator.u, integrator.p, integrator.t)
+            if nloop > 1 && rank == 0 && (k <= 3 || k % 10 == 0)
+                rss, vsz = _wall_watch_procmem()
+                heap = Base.gc_live_bytes()/2^30
+                jit  = Base.jit_total_bytes()/2^30
+                peak = Sys.maxrss()/2^30
+                @printf(" #   stat-loop %4d | heap=%.4f jit=%.4f | RSS=%.4f VSZ=%.4f peak=%.4f GB\n",
+                        k, heap, jit, rss, vsz, peak)
+                flush(stdout)
+            end
+        end
     end
 
     # Online statistics accumulation callback (Approach 2): fires every interval, no MPI
