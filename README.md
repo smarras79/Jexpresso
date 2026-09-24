@@ -523,16 +523,16 @@ julia> rows = run_periodic_poisson_benchmark()
 
 **Reading the results.** The four SEM solves compute the same discrete solution, so their error curves coincide (only the last one drawn is visible). What separates them is cost. AMG on the condensed skeleton system needs far fewer iterations than on the full system, and the gap grows with the order (43 against 141 CG iterations at N = 8): the condensation removes the element-interior modes that make the high-order SEM system hard for AMG, and the skeleton system is also 4× smaller. At N = 8 the SC AMG solve step is 24× faster than the full-system AMG one. The sparse direct solves stay the fastest solve steps at these sizes. For every SEM solve the time-to-solution is dominated by the SEM infrastructure (about 1–1.5 s, mostly reading and building the mesh).
 
-The exact solution is a trigonometric polynomial, which a Fourier basis represents exactly once the grid resolves its highest mode, so the pseudo-spectral and FFT errors are at round-off at every size. The SEM has to approximate it with piecewise polynomials, and its error falls exponentially with the order. The error curves therefore compare the bases on a problem that favours Fourier; the time curves compare the cost of the solves. The pseudo-spectral and FFT solves compute the same discrete solution (they agree to ~10⁻¹³).
+The exact solution is a trigonometric polynomial, which a Fourier basis represents exactly once the grid resolves its highest mode, so the pseudo-spectral and FFT errors are at round-off at every size. The SEM has to approximate it with piecewise polynomials, and its error falls exponentially with the order. The error curves therefore compare the bases on a problem that favours Fourier; the time curves compare the cost of the solves. The pseudo-spectral and FFT solves compute the same discrete solution (they agree to ~10⁻¹³). Likewise the four SEM solvers (direct, AMG, SC direct, SC AMG) compute the same discrete SEM solution, so their errors agree to 3–4 digits (see the table below); the two error plots draw them as a single SEM curve, and the time plots separate them.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/ppb_error_vs_order-dark.svg">
-  <img src="assets/ppb_error_vs_order.svg" width="680" alt="L-infinity error versus SEM order N: the SEM falls exponentially from 3e-3 at N = 2 to 2e-11 at N = 8; the pseudo-spectral and FFT solvers at the same number of unknowns stay at round-off.">
+  <img src="assets/ppb_error_vs_order.svg" width="680" alt="L-infinity error versus SEM order N: the SEM (one curve for its four solvers) falls exponentially from 3e-3 at N = 2 to 2e-11 at N = 8; the pseudo-spectral and FFT solvers at the same number of unknowns stay at round-off.">
 </picture>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/ppb_error_vs_dofs-dark.svg">
-  <img src="assets/ppb_error_vs_dofs.svg" width="680" alt="L-infinity error versus number of unknowns, 1024 to 16384, for the SEM, pseudo-spectral and FFT solvers.">
+  <img src="assets/ppb_error_vs_dofs.svg" width="680" alt="L-infinity error versus number of unknowns, 1024 to 16384, for the SEM (one curve for its four solvers), pseudo-spectral and FFT solvers.">
 </picture>
 
 <picture>

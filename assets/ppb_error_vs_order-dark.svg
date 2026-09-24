@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 420" width="680" height="420" role="img" aria-labelledby="t d" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
-<title id="t">Error vs order</title><desc id="d">L-infinity error versus SEM polynomial order N; the Fourier solvers are plotted at the order whose SEM grid has the same number of unknowns (a 16N by 16N grid).</desc>
+<title id="t">Error vs order</title><desc id="d">L-infinity error versus SEM polynomial order N (one SEM curve for its four solvers, which give the same discrete solution); the Fourier solvers are plotted at the order whose SEM grid has the same number of unknowns (a 16N by 16N grid).</desc>
 <rect width="680" height="420" fill="#1a1a19"/>
 <text x="78" y="28" font-size="16" font-weight="600" fill="#ffffff">Error vs order</text>
 <text x="78" y="48" font-size="12.5" fill="#c3c2b7">−∇²u = f on [0,2π]², doubly periodic · second-run timings</text>
@@ -49,30 +49,6 @@
 <circle cx="379.3" cy="232.0" r="4.5" fill="#3987e5" stroke="#1a1a19" stroke-width="2"/>
 <circle cx="454.7" cy="262.2" r="4.5" fill="#3987e5" stroke="#1a1a19" stroke-width="2"/>
 <circle cx="530.0" cy="274.1" r="4.5" fill="#3987e5" stroke="#1a1a19" stroke-width="2"/>
-<polyline points="78.0,117.8 153.3,145.5 228.7,173.3 304.0,202.9 379.3,232.0 454.7,262.2 530.0,273.9" fill="none" stroke="#d95926" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="73.5" y="113.3" width="9" height="9" rx="1.5" fill="#d95926" stroke="#1a1a19" stroke-width="2"/>
-<rect x="148.8" y="141.0" width="9" height="9" rx="1.5" fill="#d95926" stroke="#1a1a19" stroke-width="2"/>
-<rect x="224.2" y="168.8" width="9" height="9" rx="1.5" fill="#d95926" stroke="#1a1a19" stroke-width="2"/>
-<rect x="299.5" y="198.4" width="9" height="9" rx="1.5" fill="#d95926" stroke="#1a1a19" stroke-width="2"/>
-<rect x="374.8" y="227.5" width="9" height="9" rx="1.5" fill="#d95926" stroke="#1a1a19" stroke-width="2"/>
-<rect x="450.2" y="257.7" width="9" height="9" rx="1.5" fill="#d95926" stroke="#1a1a19" stroke-width="2"/>
-<rect x="525.5" y="269.4" width="9" height="9" rx="1.5" fill="#d95926" stroke="#1a1a19" stroke-width="2"/>
-<polyline points="78.0,117.8 153.3,145.5 228.7,173.3 304.0,202.9 379.3,232.0 454.7,262.2 530.0,274.1" fill="none" stroke="#199e70" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-<path d="M78.0,112.3 L83.5,122.3 L72.5,122.3 Z" fill="#199e70" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
-<path d="M153.3,140.0 L158.8,150.0 L147.8,150.0 Z" fill="#199e70" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
-<path d="M228.7,167.8 L234.2,177.8 L223.2,177.8 Z" fill="#199e70" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
-<path d="M304.0,197.4 L309.5,207.4 L298.5,207.4 Z" fill="#199e70" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
-<path d="M379.3,226.5 L384.8,236.5 L373.8,236.5 Z" fill="#199e70" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
-<path d="M454.7,256.7 L460.2,266.7 L449.2,266.7 Z" fill="#199e70" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
-<path d="M530.0,268.6 L535.5,278.6 L524.5,278.6 Z" fill="#199e70" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
-<polyline points="78.0,117.8 153.3,145.5 228.7,173.3 304.0,202.9 379.3,232.0 454.7,262.1 530.0,274.3" fill="none" stroke="#c98500" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-<path d="M78.0,111.8 L84.0,117.8 L78.0,123.8 L72.0,117.8 Z" fill="#c98500" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
-<path d="M153.3,139.5 L159.3,145.5 L153.3,151.5 L147.3,145.5 Z" fill="#c98500" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
-<path d="M228.7,167.3 L234.7,173.3 L228.7,179.3 L222.7,173.3 Z" fill="#c98500" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
-<path d="M304.0,196.9 L310.0,202.9 L304.0,208.9 L298.0,202.9 Z" fill="#c98500" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
-<path d="M379.3,226.0 L385.3,232.0 L379.3,238.0 L373.3,232.0 Z" fill="#c98500" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
-<path d="M454.7,256.1 L460.7,262.1 L454.7,268.1 L448.7,262.1 Z" fill="#c98500" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
-<path d="M530.0,268.3 L536.0,274.3 L530.0,280.3 L524.0,274.3 Z" fill="#c98500" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
 <polyline points="78.0,330.9 153.3,322.4 228.7,307.7 304.0,311.9 379.3,308.1 454.7,304.5 530.0,303.8" fill="none" stroke="#d55181" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
 <path d="M78.0,336.4 L83.5,326.4 L72.5,326.4 Z" fill="#d55181" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
 <path d="M153.3,327.9 L158.8,317.9 L147.8,317.9 Z" fill="#d55181" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
@@ -89,28 +65,16 @@
 <circle cx="379.3" cy="349.7" r="4" fill="#1a1a19" stroke="#008300" stroke-width="2.5"/>
 <circle cx="454.7" cy="348.2" r="4" fill="#1a1a19" stroke="#008300" stroke-width="2.5"/>
 <circle cx="530.0" cy="350.2" r="4" fill="#1a1a19" stroke="#008300" stroke-width="2.5"/>
-<text x="542.0" y="284.0" font-size="12.5" fill="#ffffff">SEM direct</text>
-<text x="542.0" y="254.0" font-size="12.5" fill="#ffffff">SEM AMG</text>
-<text x="542.0" y="269.0" font-size="12.5" fill="#ffffff">SC direct</text>
-<text x="542.0" y="299.0" font-size="12.5" fill="#ffffff">SC AMG</text>
-<text x="542.0" y="314.0" font-size="12.5" fill="#ffffff">pseudo-spectral</text>
+<text x="542.0" y="278.1" font-size="12.5" fill="#ffffff">SEM (all 4 solvers)</text>
+<text x="542.0" y="307.8" font-size="12.5" fill="#ffffff">pseudo-spectral</text>
 <text x="542.0" y="354.2" font-size="12.5" fill="#ffffff">FFT</text>
 <line x1="78" x2="100" y1="68" y2="68" stroke="#3987e5" stroke-width="2"/>
 <circle cx="89.0" cy="68.0" r="4.5" fill="#3987e5" stroke="#1a1a19" stroke-width="2"/>
-<text x="108" y="72" font-size="12.5" fill="#ffffff">SEM direct</text>
-<line x1="268" x2="290" y1="68" y2="68" stroke="#d95926" stroke-width="2"/>
-<rect x="274.5" y="63.5" width="9" height="9" rx="1.5" fill="#d95926" stroke="#1a1a19" stroke-width="2"/>
-<text x="298" y="72" font-size="12.5" fill="#ffffff">SEM AMG</text>
-<line x1="458" x2="480" y1="68" y2="68" stroke="#199e70" stroke-width="2"/>
-<path d="M469.0,62.5 L474.5,72.5 L463.5,72.5 Z" fill="#199e70" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
-<text x="488" y="72" font-size="12.5" fill="#ffffff">SC direct</text>
-<line x1="78" x2="100" y1="88" y2="88" stroke="#c98500" stroke-width="2"/>
-<path d="M89.0,82.0 L95.0,88.0 L89.0,94.0 L83.0,88.0 Z" fill="#c98500" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
-<text x="108" y="92" font-size="12.5" fill="#ffffff">SC AMG</text>
-<line x1="268" x2="290" y1="88" y2="88" stroke="#d55181" stroke-width="2"/>
-<path d="M279.0,93.5 L284.5,83.5 L273.5,83.5 Z" fill="#d55181" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
-<text x="298" y="92" font-size="12.5" fill="#ffffff">pseudo-spectral</text>
-<line x1="458" x2="480" y1="88" y2="88" stroke="#008300" stroke-width="2"/>
-<circle cx="469.0" cy="88.0" r="4" fill="#1a1a19" stroke="#008300" stroke-width="2.5"/>
-<text x="488" y="92" font-size="12.5" fill="#ffffff">FFT</text>
+<text x="108" y="72" font-size="12.5" fill="#ffffff">SEM (all 4 solvers)</text>
+<line x1="268" x2="290" y1="68" y2="68" stroke="#d55181" stroke-width="2"/>
+<path d="M279.0,73.5 L284.5,63.5 L273.5,63.5 Z" fill="#d55181" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<text x="298" y="72" font-size="12.5" fill="#ffffff">pseudo-spectral</text>
+<line x1="458" x2="480" y1="68" y2="68" stroke="#008300" stroke-width="2"/>
+<circle cx="469.0" cy="68.0" r="4" fill="#1a1a19" stroke="#008300" stroke-width="2.5"/>
+<text x="488" y="72" font-size="12.5" fill="#ffffff">FFT</text>
 </svg>

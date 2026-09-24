@@ -178,16 +178,31 @@ if __name__ == "__main__":
     def series(key):
         return [(lab, [(r[key], r["linf"]) for r in by[k]], slot) for k, lab, slot in names]
 
+    # The four SEM solvers compute the same discrete solution, so their error
+    # curves coincide (to 3-4 digits) and would hide one another: plot the
+    # error against dofs/order once for the SEM, labelled as such.
+    SEM4 = ("sem", "sem_amg", "sc_direct", "sc_amg")
+
+    def error_series(key):
+        out, sem_done = [], False
+        for k, lab, slot in names:
+            if k in SEM4:
+                if sem_done:
+                    continue
+                sem_done, lab = True, "SEM (all 4 solvers)"
+            out.append((lab, [(r[key], r["linf"]) for r in by[k]], slot))
+        return out
+
     write("ppb_error_vs_dofs", lambda th: chart(
         th, "Error vs unknowns", sub,
-        "L-infinity error versus number of unknowns for the six solvers (four SEM solves, pseudo-spectral, FFT).",
-        series("dofs"), (dofs[0], dofs[-1]), True, dticks, "unknowns (log scale)", ylab, ydec))
+        "L-infinity error versus number of unknowns for the SEM (one curve: its four solvers give the same discrete solution), pseudo-spectral and FFT solvers.",
+        error_series("dofs"), (dofs[0], dofs[-1]), True, dticks, "unknowns (log scale)", ylab, ydec))
 
     write("ppb_error_vs_order", lambda th: chart(
         th, "Error vs order", sub,
-        "L-infinity error versus SEM polynomial order N; the Fourier solvers are plotted at the order "
+        "L-infinity error versus SEM polynomial order N (one SEM curve for its four solvers, which give the same discrete solution); the Fourier solvers are plotted at the order "
         "whose SEM grid has the same number of unknowns (a 16N by 16N grid).",
-        series("nop"), (nops[0], nops[-1]), False, [(n, str(n)) for n in nops],
+        error_series("nop"), (nops[0], nops[-1]), False, [(n, str(n)) for n in nops],
         "SEM order N   (Fourier solvers: 16N × 16N grid, same unknowns)", ylab, ydec))
 
     for key, name, title, xl in (
