@@ -555,8 +555,19 @@ function time_loop!(inputs, params, u, args...)
         # looped run are meaningless -- diagnosis only.
         nloop = parse(Int, get(ENV, "JEXPRESSO_STAT_LOOP", "1"))
         for k = 1:nloop
+            _alloc0 = Base.gc_num().allocd
             les_statistics(integrator.u, integrator.p, integrator.t)
+            _allocd = (Base.gc_num().allocd - _alloc0) / 2^20
+            # JEXPRESSO_STAT_GC: collect right after the statistics instead of
+            # leaving its garbage to interleave with the time loop's. The run
+            # grows ~1.6 MB per call in situ while 500 calls back to back grow
+            # nothing, which is what interleaved allocation patterns do to a
+            # heap that never returns its free blocks.
+            _gcmode = get(ENV, "JEXPRESSO_STAT_GC", "")
+            _gcmode == "1" && GC.gc(false)
+            _gcmode == "2" && GC.gc(true)
             if nloop > 1 && rank == 0 && (k <= 3 || k % 10 == 0)
+                @printf(" #   stat-alloc %4d | %.1f MB allocated by this call\n", k, _allocd)
                 rss, vsz = _wall_watch_procmem()
                 heap = Base.gc_live_bytes()/2^30
                 jit  = Base.jit_total_bytes()/2^30
