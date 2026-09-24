@@ -274,6 +274,8 @@ include(joinpath("kernel", "operators", "asm_preconditioner.jl"))
 
 include(joinpath( "kernel", "solvers", "Axb.jl"))
 
+include(joinpath( "kernel", "solvers", "periodic_sem.jl"))
+
 include(joinpath( "kernel", "solvers", "fft_poisson_core.jl"))
 
 include(joinpath( "kernel", "solvers", "fft_laplace.jl"))

@@ -167,6 +167,13 @@ end
 
 function standard_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
 
+    # A mesh whose boundary is entirely periodic needs its own solve: the
+    # Dirichlet treatment below would turn the periodic seam rows into
+    # boundary rows, and the periodic Laplacian is singular (see periodic_sem.jl).
+    if sem_mesh_is_periodic(sem.mesh)
+        return periodic_sem_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
+    end
+
     RHS   = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(sem.mesh.npoin))
     Mdiag = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(sem.mesh.npoin))
     

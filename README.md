@@ -47,6 +47,7 @@ The Jexpresso core team uses Claude whereas some external developers have been s
   - [Shallow water on a spherical shell](#shallow-water-on-a-spherical-shell)
   - [2D Euler equations with buoyancy and two passive tracers](#2d-euler-equations-with-buoyancy-and-two-passive-tracers)
   - [3D Euler equations with buoyancy](#3d-euler-equations-with-buoyancy)
+  - [Spectral convergence of the SEM: doubly periodic Poisson problem](#spectral-convergence-of-the-sem-doubly-periodic-poisson-problem)
   - [Laguerre semi-infinite element test suite](#laguerre-semi-infinite-element-test-suite)
     - [Test 1: 1D wave equation with Laguerre absorbing layers](#test-1-1d-wave-equation-with-laguerre-semi-infinite-element-absorbing-layers)
     - [Test 2: 1D wave train for linearized shallow water equations](#test-2-1d-wave-train-for-linearized-shallow-water-equations)
@@ -481,6 +482,36 @@ Jexpresso.run_case("CompEuler", "3d")
 <img src="assets/rtb3d.png"
      alt="Markdown icon"
      style="float: left; margin-right: 5px;" />
+
+## Spectral convergence of the SEM: doubly periodic Poisson problem
+The problem is defined in `problems/Elliptic/poisson_periodic_sem`: $-\nabla^2 u = f$ on $[0,2\pi]^2$, periodic in $x$ and $y$, with the exact solution $u = \sin 2x\cos 3y + \sin x\cos y$, on a fixed mesh of 16×16 elements solved directly with the SEM. To run it you would do the following:
+```julia
+using Jexpresso
+Jexpresso.run_case("Elliptic", "poisson_periodic_sem")
+```
+Increasing the polynomial order `:nop` on the same mesh reduces the error exponentially: about ten orders of magnitude from N = 2 to N = 8. At N = 8 the L∞ error flattens near 10⁻¹¹, the round-off floor of the direct solve. The same deck runs the FFT (Fourier) solver on the same problem with `:lfft => true`.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/sem_pconvergence_periodic_poisson-dark.svg">
+  <img src="assets/sem_pconvergence_periodic_poisson.svg" width="680"
+       alt="SEM error versus polynomial order for the doubly periodic Poisson problem: the L-infinity and relative L2 errors fall exponentially from about 3e-3 at N = 2 to about 2e-11 and 5e-12 at N = 8.">
+</picture>
+
+| N (`:nop`) | unknowns | ‖e‖∞ | relative ‖e‖₂ |
+|---:|---:|---:|---:|
+| 2 | 1 024 | 3.1e-3 | 1.9e-3 |
+| 3 | 2 304 | 1.1e-4 | 7.3e-5 |
+| 4 | 4 096 | 4.0e-6 | 2.2e-6 |
+| 5 | 6 400 | 1.2e-7 | 6.8e-8 |
+| 6 | 9 216 | 3.6e-9 | 2.0e-9 |
+| 7 | 12 544 | 9.6e-11 | 5.3e-11 |
+| 8 | 16 384 | 2.3e-11 | 5.1e-12 |
+
+To regenerate the data and the figure:
+```bash
+julia --project=. tools/sem_pconvergence/sweep.jl
+python3 tools/sem_pconvergence/plot.py
+```
 
 ## Laguerre semi-infinite element test suite
 This section contains instructions to run all of the test cases presented in
