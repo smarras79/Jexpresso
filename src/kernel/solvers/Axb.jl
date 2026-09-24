@@ -253,10 +253,17 @@ function standard_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
     # Robust @btime timing (BenchmarkTools minimum) so re-running the same case
     # reports a stable time instead of the wide scatter of a single shot. Set
     # :lbenchmark_solve => false for one quick solve on very large problems.
-    solAxb = jx_robust_solve("direct SEM (Ax=b)", () -> sem.matrix.L \ RHS;
-                             robust  = get(inputs, :lbenchmark_solve, true),
-                             seconds = Float64(get(inputs, :EL_timing_seconds, 2.0)))
-    sol = solAxb
+    if get(inputs, :linsolve_amg, false)
+        sol = _dirichlet_sem_amg_solve(sem, RHS, inputs)
+    else
+        # one-time factorisation (setup) + triangular solves (the timed solve
+        # step): together exactly what `L \ RHS` does
+        F = jx_phase(() -> factorize(sem.matrix.L), :setup)
+        solAxb = jx_robust_solve("direct SEM (Ax=b)", () -> F \ RHS;
+                                 robust  = get(inputs, :lbenchmark_solve, true),
+                                 seconds = Float64(get(inputs, :EL_timing_seconds, 2.0)))
+        sol = solAxb
+    end
 
     println(YELLOW_FG(string(" # Solve x=inv(A)*b: sparse storage .............. DONE")))
     args = (params.SD, sol, params.uaux, 1, 1,
@@ -276,4 +283,30 @@ function standard_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
     write_output(args...; nvar=params.qp.neqs, qexact=params.qp.qe, metrics=params.metrics)
 
     return nothing
+end
+
+# AMG-preconditioned CG on the full Dirichlet SEM system. After
+# apply_boundary_conditions_lin_solve! the Dirichlet rows of L are identity rows
+# and RHS holds g there; the other rows are untouched. The SPD system is the one
+# on the free nodes,  L_ff u_f = RHS_f - L_fΓ g ,  which AMG-CG solves.
+function _dirichlet_sem_amg_solve(sem, RHS, inputs)
+    mesh  = sem.mesh
+    npoin = Int(mesh.npoin)
+    opts  = jx_amg_options(inputs)
+    L     = sem.matrix.L
+    Γ     = unroll_positive_unique(mesh.poin_in_bdy_edge)
+    free  = setdiff(1:npoin, Γ)
+    S, bf = jx_phase(:setup) do
+        Lff = L[free, free]
+        bf  = RHS[free] .- L[free, Γ] * RHS[Γ]
+        jx_amg_setup(Lff; method = opts.method), bf
+    end
+    uf = jx_time_solve("AMG-CG on the full SEM system", () -> jx_amg_solve(S, bf; rtol = opts.rtol))
+    st = JX_AMG_STATS[]
+    println(GREEN_FG(string(" # AMG (", st.method, ", ", st.levels, " levels): CG converged in ",
+                            st.iters, " iterations, relative residual ", st.rel_resid)))
+    sol = zeros(TFloat, npoin)
+    sol[free] .= uf
+    sol[Γ]    .= RHS[Γ]
+    return sol
 end

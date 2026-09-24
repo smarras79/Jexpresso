@@ -5,6 +5,7 @@ version = "0.1.0"
 [deps]
 AMD = "14f7f29c-3bd6-536c-9a0b-7339e30b5a3e"
 AMRVW = "233ec0c9-6b8d-4766-b9a2-a16e389fc38a"
+AlgebraicMultigrid = "2169fc97-5a83-5252-b627-83903c6c433c"
 ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
 Artifacts = "56f22d72-fd6d-98f1-02f0-08ddc0907c33"
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
@@ -89,6 +90,7 @@ WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
 
 [compat]
 AMD = "0.5.3"
+AlgebraicMultigrid = "1.2.0"
 BenchmarkTools = "1.8.0"
 CSV = "0.10.16"
 Crayons = "=4.1.1"

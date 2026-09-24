@@ -20,14 +20,17 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 
 THEMES = {
     "light": dict(surface="#fcfcfb", text1="#0b0b0b", text2="#52514e", grid="#e4e3dd",
-                  axis="#b5b3aa", s=["#2a78d6", "#eb6834", "#1baf7a"]),
+                  axis="#b5b3aa", s=["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"]),
     "dark":  dict(surface="#1a1a19", text1="#ffffff", text2="#c3c2b7", grid="#34342f",
-                  axis="#5d5c55", s=["#3987e5", "#d95926", "#199e70"]),
+                  axis="#5d5c55", s=["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300"]),
 }
-MARKERS = ["circle", "square", "triangle"]
+MARKERS = ["circle", "square", "triangle", "diamond", "tridown", "ring"]
+# solver key → legend label, in the fixed categorical order
+NAMES = [("sem", "SEM direct"), ("sem_amg", "SEM AMG"), ("sc_direct", "SC direct"),
+         ("sc_amg", "SC AMG"), ("ps", "pseudo-spectral"), ("fft", "FFT")]
 SUP = str.maketrans("-0123456789", "⁻⁰¹²³⁴⁵⁶⁷⁸⁹")
 W, H = 680, 420
-L, R, T, B = 78, 150, 92, 62
+L, R, T, B = 78, 150, 108, 62
 
 
 def read_rows(path):
@@ -43,8 +46,51 @@ def marker(kind, x, y, col, surface):
         return f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4.5" fill="{col}" {ring}/>'
     if kind == "square":
         return f'<rect x="{x-4.5:.1f}" y="{y-4.5:.1f}" width="9" height="9" rx="1.5" fill="{col}" {ring}/>'
-    return (f'<path d="M{x:.1f},{y-5.5:.1f} L{x+5.5:.1f},{y+4.5:.1f} L{x-5.5:.1f},{y+4.5:.1f} Z" '
-            f'fill="{col}" {ring} stroke-linejoin="round"/>')
+    if kind == "triangle":
+        return (f'<path d="M{x:.1f},{y-5.5:.1f} L{x+5.5:.1f},{y+4.5:.1f} L{x-5.5:.1f},{y+4.5:.1f} Z" '
+                f'fill="{col}" {ring} stroke-linejoin="round"/>')
+    if kind == "tridown":
+        return (f'<path d="M{x:.1f},{y+5.5:.1f} L{x+5.5:.1f},{y-4.5:.1f} L{x-5.5:.1f},{y-4.5:.1f} Z" '
+                f'fill="{col}" {ring} stroke-linejoin="round"/>')
+    if kind == "diamond":
+        return (f'<path d="M{x:.1f},{y-6:.1f} L{x+6:.1f},{y:.1f} L{x:.1f},{y+6:.1f} L{x-6:.1f},{y:.1f} Z" '
+                f'fill="{col}" {ring} stroke-linejoin="round"/>')
+    return (f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4" fill="{surface}" stroke="{col}" stroke-width="2.5"/>')
+
+
+def spread(ys, gap=15.0, lo=None, hi=None):
+    """Label y-positions near their targets `ys`, at least `gap` apart.
+
+    Overlapping labels are merged into groups, each group centred on the mean
+    of its targets (repeated until no two groups overlap), so every label stays
+    as close to its own line end as the spacing allows. Optional bounds keep
+    the stack inside the plot.
+    """
+    order = sorted(range(len(ys)), key=lambda i: ys[i])
+    groups = [[i] for i in order]                     # each: list of indices, top to bottom
+
+    def place(g):
+        c = sum(ys[i] for i in g) / len(g)
+        top = c - (len(g) - 1) * gap / 2
+        if lo is not None: top = max(top, lo)
+        if hi is not None: top = min(top, hi - (len(g) - 1) * gap)
+        return top
+
+    merged = True
+    while merged:
+        merged = False
+        for k in range(len(groups) - 1):
+            a, b = groups[k], groups[k + 1]
+            if place(a) + (len(a) - 1) * gap + gap > place(b):
+                groups[k:k + 2] = [a + b]
+                merged = True
+                break
+    out = [0.0] * len(ys)
+    for g in groups:
+        top = place(g)
+        for j, i in enumerate(g):
+            out[i] = top + j * gap
+    return out
 
 
 def chart(th, title, subtitle, desc, series, xs, xlog, xticks, xlabel, ylabel, ydec):
@@ -80,22 +126,23 @@ def chart(th, title, subtitle, desc, series, xs, xlog, xticks, xlabel, ylabel, y
     a(f'<text x="{(L + W - R)/2:.1f}" y="{H-14}" font-size="12.5" text-anchor="middle" fill="{th["text2"]}">{xlabel}</text>')
     a(f'<text x="18" y="{(T + H - B)/2:.1f}" font-size="12.5" text-anchor="middle" fill="{th["text2"]}" '
       f'transform="rotate(-90 18 {(T + H - B)/2:.1f})">{ylabel}</text>')
-    for i, (label, pts) in enumerate(series):
-        col, kind = th["s"][i], MARKERS[i]
+    ends = []
+    for i, (label, pts, slot) in enumerate(series):
+        col, kind = th["s"][slot], MARKERS[slot]
         a(f'<polyline points="{" ".join(f"{px(x):.1f},{py(y):.1f}" for x, y in pts)}" fill="none" '
           f'stroke="{col}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>')
         for x, y in pts:
             a(marker(kind, px(x), py(y), col, th["surface"]))
-        a(f'<text x="{px(pts[-1][0])+12:.1f}" y="{py(pts[-1][1])+4:.1f}" font-size="12.5" '
-          f'fill="{th["text1"]}">{label}</text>')
-    if len(series) > 1:                        # legend: one row under the subtitle, clear of the data
-        lx, ly = L, 70
-        for i, (label, _) in enumerate(series):
-            col = th["s"][i]
+        ends.append((label, px(pts[-1][0]), py(pts[-1][1])))
+    for (label, x, _), y in zip(ends, spread([e[2] for e in ends], lo=T - 4, hi=H - B + 4)):
+        a(f'<text x="{x+12:.1f}" y="{y+4:.1f}" font-size="12.5" fill="{th["text1"]}">{label}</text>')
+    if len(series) > 1:                        # legend: rows of three under the subtitle
+        for i, (label, _, slot) in enumerate(series):
+            col = th["s"][slot]
+            lx, ly = L + (i % 3) * 190, 68 + (i // 3) * 20
             a(f'<line x1="{lx}" x2="{lx+22}" y1="{ly}" y2="{ly}" stroke="{col}" stroke-width="2"/>')
-            a(marker(MARKERS[i], lx + 11, ly, col, th["surface"]))
+            a(marker(MARKERS[slot], lx + 11, ly, col, th["surface"]))
             a(f'<text x="{lx+30}" y="{ly+4}" font-size="12.5" fill="{th["text1"]}">{label}</text>')
-            lx += 30 + 7.2 * len(label) + 26
     a('</svg>')
     return "\n".join(o) + "\n"
 
@@ -116,10 +163,9 @@ def time_label(e):
 if __name__ == "__main__":
     import sys
     rows = read_rows(sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "results.csv"))
-    names = [("sem", "SEM (16×16 el.)"), ("ps", "pseudo-spectral"), ("fft", "FFT")]
-    by = {s: sorted([r for r in rows if r["solver"] == s], key=lambda r: r["nop"]) for s, _ in names}
-    names = [(s, lab) for s, lab in names if by[s]]
-    allr = [r for s, _ in names for r in by[s]]
+    by = {k: sorted([r for r in rows if r["solver"] == k], key=lambda r: r["nop"]) for k, _ in NAMES}
+    names = [(k, lab, slot) for slot, (k, lab) in enumerate(NAMES) if by[k]]
+    allr = [r for k, _, _ in names for r in by[k]]
     sub = "−∇²u = f on [0,2π]², doubly periodic · second-run timings"
     ydec = (math.floor(math.log10(min(r["linf"] for r in allr))),
             math.ceil(math.log10(max(r["linf"] for r in allr))))
@@ -130,11 +176,11 @@ if __name__ == "__main__":
     ylab = "L∞ error vs exact solution"
 
     def series(key):
-        return [(lab, [(r[key], r["linf"]) for r in by[s]]) for s, lab in names]
+        return [(lab, [(r[key], r["linf"]) for r in by[k]], slot) for k, lab, slot in names]
 
     write("ppb_error_vs_dofs", lambda th: chart(
         th, "Error vs unknowns", sub,
-        "L-infinity error versus number of unknowns for the SEM, pseudo-spectral and FFT solvers.",
+        "L-infinity error versus number of unknowns for the six solvers (four SEM solves, pseudo-spectral, FFT).",
         series("dofs"), (dofs[0], dofs[-1]), True, dticks, "unknowns (log scale)", ylab, ydec))
 
     write("ppb_error_vs_order", lambda th: chart(
@@ -153,7 +199,7 @@ if __name__ == "__main__":
         e0, e1 = math.floor(math.log10(min(ts))), math.ceil(math.log10(max(ts)))
         write(name, lambda th, key=key, title=title, xl=xl, e0=e0, e1=e1: chart(
             th, title, sub,
-            f"L-infinity error versus {xl} for the SEM, pseudo-spectral and FFT solvers; "
+            f"L-infinity error versus {xl} for the six solvers (four SEM solves, pseudo-spectral, FFT); "
             "each curve runs over increasing resolution.",
             series(key), (10.0 ** e0, 10.0 ** e1), True,
             [(10.0 ** e, time_label(e)) for e in range(e0, e1 + 1)], xl, ylab, ydec))

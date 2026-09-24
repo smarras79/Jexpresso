@@ -47,7 +47,7 @@ The Jexpresso core team uses Claude whereas some external developers have been s
   - [Shallow water on a spherical shell](#shallow-water-on-a-spherical-shell)
   - [2D Euler equations with buoyancy and two passive tracers](#2d-euler-equations-with-buoyancy-and-two-passive-tracers)
   - [3D Euler equations with buoyancy](#3d-euler-equations-with-buoyancy)
-  - [Spectral convergence of the SEM: doubly periodic Poisson problem](#spectral-convergence-of-the-sem-doubly-periodic-poisson-problem) (with pseudo-spectral and FFT)
+  - [Spectral convergence of the SEM: doubly periodic Poisson problem](#spectral-convergence-of-the-sem-doubly-periodic-poisson-problem) (SEM direct/AMG, static condensation, pseudo-spectral, FFT)
   - [Laguerre semi-infinite element test suite](#laguerre-semi-infinite-element-test-suite)
     - [Test 1: 1D wave equation with Laguerre absorbing layers](#test-1-1d-wave-equation-with-laguerre-semi-infinite-element-absorbing-layers)
     - [Test 2: 1D wave train for linearized shallow water equations](#test-2-1d-wave-train-for-linearized-shallow-water-equations)
@@ -484,13 +484,18 @@ Jexpresso.run_case("CompEuler", "3d")
      style="float: left; margin-right: 5px;" />
 
 ## Spectral convergence of the SEM: doubly periodic Poisson problem
-The problem is defined in `problems/Elliptic/poisson_periodic_sem`: $-\nabla^2 u = f$ on $[0,2\pi]^2$, periodic in $x$ and $y$, with the exact solution $u = \sin 2x\cos 3y + \sin x\cos y$. The same deck solves it three ways:
+The problem is defined in `problems/Elliptic/poisson_periodic_sem`: $-\nabla^2 u = f$ on $[0,2\pi]^2$, periodic in $x$ and $y$, with the exact solution $u = \sin 2x\cos 3y + \sin x\cos y$. The same deck solves it six ways:
 
-| solver | deck flag | discretisation | solve |
+| solver | deck flags | discretisation | solve |
 |---|---|---|---|
-| SEM | (default) | 16×16 spectral elements of order N (`:nop`) | sparse direct (Cholesky) on the periodic system |
+| SEM direct | (default) | 16×16 spectral elements of order N (`:nop`) | sparse direct (Cholesky) on the full periodic system |
+| SEM AMG | `:linsolve_amg => true` | same | AMG-preconditioned conjugate gradients on the full system |
+| SC direct | `:lstatic_condensation => true` | same, statically condensed (below) | sparse direct on the skeleton system |
+| SC AMG | `:lstatic_condensation => true, :EL_skeleton_solver => "amg"` | same, statically condensed | AMG-preconditioned conjugate gradients on the skeleton system |
 | pseudo-spectral | `:lpseudospectral => true` | Fourier collocation on a uniform `:fft_N`² grid, Kopriva's derivative matrix (`FourierDerivativeMatrix`) | dense matrix diagonalisation, O(N³) |
 | FFT | `:lfft => true` | Fourier spectral on a uniform `:fft_N`² grid | FFTW, O(N² log N) |
+
+**Static condensation (SC)** is the algorithm of element learning (`elementLearning_Axb!`), used here as a solver: the interior unknowns of every element are eliminated with the local operators T^ie = (A_{vo,vo})⁻¹ A_{vo,vb}, computed from the element blocks of the SEM matrix (element learning replaces exactly these with a trained network), which leaves a Schur-complement system on the element skeleton only — 3 840 of the 16 384 unknowns at N = 8. The skeleton system is solved, and the interiors are recovered element by element. Nothing is approximated: SC reproduces the full SEM solution to round-off. On this periodic problem there is no Dirichlet boundary (Γ = ∅), so the skeleton system is singular like the full one; one unknown is pinned and the result is shifted to zero mean, as in every periodic solve. **AMG** is smoothed aggregation (AlgebraicMultigrid.jl) as the preconditioner of conjugate gradients (Krylov.jl), to a relative residual of 10⁻¹²; `:amg_method => "rs"` selects Ruge–Stüben. The same `:EL_skeleton_solver` option applies to the element-learning inference and to the Dirichlet decks (see `problems/Elliptic/poisson_dirichlet_sc`).
 
 To run it you would do the following:
 ```julia
@@ -498,8 +503,8 @@ using Jexpresso
 Jexpresso.run_case("Elliptic", "poisson_periodic_sem")
 ```
 
-### Benchmark: error and time-to-solution of the three solvers
-`tools/periodic_poisson_benchmark/pipeline.jl` runs all three solvers at the same number of unknowns, the SEM at orders N = 2…8 and the two Fourier solvers on 16N × 16N grids, and writes the table below and the figures. Run it from the REPL:
+### Benchmark: error and time-to-solution of the six solvers
+`tools/periodic_poisson_benchmark/pipeline.jl` runs all six solvers at the same number of unknowns, the four SEM solves at orders N = 2…8 and the two Fourier solvers on 16N × 16N grids, and writes the table below and the figures. Run it from the REPL:
 ```julia
 julia --project=.
 julia> using Jexpresso
@@ -509,13 +514,16 @@ julia> rows = run_periodic_poisson_benchmark()
 **Timing protocol.** Every configuration runs twice in the same Julia session and only the **second run** is recorded, so compilation never enters a number. Each time is a single wall-clock measurement of that run (no repetition, no minimum over samples). The mesh and SEM preprocess caches are switched off, so the SEM infrastructure is built, not loaded from disk, and output files are switched off.
 
 **What the columns mean.**
-- **solve**: the solve step alone (triangular solves for the SEM, four dense N×N products for pseudo-spectral, rfft/scale/brfft for the FFT).
-- **setup**: the solver's own infrastructure (periodic reduction plus sparse Cholesky factorisation; 1-D eigen-decompositions; FFTW plan).
+- **solve**: the solve step alone (triangular solves for SEM direct; the CG iterations for SEM AMG; the skeleton solve plus the interior recovery for SC; four dense N×N products for pseudo-spectral; rfft/scale/brfft for the FFT).
+- **setup**: the solver's own infrastructure (periodic reduction, then the Cholesky factorisation or the AMG hierarchy; for SC also the element blocks and the Schur complement; 1-D eigen-decompositions; FFTW plan).
+- **solved for / CG its**: the unknowns of the system actually solved (the skeleton for SC) and the conjugate-gradient iterations of the AMG solves.
 - **SEM infrastructure**: the mesh read and the SEM setup (basis, metrics, mass and Laplacian assembly). Only the SEM needs it.
-- **time-to-solution**: everything the method needs: SEM infrastructure + RHS + setup + solve for the SEM; RHS + setup + solve for the Fourier solvers.
+- **time-to-solution**: everything the method needs: SEM infrastructure + RHS + setup + solve for the four SEM solves; RHS + setup + solve for the Fourier solvers.
 - **run_case wall-clock**: the whole second `run_case` call. For the Fourier solvers it still includes the SEM setup the driver performs before dispatching, which they do not use.
 
-**Reading the error curves.** The exact solution is a trigonometric polynomial, which a Fourier basis represents exactly once the grid resolves its highest mode, so the pseudo-spectral and FFT errors are at round-off at every size. The SEM has to approximate it with piecewise polynomials, and its error falls exponentially with the order. The error curves therefore compare the bases on a problem that favours Fourier; the time curves compare the cost of the solves. The pseudo-spectral and FFT solves compute the same discrete solution (they agree to ~10⁻¹³).
+**Reading the results.** The four SEM solves compute the same discrete solution, so their error curves coincide (only the last one drawn is visible). What separates them is cost. AMG on the condensed skeleton system needs far fewer iterations than on the full system, and the gap grows with the order (43 against 141 CG iterations at N = 8): the condensation removes the element-interior modes that make the high-order SEM system hard for AMG, and the skeleton system is also 4× smaller. At N = 8 the SC AMG solve step is 24× faster than the full-system AMG one. The sparse direct solves stay the fastest solve steps at these sizes. For every SEM solve the time-to-solution is dominated by the SEM infrastructure (about 1–1.5 s, mostly reading and building the mesh).
+
+The exact solution is a trigonometric polynomial, which a Fourier basis represents exactly once the grid resolves its highest mode, so the pseudo-spectral and FFT errors are at round-off at every size. The SEM has to approximate it with piecewise polynomials, and its error falls exponentially with the order. The error curves therefore compare the bases on a problem that favours Fourier; the time curves compare the cost of the solves. The pseudo-spectral and FFT solves compute the same discrete solution (they agree to ~10⁻¹³).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/ppb_error_vs_order-dark.svg">
@@ -537,29 +545,50 @@ julia> rows = run_periodic_poisson_benchmark()
   <img src="assets/ppb_error_vs_total_time.svg" width="680" alt="L-infinity error versus time-to-solution including all the infrastructure each method needs, second run: the SEM near one second, dominated by the mesh read and SEM setup; the pseudo-spectral solver from 1 to 22 ms; the FFT below 1 ms.">
 </picture>
 
-| method | SEM order N | unknowns (grid) | ‖e‖∞ | relative ‖e‖₂ | solve | setup | RHS | SEM infrastructure | time-to-solution | run_case wall-clock |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| SEM | 2 | 1 024 (32²) | 3.1e-03 | 1.9e-03 | 125 µs | 3 ms | 78.6 µs | 954 ms | **957 ms** | 1.25 s |
-| SEM | 3 | 2 304 (48²) | 1.1e-04 | 7.3e-05 | 195 µs | 6.1 ms | 121 µs | 968 ms | **975 ms** | 1.29 s |
-| SEM | 4 | 4 096 (64²) | 4.0e-06 | 2.2e-06 | 441 µs | 14.6 ms | 544 µs | 993 ms | **1.01 s** | 1.33 s |
-| SEM | 5 | 6 400 (80²) | 1.2e-07 | 6.8e-08 | 729 µs | 23.9 ms | 233 µs | 1.08 s | **1.11 s** | 1.42 s |
-| SEM | 6 | 9 216 (96²) | 3.6e-09 | 2.0e-09 | 1.25 ms | 48.9 ms | 427 µs | 1.22 s | **1.27 s** | 1.55 s |
-| SEM | 7 | 12 544 (112²) | 9.6e-11 | 5.3e-11 | 1.92 ms | 115 ms | 405 µs | 1.38 s | **1.5 s** | 1.78 s |
-| SEM | 8 | 16 384 (128²) | 2.3e-11 | 5.1e-12 | 2.12 ms | 184 ms | 432 µs | 1.58 s | **1.77 s** | 2.07 s |
-| pseudo-spectral | — | 1 024 (32²) | 2.6e-14 | 1.4e-14 | 11.3 µs | 925 µs | 42.3 µs | — | **979 µs** | 1.24 s |
-| pseudo-spectral | — | 2 304 (48²) | 7.1e-14 | 3.5e-14 | 27.7 µs | 2.38 ms | 152 µs | — | **2.56 ms** | 1.27 s |
-| pseudo-spectral | — | 4 096 (64²) | 4.1e-13 | 1.9e-13 | 75.7 µs | 5.75 ms | 139 µs | — | **5.97 ms** | 1.37 s |
-| pseudo-spectral | — | 6 400 (80²) | 2.5e-13 | 1.5e-13 | 97 µs | 6.11 ms | 191 µs | — | **6.4 ms** | 1.32 s |
-| pseudo-spectral | — | 9 216 (96²) | 3.9e-13 | 1.7e-13 | 173 µs | 10.4 ms | 296 µs | — | **10.9 ms** | 1.45 s |
-| pseudo-spectral | — | 12 544 (112²) | 6.1e-13 | 3.4e-13 | 642 µs | 18.9 ms | 425 µs | — | **20 ms** | 1.65 s |
-| pseudo-spectral | — | 16 384 (128²) | 6.6e-13 | 3.4e-13 | 656 µs | 20.9 ms | 503 µs | — | **22 ms** | 2.07 s |
-| FFT | — | 1 024 (32²) | 2.3e-15 | 8.3e-16 | 17.8 µs | 124 µs | 50.7 µs | — | **192 µs** | 1.19 s |
-| FFT | — | 2 304 (48²) | 2.2e-15 | 6.2e-16 | 50.2 µs | 281 µs | 149 µs | — | **480 µs** | 1.38 s |
-| FFT | — | 4 096 (64²) | 2.7e-15 | 7.0e-16 | 35 µs | 185 µs | 132 µs | — | **353 µs** | 1.28 s |
-| FFT | — | 6 400 (80²) | 2.9e-15 | 8.7e-16 | 58.7 µs | 371 µs | 203 µs | — | **633 µs** | 1.39 s |
-| FFT | — | 9 216 (96²) | 2.7e-15 | 7.0e-16 | 81 µs | 323 µs | 321 µs | — | **725 µs** | 1.46 s |
-| FFT | — | 12 544 (112²) | 3.1e-15 | 8.3e-16 | 106 µs | 385 µs | 363 µs | — | **854 µs** | 1.65 s |
-| FFT | — | 16 384 (128²) | 2.6e-15 | 7.2e-16 | 139 µs | 265 µs | 487 µs | — | **891 µs** | 1.94 s |
+| method | SEM order N | unknowns (grid) | solved for | CG its | ‖e‖∞ | relative ‖e‖₂ | solve | setup | RHS | SEM infrastructure | time-to-solution | run_case wall-clock |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| SEM direct | 2 | 1 024 (32²) | 1 024 | — | 3.1e-03 | 1.9e-03 | 111 µs | 3.27 ms | 86.4 µs | 890 ms | **893 ms** | 1.17 s |
+| SEM direct | 3 | 2 304 (48²) | 2 304 | — | 1.1e-04 | 7.3e-05 | 265 µs | 6.45 ms | 129 µs | 900 ms | **907 ms** | 1.19 s |
+| SEM direct | 4 | 4 096 (64²) | 4 096 | — | 4.0e-06 | 2.2e-06 | 405 µs | 14.1 ms | 216 µs | 1.04 s | **1.05 s** | 1.37 s |
+| SEM direct | 5 | 6 400 (80²) | 6 400 | — | 1.2e-07 | 6.8e-08 | 848 µs | 26.4 ms | 312 µs | 1.03 s | **1.06 s** | 1.3 s |
+| SEM direct | 6 | 9 216 (96²) | 9 216 | — | 3.6e-09 | 2.0e-09 | 1.31 ms | 48.7 ms | 359 µs | 1.12 s | **1.17 s** | 1.44 s |
+| SEM direct | 7 | 12 544 (112²) | 12 544 | — | 9.6e-11 | 5.3e-11 | 1.61 ms | 91.6 ms | 357 µs | 1.42 s | **1.52 s** | 1.81 s |
+| SEM direct | 8 | 16 384 (128²) | 16 384 | — | 2.3e-11 | 5.1e-12 | 2.11 ms | 202 ms | 588 µs | 1.5 s | **1.7 s** | 1.98 s |
+| SEM AMG | 2 | 1 024 (32²) | 1 024 | 31 | 3.1e-03 | 1.9e-03 | 2.83 ms | 1.99 ms | 73.4 µs | 931 ms | **936 ms** | 1.18 s |
+| SEM AMG | 3 | 2 304 (48²) | 2 304 | 48 | 1.1e-04 | 7.3e-05 | 13.2 ms | 4.53 ms | 177 µs | 889 ms | **906 ms** | 1.18 s |
+| SEM AMG | 4 | 4 096 (64²) | 4 096 | 66 | 4.0e-06 | 2.2e-06 | 72 ms | 13.4 ms | 257 µs | 1.35 s | **1.44 s** | 1.83 s |
+| SEM AMG | 5 | 6 400 (80²) | 6 400 | 84 | 1.2e-07 | 6.8e-08 | 162 ms | 20.8 ms | 312 µs | 1.07 s | **1.25 s** | 1.54 s |
+| SEM AMG | 6 | 9 216 (96²) | 9 216 | 103 | 3.6e-09 | 2.0e-09 | 421 ms | 33.4 ms | 305 µs | 1.21 s | **1.67 s** | 1.96 s |
+| SEM AMG | 7 | 12 544 (112²) | 12 544 | 123 | 9.6e-11 | 5.3e-11 | 819 ms | 90.7 ms | 438 µs | 1.31 s | **2.22 s** | 2.51 s |
+| SEM AMG | 8 | 16 384 (128²) | 16 384 | 141 | 2.4e-11 | 5.2e-12 | 1.44 s | 207 ms | 622 µs | 1.6 s | **3.25 s** | 3.63 s |
+| SC direct | 2 | 1 024 (32²) | 768 | — | 3.1e-03 | 1.9e-03 | 292 µs | 5.33 ms | 71.4 µs | 955 ms | **960 ms** | 1.24 s |
+| SC direct | 3 | 2 304 (48²) | 1 280 | — | 1.1e-04 | 7.3e-05 | 827 µs | 11.6 ms | 133 µs | 968 ms | **980 ms** | 1.27 s |
+| SC direct | 4 | 4 096 (64²) | 1 792 | — | 4.0e-06 | 2.2e-06 | 1.51 ms | 19.2 ms | 177 µs | 973 ms | **994 ms** | 1.27 s |
+| SC direct | 5 | 6 400 (80²) | 2 304 | — | 1.2e-07 | 6.8e-08 | 2.75 ms | 35 ms | 274 µs | 1.11 s | **1.15 s** | 1.43 s |
+| SC direct | 6 | 9 216 (96²) | 2 816 | — | 3.6e-09 | 2.0e-09 | 4.71 ms | 60.1 ms | 318 µs | 1.3 s | **1.36 s** | 1.67 s |
+| SC direct | 7 | 12 544 (112²) | 3 328 | — | 9.6e-11 | 5.3e-11 | 7.86 ms | 110 ms | 423 µs | 1.35 s | **1.47 s** | 1.78 s |
+| SC direct | 8 | 16 384 (128²) | 3 840 | — | 2.3e-11 | 5.1e-12 | 13.2 ms | 167 ms | 508 µs | 1.65 s | **1.83 s** | 2.14 s |
+| SC AMG | 2 | 1 024 (32²) | 768 | 23 | 3.1e-03 | 1.9e-03 | 1.77 ms | 3.18 ms | 70.9 µs | 933 ms | **938 ms** | 1.26 s |
+| SC AMG | 3 | 2 304 (48²) | 1 280 | 27 | 1.1e-04 | 7.3e-05 | 4.19 ms | 6.79 ms | 126 µs | 896 ms | **907 ms** | 1.17 s |
+| SC AMG | 4 | 4 096 (64²) | 1 792 | 31 | 4.0e-06 | 2.2e-06 | 8.45 ms | 12.8 ms | 184 µs | 994 ms | **1.02 s** | 1.31 s |
+| SC AMG | 5 | 6 400 (80²) | 2 304 | 34 | 1.2e-07 | 6.8e-08 | 15.6 ms | 24.4 ms | 303 µs | 1.03 s | **1.07 s** | 1.34 s |
+| SC AMG | 6 | 9 216 (96²) | 2 816 | 37 | 3.6e-09 | 2.0e-09 | 24.7 ms | 41.2 ms | 328 µs | 1.11 s | **1.18 s** | 1.48 s |
+| SC AMG | 7 | 12 544 (112²) | 3 328 | 40 | 9.6e-11 | 5.3e-11 | 49.1 ms | 88.3 ms | 372 µs | 1.29 s | **1.43 s** | 1.73 s |
+| SC AMG | 8 | 16 384 (128²) | 3 840 | 43 | 2.3e-11 | 5.0e-12 | 60.7 ms | 132 ms | 535 µs | 1.62 s | **1.81 s** | 2.14 s |
+| pseudo-spectral | — | 1 024 (32²) | 1 024 | — | 2.6e-14 | 1.4e-14 | 38.9 µs | 2.58 ms | 90.5 µs | — | **2.71 ms** | 1.18 s |
+| pseudo-spectral | — | 2 304 (48²) | 2 304 | — | 7.1e-14 | 3.5e-14 | 25.1 µs | 1.97 ms | 93.3 µs | — | **2.09 ms** | 1.2 s |
+| pseudo-spectral | — | 4 096 (64²) | 4 096 | — | 4.1e-13 | 1.9e-13 | 62.4 µs | 4.85 ms | 136 µs | — | **5.05 ms** | 1.27 s |
+| pseudo-spectral | — | 6 400 (80²) | 6 400 | — | 2.5e-13 | 1.5e-13 | 86.6 µs | 5.61 ms | 234 µs | — | **5.93 ms** | 1.29 s |
+| pseudo-spectral | — | 9 216 (96²) | 9 216 | — | 3.9e-13 | 1.7e-13 | 1.39 ms | 11.2 ms | 305 µs | — | **12.9 ms** | 1.51 s |
+| pseudo-spectral | — | 12 544 (112²) | 12 544 | — | 6.1e-13 | 3.4e-13 | 423 µs | 14.4 ms | 392 µs | — | **15.2 ms** | 1.57 s |
+| pseudo-spectral | — | 16 384 (128²) | 16 384 | — | 6.6e-13 | 3.4e-13 | 347 µs | 18.7 ms | 447 µs | — | **19.5 ms** | 1.94 s |
+| FFT | — | 1 024 (32²) | 1 024 | — | 2.3e-15 | 8.3e-16 | 12.9 µs | 115 µs | 51 µs | — | **179 µs** | 1.23 s |
+| FFT | — | 2 304 (48²) | 2 304 | — | 2.2e-15 | 6.1e-16 | 37.3 µs | 280 µs | 115 µs | — | **432 µs** | 1.27 s |
+| FFT | — | 4 096 (64²) | 4 096 | — | 2.6e-15 | 7.2e-16 | 32.4 µs | 142 µs | 133 µs | — | **307 µs** | 1.16 s |
+| FFT | — | 6 400 (80²) | 6 400 | — | 2.7e-15 | 8.7e-16 | 56.2 µs | 365 µs | 201 µs | — | **622 µs** | 1.34 s |
+| FFT | — | 9 216 (96²) | 9 216 | — | 2.7e-15 | 7.2e-16 | 61.4 µs | 342 µs | 257 µs | — | **660 µs** | 1.47 s |
+| FFT | — | 12 544 (112²) | 12 544 | — | 3.2e-15 | 8.3e-16 | 88.4 µs | 383 µs | 406 µs | — | **878 µs** | 1.54 s |
+| FFT | — | 16 384 (128²) | 16 384 | — | 2.6e-15 | 7.2e-16 | 101 µs | 240 µs | 474 µs | — | **815 µs** | 1.86 s |
 
 To regenerate the figures from an existing `results.csv`: `python3 tools/periodic_poisson_benchmark/plot.py`.
 

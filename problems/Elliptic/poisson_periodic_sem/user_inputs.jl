@@ -17,10 +17,25 @@ function user_inputs()
         #                    derivative matrix (dense, physical space) on the
         #                    same uniform grid (:ps_N, default :fft_N; even).
         # (:lfft wins if both spectral flags are set.)
+        #
+        # SEM solves of the periodic system (with :lfft/:lpseudospectral false):
+        #   default                        sparse direct (factorise + solve)
+        #   :linsolve_amg => true          AMG-preconditioned CG, full system
+        #   :lstatic_condensation => true  element-learning static condensation
+        #                                  (elementLearning_Axb!, T^ie from the
+        #                                  SEM matrix, no network);
+        #                                  skeleton system solved by
+        #                                  :EL_skeleton_solver => "direct" | "amg"
+        # AMG options: :amg_method => "sa" | "rs", :amg_rtol (CG stopping tol).
         #---------------------------------------------------------------------------
         :llinsolve            => true,
         :lfft                 => false,
         :lpseudospectral      => false,
+        :linsolve_amg         => false,
+        :lstatic_condensation => false,
+        :EL_skeleton_solver   => "direct",
+        :amg_method           => "sa",
+        :amg_rtol             => 1e-12,
         #--- FFT (used only with :lfft => true) -----------------------------------
         :fft_N                => 64,
         :fft_Lx               => 2π,

@@ -1,29 +1,29 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 420" width="680" height="420" role="img" aria-labelledby="t d" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
-<title id="t">Error vs time-to-solution (with infrastructure)</title><desc id="d">L-infinity error versus time-to-solution incl. infrastructure (log scale) for the SEM, pseudo-spectral and FFT solvers; each curve runs over increasing resolution.</desc>
+<title id="t">Error vs time-to-solution (with infrastructure)</title><desc id="d">L-infinity error versus time-to-solution incl. infrastructure (log scale) for the six solvers (four SEM solves, pseudo-spectral, FFT); each curve runs over increasing resolution.</desc>
 <rect width="680" height="420" fill="#fcfcfb"/>
 <text x="78" y="28" font-size="16" font-weight="600" fill="#0b0b0b">Error vs time-to-solution (with infrastructure)</text>
 <text x="78" y="48" font-size="12.5" fill="#52514e">−∇²u = f on [0,2π]², doubly periodic · second-run timings</text>
 <line x1="78" x2="530" y1="358.0" y2="358.0" stroke="#e4e3dd" stroke-width="1"/>
 <text x="68" y="362.0" font-size="12" text-anchor="end" fill="#52514e">10⁻¹⁵</text>
-<line x1="78" x2="530" y1="337.5" y2="337.5" stroke="#e4e3dd" stroke-width="1"/>
-<line x1="78" x2="530" y1="317.1" y2="317.1" stroke="#e4e3dd" stroke-width="1"/>
-<text x="68" y="321.1" font-size="12" text-anchor="end" fill="#52514e">10⁻¹³</text>
-<line x1="78" x2="530" y1="296.6" y2="296.6" stroke="#e4e3dd" stroke-width="1"/>
-<line x1="78" x2="530" y1="276.2" y2="276.2" stroke="#e4e3dd" stroke-width="1"/>
-<text x="68" y="280.2" font-size="12" text-anchor="end" fill="#52514e">10⁻¹¹</text>
-<line x1="78" x2="530" y1="255.7" y2="255.7" stroke="#e4e3dd" stroke-width="1"/>
-<line x1="78" x2="530" y1="235.2" y2="235.2" stroke="#e4e3dd" stroke-width="1"/>
-<text x="68" y="239.2" font-size="12" text-anchor="end" fill="#52514e">10⁻⁹</text>
-<line x1="78" x2="530" y1="214.8" y2="214.8" stroke="#e4e3dd" stroke-width="1"/>
-<line x1="78" x2="530" y1="194.3" y2="194.3" stroke="#e4e3dd" stroke-width="1"/>
-<text x="68" y="198.3" font-size="12" text-anchor="end" fill="#52514e">10⁻⁷</text>
-<line x1="78" x2="530" y1="173.8" y2="173.8" stroke="#e4e3dd" stroke-width="1"/>
-<line x1="78" x2="530" y1="153.4" y2="153.4" stroke="#e4e3dd" stroke-width="1"/>
-<text x="68" y="157.4" font-size="12" text-anchor="end" fill="#52514e">10⁻⁵</text>
-<line x1="78" x2="530" y1="132.9" y2="132.9" stroke="#e4e3dd" stroke-width="1"/>
-<line x1="78" x2="530" y1="112.5" y2="112.5" stroke="#e4e3dd" stroke-width="1"/>
-<text x="68" y="116.5" font-size="12" text-anchor="end" fill="#52514e">10⁻³</text>
-<line x1="78" x2="530" y1="92.0" y2="92.0" stroke="#e4e3dd" stroke-width="1"/>
+<line x1="78" x2="530" y1="338.8" y2="338.8" stroke="#e4e3dd" stroke-width="1"/>
+<line x1="78" x2="530" y1="319.5" y2="319.5" stroke="#e4e3dd" stroke-width="1"/>
+<text x="68" y="323.5" font-size="12" text-anchor="end" fill="#52514e">10⁻¹³</text>
+<line x1="78" x2="530" y1="300.3" y2="300.3" stroke="#e4e3dd" stroke-width="1"/>
+<line x1="78" x2="530" y1="281.1" y2="281.1" stroke="#e4e3dd" stroke-width="1"/>
+<text x="68" y="285.1" font-size="12" text-anchor="end" fill="#52514e">10⁻¹¹</text>
+<line x1="78" x2="530" y1="261.8" y2="261.8" stroke="#e4e3dd" stroke-width="1"/>
+<line x1="78" x2="530" y1="242.6" y2="242.6" stroke="#e4e3dd" stroke-width="1"/>
+<text x="68" y="246.6" font-size="12" text-anchor="end" fill="#52514e">10⁻⁹</text>
+<line x1="78" x2="530" y1="223.4" y2="223.4" stroke="#e4e3dd" stroke-width="1"/>
+<line x1="78" x2="530" y1="204.2" y2="204.2" stroke="#e4e3dd" stroke-width="1"/>
+<text x="68" y="208.2" font-size="12" text-anchor="end" fill="#52514e">10⁻⁷</text>
+<line x1="78" x2="530" y1="184.9" y2="184.9" stroke="#e4e3dd" stroke-width="1"/>
+<line x1="78" x2="530" y1="165.7" y2="165.7" stroke="#e4e3dd" stroke-width="1"/>
+<text x="68" y="169.7" font-size="12" text-anchor="end" fill="#52514e">10⁻⁵</text>
+<line x1="78" x2="530" y1="146.5" y2="146.5" stroke="#e4e3dd" stroke-width="1"/>
+<line x1="78" x2="530" y1="127.2" y2="127.2" stroke="#e4e3dd" stroke-width="1"/>
+<text x="68" y="131.2" font-size="12" text-anchor="end" fill="#52514e">10⁻³</text>
+<line x1="78" x2="530" y1="108.0" y2="108.0" stroke="#e4e3dd" stroke-width="1"/>
 <line x1="78" x2="530" y1="358" y2="358" stroke="#b5b3aa" stroke-width="1"/>
 <line x1="78.0" x2="78.0" y1="358" y2="363" stroke="#b5b3aa" stroke-width="1"/>
 <text x="78.0" y="378" font-size="12" text-anchor="middle" fill="#52514e">100 µs</text>
@@ -38,41 +38,77 @@
 <line x1="530.0" x2="530.0" y1="358" y2="363" stroke="#b5b3aa" stroke-width="1"/>
 <text x="530.0" y="378" font-size="12" text-anchor="middle" fill="#52514e">10 s</text>
 <text x="304.0" y="406" font-size="12.5" text-anchor="middle" fill="#52514e">time-to-solution incl. infrastructure (log scale)</text>
-<text x="18" y="225.0" font-size="12.5" text-anchor="middle" fill="#52514e" transform="rotate(-90 18 225.0)">L∞ error vs exact solution</text>
-<polyline points="437.9,102.5 438.6,131.9 439.9,161.4 443.7,193.0 449.0,223.9 455.4,256.0 462.0,268.7" fill="none" stroke="#2a78d6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-<circle cx="437.9" cy="102.5" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
-<circle cx="438.6" cy="131.9" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
-<circle cx="439.9" cy="161.4" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
-<circle cx="443.7" cy="193.0" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
-<circle cx="449.0" cy="223.9" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
-<circle cx="455.4" cy="256.0" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
-<circle cx="462.0" cy="268.7" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
-<text x="474.0" y="272.7" font-size="12.5" fill="#0b0b0b">SEM (16×16 el.)</text>
-<polyline points="167.6,329.1 205.4,320.1 238.5,304.5 241.3,308.9 262.2,304.9 286.0,301.0 289.8,300.3" fill="none" stroke="#eb6834" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="163.1" y="324.6" width="9" height="9" rx="1.5" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
-<rect x="200.9" y="315.6" width="9" height="9" rx="1.5" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
-<rect x="234.0" y="300.0" width="9" height="9" rx="1.5" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
-<rect x="236.8" y="304.4" width="9" height="9" rx="1.5" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
-<rect x="257.7" y="300.4" width="9" height="9" rx="1.5" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
-<rect x="281.5" y="296.5" width="9" height="9" rx="1.5" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
-<rect x="285.3" y="295.8" width="9" height="9" rx="1.5" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
-<text x="301.8" y="304.3" font-size="12.5" fill="#0b0b0b">pseudo-spectral</text>
-<polyline points="103.7,350.5 139.6,350.9 127.5,349.3 150.4,348.6 155.8,349.2 162.2,347.9 163.9,349.7" fill="none" stroke="#1baf7a" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-<path d="M103.7,345.0 L109.2,355.0 L98.2,355.0 Z" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
-<path d="M139.6,345.4 L145.1,355.4 L134.1,355.4 Z" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
-<path d="M127.5,343.8 L133.0,353.8 L122.0,353.8 Z" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
-<path d="M150.4,343.1 L155.9,353.1 L144.9,353.1 Z" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
-<path d="M155.8,343.7 L161.3,353.7 L150.3,353.7 Z" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
-<path d="M162.2,342.4 L167.7,352.4 L156.7,352.4 Z" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
-<path d="M163.9,344.2 L169.4,354.2 L158.4,354.2 Z" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
-<text x="175.9" y="353.7" font-size="12.5" fill="#0b0b0b">FFT</text>
-<line x1="78" x2="100" y1="70" y2="70" stroke="#2a78d6" stroke-width="2"/>
-<circle cx="89.0" cy="70.0" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
-<text x="108" y="74" font-size="12.5" fill="#0b0b0b">SEM (16×16 el.)</text>
-<line x1="242.0" x2="264.0" y1="70" y2="70" stroke="#eb6834" stroke-width="2"/>
-<rect x="248.5" y="65.5" width="9" height="9" rx="1.5" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
-<text x="272.0" y="74" font-size="12.5" fill="#0b0b0b">pseudo-spectral</text>
-<line x1="406.0" x2="428.0" y1="70" y2="70" stroke="#1baf7a" stroke-width="2"/>
-<path d="M417.0,64.5 L422.5,74.5 L411.5,74.5 Z" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
-<text x="436.0" y="74" font-size="12.5" fill="#0b0b0b">FFT</text>
+<text x="18" y="233.0" font-size="12.5" text-anchor="middle" fill="#52514e" transform="rotate(-90 18 233.0)">L∞ error vs exact solution</text>
+<polyline points="435.2,117.8 435.7,145.5 441.6,173.3 441.9,202.9 445.9,232.0 456.0,262.2 460.5,274.1" fill="none" stroke="#2a78d6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="435.2" cy="117.8" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<circle cx="435.7" cy="145.5" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<circle cx="441.6" cy="173.3" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<circle cx="441.9" cy="202.9" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<circle cx="445.9" cy="232.0" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<circle cx="456.0" cy="262.2" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<circle cx="460.5" cy="274.1" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<polyline points="437.0,117.8 435.7,145.5 453.8,173.3 448.4,202.9 459.7,232.0 470.9,262.2 485.9,273.9" fill="none" stroke="#eb6834" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="432.5" y="113.3" width="9" height="9" rx="1.5" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<rect x="431.2" y="141.0" width="9" height="9" rx="1.5" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<rect x="449.3" y="168.8" width="9" height="9" rx="1.5" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<rect x="443.9" y="198.4" width="9" height="9" rx="1.5" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<rect x="455.2" y="227.5" width="9" height="9" rx="1.5" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<rect x="466.4" y="257.7" width="9" height="9" rx="1.5" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<rect x="481.4" y="269.4" width="9" height="9" rx="1.5" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<polyline points="438.0,117.8 438.8,145.5 439.4,173.3 445.0,202.9 451.8,232.0 454.7,262.2 463.3,274.1" fill="none" stroke="#1baf7a" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M438.0,112.3 L443.5,122.3 L432.5,122.3 Z" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M438.8,140.0 L444.3,150.0 L433.3,150.0 Z" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M439.4,167.8 L444.9,177.8 L433.9,177.8 Z" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M445.0,197.4 L450.5,207.4 L439.5,207.4 Z" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M451.8,226.5 L457.3,236.5 L446.3,236.5 Z" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M454.7,256.7 L460.2,266.7 L449.2,266.7 Z" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M463.3,268.6 L468.8,278.6 L457.8,278.6 Z" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<polyline points="437.1,117.8 435.8,145.5 440.2,173.3 442.4,202.9 446.0,232.0 453.6,262.1 462.9,274.3" fill="none" stroke="#eda100" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M437.1,111.8 L443.1,117.8 L437.1,123.8 L431.1,117.8 Z" fill="#eda100" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M435.8,139.5 L441.8,145.5 L435.8,151.5 L429.8,145.5 Z" fill="#eda100" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M440.2,167.3 L446.2,173.3 L440.2,179.3 L434.2,173.3 Z" fill="#eda100" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M442.4,196.9 L448.4,202.9 L442.4,208.9 L436.4,202.9 Z" fill="#eda100" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M446.0,226.0 L452.0,232.0 L446.0,238.0 L440.0,232.0 Z" fill="#eda100" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M453.6,256.1 L459.6,262.1 L453.6,268.1 L447.6,262.1 Z" fill="#eda100" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M462.9,268.3 L468.9,274.3 L462.9,280.3 L456.9,274.3 Z" fill="#eda100" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<polyline points="207.5,330.9 197.4,322.4 232.0,307.7 238.3,311.9 268.9,308.1 275.3,304.5 285.1,303.8" fill="none" stroke="#e87ba4" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M207.5,336.4 L213.0,326.4 L202.0,326.4 Z" fill="#e87ba4" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M197.4,327.9 L202.9,317.9 L191.9,317.9 Z" fill="#e87ba4" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M232.0,313.2 L237.5,303.2 L226.5,303.2 Z" fill="#e87ba4" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M238.3,317.4 L243.8,307.4 L232.8,307.4 Z" fill="#e87ba4" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M268.9,313.6 L274.4,303.6 L263.4,303.6 Z" fill="#e87ba4" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M275.3,310.0 L280.8,300.0 L269.8,300.0 Z" fill="#e87ba4" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M285.1,309.3 L290.6,299.3 L279.6,299.3 Z" fill="#e87ba4" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<polyline points="100.9,350.9 135.5,351.3 122.1,350.2 149.8,349.8 152.1,349.7 163.3,348.2 160.4,350.2" fill="none" stroke="#008300" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="100.9" cy="350.9" r="4" fill="#fcfcfb" stroke="#008300" stroke-width="2.5"/>
+<circle cx="135.5" cy="351.3" r="4" fill="#fcfcfb" stroke="#008300" stroke-width="2.5"/>
+<circle cx="122.1" cy="350.2" r="4" fill="#fcfcfb" stroke="#008300" stroke-width="2.5"/>
+<circle cx="149.8" cy="349.8" r="4" fill="#fcfcfb" stroke="#008300" stroke-width="2.5"/>
+<circle cx="152.1" cy="349.7" r="4" fill="#fcfcfb" stroke="#008300" stroke-width="2.5"/>
+<circle cx="163.3" cy="348.2" r="4" fill="#fcfcfb" stroke="#008300" stroke-width="2.5"/>
+<circle cx="160.4" cy="350.2" r="4" fill="#fcfcfb" stroke="#008300" stroke-width="2.5"/>
+<text x="472.5" y="284.0" font-size="12.5" fill="#0b0b0b">SEM direct</text>
+<text x="497.9" y="254.0" font-size="12.5" fill="#0b0b0b">SEM AMG</text>
+<text x="475.3" y="269.0" font-size="12.5" fill="#0b0b0b">SC direct</text>
+<text x="474.9" y="299.0" font-size="12.5" fill="#0b0b0b">SC AMG</text>
+<text x="297.1" y="314.0" font-size="12.5" fill="#0b0b0b">pseudo-spectral</text>
+<text x="172.4" y="354.2" font-size="12.5" fill="#0b0b0b">FFT</text>
+<line x1="78" x2="100" y1="68" y2="68" stroke="#2a78d6" stroke-width="2"/>
+<circle cx="89.0" cy="68.0" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<text x="108" y="72" font-size="12.5" fill="#0b0b0b">SEM direct</text>
+<line x1="268" x2="290" y1="68" y2="68" stroke="#eb6834" stroke-width="2"/>
+<rect x="274.5" y="63.5" width="9" height="9" rx="1.5" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<text x="298" y="72" font-size="12.5" fill="#0b0b0b">SEM AMG</text>
+<line x1="458" x2="480" y1="68" y2="68" stroke="#1baf7a" stroke-width="2"/>
+<path d="M469.0,62.5 L474.5,72.5 L463.5,72.5 Z" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<text x="488" y="72" font-size="12.5" fill="#0b0b0b">SC direct</text>
+<line x1="78" x2="100" y1="88" y2="88" stroke="#eda100" stroke-width="2"/>
+<path d="M89.0,82.0 L95.0,88.0 L89.0,94.0 L83.0,88.0 Z" fill="#eda100" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<text x="108" y="92" font-size="12.5" fill="#0b0b0b">SC AMG</text>
+<line x1="268" x2="290" y1="88" y2="88" stroke="#e87ba4" stroke-width="2"/>
+<path d="M279.0,93.5 L284.5,83.5 L273.5,83.5 Z" fill="#e87ba4" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<text x="298" y="92" font-size="12.5" fill="#0b0b0b">pseudo-spectral</text>
+<line x1="458" x2="480" y1="88" y2="88" stroke="#008300" stroke-width="2"/>
+<circle cx="469.0" cy="88.0" r="4" fill="#fcfcfb" stroke="#008300" stroke-width="2.5"/>
+<text x="488" y="92" font-size="12.5" fill="#0b0b0b">FFT</text>
 </svg>

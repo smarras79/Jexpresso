@@ -72,6 +72,11 @@ end
 # =============================================================================
 #  St_elemLearning — struct holds ONLY per-element blocks and ML tensors.
 # =============================================================================
+# The array fields are typed CONCRETELY through A2 (the 2-D blocks) and A3
+# (the per-element 3-D blocks). Untyped, every EL.Avovo[...], EL.A∂Ovo[...] read
+# in the condensation / recovery loops was a dynamically dispatched access. The
+# 12-parameter St_elemLearning{…}() form used by allocate_elemLearning keeps
+# working through the outer constructor below the struct.
 Base.@kwdef mutable struct St_elemLearning{T <: AbstractFloat,
                                            dims0,
                                            dims_vovo,
@@ -83,11 +88,13 @@ Base.@kwdef mutable struct St_elemLearning{T <: AbstractFloat,
                                            dimsML1,
                                            dimsML2,
                                            lELSample,
-                                           backend}
+                                           backend,
+                                           A2 <: AbstractArray{T, 2},
+                                           A3 <: AbstractArray{T, 3}}
 
     # ── Per-element: interior × interior  (nvo × nvo × nelem) ────────────────
-    Avovo   = KernelAbstractions.zeros(backend, T, dims_vovo)
-    AIoIo   = KernelAbstractions.zeros(backend, T, dims_vovo)
+    Avovo::A3   = KernelAbstractions.zeros(backend, T, dims_vovo)
+    AIoIo::A3   = KernelAbstractions.zeros(backend, T, dims_vovo)
 
     # ── Per-element source term  (nvo × nelem) ───────────────────────────────
     #   fvo : interior element load vector  f_{v^{ie,o}} = (f, φ_i)_K  for the
@@ -97,30 +104,40 @@ Base.@kwdef mutable struct St_elemLearning{T <: AbstractFloat,
     #         Used both to form the condensed skeleton RHS  f̂  (eq. 1.7b) and
     #         to recover the interior solution  u_{v^{ie,o}} = t^{ie} - T^{ie} u_{v^{ie,b}}
     #         (eq. 1.9).
-    fvo     = KernelAbstractions.zeros(backend, T, dims_fvo)
-    tie     = KernelAbstractions.zeros(backend, T, dims_fvo)
+    fvo::A2     = KernelAbstractions.zeros(backend, T, dims_fvo)
+    tie::A2     = KernelAbstractions.zeros(backend, T, dims_fvo)
 
     # ── Per-element: interior × local-boundary  (nvo × elnbdy × nelem) ───────
-    Avovb   = KernelAbstractions.zeros(backend, T, dims_vovb)
-    Avo∂O   = KernelAbstractions.zeros(backend, T, dims_vovb)
-    Avo∂τ   = KernelAbstractions.zeros(backend, T, dims_vovb)
-    AIo∂τ   = KernelAbstractions.zeros(backend, T, dims_vovb)
-    AIo∂O   = KernelAbstractions.zeros(backend, T, dims_vovb)
+    Avovb::A3   = KernelAbstractions.zeros(backend, T, dims_vovb)
+    Avo∂O::A3   = KernelAbstractions.zeros(backend, T, dims_vovb)
+    Avo∂τ::A3   = KernelAbstractions.zeros(backend, T, dims_vovb)
+    AIo∂τ::A3   = KernelAbstractions.zeros(backend, T, dims_vovb)
+    AIo∂O::A3   = KernelAbstractions.zeros(backend, T, dims_vovb)
 
     # ── Per-element: local-boundary × interior  (elnbdy × nvo × nelem) ───────
-    A∂Ovo   = KernelAbstractions.zeros(backend, T, dims_∂Ovo)
-    A∂OIo   = KernelAbstractions.zeros(backend, T, dims_∂Ovo)
+    A∂Ovo::A3   = KernelAbstractions.zeros(backend, T, dims_∂Ovo)
+    A∂OIo::A3   = KernelAbstractions.zeros(backend, T, dims_∂Ovo)
 
     # ── Local temporaries ─────────────────────────────────────────────────────
-    T1      = KernelAbstractions.zeros(backend, T, dims_T1)
-    T2      = KernelAbstractions.zeros(backend, T, dims_T2)
-    Tie     = KernelAbstractions.zeros(backend, T, dims_T2)
+    T1::A2      = KernelAbstractions.zeros(backend, T, dims_T1)
+    T2::A2      = KernelAbstractions.zeros(backend, T, dims_T2)
+    Tie::A2     = KernelAbstractions.zeros(backend, T, dims_T2)
 
-    lEL_Sample = lELSample
+    lEL_Sample::Bool = lELSample
 
     # ── ML tensors ────────────────────────────────────────────────────────────
-    input_tensor  = KernelAbstractions.zeros(backend, T, dimsML1)
-    output_tensor = KernelAbstractions.zeros(backend, T, dimsML2)
+    input_tensor::A2  = KernelAbstractions.zeros(backend, T, dimsML1)
+    output_tensor::A2 = KernelAbstractions.zeros(backend, T, dimsML2)
+end
+
+function St_elemLearning{T, dims0, dims_vovo, dims_fvo, dims_∂Ovo, dims_vovb, dims_T2, dims_T1,
+                         dimsML1, dimsML2, lELSample, backend}(; kwargs...) where
+                         {T, dims0, dims_vovo, dims_fvo, dims_∂Ovo, dims_vovb, dims_T2, dims_T1,
+                          dimsML1, dimsML2, lELSample, backend}
+    A2 = typeof(KernelAbstractions.zeros(backend, T, 1, 1))
+    A3 = typeof(KernelAbstractions.zeros(backend, T, 1, 1, 1))
+    return St_elemLearning{T, dims0, dims_vovo, dims_fvo, dims_∂Ovo, dims_vovb, dims_T2, dims_T1,
+                           dimsML1, dimsML2, lELSample, backend, A2, A3}(; kwargs...)
 end
 
 
@@ -366,6 +383,41 @@ end
 
 
 # ╔══════════════════════════════════════════════════════════════════════════════╗
+# ║  Skeleton solve of the statically condensed system                          ║
+# ╚══════════════════════════════════════════════════════════════════════════════╝
+"""
+    el_skeleton_solve(B, rhs; solver = :direct, amg_method = "sa", amg_rtol = 1e-12,
+                      singular = false) -> u
+
+Solve the condensed skeleton system  B_{∂O,∂O} u_{∂O} = rhs  (eq. 1.4) with
+  solver = :direct  sparse direct factorisation (factorize = Cholesky for a
+                    symmetric B, LU otherwise — what `B \\ rhs` did before)
+  solver = :amg     AMG-preconditioned CG (amg.jl); B is SPD
+`singular = true` is the pure-periodic case (no Dirichlet set Γ): B has the
+constants in its null space, the first unknown is pinned to 0 and the caller
+fixes the gauge. Records the phases :sc_factor (factorisation / AMG hierarchy)
+and :sc_skeleton (triangular solves / CG iterations) in JX_TIMINGS.
+"""
+function el_skeleton_solve(B::SparseMatrixCSC, rhs::AbstractVector;
+                           solver = :direct, amg_method = "sa", amg_rtol = 1e-12,
+                           singular::Bool = false)
+    s  = Symbol(lowercase(string(solver)))
+    s in (:direct, :amg) ||
+        error(" # el_skeleton_solve: :EL_skeleton_solver => \"$solver\"; expected \"direct\" or \"amg\".")
+    Bs = singular ? B[2:end, 2:end] : B
+    bs = singular ? rhs[2:end] : rhs
+    if s === :direct
+        F  = jx_phase(() -> factorize(Bs), :sc_factor)
+        us = jx_phase(() -> F \ bs, :sc_skeleton)
+    else
+        S  = jx_phase(() -> jx_amg_setup(Bs; method = amg_method), :sc_factor)
+        us = jx_phase(() -> jx_amg_solve(S, bs; rtol = amg_rtol), :sc_skeleton)
+    end
+    return singular ? vcat(zero(eltype(us)), us) : us
+end
+
+
+# ╔══════════════════════════════════════════════════════════════════════════════╗
 # ║  Main function                                                              ║
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 # `RHS` is the global right-hand-side / load vector of the governing equation
@@ -387,7 +439,11 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
                               wbuf::EL_WorkBuffers;
                               isamp=1,
                               total_cols_writtenin=0,
-                              total_cols_writtenout=0)
+                              total_cols_writtenout=0,
+                              skeleton_solver=:direct,
+                              amg_method="sa",
+                              amg_rtol=1e-12,
+                              record_tensors::Bool=true)
 
     mesh.lengthO  = mesh.length∂O + mesh.lengthIo
     nelintpoints  = (mesh.ngl - 2)^2
@@ -397,6 +453,8 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
     # ── DOF → position lookup tables ─────────────────────────────────────────
     ∂O_pos = Dict{Int,Int}(mesh.∂O[i] => i for i in 1:mesh.length∂O)
     ∂τ_pos = Dict{Int,Int}(mesh.∂τ[j] => j for j in 1:mesh.length∂τ)
+
+    _t_extract = time_ns()
 
     # =========================================================================
     # SECTION 1: Sparse skeleton submatrices
@@ -459,13 +517,23 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
         end
     end
 
+    JX_TIMINGS[:sc_extract] = (time_ns() - _t_extract) / 1e9
+
     if EL.lEL_Sample
 
+        _t_condense = time_ns()
         # ── Build ΔB and the condensed RHS correction Δf_{∂O} ──────────────────
         #   ΔB    = Σ_ie A_{∂O,vo} (A_{vo,vo})^{-1} A_{vo,∂τ}          (eq. 1.3b)
         #   t^ie  = (A_{vo,vo})^{-1} f_{vo}                            (eq. 1.6b)
         #   Δf_{∂O} = Σ_ie A_{∂O,vo} t^ie  (= Σ_ie A_{∂O,Io} A_{Io,Io}^{-1} f_{Io})
-        fill!(nonzeros(wbuf.ΔB), zero(eltype(A)))
+        # ΔB is accumulated as (row, col, value) triplets and assembled ONCE by
+        # sparse(), which sums repeated entries in the order they were pushed —
+        # the same sums as the former in-place `ΔB[io, jτ] += s`, whose every
+        # new entry was a structural insertion into a sparse matrix (quadratic
+        # in the number of entries: 2.9 s of 3.5 s at nop = 8 on 16×16 elements).
+        ΔB_I = Int[];  ΔB_J = Int[];  ΔB_V = eltype(A)[]
+        sizehint!(ΔB_I, nelem * elnbdypoints^2); sizehint!(ΔB_J, nelem * elnbdypoints^2)
+        sizehint!(ΔB_V, nelem * elnbdypoints^2)
         fill!(wbuf.Δf∂O, zero(eltype(A)))
 
         @inbounds for iel = 1:nelem
@@ -493,7 +561,7 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
                     for ii = 1:nelintpoints
                         s += EL.A∂Ovo[i_loc, ii, iel] * wbuf.BC_local[ii, j_loc]
                     end
-                    wbuf.ΔB[io, jτ] += s
+                    push!(ΔB_I, io);  push!(ΔB_J, jτ);  push!(ΔB_V, s)
                 end
             end
 
@@ -508,7 +576,8 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
             end
         end
 
-        B_∂O∂τ = A_∂O∂τ - wbuf.ΔB
+        ΔB     = sparse(ΔB_I, ΔB_J, ΔB_V, mesh.length∂O, mesh.length∂τ)
+        B_∂O∂τ = A_∂O∂τ - ΔB
 
         @inbounds for i  = 1:mesh.length∂O
             wbuf.∂O_in_∂τ[i]  = ∂τ_pos[mesh.∂O[i]]
@@ -530,7 +599,15 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
         # Solve  B_{∂O,∂O} u_{∂O} = f̂_{∂O} - B_{∂O,Γ} gΓ               (eq. 1.4)
         BOΓg_tmp          = B_∂O∂Γ * gΓ
         wbuf.rhs∂O       .= wbuf.f̂∂O .- BOΓg_tmp
-        wbuf.u∂O         .= B_∂O∂O \ wbuf.rhs∂O
+        JX_TIMINGS[:sc_condense] = (time_ns() - _t_condense) / 1e9
+        # sparse direct or AMG-preconditioned CG (el_skeleton_solve); with no
+        # Dirichlet set (a fully periodic problem) B has the constants in its
+        # null space and one unknown is pinned
+        wbuf.u∂O         .= el_skeleton_solve(B_∂O∂O, wbuf.rhs∂O;
+                                              solver = skeleton_solver,
+                                              amg_method = amg_method, amg_rtol = amg_rtol,
+                                              singular = mesh.lengthΓ == 0)
+        _t_recover = time_ns()
 
         @inbounds for io = 1:mesh.length∂O;  u[mesh.∂O[io]] = wbuf.u∂O[io];  end
         @inbounds for io = 1:mesh.lengthΓ;   u[mesh.Γ[io]]  = gΓ[io];        end
@@ -572,7 +649,11 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
             end
         end
 
+        JX_TIMINGS[:sc_recover] = (time_ns() - _t_recover) / 1e9
+
         # ── ML tensor recording ───────────────────────────────────────────────
+        # (skipped when the condensation is used as a solver: :lstatic_condensation)
+        record_tensors || return nothing
         EL.input_tensor[:, isamp] .= vec(avisc)
         let iel = 1
             copyto!(wbuf.invAvovo_buf, @view(EL.Avovo[:, :, iel]))
@@ -596,7 +677,9 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
                                wbuf.model, wbuf.model_type,
                                wbuf.input_name, wbuf.output_name,
                                avisc, EL, A_∂τ∂τ, ∂τ_pos, gΓ, RHS, wbuf.infer,
-                               nelintpoints, elnbdypoints)
+                               nelintpoints, elnbdypoints;
+                               skeleton_solver = skeleton_solver,
+                               amg_method = amg_method, amg_rtol = amg_rtol)
         JX_LAST_EL_INFER_TIME[] = (time_ns() - _t_infer0) / 1e9
 
         # PERF: ad-hoc @btime instrumentation removed. The line below was a
@@ -667,7 +750,10 @@ function elementLearning_infer!(
     RHS,
     buf          :: EL_InferBuffers,
     nelintpoints :: Int,
-    elnbdypoints :: Int,
+    elnbdypoints :: Int;
+    skeleton_solver = :direct,
+    amg_method      = "sa",
+    amg_rtol        = 1e-12,
 )
     nfeatures    = size(avisc, 2)
     nout         = nelintpoints * elnbdypoints
@@ -769,7 +855,10 @@ function elementLearning_infer!(
 
     f̂_∂O    = buf.f̂_∂τ[buf.∂O_in_∂τ]
     BOΓg_nn = B_∂O∂Γ * gΓ
-    u∂O_nn  = B_∂O∂O \ (f̂_∂O .- BOΓg_nn)
+    u∂O_nn  = el_skeleton_solve(B_∂O∂O, f̂_∂O .- BOΓg_nn;
+                                solver = skeleton_solver,
+                                amg_method = amg_method, amg_rtol = amg_rtol,
+                                singular = mesh.lengthΓ == 0)
 
     # ══════════════════════════════════════════════════════════════════════════
     # STEP 7 — Scatter solution into u
@@ -990,7 +1079,106 @@ end
 # trained NN and writes the solution) — that used to live inline inside the
 # `if inputs[:lelementLearning]` block of driver(). Called from there.
 #---------------------------------------------------------------------------------------
+# Static-condensation solve options from a case deck (both EL branches).
+el_skeleton_options(inputs) = (skeleton_solver = Symbol(lowercase(string(get(inputs, :EL_skeleton_solver, "direct")))),
+                               amg_method      = get(inputs, :amg_method, "sa"),
+                               amg_rtol        = Float64(get(inputs, :amg_rtol, 1e-12)))
+
+"""
+    el_static_condensation_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat, rank)
+
+The static condensation of element learning used as a SOLVER: the local
+operators T^ie = (A_{vo,vo})^{-1} A_{vo,vb} are computed from the element
+blocks of the SEM matrix (eq. 1.6a) instead of being predicted by the
+network, so the condensation is an exact algebraic reduction of the SEM system
+and reproduces the full solve to round-off. One pass of the sampling branch of
+elementLearning_Axb! without recording ML tensors; the skeleton system is
+solved by `:EL_skeleton_solver` ("direct" or "amg"). Selected with
+`:lelementLearning => true, :lstatic_condensation => true` on a Dirichlet
+problem (the periodic counterpart is periodic_sem_sc_solve).
+"""
+function el_static_condensation_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat, rank)
+    mesh  = sem.mesh
+    ngl   = mesh.ngl;  nelem = mesh.nelem;  npoin = Int(mesh.npoin)
+    nelintpoints = (ngl - 2)^2
+    elnbdypoints = ngl^2 - nelintpoints
+    opts  = el_skeleton_options(inputs)
+
+    RHS = jx_phase(:rhs) do
+        R = zeros(TFloat, npoin)
+        for ip = 1:npoin
+            R[ip] = user_source!(R[ip], params.qp.qn[ip], params.qp.qe[ip], npoin,
+                                 inputs[:CL], inputs[:SOL_VARS_TYPE];
+                                 neqs=1, x=mesh.coords[1,ip], y=mesh.coords[2,ip],
+                                 xmax=mesh.xmax, xmin=mesh.xmin, ymax=mesh.ymax, ymin=mesh.ymin)
+        end
+        R = sem.matrix.M .* R
+        apply_boundary_conditions_lin_solve!(sem.matrix.L, 0.0, params.qp.qe, params.mesh.coords,
+                                             params.metrics.nx, params.metrics.ny, params.metrics.nz,
+                                             npoin, params.mesh.npoin_linear,
+                                             params.mesh.poin_in_bdy_edge, params.mesh.poin_in_bdy_face,
+                                             params.mesh.nedges_bdy, params.mesh.nfaces_bdy,
+                                             ngl, mesh.ngr, mesh.nelem_semi_inf,
+                                             params.basis.ψ, params.basis.dψ,
+                                             0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                             R, 0.0, params.ubdy,
+                                             params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem,
+                                             params.mesh.bdy_edge_type,
+                                             params.ω, qp.neqs, params.inputs, params.AD, mesh.SD)
+        R
+    end
+
+    A = sem.matrix.L
+    EL, wbuf = jx_phase(:sc_alloc) do
+        EL = allocate_elemLearning(nelem, ngl, mesh.length∂O, mesh.length∂τ, mesh.lengthΓ,
+                                   TFloat, inputs[:backend]; Nsamp = 1, lEL_Sample = true)
+        wbuf = EL_WorkBuffers(mesh, A, A[mesh.∂τ, mesh.∂τ], ngl^2,
+                              nelintpoints, elnbdypoints, nothing)
+        EL, wbuf
+    end
+
+    println(YELLOW_FG(string(" # Static condensation (T^ie from the SEM matrix), skeleton solver: ",
+                             opts.skeleton_solver, " ..............")))
+    elementLearning_Axb!(params.qp.qn, params.uaux, mesh, A, RHS, EL,
+                         zeros(TFloat, 1, ngl^2), nothing, nothing,
+                         zeros(mesh.length∂O), zeros(mesh.lengthΓ), wbuf;
+                         skeleton_solver = opts.skeleton_solver,
+                         amg_method = opts.amg_method, amg_rtol = opts.amg_rtol,
+                         record_tensors = false)
+    _el_sc_record_phases!()
+    opts.skeleton_solver === :amg && _el_print_amg_stats()
+    println(YELLOW_FG(string(" # Static condensation ...................................... DONE")))
+
+    usol = params.qp.qn
+    print_solution_L2_error(usol, params.qp.qe, sem.matrix.M, npoin;
+                            label = string("static condensation (", opts.skeleton_solver, ")"))
+    args = (params.SD, usol, params.uaux, 1, 1, mesh, nothing, nothing, nothing,
+            0.0, 0.0, 0.0, OUTPUT_DIR, inputs, params.qp.qvars, params.qp.qoutvars, inputs[:outformat])
+    write_output(args...; nvar=params.qp.neqs, qexact=params.qp.qe, metrics=params.metrics)
+    return nothing
+end
+
+# Roll the static-condensation phases up into the benchmark's :setup / :solve:
+#   setup = work buffers + element blocks from A + Schur complement (ΔB, f̂)
+#           + factorisation / AMG hierarchy of the skeleton system
+#   solve = skeleton solve (triangular solves / CG) + interior recovery
+function _el_sc_record_phases!()
+    g(k) = get(JX_TIMINGS, k, 0.0)
+    JX_TIMINGS[:setup] = g(:setup) + g(:sc_alloc) + g(:sc_extract) + g(:sc_condense) + g(:sc_factor)
+    JX_TIMINGS[:solve] = g(:sc_skeleton) + g(:sc_recover)
+    JX_LAST_SOLVE_TIME[] = JX_TIMINGS[:solve]
+    return nothing
+end
+
+_el_print_amg_stats() = (st = JX_AMG_STATS[];
+    println(GREEN_FG(string(" # AMG (", st.method, ", ", st.levels, " levels): CG converged in ",
+                            st.iters, " iterations, relative residual ", st.rel_resid))))
+
 function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat, rank)
+
+    if get(inputs, :lstatic_condensation, false)
+        return el_static_condensation_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat, rank)
+    end
 
     if rank == 0 println(BLUE_FG(string(" # ALLOCATE FOR ELEMENT LEARNING ......."))) end
 
@@ -1245,6 +1433,7 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
         # Closure that runs the FULL EL condensation solve (per-element block
         # assembly from A + surrogate inference). Re-running reproduces
         # params.qp.qn (deterministic; only reads A/RHS).
+        el_opts  = el_skeleton_options(inputs)
         el_solve = function ()
             elementLearning_Axb!(params.qp.qn, params.uaux, sem.mesh,
                                  A, RHS, EL,
@@ -1253,7 +1442,9 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
                                  BOΓg, gΓ, wbuf;
                                  isamp=1,
                                  total_cols_writtenin=total_cols_writtenin,
-                                 total_cols_writtenout=total_cols_writtenout)
+                                 total_cols_writtenout=total_cols_writtenout,
+                                 skeleton_solver = el_opts.skeleton_solver,
+                                 amg_method = el_opts.amg_method, amg_rtol = el_opts.amg_rtol)
         end
 
         println(GREEN_FG(string(" # INFERENCE: call to elementLearning_Axb! .......... ")))

@@ -54,6 +54,8 @@ using LinearAlgebra
 using SpecialFunctions
 using SparseArrays
 import FFTW              # periodic Poisson solver (kernel/solvers/fft_poisson_core.jl)
+import AlgebraicMultigrid # AMG preconditioner of the SEM / condensed linear solves (kernel/solvers/amg.jl)
+import Krylov             # its conjugate-gradient driver
 using StaticArrays
 using StaticArrays: SVector, MVector
 using OrdinaryDiffEq
@@ -273,6 +275,8 @@ include(joinpath("kernel", "operators", "Axb_rad_mpi.jl"))
 include(joinpath("kernel", "operators", "asm_preconditioner.jl"))
 
 include(joinpath( "kernel", "solvers", "Axb.jl"))
+
+include(joinpath( "kernel", "solvers", "amg.jl"))
 
 include(joinpath( "kernel", "solvers", "periodic_sem.jl"))
 
