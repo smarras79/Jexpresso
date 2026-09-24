@@ -15,8 +15,8 @@
    * stretch "fixed_first_twoblocks_strong" -- inverts the vertical grid on
      these values (40 m at the ground against 14.39 m above); stretching.jl
      warns about it and the 128x128x60 deck names it as the thing not to use.
-   * no :mu_x/:mu_y -- the erf filter defaults are too weak at 160 m elements,
-     where the initial shear layer rolls up at t ~ 450 s and kills the run.
+   * no :mu_x/:mu_y -- the erf filter defaults are too weak at 160 m elements;
+     this case dies at t = 320 s below mu = 0.15.
    * dt 0.02, explicit -- 540,000 steps for 10800 s.
 
  With U = 0 the surface layer is driven by buoyancy alone: u* collapses to
@@ -512,16 +512,18 @@ function user_inputs()
         # do not "restore" it. DBG_FILTER=1 turns it on for a one-off A/B.
         #---------------------------------------------------------------------------
         :lfilter             => true, #parse(Bool, get(ENV, "DBG_FILTER", "false")),
-        # 0.05, the protocol's value, NOT the 0.15 the u10 case needs. That 0.15
-        # exists to hold down the spin-up billow: MOST drag on a 10 m/s mean wind
-        # builds a wall shear layer that rolls up at t ~ 450 s and, at 160 m
-        # elements, cannot break into 3D turbulence. With U = 0 there is no mean
-        # wind, no shear layer and no billow -- free convection is driven by
-        # buoyancy straight out of the surface flux -- so the extra dissipation
-        # would only damp the resolved plumes. DBG_MU=0.15 if the spin-up
-        # surprises us; watch node2-layer max|u_h| over t = 400-800.
-        :mu_x                => parse(Float64, get(ENV, "DBG_MU", "0.05")),
-        :mu_y                => parse(Float64, get(ENV, "DBG_MU", "0.05")),
+        # 0.15, the same as the u10 case. 0.05 was tried on the reasoning that
+        # the u10 value exists to hold down a SHEAR instability -- MOST drag on
+        # a 10 m/s wind builds a wall shear layer that rolls up -- and that with
+        # U = 0 there is no shear layer. That reasoning was wrong: job 1323888
+        # died at t = 320 s on a negative rho*theta, with the node2-layer
+        # max|u_h| going 0.38 -> 1.05 -> 3.38 and max|w| reaching 2.77 over
+        # t = 100-300. Free convection has its own path to the same place: the
+        # plumes grow from the smallest scales the grid has, and at 160 m
+        # elements those are not resolved either. The filter's job here is
+        # de-aliasing, which does not care whether there is a mean wind.
+        :mu_x                => parse(Float64, get(ENV, "DBG_MU", "0.15")),
+        :mu_y                => parse(Float64, get(ENV, "DBG_MU", "0.15")),
 	:mu_z                => 0.1,
         :filter_type         => "erf",
         #---------------------------------------------------------------------------

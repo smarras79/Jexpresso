@@ -681,13 +681,23 @@ function time_loop!(inputs, params, u, args...)
             end
         end
     end
-    cb_les_stat    = DiscreteCallback(les_stat_condition, do_les_statistics!)
-    cb_les_online  = DiscreteCallback(les_online_condition, do_les_online!)
+    # save_positions=(false,false) ON EVERY ONE OF THESE. A DiscreteCallback
+    # defaults to (true,true), which makes the integrator push a COPY OF u into
+    # the solution object before and after each firing. Those copies are live
+    # data, so the GC cannot reclaim them and --heap-size-hint does not bound
+    # them: at 9000-10800 s with statistics every 2 s the heap grew ~6 MB per
+    # call, 1.2 GB over the window, and the 64x64x60 runs died of std::bad_alloc
+    # at the cgroup limit. A heap snapshot at the 5th and the 95th statistics
+    # call showed 306 retained arrays of exactly npoin*neqs Float64 -- u, once
+    # per save. None of these callbacks wants a saved state: the output callback
+    # writes its own VTK, and the rest only read and print.
+    cb_les_stat    = DiscreteCallback(les_stat_condition, do_les_statistics!; save_positions=(false,false))
+    cb_les_online  = DiscreteCallback(les_online_condition, do_les_online!; save_positions=(false,false))
 
-    cb_rad     = DiscreteCallback(rad_condition, do_radiation!)
-    cb         = DiscreteCallback(condition, affect!)
-    cb_amr     = DiscreteCallback(condition, affect!)
-    cb_restart = DiscreteCallback(restart_condition, do_restart!)
+    cb_rad     = DiscreteCallback(rad_condition, do_radiation!; save_positions=(false,false))
+    cb         = DiscreteCallback(condition, affect!; save_positions=(false,false))
+    cb_amr     = DiscreteCallback(condition, affect!; save_positions=(false,false))
+    cb_restart = DiscreteCallback(restart_condition, do_restart!; save_positions=(false,false))
     # Coupled-mode exchange callback: fires once per accepted timestep,
     # sends Julia's interpolated solution to Alya so its MPI.Waitall in
     # the time loop can advance. Without this Alya hangs and never
@@ -830,7 +840,7 @@ function time_loop!(inputs, params, u, args...)
             get(inputs, :lstep_heartbeat, false) == true
         end
         cb_heartbeat = _heartbeat_on ?
-            DiscreteCallback(step_heartbeat_condition, step_heartbeat_affect!) :
+            DiscreteCallback(step_heartbeat_condition, step_heartbeat_affect!; save_positions=(false,false)) :
             nothing
 
         #---------------------------------------------------------------------
@@ -887,7 +897,7 @@ function time_loop!(inputs, params, u, args...)
             return nothing
         end
         cb_cfl = _cfl_every > 0 ?
-            DiscreteCallback(cfl_periodic_condition, cfl_periodic_affect!) :
+            DiscreteCallback(cfl_periodic_condition, cfl_periodic_affect!; save_positions=(false,false)) :
             nothing
 
         #---------------------------------------------------------------------
@@ -909,7 +919,7 @@ function time_loop!(inputs, params, u, args...)
             return nothing
         end
         cb_ww = _ww_every > 0 ?
-            DiscreteCallback(wall_watch_condition, wall_watch_affect!) :
+            DiscreteCallback(wall_watch_condition, wall_watch_affect!; save_positions=(false,false)) :
             nothing
 
         _cbs = Any[cb, cb_restart, cb_les_stat, cb_les_online]
