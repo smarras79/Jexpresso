@@ -4,57 +4,47 @@
 
      -∇²u = f   on a periodic box,   answer fixed to zero mean.
 
- Any solver is tested through ONE calling convention, the "solve function":
+ The manufactured problems (PROBLEMS) are closed-form (u, f) pairs, so every
+ solver — whatever grid or discretisation it uses — is scored against the SAME
+ exact answers. Two scoring paths:
 
-     solve(f::Array{Float64,ND}, Ls::NTuple{ND,Float64}, disc::Symbol) -> u
+ 1. UNIFORM-GRID solvers (the FFT) are called through the "solve function"
 
-   f     right-hand side sampled on the uniform periodic grid
-         x_d,i = x0_d + (i-1) L_d/n_d  (right-hand periodic image not stored)
-   Ls    the periods
-   disc  the discretisation of -∇² the solver is asked to invert:
-           :spectral   Fourier (only a spectral solver can offer this)
-           :fd2        2nd-order centred finite differences, i.e. the sparse
-                       matrix returned by fd2_periodic_laplacian
-   u     any solution; the harness removes its mean before comparing, so a
-         solver that pins a node instead of fixing the mean is not penalised.
+        solve(f::Array{Float64,ND}, Ls::NTuple{ND,Float64}) -> u
 
- A solver declares which discretisations it supports and is then run through
- the SAME checks as every other solver:
+      f   right-hand side sampled on the uniform periodic grid
+          x_d,i = x0_d + (i-1) L_d/n_d  (right-hand periodic image not stored)
+      Ls  the periods
+      u   any solution; the harness removes its mean before comparing, so a
+          solver that pins a node instead of fixing the mean is not penalised.
 
-   verify_periodic_poisson_solver(name, solve; discretizations = (...))
-       correctness of one solver against closed-form answers.
+    verify_periodic_poisson_solver(name, solve)
+        correctness against the exact answers: Laplace equation, null space,
+        spectral exactness and exponential convergence.
+    compare_periodic_poisson_solvers(nameA, solveA, nameB, solveB)
+        two uniform-grid solvers must return the same solution; timing table.
 
-   compare_periodic_poisson_solvers(nameA, solveA, nameB, solveB; ...)
-       agreement of two solvers of the SAME discrete system, plus a timing
-       table. With :fd2 both must return the same discrete solution, so they
-       have to agree to solver tolerance — far tighter than the truncation
-       error they share with the exact solution.
+ 2. NODAL solvers on Jexpresso's periodic SEM mesh (LGL nodes):
+      • the standard direct SEM solve,
+      • an AlgebraicMultigrid.jl solve of the SAME SEM system,
+      • the element-learning static-condensation solve.
+    They live on LGL nodes, not on the uniform grid, so they are scored with
+    nodal_error_norms(p, X, u; w): node coordinates X (nsd × npoin, the layout
+    of mesh.coords), the nodal solution u and the quadrature weights w (the
+    lumped mass matrix), which fix the free constant by the w-weighted mean and
+    weight the relative L² norm. The FFT result is scored the same way (on its
+    own grid, uniform weights), which puts all four solvers in one table.
+    The direct and AMG solves of the SEM system must additionally agree with
+    each other to the AMG tolerance.
 
- Step 1 (now): the FFTW solver, :spectral and :fd2, checked against the exact
- answers and against a sparse direct solve of the fd2 system.
- Step 2: an AlgebraicMultigrid.jl solve of fd2_periodic_laplacian plugs into
- verify_periodic_poisson_solver(...; discretizations = (:fd2,)) and into
- compare_periodic_poisson_solvers against the FFT with no change to this file.
- Step 3: Jexpresso's SEM solves — the standard direct SEM solve and the
- element-learning static-condensation solve — on a periodic mesh. They live on
- LGL nodes, not on this uniform grid, and discretise a different system, so
- they cannot be compared node-by-node with the FFT. They are compared through
- the SAME manufactured problems instead, each solver against the exact answer
- on its own nodes: nodal_error_norms(p, X, u; w) takes the node coordinates X
- (nsd × npoin, the layout of mesh.coords) and the quadrature weights w (the
- lumped mass matrix), fixes the free constant with the w-weighted mean and
- returns the same L∞ / relative-L² pair as error_norms. The problem data are
- closed-form functions, so a case deck evaluates them directly.
-
- Depends on Test, LinearAlgebra, SparseArrays and Printf only.
+ Depends on Test, LinearAlgebra and Printf only.
 =============================================================================#
 module PeriodicPoissonBenchmark
 
-using Test, LinearAlgebra, SparseArrays, Printf
+using Test, LinearAlgebra, Printf
 
 export PoissonProblem, PROBLEMS, problem, sample_problem, gauge, error_norms,
-       grid_points, nodal_error_norms,
-       fd2_periodic_laplacian, direct_fd2_solve,
+       grid_points, nodal_error_norms, reference_spectral_solve,
        verify_periodic_poisson_solver, compare_periodic_poisson_solvers
 
 #-----------------------------------------------------------------------------
@@ -162,214 +152,158 @@ function nodal_error_norms(p::PoissonProblem{ND}, X::AbstractMatrix, u::Abstract
 end
 
 #-----------------------------------------------------------------------------
-# The fd2 discrete system.
+# Independent reference: dense-DFT Fourier solve.
 #-----------------------------------------------------------------------------
 """
-    fd2_periodic_laplacian(dims, Ls) -> SparseMatrixCSC
+    reference_spectral_solve(f, Ls) -> u
 
-The periodic second-order centred finite-difference approximation of -∇² on
-the uniform `dims` grid of periods `Ls`, acting on `vec(u)` (column-major).
-Symmetric positive SEMI-definite; its null space is the constant vector.
-Every axis needs at least 3 points (with 2, the ± neighbours coincide).
+The Fourier spectral solution of -∇²u = f - mean(f), zero mean, computed with
+EXPLICIT DFT matrices applied along each axis (O(n) work per point per axis),
+no FFT library involved. Slow, but an independent implementation of the same
+mathematics — the trusted baseline the FFT is compared against. Keep grids
+modest (≲ 128 per axis).
 """
-function fd2_periodic_laplacian(dims::NTuple{ND, Int}, Ls::NTuple{ND, <:Real}) where {ND}
-    all(>=(3), dims) || throw(ArgumentError("fd2 stencil needs ≥ 3 points per axis, got $dims"))
-    N  = prod(dims)
-    LI = LinearIndices(dims)
-    I, J, V = Int[], Int[], Float64[]
-    sizehint!(I, (2ND + 1) * N); sizehint!(J, (2ND + 1) * N); sizehint!(V, (2ND + 1) * N)
-    for C in CartesianIndices(dims)
-        row  = LI[C]
-        diag = 0.0
-        for d = 1:ND
-            ih2 = (dims[d] / Ls[d])^2
-            diag += 2ih2
-            for s in (-1, 1)
-                nb = ntuple(e -> e == d ? mod1(C[e] + s, dims[e]) : C[e], ND)
-                push!(I, row); push!(J, LI[nb...]); push!(V, -ih2)
-            end
-        end
-        push!(I, row); push!(J, row); push!(V, diag)
+function reference_spectral_solve(f::Array{Float64, ND}, Ls::NTuple{ND, Float64}) where {ND}
+    dims = size(f)
+    Fwd  = [ComplexF64[cis(-2π * j * m / n) for m in 0:n-1, j in 0:n-1] for n in dims]
+    Bwd  = [conj.(F) ./ size(F, 1) for F in Fwd]
+    along(A, M, d) = mapslices(v -> M * v, A; dims = d)
+    fh = ComplexF64.(f)
+    for d = 1:ND
+        fh = along(fh, Fwd[d], d)
     end
-    return sparse(I, J, V, N, N)
-end
-
-"""
-    direct_fd2_solve(f, Ls) -> u
-
-Reference solution of the fd2 system by sparse LU: the mean of f is removed
-(compatibility), the first unknown is pinned to 0 to remove the null space,
-and the result is gauged to zero mean. A trusted baseline for the comparison
-harness, and a template for the AMG solve function.
-"""
-function direct_fd2_solve(f::Array{Float64, ND}, Ls::NTuple{ND, Float64}) where {ND}
-    A  = fd2_periodic_laplacian(size(f), Ls)
-    b  = vec(f) .- sum(f) / length(f)
-    u  = zeros(length(b))
-    u[2:end] = lu(A[2:end, 2:end]) \ b[2:end]
-    return reshape(gauge(u), size(f))
+    for I in CartesianIndices(fh)
+        k2 = 0.0
+        for d = 1:ND
+            m   = I[d] - 1
+            m̃   = 2m <= dims[d] ? m : m - dims[d]
+            k2 += (2π * m̃ / Ls[d])^2
+        end
+        fh[I] = k2 == 0 ? 0.0 : fh[I] / k2
+    end
+    for d = 1:ND
+        fh = along(fh, Bwd[d], d)
+    end
+    return real.(fh)
 end
 
 #-----------------------------------------------------------------------------
-# Correctness of ONE solver.
+# Correctness of ONE uniform-grid solver.
 #-----------------------------------------------------------------------------
-_fd2_residual(u, f, Ls) =
-    maximum(abs, fd2_periodic_laplacian(size(f), Ls) * vec(u) .- (vec(f) .- sum(f) / length(f))) /
-    max(maximum(abs, f), eps())
-
-"Observed order of convergence between successive (h, error) pairs."
+"Local algebraic order between successive (n, error) pairs."
 _rates(ns, errs) = [log(errs[i-1] / errs[i]) / log(ns[i] / ns[i-1]) for i in 2:length(errs)]
 
 """
-    verify_periodic_poisson_solver(name, solve; discretizations = (:spectral, :fd2),
-                                   rtol_solver = 1e-10, verbose = true)
+    verify_periodic_poisson_solver(name, solve; rtol_solver = 1e-10, verbose = true)
 
-Run the benchmark's correctness checks on `solve` (see the file header for
-its calling convention) for every discretisation it supports. `rtol_solver`
-is the relative accuracy the solver promises on its own discrete system — a
-direct/FFT solver meets 1e-10 easily; an iterative one is run with a matching
-stopping tolerance.
+Run the benchmark's correctness checks on a uniform-grid `solve(f, Ls) -> u`
+(see the file header). `rtol_solver` is the relative accuracy the solver
+promises on its own discrete problem.
 """
 function verify_periodic_poisson_solver(name::AbstractString, solve;
-                                        discretizations = (:spectral, :fd2),
                                         rtol_solver::Real = 1e-10,
                                         verbose::Bool = true)
     @testset verbose = verbose "$name" begin
 
-        for disc in discretizations
-            @testset "$disc: Laplace equation (f ≡ 0) ⇒ u ≡ 0" begin
-                for dims in ((16, 16), (15, 22), (8, 6, 10))
-                    Ls = ntuple(d -> 1.0 + d, length(dims))
-                    u  = solve(zeros(dims), Ls, disc)
-                    @test size(u) == dims
-                    @test maximum(abs, u) < 1e-12
-                end
-            end
-
-            @testset "$disc: returned solution is gauge-consistent" begin
-                p = problem("modes2d")
-                f, _ = sample_problem(p, (32, 32))
-                u  = solve(f, p.Ls, disc)
-                u2 = solve(2 .* f, p.Ls, disc)        # linearity
-                @test maximum(abs, gauge(u2) .- 2 .* gauge(u)) < 10rtol_solver * maximum(abs, u)
-            end
-
-            @testset "$disc: incompatible RHS ⇒ solves the projected problem" begin
-                # f + c has no periodic solution for c ≠ 0; the answer must be
-                # that of f (the mean is projected out), not garbage.
-                p = problem("aniso2d")
-                f, _ = sample_problem(p, (40, 24))
-                u  = solve(f,         p.Ls, disc)
-                uc = solve(f .+ 3.25, p.Ls, disc)
-                @test maximum(abs, gauge(uc) .- gauge(u)) < 10rtol_solver * maximum(abs, u)
+        @testset "Laplace equation (f ≡ 0) ⇒ u ≡ 0" begin
+            for dims in ((16, 16), (15, 22), (8, 6, 10))
+                Ls = ntuple(d -> 1.0 + d, length(dims))
+                u  = solve(zeros(dims), Ls)
+                @test size(u) == dims
+                @test maximum(abs, u) < 1e-12
             end
         end
 
-        if :fd2 in discretizations
-            @testset "fd2: solves the sparse fd2 system (residual)" begin
-                # Includes odd, non-power-of-2 and anisotropic grids.
-                for (pname, dims) in (("modes2d", (32, 32)), ("aniso2d", (48, 30)),
-                                      ("smooth2d", (27, 25)), ("modes3d", (12, 10, 9)))
-                    p = problem(pname)
-                    f, _ = sample_problem(p, dims)
-                    u = solve(f, p.Ls, :fd2)
-                    r = _fd2_residual(u, f, p.Ls)
-                    verbose && @info @sprintf("  %-9s fd2 %-12s  relative residual %.2e", name, string(dims), r)
-                    @test r < rtol_solver
-                end
-            end
+        @testset "linearity" begin
+            p = problem("modes2d")
+            f, _ = sample_problem(p, (32, 32))
+            u  = solve(f, p.Ls)
+            u2 = solve(2 .* f, p.Ls)
+            @test maximum(abs, gauge(u2) .- 2 .* gauge(u)) < 10rtol_solver * maximum(abs, u)
+        end
 
-            @testset "fd2: second-order convergence to the exact solution" begin
-                for pname in ("smooth2d", "aniso2d")
-                    p  = problem(pname)
-                    ns = [32, 64, 128, 256]     # asymptotic range for both problems
-                    errs = map(ns) do n
-                        f, uex = sample_problem(p, (n, n))
-                        error_norms(solve(f, p.Ls, :fd2), uex).linf
-                    end
-                    r = _rates(ns, errs)
-                    verbose && @info "  $name fd2 $pname: L∞ errors $(round.(errs; sigdigits=3)), rates $(round.(r; digits=3))"
-                    @test all(x -> 1.9 < x < 2.1, r)
+        @testset "incompatible RHS ⇒ solves the projected problem" begin
+            # f + c has no periodic solution for c ≠ 0; the answer must be
+            # that of f (the mean is projected out), not garbage.
+            p = problem("aniso2d")
+            f, _ = sample_problem(p, (40, 24))
+            u  = solve(f,         p.Ls)
+            uc = solve(f .+ 3.25, p.Ls)
+            @test maximum(abs, gauge(uc) .- gauge(u)) < 10rtol_solver * maximum(abs, u)
+        end
+
+        @testset "band-limited u reproduced to round-off" begin
+            for (pname, dimsets) in (("modes2d",  ((8, 8), (16, 16), (9, 11), (64, 32))),
+                                     ("aniso2d",  ((8, 8), (7, 10), (24, 48))),
+                                     ("modes3d",  ((8, 8, 8), (5, 7, 9), (16, 12, 10))))
+                p = problem(pname)
+                for dims in dimsets
+                    # resolvable: every mode strictly below the Nyquist mode
+                    all(d -> dims[d] > 2p.maxmode[d], eachindex(dims)) || continue
+                    f, uex = sample_problem(p, dims)
+                    e = error_norms(solve(f, p.Ls), uex)
+                    @test e.linf < 1e-12 * max(1.0, maximum(abs, uex))
                 end
             end
         end
 
-        if :spectral in discretizations
-            @testset "spectral: band-limited u reproduced to round-off" begin
-                for (pname, dimsets) in (("modes2d",  ((8, 8), (16, 16), (9, 11), (64, 32))),
-                                         ("aniso2d",  ((8, 8), (7, 10), (24, 48))),
-                                         ("modes3d",  ((8, 8, 8), (5, 7, 9), (16, 12, 10))))
-                    p = problem(pname)
-                    for dims in dimsets
-                        # resolvable: every mode strictly below the Nyquist mode
-                        all(d -> dims[d] > 2p.maxmode[d], eachindex(dims)) || continue
-                        f, uex = sample_problem(p, dims)
-                        e = error_norms(solve(f, p.Ls, :spectral), uex)
-                        @test e.linf < 1e-12 * max(1.0, maximum(abs, uex))
-                    end
-                end
+        @testset "exponential convergence (non-band-limited u)" begin
+            p  = problem("smooth2d")
+            ns = [8, 12, 16, 24, 32]
+            errs = map(ns) do n
+                f, uex = sample_problem(p, (n, n))
+                error_norms(solve(f, p.Ls), uex).linf
             end
-
-            @testset "spectral: exponential convergence (non-band-limited u)" begin
-                p  = problem("smooth2d")
-                ns = [8, 12, 16, 24, 32]
-                errs = map(ns) do n
-                    f, uex = sample_problem(p, (n, n))
-                    error_norms(solve(f, p.Ls, :spectral), uex).linf
-                end
-                r = _rates(ns, errs)
-                verbose && @info "  $name spectral smooth2d: L∞ errors $(round.(errs; sigdigits=3)) at n = $ns, local orders $(round.(r; digits=1))"
-                # Exponential, not algebraic: the local algebraic order
-                # log(e_i-1/e_i)/log(n_i/n_i-1) of a fixed-order method tends to
-                # a constant; for a spectral method it keeps GROWING with n.
-                @test issorted(r)
-                @test r[end] > 15
-                f, uex = sample_problem(p, (48, 48))
-                @test error_norms(solve(f, p.Ls, :spectral), uex).linf < 1e-12
-            end
+            r = _rates(ns, errs)
+            verbose && @info "  $name smooth2d: L∞ errors $(round.(errs; sigdigits=3)) at n = $ns, local orders $(round.(r; digits=1))"
+            # Exponential, not algebraic: the local algebraic order
+            # log(e_i-1/e_i)/log(n_i/n_i-1) of a fixed-order method tends to
+            # a constant; for a spectral method it keeps GROWING with n.
+            @test issorted(r)
+            @test r[end] > 15
+            f, uex = sample_problem(p, (48, 48))
+            @test error_norms(solve(f, p.Ls), uex).linf < 1e-12
         end
     end
 end
 
 #-----------------------------------------------------------------------------
-# Agreement of TWO solvers of the same discrete system.
+# Agreement of TWO uniform-grid solvers.
 #-----------------------------------------------------------------------------
-"""
-    compare_periodic_poisson_solvers(nameA, solveA, nameB, solveB;
-        disc = :fd2, cases = DEFAULT_COMPARISON_CASES, rtol = 1e-8,
-        reps = 3, verbose = true) -> rows
-
-For every (problem, grid) in `cases`, solve with both solvers, check that the
-gauged solutions agree to `rtol` (relative to max|u|), and report each
-solver's error against the exact solution and its best-of-`reps` wall time.
-Returns the table rows (NamedTuples) so a caller can post-process them.
-"""
 const DEFAULT_COMPARISON_CASES = (("modes2d", (64, 64)), ("aniso2d", (96, 48)),
-                                  ("smooth2d", (128, 128)), ("smooth2d", (100, 90)),
-                                  ("modes3d", (24, 24, 24)))
+                                  ("smooth2d", (64, 64)), ("smooth2d", (50, 45)),
+                                  ("modes3d", (16, 16, 16)))
 
-function _best_time(solve, f, Ls, disc, reps)
-    u = solve(f, Ls, disc)                   # also warms up / compiles
+function _best_time(solve, f, Ls, reps)
+    u = solve(f, Ls)                         # also warms up / compiles
     t = Inf
     for _ in 1:reps
-        t = min(t, @elapsed solve(f, Ls, disc))
+        t = min(t, @elapsed solve(f, Ls))
     end
     return u, t
 end
 
+"""
+    compare_periodic_poisson_solvers(nameA, solveA, nameB, solveB;
+        cases = DEFAULT_COMPARISON_CASES, rtol = 1e-10, reps = 3, verbose = true) -> rows
+
+For every (problem, grid) in `cases`, solve with both uniform-grid solvers,
+check that the gauged solutions agree to `rtol` (relative to max|u|), and
+report each solver's error against the exact solution and its best-of-`reps`
+wall time. Returns the table rows (NamedTuples).
+"""
 function compare_periodic_poisson_solvers(nameA::AbstractString, solveA,
                                           nameB::AbstractString, solveB;
-                                          disc::Symbol = :fd2,
                                           cases = DEFAULT_COMPARISON_CASES,
-                                          rtol::Real = 1e-8, reps::Int = 3,
+                                          rtol::Real = 1e-10, reps::Int = 3,
                                           verbose::Bool = true)
     rows = NamedTuple[]
-    @testset verbose = verbose "$nameA vs $nameB ($disc)" begin
+    @testset verbose = verbose "$nameA vs $nameB" begin
         for (pname, dims) in cases
             p = problem(pname)
             f, uex = sample_problem(p, dims)
-            uA, tA = _best_time(solveA, f, p.Ls, disc, reps)
-            uB, tB = _best_time(solveB, f, p.Ls, disc, reps)
+            uA, tA = _best_time(solveA, f, p.Ls, reps)
+            uB, tB = _best_time(solveB, f, p.Ls, reps)
             diff = maximum(abs, gauge(uA) .- gauge(uB)) / max(maximum(abs, gauge(uA)), eps())
             push!(rows, (problem = pname, dims = dims, npts = prod(dims), diff = diff,
                          errA = error_norms(uA, uex).linf, errB = error_norms(uB, uex).linf,
@@ -377,14 +311,14 @@ function compare_periodic_poisson_solvers(nameA::AbstractString, solveA,
             @test diff < rtol
         end
     end
-    verbose && _print_comparison(nameA, nameB, disc, rows)
+    verbose && _print_comparison(nameA, nameB, rows)
     return rows
 end
 
-function _print_comparison(nameA, nameB, disc, rows)
+function _print_comparison(nameA, nameB, rows)
     println()
-    println("  periodic Poisson, -∇²u = f, discretisation :$disc")
-    @printf("  %-9s %-13s %9s  %-10s %-10s  %-10s %-10s  %-10s\n",
+    println("  periodic Poisson, -∇²u = f")
+    @printf("  %-9s %-13s %9s  %-10s %-10s %-10s  %-10s %-10s\n",
             "problem", "grid", "points", "‖uA-uB‖∞", "err A", "err B", "time A[s]", "time B[s]")
     println("  ", repeat("─", 94))
     for r in rows

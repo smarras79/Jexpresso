@@ -17,7 +17,6 @@ function user_inputs()
         :lfft                 => true,
         #--- FFT grid / geometry (periodic) --------------------------------------
         :fft_N                => 64,        # points per direction (any size)
-        :fft_laplacian        => "spectral",# "spectral" (Fourier-exact) | "fd2" (2nd-order FD)
         :fft_Lx               => 2π,        # domain lengths
         :fft_Ly               => 2π,
         :fft_x0               => 0.0,       # lower-left corner

@@ -7,22 +7,15 @@
 #
 #       -∇²u = f,          u periodic, zero mean,
 #
-#  with the FFTW-based solver in fft_poisson_core.jl (FFTPoissonSolver /
-#  fft_poisson_solve!): forward rfft, division by the eigenvalue of -∇², inverse
-#  rfft. The mathematics, the null-space handling and the two discretisations of
-#  -∇² are documented there; this file only feeds that core from a case deck and
+#  with the FFTW-based Fourier spectral solver in fft_poisson_core.jl
+#  (FFTPoissonSolver / fft_poisson_solve!): forward rfft, division by |k|²,
+#  inverse rfft. The mathematics and the null-space handling are documented there; this file only feeds that core from a case deck and
 #  writes the result. It is an ALTERNATIVE to the SEM direct solve
 #  (standard_linsolve!) and the element-learning solve
 #  (element_learning_linsolve!); the three are selected in problems/drivers.jl.
 #
 #  Case-deck inputs (user_inputs.jl):
 #
-#   :fft_laplacian  => "spectral" (default) | "fd2"
-#                      spectral : Fourier-exact -∇² (round-off error for a
-#                                 band-limited solution)
-#                      fd2      : 2nd-order finite-difference -∇²; the FFT then
-#                                 returns the solution of the sparse FD system
-#                                 (the system an AMG solver is compared against)
 #   :fft_plan       => "measure" (default) | "estimate"   FFTW planner effort
 #
 #  and ONE of two grid sources, selected by :fft_use_mesh:
@@ -46,16 +39,12 @@
 #                               the automatic error verification)
 # =============================================================================
 
-# :fft_laplacian / :fft_plan from the deck → the core's Symbol / FFTW flag.
-function _fft_inputs(inputs)
-    lap = Symbol(get(inputs, :fft_laplacian, "spectral"))
-    lap in FFT_POISSON_LAPLACIANS ||
-        error(" # fft_linsolve!: :fft_laplacian => \"$lap\"; expected one of $(FFT_POISSON_LAPLACIANS).")
-    plan  = lowercase(string(get(inputs, :fft_plan, "measure")))
-    flags = plan == "measure"  ? FFTW.MEASURE :
-            plan == "estimate" ? FFTW.ESTIMATE :
-            error(" # fft_linsolve!: :fft_plan => \"$plan\"; expected \"measure\" or \"estimate\".")
-    return lap, flags
+# :fft_plan from the deck → FFTW planner flag.
+function _fft_plan_flags(inputs)
+    plan = lowercase(string(get(inputs, :fft_plan, "measure")))
+    plan == "measure"  && return FFTW.MEASURE
+    plan == "estimate" && return FFTW.ESTIMATE
+    error(" # fft_linsolve!: :fft_plan => \"$plan\"; expected \"measure\" or \"estimate\".")
 end
 
 # Plan, solve and time the solve (planning excluded: it is a one-time setup
@@ -63,10 +52,9 @@ end
 # round-off — a periodic problem with ∫f ≠ 0 has no solution, so the solver
 # answers the projected problem -∇²u = f - mean(f).
 function _fft_solve_timed(F::Array{Float64}, Ls, inputs)
-    lap, flags = _fft_inputs(inputs)
-    S = FFTPoissonSolver(size(F), Ls; laplacian = lap, flags = flags)
+    S = FFTPoissonSolver(size(F), Ls; flags = _fft_plan_flags(inputs))
     u = similar(F)
-    jx_robust_solve(string("FFT (FFTW, ", lap, ") solve"), () -> fft_poisson_solve!(u, S, F);
+    jx_robust_solve("FFT (FFTW) solve", () -> fft_poisson_solve!(u, S, F);
                     robust  = get(inputs, :lbenchmark_solve, true),
                     seconds = Float64(get(inputs, :EL_timing_seconds, 2.0)))
     fmean = S.fmean[]
@@ -75,7 +63,7 @@ function _fft_solve_timed(F::Array{Float64}, Ls, inputs)
                        " ≠ 0; solved the projected problem -∇²u = f - mean(f) ",
                        "(periodic compatibility condition)."))
     end
-    return u, lap
+    return u
 end
 
 # ── Legacy-VTK STRUCTURED_POINTS writer for the uniform FFT grid ──────────────
@@ -248,9 +236,9 @@ function fft_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
                              N, "×", M, " synthetic periodic grid ..............")))
 
     F = _fft_sample_rhs((x, y))
-    u, lap = _fft_solve_timed(F, (Lx, Ly), inputs)
+    u = _fft_solve_timed(F, (Lx, Ly), inputs)
 
-    println(YELLOW_FG(string(" # Solve -∇²u = f by FFT (", lap, ") ............................ DONE")))
+    println(YELLOW_FG(string(" # Solve -∇²u = f by FFT ............................................ DONE")))
 
     uex = nothing; err = nothing
     has_exact && ((uex, err) = fft_report_grid_error(u, (x, y), (Lx, Ly)))
@@ -283,9 +271,9 @@ function fft_linsolve_on_mesh!(sem, params, inputs, OUTPUT_DIR, has_exact)
 
     # RHS sampled on the canonical grid lines (periodic ⇒ seam value is unique)
     F = _fft_sample_rhs(lines)
-    ugrid, lap = _fft_solve_timed(F, Ls, inputs)
+    ugrid = _fft_solve_timed(F, Ls, inputs)
 
-    println(YELLOW_FG(string(" # Solve -∇²u = f by FFT (", lap, ") ............................ DONE")))
+    println(YELLOW_FG(string(" # Solve -∇²u = f by FFT ............................................ DONE")))
 
     has_exact && fft_report_grid_error(ugrid, lines, Ls)
 

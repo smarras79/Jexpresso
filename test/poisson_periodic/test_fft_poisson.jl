@@ -7,18 +7,19 @@
 
  NO `using Jexpresso`: the solver core depends on FFTW and LinearAlgebra only,
  so it is included directly and tested in seconds. The small environment in
- this directory (FFTW now; AlgebraicMultigrid in the next step) is all it needs.
+ this directory is all it needs.
 
  WHAT IS CHECKED
-   1. The solver-agnostic benchmark (benchmark.jl) for BOTH discretisations
-      the FFT offers: the Laplace equation, the null space / incompatible RHS,
-      band-limited exactness and exponential convergence (:spectral), the
-      residual of the sparse fd2 system and second-order convergence (:fd2).
-   2. The comparison harness, FFT(:fd2) vs a sparse direct LU solve of the same
-      fd2 matrix. This is the exact slot the AlgebraicMultigrid.jl solve takes
-      in step 2 — it must pass with the direct solver first, so that a failure
-      there can only be the new solver's.
-   3. FFT-specific behaviour: plan reuse without allocation, the reported RHS
+   1. The solver-agnostic benchmark (benchmark.jl): the Laplace equation,
+      linearity, the null space / incompatible RHS, band-limited exactness to
+      round-off and exponential convergence for a non-band-limited solution.
+   2. The comparison harness: the FFT vs an independent dense-DFT spectral
+      solve (reference_spectral_solve) — same mathematics, no FFT library, so
+      they must agree to round-off.
+   3. The nodal scoring path (nodal_error_norms) that the SEM-mesh solvers —
+      direct SEM, AlgebraicMultigrid on the SEM system, static condensation —
+      will be scored with: on the FFT grid it must reduce to error_norms.
+   4. FFT-specific behaviour: plan reuse without allocation, the reported RHS
       mean, the 1D case against a closed form, argument checks.
 =============================================================================#
 using Test, LinearAlgebra
@@ -28,26 +29,17 @@ include(joinpath(@__DIR__, "..", "..", "src", "kernel", "solvers", "fft_poisson_
 include(joinpath(@__DIR__, "benchmark.jl"))
 using .PeriodicPoissonBenchmark
 
-# The benchmark's calling convention: solve(f, Ls, disc) -> u
-fft_solve(f, Ls, disc) = fft_poisson_solve(f, Ls; laplacian = disc)
+# The benchmark's calling convention: solve(f, Ls) -> u
+fft_solve(f, Ls) = fft_poisson_solve(f, Ls)
 
 @testset verbose = true "FFTW periodic Poisson solver" begin
 
-    verify_periodic_poisson_solver("FFTW", fft_solve; discretizations = (:spectral, :fd2))
+    verify_periodic_poisson_solver("FFTW", fft_solve)
 
-    @testset "comparison harness: FFT(fd2) vs sparse direct LU" begin
-        compare_periodic_poisson_solvers("FFTW (fd2)", fft_solve,
-                                         "sparse LU (fd2)", (f, Ls, _) -> direct_fd2_solve(f, Ls);
-                                         disc = :fd2, rtol = 1e-10, reps = 2)
-    end
-
-    @testset "spectral and fd2 converge to the same limit" begin
-        p = problem("smooth2d")
-        f, uex = sample_problem(p, (256, 256))
-        es = error_norms(fft_solve(f, p.Ls, :spectral), uex).linf
-        ef = error_norms(fft_solve(f, p.Ls, :fd2),      uex).linf
-        @test es < 1e-12
-        @test 1e-6 < ef < 1e-2          # fd2 carries its O(h²) error, spectral does not
+    @testset "comparison harness: FFTW vs dense-DFT reference" begin
+        compare_periodic_poisson_solvers("FFTW", fft_solve,
+                                         "dense DFT", reference_spectral_solve;
+                                         rtol = 1e-11, reps = 2)
     end
 
     @testset "nodal error norms agree with the grid ones (SEM comparison path)" begin
@@ -56,29 +48,29 @@ fft_solve(f, Ls, disc) = fft_poisson_solve(f, Ls; laplacian = disc)
         for (pname, dims) in (("smooth2d", (40, 36)), ("modes3d", (10, 12, 8)))
             p = problem(pname)
             f, uex = sample_problem(p, dims)
-            u  = fft_solve(f, p.Ls, :fd2)
+            u  = fft_solve(f, p.Ls)
             eg = error_norms(u, uex)
             en = nodal_error_norms(p, grid_points(p, dims), vec(u))
             @test en.linf  ≈ eg.linf  rtol = 1e-10
             @test en.l2rel ≈ eg.l2rel rtol = 1e-10
-            # the gauge is weight-consistent: a constant shift of u changes nothing
-            @test nodal_error_norms(p, grid_points(p, dims), vec(u) .+ 7.0;
-                                    w = fill(0.3, length(u))).linf ≈ eg.linf rtol = 1e-8
+            # the gauge is weight-consistent: a constant shift of u changes
+            # nothing (up to the round-off of adding and removing the constant)
+            @test abs(nodal_error_norms(p, grid_points(p, dims), vec(u) .+ 7.0;
+                                        w = fill(0.3, length(u))).linf - eg.linf) < 1e-12
         end
     end
 
     @testset "plan reuse is allocation-free and repeatable" begin
         p = problem("aniso2d")
         f, uex = sample_problem(p, (64, 48))
-        for disc in (:spectral, :fd2)
-            S = FFTPoissonSolver(size(f), p.Ls; laplacian = disc, flags = FFTW.MEASURE)
-            u = similar(f)
-            fft_poisson_solve!(u, S, f)
-            u1 = copy(u)
-            fft_poisson_solve!(u, S, f)
-            @test u == u1
-            @test (@allocated fft_poisson_solve!(u, S, f)) == 0
-        end
+        S = FFTPoissonSolver(size(f), p.Ls; flags = FFTW.MEASURE)
+        u = similar(f)
+        fft_poisson_solve!(u, S, f)
+        u1 = copy(u)
+        fft_poisson_solve!(u, S, f)
+        @test u == u1
+        @test (@allocated fft_poisson_solve!(u, S, f)) == 0
+        @test error_norms(u, uex).linf < 1e-12
     end
 
     @testset "reported RHS mean" begin
@@ -99,7 +91,6 @@ fft_solve(f, Ls, disc) = fft_poisson_solve(f, Ls; laplacian = disc)
     end
 
     @testset "argument checks" begin
-        @test_throws ArgumentError FFTPoissonSolver((8, 8), (1.0, 1.0); laplacian = :fd4)
         @test_throws ArgumentError FFTPoissonSolver((8, 0), (1.0, 1.0))
         @test_throws ArgumentError FFTPoissonSolver((8, 8), (1.0, -1.0))
         S = FFTPoissonSolver((8, 8), (1.0, 1.0))

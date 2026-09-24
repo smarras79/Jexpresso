@@ -25,7 +25,6 @@ function user_inputs()
         :fft_use_mesh         => false,     # FFT on its own spectral grid (mesh-independent)
         # SAME DOF as the Chebyshev and EL cases: 64 points/dir = 4096 nodes.
         :fft_N                => 64,        # Fourier resolution N (modes)
-        :fft_laplacian        => "spectral",# "spectral" (Fourier-exact) | "fd2" (2nd-order FD)
         :fft_x0               => -π,        # domain corner  (x ∈ [-π, π])
         :fft_y0               => -π,        # domain corner  (y ∈ [-π, π])
         :fft_Lx               => 2π,        # period in x

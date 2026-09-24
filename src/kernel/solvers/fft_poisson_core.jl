@@ -10,7 +10,7 @@
  on that grid, so the solve is three passes and no iteration:
 
      f̂ = rfft(f)             real-to-complex forward transform  (FFTW)
-     û = f̂ / λ(k)            pointwise, λ = eigenvalue of the discrete -∇²
+     û = f̂ / |k|²            pointwise, |k|² = eigenvalue of -∇²
      u = brfft(û) / Π n_d    complex-to-real backward transform  (FFTW)
 
  THE NULL SPACE. On a periodic domain the constants are in the kernel of -∇²
@@ -23,19 +23,9 @@
  Laplace's equation (f ≡ 0) therefore returns u ≡ 0, the only zero-mean
  periodic harmonic function.
 
- TWO DISCRETISATIONS of -∇², selected by `laplacian`:
-
-   :spectral   λ = Σ_d k_d²                          (Fourier–Galerkin)
-               Exact for every mode the grid resolves: a band-limited f gives
-               u to round-off, a smooth periodic f converges exponentially.
-
-   :fd2        λ = Σ_d (4/h_d²) sin²(k_d h_d / 2)     (second-order centred
-               finite differences, the 3/5/7-point stencil). The FFT then
-               returns, to round-off, the solution of the SPARSE linear system
-               A u = f - mean(f) with A the periodic FD Laplacian. This is the
-               mode an iterative / multigrid solver of the same system is to be
-               compared against: the two must agree to solver tolerance, not
-               merely to truncation error.
+ THE DISCRETISATION is Fourier spectral: λ(k) = Σ_d k_d², the exact
+ eigenvalue of -∇² for every mode the grid resolves. A band-limited f gives u
+ to round-off; a smooth periodic f converges exponentially in n.
 
  The wavenumbers are the signed ones, k = 2π m / L with m ∈ (-n/2, n/2]. For
  even n the Nyquist mode m = n/2 is its own alias; λ depends on k² only, so
@@ -44,22 +34,20 @@
  Any grid size works (FFTW handles all n; powers of 2, 3, 5, 7 are fastest).
 
  USAGE
-     S = FFTPoissonSolver((nx, ny), (Lx, Ly); laplacian = :spectral)
+     S = FFTPoissonSolver((nx, ny), (Lx, Ly))
      u = similar(f)
      fft_poisson_solve!(u, S, f)          # allocation-free, plan reused
      S.fmean[]                            # mean removed from f
  or, one-shot,
-     u = fft_poisson_solve(f, (Lx, Ly); laplacian = :fd2)
+     u = fft_poisson_solve(f, (Lx, Ly))
 
  This file depends on FFTW and LinearAlgebra only (no Jexpresso types), so it
  is unit-tested standalone by test/poisson_periodic/test_fft_poisson.jl. The
  Jexpresso driver that feeds it from a case deck is fft_laplace.jl.
 =============================================================================#
 
-const FFT_POISSON_LAPLACIANS = (:spectral, :fd2)
-
 """
-    FFTPoissonSolver(dims, Ls; laplacian = :spectral, flags = FFTW.ESTIMATE)
+    FFTPoissonSolver(dims, Ls; flags = FFTW.ESTIMATE)
 
 Precomputed FFTW plans, work array and inverse eigenvalues for the periodic
 Poisson problem `-∇²u = f` on an `dims[1] × … × dims[ND]` grid of periods `Ls`.
@@ -71,7 +59,6 @@ Build it once, then call [`fft_poisson_solve!`](@ref) as many times as needed.
 struct FFTPoissonSolver{ND, TF, TB}
     dims      :: NTuple{ND, Int}
     Ls        :: NTuple{ND, Float64}
-    laplacian :: Symbol
     fhat      :: Array{ComplexF64, ND}   # half-spectrum work array (rfft layout)
     invλ      :: Array{Float64, ND}      # 1/(λ Π n_d); 0 on the null mode
     fwd       :: TF                      # rfft  plan
@@ -80,10 +67,7 @@ struct FFTPoissonSolver{ND, TF, TB}
 end
 
 function FFTPoissonSolver(dims::NTuple{ND, Integer}, Ls::NTuple{ND, Real};
-                          laplacian::Symbol = :spectral,
                           flags::UInt32 = FFTW.ESTIMATE) where {ND}
-    laplacian in FFT_POISSON_LAPLACIANS ||
-        throw(ArgumentError("laplacian = :$laplacian; expected one of $(FFT_POISSON_LAPLACIANS)"))
     all(>(0), dims) || throw(ArgumentError("grid size $dims must be positive"))
     all(>(0), Ls)   || throw(ArgumentError("periods $Ls must be positive"))
 
@@ -96,16 +80,10 @@ function FFTPoissonSolver(dims::NTuple{ND, Integer}, Ls::NTuple{ND, Real};
     fwd  = FFTW.plan_rfft(zeros(Float64, n); flags = flags)
     bwd  = FFTW.plan_brfft(fhat, n[1]; flags = flags)
 
-    # Per-axis eigenvalue factors on the rfft index layout.
+    # Per-axis eigenvalue factors k_d² on the rfft index layout.
     λ1d = ntuple(ND) do d
         m = d == 1 ? (0:nh[1]-1) : [j <= n[d] ÷ 2 ? j : j - n[d] for j in 0:n[d]-1]
-        k = (2π / L[d]) .* m
-        if laplacian === :spectral
-            k .^ 2
-        else
-            h = L[d] / n[d]
-            (4 / h^2) .* sin.(k .* (h / 2)) .^ 2
-        end
+        ((2π / L[d]) .* m) .^ 2
     end
 
     scale = 1.0 / prod(n)             # brfft is unnormalised
@@ -115,12 +93,11 @@ function FFTPoissonSolver(dims::NTuple{ND, Integer}, Ls::NTuple{ND, Real};
         for d = 1:ND
             λ += λ1d[d][I[d]]
         end
-        # λ vanishes only on the constant mode (every other k has k_d ≠ 0 for
-        # some d, and 0 < |k_d h_d/2| ≤ π/2 keeps the fd2 factor positive).
+        # λ vanishes only on the constant mode (every other k has k_d ≠ 0 for some d).
         invλ[I] = I == first(CartesianIndices(invλ)) ? 0.0 : scale / λ
     end
 
-    return FFTPoissonSolver{ND, typeof(fwd), typeof(bwd)}(n, L, laplacian, fhat, invλ,
+    return FFTPoissonSolver{ND, typeof(fwd), typeof(bwd)}(n, L, fhat, invλ,
                                                           fwd, bwd, Ref(0.0))
 end
 
@@ -143,14 +120,13 @@ function fft_poisson_solve!(u::Array{Float64, ND}, S::FFTPoissonSolver{ND},
 end
 
 """
-    fft_poisson_solve(f, Ls; laplacian = :spectral) -> u
+    fft_poisson_solve(f, Ls) -> u
 
 One-shot convenience wrapper: builds an [`FFTPoissonSolver`](@ref) for
 `size(f)` and `Ls`, solves once and returns the zero-mean solution.
 """
-function fft_poisson_solve(f::AbstractArray{<:Real, ND}, Ls::NTuple{ND, Real};
-                           laplacian::Symbol = :spectral) where {ND}
-    S = FFTPoissonSolver(size(f), Ls; laplacian = laplacian)
+function fft_poisson_solve(f::AbstractArray{<:Real, ND}, Ls::NTuple{ND, Real}) where {ND}
+    S = FFTPoissonSolver(size(f), Ls)
     return fft_poisson_solve!(Array{Float64, ND}(undef, size(f)), S, Array{Float64, ND}(f))
 end
 
