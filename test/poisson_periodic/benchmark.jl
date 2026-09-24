@@ -194,19 +194,25 @@ end
 _rates(ns, errs) = [log(errs[i-1] / errs[i]) / log(ns[i] / ns[i-1]) for i in 2:length(errs)]
 
 """
-    verify_periodic_poisson_solver(name, solve; rtol_solver = 1e-10, verbose = true)
+    verify_periodic_poisson_solver(name, solve; rtol_solver = 1e-10,
+                                   supports = dims -> true, verbose = true)
 
 Run the benchmark's correctness checks on a uniform-grid `solve(f, Ls) -> u`
 (see the file header). `rtol_solver` is the relative accuracy the solver
-promises on its own discrete problem.
+promises on its own discrete problem. `supports(dims)` says whether the solver
+handles a grid size (e.g. the pseudo-spectral solver: 2-D, even sizes only);
+grids it rejects are skipped, and every check keeps at least one grid that
+any 2-D, even-size solver supports.
 """
 function verify_periodic_poisson_solver(name::AbstractString, solve;
                                         rtol_solver::Real = 1e-10,
+                                        supports = dims -> true,
                                         verbose::Bool = true)
     @testset verbose = verbose "$name" begin
 
         @testset "Laplace equation (f ≡ 0) ⇒ u ≡ 0" begin
             for dims in ((16, 16), (15, 22), (8, 6, 10))
+                supports(dims) || continue
                 Ls = ntuple(d -> 1.0 + d, length(dims))
                 u  = solve(zeros(dims), Ls)
                 @test size(u) == dims
@@ -240,6 +246,7 @@ function verify_periodic_poisson_solver(name::AbstractString, solve;
                 for dims in dimsets
                     # resolvable: every mode strictly below the Nyquist mode
                     all(d -> dims[d] > 2p.maxmode[d], eachindex(dims)) || continue
+                    supports(dims) || continue
                     f, uex = sample_problem(p, dims)
                     e = error_norms(solve(f, p.Ls), uex)
                     @test e.linf < 1e-12 * max(1.0, maximum(abs, uex))

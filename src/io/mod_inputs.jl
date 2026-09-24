@@ -809,6 +809,12 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:lfft] = false
     end
 
+    # Pseudo-spectral (Fourier collocation) Laplace/Poisson solver for periodic
+    # problems — the physical-space counterpart of :lfft. Off by default.
+    if (!haskey(inputs, :lpseudospectral))
+        inputs[:lpseudospectral] = false
+    end
+
     # Chebyshev spectral (collocation) Laplace/Poisson solver — the non-periodic
     # counterpart of :lfft. Off by default.
     if (!haskey(inputs, :lcheb))

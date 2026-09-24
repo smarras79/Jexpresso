@@ -460,6 +460,8 @@ function FourierDerivativeMatrix(N)
        TODO!!!!!!
        Implement sorted and ordered version if this is important for later
     """
+    # The cot form below is Algorithm 18 for EVEN N (odd N needs csc instead).
+    iseven(N) || throw(ArgumentError("FourierDerivativeMatrix: N = $N must be even (Algorithm 18)"))
     D=zeros(Float64,N,N)
     for i=0:N-1
         D[i+1,i+1]=0
@@ -470,7 +472,6 @@ function FourierDerivativeMatrix(N)
             end
         end
     end
-    @info D
     return D
 end
 

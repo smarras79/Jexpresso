@@ -319,6 +319,11 @@ function driver(nparts,
                 # Classical FFT (Fourier spectral) solver for -∇²u = f on a
                 # periodic rectangular grid (alternative to the SEM direct solve).
                 fft_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
+            elseif inputs[:lpseudospectral]
+                # Pseudo-spectral (Fourier collocation, Kopriva) solver for
+                # -∇²u = f on a periodic rectangle: dense physical-space
+                # operators, same problem definition as :lfft.
+                pseudospectral_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
             elseif inputs[:lcheb]
                 # Chebyshev spectral (collocation) solver for -∇²u = f on a box
                 # with Dirichlet BCs (the non-periodic counterpart of the FFT).

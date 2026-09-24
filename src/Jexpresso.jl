@@ -280,6 +280,10 @@ include(joinpath( "kernel", "solvers", "fft_poisson_core.jl"))
 
 include(joinpath( "kernel", "solvers", "fft_laplace.jl"))
 
+include(joinpath( "kernel", "solvers", "fourier_collocation.jl"))
+
+include(joinpath( "kernel", "solvers", "pseudospectral_laplace.jl"))
+
 include(joinpath( "kernel", "solvers", "cheb_laplace.jl"))
 
 include(joinpath( "kernel", "solvers", "compare_solvers.jl"))

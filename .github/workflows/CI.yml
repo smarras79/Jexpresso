@@ -57,10 +57,11 @@ jobs:
       # The periodic Poisson solvers are Jexpresso-free too, but need FFTW:
       # a small environment of their own (test/poisson_periodic/Project.toml)
       # instantiates in seconds, not the whole package.
-      - name: Periodic Poisson solvers (FFTW)
+      - name: Periodic Poisson solvers (FFTW, pseudo-spectral)
         run: |
           julia --project=test/poisson_periodic -e 'using Pkg; Pkg.instantiate()'
           julia --project=test/poisson_periodic test/poisson_periodic/test_fft_poisson.jl
+          julia --project=test/poisson_periodic test/poisson_periodic/test_pseudospectral_poisson.jl
 
   test:
     name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }}

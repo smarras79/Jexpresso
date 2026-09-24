@@ -47,7 +47,7 @@ The Jexpresso core team uses Claude whereas some external developers have been s
   - [Shallow water on a spherical shell](#shallow-water-on-a-spherical-shell)
   - [2D Euler equations with buoyancy and two passive tracers](#2d-euler-equations-with-buoyancy-and-two-passive-tracers)
   - [3D Euler equations with buoyancy](#3d-euler-equations-with-buoyancy)
-  - [Spectral convergence of the SEM: doubly periodic Poisson problem](#spectral-convergence-of-the-sem-doubly-periodic-poisson-problem)
+  - [Spectral convergence of the SEM: doubly periodic Poisson problem](#spectral-convergence-of-the-sem-doubly-periodic-poisson-problem) (with pseudo-spectral and FFT)
   - [Laguerre semi-infinite element test suite](#laguerre-semi-infinite-element-test-suite)
     - [Test 1: 1D wave equation with Laguerre absorbing layers](#test-1-1d-wave-equation-with-laguerre-semi-infinite-element-absorbing-layers)
     - [Test 2: 1D wave train for linearized shallow water equations](#test-2-1d-wave-train-for-linearized-shallow-water-equations)
@@ -484,12 +484,20 @@ Jexpresso.run_case("CompEuler", "3d")
      style="float: left; margin-right: 5px;" />
 
 ## Spectral convergence of the SEM: doubly periodic Poisson problem
-The problem is defined in `problems/Elliptic/poisson_periodic_sem`: $-\nabla^2 u = f$ on $[0,2\pi]^2$, periodic in $x$ and $y$, with the exact solution $u = \sin 2x\cos 3y + \sin x\cos y$, on a fixed mesh of 16×16 elements solved directly with the SEM. To run it you would do the following:
+The problem is defined in `problems/Elliptic/poisson_periodic_sem`: $-\nabla^2 u = f$ on $[0,2\pi]^2$, periodic in $x$ and $y$, with the exact solution $u = \sin 2x\cos 3y + \sin x\cos y$. The same deck solves it three ways:
+
+| solver | deck flag | discretisation | solve |
+|---|---|---|---|
+| SEM | (default) | 16×16 spectral elements of order N (`:nop`) | sparse direct (LU) on the periodic system |
+| pseudo-spectral | `:lpseudospectral => true` | Fourier collocation on a uniform `:fft_N`² grid, Kopriva's derivative matrix (`FourierDerivativeMatrix`) | dense matrix diagonalisation, O(N³) |
+| FFT | `:lfft => true` | Fourier spectral on a uniform `:fft_N`² grid | FFTW, O(N² log N) |
+
+To run it you would do the following:
 ```julia
 using Jexpresso
 Jexpresso.run_case("Elliptic", "poisson_periodic_sem")
 ```
-Increasing the polynomial order `:nop` on the same mesh reduces the error exponentially: about ten orders of magnitude from N = 2 to N = 8. At N = 8 the L∞ error flattens near 10⁻¹¹, the round-off floor of the direct solve. The same deck runs the FFT (Fourier) solver on the same problem with `:lfft => true`.
+Increasing the polynomial order `:nop` on the same mesh reduces the SEM error exponentially: about ten orders of magnitude from N = 2 to N = 8. At N = 8 the L∞ error flattens near 10⁻¹¹, the round-off floor of the direct solve.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/sem_pconvergence_periodic_poisson-dark.svg">
@@ -497,17 +505,33 @@ Increasing the polynomial order `:nop` on the same mesh reduces the error expone
        alt="SEM error versus polynomial order for the doubly periodic Poisson problem: the L-infinity and relative L2 errors fall exponentially from about 3e-3 at N = 2 to about 2e-11 and 5e-12 at N = 8.">
 </picture>
 
-| N (`:nop`) | unknowns | ‖e‖∞ | relative ‖e‖₂ |
-|---:|---:|---:|---:|
-| 2 | 1 024 | 3.1e-3 | 1.9e-3 |
-| 3 | 2 304 | 1.1e-4 | 7.3e-5 |
-| 4 | 4 096 | 4.0e-6 | 2.2e-6 |
-| 5 | 6 400 | 1.2e-7 | 6.8e-8 |
-| 6 | 9 216 | 3.6e-9 | 2.0e-9 |
-| 7 | 12 544 | 9.6e-11 | 5.3e-11 |
-| 8 | 16 384 | 2.3e-11 | 5.1e-12 |
+**SEM vs pseudo-spectral vs FFT at the same number of unknowns.** For each SEM order N the two Fourier solvers run on a 16N × 16N grid. Their error is at round-off at every size: this exact solution is a trigonometric polynomial, which a Fourier basis represents exactly once the grid resolves its highest mode, while the SEM has to approximate it with piecewise polynomials. The error curves therefore compare the bases on a problem that favours Fourier; the time curves compare the cost of the three solves. The pseudo-spectral and FFT solves compute the same discrete solution (they agree to ~10⁻¹³); the pseudo-spectral one does it with dense physical-space matrices, the FFT one with fast transforms.
 
-To regenerate the data and the figure:
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/periodic_poisson_error_vs_unknowns-dark.svg">
+  <img src="assets/periodic_poisson_error_vs_unknowns.svg" width="680"
+       alt="L-infinity error versus unknowns: SEM falls exponentially from 3e-3 to 2e-11; pseudo-spectral and FFT stay at round-off, 1e-14 to 7e-13 and about 3e-15.">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/periodic_poisson_time_vs_unknowns-dark.svg">
+  <img src="assets/periodic_poisson_time_vs_unknowns.svg" width="680"
+       alt="Solve time versus unknowns: SEM from 1.2 ms to 88 ms, pseudo-spectral from 5 microseconds to 0.25 ms, FFT from 2 to 53 microseconds.">
+</picture>
+
+| unknowns | SEM N | SEM ‖e‖∞ | SEM time | pseudo-spectral ‖e‖∞ | pseudo-spectral time (setup) | FFT ‖e‖∞ | FFT time (plan) |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 024 (32²) | 2 | 3.1e-03 | 1.19 ms | 2.6e-14 | 4.67 µs (999 µs) | 2.3e-15 | 2.45 µs (25.4 µs) |
+| 2 304 (48²) | 3 | 1.1e-04 | 3.15 ms | 7.1e-14 | 15.5 µs (2.21 ms) | 2.2e-15 | 10 µs (106 µs) |
+| 4 096 (64²) | 4 | 4.0e-06 | 7.09 ms | 4.1e-13 | 33.6 µs (4.1 ms) | 2.6e-15 | 13.5 µs (78.5 µs) |
+| 6 400 (80²) | 5 | 1.2e-07 | 14.4 ms | 2.5e-13 | 56.3 µs (6.24 ms) | 2.7e-15 | 26 µs (183 µs) |
+| 9 216 (96²) | 6 | 3.6e-09 | 29.3 ms | 3.9e-13 | 89.3 µs (9.72 ms) | 2.7e-15 | 36.6 µs (116 µs) |
+| 12 544 (112²) | 7 | 9.6e-11 | 50 ms | 6.1e-13 | 196 µs (13.6 ms) | 3.1e-15 | 39.3 µs (142 µs) |
+| 16 384 (128²) | 8 | 2.3e-11 | 88.4 ms | 6.6e-13 | 249 µs (16.6 ms) | 2.6e-15 | 53 µs (140 µs) |
+
+Times are BenchmarkTools minima of each solver's solve. The SEM time includes the sparse LU factorisation of the periodic system; the pseudo-spectral and FFT times exclude their one-time setup (the eigen-decompositions of the 1-D collocation operators, the FFTW plan), shown in parentheses.
+
+To regenerate the data and the figures:
 ```bash
 julia --project=. tools/sem_pconvergence/sweep.jl
 python3 tools/sem_pconvergence/plot.py

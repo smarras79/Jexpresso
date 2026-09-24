@@ -3,7 +3,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Doubly periodic Poisson problem  -∇²u = f  on [0,2π]²  (see user_source.jl)
         #
-        # ONE deck, two solvers of the SAME problem:
+        # ONE deck, three solvers of the SAME problem:
         #   :lfft => false   SEM: Jexpresso's native spectral-element
         #                    discretisation on the periodic mesh below, solved
         #                    directly (standard_linsolve!). The periodic SEM
@@ -12,9 +12,15 @@ function user_inputs()
         #                    solve_periodic_sem_system in src/kernel/solvers/Axb.jl.
         #   :lfft => true    FFT: the Fourier spectral solver on a uniform
         #                    :fft_N × :fft_N grid of the same box.
+        #   :lpseudospectral => true
+        #                    pseudo-spectral: Fourier collocation with Kopriva's
+        #                    derivative matrix (dense, physical space) on the
+        #                    same uniform grid (:ps_N, default :fft_N; even).
+        # (:lfft wins if both spectral flags are set.)
         #---------------------------------------------------------------------------
         :llinsolve            => true,
         :lfft                 => false,
+        :lpseudospectral      => false,
         #--- FFT (used only with :lfft => true) -----------------------------------
         :fft_N                => 64,
         :fft_Lx               => 2π,

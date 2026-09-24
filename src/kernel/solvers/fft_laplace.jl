@@ -186,7 +186,7 @@ end
 # lines. `lines` = per-axis coordinate vectors, `Ls` = per-axis periods (2D or
 # 3D). The periodic solution is unique only up to a constant, so the constant is
 # pinned to the exact field's mean before comparing (u is shifted in place).
-function fft_report_grid_error(u, lines, Ls)
+function fft_report_grid_error(u, lines, Ls; label = "FFT solve")
     ND  = ndims(u)
     uex = Array{Float64}(undef, size(u))
     @inbounds for I in CartesianIndices(u)
@@ -199,7 +199,7 @@ function fft_report_grid_error(u, lines, Ls)
     ref2 = sqrt(sum(abs2, uex) * dV)
     linf = maximum(abs, err)
     relstr = ref2 > 0 ? string(" , relative ‖e‖_L2 = ", l2/ref2) : ""
-    println(GREEN_FG(string(" # MMS verification: FFT solve vs exact  →  ‖e‖_L2 = ", l2,
+    println(GREEN_FG(string(" # MMS verification: ", label, " vs exact  →  ‖e‖_L2 = ", l2,
                             relstr, " , ‖e‖_∞ = ", linf)))
     jx_record_solve_error(; linf = linf, l2rel = (ref2 > 0 ? l2/ref2 : NaN), npts = length(u))
     return uex, err
