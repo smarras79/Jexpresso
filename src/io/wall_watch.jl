@@ -135,7 +135,7 @@ function wall_watch_report(params, u, t, step; io = stdout, thresh = 12.0)
     end
     MPI.Barrier(comm)
     if rank == 0
-        @printf(io, " # wall-watch t=%.1f summary | wall nodes=%d, |uh|>%.0f: %d | mean|uh_wall-uh_node2|=%.3f | node2 layer max|uh|=%.2f max|w|=%.2f | min(rho*theta)=%.1f | mem GB: RSS=%.2f VSZ=%.2f peak=%.2f | heap=%.2f jit=%.3f other=%.2f\n",
+        @printf(io, " # wall-watch t=%.1f summary | wall nodes=%d, |uh|>%.0f: %d | mean|uh_wall-uh_node2|=%.3f | node2 layer max|uh|=%.2f max|w|=%.2f | min(rho*theta)=%.1f | mem GB: RSS=%.3f VSZ=%.3f peak=%.3f | heap=%.3f jit=%.4f other=%.3f\n",
                 Float64(t), g_n, thresh, g_run, g_off / max(g_n,1), g_u1, g_w1, g_ρθ,
                 g_rssn, g_vsz, g_rss, g_heap, g_jit, g_rssn - g_heap - g_jit)
         flush(io)
