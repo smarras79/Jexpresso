@@ -70,7 +70,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
 
                     randnoise = 0.0
                     if z < 800.0
-                        randnoise = 2*amp*(rand() - 1.0)
+                        randnoise = amp*(2*rand() - 1.0)
                     end
                     θ    = θ + randnoise
                     
@@ -298,7 +298,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             for ip = 1:mesh.npoin
                 randnoise = 0.0
                 if mesh.z[ip] < 800.0
-                    randnoise = 2*amp*(rand() - 1.0)
+                    randnoise = amp*(2*rand() - 1.0)
                 end
                 θ     = data_interpolate[ip,1] + randnoise  # theta from column 2
                 qv    = data_interpolate[ip,2] / 1000.0     # qv from column 3, convert g/kg to kg/kg

@@ -1,7 +1,7 @@
 #-----------------------------------------------------------------------------
 # DETERMINISTIC INITIAL PERTURBATION.
 #
-# The theta perturbation used to be `2*amp*(rand() - 1.0)` off Julia's global
+# The theta perturbation used to be `amp*(2*rand() - 1.0)` off Julia's global
 # RNG, drawn in a loop over LOCAL points. That has three consequences, and the
 # third is what made this deck impossible to debug:
 #
@@ -28,17 +28,21 @@
 # Periodic partners share a gip after the restructuring, so they also share a
 # perturbation -- correct, they are one physical point.
 #
-# NOTE, NOT FIXED HERE: `2*amp*(u - 1.0)` with u in [0,1) is strictly NEGATIVE,
-# range [-2*amp, 0), mean -amp. A symmetric perturbation would be
-# `2*amp*(u - 0.5)`. As written, amp = 0.25 cools everything below 800 m by
-# 0.25 K on average rather than perturbing about zero. That is a real bug, but
-# fixing it changes the physics of the case, so it is left for a deliberate
-# decision rather than folded into a reproducibility change.
 #-----------------------------------------------------------------------------
 @inline function jexpresso_theta_noise(gip::Integer)
     h = hash(UInt64(gip) * 0x9E3779B97F4A7C15)
     return Float64(h >> 11) * 2.0^-53          # uniform on [0,1), same as rand()
 end
+
+# INTERCOMPARISON EQ. (2). The setup document prints
+#     theta_init = theta + amp*2*(rand - 1),      rand in [0,1]
+# which is one-sided: [-2amp, 0], mean -amp, and contradicts its own text
+# ("amp = 0.25 K is the maximum amplitude"). Confirmed by A. Rauchoecker
+# 2026-09-23 as a misplaced bracket; the intended form is
+#     theta_init = theta + amp*(2*rand - 1)
+# i.e. zero-mean, +-amp. The printed form left the mixed layer 0.25 K cold for
+# the whole run: 301.14 K at 3 h against ~301.4 K for the groups that used the
+# intended form (Nek5000 read it the same literal way and has the same bias).
 
 function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
     
@@ -112,7 +116,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
 
                     randnoise = 0.0
                     if z < 800.0
-                        randnoise = 2*amp*(jexpresso_theta_noise(mesh.ip2gip[ip]) - 1.0)
+                        randnoise = amp*(2*jexpresso_theta_noise(mesh.ip2gip[ip]) - 1.0)
                     end
                     θ    = θ + randnoise
                     
@@ -340,7 +344,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             for ip = 1:mesh.npoin
                 randnoise = 0.0
                 if mesh.z[ip] < 800.0
-                    randnoise = 2*amp*(jexpresso_theta_noise(mesh.ip2gip[ip]) - 1.0)
+                    randnoise = amp*(2*jexpresso_theta_noise(mesh.ip2gip[ip]) - 1.0)
                 end
                 θ     = data_interpolate[ip,1] + randnoise  # theta from column 2
                 qv    = data_interpolate[ip,2] / 1000.0     # qv from column 3, convert g/kg to kg/kg
