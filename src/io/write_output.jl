@@ -82,7 +82,7 @@ function write_output(SD, sol::SciMLBase.LinearSolution, uaux, mesh::St_mesh,
                       OUTPUT_DIR::String, inputs,
                       varnames, outvarnames,
                       outformat::NONE;
-                      nvar=1, qexact=zeros(1,nvar), case="")
+                      nvar=1, qexact=zeros(1,nvar), case="", kwargs...)   # no output: any keyword is accepted and ignored
     nothing
 end
 
@@ -93,7 +93,8 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       outformat::NONE;
                       nvar=1, qexact=zeros(1,nvar), case="",
                       μ_dsgs_pnode=nothing, schlieren=nothing,
-                      Minv=nothing)   # the 2D PNG path hands it to user_plot_2d; ignored elsewhere
+                      Minv=nothing,   # the 2D PNG path hands it to user_plot_2d; ignored elsewhere
+                      kwargs...)      # no output: any other keyword (metrics, extra_fields) is ignored
     nothing
 end
 
@@ -113,7 +114,8 @@ function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       outformat::PNG;
                       nvar=1, qexact=zeros(1,nvar), case="",
                       μ_dsgs_pnode=nothing, schlieren=nothing,
-                      Minv=nothing)   # the 2D PNG path hands it to user_plot_2d; ignored elsewhere
+                      Minv=nothing,   # the 2D PNG path hands it to user_plot_2d; ignored elsewhere
+                      metrics=nothing, extra_fields=nothing)   # passed by the linear solves; only the VTK writer uses them
         
     #
     # 1D PNG of q(t) from dq/dt = RHS
@@ -176,7 +178,8 @@ function write_output(SD::NSD_2D, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       varnames, outvarnames,
                       outformat::PNG;
                       nvar=1, qexact=zeros(1,nvar), case="",
-                      μ_dsgs_pnode=nothing, schlieren=nothing, Minv=nothing)
+                      μ_dsgs_pnode=nothing, schlieren=nothing, Minv=nothing,
+                      metrics=nothing, extra_fields=nothing)   # passed by the linear solves; only the VTK writer uses them
 
     #
     # 2D PNG of q(t): one colored map per variable and output time.
@@ -331,7 +334,8 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                     outformat::NETCDF;
                     nvar=1, qexact=zeros(1,nvar), case="",
                     μ_dsgs_pnode=nothing, schlieren=nothing,
-                    Minv=nothing)   # the 2D PNG path hands it to user_plot_2d; ignored elsewhere
+                    Minv=nothing,   # the 2D PNG path hands it to user_plot_2d; ignored elsewhere
+                    metrics=nothing, extra_fields=nothing)   # passed by the linear solves; only the VTK writer uses them
 
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
@@ -1228,7 +1232,8 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       outformat::HDF5;
                       nvar=1, qexact=zeros(1,nvar), case="",
                       μ_dsgs_pnode=nothing, schlieren=nothing,
-                      Minv=nothing)   # the 2D PNG path hands it to user_plot_2d; ignored elsewhere
+                      Minv=nothing,   # the 2D PNG path hands it to user_plot_2d; ignored elsewhere
+                      metrics=nothing, extra_fields=nothing)   # passed by the linear solves; only the VTK writer uses them
     
     # println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ...  ") )
     iout = size(t,1)

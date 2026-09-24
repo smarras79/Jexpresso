@@ -372,11 +372,23 @@ function build_laplace_matrix(SD::NSD_1D, ψ, dψ, ω, mesh, metrics, N, Q, T)
 end
 
 
-function build_laplace_matrix(SD::NSD_2D, ψ, dψ, ω, nelem, mesh, metrics, N, Q, T; afun=nothing)
+# `::Type{T}`: an untyped `T` argument is not specialised on when it is only
+# passed through (here to zeros/one), which left the element buffer as `Any`
+# and dispatched every update of the inner loop dynamically.
+function build_laplace_matrix(SD::NSD_2D, ψ, dψ, ω, nelem, mesh, metrics, N, Q, ::Type{T}; afun=nothing) where {T}
 
     Le = zeros(nelem, Q+1, Q+1, N+1, N+1)
+    # One element's matrix is accumulated in a small contiguous buffer and
+    # copied into Le once. Le is (nelem, …) with the ELEMENT index fastest, so
+    # accumulating into Le[iel,m,n,i,j] directly strided across the whole
+    # array (13 MB at nop = 8 on 16×16 elements) on every inner-loop update —
+    # a cache miss per update, ~40 s of sem_setup there. Every entry is still
+    # summed over (l,k) in the same order ⇒ bitwise-identical Le.
+    Lel = zeros(T, Q+1, Q+1, N+1, N+1)
+    Je  = metrics.Je
 
     for iel = 1:nelem
+        fill!(Lel, zero(T))
         for l = 1:Q+1, k = 1:Q+1
 
             dξdx_kl = metrics.dξdx[iel,k,l]
@@ -390,20 +402,25 @@ function build_laplace_matrix(SD::NSD_2D, ψ, dψ, ω, nelem, mesh, metrics, N, 
             acoef = afun === nothing ? one(T) :
                     T(afun(mesh.coords[1,mesh.connijk[iel,k,l]], mesh.coords[2,mesh.connijk[iel,k,l]]))
 
+            # quadrature weight × Jacobian of the (k,l) point, once per point
+            # (same product, same left-to-right order as before)
+            wJ = acoef*ω[k]*ω[l]*Je[iel,k,l]
+
             for j = 1:N+1, i = 1:N+1
 
                 dΨJKdx = dψ[i,k]*ψ[j,l]*dξdx_kl + ψ[i,k]*dψ[j,l]*dηdx_kl
                 dΨJKdy = dψ[i,k]*ψ[j,l]*dξdy_kl + ψ[i,k]*dψ[j,l]*dηdy_kl
 
-                for n = 1:N+1, m = 1:N+1
+                @inbounds for n = 1:N+1, m = 1:N+1
 
                     dΨIKdx = dψ[m,k]*ψ[n,l]*dξdx_kl + ψ[m,k]*dψ[n,l]*dηdx_kl
                     dΨIKdy = dψ[m,k]*ψ[n,l]*dξdy_kl + ψ[m,k]*dψ[n,l]*dηdy_kl
 
-                    Le[iel,m,n,i,j] += acoef*ω[k]*ω[l]*metrics.Je[iel,k,l]*(dΨIKdx*dΨJKdx + dΨIKdy*dΨJKdy)
+                    Lel[m,n,i,j] += wJ*(dΨIKdx*dΨJKdx + dΨIKdy*dΨJKdy)
                 end
             end
         end
+        @views Le[iel,:,:,:,:] .= Lel
     end
 
     #@info size(L)

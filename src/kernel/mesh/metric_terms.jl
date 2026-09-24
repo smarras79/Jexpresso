@@ -1,68 +1,82 @@
-Base.@kwdef mutable struct St_metrics{TFloat <: AbstractFloat, dims1, dims2, backend}
+# The array fields are typed CONCRETELY through the parameters A1 (the volume
+# arrays, dims1) and A2 (the face arrays, dims2). They used to be untyped
+# (`Any`), so every `metrics.Je[...]`, `metrics.dξdx[...]`, … read in a hot
+# loop was a dynamically dispatched access — the element-Laplacian assembly
+# spent most of its time there. The existing call sites keep writing
+# St_metrics{TFloat, dims1, dims2, backend}(): the outer constructor below
+# works A1/A2 out from the backend.
+Base.@kwdef mutable struct St_metrics{TFloat <: AbstractFloat, dims1, dims2, backend,
+                                      A1 <: AbstractArray{TFloat}, A2 <: AbstractArray{TFloat}}
 
-    dxdξ = KernelAbstractions.zeros(backend,TFloat, dims1)
-    dxdη = KernelAbstractions.zeros(backend,TFloat, dims1)
-    dxdζ = KernelAbstractions.zeros(backend,TFloat, dims1)
+    dxdξ::A1 = KernelAbstractions.zeros(backend,TFloat, dims1)
+    dxdη::A1 = KernelAbstractions.zeros(backend,TFloat, dims1)
+    dxdζ::A1 = KernelAbstractions.zeros(backend,TFloat, dims1)
     
-    dydξ = KernelAbstractions.zeros(backend,TFloat, dims1)
-    dydη = KernelAbstractions.zeros(backend,TFloat, dims1)
-    dydζ = KernelAbstractions.zeros(backend,TFloat, dims1)
+    dydξ::A1 = KernelAbstractions.zeros(backend,TFloat, dims1)
+    dydη::A1 = KernelAbstractions.zeros(backend,TFloat, dims1)
+    dydζ::A1 = KernelAbstractions.zeros(backend,TFloat, dims1)
 
-    dzdξ = KernelAbstractions.zeros(backend,TFloat, dims1)
-    dzdη = KernelAbstractions.zeros(backend,TFloat, dims1)
-    dzdζ = KernelAbstractions.zeros(backend,TFloat, dims1)
+    dzdξ::A1 = KernelAbstractions.zeros(backend,TFloat, dims1)
+    dzdη::A1 = KernelAbstractions.zeros(backend,TFloat, dims1)
+    dzdζ::A1 = KernelAbstractions.zeros(backend,TFloat, dims1)
     
-    dξdx = KernelAbstractions.zeros(backend,TFloat, dims1)
-    dξdy = KernelAbstractions.zeros(backend,TFloat, dims1)
-    dξdz = KernelAbstractions.zeros(backend,TFloat, dims1)
+    dξdx::A1 = KernelAbstractions.zeros(backend,TFloat, dims1)
+    dξdy::A1 = KernelAbstractions.zeros(backend,TFloat, dims1)
+    dξdz::A1 = KernelAbstractions.zeros(backend,TFloat, dims1)
     
-    dηdx = KernelAbstractions.zeros(backend,TFloat, dims1)
-    dηdy = KernelAbstractions.zeros(backend,TFloat, dims1)
-    dηdz = KernelAbstractions.zeros(backend,TFloat, dims1)
+    dηdx::A1 = KernelAbstractions.zeros(backend,TFloat, dims1)
+    dηdy::A1 = KernelAbstractions.zeros(backend,TFloat, dims1)
+    dηdz::A1 = KernelAbstractions.zeros(backend,TFloat, dims1)
 
-    dζdx = KernelAbstractions.zeros(backend,TFloat, dims1)
-    dζdy = KernelAbstractions.zeros(backend,TFloat, dims1)
-    dζdz = KernelAbstractions.zeros(backend,TFloat, dims1)
+    dζdx::A1 = KernelAbstractions.zeros(backend,TFloat, dims1)
+    dζdy::A1 = KernelAbstractions.zeros(backend,TFloat, dims1)
+    dζdz::A1 = KernelAbstractions.zeros(backend,TFloat, dims1)
     
     #
     # Element jacobian determinant
     #
-    Je  = KernelAbstractions.zeros(backend,TFloat, dims1)
-    Jef = KernelAbstractions.zeros(backend,TFloat, dims2)
-    nx  = KernelAbstractions.zeros(backend,TFloat, dims2)
-    ny  = KernelAbstractions.zeros(backend,TFloat, dims2)
-    nz  = KernelAbstractions.zeros(backend,TFloat, dims2)
+    Je::A1  = KernelAbstractions.zeros(backend,TFloat, dims1)
+    Jef::A2 = KernelAbstractions.zeros(backend,TFloat, dims2)
+    nx::A2  = KernelAbstractions.zeros(backend,TFloat, dims2)
+    ny::A2  = KernelAbstractions.zeros(backend,TFloat, dims2)
+    nz::A2  = KernelAbstractions.zeros(backend,TFloat, dims2)
     
-    dxdξ_f = KernelAbstractions.zeros(backend,TFloat, dims2)
-    dxdη_f = KernelAbstractions.zeros(backend,TFloat, dims2)
-    dxdζ_f = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dxdξ_f::A2 = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dxdη_f::A2 = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dxdζ_f::A2 = KernelAbstractions.zeros(backend,TFloat, dims2)
 
-    dydξ_f = KernelAbstractions.zeros(backend,TFloat, dims2)
-    dydη_f = KernelAbstractions.zeros(backend,TFloat, dims2)
-    dydζ_f = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dydξ_f::A2 = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dydη_f::A2 = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dydζ_f::A2 = KernelAbstractions.zeros(backend,TFloat, dims2)
 
-    dzdξ_f = KernelAbstractions.zeros(backend,TFloat, dims2)
-    dzdη_f = KernelAbstractions.zeros(backend,TFloat, dims2)
-    dzdζ_f = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dzdξ_f::A2 = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dzdη_f::A2 = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dzdζ_f::A2 = KernelAbstractions.zeros(backend,TFloat, dims2)
 
-    dξdx_f = KernelAbstractions.zeros(backend,TFloat, dims2)
-    dξdy_f = KernelAbstractions.zeros(backend,TFloat, dims2)
-    dξdz_f = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dξdx_f::A2 = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dξdy_f::A2 = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dξdz_f::A2 = KernelAbstractions.zeros(backend,TFloat, dims2)
 
-    dηdx_f = KernelAbstractions.zeros(backend,TFloat, dims2)
-    dηdy_f = KernelAbstractions.zeros(backend,TFloat, dims2)
-    dηdz_f = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dηdx_f::A2 = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dηdy_f::A2 = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dηdz_f::A2 = KernelAbstractions.zeros(backend,TFloat, dims2)
 
-    dζdx_f = KernelAbstractions.zeros(backend,TFloat, dims2)
-    dζdy_f = KernelAbstractions.zeros(backend,TFloat, dims2)
-    dζdz_f = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dζdx_f::A2 = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dζdy_f::A2 = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dζdz_f::A2 = KernelAbstractions.zeros(backend,TFloat, dims2)
 
 
     #
     # Contravariant arrays
     #
-    vⁱ::Union{Array{TFloat}, Missing} = zeros(3) #contravariant unit vectors
+    vⁱ::Union{Vector{TFloat}, Missing} = zeros(TFloat, 3) #contravariant unit vectors
     
+end
+
+function St_metrics{TFloat, dims1, dims2, backend}(; kwargs...) where {TFloat, dims1, dims2, backend}
+    A1 = typeof(KernelAbstractions.zeros(backend, TFloat, dims1))
+    A2 = typeof(KernelAbstractions.zeros(backend, TFloat, dims2))
+    return St_metrics{TFloat, dims1, dims2, backend, A1, A2}(; kwargs...)
 end
 
 function allocate_metrics(SD, nelem, nfaces_bdy, Q, T, backend)

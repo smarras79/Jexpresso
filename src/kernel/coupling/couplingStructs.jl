@@ -222,7 +222,10 @@ const _CACHE_FINGERPRINT_KEYS = (
 # rebuilt.
 # v4: cache identity reworked — per-case paths, adaptive runs never read a
 # cache, struct-shape signature added to the fingerprint.
-const _CACHE_SCHEMA_VERSION = 4
+# v5: St_metrics gained the concrete array-type parameters A1/A2 (same field
+# names, so the struct signature cannot see it); metrics serialized with the
+# old untyped struct must be rebuilt.
+const _CACHE_SCHEMA_VERSION = 5
 
 # Signature of the field sets of the structs that get serialized into the
 # caches (St_mesh in the mesh cache, St_metrics in the SEM cache).
