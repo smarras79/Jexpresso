@@ -390,13 +390,23 @@ end
                       singular = false) -> u
 
 Solve the condensed skeleton system  B_{∂O,∂O} u_{∂O} = rhs  (eq. 1.4) with
-  solver = :direct  sparse direct factorisation (factorize = Cholesky for a
-                    symmetric B, LU otherwise — what `B \\ rhs` did before)
-  solver = :amg     AMG-preconditioned CG (amg.jl); B is SPD
+  solver = :direct  sparse Cholesky (CHOLMOD) of the symmetrised B
+  solver = :amg     AMG-preconditioned CG (amg.jl) on the symmetrised B
 `singular = true` is the pure-periodic case (no Dirichlet set Γ): B has the
 constants in its null space, the first unknown is pinned to 0 and the caller
-fixes the gauge. Records the phases :sc_factor (factorisation / AMG hierarchy)
-and :sc_skeleton (triangular solves / CG iterations) in JX_TIMINGS.
+fixes the gauge. Records the phases :sc_factor (symmetrisation +
+factorisation / AMG hierarchy) and :sc_skeleton (triangular solves / CG
+iterations) in JX_TIMINGS.
+
+SYMMETRY. B = A_{∂O∂O} - Σ_e A_{∂O,o} A_{oo}⁻¹ A_{o,∂O} is symmetric positive
+(semi-)definite in exact arithmetic, but the subtraction leaves a round-off
+asymmetry (≈1e-16 relative, measured on the periodic Poisson benchmark). That
+was enough for `factorize` — which tests for EXACT symmetry — to reject
+Cholesky and fall back to UMFPACK LU. The matrix is therefore symmetrised,
+(B + Bᵀ)/2 (bitwise symmetric: floating-point addition commutes), before
+either solver sees it, and factorised explicitly with Cholesky. A relative
+asymmetry above 1e-10 is not round-off and is reported; a B that is not
+positive definite falls back to LU with a warning.
 """
 function el_skeleton_solve(B::SparseMatrixCSC, rhs::AbstractVector;
                            solver = :direct, amg_method = "sa", amg_rtol = 1e-12,
@@ -404,16 +414,35 @@ function el_skeleton_solve(B::SparseMatrixCSC, rhs::AbstractVector;
     s  = Symbol(lowercase(string(solver)))
     s in (:direct, :amg) ||
         error(" # el_skeleton_solve: :EL_skeleton_solver => \"$solver\"; expected \"direct\" or \"amg\".")
-    Bs = singular ? B[2:end, 2:end] : B
+    Bp = singular ? B[2:end, 2:end] : B
     bs = singular ? rhs[2:end] : rhs
     if s === :direct
-        F  = jx_phase(() -> factorize(Bs), :sc_factor)
+        F  = jx_phase(() -> _el_skeleton_cholesky(_el_symmetrise(Bp)), :sc_factor)
         us = jx_phase(() -> F \ bs, :sc_skeleton)
     else
-        S  = jx_phase(() -> jx_amg_setup(Bs; method = amg_method), :sc_factor)
+        S  = jx_phase(() -> jx_amg_setup(_el_symmetrise(Bp); method = amg_method), :sc_factor)
         us = jx_phase(() -> jx_amg_solve(S, bs; rtol = amg_rtol), :sc_skeleton)
     end
     return singular ? vcat(zero(eltype(us)), us) : us
+end
+
+# (B + Bᵀ)/2, exactly symmetric; reports an asymmetry that is not round-off
+function _el_symmetrise(B::SparseMatrixCSC)
+    Bt  = sparse(transpose(B))
+    nB  = opnorm(B, Inf)
+    asym = nB > 0 ? opnorm(B - Bt, Inf) / nB : 0.0
+    asym > 1e-10 && @warn " # el_skeleton_solve: skeleton matrix B has relative asymmetry $asym " *
+                          "(not round-off); symmetrising it anyway."
+    return (B + Bt) ./ 2
+end
+
+# Sparse Cholesky (CHOLMOD) of the symmetric skeleton matrix; LU if it is not
+# positive definite (B is SPD whenever the problem is well posed)
+function _el_skeleton_cholesky(Bsym::SparseMatrixCSC)
+    F = cholesky(Symmetric(Bsym); check = false)
+    issuccess(F) && return F
+    @warn " # el_skeleton_solve: skeleton matrix B is not positive definite; using sparse LU."
+    return lu(Bsym)
 end
 
 

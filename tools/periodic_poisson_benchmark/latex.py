@@ -403,10 +403,16 @@ operators computed from $K$ (no network). The set-up is done in
         \end{equation}
   \item \emph{Skeleton solve} (\texttt{el\_skeleton\_solve}, with
         \texttt{singular = true} because $\Gamma=\emptyset$): the first skeleton
-        unknown is pinned, and \texttt{factorize(B[2:end,2:end])} then
-        \texttt{F \textbackslash{} rhs}. The subtraction leaves $B$ symmetric only up
-        to round-off ($\approx10^{-16}$ relative), so \texttt{factorize} returns an
-        UMFPACK sparse LU factorisation, not Cholesky.
+        unknown is pinned. $B$ is symmetric in exact arithmetic, but the subtraction
+        leaves a round-off asymmetry ($\approx10^{-16}$ relative), enough for
+        \texttt{factorize}, which tests for exact symmetry, to fall back to LU. The
+        code therefore symmetrises the pinned matrix, $\tfrac12(B+B^{\mathsf T})$,
+        which is bitwise symmetric because floating-point addition commutes. It warns
+        if the relative asymmetry exceeds $10^{-10}$, which would not be round-off. It
+        then factorises the result with CHOLMOD sparse Cholesky
+        (\texttt{cholesky}), as for the full system, and solves with
+        \texttt{F \textbackslash{} rhs}. LU is used only if $B$ is not positive
+        definite, and then with a warning.
   \item \emph{Interior recovery.} For every element,
         $\mathbf r^e=\mathbf f^e_o-A^e_{o\,\partial O}\mathbf u_{\partial O}$, the
         inverse of $A^e_{oo}$ is formed again (\texttt{inv}), and
@@ -501,11 +507,11 @@ The six solvers, detailed in
 Sections~\ref{sec:alg-sem-direct}--\ref{sec:alg-fft}, are listed in
 Table~\ref{tab:sc-solvers}. AMG is smoothed aggregation (AlgebraicMultigrid.jl) used as
 the preconditioner of the conjugate gradient method (Krylov.jl). CG stops when the
-preconditioned residual norm has fallen by $10^{-12}$. The direct solves use the
-SuiteSparse factorisation selected by Julia's \texttt{factorize}: sparse Cholesky
-(CHOLMOD) for the exactly symmetric full matrix $K$, and sparse LU (UMFPACK) for the
-skeleton matrix $B$. After the subtraction in \eqref{eq:sc-schur}, $B$ is symmetric
-only up to round-off (relative asymmetry $\approx10^{-16}$).
+preconditioned residual norm has fallen by $10^{-12}$. Both direct solves use sparse
+Cholesky (CHOLMOD, SuiteSparse): of the exactly symmetric full matrix $K$, and of the
+skeleton matrix $B$ after symmetrisation, since the subtraction in
+\eqref{eq:sc-schur} leaves $B$ symmetric only up to round-off (relative asymmetry
+$\approx10^{-16}$). Both AMG solves also use the symmetrised $B$.
 
 \begin{table}[htbp]
   \centering
@@ -516,9 +522,9 @@ only up to round-off (relative asymmetry $\approx10^{-16}$).
     \toprule
     Solver & System solved & Solve \\
     \midrule
-    SEM direct & full SEM system, $(""" + f"{nel}" + r"""N)^2$ unknowns & sparse Cholesky, triangular solves \\
+    SEM direct & full SEM system, $(""" + f"{nel}" + r"""N)^2$ unknowns & sparse Cholesky \\
     SEM AMG & full SEM system & AMG-preconditioned CG \\
-    SC direct & skeleton system \eqref{eq:sc-schur}, $""" + f"{nel}^2(2N-1)" + r"""$ unknowns & sparse LU, triangular solves; recovery \\
+    SC direct & skeleton system \eqref{eq:sc-schur}, $""" + f"{nel}^2(2N-1)" + r"""$ unknowns & sparse Cholesky; recovery \\
     SC AMG & skeleton system \eqref{eq:sc-schur} & AMG-preconditioned CG; recovery \\
     pseudo-spectral & Fourier collocation, $(""" + f"{nel}" + r"""N)^2$ grid & matrix diagonalisation \\
     FFT & Fourier spectral, $(""" + f"{nel}" + r"""N)^2$ grid & real FFT \\
@@ -785,10 +791,6 @@ if any, in which AMG on the SEM system --- full or condensed --- wins.
         comparison on those cases.
   \item \textbf{Measure memory.} Record the peak memory of every solver; in large 2D and in
         3D problems the fill-in of the factorisation is often the binding limit.
-  \item \textbf{Make the direct baselines like-for-like.} The skeleton matrix $B$ is
-        symmetric only up to round-off, so \texttt{factorize} selects LU; symmetrising it,
-        $\tfrac12(B+B^{\mathsf T})$, allows a Cholesky factorisation, as for the full system,
-        roughly halving the factorisation cost and memory.
   \item \textbf{Report robust timings.} Keep the second-run protocol but repeat each
         measurement several times and report the median (single-shot timings of
         sub-millisecond solves are noisy), fix the numbers of Julia and BLAS threads, and
