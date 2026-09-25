@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 420" width="680" height="420" role="img" aria-labelledby="t d" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+<title id="t">h-refinement at order N = 4: time-to-solution incl. infrastructure</title><desc id="d">Wall-clock of the time-to-solution incl. infrastructure versus number of unknowns under uniform mesh refinement at SEM order 4, for the six solvers.</desc>
+<rect width="680" height="420" fill="#1a1a19"/>
+<text x="78" y="28" font-size="16" font-weight="600" fill="#ffffff">h-refinement at order N = 4: time-to-solution incl. infrastructure</text>
+<text x="78" y="48" font-size="12.5" fill="#c3c2b7">−∇²u = f on [0,2π]², doubly periodic · meshes 16²·4^L elements · second-run timings</text>
+<line x1="78" x2="530" y1="358.0" y2="358.0" stroke="#34342f" stroke-width="1"/>
+<text x="68" y="362.0" font-size="12" text-anchor="end" fill="#c3c2b7">10⁻⁴</text>
+<line x1="78" x2="530" y1="308.0" y2="308.0" stroke="#34342f" stroke-width="1"/>
+<text x="68" y="312.0" font-size="12" text-anchor="end" fill="#c3c2b7">10⁻³</text>
+<line x1="78" x2="530" y1="258.0" y2="258.0" stroke="#34342f" stroke-width="1"/>
+<text x="68" y="262.0" font-size="12" text-anchor="end" fill="#c3c2b7">10⁻²</text>
+<line x1="78" x2="530" y1="208.0" y2="208.0" stroke="#34342f" stroke-width="1"/>
+<text x="68" y="212.0" font-size="12" text-anchor="end" fill="#c3c2b7">10⁻¹</text>
+<line x1="78" x2="530" y1="158.0" y2="158.0" stroke="#34342f" stroke-width="1"/>
+<text x="68" y="162.0" font-size="12" text-anchor="end" fill="#c3c2b7">10⁰</text>
+<line x1="78" x2="530" y1="108.0" y2="108.0" stroke="#34342f" stroke-width="1"/>
+<text x="68" y="112.0" font-size="12" text-anchor="end" fill="#c3c2b7">10¹</text>
+<line x1="78" x2="530" y1="358" y2="358" stroke="#5d5c55" stroke-width="1"/>
+<line x1="175.0" x2="175.0" y1="358" y2="363" stroke="#5d5c55" stroke-width="1"/>
+<text x="175.0" y="378" font-size="12" text-anchor="middle" fill="#c3c2b7">10⁴</text>
+<line x1="425.3" x2="425.3" y1="358" y2="363" stroke="#5d5c55" stroke-width="1"/>
+<text x="425.3" y="378" font-size="12" text-anchor="middle" fill="#c3c2b7">10⁵</text>
+<text x="304.0" y="406" font-size="12.5" text-anchor="middle" fill="#c3c2b7">unknowns (log scale)</text>
+<text x="18" y="233.0" font-size="12.5" text-anchor="middle" fill="#c3c2b7" transform="rotate(-90 18 233.0)">seconds (log scale)</text>
+<polyline points="78.0,179.6 228.7,171.6 379.3,139.8 530.0,120.5" fill="none" stroke="#3987e5" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="78.0" cy="179.6" r="4.5" fill="#3987e5" stroke="#1a1a19" stroke-width="2"/>
+<circle cx="228.7" cy="171.6" r="4.5" fill="#3987e5" stroke="#1a1a19" stroke-width="2"/>
+<circle cx="379.3" cy="139.8" r="4.5" fill="#3987e5" stroke="#1a1a19" stroke-width="2"/>
+<circle cx="530.0" cy="120.5" r="4.5" fill="#3987e5" stroke="#1a1a19" stroke-width="2"/>
+<polyline points="78.0,179.6 228.7,162.0 379.3,142.4 530.0,115.8" fill="none" stroke="#d95926" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="73.5" y="175.1" width="9" height="9" rx="1.5" fill="#d95926" stroke="#1a1a19" stroke-width="2"/>
+<rect x="224.2" y="157.5" width="9" height="9" rx="1.5" fill="#d95926" stroke="#1a1a19" stroke-width="2"/>
+<rect x="374.8" y="137.9" width="9" height="9" rx="1.5" fill="#d95926" stroke="#1a1a19" stroke-width="2"/>
+<rect x="525.5" y="111.3" width="9" height="9" rx="1.5" fill="#d95926" stroke="#1a1a19" stroke-width="2"/>
+<polyline points="78.0,179.7 228.7,168.2 379.3,145.6 530.0,122.4" fill="none" stroke="#199e70" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M78.0,174.2 L83.5,184.2 L72.5,184.2 Z" fill="#199e70" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<path d="M228.7,162.7 L234.2,172.7 L223.2,172.7 Z" fill="#199e70" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<path d="M379.3,140.1 L384.8,150.1 L373.8,150.1 Z" fill="#199e70" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<path d="M530.0,116.9 L535.5,126.9 L524.5,126.9 Z" fill="#199e70" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<polyline points="78.0,180.4 228.7,171.0 379.3,146.7 530.0,115.7" fill="none" stroke="#c98500" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M78.0,174.4 L84.0,180.4 L78.0,186.4 L72.0,180.4 Z" fill="#c98500" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<path d="M228.7,165.0 L234.7,171.0 L228.7,177.0 L222.7,171.0 Z" fill="#c98500" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<path d="M379.3,140.7 L385.3,146.7 L379.3,152.7 L373.3,146.7 Z" fill="#c98500" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<path d="M530.0,109.7 L536.0,115.7 L530.0,121.7 L524.0,115.7 Z" fill="#c98500" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<polyline points="78.0,282.7 228.7,252.0 379.3,216.5 530.0,186.0" fill="none" stroke="#d55181" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M78.0,288.2 L83.5,278.2 L72.5,278.2 Z" fill="#d55181" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<path d="M228.7,257.5 L234.2,247.5 L223.2,247.5 Z" fill="#d55181" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<path d="M379.3,222.0 L384.8,212.0 L373.8,212.0 Z" fill="#d55181" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<path d="M530.0,191.5 L535.5,181.5 L524.5,181.5 Z" fill="#d55181" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<polyline points="78.0,340.4 228.7,313.2 379.3,265.5 530.0,252.2" fill="none" stroke="#008300" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="78.0" cy="340.4" r="4" fill="#1a1a19" stroke="#008300" stroke-width="2.5"/>
+<circle cx="228.7" cy="313.2" r="4" fill="#1a1a19" stroke="#008300" stroke-width="2.5"/>
+<circle cx="379.3" cy="265.5" r="4" fill="#1a1a19" stroke="#008300" stroke-width="2.5"/>
+<circle cx="530.0" cy="252.2" r="4" fill="#1a1a19" stroke="#008300" stroke-width="2.5"/>
+<text x="542.0" y="138.0" font-size="12.5" fill="#ffffff">SEM direct</text>
+<text x="542.0" y="123.0" font-size="12.5" fill="#ffffff">SEM AMG</text>
+<text x="542.0" y="153.0" font-size="12.5" fill="#ffffff">SC direct</text>
+<text x="542.0" y="108.0" font-size="12.5" fill="#ffffff">SC AMG</text>
+<text x="542.0" y="190.0" font-size="12.5" fill="#ffffff">pseudo-spectral</text>
+<text x="542.0" y="256.2" font-size="12.5" fill="#ffffff">FFT</text>
+<line x1="78" x2="100" y1="68" y2="68" stroke="#3987e5" stroke-width="2"/>
+<circle cx="89.0" cy="68.0" r="4.5" fill="#3987e5" stroke="#1a1a19" stroke-width="2"/>
+<text x="108" y="72" font-size="12.5" fill="#ffffff">SEM direct</text>
+<line x1="268" x2="290" y1="68" y2="68" stroke="#d95926" stroke-width="2"/>
+<rect x="274.5" y="63.5" width="9" height="9" rx="1.5" fill="#d95926" stroke="#1a1a19" stroke-width="2"/>
+<text x="298" y="72" font-size="12.5" fill="#ffffff">SEM AMG</text>
+<line x1="458" x2="480" y1="68" y2="68" stroke="#199e70" stroke-width="2"/>
+<path d="M469.0,62.5 L474.5,72.5 L463.5,72.5 Z" fill="#199e70" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<text x="488" y="72" font-size="12.5" fill="#ffffff">SC direct</text>
+<line x1="78" x2="100" y1="88" y2="88" stroke="#c98500" stroke-width="2"/>
+<path d="M89.0,82.0 L95.0,88.0 L89.0,94.0 L83.0,88.0 Z" fill="#c98500" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<text x="108" y="92" font-size="12.5" fill="#ffffff">SC AMG</text>
+<line x1="268" x2="290" y1="88" y2="88" stroke="#d55181" stroke-width="2"/>
+<path d="M279.0,93.5 L284.5,83.5 L273.5,83.5 Z" fill="#d55181" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<text x="298" y="92" font-size="12.5" fill="#ffffff">pseudo-spectral</text>
+<line x1="458" x2="480" y1="88" y2="88" stroke="#008300" stroke-width="2"/>
+<circle cx="469.0" cy="88.0" r="4" fill="#1a1a19" stroke="#008300" stroke-width="2.5"/>
+<text x="488" y="92" font-size="12.5" fill="#ffffff">FFT</text>
+</svg>

@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 420" width="680" height="420" role="img" aria-labelledby="t d" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+<title id="t">Error vs unknowns</title><desc id="d">L-infinity error versus number of unknowns for the SEM (one curve: its four solvers give the same discrete solution), pseudo-spectral and FFT solvers.</desc>
+<rect width="680" height="420" fill="#1a1a19"/>
+<text x="78" y="28" font-size="16" font-weight="600" fill="#ffffff">Error vs unknowns</text>
+<text x="78" y="48" font-size="12.5" fill="#c3c2b7">−∇²u = f on [0,2π]², doubly periodic · 64×64 elements · second-run timings</text>
+<line x1="78" x2="530" y1="358.0" y2="358.0" stroke="#34342f" stroke-width="1"/>
+<text x="68" y="362.0" font-size="12" text-anchor="end" fill="#c3c2b7">10⁻¹⁵</text>
+<line x1="78" x2="530" y1="338.8" y2="338.8" stroke="#34342f" stroke-width="1"/>
+<line x1="78" x2="530" y1="319.5" y2="319.5" stroke="#34342f" stroke-width="1"/>
+<text x="68" y="323.5" font-size="12" text-anchor="end" fill="#c3c2b7">10⁻¹³</text>
+<line x1="78" x2="530" y1="300.3" y2="300.3" stroke="#34342f" stroke-width="1"/>
+<line x1="78" x2="530" y1="281.1" y2="281.1" stroke="#34342f" stroke-width="1"/>
+<text x="68" y="285.1" font-size="12" text-anchor="end" fill="#c3c2b7">10⁻¹¹</text>
+<line x1="78" x2="530" y1="261.8" y2="261.8" stroke="#34342f" stroke-width="1"/>
+<line x1="78" x2="530" y1="242.6" y2="242.6" stroke="#34342f" stroke-width="1"/>
+<text x="68" y="246.6" font-size="12" text-anchor="end" fill="#c3c2b7">10⁻⁹</text>
+<line x1="78" x2="530" y1="223.4" y2="223.4" stroke="#34342f" stroke-width="1"/>
+<line x1="78" x2="530" y1="204.2" y2="204.2" stroke="#34342f" stroke-width="1"/>
+<text x="68" y="208.2" font-size="12" text-anchor="end" fill="#c3c2b7">10⁻⁷</text>
+<line x1="78" x2="530" y1="184.9" y2="184.9" stroke="#34342f" stroke-width="1"/>
+<line x1="78" x2="530" y1="165.7" y2="165.7" stroke="#34342f" stroke-width="1"/>
+<text x="68" y="169.7" font-size="12" text-anchor="end" fill="#c3c2b7">10⁻⁵</text>
+<line x1="78" x2="530" y1="146.5" y2="146.5" stroke="#34342f" stroke-width="1"/>
+<line x1="78" x2="530" y1="127.2" y2="127.2" stroke="#34342f" stroke-width="1"/>
+<text x="68" y="131.2" font-size="12" text-anchor="end" fill="#c3c2b7">10⁻³</text>
+<line x1="78" x2="530" y1="108.0" y2="108.0" stroke="#34342f" stroke-width="1"/>
+<line x1="78" x2="530" y1="358" y2="358" stroke="#5d5c55" stroke-width="1"/>
+<line x1="372.9" x2="372.9" y1="358" y2="363" stroke="#5d5c55" stroke-width="1"/>
+<text x="372.9" y="378" font-size="12" text-anchor="middle" fill="#c3c2b7">10⁵</text>
+<text x="304.0" y="406" font-size="12.5" text-anchor="middle" fill="#c3c2b7">unknowns (log scale)</text>
+<text x="18" y="233.0" font-size="12.5" text-anchor="middle" fill="#c3c2b7" transform="rotate(-90 18 233.0)">L∞ error vs exact solution</text>
+<polyline points="78.0,117.1 210.2,139.8 304.0,167.0 376.8,184.3 436.2,212.9 486.5,226.9 530.0,249.3" fill="none" stroke="#3987e5" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="78.0" cy="117.1" r="4.5" fill="#3987e5" stroke="#1a1a19" stroke-width="2"/>
+<circle cx="210.2" cy="139.8" r="4.5" fill="#3987e5" stroke="#1a1a19" stroke-width="2"/>
+<circle cx="304.0" cy="167.0" r="4.5" fill="#3987e5" stroke="#1a1a19" stroke-width="2"/>
+<circle cx="376.8" cy="184.3" r="4.5" fill="#3987e5" stroke="#1a1a19" stroke-width="2"/>
+<circle cx="436.2" cy="212.9" r="4.5" fill="#3987e5" stroke="#1a1a19" stroke-width="2"/>
+<circle cx="486.5" cy="226.9" r="4.5" fill="#3987e5" stroke="#1a1a19" stroke-width="2"/>
+<circle cx="530.0" cy="249.3" r="4.5" fill="#3987e5" stroke="#1a1a19" stroke-width="2"/>
+<polyline points="78.0,190.6 210.2,254.9 304.0,298.3 376.8,294.2 436.2,303.1 486.5,307.1 530.0,301.1" fill="none" stroke="#d55181" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M78.0,196.1 L83.5,186.1 L72.5,186.1 Z" fill="#d55181" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<path d="M210.2,260.4 L215.7,250.4 L204.7,250.4 Z" fill="#d55181" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<path d="M304.0,303.8 L309.5,293.8 L298.5,293.8 Z" fill="#d55181" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<path d="M376.8,299.7 L382.3,289.7 L371.3,289.7 Z" fill="#d55181" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<path d="M436.2,308.6 L441.7,298.6 L430.7,298.6 Z" fill="#d55181" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<path d="M486.5,312.6 L492.0,302.6 L481.0,302.6 Z" fill="#d55181" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<path d="M530.0,306.6 L535.5,296.6 L524.5,296.6 Z" fill="#d55181" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<polyline points="78.0,190.6 210.2,254.9 304.0,317.3 376.8,342.3 436.2,342.9 486.5,342.6 530.0,341.6" fill="none" stroke="#008300" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="78.0" cy="190.6" r="4" fill="#1a1a19" stroke="#008300" stroke-width="2.5"/>
+<circle cx="210.2" cy="254.9" r="4" fill="#1a1a19" stroke="#008300" stroke-width="2.5"/>
+<circle cx="304.0" cy="317.3" r="4" fill="#1a1a19" stroke="#008300" stroke-width="2.5"/>
+<circle cx="376.8" cy="342.3" r="4" fill="#1a1a19" stroke="#008300" stroke-width="2.5"/>
+<circle cx="436.2" cy="342.9" r="4" fill="#1a1a19" stroke="#008300" stroke-width="2.5"/>
+<circle cx="486.5" cy="342.6" r="4" fill="#1a1a19" stroke="#008300" stroke-width="2.5"/>
+<circle cx="530.0" cy="341.6" r="4" fill="#1a1a19" stroke="#008300" stroke-width="2.5"/>
+<text x="542.0" y="253.3" font-size="12.5" fill="#ffffff">SEM (all 4 solvers)</text>
+<text x="542.0" y="305.1" font-size="12.5" fill="#ffffff">pseudo-spectral</text>
+<text x="542.0" y="345.6" font-size="12.5" fill="#ffffff">FFT</text>
+<line x1="78" x2="100" y1="68" y2="68" stroke="#3987e5" stroke-width="2"/>
+<circle cx="89.0" cy="68.0" r="4.5" fill="#3987e5" stroke="#1a1a19" stroke-width="2"/>
+<text x="108" y="72" font-size="12.5" fill="#ffffff">SEM (all 4 solvers)</text>
+<line x1="268" x2="290" y1="68" y2="68" stroke="#d55181" stroke-width="2"/>
+<path d="M279.0,73.5 L284.5,63.5 L273.5,63.5 Z" fill="#d55181" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<text x="298" y="72" font-size="12.5" fill="#ffffff">pseudo-spectral</text>
+<line x1="458" x2="480" y1="68" y2="68" stroke="#008300" stroke-width="2"/>
+<circle cx="469.0" cy="68.0" r="4" fill="#1a1a19" stroke="#008300" stroke-width="2.5"/>
+<text x="488" y="72" font-size="12.5" fill="#ffffff">FFT</text>
+</svg>

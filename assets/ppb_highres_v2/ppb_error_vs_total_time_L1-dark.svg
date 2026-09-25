@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 420" width="680" height="420" role="img" aria-labelledby="t d" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+<title id="t">Error vs time-to-solution (with infrastructure)</title><desc id="d">L-infinity error versus time-to-solution incl. infrastructure (log scale) for the six solvers (four SEM solves, pseudo-spectral, FFT); each curve runs over increasing resolution.</desc>
+<rect width="680" height="420" fill="#1a1a19"/>
+<text x="78" y="28" font-size="16" font-weight="600" fill="#ffffff">Error vs time-to-solution (with infrastructure)</text>
+<text x="78" y="48" font-size="12.5" fill="#c3c2b7">−∇²u = f on [0,2π]², doubly periodic · 32×32 elements · second-run timings</text>
+<line x1="78" x2="530" y1="358.0" y2="358.0" stroke="#34342f" stroke-width="1"/>
+<text x="68" y="362.0" font-size="12" text-anchor="end" fill="#c3c2b7">10⁻¹³</text>
+<line x1="78" x2="530" y1="338.8" y2="338.8" stroke="#34342f" stroke-width="1"/>
+<line x1="78" x2="530" y1="319.5" y2="319.5" stroke="#34342f" stroke-width="1"/>
+<text x="68" y="323.5" font-size="12" text-anchor="end" fill="#c3c2b7">10⁻¹¹</text>
+<line x1="78" x2="530" y1="300.3" y2="300.3" stroke="#34342f" stroke-width="1"/>
+<line x1="78" x2="530" y1="281.1" y2="281.1" stroke="#34342f" stroke-width="1"/>
+<text x="68" y="285.1" font-size="12" text-anchor="end" fill="#c3c2b7">10⁻⁹</text>
+<line x1="78" x2="530" y1="261.8" y2="261.8" stroke="#34342f" stroke-width="1"/>
+<line x1="78" x2="530" y1="242.6" y2="242.6" stroke="#34342f" stroke-width="1"/>
+<text x="68" y="246.6" font-size="12" text-anchor="end" fill="#c3c2b7">10⁻⁷</text>
+<line x1="78" x2="530" y1="223.4" y2="223.4" stroke="#34342f" stroke-width="1"/>
+<line x1="78" x2="530" y1="204.2" y2="204.2" stroke="#34342f" stroke-width="1"/>
+<text x="68" y="208.2" font-size="12" text-anchor="end" fill="#c3c2b7">10⁻⁵</text>
+<line x1="78" x2="530" y1="184.9" y2="184.9" stroke="#34342f" stroke-width="1"/>
+<line x1="78" x2="530" y1="165.7" y2="165.7" stroke="#34342f" stroke-width="1"/>
+<text x="68" y="169.7" font-size="12" text-anchor="end" fill="#c3c2b7">10⁻³</text>
+<line x1="78" x2="530" y1="146.5" y2="146.5" stroke="#34342f" stroke-width="1"/>
+<line x1="78" x2="530" y1="127.2" y2="127.2" stroke="#34342f" stroke-width="1"/>
+<text x="68" y="131.2" font-size="12" text-anchor="end" fill="#c3c2b7">10⁻¹</text>
+<line x1="78" x2="530" y1="108.0" y2="108.0" stroke="#34342f" stroke-width="1"/>
+<line x1="78" x2="530" y1="358" y2="358" stroke="#5d5c55" stroke-width="1"/>
+<line x1="78.0" x2="78.0" y1="358" y2="363" stroke="#5d5c55" stroke-width="1"/>
+<text x="78.0" y="378" font-size="12" text-anchor="middle" fill="#c3c2b7">100 µs</text>
+<line x1="168.4" x2="168.4" y1="358" y2="363" stroke="#5d5c55" stroke-width="1"/>
+<text x="168.4" y="378" font-size="12" text-anchor="middle" fill="#c3c2b7">1 ms</text>
+<line x1="258.8" x2="258.8" y1="358" y2="363" stroke="#5d5c55" stroke-width="1"/>
+<text x="258.8" y="378" font-size="12" text-anchor="middle" fill="#c3c2b7">10 ms</text>
+<line x1="349.2" x2="349.2" y1="358" y2="363" stroke="#5d5c55" stroke-width="1"/>
+<text x="349.2" y="378" font-size="12" text-anchor="middle" fill="#c3c2b7">100 ms</text>
+<line x1="439.6" x2="439.6" y1="358" y2="363" stroke="#5d5c55" stroke-width="1"/>
+<text x="439.6" y="378" font-size="12" text-anchor="middle" fill="#c3c2b7">1 s</text>
+<line x1="530.0" x2="530.0" y1="358" y2="363" stroke="#5d5c55" stroke-width="1"/>
+<text x="530.0" y="378" font-size="12" text-anchor="middle" fill="#c3c2b7">10 s</text>
+<text x="304.0" y="406" font-size="12.5" text-anchor="middle" fill="#c3c2b7">time-to-solution incl. infrastructure (log scale)</text>
+<text x="18" y="233.0" font-size="12.5" text-anchor="middle" fill="#c3c2b7" transform="rotate(-90 18 233.0)">L∞ error vs exact solution</text>
+<polyline points="402.0,121.7 408.9,142.4 415.0,167.6 423.3,188.6 441.8,201.8 462.5,222.3 478.4,236.9" fill="none" stroke="#3987e5" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="402.0" cy="121.7" r="4.5" fill="#3987e5" stroke="#1a1a19" stroke-width="2"/>
+<circle cx="408.9" cy="142.4" r="4.5" fill="#3987e5" stroke="#1a1a19" stroke-width="2"/>
+<circle cx="415.0" cy="167.6" r="4.5" fill="#3987e5" stroke="#1a1a19" stroke-width="2"/>
+<circle cx="423.3" cy="188.6" r="4.5" fill="#3987e5" stroke="#1a1a19" stroke-width="2"/>
+<circle cx="441.8" cy="201.8" r="4.5" fill="#3987e5" stroke="#1a1a19" stroke-width="2"/>
+<circle cx="462.5" cy="222.3" r="4.5" fill="#3987e5" stroke="#1a1a19" stroke-width="2"/>
+<circle cx="478.4" cy="236.9" r="4.5" fill="#3987e5" stroke="#1a1a19" stroke-width="2"/>
+<polyline points="412.8,121.7 418.8,142.4 432.4,167.6 447.9,188.6 469.0,201.8 488.9,222.3 511.9,236.9" fill="none" stroke="#d95926" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="408.3" y="117.2" width="9" height="9" rx="1.5" fill="#d95926" stroke="#1a1a19" stroke-width="2"/>
+<rect x="414.3" y="137.9" width="9" height="9" rx="1.5" fill="#d95926" stroke="#1a1a19" stroke-width="2"/>
+<rect x="427.9" y="163.1" width="9" height="9" rx="1.5" fill="#d95926" stroke="#1a1a19" stroke-width="2"/>
+<rect x="443.4" y="184.1" width="9" height="9" rx="1.5" fill="#d95926" stroke="#1a1a19" stroke-width="2"/>
+<rect x="464.5" y="197.3" width="9" height="9" rx="1.5" fill="#d95926" stroke="#1a1a19" stroke-width="2"/>
+<rect x="484.4" y="217.8" width="9" height="9" rx="1.5" fill="#d95926" stroke="#1a1a19" stroke-width="2"/>
+<rect x="507.4" y="232.4" width="9" height="9" rx="1.5" fill="#d95926" stroke="#1a1a19" stroke-width="2"/>
+<polyline points="429.5,121.7 410.2,142.4 421.1,167.6 438.7,188.6 476.9,201.8 462.2,222.3 477.1,236.9" fill="none" stroke="#199e70" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M429.5,116.2 L435.0,126.2 L424.0,126.2 Z" fill="#199e70" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<path d="M410.2,136.9 L415.7,146.9 L404.7,146.9 Z" fill="#199e70" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<path d="M421.1,162.1 L426.6,172.1 L415.6,172.1 Z" fill="#199e70" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<path d="M438.7,183.1 L444.2,193.1 L433.2,193.1 Z" fill="#199e70" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<path d="M476.9,196.3 L482.4,206.3 L471.4,206.3 Z" fill="#199e70" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<path d="M462.2,216.8 L467.7,226.8 L456.7,226.8 Z" fill="#199e70" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<path d="M477.1,231.4 L482.6,241.4 L471.6,241.4 Z" fill="#199e70" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<polyline points="411.6,121.7 406.4,142.4 416.2,167.6 438.2,188.6 458.6,201.8 470.2,222.3 476.1,236.9" fill="none" stroke="#c98500" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M411.6,115.7 L417.6,121.7 L411.6,127.7 L405.6,121.7 Z" fill="#c98500" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<path d="M406.4,136.4 L412.4,142.4 L406.4,148.4 L400.4,142.4 Z" fill="#c98500" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<path d="M416.2,161.6 L422.2,167.6 L416.2,173.6 L410.2,167.6 Z" fill="#c98500" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<path d="M438.2,182.6 L444.2,188.6 L438.2,194.6 L432.2,188.6 Z" fill="#c98500" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<path d="M458.6,195.8 L464.6,201.8 L458.6,207.8 L452.6,201.8 Z" fill="#c98500" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<path d="M470.2,216.3 L476.2,222.3 L470.2,228.3 L464.2,222.3 Z" fill="#c98500" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<path d="M476.1,230.9 L482.1,236.9 L476.1,242.9 L470.1,236.9 Z" fill="#c98500" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<polyline points="214.4,155.2 244.9,194.7 269.7,229.1 287.6,261.6 302.9,293.3 315.7,324.5 330.5,336.8" fill="none" stroke="#d55181" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M214.4,160.7 L219.9,150.7 L208.9,150.7 Z" fill="#d55181" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<path d="M244.9,200.2 L250.4,190.2 L239.4,190.2 Z" fill="#d55181" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<path d="M269.7,234.6 L275.2,224.6 L264.2,224.6 Z" fill="#d55181" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<path d="M287.6,267.1 L293.1,257.1 L282.1,257.1 Z" fill="#d55181" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<path d="M302.9,298.8 L308.4,288.8 L297.4,288.8 Z" fill="#d55181" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<path d="M315.7,330.0 L321.2,320.0 L310.2,320.0 Z" fill="#d55181" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<path d="M330.5,342.3 L336.0,332.3 L325.0,332.3 Z" fill="#d55181" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<polyline points="111.0,155.2 140.9,194.7 158.9,229.1 183.1,261.6 190.3,293.3 202.3,324.7 223.9,355.7" fill="none" stroke="#008300" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="111.0" cy="155.2" r="4" fill="#1a1a19" stroke="#008300" stroke-width="2.5"/>
+<circle cx="140.9" cy="194.7" r="4" fill="#1a1a19" stroke="#008300" stroke-width="2.5"/>
+<circle cx="158.9" cy="229.1" r="4" fill="#1a1a19" stroke="#008300" stroke-width="2.5"/>
+<circle cx="183.1" cy="261.6" r="4" fill="#1a1a19" stroke="#008300" stroke-width="2.5"/>
+<circle cx="190.3" cy="293.3" r="4" fill="#1a1a19" stroke="#008300" stroke-width="2.5"/>
+<circle cx="202.3" cy="324.7" r="4" fill="#1a1a19" stroke="#008300" stroke-width="2.5"/>
+<circle cx="223.9" cy="355.7" r="4" fill="#1a1a19" stroke="#008300" stroke-width="2.5"/>
+<text x="490.4" y="263.4" font-size="12.5" fill="#ffffff">SEM direct</text>
+<text x="523.9" y="218.4" font-size="12.5" fill="#ffffff">SEM AMG</text>
+<text x="489.1" y="248.4" font-size="12.5" fill="#ffffff">SC direct</text>
+<text x="488.1" y="233.4" font-size="12.5" fill="#ffffff">SC AMG</text>
+<text x="342.5" y="340.8" font-size="12.5" fill="#ffffff">pseudo-spectral</text>
+<text x="235.9" y="359.7" font-size="12.5" fill="#ffffff">FFT</text>
+<line x1="78" x2="100" y1="68" y2="68" stroke="#3987e5" stroke-width="2"/>
+<circle cx="89.0" cy="68.0" r="4.5" fill="#3987e5" stroke="#1a1a19" stroke-width="2"/>
+<text x="108" y="72" font-size="12.5" fill="#ffffff">SEM direct</text>
+<line x1="268" x2="290" y1="68" y2="68" stroke="#d95926" stroke-width="2"/>
+<rect x="274.5" y="63.5" width="9" height="9" rx="1.5" fill="#d95926" stroke="#1a1a19" stroke-width="2"/>
+<text x="298" y="72" font-size="12.5" fill="#ffffff">SEM AMG</text>
+<line x1="458" x2="480" y1="68" y2="68" stroke="#199e70" stroke-width="2"/>
+<path d="M469.0,62.5 L474.5,72.5 L463.5,72.5 Z" fill="#199e70" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<text x="488" y="72" font-size="12.5" fill="#ffffff">SC direct</text>
+<line x1="78" x2="100" y1="88" y2="88" stroke="#c98500" stroke-width="2"/>
+<path d="M89.0,82.0 L95.0,88.0 L89.0,94.0 L83.0,88.0 Z" fill="#c98500" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<text x="108" y="92" font-size="12.5" fill="#ffffff">SC AMG</text>
+<line x1="268" x2="290" y1="88" y2="88" stroke="#d55181" stroke-width="2"/>
+<path d="M279.0,93.5 L284.5,83.5 L273.5,83.5 Z" fill="#d55181" stroke="#1a1a19" stroke-width="2" stroke-linejoin="round"/>
+<text x="298" y="92" font-size="12.5" fill="#ffffff">pseudo-spectral</text>
+<line x1="458" x2="480" y1="88" y2="88" stroke="#008300" stroke-width="2"/>
+<circle cx="469.0" cy="88.0" r="4" fill="#1a1a19" stroke="#008300" stroke-width="2.5"/>
+<text x="488" y="92" font-size="12.5" fill="#ffffff">FFT</text>
+</svg>
