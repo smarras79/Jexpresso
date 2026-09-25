@@ -769,13 +769,13 @@ The same six solvers, with the 16×16 mesh refined uniformly through `:linitial_
 
 </details>
 
-#### Error versus the Fourier grid size, all levels
+#### Error versus unknowns per direction, all levels
 
-Every level on one axis: N_g = (elements per side) × N points per direction, the resolution of the Fourier solvers. Their error follows the predicted r^(N_g/2) (dashed) on every mesh, then flattens at the round-off floor, higher for the pseudo-spectral solver (dense eigen-decomposition and matrix products) than for the FFT. The SEM has one curve per mesh.
+All levels on one axis. The horizontal axis is the number of unknowns per direction, √n = (elements per side) × N, the same for every solver at a given configuration; each error is measured against the exact solution at that solver's own points. The pseudo-spectral and FFT errors depend on √n only, so all meshes fall on one curve, which follows the predicted 0.8^(√n/2) (dashed) until it reaches the round-off floor: about 6·10⁻¹⁵ for the FFT, and 10⁻¹² to 10⁻¹¹ for the pseudo-spectral solver, whose dense matrix computations accumulate more rounding. The SEM error depends on the element size and the order separately, so it has one curve per mesh.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/ppb_highres_v2/ppb_error_vs_Ng-dark.svg">
-  <img src="assets/ppb_highres_v2/ppb_error_vs_Ng.svg" width="680" alt="L-infinity error versus N_g, the number of points per direction, for all mesh levels: one SEM curve per mesh; the pseudo-spectral and FFT errors follow the predicted 0.8^(N_g/2) and then flatten at their round-off floors.">
+  <img src="assets/ppb_highres_v2/ppb_error_vs_Ng.svg" width="680" alt="L-infinity error versus the number of unknowns per direction, the same for every solver, for all mesh levels: one SEM curve per mesh; the pseudo-spectral and FFT errors follow the predicted 0.8^(√n/2) and then flatten at their round-off floors.">
 </picture>
 
 #### Time versus unknowns under mesh refinement

@@ -7,7 +7,8 @@
 script
   1. copies every SVG in <outdir>/assets/ into assets/<name of outdir>/;
   2. writes a README section with the results table (<outdir>/results.md),
-     the error-versus-N_g figure of all levels (ppb_error_vs_Ng), the
+     the error-versus-unknowns-per-direction figure of all levels
+     (ppb_error_vs_Ng), the
      h-refinement figures (ppb_hrefine_*_N<N>) and the per-level figures
      (ppb_error_vs_*_L<L>), each figure with its dark-mode variant.
 
@@ -120,15 +121,18 @@ if os.path.isfile(mdpath):
              + table + "\n\n</details>\n\n")
 
 if "ppb_error_vs_Ng" in light:
-    o.append("#### Error versus the Fourier grid size, all levels\n\n"
-             "Every level on one axis: N_g = (elements per side) × N points per direction, the resolution of "
-             "the Fourier solvers. Their error follows the predicted r^(N_g/2) (dashed) on every mesh, then "
-             "flattens at the round-off floor, higher for the pseudo-spectral solver (dense eigen-decomposition "
-             "and matrix products) than for the FFT. The SEM has one curve per mesh.\n\n")
+    o.append("#### Error versus unknowns per direction, all levels\n\n"
+             "All levels on one axis. The horizontal axis is the number of unknowns per direction, "
+             "√n = (elements per side) × N, the same for every solver at a given configuration; each error is "
+             "measured against the exact solution at that solver's own points. The pseudo-spectral and FFT errors "
+             "depend on √n only, so all meshes fall on one curve, which follows the predicted 0.8^(√n/2) (dashed) "
+             "until it reaches the round-off floor: about 6·10⁻¹⁵ for the FFT, and 10⁻¹² to 10⁻¹¹ for the "
+             "pseudo-spectral solver, whose dense matrix computations accumulate more rounding. The SEM error "
+             "depends on the element size and the order separately, so it has one curve per mesh.\n\n")
     o.append(picture("ppb_error_vs_Ng",
-                     "L-infinity error versus N_g, the number of points per direction, for all mesh levels: one SEM "
-                     "curve per mesh; the pseudo-spectral and FFT errors follow the predicted 0.8^(N_g/2) and then "
-                     "flatten at their round-off floors."))
+                     "L-infinity error versus the number of unknowns per direction, the same for every solver, for all "
+                     "mesh levels: one SEM curve per mesh; the pseudo-spectral and FFT errors follow the predicted "
+                     "0.8^(√n/2) and then flatten at their round-off floors."))
 
 if hrefine_n:
     o.append("#### Time versus unknowns under mesh refinement\n\n"

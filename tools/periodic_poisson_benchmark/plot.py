@@ -19,9 +19,9 @@ run on two or more levels, time versus unknowns under h-refinement:
   ppb_hrefine_solve_N<N>     solve step
   ppb_hrefine_cost_N<N>      setup + solve (the solver's cost)
   ppb_hrefine_total_N<N>     time-to-solution incl. infrastructure
-  ppb_error_vs_Ng            error vs the Fourier grid size N_g for all levels
-                             (one SEM curve per mesh; pseudo-spectral, FFT and
-                             the predicted 0.8^(N_g/2))
+  ppb_error_vs_Ng            error vs unknowns per direction, sqrt(n) = n_e*N, for
+                             all levels (one SEM curve per mesh; pseudo-spectral,
+                             FFT and the predicted 0.8^(sqrt(n)/2))
 
 No dependencies.
 """
@@ -282,11 +282,14 @@ def hrefine_figures(rows, assets):
 
 
 def ng_figure(rows, assets, r=0.8):
-    """Error versus the Fourier grid size N_g = n_e*N (points per direction) for
-    every level of a multi-level run: one SEM curve per mesh, the pseudo-spectral
-    and FFT results of all levels merged (they depend on N_g only), and the
-    predicted Fourier error r^(N_g/2). On a linear N_g axis geometric decay is a
-    straight line, until the round-off floor."""
+    """Error versus the number of unknowns per direction, sqrt(n) = n_e*N (the
+    same for every solver at a given configuration: SEM nodes per direction =
+    Fourier grid points per direction), for every level of a multi-level run:
+    one SEM curve per mesh, the pseudo-spectral and FFT results of all levels
+    merged (they depend on sqrt(n) only), and the predicted Fourier error
+    r^(sqrt(n)/2). Each error is measured against the exact solution at that
+    solver's own points. On a linear axis geometric decay is a straight line,
+    until the round-off floor."""
     ng = lambda q: q["nel"] * q["nop"]
     levels = sorted({q["level"] for q in rows})
     series = []
@@ -312,16 +315,17 @@ def ng_figure(rows, assets, r=0.8):
     pred = [(n, r ** (n / 2)) for n in range(x0, x1 + 1, max(1, (x1 - x0) // 200))
             if r ** (n / 2) >= 10.0 ** ydec[0]]
     if len(pred) > 1:
-        series.append((f"{r}^(N_g/2)", pred, (None, None, True)))
+        series.append((f"{r}^(√n/2)", pred, (None, None, True)))
     step = 64 if x1 - x0 <= 640 else 128
     xticks = [(n, str(n)) for n in range(0, x1 + 1, step) if n >= x0]
     write(assets, "ppb_error_vs_Ng", lambda th: chart(
-        th, "Error vs Fourier grid size, all mesh levels",
-        "−∇²u = f on [0,2π]², doubly periodic · N_g = (elements per side) × N points per direction",
-        "L-infinity error versus N_g, the number of points per direction (N_g = elements per side times the "
-        "SEM order), for every mesh level: one SEM curve per mesh, the pseudo-spectral and FFT results of all "
-        f"levels, and the predicted Fourier error {r}^(N_g/2) (dashed).",
-        series, (x0, x1), False, xticks, "N_g, points per direction (linear scale)",
+        th, "Error vs unknowns per direction, all mesh levels",
+        "−∇²u = f on [0,2π]², doubly periodic · √n = (elements per side) × N, the same for every solver",
+        "L-infinity error versus the number of unknowns per direction, the square root of n = (elements per "
+        "side) times N, the same for every solver at a given configuration, for every mesh level: one SEM curve "
+        "per mesh, the pseudo-spectral and FFT results of all levels, and the predicted Fourier error "
+        f"{r}^(√n/2) (dashed).",
+        series, (x0, x1), False, xticks, "unknowns per direction, √n = (elements per side) × N (linear scale)",
         "L∞ error vs exact solution", ydec, end_labels=False, legend_cols=4))
 
 
