@@ -19,6 +19,9 @@ run on two or more levels, time versus unknowns under h-refinement:
   ppb_hrefine_solve_N<N>     solve step
   ppb_hrefine_cost_N<N>      setup + solve (the solver's cost)
   ppb_hrefine_total_N<N>     time-to-solution incl. infrastructure
+  ppb_error_vs_Ng            error vs the Fourier grid size N_g for all levels
+                             (one SEM curve per mesh; pseudo-spectral, FFT and
+                             the predicted 0.8^(N_g/2))
 
 No dependencies.
 """
@@ -107,8 +110,18 @@ def spread(ys, gap=15.0, lo=None, hi=None):
     return out
 
 
-def chart(th, title, subtitle, desc, series, xs, xlog, xticks, xlabel, ylabel, ydec):
-    """series: list of (label, [(x, y), ...]); y on a log axis spanning decades ydec."""
+def style(th, slot):
+    """slot: an index into the palette/markers, or (color index | None for grey,
+    marker kind | None, dashed) -> (colour, marker kind or None, dashed)"""
+    if isinstance(slot, tuple):
+        c, kind, dash = slot
+        return (th["text2"] if c is None else th["s"][c]), kind, dash
+    return th["s"][slot], MARKERS[slot], False
+
+
+def chart(th, title, subtitle, desc, series, xs, xlog, xticks, xlabel, ylabel, ydec,
+          end_labels=True, legend_cols=3):
+    """series: list of (label, [(x, y), ...], slot); y on a log axis spanning decades ydec."""
     ymin, ymax = ydec
     if xlog:
         lx0, lx1 = math.log10(xs[0]), math.log10(xs[1])
@@ -142,20 +155,26 @@ def chart(th, title, subtitle, desc, series, xs, xlog, xticks, xlabel, ylabel, y
       f'transform="rotate(-90 18 {(T + H - B)/2:.1f})">{ylabel}</text>')
     ends = []
     for i, (label, pts, slot) in enumerate(series):
-        col, kind = th["s"][slot], MARKERS[slot]
+        col, kind, dash = style(th, slot)
+        da = ' stroke-dasharray="6 4"' if dash else ""
         a(f'<polyline points="{" ".join(f"{px(x):.1f},{py(y):.1f}" for x, y in pts)}" fill="none" '
-          f'stroke="{col}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>')
-        for x, y in pts:
-            a(marker(kind, px(x), py(y), col, th["surface"]))
+          f'stroke="{col}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"{da}/>')
+        if kind:
+            for x, y in pts:
+                a(marker(kind, px(x), py(y), col, th["surface"]))
         ends.append((label, px(pts[-1][0]), py(pts[-1][1])))
-    for (label, x, _), y in zip(ends, spread([e[2] for e in ends], lo=T - 4, hi=H - B + 4)):
-        a(f'<text x="{x+12:.1f}" y="{y+4:.1f}" font-size="12.5" fill="{th["text1"]}">{label}</text>')
-    if len(series) > 1:                        # legend: rows of three under the subtitle
+    if end_labels:
+        for (label, x, _), y in zip(ends, spread([e[2] for e in ends], lo=T - 4, hi=H - B + 4)):
+            a(f'<text x="{x+12:.1f}" y="{y+4:.1f}" font-size="12.5" fill="{th["text1"]}">{label}</text>')
+    if len(series) > 1:                        # legend: rows under the subtitle
+        colw = 570 // legend_cols
         for i, (label, _, slot) in enumerate(series):
-            col = th["s"][slot]
-            lx, ly = L + (i % 3) * 190, 68 + (i // 3) * 20
-            a(f'<line x1="{lx}" x2="{lx+22}" y1="{ly}" y2="{ly}" stroke="{col}" stroke-width="2"/>')
-            a(marker(MARKERS[slot], lx + 11, ly, col, th["surface"]))
+            col, kind, dash = style(th, slot)
+            lx, ly = L + (i % legend_cols) * colw, 68 + (i // legend_cols) * 20
+            da = ' stroke-dasharray="6 4"' if dash else ""
+            a(f'<line x1="{lx}" x2="{lx+22}" y1="{ly}" y2="{ly}" stroke="{col}" stroke-width="2"{da}/>')
+            if kind:
+                a(marker(kind, lx + 11, ly, col, th["surface"]))
             a(f'<text x="{lx+30}" y="{ly+4}" font-size="12.5" fill="{th["text1"]}">{label}</text>')
     a('</svg>')
     return "\n".join(o) + "\n"
@@ -262,6 +281,50 @@ def hrefine_figures(rows, assets):
                 series, (dofs[0], dofs[-1]), True, log_ticks(dofs), "unknowns (log scale)", "seconds (log scale)", ydec))
 
 
+def ng_figure(rows, assets, r=0.8):
+    """Error versus the Fourier grid size N_g = n_e*N (points per direction) for
+    every level of a multi-level run: one SEM curve per mesh, the pseudo-spectral
+    and FFT results of all levels merged (they depend on N_g only), and the
+    predicted Fourier error r^(N_g/2). On a linear N_g axis geometric decay is a
+    straight line, until the round-off floor."""
+    ng = lambda q: q["nel"] * q["nop"]
+    levels = sorted({q["level"] for q in rows})
+    series = []
+    sem_marks = ["circle", "square", "triangle", "diamond", "tridown", "ring"]
+    for i, L in enumerate(levels):
+        pts = sorted((ng(q), q["linf"]) for q in rows if q["solver"] == "sem" and q["level"] == L)
+        if pts:
+            n = pts[0][0] // min(q["nop"] for q in rows if q["solver"] == "sem" and q["level"] == L)
+            series.append((f"SEM, {n}² el.", pts, (0, sem_marks[i % len(sem_marks)], False)))
+    for key, lab, slot in (("ps", "pseudo-spectral", 4), ("fft", "FFT", 5)):
+        byng = {}
+        for q in rows:
+            if q["solver"] == key:
+                byng[ng(q)] = q["linf"]              # the same N_g on two levels: same solve
+        if byng:
+            series.append((lab, sorted(byng.items()), slot))
+    allpts = [p for _, pts, _ in series for p in pts]
+    if not allpts:
+        return
+    x0, x1 = min(p[0] for p in allpts), max(p[0] for p in allpts)
+    y0 = min(p[1] for p in allpts)
+    ydec = (math.floor(math.log10(y0)), math.ceil(math.log10(max(p[1] for p in allpts))))
+    pred = [(n, r ** (n / 2)) for n in range(x0, x1 + 1, max(1, (x1 - x0) // 200))
+            if r ** (n / 2) >= 10.0 ** ydec[0]]
+    if len(pred) > 1:
+        series.append((f"{r}^(N_g/2)", pred, (None, None, True)))
+    step = 64 if x1 - x0 <= 640 else 128
+    xticks = [(n, str(n)) for n in range(0, x1 + 1, step) if n >= x0]
+    write(assets, "ppb_error_vs_Ng", lambda th: chart(
+        th, "Error vs Fourier grid size, all mesh levels",
+        "−∇²u = f on [0,2π]², doubly periodic · N_g = (elements per side) × N points per direction",
+        "L-infinity error versus N_g, the number of points per direction (N_g = elements per side times the "
+        "SEM order), for every mesh level: one SEM curve per mesh, the pseudo-spectral and FFT results of all "
+        f"levels, and the predicted Fourier error {r}^(N_g/2) (dashed).",
+        series, (x0, x1), False, xticks, "N_g, points per direction (linear scale)",
+        "L∞ error vs exact solution", ydec, end_labels=False, legend_cols=4))
+
+
 def log_ticks(dofs):
     t = [(d, f"{d:,}".replace(",", " ")) for d in dofs if d in (1024, 2304, 4096, 9216, 16384)]
     if len(t) >= 2 and max(dofs) <= 16384:
@@ -283,3 +346,4 @@ if __name__ == "__main__":
         for l in levels:
             level_figures([r for r in rows if r["level"] == l], assets, f"_L{l}")
         hrefine_figures(rows, assets)
+        ng_figure(rows, assets)

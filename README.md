@@ -769,6 +769,15 @@ The same six solvers, with the 16×16 mesh refined uniformly through `:linitial_
 
 </details>
 
+#### Error versus the Fourier grid size, all levels
+
+Every level on one axis: N_g = (elements per side) × N points per direction, the resolution of the Fourier solvers. Their error follows the predicted r^(N_g/2) (dashed) on every mesh, then flattens at the round-off floor, higher for the pseudo-spectral solver (dense eigen-decomposition and matrix products) than for the FFT. The SEM has one curve per mesh.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/ppb_highres_v2/ppb_error_vs_Ng-dark.svg">
+  <img src="assets/ppb_highres_v2/ppb_error_vs_Ng.svg" width="680" alt="L-infinity error versus N_g, the number of points per direction, for all mesh levels: one SEM curve per mesh; the pseudo-spectral and FFT errors follow the predicted 0.8^(N_g/2) and then flatten at their round-off floors.">
+</picture>
+
 #### Time versus unknowns under mesh refinement
 
 At fixed SEM order N, one curve per solver as the mesh is refined: where the AMG curves cross the direct-solve curves, if they do. *Cost* is the solver's own setup plus solve, without the SEM infrastructure; *total* is the time-to-solution including it.
