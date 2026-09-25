@@ -707,38 +707,37 @@ end
 
 # Alternative version with pre-computed element matrices for better performance
 function DSS_laplace_sparse(mesh, Lel)
+    # Function barrier: St_mesh leaves connijk untyped and ngl/nelem as
+    # Union{Int,Missing}, so reading them inside the loops dispatched
+    # dynamically on every access (≈20 s of assembly at 4096 elements, N = 8).
+    return _DSS_laplace_sparse(mesh.connijk, Lel, Int(mesh.nelem), Int(mesh.ngl))
+end
 
-    # Pre-allocate arrays for triplet format
-    # Estimate size: ngl^2 entries per element * number of elements
-    max_entries = mesh.ngl^2 * mesh.ngl^2 * mesh.nelem
-    
-    I_vec = Vector{Int}()
-    J_vec = Vector{Int}()
-    V_vec = Vector{Float64}()
-    
-    # Reserve space to avoid frequent reallocations
-    sizehint!(I_vec, max_entries)
-    sizehint!(J_vec, max_entries)
-    sizehint!(V_vec, max_entries)
-    
-    # Assembly loop
-    for iel = 1:mesh.nelem
-        for j = 1:mesh.ngl, i = 1:mesh.ngl
-            JP = mesh.connijk[iel, i, j]
-            
-            for n = 1:mesh.ngl, m = 1:mesh.ngl
-                IP = mesh.connijk[iel, m, n]
-                
+function _DSS_laplace_sparse(connijk::AbstractArray{<:Integer}, Lel::AbstractArray{T}, nelem::Int, ngl::Int) where T
+    # Triplets (row, column, value) in the same order as before — element by
+    # element — so sparse() sums the duplicates in the same order and the
+    # matrix is bitwise unchanged. Sized once for the upper bound, then trimmed.
+    max_entries = ngl^4 * nelem
+    I_vec = Vector{Int}(undef, max_entries)
+    J_vec = Vector{Int}(undef, max_entries)
+    V_vec = Vector{T}(undef, max_entries)
+    k = 0
+    @inbounds for iel = 1:nelem
+        for j = 1:ngl, i = 1:ngl
+            JP = Int(connijk[iel, i, j])
+            for n = 1:ngl, m = 1:ngl
                 val = Lel[iel, m, n, i, j]
                 if abs(val) > eps(Float64)  # Skip near-zero entries
-                    push!(I_vec, IP)
-                    push!(J_vec, JP)
-                    push!(V_vec, val)
+                    k += 1
+                    I_vec[k] = Int(connijk[iel, m, n])
+                    J_vec[k] = JP
+                    V_vec[k] = val
                 end
             end
         end
     end
-    
+    resize!(I_vec, k); resize!(J_vec, k); resize!(V_vec, k)
+
     # Create sparse matrix and sum duplicate entries automatically
     return sparse(I_vec, J_vec, V_vec)
 end

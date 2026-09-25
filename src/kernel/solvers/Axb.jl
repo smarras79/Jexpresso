@@ -301,7 +301,7 @@ function _dirichlet_sem_amg_solve(sem, RHS, inputs)
         bf  = RHS[free] .- L[free, Γ] * RHS[Γ]
         jx_amg_setup(Lff; method = opts.method), bf
     end
-    uf = jx_time_solve("AMG-CG on the full SEM system", () -> jx_amg_solve(S, bf; rtol = opts.rtol))
+    uf = jx_time_solve("AMG-CG on the full SEM system", () -> jx_amg_solve(S, bf; rtol = opts.rtol, itmax = opts.itmax))
     st = JX_AMG_STATS[]
     println(GREEN_FG(string(" # AMG (", st.method, ", ", st.levels, " levels): CG converged in ",
                             st.iters, " iterations, relative residual ", st.rel_resid)))

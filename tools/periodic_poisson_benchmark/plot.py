@@ -1,15 +1,24 @@
 #!/usr/bin/env python3
 """Draw the README figures of the periodic Poisson solver benchmark.
 
-    python3 tools/periodic_poisson_benchmark/plot.py [results.csv]
+    python3 tools/periodic_poisson_benchmark/plot.py [results.csv] [assets_dir]
 
 Reads results.csv (written by pipeline.jl, second-run timings) and writes, each
-in a light and a dark variant (assets/<name>.svg and assets/<name>-dark.svg):
+in a light and a dark variant (<assets_dir>/<name>.svg and <name>-dark.svg;
+assets_dir defaults to the repository's assets/, the README figures):
 
   ppb_error_vs_dofs          L-inf error vs number of unknowns
   ppb_error_vs_order         L-inf error vs SEM order N (Fourier grids 16N)
   ppb_error_vs_solve_time    L-inf error vs time of the solve step
   ppb_error_vs_total_time    L-inf error vs time-to-solution incl. infrastructure
+
+If the CSV holds several refinement levels (pipeline.jl levels = ...), those
+four figures are drawn per level (suffix _L<level>), plus, at every order N
+run on two or more levels, time versus unknowns under h-refinement:
+
+  ppb_hrefine_solve_N<N>     solve step
+  ppb_hrefine_cost_N<N>      setup + solve (the solver's cost)
+  ppb_hrefine_total_N<N>     time-to-solution incl. infrastructure
 
 No dependencies.
 """
@@ -35,9 +44,14 @@ L, R, T, B = 78, 150, 108, 62
 
 def read_rows(path):
     with open(path) as f:
-        return [dict(solver=r["solver"], nop=int(r["nop"]), dofs=int(r["dofs"]),
-                     linf=float(r["linf"]), solve=float(r["solve"]), total=float(r["total"]))
+        rows = [dict(solver=r["solver"], nop=int(r["nop"]), dofs=int(r["dofs"]),
+                     level=int(r.get("level", 0) or 0), linf=float(r["linf"]),
+                     solve=float(r["solve"]), cost=float(r["setup"]) + float(r["solve"]),
+                     total=float(r["total"]))
                 for r in csv.DictReader(f)]
+    for r in rows:                                   # a single-level CSV has no nel column
+        r["nel"] = round(math.sqrt(r["dofs"]) / r["nop"])
+    return rows
 
 
 def marker(kind, x, y, col, surface):
@@ -147,9 +161,9 @@ def chart(th, title, subtitle, desc, series, xs, xlog, xticks, xlabel, ylabel, y
     return "\n".join(o) + "\n"
 
 
-def write(name, make):
+def write(assets, name, make):
     for mode, th in THEMES.items():
-        path = os.path.join(ROOT, "assets", name + ("" if mode == "light" else "-dark") + ".svg")
+        path = os.path.join(assets, name + ("" if mode == "light" else "-dark") + ".svg")
         with open(path, "w") as f:
             f.write(make(th))
         print("wrote", path)
@@ -160,19 +174,18 @@ def time_label(e):
             0: "1 s", 1: "10 s", 2: "100 s"}.get(e, f"10{str(e).translate(SUP)} s")
 
 
-if __name__ == "__main__":
-    import sys
-    rows = read_rows(sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "results.csv"))
+def level_figures(rows, assets, suffix=""):
+    """The four error figures of one mesh (one refinement level)."""
     by = {k: sorted([r for r in rows if r["solver"] == k], key=lambda r: r["nop"]) for k, _ in NAMES}
     names = [(k, lab, slot) for slot, (k, lab) in enumerate(NAMES) if by[k]]
     allr = [r for k, _, _ in names for r in by[k]]
-    sub = "−∇²u = f on [0,2π]², doubly periodic · second-run timings"
+    nel = allr[0]["nel"]
+    sub = f"−∇²u = f on [0,2π]², doubly periodic · {nel}×{nel} elements · second-run timings"
     ydec = (math.floor(math.log10(min(r["linf"] for r in allr))),
             math.ceil(math.log10(max(r["linf"] for r in allr))))
     dofs = sorted({r["dofs"] for r in allr})
     nops = sorted({r["nop"] for r in allr})
-    dticks = [(d, f"{d:,}".replace(",", " ")) for d in dofs if d in (1024, 2304, 4096, 9216, 16384)] \
-             or [(d, str(d)) for d in dofs]
+    dticks = log_ticks(dofs)
     ylab = "L∞ error vs exact solution"
 
     def series(key):
@@ -193,17 +206,19 @@ if __name__ == "__main__":
             out.append((lab, [(r[key], r["linf"]) for r in by[k]], slot))
         return out
 
-    write("ppb_error_vs_dofs", lambda th: chart(
+    write(assets, "ppb_error_vs_dofs" + suffix, lambda th: chart(
         th, "Error vs unknowns", sub,
-        "L-infinity error versus number of unknowns for the SEM (one curve: its four solvers give the same discrete solution), pseudo-spectral and FFT solvers.",
+        "L-infinity error versus number of unknowns for the SEM (one curve: its four solvers give the same "
+        "discrete solution), pseudo-spectral and FFT solvers.",
         error_series("dofs"), (dofs[0], dofs[-1]), True, dticks, "unknowns (log scale)", ylab, ydec))
 
-    write("ppb_error_vs_order", lambda th: chart(
+    write(assets, "ppb_error_vs_order" + suffix, lambda th: chart(
         th, "Error vs order", sub,
-        "L-infinity error versus SEM polynomial order N (one SEM curve for its four solvers, which give the same discrete solution); the Fourier solvers are plotted at the order "
-        "whose SEM grid has the same number of unknowns (a 16N by 16N grid).",
+        "L-infinity error versus SEM polynomial order N (one SEM curve for its four solvers, which give the "
+        f"same discrete solution); the Fourier solvers are plotted at the order whose SEM grid has the same "
+        f"number of unknowns (a {nel}N by {nel}N grid).",
         error_series("nop"), (nops[0], nops[-1]), False, [(n, str(n)) for n in nops],
-        "SEM order N   (Fourier solvers: 16N × 16N grid, same unknowns)", ylab, ydec))
+        f"SEM order N   (Fourier solvers: {nel}N × {nel}N grid, same unknowns)", ylab, ydec))
 
     for key, name, title, xl in (
             ("solve", "ppb_error_vs_solve_time", "Error vs time of the solve step",
@@ -212,9 +227,59 @@ if __name__ == "__main__":
              "time-to-solution incl. infrastructure (log scale)")):
         ts = [r[key] for r in allr]
         e0, e1 = math.floor(math.log10(min(ts))), math.ceil(math.log10(max(ts)))
-        write(name, lambda th, key=key, title=title, xl=xl, e0=e0, e1=e1: chart(
+        write(assets, name + suffix, lambda th, key=key, title=title, xl=xl, e0=e0, e1=e1: chart(
             th, title, sub,
             f"L-infinity error versus {xl} for the six solvers (four SEM solves, pseudo-spectral, FFT); "
             "each curve runs over increasing resolution.",
             series(key), (10.0 ** e0, 10.0 ** e1), True,
             [(10.0 ** e, time_label(e)) for e in range(e0, e1 + 1)], xl, ylab, ydec))
+
+
+def hrefine_figures(rows, assets):
+    """Time versus unknowns under h-refinement (one curve per solver) at each
+    SEM order N that was run on at least two levels: where the curves of AMG
+    and of the direct solves cross, if they do."""
+    for n in sorted({r["nop"] for r in rows}):
+        rn = [r for r in rows if r["nop"] == n]
+        if len({r["level"] for r in rn}) < 2:
+            continue
+        by = {k: sorted([r for r in rn if r["solver"] == k], key=lambda r: r["level"]) for k, _ in NAMES}
+        names = [(k, lab, slot) for slot, (k, lab) in enumerate(NAMES) if len(by[k]) >= 1]
+        dofs = sorted({r["dofs"] for r in rn})
+        for key, what in (("solve", "solve step"), ("cost", "setup + solve (no SEM infrastructure)"),
+                          ("total", "time-to-solution incl. infrastructure")):
+            ts = [r[key] for r in rn if r[key] > 0]
+            if not ts:
+                continue
+            ydec = (math.floor(math.log10(min(ts))), math.ceil(math.log10(max(ts))))
+            series = [(lab, [(r["dofs"], r[key]) for r in by[k] if r[key] > 0], slot) for k, lab, slot in names]
+            series = [x for x in series if x[1]]
+            write(assets, f"ppb_hrefine_{key}_N{n}", lambda th, key=key, what=what, series=series, ydec=ydec, dofs=dofs: chart(
+                th, f"h-refinement at order N = {n}: {what}",
+                "−∇²u = f on [0,2π]², doubly periodic · meshes 16²·4^L elements · second-run timings",
+                f"Wall-clock of the {what} versus number of unknowns under uniform mesh refinement at SEM order {n}, "
+                "for the six solvers.",
+                series, (dofs[0], dofs[-1]), True, log_ticks(dofs), "unknowns (log scale)", "seconds (log scale)", ydec))
+
+
+def log_ticks(dofs):
+    t = [(d, f"{d:,}".replace(",", " ")) for d in dofs if d in (1024, 2304, 4096, 9216, 16384)]
+    if len(t) >= 2 and max(dofs) <= 16384:
+        return t
+    lo, hi = math.floor(math.log10(dofs[0])), math.ceil(math.log10(dofs[-1]))
+    t = [(10.0 ** e, f"10{str(e).translate(SUP)}") for e in range(lo, hi + 1) if dofs[0] <= 10.0 ** e <= dofs[-1]]
+    return t or [(d, str(d)) for d in (dofs[0], dofs[-1])]
+
+
+if __name__ == "__main__":
+    import sys
+    rows = read_rows(sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "results.csv"))
+    assets = sys.argv[2] if len(sys.argv) > 2 else os.path.join(ROOT, "assets")
+    os.makedirs(assets, exist_ok=True)
+    levels = sorted({r["level"] for r in rows})
+    if len(levels) == 1:
+        level_figures(rows, assets)                  # the README figures
+    else:
+        for l in levels:
+            level_figures([r for r in rows if r["level"] == l], assets, f"_L{l}")
+        hrefine_figures(rows, assets)

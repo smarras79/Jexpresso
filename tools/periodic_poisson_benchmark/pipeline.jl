@@ -41,32 +41,43 @@
              1-D eigen-decompositions (pseudo-spectral); FFTW plan (FFT)
    rhs       sampling / assembling the right-hand side
    sem_setup mesh read + SEM infrastructure (basis, metrics, mass and
-             Laplacian assembly) — needed by the SEM only
+             Laplacian assembly) — needed by the SEM only (the driver skips
+             it entirely for :ps / :fft, which read no mesh)
    total     time-to-solution including all the infrastructure the METHOD
              needs:  SEM (all four) = sem_setup + rhs + setup + solve
                      ps / fft       = rhs + setup + solve
-             (the Jexpresso driver still runs sem_setup before dispatching to
-             a spectral solver; the spectral methods do not use it, so it is
-             not charged to them — it is in `wall`)
    wall      the whole second run_case call, for reference
+
+ HIGHER RESOLUTION — uniform h-refinement (:linitial_refine). `levels`
+ refines the 16×16 base mesh `level` times (p4est, periodicity kept), so
+ level L has (16·2^L)² elements and (16·2^L·N)² unknowns; the Fourier grids
+ follow (16·2^L·N points per direction). The sweep covers every
+ (level, N, solver). Unknowns at N = 8: 16 384 (L=0), 65 536 (1), 262 144 (2),
+ 1 048 576 (3), 4 194 304 (4). See README.md in this directory for a laptop
+ run and for the options that keep a long run manageable (max_unknowns,
+ resume, warmup).
 
  USAGE — from the REPL (the intended way):
      julia --project=.
      julia> using Jexpresso
      julia> include("tools/periodic_poisson_benchmark/pipeline.jl")
-     julia> rows = run_periodic_poisson_benchmark()            # N = 2..8
+     julia> rows = run_periodic_poisson_benchmark()            # N = 2..8, 16×16 elements
+     julia> rows = run_periodic_poisson_benchmark(; levels = 0:3, outdir = "ppb_highres")
  or as a script (also one Julia session, same protocol):
-     julia --project=. tools/periodic_poisson_benchmark/pipeline.jl
+     julia --project=. tools/periodic_poisson_benchmark/pipeline.jl --levels 0:3 --outdir ppb_highres
 
- OUTPUT (in this directory): results.csv, results.md (the table), and the
- figures in assets/ drawn by plot.py (error vs DOFs, vs order, vs solve time,
- vs total time-to-solution), when python3 is available.
+ OUTPUT (in `outdir`, default this directory): results.csv (rewritten after
+ every configuration), results.md (the table), and the figures drawn by
+ plot.py when python3 is available — into the repository's assets/ (the
+ README figures) for the default outdir, into <outdir>/assets otherwise.
 =============================================================================#
 using Jexpresso, Printf
 
 const PPB_DIR    = @__DIR__
+const PPB_ROOT   = dirname(dirname(PPB_DIR))
 const PPB_EQS    = "Elliptic"
 const PPB_CASE   = "poisson_periodic_sem"
+const PPB_NEL    = 16                                         # base mesh of the deck: 16×16
 const PPB_LABELS = Dict(:sem => "SEM direct", :sem_amg => "SEM AMG",
                         :sc_direct => "SC direct", :sc_amg => "SC AMG",
                         :ps => "pseudo-spectral", :fft => "FFT")
@@ -74,18 +85,28 @@ const PPB_ORDER  = (:sem, :sem_amg, :sc_direct, :sc_amg, :ps, :fft)
 const PPB_SEM    = (:sem, :sem_amg, :sc_direct, :sc_amg)      # need the SEM infrastructure
 const PPB_AMG    = (:sem_amg, :sc_amg)
 
+# elements per side after `level` uniform refinements of the base mesh
+_ppb_nel(level, nel0 = PPB_NEL) = nel0 * 2^level
+
 # unknowns each method actually solves for (the SEM ones in periodic classes)
 _ppb_solved(solver, nop, nel) = solver in (:sc_direct, :sc_amg) ? nel^2 * (2nop - 1) : (nel * nop)^2
 
-function _ppb_overrides(solver::Symbol, nop::Int, nel::Int)
+function _ppb_overrides(solver::Symbol, nop::Int, level::Int; nel0::Int = PPB_NEL,
+                        amg_itmax::Int = 10_000)
+    nel = _ppb_nel(level, nel0)
+    # :ps / :fft solve on their own (16·2^L·N)² grid (:fft_N); the driver
+    # dispatches to them before sem_setup, so they read no mesh at all.
     return Dict{Symbol, Any}(
         :nop              => nop,
+        :linitial_refine  => level > 0,          # uniform h-refinement of the base mesh
+        :init_refine_lvl  => level,
         :fft_N            => nel * nop,          # the pseudo-spectral grid defaults to it
         :lfft             => solver === :fft,
         :lpseudospectral  => solver === :ps,
         :linsolve_amg     => solver === :sem_amg,
         :lstatic_condensation => solver in (:sc_direct, :sc_amg),
         :EL_skeleton_solver   => solver === :sc_amg ? "amg" : "direct",
+        :amg_itmax        => amg_itmax,
         :luse_mesh_cache  => false,              # build, never load, the infrastructure
         :lbenchmark_solve => false,              # single-shot solve timer
         :outformat        => "none",
@@ -99,27 +120,84 @@ function _ppb_run(ov)
 end
 
 """
-    run_periodic_poisson_benchmark(; nops = 2:8, nel = 16, solvers = PPB_ORDER,
-                                   outdir = <this directory>, plot = true) -> rows
+    run_periodic_poisson_benchmark(; levels = 0:0, nops = 2:8, solvers = PPB_ORDER,
+                                   outdir = <this directory>, plot = true,
+                                   max_unknowns = Dict(), resume = false,
+                                   warmup = :same, amg_itmax = 10_000) -> rows
 
-Run the benchmark (see the file header), write results.csv / results.md into
-`outdir`, draw the figures, and return the rows.
+Run the benchmark (see the file header) over every (level, N, solver), write
+results.csv / results.md into `outdir`, draw the figures, and return the rows.
+
+- `levels`: uniform refinements of the 16×16 base mesh (:linitial_refine);
+  level L has (16·2^L)² elements.
+- `max_unknowns`: per-solver cap on the grid unknowns (16·2^L·N)², e.g.
+  `Dict(:sem_amg => 300_000)`; larger configurations are skipped. The key
+  `:all` caps every solver.
+- `resume`: keep the configurations already in `outdir`/results.csv and run
+  only the missing ones (results.csv is rewritten after every configuration,
+  so an interrupted sweep loses at most the one it was running).
+- `warmup`: `:same` (the protocol: the discarded first run is the identical
+  configuration) or `:small` (the first run uses the same solver and N at
+  level min(L, 1), so every code path is compiled — including the p4est
+  refinement — but a large configuration is not solved twice). Only the
+  second run is ever recorded; `:small` just makes the discarded run cheap.
+- `amg_itmax`: CG iteration cap of the AMG solves (:amg_itmax).
+
+A configuration that throws (e.g. out of memory) is reported and skipped;
+the sweep continues.
 """
-function run_periodic_poisson_benchmark(; nops = 2:8, nel::Int = 16,
+function run_periodic_poisson_benchmark(; levels = 0:0, nops = 2:8, nel::Int = PPB_NEL,
                                         solvers = PPB_ORDER,
                                         outdir::AbstractString = PPB_DIR,
-                                        plot::Bool = true)
-    rows = NamedTuple[]
-    for nop in nops, solver in solvers
-        ov = _ppb_overrides(solver, nop, nel)
-        _ppb_run(ov)                             # 1st run: warm-up, discarded
-        GC.gc()
-        r = _ppb_run(ov)                         # 2nd run: recorded
+                                        plot::Bool = true,
+                                        max_unknowns = Dict{Symbol, Int}(),
+                                        resume::Bool = false,
+                                        warmup::Symbol = :same,
+                                        amg_itmax::Int = 10_000)
+    warmup in (:same, :small) || error("warmup = :same or :small")
+    outdir = abspath(outdir)                     # relative to where you started, not the repo
+    mkpath(outdir)
+    # the deck names its mesh relative to the repository root
+    return cd(PPB_ROOT) do
+        _ppb_sweep(levels, nops, nel, solvers, outdir, plot, max_unknowns, resume, warmup, amg_itmax)
+    end
+end
+
+function _ppb_sweep(levels, nops, nel, solvers, outdir, plot, max_unknowns, resume, warmup, amg_itmax)
+    csvpath = joinpath(outdir, "results.csv")
+    rows = resume && isfile(csvpath) ? _ppb_read_csv(csvpath) : NamedTuple[]
+    done = Set((r.solver, r.level, r.nop) for r in rows)
+    resume && !isempty(rows) && println("PPB  resuming: $(length(rows)) configurations already in $csvpath")
+    cap(s) = min(get(max_unknowns, s, typemax(Int)), get(max_unknowns, :all, typemax(Int)))
+    for level in levels, nop in nops, solver in solvers
+        (solver, level, nop) in done && continue
+        nelL = _ppb_nel(level, nel)
+        dofs = (nelL * nop)^2
+        if dofs > cap(solver)
+            @printf("PPB  skip %-15s L=%d N=%d  dofs=%d > max_unknowns %d\n",
+                    PPB_LABELS[solver], level, nop, dofs, cap(solver))
+            continue
+        end
+        @printf("PPB  run  %-15s L=%d (%d×%d elements) N=%d  dofs=%d ...\n",
+                PPB_LABELS[solver], level, nelL, nelL, nop, dofs)
+        ov = _ppb_overrides(solver, nop, level; nel0 = nel, amg_itmax = amg_itmax)
+        r = try
+            ov1 = warmup === :same ? ov :
+                  _ppb_overrides(solver, nop, min(level, 1); nel0 = nel, amg_itmax = amg_itmax)
+            _ppb_run(ov1)                        # 1st run: warm-up, discarded
+            GC.gc()
+            _ppb_run(ov)                         # 2nd run: recorded
+        catch e
+            e isa InterruptException && rethrow()
+            @warn "PPB: $(PPB_LABELS[solver]) L=$level N=$nop failed; skipped" exception = (e, catch_backtrace())
+            GC.gc()
+            continue
+        end
         g(k) = get(r.t, k, 0.0)
         issem = solver in PPB_SEM
         method_total = g(:rhs) + g(:setup) + g(:solve) + (issem ? g(:sem_setup) : 0.0)
-        row = (solver = solver, nop = nop, N = nel * nop, dofs = (nel * nop)^2,
-               solved = _ppb_solved(solver, nop, nel),
+        row = (solver = solver, level = level, nel = nelL, nop = nop, N = nelL * nop, dofs = dofs,
+               solved = _ppb_solved(solver, nop, nelL),
                linf = r.err.linf, l2rel = r.err.l2rel,
                solve = g(:solve), setup = g(:setup), rhs = g(:rhs),
                sem_setup = issem ? g(:sem_setup) : 0.0,
@@ -127,16 +205,17 @@ function run_periodic_poisson_benchmark(; nops = 2:8, nel::Int = 16,
                amg_iters = solver in PPB_AMG ? r.amg.iters : 0,
                total = method_total, wall = r.wall)
         push!(rows, row)
-        @printf("PPB  %-15s N=%d  dofs=%6d  solved=%6d  L∞=%.2e  solve=%.3e s  total=%.3e s  wall=%.3e s%s\n",
-                PPB_LABELS[solver], nop, row.dofs, row.solved, row.linf, row.solve, row.total, row.wall,
+        _ppb_write_csv(csvpath, rows; quiet = true)
+        @printf("PPB  %-15s L=%d N=%d  dofs=%8d  solved=%8d  L∞=%.2e  solve=%.3e s  total=%.3e s  wall=%.3e s%s\n",
+                PPB_LABELS[solver], level, nop, row.dofs, row.solved, row.linf, row.solve, row.total, row.wall,
                 row.amg_iters > 0 ? "  CG its=$(row.amg_iters)" : "")
     end
-    mkpath(outdir)
-    _ppb_write_csv(joinpath(outdir, "results.csv"), rows)
-    _ppb_write_md(joinpath(outdir, "results.md"), rows, nel)
+    _ppb_write_csv(csvpath, rows)
+    _ppb_write_md(joinpath(outdir, "results.md"), rows)
     if plot
+        assets = abspath(outdir) == abspath(PPB_DIR) ? joinpath(PPB_ROOT, "assets") : joinpath(outdir, "assets")
         try
-            run(`python3 $(joinpath(PPB_DIR, "plot.py")) $(joinpath(outdir, "results.csv"))`)
+            run(`python3 $(joinpath(PPB_DIR, "plot.py")) $csvpath $assets`)
         catch e
             @warn "plot.py failed; the CSV and the table are written" exception = e
         end
@@ -144,29 +223,52 @@ function run_periodic_poisson_benchmark(; nops = 2:8, nel::Int = 16,
     return rows
 end
 
-const _PPB_COLS = (:solver, :nop, :N, :dofs, :solved, :linf, :l2rel, :solve, :setup, :rhs,
+const _PPB_COLS = (:solver, :level, :nel, :nop, :N, :dofs, :solved, :linf, :l2rel, :solve, :setup, :rhs,
                    :sem_setup, :reduce, :factorize, :amg_iters, :total, :wall)
+const _PPB_INT  = (:level, :nel, :nop, :N, :dofs, :solved, :amg_iters)
 
-function _ppb_write_csv(path, rows)
-    open(path, "w") do io
+function _ppb_write_csv(path, rows; quiet = false)
+    tmp = path * ".tmp"
+    open(tmp, "w") do io
         println(io, join(_PPB_COLS, ","))
         for r in rows
             println(io, join((getproperty(r, c) for c in _PPB_COLS), ","))
         end
     end
-    println("wrote ", path)
+    mv(tmp, path; force = true)                   # never leave a half-written CSV
+    quiet || println("wrote ", path)
+end
+
+# results.csv -> rows (a CSV of the single-level benchmark has no level/nel columns)
+function _ppb_read_csv(path)
+    lines = filter(!isempty, readlines(path))
+    hdr   = Symbol.(split(lines[1], ","))
+    rows  = NamedTuple[]
+    for l in lines[2:end]
+        d = Dict(zip(hdr, split(l, ",")))
+        val(c) = c === :solver ? Symbol(d[c]) :
+                 c in _PPB_INT ? parse(Int, d[c]) : parse(Float64, d[c])
+        if !haskey(d, :level)
+            d[:level] = "0"
+            d[:nel]   = string(round(Int, sqrt(parse(Int, d[:dofs])) / parse(Int, d[:nop])))
+        end
+        push!(rows, NamedTuple{_PPB_COLS}(Tuple(val(c) for c in _PPB_COLS)))
+    end
+    return rows
 end
 
 _ppb_t(x) = x == 0 ? "—" : x < 1e-3 ? @sprintf("%.3g µs", 1e6x) : x < 1 ? @sprintf("%.3g ms", 1e3x) : @sprintf("%.3g s", x)
 _ppb_e(x) = @sprintf("%.1e", x)
 _ppb_n(x) = replace(string(x), r"(\d)(?=(\d{3})+$)" => s"\1 ")
 
-function _ppb_write_md(path, rows, nel)
+function _ppb_write_md(path, rows)
     open(path, "w") do io
-        println(io, "| method | SEM order N | unknowns (grid) | solved for | CG its | ‖e‖∞ | relative ‖e‖₂ | solve | setup | RHS | SEM infrastructure | time-to-solution | run_case wall-clock |")
-        println(io, "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
-        for r in sort(rows; by = r -> (findfirst(==(r.solver), PPB_ORDER), r.nop))
-            println(io, "| ", PPB_LABELS[r.solver], " | ", r.solver in PPB_SEM ? string(r.nop) : "—", " | ",
+        println(io, "| method | elements | SEM order N | unknowns (grid) | solved for | CG its | ‖e‖∞ | relative ‖e‖₂ | solve | setup | RHS | SEM infrastructure | time-to-solution | run_case wall-clock |")
+        println(io, "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+        for r in sort(rows; by = r -> (findfirst(==(r.solver), PPB_ORDER), r.level, r.nop))
+            issem = r.solver in PPB_SEM
+            println(io, "| ", PPB_LABELS[r.solver], " | ", issem ? "$(r.nel)²" : "—", " | ",
+                    issem ? string(r.nop) : "—", " | ",
                     _ppb_n(r.dofs), " (", r.N, "²) | ", _ppb_n(r.solved), " | ",
                     r.amg_iters > 0 ? string(r.amg_iters) : "—", " | ",
                     _ppb_e(r.linf), " | ", _ppb_e(r.l2rel), " | ",
@@ -177,6 +279,38 @@ function _ppb_write_md(path, rows, nel)
     println("wrote ", path)
 end
 
+# ---- command line ------------------------------------------------------------
+#   --levels 0:3  --nops 2:8  --solvers sem,sc_direct,sc_amg,ps,fft
+#   --outdir DIR  --warmup same|small  --resume  --noplot
+#   --max-unknowns sem_amg=300000,all=5000000  --amg-itmax 10000
+_ppb_range(s) = occursin(':', s) ? (p = parse.(Int, split(s, ':')); length(p) == 2 ? (p[1]:p[2]) : (p[1]:p[2]:p[3])) :
+                                  parse.(Int, split(s, ','))
+
+function _ppb_main(args)
+    kw = Dict{Symbol, Any}()
+    i = 1
+    nxt() = (i += 1; i <= length(args) || error("missing value after $(args[i-1])"); args[i])
+    while i <= length(args)
+        a = args[i]
+        if     a == "--levels";       kw[:levels]    = _ppb_range(nxt())
+        elseif a == "--nops";         kw[:nops]      = _ppb_range(nxt())
+        elseif a == "--solvers";      kw[:solvers]   = Tuple(Symbol.(split(nxt(), ',')))
+        elseif a == "--outdir";       kw[:outdir]    = nxt()
+        elseif a == "--warmup";       kw[:warmup]    = Symbol(nxt())
+        elseif a == "--amg-itmax";    kw[:amg_itmax] = parse(Int, nxt())
+        elseif a == "--resume";       kw[:resume]    = true
+        elseif a == "--noplot";       kw[:plot]      = false
+        elseif a == "--max-unknowns"
+            kw[:max_unknowns] = Dict(Symbol(k) => parse(Int, replace(v, "_" => ""))
+                                     for (k, v) in (split(p, '=') for p in split(nxt(), ',')))
+        else
+            error("unknown option $a (see the header of pipeline.jl)")
+        end
+        i += 1
+    end
+    run_periodic_poisson_benchmark(; kw...)
+end
+
 if abspath(PROGRAM_FILE) == @__FILE__
-    run_periodic_poisson_benchmark()
+    _ppb_main(copy(ARGS))
 end

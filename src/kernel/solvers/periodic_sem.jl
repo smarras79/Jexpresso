@@ -91,7 +91,7 @@ function periodic_sem_system(sem, f_nodal::AbstractVector)
     end
 
     P = sparse(1:npoin, cls, ones(Float64, npoin), npoin, m)
-    K = sparse(P' * (sem.matrix.L * P))
+    K = P' * (sem.matrix.L * P)                   # SparseMatrixCSC; exactly symmetric
 
     w = Float64[M[rep[c]] for c in 1:m]              # class mass (already summed)
     b = Float64[M[rep[c]] * f_nodal[rep[c]] for c in 1:m]
@@ -228,7 +228,7 @@ function periodic_sem_amg_solve(sys, inputs)
     S  = jx_phase(() -> jx_amg_setup(sys.K[2:end, 2:end]; method = opts.method), :setup)
     uc = jx_time_solve("AMG-CG on the full periodic SEM system", () -> begin
              u = zeros(Float64, length(sys.b))
-             u[2:end] = jx_amg_solve(S, sys.b[2:end]; rtol = opts.rtol)
+             u[2:end] = jx_amg_solve(S, sys.b[2:end]; rtol = opts.rtol, itmax = opts.itmax)
              u .-= sum(sys.w .* u) / sum(sys.w)
              u
          end)

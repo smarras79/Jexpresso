@@ -19,6 +19,24 @@ function driver(nparts,
     comm = distribute.comm
     rank = MPI.Comm_rank(comm)
 
+    #---------------------------------------------------------
+    # Mesh-free spectral solves of -∇²u = f on a periodic box.
+    #
+    # :lfft / :lpseudospectral (with :llinsolve) solve on their own uniform
+    # :fft_N × :fft_M grid of the box :fft_Lx × :fft_Ly: they read neither the
+    # mesh nor any SEM operator. Dispatch to them BEFORE sem_setup, so no mesh
+    # is read and no SEM infrastructure is built for them. (:fft_use_mesh =>
+    # true, the FFT on the mesh nodes, does need the mesh and takes the
+    # normal path below.)
+    #---------------------------------------------------------
+    if !is_coupled && inputs[:llinsolve] && inputs[:backend] == CPU() &&
+       (inputs[:lfft] || inputs[:lpseudospectral]) && !get(inputs, :fft_use_mesh, false)
+        empty!(JX_TIMINGS)
+        rank == 0 && println(" # driver(): mesh-free spectral solve — no mesh read, no SEM infrastructure built")
+        return inputs[:lfft] ? fft_linsolve!(nothing, nothing, nothing, inputs, OUTPUT_DIR) :
+                               pseudospectral_linsolve!(nothing, nothing, nothing, inputs, OUTPUT_DIR)
+    end
+
     # PERF/UX: narrow progress prints so the user can see where the
     # silent-wall first-call JIT time is going (sem_setup, mesh read,
     # metric build, …). This prints every phase boundary on rank 0; if

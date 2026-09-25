@@ -12,7 +12,8 @@
    "sa"  smoothed aggregation (default) — robust for the high-order SEM
          stiffness, whose off-diagonal entries are not all ≤ 0
    "rs"  classical Ruge–Stüben
- CG stops at the relative residual :amg_rtol (default 1e-12). The hierarchy
+ CG stops at the relative residual :amg_rtol (default 1e-12), or after
+ :amg_itmax iterations (default 1000; full-system solves). The hierarchy
  is built once (setup) and then applied as a V-cycle preconditioner by every
  CG iteration (solve). The iteration count and final residual of the last
  solve are kept in JX_AMG_STATS.
@@ -60,4 +61,5 @@ end
 
 # AMG options from a case deck.
 jx_amg_options(inputs) = (method = get(inputs, :amg_method, "sa"),
-                          rtol   = Float64(get(inputs, :amg_rtol, 1e-12)))
+                          rtol   = Float64(get(inputs, :amg_rtol, 1e-12)),
+                          itmax  = Int(get(inputs, :amg_itmax, 1000)))

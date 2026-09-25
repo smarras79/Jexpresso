@@ -2,7 +2,7 @@
 <title id="t">Error vs time of the solve step</title><desc id="d">L-infinity error versus solve-step wall-clock (log scale) for the six solvers (four SEM solves, pseudo-spectral, FFT); each curve runs over increasing resolution.</desc>
 <rect width="680" height="420" fill="#1a1a19"/>
 <text x="78" y="28" font-size="16" font-weight="600" fill="#ffffff">Error vs time of the solve step</text>
-<text x="78" y="48" font-size="12.5" fill="#c3c2b7">−∇²u = f on [0,2π]², doubly periodic · second-run timings</text>
+<text x="78" y="48" font-size="12.5" fill="#c3c2b7">−∇²u = f on [0,2π]², doubly periodic · 16×16 elements · second-run timings</text>
 <line x1="78" x2="530" y1="358.0" y2="358.0" stroke="#34342f" stroke-width="1"/>
 <text x="68" y="362.0" font-size="12" text-anchor="end" fill="#c3c2b7">10⁻¹⁵</text>
 <line x1="78" x2="530" y1="338.8" y2="338.8" stroke="#34342f" stroke-width="1"/>

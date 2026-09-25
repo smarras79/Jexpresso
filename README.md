@@ -511,6 +511,8 @@ julia> using Jexpresso
 julia> include("tools/periodic_poisson_benchmark/pipeline.jl")
 julia> rows = run_periodic_poisson_benchmark()
 ```
+For higher resolutions, `levels = 0:3` refines the 16×16 mesh uniformly through `:linitial_refine`, up to (16·2^L)² elements. The pipeline can cap the size per solver, resume an interrupted sweep, and draw h-refinement figures of time against unknowns. See [tools/periodic_poisson_benchmark/README.md](tools/periodic_poisson_benchmark/README.md) for running it on a laptop.
+
 **Timing protocol.** Every configuration runs twice in the same Julia session and only the **second run** is recorded, so compilation never enters a number. Each time is a single wall-clock measurement of that run (no repetition, no minimum over samples). The mesh and SEM preprocess caches are switched off, so the SEM infrastructure is built, not loaded from disk, and output files are switched off.
 
 **What the columns mean.**
@@ -519,7 +521,7 @@ julia> rows = run_periodic_poisson_benchmark()
 - **solved for / CG its**: the unknowns of the system actually solved (the skeleton for SC) and the conjugate-gradient iterations of the AMG solves.
 - **SEM infrastructure**: the mesh read and the SEM setup (basis, metrics, mass and Laplacian assembly). Only the SEM needs it.
 - **time-to-solution**: everything the method needs: SEM infrastructure + RHS + setup + solve for the four SEM solves; RHS + setup + solve for the Fourier solvers.
-- **run_case wall-clock**: the whole second `run_case` call. For the Fourier solvers it still includes the SEM setup the driver performs before dispatching, which they do not use.
+- **run_case wall-clock**: the whole second `run_case` call. When the table below was measured, the driver still built the SEM infrastructure before dispatching to the Fourier solvers, which do not use it, so their wall-clock includes it. The driver now skips it for them: `:lfft` and `:lpseudospectral` read no mesh.
 
 **Reading the results.** The four SEM solves compute the same discrete solution, so their error curves coincide (only the last one drawn is visible). What separates them is cost. AMG on the condensed skeleton system needs far fewer iterations than on the full system, and the gap grows with the order (43 against 141 CG iterations at N = 8): the condensation removes the element-interior modes that make the high-order SEM system hard for AMG, and the skeleton system is also 4× smaller. At N = 8 the SC AMG solve step is 24× faster than the full-system AMG one. The sparse direct solves stay the fastest solve steps at these sizes. For every SEM solve the time-to-solution is dominated by the SEM infrastructure (about 1–1.5 s, mostly reading and building the mesh).
 

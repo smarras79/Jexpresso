@@ -83,16 +83,259 @@ skeleton system is singular like $K$, and it is gauged in the same way. The skel
 has $16^2(2N-1)$ unknowns: $3\,840$ of the $16\,384$ unknowns at
 $N=8$.
 
+\begingroup\sloppy
+\subsection{Common SEM infrastructure}
+\label{sec:alg-sem-common}
+The four SEM solvers share one discretisation, built by the driver before the linear
+solve (\texttt{sem\_setup}). This subsection describes that code path and the reduction
+to the periodic system that all four solve.
+
+\paragraph{Mesh.} The deck reads a Gmsh mesh of $16\times16$ straight-sided
+quadrilaterals on $[0,1]^2$ whose boundary edges are tagged periodic in $x$ and in $y$.
+With refinement level $L>0$ (\texttt{:linitial\_refine}, \texttt{:init\_refine\_lvl}$\,=L$)
+the mesh is refined uniformly $L$ times by p4est
+(\texttt{UniformlyRefinedForestOfOctreesDiscreteModel}), giving $n_e\times n_e$ elements
+with $n_e=16\cdot2^L$. The high-order nodes are added on the edges and in the
+interiors. The node coordinates are then mapped by
+$x\leftarrow(x+x_{\rm disp})\,x_{\rm scale}/2$ with $x_{\rm disp}=0$, $x_{\rm scale}=4\pi$,
+and likewise in $y$, which gives $[0,2\pi]^2$. The local node numbering is not merged
+across the periodic seams. Instead, the periodic restructuring gives the two (or four,
+at a corner) local copies of a seam node the same global number in
+\texttt{mesh.ip2gip}.
+
+\paragraph{Basis and quadrature.} The $N+1$ Legendre--Gauss--Lobatto (LGL) nodes
+$\xi_k$ and weights $\omega_k$ come from Kopriva's algorithm: Newton iteration on
+$q=L_{N+1}-L_{N-1}$ from the Chebyshev-like initial guess
+$-\cos\big((j+\tfrac14)\pi/N-3/(8N\pi(j+\tfrac14))\big)$, with tolerance $4\varepsilon$ and
+$\omega_j=2/\big(N(N+1)L_N(\xi_j)^2\big)$. The quadrature is \emph{inexact}: it uses the
+same $N+1$ LGL points ($Q=N$), which is the default \texttt{:lexact\_integration =>
+false}. The 1-D Lagrange basis $\psi_i$ and its derivative $\psi_i'$ are evaluated at the
+quadrature points with the product formula (Giraldo, Algorithms 3.1--3.2). Because the
+interpolation and quadrature points coincide, $\psi_i(\xi_k)=\delta_{ik}$.
+
+\paragraph{Metric terms.} For each element and quadrature point $(k,l)$:
+$x_\xi=\sum_{i,j}\psi_i'(\xi_k)\psi_j(\xi_l)\,x_{ij}$ and $x_\eta=\sum_{i,j}\psi_i(\xi_k)\psi_j'(\xi_l)\,x_{ij}$
+(likewise $y_\xi,y_\eta$), $J=x_\xi y_\eta-y_\xi x_\eta$, and
+$\xi_x=y_\eta/J$, $\xi_y=-x_\eta/J$, $\eta_x=-y_\xi/J$, $\eta_y=x_\xi/J$
+(\texttt{build\_metric\_terms!}).
+
+\paragraph{Element Laplacian.} With $\Psi_{mn}(\xi,\eta)=\psi_m(\xi)\psi_n(\eta)$ and
+\[
+  \partial_x\Psi_{mn}\big|_{kl}=\psi_m'(\xi_k)\psi_n(\xi_l)\,\xi_x+\psi_m(\xi_k)\psi_n'(\xi_l)\,\eta_x
+\]
+(likewise $\partial_y$), the element stiffness matrix is
+\begin{equation}
+  L^e_{mn,ij}=\sum_{k,l=1}^{N+1}\omega_k\omega_l\,J_{kl}\,
+  \big(\partial_x\Psi_{mn}\,\partial_x\Psi_{ij}+\partial_y\Psi_{mn}\,\partial_y\Psi_{ij}\big)\big|_{kl},
+  \label{eq:alg-Le}
+\end{equation}
+the positive semi-definite form of $-\nabla^2$ (\texttt{build\_laplace\_matrix}). It is
+stored densely for every element, $n_e^2(N+1)^4$ numbers.
+
+\paragraph{Assembly.} The global matrix $L$ is assembled on the \emph{local} nodes
+(\texttt{DSS\_laplace\_sparse}). For every element and every pair of its nodes, the
+triplet $(\text{row}, \text{column}, L^e)$ is recorded, but only when
+$|L^e|>\varepsilon=2.2\times10^{-16}$. One call to \texttt{sparse} then sums the
+duplicate entries. Because the seam copies are distinct local nodes, $L$ is the
+stiffness matrix of the box with natural boundaries: the copies are not yet coupled.
+
+\paragraph{Mass matrix.} The element mass matrix
+$M^e_{IJ}=\sum_{k,l}\omega_k\omega_lJ_{kl}\Psi_I\Psi_J|_{kl}$ is diagonal, because
+$\psi_i(\xi_k)=\delta_{ik}$. Its rows are summed into a vector $M$ on the local nodes
+(\texttt{DSS\_mass!}). The global DSS (\texttt{DSS\_global\_mass!}, through
+\texttt{assemble\_mpi!}) then sums the entries of all local nodes that share a global
+number. Every seam copy therefore holds the mass of its whole periodic class.
+
+\paragraph{Periodic system} (\texttt{periodic\_sem\_system}). The local nodes are grouped
+into classes $c=1,\dots,m$ by their global number (\texttt{unique(ip2gip)}). The
+representative $r_c$ of a class is its lowest local index, and $P$ is the
+$n_{\rm loc}\times m$ incidence matrix, $P_{i,c(i)}=1$. Then
+\begin{equation}
+  K=P^{\mathsf T}(LP),\qquad w_c=M_{r_c},\qquad b_c=M_{r_c}\,f(\mathbf x_{r_c}),
+  \label{eq:alg-K}
+\end{equation}
+with $f$ evaluated at every local node by the case's \texttt{user\_source!}.
+$K$ has $m=(n_eN)^2$ rows, is exactly symmetric, and satisfies $K\mathbf 1=0$. The
+right-hand side is projected onto the range of $K$:
+$\bar f=\sum_cb_c/\sum_cw_c$ and $\mathbf b\leftarrow\mathbf b-\bar f\,\mathbf w$.
+All four SEM solvers solve $K\mathbf u=\mathbf b$ with the same gauge: the first
+class is pinned, $u_1=0$, and afterwards $\mathbf u\leftarrow\mathbf u-(\mathbf w^{\mathsf T}\mathbf u)/(\mathbf w^{\mathsf T}\mathbf 1)$.
+The solution of each class is copied to all its local nodes.
+
+\subsection{Algorithm: SEM direct}
+\label{sec:alg-sem-direct}
+\begin{enumerate}
+  \item \emph{Setup} (\texttt{periodic\_sem\_factorize}): \texttt{F = factorize(K[2:end,2:end])}.
+        Julia's \texttt{factorize} tests the matrix; $K$ is exactly symmetric, so it
+        returns a CHOLMOD sparse Cholesky factor (SuiteSparse), with CHOLMOD's own
+        fill-reducing ordering (symbolic analysis plus numeric factorisation).
+  \item \emph{Solve} (\texttt{periodic\_sem\_direct\_solve}): $u_1=0$,
+        $\mathbf u_{2:m}=F\backslash\mathbf b_{2:m}$ (forward and backward triangular
+        solves), then the $\mathbf w$-weighted gauge.
+\end{enumerate}
+The setup time also includes the periodic reduction \eqref{eq:alg-K}.
+
+\subsection{Algorithm: SEM AMG}
+\label{sec:alg-sem-amg}
+\begin{enumerate}
+  \item \emph{Setup} (\texttt{jx\_amg\_setup}): $K_{2:m,2:m}$ is converted to
+        \texttt{SparseMatrixCSC\{Float64,Int\}}, and \texttt{smoothed\_aggregation} of
+        AlgebraicMultigrid.jl builds the hierarchy with the package defaults:
+        \begin{itemize}
+          \item symmetric strength of connection with $\theta=0$;
+          \item standard aggregation;
+          \item tentative prolongator from the constant near-null-space vector, improved by
+                four symmetric Gauss--Seidel iterations and smoothed by weighted Jacobi
+                with $\omega=4/3$;
+          \item at most 10 levels; coarsening stops at 10 unknowns, and the coarsest
+                system is solved with a dense pseudo-inverse.
+        \end{itemize}
+        \texttt{aspreconditioner} wraps it: one application is one V-cycle from a
+        zero initial guess, with one symmetric Gauss--Seidel sweep before and one after
+        each coarse-grid correction.
+  \item \emph{Solve} (\texttt{jx\_amg\_solve}): \texttt{Krylov.cg} with this
+        preconditioner (\texttt{ldiv=true}), from $\mathbf x_0=0$, $u_1=0$, and then
+        the $\mathbf w$-weighted gauge. CG stops when the preconditioned residual
+        norm $\sqrt{\mathbf r^{\mathsf T}M^{-1}\mathbf r}$ falls below
+        $10^{-12}$ times its initial value (\texttt{rtol}; \texttt{atol}$\,=0$), or
+        after \texttt{:amg\_itmax} iterations (10\,000 in the benchmark).
+\end{enumerate}
+
+\subsection{Algorithm: SC direct}
+\label{sec:alg-sc-direct}
+The static condensation of Section~\ref{sec:sc-method} is applied to $K\mathbf u=\mathbf b$
+by the element-learning routine \texttt{elementLearning\_Axb!}, with the local
+operators computed from $K$ (no network). The set-up is done in
+\texttt{periodic\_sem\_sc\_solve}:
+\begin{enumerate}
+  \item \emph{Class-numbered mesh.} Each element's node list \texttt{mesh.conn} lists
+        its $4N$ boundary nodes first and its $(N-1)^2$ interior nodes last; it is
+        rewritten in class numbers. The skeleton $\partial O$ is the sorted set of
+        classes of the boundary nodes, and $I_o$ is the set of classes of the
+        interior nodes. The code checks that every interior class belongs to one
+        element only and not to the skeleton, and that
+        $|\partial O|+|I_o|=m$. There is no Dirichlet set ($\Gamma=\emptyset$),
+        so $\partial\tau=\partial O$, and $|\partial O|=n_e^2(2N-1)$.
+  \item \emph{Extraction.} The sparse blocks $K_{\partial\tau\partial\tau}$ and
+        $K_{\partial O\partial\tau}$ are sliced from $K$. For every element, the dense
+        blocks $A^e_{oo}$ ($(N-1)^2\times(N-1)^2$), $A^e_{ob}$ ($(N-1)^2\times4N$) and
+        $A^e_{bo}$ ($4N\times(N-1)^2$) are read entry by entry from $K$, and the
+        interior load $\mathbf f^e_o=\mathbf b[I_o^e]$ is taken from the projected
+        right-hand side.
+  \item \emph{Condensation.} For every element the dense inverse
+        $(A^e_{oo})^{-1}$ is formed explicitly (\texttt{inv}, LAPACK), and then
+        $T^e=(A^e_{oo})^{-1}A^e_{ob}$ and $\mathbf t^e=(A^e_{oo})^{-1}\mathbf f^e_o$.
+        Each entry of $A^e_{bo}T^e$ whose row is in $\partial O$ and column in
+        $\partial\tau$ is recorded as a triplet, and
+        $\Delta\mathbf f\mathrel{+}=A^e_{bo}\mathbf t^e$ is accumulated. After the
+        element loop, \texttt{sparse} sums the triplets into $\Delta B$, and
+        \begin{equation}
+          B=K_{\partial O\partial\tau}-\Delta B,\qquad
+          \hat{\mathbf f}=\mathbf b_{\partial O}-\Delta\mathbf f\quad(-\,B_{\partial O\Gamma}\mathbf g_\Gamma=0\text{ here}).
+        \end{equation}
+  \item \emph{Skeleton solve} (\texttt{el\_skeleton\_solve}, with
+        \texttt{singular = true} because $\Gamma=\emptyset$): the first skeleton
+        unknown is pinned, and \texttt{factorize(B[2:end,2:end])} then
+        \texttt{F \textbackslash{} rhs}. The subtraction leaves $B$ symmetric only up
+        to round-off ($\approx10^{-16}$ relative), so \texttt{factorize} returns an
+        UMFPACK sparse LU factorisation, not Cholesky.
+  \item \emph{Interior recovery.} For every element,
+        $\mathbf r^e=\mathbf f^e_o-A^e_{o\,\partial O}\mathbf u_{\partial O}$, the
+        inverse of $A^e_{oo}$ is formed again (\texttt{inv}), and
+        $\mathbf u_{o}^e=(A^e_{oo})^{-1}\mathbf r^e$.
+  \item The $\mathbf w$-weighted gauge is applied to the full class vector.
+\end{enumerate}
+Timing: the setup is the periodic reduction plus steps 1--3 plus the factorisation
+in step 4. The solve step is the triangular solves in step 4 plus step 5.
+
+\subsection{Algorithm: SC AMG}
+\label{sec:alg-sc-amg}
+Identical to SC direct except in step 4, where the pinned skeleton matrix
+$B_{2:,2:}$ goes through \texttt{jx\_amg\_setup} and \texttt{jx\_amg\_solve}. These
+use the same smoothed-aggregation hierarchy and CG settings as SEM AMG
+(Section~\ref{sec:alg-sem-amg}): relative tolerance $10^{-12}$ on the preconditioned
+residual norm. The setup contains the AMG hierarchy of $B$, and the solve step
+contains the CG iterations and the interior recovery.
+
+\subsection{Algorithm: pseudo-spectral (Fourier collocation)}
+\label{sec:alg-ps}
+The pseudo-spectral and FFT solvers do not use the SEM mesh: the driver dispatches
+to them before \texttt{sem\_setup}. Both use the uniform periodic grid
+$x_i=iL_x/N_g$, $y_j=jL_y/N_g$, $i,j=0,\dots,N_g-1$ (the right-hand periodic image
+is not stored), with $N_g=n_eN$ (\texttt{:fft\_N}) and $L_x=L_y=2\pi$.
+\begin{enumerate}
+  \item \emph{Right-hand side:} $F_{ij}=f(x_i,y_j)$ is sampled on the grid.
+  \item \emph{Setup, per axis} (\texttt{\_collocation\_axis}): Kopriva's Fourier
+        derivative matrix for even $N_g$ (Algorithm~18) has
+        $D_{ij}=\tfrac12(-1)^{i+j}\cot\big((i-j)\pi/N_g\big)$ for $i\neq j$, and
+        $D_{ii}=-\sum_{j\neq i}D_{ij}$; it is scaled by $2\pi/L$. Form
+        $A=-D\,D$ and compute the symmetric eigendecomposition of
+        $(A+A^{\mathsf T})/2$ (\texttt{eigen(Symmetric(\dots))}, LAPACK). The code
+        requires exactly two eigenvalues with $|\lambda|<10^{-6}(2\pi/L)^2$; $D\,D$
+        annihilates both the constant and the Nyquist mode $\cos(N_gx/2)$. Their
+        eigenvectors are replaced by the exact vectors $1/\sqrt{N_g}$ and
+        $(-1)^j/\sqrt{N_g}$, and their eigenvalues are set to $0$ and to the true
+        $-\mathrm d^2/\mathrm dx^2$ eigenvalue of the Nyquist mode, $(\pi N_g/L)^2$.
+        This correction turns $D\,D$ into the Fourier second-derivative collocation
+        matrix $D^{(2)}$. Then
+        $\Lambda^{-1}_{ij}=1/(\lambda^x_i+\lambda^y_j)$, set to $0$ for the
+        constant-by-constant mode (the zero-mean gauge).
+  \item \emph{Solve} (\texttt{fourier\_collocation\_poisson\_solve!}), four dense
+        $N_g\times N_g$ products, $O(N_g^3)$:
+        $W_1=Q_x^{\mathsf T}F$, $W_2=W_1Q_y$, $W_2\leftarrow W_2\circ\Lambda^{-1}$,
+        $W_1=Q_xW_2$, $U=W_1Q_y^{\mathsf T}$. The mean of $F$ is discarded by the zero
+        entry of $\Lambda^{-1}$; its value is only reported.
+\end{enumerate}
+
+\subsection{Algorithm: FFT}
+\label{sec:alg-fft}
+On the same grid and right-hand side as the pseudo-spectral solver:
+\begin{enumerate}
+  \item \emph{Setup} (\texttt{FFTPoissonSolver}): FFTW plans for the real-to-complex
+        transform (\texttt{plan\_rfft}) and the unnormalised inverse
+        (\texttt{plan\_brfft}), with the planner flag \texttt{FFTW.MEASURE}. That is
+        the driver default (\texttt{:fft\_plan => "measure"}): FFTW times candidate
+        algorithms and keeps the fastest. On the half spectrum, $m_x=0,\dots,N_g/2$
+        and $m_y\in(-N_g/2,N_g/2]$, the code stores
+        $\Lambda^{-1}=1/\big(\lambda\,N_g^2\big)$ with
+        $\lambda=(2\pi m_x/L_x)^2+(2\pi m_y/L_y)^2$, and $0$ for $m_x=m_y=0$.
+  \item \emph{Solve} (\texttt{fft\_poisson\_solve!}), $O(N_g^2\log N_g)$:
+        $\hat F=\texttt{rfft}(F)$, $\hat F\leftarrow\hat F\circ\Lambda^{-1}$,
+        $U=\texttt{brfft}(\hat F)$. The normalisation $1/N_g^2$ is folded into
+        $\Lambda^{-1}$, and the mean of $F$, $\operatorname{Re}\hat F_{00}/N_g^2$, is
+        only reported.
+\end{enumerate}
+The Nyquist modes are included with their exact eigenvalues. The pseudo-spectral and
+FFT solvers therefore compute the same discrete solution, and they agree to about
+$10^{-13}$.
+
+\subsection{Error measurement}
+\label{sec:alg-error}
+\emph{SEM} (\texttt{print\_solution\_L2\_error}): at every local node $i$, including
+the duplicate seam copies, $e_i=u_i-u(\mathbf x_i)$. The norm
+$\|e\|_\infty=\max_i|e_i|$, and the relative $L^2$ error is
+$\big(\sum_iq_ie_i^2/\sum_iq_iu(\mathbf x_i)^2\big)^{1/2}$ with
+$q_i=M_i/(\text{number of copies of the class of }i)$, so that each periodic class
+is counted once. The SEM solution is compared as returned, with its $M$-weighted
+zero-mean gauge.
+
+\emph{Fourier solvers} (\texttt{fft\_report\_grid\_error}): at the $N_g^2$ grid
+points. The solution is first shifted by the difference between the means of the
+exact and the computed grid values. Then $\|e\|_\infty=\max|e_{ij}|$ and the relative
+$L^2$ error is $\|e\|_2/\|u\|_2$ with uniform weights.
+\endgroup
+
 \subsection{Solvers and timing protocol}
 \label{sec:sc-protocol}
-The six solvers are listed in Table~\ref{tab:sc-solvers}. AMG is smoothed
-aggregation (AlgebraicMultigrid.jl) used as the preconditioner of the conjugate
-gradient method (Krylov.jl), stopped at a relative residual of $10^{-12}$. The
-direct solves use the SuiteSparse factorisation selected by Julia's
-\texttt{factorize}: sparse Cholesky (CHOLMOD) for the exactly symmetric full matrix
-$K$, and sparse LU (UMFPACK) for the skeleton matrix $B$, which is symmetric only up
-to round-off (relative asymmetry $\approx10^{-16}$) after the subtraction in
-\eqref{eq:sc-schur}.
+The six solvers, detailed in
+Sections~\ref{sec:alg-sem-direct}--\ref{sec:alg-fft}, are listed in
+Table~\ref{tab:sc-solvers}. AMG is smoothed aggregation (AlgebraicMultigrid.jl) used as
+the preconditioner of the conjugate gradient method (Krylov.jl). CG stops when the
+preconditioned residual norm has fallen by $10^{-12}$. The direct solves use the
+SuiteSparse factorisation selected by Julia's \texttt{factorize}: sparse Cholesky
+(CHOLMOD) for the exactly symmetric full matrix $K$, and sparse LU (UMFPACK) for the
+skeleton matrix $B$. After the subtraction in \eqref{eq:sc-schur}, $B$ is symmetric
+only up to round-off (relative asymmetry $\approx10^{-16}$).
 
 \begin{table}[htbp]
   \centering
