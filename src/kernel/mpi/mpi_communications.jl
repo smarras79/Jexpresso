@@ -382,7 +382,7 @@ mutable struct SendReceiveCache{T}
         end
     
         # Pre-allocate send buffers with exact sizes
-        send_buffers = [Vector{Float64}(undef, send_counts[i]) for i in 1:rank_sz]
+        send_buffers = [Vector{T}(undef, send_counts[i]) for i in 1:rank_sz]
         send_indices = ones(Int, rank_sz)  # Track insertion positions
         # data = ones(T, length(send_targets),m)  # Track insertion positions
         

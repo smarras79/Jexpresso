@@ -309,20 +309,22 @@ function get_RT_heat_fluxes!(q, qe, mesh, micro, metrics, atmos_data, params, d�
     #Solve shortwave RT problem and get heating rate
     inputs[:RT_shortwave] = true
     inputs[:RT_longwave] = false
-    Q, dTdt, micro.rt_sol_sw = build_radiative_transfer_problem(mesh, inputs, 1, mesh.ngl, dψ, ψ, ω, metrics.Je,
+    #=Q, dTdt, micro.rt_sol_sw = build_radiative_transfer_problem(mesh, inputs, 1, mesh.ngl, dψ, ψ, ω, metrics.Je,
                                      metrics.dξdx, metrics.dξdy, metrics.dξdz, 
                                      metrics.dηdx, metrics.dηdy, metrics.dηdz,
                                      metrics.dζdx, metrics.dζdy, metrics.dζdz,
                                      metrics.nx, metrics.ny, metrics.nz, 
                                      mesh.elem_to_face, mesh.extra_mesh, κ, σ, atmos_data, z_prof, τ_from_TOA, params.QT, NSD_3D(), params.AD;
-                                     rt_sol_sw = micro.rt_sol_sw, rt_sol_sw_available = micro.rt_sol_sw_available)
+                                     rt_sol_sw = micro.rt_sol_sw, rt_sol_sw_available = micro.rt_sol_sw_available,
+				     lw_cache = micro.lw_cache, sw_cache = micro.sw_cache,
+				     mumps_handle_ref = micro.mumps_handle_ref, superlu_handle_ref=micro.superlu_handle_ref, prev_nnz_ref=micro.prev_nnz_ref)
 
     if !(inputs[:energy_equation] == "theta") || (inputs[:lmoist])
         micro.flux_sw .= PhysConst.cp .* dTdt   # J/(kg·s) = Q/ρ, positive for SW heating
     else
         micro.flux_sw .= dTdt                    # K/s, positive for SW heating
     end
-
+    =#
     #Second do longwave
     #Get gray longwave absorption and scattering coefficients
     κ, σ = atmos_to_rad_longwave(atmos_data,mesh.npoin)
@@ -336,7 +338,9 @@ function get_RT_heat_fluxes!(q, qe, mesh, micro, metrics, atmos_data, params, d�
                                      metrics.dζdx, metrics.dζdy, metrics.dζdz,
                                      metrics.nx, metrics.ny, metrics.nz,
                                      mesh.elem_to_face, mesh.extra_mesh, κ, σ, atmos_data, z_prof, τ_from_TOA, params.QT, NSD_3D(), params.AD;
-                                     rt_sol_lw = micro.rt_sol_lw, rt_sol_lw_available = micro.rt_sol_lw_available)
+                                     rt_sol_lw = micro.rt_sol_lw, rt_sol_lw_available = micro.rt_sol_lw_available,
+				     lw_cache = micro.lw_cache, sw_cache = micro.sw_cache,
+				     mumps_handle_ref = micro.mumps_handle_ref, superlu_handle_ref=micro.superlu_handle_ref, prev_nnz_ref=micro.prev_nnz_ref)
 
     if !(inputs[:energy_equation] == "theta") || inputs[:lmoist]
         micro.flux_lw .= PhysConst.cp .* dTdt   # J/(kg·s) = Q/ρ, negative for LW cooling

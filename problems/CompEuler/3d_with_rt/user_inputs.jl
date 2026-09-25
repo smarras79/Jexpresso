@@ -4,7 +4,7 @@ function user_inputs()
     # User define your inputs below: the order doesn't matter
     #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.5,
+        :Δt                   => 0.1,
         :tinit                => 0.0,
         :tend                 => 1000.0,
         :diagnostics_at_times => (100:100:1000),
@@ -47,13 +47,13 @@ function user_inputs()
         :extra_dimensions    => 2,
         :adaptive_extra_meshes => false,
         :RT_amr_threshold => [0.99999],
-        :extra_dimensions_order => 3,
-        :extra_dimensions_nelemx => 3,
-        :extra_dimensions_nelemy => 3,
+        :extra_dimensions_order => 4,
+        :extra_dimensions_nelemx => 4,
+        :extra_dimensions_nelemy => 4,
         :lcubed_sphere_angular_mesh => false,
         :extra_dimensions_xmax => π,
         :extra_dimensions_ymax => 2*π,
-        :radiation_time_step => 50.0,
+        :radiation_time_step => 20.0,
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
@@ -76,8 +76,8 @@ function user_inputs()
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x1x1.msh",
         # :gmsh_filename       => "./meshes/gmsh_grids/2x2x2.msh",
-        # :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10x10.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x1x10.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_20x1x20.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_6x6x6.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/unstructured_xz_20x2x20.msh",
         #---------------------------------------------------------------------------
         # Filter parameters
@@ -90,8 +90,8 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        :output_dir          => "./output/",
-        :loverwrite_output   => true,
+        :output_dir          => "./scratch/tissaoui/",
+        :loverwrite_output   => false,
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------
         # init_refinement

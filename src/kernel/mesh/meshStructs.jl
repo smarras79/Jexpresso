@@ -50,6 +50,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     nelem_semi_inf::Union{TInt, Missing} = 0# Semi infinite elements for Laguerre BC
     nelem_int::Union{TInt, Missing} = 1    # internal elements
     npoin::Union{TInt, Missing} = 1        # This is updated after populating with high-order nodes
+    npoin_dg::Union{TInt, Missing} = 1     # Total number of dg nodes
     npoin_original::Union{TInt, Missing} =1# Storage for original npoin if modified for Laguerre semi_inf
     npoin_linear::Union{TInt, Missing} = 1 # This is always the original number of the first-order grid
     nelem_bdy::Union{TInt, Missing} = 1    # bdy elements
@@ -95,6 +96,10 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     connijk =  KernelAbstractions.zeros(backend,TInt, 0, 0, 0, 0)
     conn_edgesijk::Array{Int64,2} = KernelAbstractions.zeros(backend, TInt, 0, 0)    # edge analogue of connijk
     conn_facesijk::Array{Int64,2} = KernelAbstractions.zeros(backend, TInt, 0, 0)    # face analogue of connijk
+    connijk_dg =  KernelAbstractions.zeros(backend,TInt, 0, 0, 0, 0)
+    
+    dg_to_cg = KernelAbstractions.zeros(backend,TInt, 0)
+    face_neighbor_dg = KernelAbstractions.zeros(backend,TInt, 0, 0, 0)
 
     el_min = KernelAbstractions.zeros(backend,TFloat, 0, 0)
     el_max = KernelAbstractions.zeros(backend,TFloat, 0, 0)

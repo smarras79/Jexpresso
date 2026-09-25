@@ -1731,7 +1731,9 @@ Writes a VTK file of the angle-integrated solution and reference field to
 function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
         nx, ny, nz, elem_to_face,
         extra_mesh, κ, σ, atmos_data, z_prof, τ_from_TOA, QT::Inexact, SD::NSD_3D, AD::ContGal;
-        rt_sol_lw = Float64[], rt_sol_sw = Float64[], rt_sol_lw_available = false, rt_sol_sw_available = false)
+        rt_sol_lw = Float64[], rt_sol_sw = Float64[], rt_sol_lw_available = false, rt_sol_sw_available = false,
+	lw_cache = nothing, sw_cache,
+	mumps_handle_ref = nothing, superlu_handle_ref = nothing, prev_nnz_ref =nothing)
 
     bdy = make_boundary_predicates(mesh)
     sw = []
@@ -1756,6 +1758,8 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         sw  = SWParams(inputs[:RT_S0_flux], inputs[:RT_μ0], inputs[:RT_ϕ0], 0.35, z_prof, τ_from_TOA)
         lw  = LWParams(inputs[:RT_ϵ_surface], inputs[:RT_T_space])
     end
+
+
 
     if (inputs[:RT_shortwave])
         κ_ext_sw      = κ .+ σ
@@ -3498,6 +3502,10 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
 
     npoin_ang_total = size(B, 1)
 
+    #analyze_operator_for_preconditioning(
+    #As, ip2gip_spa, gip2owner_extra, gnpoin;
+    #npoin_g=n_ext_spa, g_ip2gip=extended_parents_to_gid_spa, comm=comm)
+
     solution = if (inputs[:adaptive_extra_meshes] && inputs[:RT_shortwave])
         x_warm = zeros(Float64,n_spa)
         if (rt_sol_sw_available)
@@ -3507,6 +3515,9 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             precond     = :global_ilu,
             asm_solver  = :rcmilu,
             asm_ilu_tau = 0.01,
+	    mumps_handle_ref   = mumps_handle_ref,  # enables handle caching
+    	    superlu_handle_ref = superlu_handle_ref,
+    	    prev_nnz_ref       = prev_nnz_ref,
             npoin_g     = n_spa_g,
             g_ip2gip    = extended_parents_to_gid,
             g_gip2ip    = gid_to_extended_parents,
@@ -3522,7 +3533,10 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             precond     = :global_ilu,
             asm_solver  = :rcmilu,
             asm_ilu_tau = 0.1,
-            npoin_g     = n_spa_g,
+            mumps_handle_ref   = mumps_handle_ref,  # enables handle caching
+            superlu_handle_ref = superlu_handle_ref,
+            prev_nnz_ref       = prev_nnz_ref,
+	    npoin_g     = n_spa_g,
             g_ip2gip    = extended_parents_to_gid,
             g_gip2ip    = gid_to_extended_parents,
             restart     = 100,
@@ -3545,6 +3559,9 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             precond     = :global_ilu,
             asm_solver  = :rcmilu,
             asm_ilu_tau = 0.1,
+	    mumps_handle_ref   = mumps_handle_ref,  # enables handle caching
+            superlu_handle_ref = superlu_handle_ref,
+            prev_nnz_ref       = prev_nnz_ref,
             npoin_g     = n_spa_g,
             g_ip2gip    = extended_parents_to_gid,
             g_gip2ip    = gid_to_extended_parents,
@@ -3560,11 +3577,28 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             npoin_g  = n_ext_spa,
             g_ip2gip = extended_parents_to_gid_spa,
             g_gip2ip = gid_to_extended_parents_spa,
-            precond     = :global_lu,
+            precond     = :angular_direct,
+	    spa_ip2gip    = mesh.ip2gip,        # 3D spatial ip2gip
+    	    spa_gip2owner = mesh.gip2owner,     # 3D spatial gip2owner
+    	    spa_gnpoin    = mesh.gnpoin,        # 3D global DOF count
+    	    spa_angular_cache = sw_cache,
+	    spa_extra_npoin = extra_mesh.extra_npoin,  # angular DOFs per spatial node
+	    spa_extra_mesh  = extra_mesh,
+    	    spa_local_weight = 1.0,
+	    #amg_restriction = 1,
+	    #amg_interp = 4,
+	    amg_coarsen = 6,
+            amg_threshold = 0.25,
+	    amg_relax =6,
+	    #amg_sweeps = 1,
+	    #amg_levels = 1,
             asm_solver  = :rcmilu,
-            asm_ilu_tau = 0.1,
-            restart = 100,
-            tol     = 1e-3)
+            asm_ilu_tau = 0.0001,
+	    mumps_handle_ref   = mumps_handle_ref,  # enables handle caching
+            superlu_handle_ref = superlu_handle_ref,
+            prev_nnz_ref       = prev_nnz_ref,
+            restart = 50,
+            tol     = 1e-5)
 
     elseif (inputs[:RT_longwave])
         x_warm = Float64[]
@@ -3575,11 +3609,28 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             npoin_g  = n_ext_spa,
             g_ip2gip = extended_parents_to_gid_spa,
             g_gip2ip = gid_to_extended_parents_spa,
-            precond     = :global_lu,
-            asm_solver  = :rcmilu,
+            precond     = :angular_direct,
+	    spa_ip2gip    = mesh.ip2gip,        # 3D spatial ip2gip
+            spa_gnpoin      = mesh.gnpoin,
+	    spa_angular_cache = lw_cache,
+	    spa_gip2owner = mesh.gip2owner,     # 3D spatial gip2owner
+            spa_extra_npoin = extra_mesh.extra_npoin,  # angular DOFs per spatial node
+	    spa_extra_mesh  = extra_mesh,
+    	    spa_local_weight = 1.0,
+	    #amg_restriction = 1,
+	    #amg_interp = 4,
+	    amg_coarsen = 6,
+            amg_threshold = 0.25,
+            amg_relax =6,
+            #amg_sweeps = 1,
+	    #amg_levels = 1,
+	    asm_solver  = :rcmilu,
             asm_ilu_tau = 0.1,
-            restart = 60,
-            tol     = 1e-7)
+	    mumps_handle_ref   = mumps_handle_ref,  # enables handle caching
+            superlu_handle_ref = superlu_handle_ref,
+            prev_nnz_ref       = prev_nnz_ref,
+            restart = 75,
+            tol     = 1e-5)
     else
         x_warm = Float64[]
         if (inputs[:lmanufactured_solution])
@@ -3597,11 +3648,14 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         precond  = :global_ilu,
         asm_solver = :rcmsplu,
         asm_ilu_tau = 0.1,
-        restart  = 50,
+	mumps_handle_ref   = mumps_handle_ref,  # enables handle caching
+        superlu_handle_ref = superlu_handle_ref,
+        prev_nnz_ref       = prev_nnz_ref,
+        restart  = 75,
         tol      = 1e-7)
 
     end
-    
+   
     @rankinfo rank "Solve complete."
     # ── Solution prolongation ─────────────────────────────────────────────────
     solution_new = zeros(Float64, n_spa)

@@ -75,7 +75,7 @@ import SciMLBase: get_du, get_tmp_cache, u_modified!,
 import ClimaParams as CP
 import Thermodynamics as TD
 import Thermodynamics.Parameters as TP
-
+import Libdl
 # PERF: the radiative-transfer dependency tree (RRTMGP + 11
 # submodules, ClimaComms with its MPI-backend macro, NCDatasets) used
 # to be `using`-d at the top of this file. They are
@@ -213,6 +213,16 @@ include(joinpath( "kernel", "operators", "operators.jl"))
 
 include(joinpath( "kernel", "operators", "rhs.jl"))
 
+include(joinpath( "kernel", "operators", "sweep_ordering.jl"))
+
+include(joinpath( "kernel", "operators", "sweep_mpi.jl"))
+
+include(joinpath( "kernel", "operators", "sweep_nc.jl"))
+
+include(joinpath( "kernel", "operators", "sweep_nc_mpi.jl"))
+
+include(joinpath( "kernel", "operators", "sweep_periodic.jl"))
+
 include(joinpath( "kernel", "operators", "rhs_2point.jl"))
 
 include(joinpath( "kernel", "operators", "rhs_gpu.jl"))
@@ -226,6 +236,10 @@ include(joinpath( "kernel", "operators", "filter.jl"))
 include(joinpath( "kernel", "solvers", "TimeIntegrators.jl"))
 
 include(joinpath("kernel", "operators", "Axb_rad_mpi.jl"))
+
+Libdl.dlopen("/home/tissaoui/local/lib/libHYPRE.so", Libdl.RTLD_GLOBAL)
+include(joinpath("kernel", "operators", "hypre_boomeramg.jl"))
+HypreAMG.set_library!("/home/tissaoui/local/lib/libHYPRE.so")
 
 include(joinpath("kernel", "operators", "asm_preconditioner.jl"))
 

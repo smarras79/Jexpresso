@@ -68,7 +68,9 @@ function driver(nparts,
 
         sem, partitioned_model = sem_setup(inputs, nparts, distribute)
 
-        if rank == 0
+	test_stress_combined_ncf_unified_manufactured(inputs, nparts, distribute, sem, partitioned_model)
+
+	if rank == 0
             @printf("DONE (%.2f s)\n", (time_ns() - _t_sem) / 1e9)
             print(" # initialize() ......... ")
             flush(stdout)

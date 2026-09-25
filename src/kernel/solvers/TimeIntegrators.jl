@@ -276,9 +276,21 @@ function time_loop!(inputs, params, u, args...)
     end
 
     function do_radiation!(integrator)
-        if (params.inputs[:RT_atmos_coupling])
+        _ensure_rt_loaded!()
+	if (params.inputs[:RT_atmos_coupling])
             println(" doing full 3D RT solve + heat flux calculations at t=", integrator.t)
-            get_RT_heat_fluxes!(params.uaux, params.qp.qe, params.mesh, params.mp, params.metrics, params.atmos_data, params, params.basis.dψ, params.basis.ψ, params.ω, PhysicalConst{TFloat}(), params.inputs)
+	    
+	    #verify_sweep_ordering(params.mesh, params.metrics)
+            #test_dg_volume_matrix()
+	    #test_dg_reconciliation_convergence()
+	    #test_full_sweep_exponential_layered(params.mesh, params.metrics, params.basis, params.ω; κ_val = 0.0001) 
+	    #test_kappa_sweep(params.mesh, params.metrics, params.basis, params.ω, 1)
+	    #test_all_directions_exponential(params.mesh, params.metrics, params.basis, params.ω)
+	    #test_manufactured_isotropic_timed(params.mesh, params.metrics, params.basis, params.ω)
+	    #test_rank_cut_exchange(params.mesh, params.metrics) 
+	    #test_manufactured_isotropic_multirank(params.mesh, params.metrics, params.basis, params.ω)
+	
+	    get_RT_heat_fluxes!(params.uaux, params.qp.qe, params.mesh, params.mp, params.metrics, params.atmos_data, params, params.basis.dψ, params.basis.ψ, params.ω, PhysicalConst{TFloat}(), params.inputs)
         else
             println(" doing two stream radiation heat flux calculations at t=", integrator.t)
             compute_radiative_fluxes!(lnew_mesh, params.mesh, params.uaux, params.qp.qe, params.mp, params.phys_grid, params.inputs[:backend], params.SOL_VARS_TYPE)
