@@ -64,7 +64,13 @@
      julia> rows = run_periodic_poisson_benchmark()            # N = 2..8, 16×16 elements
      julia> rows = run_periodic_poisson_benchmark(; levels = 0:3, outdir = "ppb_highres")
  or as a script (also one Julia session, same protocol):
-     julia --project=. tools/periodic_poisson_benchmark/pipeline.jl --levels 0:3 --outdir ppb_highres
+julia --project=. tools/periodic_poisson_benchmark/pipeline.jl --levels 0:3 --outdir ppb_highres
+
+# LAUNCH THIS FROM THE LAPTOP"
+julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
+julia --project=. tools/periodic_poisson_benchmark/pipeline.jl \
+      --levels 0:3 --nops 2:8 --outdir ppb_highres --warmup small \
+      --max-unknowns all=810000,sem_amg=300000 --resume
 
  OUTPUT (in `outdir`, default this directory): results.csv (rewritten after
  every configuration), results.md (the table), and the figures drawn by
