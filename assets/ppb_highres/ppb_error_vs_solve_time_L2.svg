@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 420" width="680" height="420" role="img" aria-labelledby="t d" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+<title id="t">Error vs time of the solve step</title><desc id="d">L-infinity error versus solve-step wall-clock (log scale) for the six solvers (four SEM solves, pseudo-spectral, FFT); each curve runs over increasing resolution.</desc>
+<rect width="680" height="420" fill="#fcfcfb"/>
+<text x="78" y="28" font-size="16" font-weight="600" fill="#0b0b0b">Error vs time of the solve step</text>
+<text x="78" y="48" font-size="12.5" fill="#52514e">−∇²u = f on [0,2π]², doubly periodic · 64×64 elements · second-run timings</text>
+<line x1="78" x2="530" y1="358.0" y2="358.0" stroke="#e4e3dd" stroke-width="1"/>
+<text x="68" y="362.0" font-size="12" text-anchor="end" fill="#52514e">10⁻¹⁵</text>
+<line x1="78" x2="530" y1="335.3" y2="335.3" stroke="#e4e3dd" stroke-width="1"/>
+<line x1="78" x2="530" y1="312.5" y2="312.5" stroke="#e4e3dd" stroke-width="1"/>
+<text x="68" y="316.5" font-size="12" text-anchor="end" fill="#52514e">10⁻¹³</text>
+<line x1="78" x2="530" y1="289.8" y2="289.8" stroke="#e4e3dd" stroke-width="1"/>
+<line x1="78" x2="530" y1="267.1" y2="267.1" stroke="#e4e3dd" stroke-width="1"/>
+<text x="68" y="271.1" font-size="12" text-anchor="end" fill="#52514e">10⁻¹¹</text>
+<line x1="78" x2="530" y1="244.4" y2="244.4" stroke="#e4e3dd" stroke-width="1"/>
+<line x1="78" x2="530" y1="221.6" y2="221.6" stroke="#e4e3dd" stroke-width="1"/>
+<text x="68" y="225.6" font-size="12" text-anchor="end" fill="#52514e">10⁻⁹</text>
+<line x1="78" x2="530" y1="198.9" y2="198.9" stroke="#e4e3dd" stroke-width="1"/>
+<line x1="78" x2="530" y1="176.2" y2="176.2" stroke="#e4e3dd" stroke-width="1"/>
+<text x="68" y="180.2" font-size="12" text-anchor="end" fill="#52514e">10⁻⁷</text>
+<line x1="78" x2="530" y1="153.5" y2="153.5" stroke="#e4e3dd" stroke-width="1"/>
+<line x1="78" x2="530" y1="130.7" y2="130.7" stroke="#e4e3dd" stroke-width="1"/>
+<text x="68" y="134.7" font-size="12" text-anchor="end" fill="#52514e">10⁻⁵</text>
+<line x1="78" x2="530" y1="108.0" y2="108.0" stroke="#e4e3dd" stroke-width="1"/>
+<line x1="78" x2="530" y1="358" y2="358" stroke="#b5b3aa" stroke-width="1"/>
+<line x1="78.0" x2="78.0" y1="358" y2="363" stroke="#b5b3aa" stroke-width="1"/>
+<text x="78.0" y="378" font-size="12" text-anchor="middle" fill="#52514e">10 µs</text>
+<line x1="142.6" x2="142.6" y1="358" y2="363" stroke="#b5b3aa" stroke-width="1"/>
+<text x="142.6" y="378" font-size="12" text-anchor="middle" fill="#52514e">100 µs</text>
+<line x1="207.1" x2="207.1" y1="358" y2="363" stroke="#b5b3aa" stroke-width="1"/>
+<text x="207.1" y="378" font-size="12" text-anchor="middle" fill="#52514e">1 ms</text>
+<line x1="271.7" x2="271.7" y1="358" y2="363" stroke="#b5b3aa" stroke-width="1"/>
+<text x="271.7" y="378" font-size="12" text-anchor="middle" fill="#52514e">10 ms</text>
+<line x1="336.3" x2="336.3" y1="358" y2="363" stroke="#b5b3aa" stroke-width="1"/>
+<text x="336.3" y="378" font-size="12" text-anchor="middle" fill="#52514e">100 ms</text>
+<line x1="400.9" x2="400.9" y1="358" y2="363" stroke="#b5b3aa" stroke-width="1"/>
+<text x="400.9" y="378" font-size="12" text-anchor="middle" fill="#52514e">1 s</text>
+<line x1="465.4" x2="465.4" y1="358" y2="363" stroke="#b5b3aa" stroke-width="1"/>
+<text x="465.4" y="378" font-size="12" text-anchor="middle" fill="#52514e">10 s</text>
+<line x1="530.0" x2="530.0" y1="358" y2="363" stroke="#b5b3aa" stroke-width="1"/>
+<text x="530.0" y="378" font-size="12" text-anchor="middle" fill="#52514e">100 s</text>
+<text x="304.0" y="406" font-size="12.5" text-anchor="middle" fill="#52514e">solve-step wall-clock (log scale)</text>
+<text x="18" y="233.0" font-size="12.5" text-anchor="middle" fill="#52514e" transform="rotate(-90 18 233.0)">L∞ error vs exact solution</text>
+<polyline points="214.9,129.0 260.8,175.2 249.0,220.7 269.9,258.8 282.5,258.8 298.7,258.8 320.4,258.8" fill="none" stroke="#2a78d6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="214.9" cy="129.0" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<circle cx="260.8" cy="175.2" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<circle cx="249.0" cy="220.7" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<circle cx="269.9" cy="258.8" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<circle cx="282.5" cy="258.8" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<circle cx="298.7" cy="258.8" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<circle cx="320.4" cy="258.8" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<polyline points="318.6,129.0 360.9,175.2 392.2,220.7 422.1,258.8 441.9,258.9 460.2,258.8 478.8,258.6" fill="none" stroke="#eb6834" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="314.1" y="124.5" width="9" height="9" rx="1.5" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<rect x="356.4" y="170.7" width="9" height="9" rx="1.5" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<rect x="387.7" y="216.2" width="9" height="9" rx="1.5" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<rect x="417.6" y="254.3" width="9" height="9" rx="1.5" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<rect x="437.4" y="254.4" width="9" height="9" rx="1.5" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<rect x="455.7" y="254.3" width="9" height="9" rx="1.5" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<rect x="474.3" y="254.1" width="9" height="9" rx="1.5" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<polyline points="237.4,129.0 263.9,175.2 280.9,220.7 302.8,258.8 323.5,258.8 350.1,258.8 364.8,258.8" fill="none" stroke="#1baf7a" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M237.4,123.5 L242.9,133.5 L231.9,133.5 Z" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M263.9,169.7 L269.4,179.7 L258.4,179.7 Z" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M280.9,215.2 L286.4,225.2 L275.4,225.2 Z" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M302.8,253.3 L308.3,263.3 L297.3,263.3 Z" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M323.5,253.3 L329.0,263.3 L318.0,263.3 Z" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M350.1,253.3 L355.6,263.3 L344.6,263.3 Z" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M364.8,253.3 L370.3,263.3 L359.3,263.3 Z" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<polyline points="304.2,129.0 331.3,175.2 349.5,220.7 365.8,258.8 378.6,258.8 389.6,258.9 402.4,258.9" fill="none" stroke="#eda100" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M304.2,123.0 L310.2,129.0 L304.2,135.0 L298.2,129.0 Z" fill="#eda100" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M331.3,169.2 L337.3,175.2 L331.3,181.2 L325.3,175.2 Z" fill="#eda100" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M349.5,214.7 L355.5,220.7 L349.5,226.7 L343.5,220.7 Z" fill="#eda100" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M365.8,252.8 L371.8,258.8 L365.8,264.8 L359.8,258.8 Z" fill="#eda100" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M378.6,252.8 L384.6,258.8 L378.6,264.8 L372.6,258.8 Z" fill="#eda100" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M389.6,252.9 L395.6,258.9 L389.6,264.9 L383.6,258.9 Z" fill="#eda100" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M402.4,252.9 L408.4,258.9 L402.4,264.9 L396.4,258.9 Z" fill="#eda100" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<polyline points="178.3,295.3 214.1,281.8 239.2,266.3 256.1,268.6 269.3,277.8 284.0,266.0 295.0,271.0" fill="none" stroke="#e87ba4" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M178.3,300.8 L183.8,290.8 L172.8,290.8 Z" fill="#e87ba4" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M214.1,287.3 L219.6,277.3 L208.6,277.3 Z" fill="#e87ba4" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M239.2,271.8 L244.7,261.8 L233.7,261.8 Z" fill="#e87ba4" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M256.1,274.1 L261.6,264.1 L250.6,264.1 Z" fill="#e87ba4" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M269.3,283.3 L274.8,273.3 L263.8,273.3 Z" fill="#e87ba4" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M284.0,271.5 L289.5,261.5 L278.5,261.5 Z" fill="#e87ba4" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M295.0,276.5 L300.5,266.5 L289.5,266.5 Z" fill="#e87ba4" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<polyline points="138.6,349.2 152.1,347.7 169.6,348.3 195.8,342.8 199.9,347.2 207.1,343.5 216.0,346.5" fill="none" stroke="#008300" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="138.6" cy="349.2" r="4" fill="#fcfcfb" stroke="#008300" stroke-width="2.5"/>
+<circle cx="152.1" cy="347.7" r="4" fill="#fcfcfb" stroke="#008300" stroke-width="2.5"/>
+<circle cx="169.6" cy="348.3" r="4" fill="#fcfcfb" stroke="#008300" stroke-width="2.5"/>
+<circle cx="195.8" cy="342.8" r="4" fill="#fcfcfb" stroke="#008300" stroke-width="2.5"/>
+<circle cx="199.9" cy="347.2" r="4" fill="#fcfcfb" stroke="#008300" stroke-width="2.5"/>
+<circle cx="207.1" cy="343.5" r="4" fill="#fcfcfb" stroke="#008300" stroke-width="2.5"/>
+<circle cx="216.0" cy="346.5" r="4" fill="#fcfcfb" stroke="#008300" stroke-width="2.5"/>
+<text x="332.4" y="250.2" font-size="12.5" fill="#0b0b0b">SEM direct</text>
+<text x="490.8" y="235.2" font-size="12.5" fill="#0b0b0b">SEM AMG</text>
+<text x="376.8" y="265.2" font-size="12.5" fill="#0b0b0b">SC direct</text>
+<text x="414.4" y="280.2" font-size="12.5" fill="#0b0b0b">SC AMG</text>
+<text x="307.0" y="295.2" font-size="12.5" fill="#0b0b0b">pseudo-spectral</text>
+<text x="228.0" y="350.5" font-size="12.5" fill="#0b0b0b">FFT</text>
+<line x1="78" x2="100" y1="68" y2="68" stroke="#2a78d6" stroke-width="2"/>
+<circle cx="89.0" cy="68.0" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<text x="108" y="72" font-size="12.5" fill="#0b0b0b">SEM direct</text>
+<line x1="268" x2="290" y1="68" y2="68" stroke="#eb6834" stroke-width="2"/>
+<rect x="274.5" y="63.5" width="9" height="9" rx="1.5" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<text x="298" y="72" font-size="12.5" fill="#0b0b0b">SEM AMG</text>
+<line x1="458" x2="480" y1="68" y2="68" stroke="#1baf7a" stroke-width="2"/>
+<path d="M469.0,62.5 L474.5,72.5 L463.5,72.5 Z" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<text x="488" y="72" font-size="12.5" fill="#0b0b0b">SC direct</text>
+<line x1="78" x2="100" y1="88" y2="88" stroke="#eda100" stroke-width="2"/>
+<path d="M89.0,82.0 L95.0,88.0 L89.0,94.0 L83.0,88.0 Z" fill="#eda100" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<text x="108" y="92" font-size="12.5" fill="#0b0b0b">SC AMG</text>
+<line x1="268" x2="290" y1="88" y2="88" stroke="#e87ba4" stroke-width="2"/>
+<path d="M279.0,93.5 L284.5,83.5 L273.5,83.5 Z" fill="#e87ba4" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<text x="298" y="92" font-size="12.5" fill="#0b0b0b">pseudo-spectral</text>
+<line x1="458" x2="480" y1="88" y2="88" stroke="#008300" stroke-width="2"/>
+<circle cx="469.0" cy="88.0" r="4" fill="#fcfcfb" stroke="#008300" stroke-width="2.5"/>
+<text x="488" y="92" font-size="12.5" fill="#0b0b0b">FFT</text>
+</svg>

@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 420" width="680" height="420" role="img" aria-labelledby="t d" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+<title id="t">h-refinement at order N = 3: solve step</title><desc id="d">Wall-clock of the solve step versus number of unknowns under uniform mesh refinement at SEM order 3, for the six solvers.</desc>
+<rect width="680" height="420" fill="#fcfcfb"/>
+<text x="78" y="28" font-size="16" font-weight="600" fill="#0b0b0b">h-refinement at order N = 3: solve step</text>
+<text x="78" y="48" font-size="12.5" fill="#52514e">−∇²u = f on [0,2π]², doubly periodic · meshes 16²·4^L elements · second-run timings</text>
+<line x1="78" x2="530" y1="358.0" y2="358.0" stroke="#e4e3dd" stroke-width="1"/>
+<text x="68" y="362.0" font-size="12" text-anchor="end" fill="#52514e">10⁻⁵</text>
+<line x1="78" x2="530" y1="316.3" y2="316.3" stroke="#e4e3dd" stroke-width="1"/>
+<text x="68" y="320.3" font-size="12" text-anchor="end" fill="#52514e">10⁻⁴</text>
+<line x1="78" x2="530" y1="274.7" y2="274.7" stroke="#e4e3dd" stroke-width="1"/>
+<text x="68" y="278.7" font-size="12" text-anchor="end" fill="#52514e">10⁻³</text>
+<line x1="78" x2="530" y1="233.0" y2="233.0" stroke="#e4e3dd" stroke-width="1"/>
+<text x="68" y="237.0" font-size="12" text-anchor="end" fill="#52514e">10⁻²</text>
+<line x1="78" x2="530" y1="191.3" y2="191.3" stroke="#e4e3dd" stroke-width="1"/>
+<text x="68" y="195.3" font-size="12" text-anchor="end" fill="#52514e">10⁻¹</text>
+<line x1="78" x2="530" y1="149.7" y2="149.7" stroke="#e4e3dd" stroke-width="1"/>
+<text x="68" y="153.7" font-size="12" text-anchor="end" fill="#52514e">10⁰</text>
+<line x1="78" x2="530" y1="108.0" y2="108.0" stroke="#e4e3dd" stroke-width="1"/>
+<text x="68" y="112.0" font-size="12" text-anchor="end" fill="#52514e">10¹</text>
+<line x1="78" x2="530" y1="358" y2="358" stroke="#b5b3aa" stroke-width="1"/>
+<line x1="237.5" x2="237.5" y1="358" y2="363" stroke="#b5b3aa" stroke-width="1"/>
+<text x="237.5" y="378" font-size="12" text-anchor="middle" fill="#52514e">10⁴</text>
+<line x1="487.8" x2="487.8" y1="358" y2="363" stroke="#b5b3aa" stroke-width="1"/>
+<text x="487.8" y="378" font-size="12" text-anchor="middle" fill="#52514e">10⁵</text>
+<text x="304.0" y="406" font-size="12.5" text-anchor="middle" fill="#52514e">unknowns (log scale)</text>
+<text x="18" y="233.0" font-size="12.5" text-anchor="middle" fill="#52514e" transform="rotate(-90 18 233.0)">seconds (log scale)</text>
+<polyline points="78.0,309.4 228.7,284.8 379.3,240.0 530.0,229.6" fill="none" stroke="#2a78d6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="78.0" cy="309.4" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<circle cx="228.7" cy="284.8" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<circle cx="379.3" cy="240.0" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<circle cx="530.0" cy="229.6" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<polyline points="78.0,229.3 228.7,202.8 379.3,175.5 530.0,148.5" fill="none" stroke="#eb6834" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="73.5" y="224.8" width="9" height="9" rx="1.5" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<rect x="224.2" y="198.3" width="9" height="9" rx="1.5" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<rect x="374.8" y="171.0" width="9" height="9" rx="1.5" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<rect x="525.5" y="144.0" width="9" height="9" rx="1.5" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<polyline points="78.0,289.4 228.7,262.9 379.3,238.1 530.0,210.9" fill="none" stroke="#1baf7a" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M78.0,283.9 L83.5,293.9 L72.5,293.9 Z" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M228.7,257.4 L234.2,267.4 L223.2,267.4 Z" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M379.3,232.6 L384.8,242.6 L373.8,242.6 Z" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M530.0,205.4 L535.5,215.4 L524.5,215.4 Z" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<polyline points="78.0,249.2 228.7,197.3 379.3,194.6 530.0,166.7" fill="none" stroke="#eda100" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M78.0,243.2 L84.0,249.2 L78.0,255.2 L72.0,249.2 Z" fill="#eda100" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M228.7,191.3 L234.7,197.3 L228.7,203.3 L222.7,197.3 Z" fill="#eda100" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M379.3,188.6 L385.3,194.6 L379.3,200.6 L373.3,194.6 Z" fill="#eda100" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M530.0,160.7 L536.0,166.7 L530.0,172.7 L524.0,166.7 Z" fill="#eda100" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<polyline points="78.0,341.3 228.7,305.3 379.3,270.2 530.0,234.4" fill="none" stroke="#e87ba4" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M78.0,346.8 L83.5,336.8 L72.5,336.8 Z" fill="#e87ba4" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M228.7,310.8 L234.2,300.8 L223.2,300.8 Z" fill="#e87ba4" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M379.3,275.7 L384.8,265.7 L373.8,265.7 Z" fill="#e87ba4" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M530.0,239.9 L535.5,229.9 L524.5,229.9 Z" fill="#e87ba4" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<polyline points="78.0,355.1 228.7,332.4 379.3,310.2 530.0,282.8" fill="none" stroke="#008300" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="78.0" cy="355.1" r="4" fill="#fcfcfb" stroke="#008300" stroke-width="2.5"/>
+<circle cx="228.7" cy="332.4" r="4" fill="#fcfcfb" stroke="#008300" stroke-width="2.5"/>
+<circle cx="379.3" cy="310.2" r="4" fill="#fcfcfb" stroke="#008300" stroke-width="2.5"/>
+<circle cx="530.0" cy="282.8" r="4" fill="#fcfcfb" stroke="#008300" stroke-width="2.5"/>
+<text x="542.0" y="229.0" font-size="12.5" fill="#0b0b0b">SEM direct</text>
+<text x="542.0" y="152.5" font-size="12.5" fill="#0b0b0b">SEM AMG</text>
+<text x="542.0" y="214.0" font-size="12.5" fill="#0b0b0b">SC direct</text>
+<text x="542.0" y="170.7" font-size="12.5" fill="#0b0b0b">SC AMG</text>
+<text x="542.0" y="244.0" font-size="12.5" fill="#0b0b0b">pseudo-spectral</text>
+<text x="542.0" y="286.8" font-size="12.5" fill="#0b0b0b">FFT</text>
+<line x1="78" x2="100" y1="68" y2="68" stroke="#2a78d6" stroke-width="2"/>
+<circle cx="89.0" cy="68.0" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<text x="108" y="72" font-size="12.5" fill="#0b0b0b">SEM direct</text>
+<line x1="268" x2="290" y1="68" y2="68" stroke="#eb6834" stroke-width="2"/>
+<rect x="274.5" y="63.5" width="9" height="9" rx="1.5" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<text x="298" y="72" font-size="12.5" fill="#0b0b0b">SEM AMG</text>
+<line x1="458" x2="480" y1="68" y2="68" stroke="#1baf7a" stroke-width="2"/>
+<path d="M469.0,62.5 L474.5,72.5 L463.5,72.5 Z" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<text x="488" y="72" font-size="12.5" fill="#0b0b0b">SC direct</text>
+<line x1="78" x2="100" y1="88" y2="88" stroke="#eda100" stroke-width="2"/>
+<path d="M89.0,82.0 L95.0,88.0 L89.0,94.0 L83.0,88.0 Z" fill="#eda100" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<text x="108" y="92" font-size="12.5" fill="#0b0b0b">SC AMG</text>
+<line x1="268" x2="290" y1="88" y2="88" stroke="#e87ba4" stroke-width="2"/>
+<path d="M279.0,93.5 L284.5,83.5 L273.5,83.5 Z" fill="#e87ba4" stroke="#fcfcfb" stroke-width="2" stroke-linejoin="round"/>
+<text x="298" y="92" font-size="12.5" fill="#0b0b0b">pseudo-spectral</text>
+<line x1="458" x2="480" y1="88" y2="88" stroke="#008300" stroke-width="2"/>
+<circle cx="469.0" cy="88.0" r="4" fill="#fcfcfb" stroke="#008300" stroke-width="2.5"/>
+<text x="488" y="92" font-size="12.5" fill="#0b0b0b">FFT</text>
+</svg>
