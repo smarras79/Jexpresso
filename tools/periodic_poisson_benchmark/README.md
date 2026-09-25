@@ -182,6 +182,16 @@ The figures are SVGs, each in a light and a dark variant (`-dark`), in
 With the default `outdir` (this directory), a single-level run writes the
 README figures in the repository's `assets/` instead.
 
+To show a run's figures and table in the main README.md (each run in its own
+section, figures copied to `assets/<outdir name>/`; rerunning replaces that
+section):
+
+```bash
+python3 tools/periodic_poisson_benchmark/readme_figures.py ppb_1level
+python3 tools/periodic_poisson_benchmark/readme_figures.py ppb_highres
+git add assets/ppb_1level assets/ppb_highres README.md
+```
+
 The LaTeX section for the paper covers one mesh at a time:
 
 ```bash
