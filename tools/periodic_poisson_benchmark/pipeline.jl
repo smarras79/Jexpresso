@@ -113,6 +113,12 @@ function _ppb_overrides(solver::Symbol, nop::Int, level::Int; nel0::Int = PPB_NE
         :lstatic_condensation => solver in (:sc_direct, :sc_amg),
         :EL_skeleton_solver   => solver === :sc_amg ? "amg" : "direct",
         :amg_itmax        => amg_itmax,
+        # FFTW.ESTIMATE: the plan is built (and charged to the setup) in every
+        # run, cheaply and deterministically. FFTW.MEASURE plans take 0.5-0.9 s
+        # and FFTW keeps them for the session, so a warm-up at the same size
+        # would make the recorded run's planning free and one at another size
+        # would not: setup times would not be comparable across levels.
+        :fft_plan         => "estimate",
         :luse_mesh_cache  => false,              # build, never load, the infrastructure
         :lbenchmark_solve => false,              # single-shot solve timer
         :outformat        => "none",

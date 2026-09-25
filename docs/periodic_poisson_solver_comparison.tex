@@ -30,12 +30,22 @@ We solve
 \end{equation}
 with the manufactured solution
 \begin{equation}
-  u(x,y)=\sin 2x\,\cos 3y+\sin x\,\cos y,\qquad f=-\nabla^2u=13\sin 2x\,\cos 3y+2\sin x\,\cos y .
+  \begin{gathered}
+  u(x,y)=A\Big(p(x)\,p(y)-\frac{1}{c^2-1}\Big),\qquad p(s)=\frac{1}{c-\cos s},\\
+  f=-\nabla^2u=-A\big(p''(x)\,p(y)+p(x)\,p''(y)\big),
+  \end{gathered}
   \label{eq:sc-exact}
 \end{equation}
-Both $u$ and $f$ have zero mean, so $u$ is the zero-mean solution of
-\eqref{eq:sc-poisson}; every solver returns the zero-mean solution (the constants
-span the null space of the periodic Laplacian).
+where $p''(s)=-\cos s/(c-\cos s)^2+2\sin^2 s/(c-\cos s)^3$, $c=(r+r^{-1})/2$ with
+$r=0.8$, and $A=(c-1)^2(c+1)/2$ scales the peak to $u(0,0)=1$. The periodic Poisson
+kernel $p$ has the Fourier series
+$p(s)=(c^2-1)^{-1/2}\big(1+2\sum_{k\ge1}r^k\cos ks\big)$. The Fourier coefficients of $u$
+therefore decay geometrically, like $r^{|k_x|+|k_y|}$, and $u$ is not band-limited: a
+Fourier method on an $N_g\times N_g$ grid has a grid-dependent error, about
+$r^{N_g/2}$, as does the SEM. Since the mean of $p$ is $(c^2-1)^{-1/2}$, $u$ has zero
+mean, and so does $f$ (the integral of a Laplacian over a period). $u$ is therefore
+the zero-mean solution of \eqref{eq:sc-poisson}, which is the one every solver
+returns (the constants span the null space of the periodic Laplacian).
 
 \paragraph{SEM.} The mesh has $16\times16$ quadrilateral elements of polynomial order
 $N=2,\dots,8$ on the Legendre--Gauss--Lobatto nodes, i.e.\ $n=(16N)^2$
@@ -299,9 +309,15 @@ On the same grid and right-hand side as the pseudo-spectral solver:
 \begin{enumerate}
   \item \emph{Setup} (\texttt{FFTPoissonSolver}): FFTW plans for the real-to-complex
         transform (\texttt{plan\_rfft}) and the unnormalised inverse
-        (\texttt{plan\_brfft}), with the planner flag \texttt{FFTW.MEASURE}. That is
-        the driver default (\texttt{:fft\_plan => "measure"}): FFTW times candidate
-        algorithms and keeps the fastest. On the half spectrum, $m_x=0,\dots,N_g/2$
+        (\texttt{plan\_brfft}). The benchmark sets \texttt{:fft\_plan => "estimate"},
+        so the planner flag is \texttt{FFTW.ESTIMATE}: FFTW picks the algorithm by
+        heuristics, in milliseconds, and the same one on every run. The driver
+        default, \texttt{FFTW.MEASURE}, times candidate algorithms instead. That
+        planning takes 0.5--0.9\,s on grids of $512^2$--$1024^2$ and makes the
+        transform pair about 1.2--1.7 times faster, so it pays off only when a plan
+        is reused over many solves. FFTW also keeps a MEASURE plan for the rest of
+        the Julia session, which would make the planning cost depend on what ran
+        before. On the half spectrum, $m_x=0,\dots,N_g/2$
         and $m_y\in(-N_g/2,N_g/2]$, the code stores
         $\Lambda^{-1}=1/\big(\lambda\,N_g^2\big)$ with
         $\lambda=(2\pi m_x/L_x)^2+(2\pi m_y/L_y)^2$, and $0$ for $m_x=m_y=0$.
@@ -398,13 +414,13 @@ one Julia thread and two BLAS threads; AlgebraicMultigrid.jl 1.2.0, Krylov.jl 0.
     \cmidrule(lr){4-6}\cmidrule(l){7-8}
     $N$ & unknowns & skeleton & SEM (all four) & pseudo-spectral & FFT & SEM AMG & SC AMG \\
     \midrule
-    2 & 1\,024 & 768 & $3.1\times10^{-3}$ & $2.6\times10^{-14}$ & $2.3\times10^{-15}$ & 31 & 23 \\
-    3 & 2\,304 & 1\,280 & $1.1\times10^{-4}$ & $7.1\times10^{-14}$ & $2.2\times10^{-15}$ & 48 & 27 \\
-    4 & 4\,096 & 1\,792 & $4.0\times10^{-6}$ & $4.1\times10^{-13}$ & $2.6\times10^{-15}$ & 66 & 31 \\
-    5 & 6\,400 & 2\,304 & $1.2\times10^{-7}$ & $2.5\times10^{-13}$ & $2.7\times10^{-15}$ & 84 & 34 \\
-    6 & 9\,216 & 2\,816 & $3.6\times10^{-9}$ & $3.9\times10^{-13}$ & $2.7\times10^{-15}$ & 103 & 37 \\
-    7 & 12\,544 & 3\,328 & $9.6\times10^{-11}$ & $6.1\times10^{-13}$ & $3.2\times10^{-15}$ & 123 & 40 \\
-    8 & 16\,384 & 3\,840 & $2.3\times10^{-11}$ & $6.6\times10^{-13}$ & $2.6\times10^{-15}$ & 141 & 43 \\
+    2 & 1\,024 & 768 & $7.3\times10^{-1}$ & $5.6\times10^{-1}$ & $5.6\times10^{-1}$ & 31 & 23 \\
+    3 & 2\,304 & 1\,280 & $2.2\times10^{-1}$ & $4.6\times10^{-2}$ & $4.6\times10^{-2}$ & 46 & 26 \\
+    4 & 4\,096 & 1\,792 & $4.7\times10^{-2}$ & $3.5\times10^{-3}$ & $3.5\times10^{-3}$ & 64 & 30 \\
+    5 & 6\,400 & 2\,304 & $2.5\times10^{-3}$ & $3.0\times10^{-4}$ & $3.0\times10^{-4}$ & 82 & 33 \\
+    6 & 9\,216 & 2\,816 & $1.2\times10^{-3}$ & $3.1\times10^{-5}$ & $3.1\times10^{-5}$ & 102 & 36 \\
+    7 & 12\,544 & 3\,328 & $1.7\times10^{-4}$ & $3.8\times10^{-6}$ & $3.8\times10^{-6}$ & 117 & 39 \\
+    8 & 16\,384 & 3\,840 & $5.0\times10^{-5}$ & $5.0\times10^{-7}$ & $5.0\times10^{-7}$ & 138 & 41 \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -418,13 +434,13 @@ one Julia thread and two BLAS threads; AlgebraicMultigrid.jl 1.2.0, Krylov.jl 0.
     \toprule
     $N$ & SEM direct & SEM AMG & SC direct & SC AMG & pseudo-spectral & FFT \\
     \midrule
-    2 & 0.11 & 2.83 & 0.29 & 1.77 & 0.039 & 0.013 \\
-    3 & 0.26 & 13.2 & 0.83 & 4.19 & 0.025 & 0.037 \\
-    4 & 0.40 & 72.0 & 1.51 & 8.45 & 0.062 & 0.032 \\
-    5 & 0.85 & 162 & 2.75 & 15.6 & 0.087 & 0.056 \\
-    6 & 1.31 & 421 & 4.71 & 24.7 & 1.39 & 0.061 \\
-    7 & 1.61 & 819 & 7.86 & 49.1 & 0.42 & 0.088 \\
-    8 & 2.11 & 1\,440 & 13.2 & 60.7 & 0.35 & 0.10 \\
+    2 & 0.15 & 5.66 & 0.67 & 3.38 & 0.014 & 0.012 \\
+    3 & 0.56 & 28.9 & 1.40 & 9.00 & 0.036 & 0.039 \\
+    4 & 0.62 & 87.4 & 2.20 & 17.6 & 0.13 & 0.036 \\
+    5 & 1.11 & 227 & 6.38 & 29.1 & 0.17 & 0.093 \\
+    6 & 1.81 & 513 & 6.83 & 44.4 & 0.42 & 0.20 \\
+    7 & 4.69 & 1\,430 & 11.1 & 68.7 & 0.50 & 0.16 \\
+    8 & 5.84 & 3\,280 & 37.2 & 112 & 0.63 & 0.21 \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -438,13 +454,13 @@ one Julia thread and two BLAS threads; AlgebraicMultigrid.jl 1.2.0, Krylov.jl 0.
     \toprule
     $N$ & SEM direct & SEM AMG & SC direct & SC AMG & pseudo-spectral & FFT \\
     \midrule
-    2 & 3.38 & 4.82 & 5.62 & 4.95 & 2.62 & 0.13 \\
-    3 & 6.72 & 17.7 & 12.5 & 11.0 & 2.00 & 0.32 \\
-    4 & 14.5 & 85.4 & 20.7 & 21.3 & 4.92 & 0.17 \\
-    5 & 27.3 & 183 & 37.8 & 40.0 & 5.70 & 0.42 \\
-    6 & 50.1 & 454 & 64.8 & 65.9 & 12.6 & 0.40 \\
-    7 & 93.2 & 909 & 118 & 137 & 14.8 & 0.47 \\
-    8 & 204 & 1\,640 & 180 & 193 & 19.1 & 0.34 \\
+    2 & 3.74 & 8.12 & 6.70 & 8.34 & 1.72 & 0.11 \\
+    3 & 13.4 & 35.9 & 14.4 & 21.3 & 3.59 & 0.25 \\
+    4 & 17.6 & 101 & 26.1 & 38.8 & 6.38 & 0.16 \\
+    5 & 35.4 & 254 & 70.6 & 66.9 & 9.71 & 0.36 \\
+    6 & 74.3 & 574 & 77.9 & 111 & 16.7 & 0.68 \\
+    7 & 160 & 1\,570 & 132 & 181 & 19.6 & 0.46 \\
+    8 & 262 & 3\,510 & 227 & 288 & 29.4 & 0.39 \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -458,13 +474,13 @@ one Julia thread and two BLAS threads; AlgebraicMultigrid.jl 1.2.0, Krylov.jl 0.
     \toprule
     $N$ & SEM direct & SEM AMG & SC direct & SC AMG & pseudo-spectral & FFT \\
     \midrule
-    2 & 893 & 936 & 960 & 938 & 2.71 & 0.18 \\
-    3 & 907 & 906 & 980 & 907 & 2.09 & 0.43 \\
-    4 & 1\,050 & 1\,440 & 994 & 1\,020 & 5.05 & 0.31 \\
-    5 & 1\,060 & 1\,250 & 1\,150 & 1\,070 & 5.93 & 0.62 \\
-    6 & 1\,170 & 1\,670 & 1\,360 & 1\,180 & 12.9 & 0.66 \\
-    7 & 1\,520 & 2\,220 & 1\,470 & 1\,430 & 15.2 & 0.88 \\
-    8 & 1\,700 & 3\,250 & 1\,830 & 1\,810 & 19.5 & 0.82 \\
+    2 & 1\,320 & 1\,380 & 1\,500 & 1\,390 & 1.85 & 0.22 \\
+    3 & 1\,530 & 1\,510 & 1\,540 & 1\,590 & 3.83 & 0.55 \\
+    4 & 1\,510 & 1\,560 & 1\,500 & 1\,580 & 6.76 & 0.53 \\
+    5 & 1\,650 & 1\,780 & 1\,710 & 1\,550 & 10.4 & 0.99 \\
+    6 & 1\,730 & 2\,310 & 1\,650 & 1\,810 & 18.2 & 2.24 \\
+    7 & 2\,110 & 3\,340 & 1\,970 & 1\,990 & 20.8 & 1.65 \\
+    8 & 2\,610 & 5\,860 & 2\,320 & 2\,600 & 30.9 & 1.90 \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -477,17 +493,17 @@ one Julia thread and two BLAS threads; AlgebraicMultigrid.jl 1.2.0, Krylov.jl 0.
                  xmode=normal, ymode=log, grid=major, grid style={gray!20},
                  legend style={font=\scriptsize, cells={anchor=west}},
                  tick label style={font=\scriptsize}, label style={font=\small}, legend to name=scleg, legend columns=3]
-      \addplot[color=jxsem, mark=*, mark options={solid, fill=jxsem}, solid, thick, mark size=1.8pt] coordinates {(2,0.00308425) (3,0.000112827) (4,4.03675e-06) (5,1.16178e-07) (6,3.5766e-09) (7,9.60969e-11) (8,2.31554e-11)};
+      \addplot[color=jxsem, mark=*, mark options={solid, fill=jxsem}, solid, thick, mark size=1.8pt] coordinates {(2,0.731752) (3,0.220314) (4,0.0470748) (5,0.00254928) (6,0.00116637) (7,0.000174658) (8,4.95039e-05)};
       \addlegendentry{SEM direct}
-      \addplot[color=jxsemamg, mark=square*, mark options={solid, fill=jxsemamg}, solid, thick, mark size=1.8pt] coordinates {(2,0.00308425) (3,0.000112827) (4,4.03675e-06) (5,1.16178e-07) (6,3.57609e-09) (7,9.61137e-11) (8,2.35539e-11)};
+      \addplot[color=jxsemamg, mark=square*, mark options={solid, fill=jxsemamg}, solid, thick, mark size=1.8pt] coordinates {(2,0.731752) (3,0.220314) (4,0.0470748) (5,0.00254928) (6,0.00116637) (7,0.000174658) (8,4.95039e-05)};
       \addlegendentry{SEM AMG}
-      \addplot[color=jxscdirect, mark=triangle*, mark options={solid, fill=jxscdirect}, solid, thick, mark size=1.8pt] coordinates {(2,0.00308425) (3,0.000112827) (4,4.03675e-06) (5,1.16178e-07) (6,3.5766e-09) (7,9.60848e-11) (8,2.31637e-11)};
+      \addplot[color=jxscdirect, mark=triangle*, mark options={solid, fill=jxscdirect}, solid, thick, mark size=1.8pt] coordinates {(2,0.731752) (3,0.220314) (4,0.0470748) (5,0.00254928) (6,0.00116637) (7,0.000174658) (8,4.95039e-05)};
       \addlegendentry{SC direct}
-      \addplot[color=jxscamg, mark=diamond*, mark options={solid, fill=jxscamg}, solid, thick, mark size=1.8pt] coordinates {(2,0.00308425) (3,0.000112827) (4,4.03675e-06) (5,1.16179e-07) (6,3.57635e-09) (7,9.64954e-11) (8,2.25604e-11)};
+      \addplot[color=jxscamg, mark=diamond*, mark options={solid, fill=jxscamg}, solid, thick, mark size=1.8pt] coordinates {(2,0.731752) (3,0.220314) (4,0.0470748) (5,0.00254928) (6,0.00116637) (7,0.000174658) (8,4.95039e-05)};
       \addlegendentry{SC AMG}
-      \addplot[color=jxps, mark=pentagon*, mark options={solid, fill=jxps}, solid, thick, mark size=1.8pt] coordinates {(2,2.57572e-14) (3,7.11653e-14) (4,4.10783e-13) (5,2.50022e-13) (6,3.93241e-13) (7,6.07736e-13) (8,6.59417e-13)};
+      \addplot[color=jxps, mark=pentagon*, mark options={solid, fill=jxps}, solid, thick, mark size=1.8pt] coordinates {(2,0.561648) (3,0.0462008) (4,0.0034958) (5,0.000297471) (6,3.08363e-05) (7,3.75822e-06) (8,5.03773e-07)};
       \addlegendentry{pseudo-spectral}
-      \addplot[color=jxfft, mark=o, mark options={solid, fill=white}, solid, thick, mark size=1.8pt] coordinates {(2,2.33147e-15) (3,2.22045e-15) (4,2.55351e-15) (5,2.66454e-15) (6,2.69229e-15) (7,3.21965e-15) (8,2.55351e-15)};
+      \addplot[color=jxfft, mark=o, mark options={solid, fill=white}, solid, thick, mark size=1.8pt] coordinates {(2,0.561648) (3,0.0462008) (4,0.0034958) (5,0.000297471) (6,3.08363e-05) (7,3.75822e-06) (8,5.03773e-07)};
       \addlegendentry{FFT}
     \end{axis}
   \end{tikzpicture}
@@ -498,19 +514,18 @@ one Julia thread and two BLAS threads; AlgebraicMultigrid.jl 1.2.0, Krylov.jl 0.
                  xmode=log, ymode=log, grid=major, grid style={gray!20},
                  legend style={font=\scriptsize, cells={anchor=west}},
                  tick label style={font=\scriptsize}, label style={font=\small}]
-      \addplot[color=jxsem, mark=*, mark options={solid, fill=jxsem}, solid, thick, mark size=1.8pt] coordinates {(1024,0.00308425) (2304,0.000112827) (4096,4.03675e-06) (6400,1.16178e-07) (9216,3.5766e-09) (12544,9.60969e-11) (16384,2.31554e-11)};
-      \addplot[color=jxsemamg, mark=square*, mark options={solid, fill=jxsemamg}, solid, thick, mark size=1.8pt] coordinates {(1024,0.00308425) (2304,0.000112827) (4096,4.03675e-06) (6400,1.16178e-07) (9216,3.57609e-09) (12544,9.61137e-11) (16384,2.35539e-11)};
-      \addplot[color=jxscdirect, mark=triangle*, mark options={solid, fill=jxscdirect}, solid, thick, mark size=1.8pt] coordinates {(1024,0.00308425) (2304,0.000112827) (4096,4.03675e-06) (6400,1.16178e-07) (9216,3.5766e-09) (12544,9.60848e-11) (16384,2.31637e-11)};
-      \addplot[color=jxscamg, mark=diamond*, mark options={solid, fill=jxscamg}, solid, thick, mark size=1.8pt] coordinates {(1024,0.00308425) (2304,0.000112827) (4096,4.03675e-06) (6400,1.16179e-07) (9216,3.57635e-09) (12544,9.64954e-11) (16384,2.25604e-11)};
-      \addplot[color=jxps, mark=pentagon*, mark options={solid, fill=jxps}, solid, thick, mark size=1.8pt] coordinates {(1024,2.57572e-14) (2304,7.11653e-14) (4096,4.10783e-13) (6400,2.50022e-13) (9216,3.93241e-13) (12544,6.07736e-13) (16384,6.59417e-13)};
-      \addplot[color=jxfft, mark=o, mark options={solid, fill=white}, solid, thick, mark size=1.8pt] coordinates {(1024,2.33147e-15) (2304,2.22045e-15) (4096,2.55351e-15) (6400,2.66454e-15) (9216,2.69229e-15) (12544,3.21965e-15) (16384,2.55351e-15)};
+      \addplot[color=jxsem, mark=*, mark options={solid, fill=jxsem}, solid, thick, mark size=1.8pt] coordinates {(1024,0.731752) (2304,0.220314) (4096,0.0470748) (6400,0.00254928) (9216,0.00116637) (12544,0.000174658) (16384,4.95039e-05)};
+      \addplot[color=jxsemamg, mark=square*, mark options={solid, fill=jxsemamg}, solid, thick, mark size=1.8pt] coordinates {(1024,0.731752) (2304,0.220314) (4096,0.0470748) (6400,0.00254928) (9216,0.00116637) (12544,0.000174658) (16384,4.95039e-05)};
+      \addplot[color=jxscdirect, mark=triangle*, mark options={solid, fill=jxscdirect}, solid, thick, mark size=1.8pt] coordinates {(1024,0.731752) (2304,0.220314) (4096,0.0470748) (6400,0.00254928) (9216,0.00116637) (12544,0.000174658) (16384,4.95039e-05)};
+      \addplot[color=jxscamg, mark=diamond*, mark options={solid, fill=jxscamg}, solid, thick, mark size=1.8pt] coordinates {(1024,0.731752) (2304,0.220314) (4096,0.0470748) (6400,0.00254928) (9216,0.00116637) (12544,0.000174658) (16384,4.95039e-05)};
+      \addplot[color=jxps, mark=pentagon*, mark options={solid, fill=jxps}, solid, thick, mark size=1.8pt] coordinates {(1024,0.561648) (2304,0.0462008) (4096,0.0034958) (6400,0.000297471) (9216,3.08363e-05) (12544,3.75822e-06) (16384,5.03773e-07)};
+      \addplot[color=jxfft, mark=o, mark options={solid, fill=white}, solid, thick, mark size=1.8pt] coordinates {(1024,0.561648) (2304,0.0462008) (4096,0.0034958) (6400,0.000297471) (9216,3.08363e-05) (12544,3.75822e-06) (16384,5.03773e-07)};
     \end{axis}
   \end{tikzpicture}
   \\[2pt]\ref{scleg}
   \caption{Error against the exact solution versus order (left) and number of unknowns
-           (right). The four SEM curves coincide (the same discrete solution); the Fourier
-           solvers are at round-off because \eqref{eq:sc-exact} is a trigonometric
-           polynomial.}
+           (right). The four SEM curves coincide (the same discrete solution), and so do the
+           pseudo-spectral and FFT curves.}
   \label{fig:sc-error}
 \end{figure}
 
@@ -522,17 +537,17 @@ one Julia thread and two BLAS threads; AlgebraicMultigrid.jl 1.2.0, Krylov.jl 0.
                  xmode=log, ymode=log, grid=major, grid style={gray!20},
                  legend style={font=\scriptsize, cells={anchor=west}},
                  tick label style={font=\scriptsize}, label style={font=\small}, legend to name=sclegb, legend columns=3]
-      \addplot[color=jxsem, mark=*, mark options={solid, fill=jxsem}, solid, thick, mark size=1.8pt] coordinates {(0.000110529,0.00308425) (0.000264886,0.000112827) (0.000404926,4.03675e-06) (0.000847946,1.16178e-07) (0.00130871,3.5766e-09) (0.00161267,9.60969e-11) (0.00210817,2.31554e-11)};
+      \addplot[color=jxsem, mark=*, mark options={solid, fill=jxsem}, solid, thick, mark size=1.8pt] coordinates {(0.000152431,0.731752) (0.00055852,0.220314) (0.000624552,0.0470748) (0.00111073,0.00254928) (0.00180604,0.00116637) (0.00469084,0.000174658) (0.00583525,4.95039e-05)};
       \addlegendentry{SEM direct}
-      \addplot[color=jxsemamg, mark=square*, mark options={solid, fill=jxsemamg}, solid, thick, mark size=1.8pt] coordinates {(0.00283124,0.00308425) (0.0132018,0.000112827) (0.0720464,4.03675e-06) (0.162262,1.16178e-07) (0.421004,3.57609e-09) (0.818565,9.61137e-11) (1.43722,2.35539e-11)};
+      \addplot[color=jxsemamg, mark=square*, mark options={solid, fill=jxsemamg}, solid, thick, mark size=1.8pt] coordinates {(0.00565536,0.731752) (0.0288679,0.220314) (0.087398,0.0470748) (0.227232,0.00254928) (0.513428,0.00116637) (1.42727,0.000174658) (3.27811,4.95039e-05)};
       \addlegendentry{SEM AMG}
-      \addplot[color=jxscdirect, mark=triangle*, mark options={solid, fill=jxscdirect}, solid, thick, mark size=1.8pt] coordinates {(0.00029177,0.00308425) (0.000827321,0.000112827) (0.00150985,4.03675e-06) (0.00274959,1.16178e-07) (0.00470528,3.5766e-09) (0.00785845,9.60848e-11) (0.013163,2.31637e-11)};
+      \addplot[color=jxscdirect, mark=triangle*, mark options={solid, fill=jxscdirect}, solid, thick, mark size=1.8pt] coordinates {(0.000667467,0.731752) (0.00139912,0.220314) (0.00220466,0.0470748) (0.00637712,0.00254928) (0.00682894,0.00116637) (0.0111215,0.000174658) (0.0372081,4.95039e-05)};
       \addlegendentry{SC direct}
-      \addplot[color=jxscamg, mark=diamond*, mark options={solid, fill=jxscamg}, solid, thick, mark size=1.8pt] coordinates {(0.00176837,0.00308425) (0.00419116,0.000112827) (0.00844674,4.03675e-06) (0.0156166,1.16179e-07) (0.0246977,3.57635e-09) (0.0490682,9.64954e-11) (0.060734,2.25604e-11)};
+      \addplot[color=jxscamg, mark=diamond*, mark options={solid, fill=jxscamg}, solid, thick, mark size=1.8pt] coordinates {(0.00337714,0.731752) (0.0089975,0.220314) (0.0176314,0.0470748) (0.0291203,0.00254928) (0.0443627,0.00116637) (0.0686788,0.000174658) (0.112363,4.95039e-05)};
       \addlegendentry{SC AMG}
-      \addplot[color=jxps, mark=pentagon*, mark options={solid, fill=jxps}, solid, thick, mark size=1.8pt] coordinates {(3.8898e-05,2.57572e-14) (2.5063e-05,7.11653e-14) (6.2408e-05,4.10783e-13) (8.6574e-05,2.50022e-13) (0.00139176,3.93241e-13) (0.000423146,6.07736e-13) (0.000347458,6.59417e-13)};
+      \addplot[color=jxps, mark=pentagon*, mark options={solid, fill=jxps}, solid, thick, mark size=1.8pt] coordinates {(1.4275e-05,0.561648) (3.6248e-05,0.0462008) (0.000126507,0.0034958) (0.000167133,0.000297471) (0.000422151,3.08363e-05) (0.000503398,3.75822e-06) (0.000630872,5.03773e-07)};
       \addlegendentry{pseudo-spectral}
-      \addplot[color=jxfft, mark=o, mark options={solid, fill=white}, solid, thick, mark size=1.8pt] coordinates {(1.2908e-05,2.33147e-15) (3.7324e-05,2.22045e-15) (3.2371e-05,2.55351e-15) (5.6183e-05,2.66454e-15) (6.1392e-05,2.69229e-15) (8.8412e-05,3.21965e-15) (0.000100671,2.55351e-15)};
+      \addplot[color=jxfft, mark=o, mark options={solid, fill=white}, solid, thick, mark size=1.8pt] coordinates {(1.2078e-05,0.561648) (3.939e-05,0.0462008) (3.6012e-05,0.0034958) (9.2952e-05,0.000297471) (0.000196288,3.08363e-05) (0.000159729,3.75822e-06) (0.000214428,5.03773e-07)};
       \addlegendentry{FFT}
     \end{axis}
   \end{tikzpicture}
@@ -543,12 +558,12 @@ one Julia thread and two BLAS threads; AlgebraicMultigrid.jl 1.2.0, Krylov.jl 0.
                  xmode=log, ymode=log, grid=major, grid style={gray!20},
                  legend style={font=\scriptsize, cells={anchor=west}},
                  tick label style={font=\scriptsize}, label style={font=\small}]
-      \addplot[color=jxsem, mark=*, mark options={solid, fill=jxsem}, solid, thick, mark size=1.8pt] coordinates {(0.00337841,0.00308425) (0.00671553,0.000112827) (0.014497,4.03675e-06) (0.0272664,1.16178e-07) (0.0500586,3.5766e-09) (0.0932112,9.60969e-11) (0.204274,2.31554e-11)};
-      \addplot[color=jxsemamg, mark=square*, mark options={solid, fill=jxsemamg}, solid, thick, mark size=1.8pt] coordinates {(0.00482367,0.00308425) (0.0177273,0.000112827) (0.0854028,4.03675e-06) (0.183021,1.16178e-07) (0.454413,3.57609e-09) (0.909307,9.61137e-11) (1.64461,2.35539e-11)};
-      \addplot[color=jxscdirect, mark=triangle*, mark options={solid, fill=jxscdirect}, solid, thick, mark size=1.8pt] coordinates {(0.00562356,0.00308425) (0.0124772,0.000112827) (0.0206616,4.03675e-06) (0.0377992,1.16178e-07) (0.0648449,3.5766e-09) (0.118302,9.60848e-11) (0.180376,2.31637e-11)};
-      \addplot[color=jxscamg, mark=diamond*, mark options={solid, fill=jxscamg}, solid, thick, mark size=1.8pt] coordinates {(0.00495221,0.00308425) (0.0109769,0.000112827) (0.021276,4.03675e-06) (0.0399805,1.16179e-07) (0.0658819,3.57635e-09) (0.137375,9.64954e-11) (0.192553,2.25604e-11)};
-      \addplot[color=jxps, mark=pentagon*, mark options={solid, fill=jxps}, solid, thick, mark size=1.8pt] coordinates {(0.00261933,2.57572e-14) (0.00199718,7.11653e-14) (0.00491709,4.10783e-13) (0.0056974,2.50022e-13) (0.0126269,3.93241e-13) (0.0148255,6.07736e-13) (0.0190939,6.59417e-13)};
-      \addplot[color=jxfft, mark=o, mark options={solid, fill=white}, solid, thick, mark size=1.8pt] coordinates {(0.000128132,2.33147e-15) (0.000317467,2.22045e-15) (0.000174853,2.55351e-15) (0.000421556,2.66454e-15) (0.000403653,2.69229e-15) (0.000471861,3.21965e-15) (0.000340683,2.55351e-15)};
+      \addplot[color=jxsem, mark=*, mark options={solid, fill=jxsem}, solid, thick, mark size=1.8pt] coordinates {(0.00374215,0.731752) (0.0134391,0.220314) (0.0175939,0.0470748) (0.0354009,0.00254928) (0.0742986,0.00116637) (0.159507,0.000174658) (0.262042,4.95039e-05)};
+      \addplot[color=jxsemamg, mark=square*, mark options={solid, fill=jxsemamg}, solid, thick, mark size=1.8pt] coordinates {(0.00812317,0.731752) (0.0358768,0.220314) (0.100848,0.0470748) (0.254248,0.00254928) (0.574367,0.00116637) (1.56588,0.000174658) (3.50514,4.95039e-05)};
+      \addplot[color=jxscdirect, mark=triangle*, mark options={solid, fill=jxscdirect}, solid, thick, mark size=1.8pt] coordinates {(0.00669611,0.731752) (0.0143678,0.220314) (0.0261428,0.0470748) (0.0705546,0.00254928) (0.0778576,0.00116637) (0.131578,0.000174658) (0.227487,4.95039e-05)};
+      \addplot[color=jxscamg, mark=diamond*, mark options={solid, fill=jxscamg}, solid, thick, mark size=1.8pt] coordinates {(0.00834252,0.731752) (0.0212965,0.220314) (0.0387745,0.0470748) (0.0669096,0.00254928) (0.111024,0.00116637) (0.181313,0.000174658) (0.287995,4.95039e-05)};
+      \addplot[color=jxps, mark=pentagon*, mark options={solid, fill=jxps}, solid, thick, mark size=1.8pt] coordinates {(0.00172248,0.561648) (0.00359302,0.0462008) (0.0063751,0.0034958) (0.00971423,0.000297471) (0.0166562,3.08363e-05) (0.0195638,3.75822e-06) (0.0293551,5.03773e-07)};
+      \addplot[color=jxfft, mark=o, mark options={solid, fill=white}, solid, thick, mark size=1.8pt] coordinates {(0.000109514,0.561648) (0.000250324,0.0462008) (0.00016137,0.0034958) (0.000362438,0.000297471) (0.000678374,3.08363e-05) (0.000458652,3.75822e-06) (0.000386749,5.03773e-07)};
     \end{axis}
   \end{tikzpicture}
   \\[4pt]
@@ -558,12 +573,12 @@ one Julia thread and two BLAS threads; AlgebraicMultigrid.jl 1.2.0, Krylov.jl 0.
                  xmode=log, ymode=log, grid=major, grid style={gray!20},
                  legend style={font=\scriptsize, cells={anchor=west}},
                  tick label style={font=\scriptsize}, label style={font=\small}]
-      \addplot[color=jxsem, mark=*, mark options={solid, fill=jxsem}, solid, thick, mark size=1.8pt] coordinates {(0.89326,0.00308425) (0.906579,0.000112827) (1.05206,4.03675e-06) (1.06116,1.16178e-07) (1.17362,3.5766e-09) (1.51783,9.60969e-11) (1.70077,2.31554e-11)};
-      \addplot[color=jxsemamg, mark=square*, mark options={solid, fill=jxsemamg}, solid, thick, mark size=1.8pt] coordinates {(0.936353,0.00308425) (0.906486,0.000112827) (1.43695,4.03675e-06) (1.2519,1.16178e-07) (1.66729,3.57609e-09) (2.21813,9.61137e-11) (3.25011,2.35539e-11)};
-      \addplot[color=jxscdirect, mark=triangle*, mark options={solid, fill=jxscdirect}, solid, thick, mark size=1.8pt] coordinates {(0.960308,0.00308425) (0.980151,0.000112827) (0.994247,4.03675e-06) (1.14721,1.16178e-07) (1.36348,3.5766e-09) (1.47073,9.60848e-11) (1.8308,2.31637e-11)};
-      \addplot[color=jxscamg, mark=diamond*, mark options={solid, fill=jxscamg}, solid, thick, mark size=1.8pt] coordinates {(0.938216,0.00308425) (0.906823,0.000112827) (1.01551,4.03675e-06) (1.07275,1.16179e-07) (1.17753,3.57635e-09) (1.42861,9.64954e-11) (1.80963,2.25604e-11)};
-      \addplot[color=jxps, mark=pentagon*, mark options={solid, fill=jxps}, solid, thick, mark size=1.8pt] coordinates {(0.0027098,2.57572e-14) (0.00209049,7.11653e-14) (0.0050531,4.10783e-13) (0.00593146,2.50022e-13) (0.0129318,3.93241e-13) (0.0152174,6.07736e-13) (0.0195408,6.59417e-13)};
-      \addplot[color=jxfft, mark=o, mark options={solid, fill=white}, solid, thick, mark size=1.8pt] coordinates {(0.000179156,2.33147e-15) (0.000432101,2.22045e-15) (0.000307432,2.55351e-15) (0.000622411,2.66454e-15) (0.000660314,2.69229e-15) (0.000877839,3.21965e-15) (0.000815034,2.55351e-15)};
+      \addplot[color=jxsem, mark=*, mark options={solid, fill=jxsem}, solid, thick, mark size=1.8pt] coordinates {(1.32432,0.731752) (1.52859,0.220314) (1.51045,0.0470748) (1.65165,0.00254928) (1.72772,0.00116637) (2.1083,0.000174658) (2.60946,4.95039e-05)};
+      \addplot[color=jxsemamg, mark=square*, mark options={solid, fill=jxsemamg}, solid, thick, mark size=1.8pt] coordinates {(1.37726,0.731752) (1.50794,0.220314) (1.55535,0.0470748) (1.77967,0.00254928) (2.30925,0.00116637) (3.33863,0.000174658) (5.85828,4.95039e-05)};
+      \addplot[color=jxscdirect, mark=triangle*, mark options={solid, fill=jxscdirect}, solid, thick, mark size=1.8pt] coordinates {(1.49708,0.731752) (1.53743,0.220314) (1.50047,0.0470748) (1.71279,0.00254928) (1.64951,0.00116637) (1.97395,0.000174658) (2.31796,4.95039e-05)};
+      \addplot[color=jxscamg, mark=diamond*, mark options={solid, fill=jxscamg}, solid, thick, mark size=1.8pt] coordinates {(1.38723,0.731752) (1.59109,0.220314) (1.57513,0.0470748) (1.54663,0.00254928) (1.80604,0.00116637) (1.9908,0.000174658) (2.59874,4.95039e-05)};
+      \addplot[color=jxps, mark=pentagon*, mark options={solid, fill=jxps}, solid, thick, mark size=1.8pt] coordinates {(0.00185167,0.561648) (0.00382646,0.0462008) (0.00675892,0.0034958) (0.0103786,0.000297471) (0.0182445,3.08363e-05) (0.0207658,3.75822e-06) (0.0308972,5.03773e-07)};
+      \addplot[color=jxfft, mark=o, mark options={solid, fill=white}, solid, thick, mark size=1.8pt] coordinates {(0.000219989,0.561648) (0.000546883,0.0462008) (0.000531499,0.0034958) (0.000988189,0.000297471) (0.00224185,3.08363e-05) (0.0016504,3.75822e-06) (0.00189743,5.03773e-07)};
     \end{axis}
   \end{tikzpicture}
   \hfill
@@ -573,9 +588,9 @@ one Julia thread and two BLAS threads; AlgebraicMultigrid.jl 1.2.0, Krylov.jl 0.
                  xmode=normal, ymode=normal, grid=major, grid style={gray!20},
                  legend style={font=\scriptsize, cells={anchor=west}},
                  tick label style={font=\scriptsize}, label style={font=\small}, ymin=0, legend pos=north west]
-      \addplot[color=jxsemamg, mark=square*, mark options={solid, fill=jxsemamg}, solid, thick, mark size=1.8pt] coordinates {(2,31) (3,48) (4,66) (5,84) (6,103) (7,123) (8,141)};
+      \addplot[color=jxsemamg, mark=square*, mark options={solid, fill=jxsemamg}, solid, thick, mark size=1.8pt] coordinates {(2,31) (3,46) (4,64) (5,82) (6,102) (7,117) (8,138)};
       \addlegendentry{SEM AMG}
-      \addplot[color=jxscamg, mark=diamond*, mark options={solid, fill=jxscamg}, solid, thick, mark size=1.8pt] coordinates {(2,23) (3,27) (4,31) (5,34) (6,37) (7,40) (8,43)};
+      \addplot[color=jxscamg, mark=diamond*, mark options={solid, fill=jxscamg}, solid, thick, mark size=1.8pt] coordinates {(2,23) (3,26) (4,30) (5,33) (6,36) (7,39) (8,41)};
       \addlegendentry{SC AMG}
     \end{axis}
   \end{tikzpicture}
@@ -592,43 +607,46 @@ one Julia thread and two BLAS threads; AlgebraicMultigrid.jl 1.2.0, Krylov.jl 0.
 \begin{enumerate}
   \item \textbf{One discrete solution, four solves.} SEM direct, SEM AMG, SC direct and SC
         AMG return the same solution: the errors of SC direct and SEM direct differ by at
-        most $1.2\times10^{-14}$, those of the AMG solves by amounts consistent with the CG
+        most $4.9\times10^{-13}$, those of the AMG solves by amounts consistent with the CG
         tolerance. The SEM error falls exponentially with the order, from
-        $3.1\times10^{-3}$ at $N=2$ to $2.3\times10^{-11}$ at $N=8$
-        (Table~\ref{tab:sc-accuracy}), where it reaches the round-off floor of the solves.
+        $7.3\times10^{-1}$ at $N=2$ to $5.0\times10^{-5}$ at $N=8$
+        (Table~\ref{tab:sc-accuracy}).
   \item \textbf{Static condensation makes AMG far more effective.} On the full SEM system
-        the CG iterations grow from 31 to 141 between $N=2$ and
+        the CG iterations grow from 31 to 138 between $N=2$ and
         $N=8$: smoothed aggregation, designed for low-order stencils, degrades as the
         element-interior modes of the high-order discretisation are added. On the
-        skeleton system they grow only from 23 to 43
+        skeleton system they grow only from 23 to 41
         (Figure~\ref{fig:sc-time}, bottom right), and each iteration is cheaper because
         the system is 4.3$\times$ smaller. At $N=8$ the SC AMG solve step is
-        24$\times$ faster than AMG on the full system.
+        29$\times$ faster than AMG on the full system.
   \item \textbf{The direct triangular solves are the fastest solve step; condensation makes
         the setup cheap.} A Cholesky back-solve of the $16\,384$-unknown system takes
-        2.11\,ms, 29$\times$ less than the SC AMG solve step
+        5.84\,ms, 19$\times$ less than the SC AMG solve step
         (Table~\ref{tab:sc-solve}). Setup changes the ranking (Table~\ref{tab:sc-cost}): at
-        $N=8$ the solver cost is 180\,ms for SC direct,
-        193\,ms for SC AMG, 204\,ms for SEM direct and
-        1.64\,s for SEM AMG. After static condensation both skeleton
+        $N=8$ the solver cost is 227\,ms for SC direct,
+        288\,ms for SC AMG, 262\,ms for SEM direct and
+        3.51\,s for SEM AMG. After static condensation both skeleton
         solves are as cheap as the direct solve of the full system, while AMG on the full
         system is not competitive. Over this range the Cholesky factorisation of the full
-        system grows as $n^{1.53}$, as expected ($n^{3/2}$) for nested-dissection
+        system grows as $n^{1.56}$, as expected ($n^{3/2}$) for nested-dissection
         orderings in two dimensions.
-  \item \textbf{The SEM infrastructure dominates the time-to-solution} of all four SEM
-        solves: reading the mesh and building the high-order nodes, the metric terms and
-        the matrices takes 0.9--1.6\,s, against at most
-        1.64\,s for any solver cost
-        (Table~\ref{tab:sc-total}). The choice of linear solver changes the
-        time-to-solution by at most a factor of two here.
+  \item \textbf{The SEM infrastructure dominates the time-to-solution} of SEM direct,
+        SC direct and SC AMG: reading the mesh and building the high-order nodes, the
+        metric terms and the matrices takes 1.3--2.4\,s, against at most
+        288\,ms for the cost of these three solvers, so their
+        times-to-solution differ by at most a factor of 1.13
+        (Table~\ref{tab:sc-total}). SEM AMG is the exception: its cost grows to
+        3.51\,s at $N=8$, and its time-to-solution there is
+        2.2$\times$ that of SEM direct.
   \item \textbf{Spectral baselines.} The pseudo-spectral and FFT solvers compute the same
-        Fourier solution (agreement $\approx10^{-13}$) and represent \eqref{eq:sc-exact}
-        exactly, so their error is round-off at every size; this problem favours a global
-        Fourier basis and is not a fair accuracy comparison with the SEM. The
-        pseudo-spectral round-off grows like $\varepsilon N^2$ with the number $N$ of grid
-        points per direction (the eigenvectors of $D^{(2)}$ are computed numerically for a
-        matrix of norm $\approx(N/2)^2$); the FFT's does not. Their time-to-solution at the
-        largest size is 19.5\,ms and 0.82\,ms.
+        Fourier solution: their errors agree to 6 digits. Their error falls
+        geometrically with the grid, from $5.6\times10^{-1}$ on the
+        $32^2$ grid to $5.0\times10^{-7}$ on the $128^2$ grid, consistent with
+        the $r^{N_g/2}$ decay of the Fourier coefficients of \eqref{eq:sc-exact}. At
+        the same number of unknowns it is 98$\times$ smaller than the SEM
+        error at $N=8$. The analytic, periodic solution suits a global Fourier basis,
+        which converges geometrically in $N_g$, while the SEM gains its accuracy element by
+        element. Their time-to-solution at the largest size is 30.9\,ms and 1.9\,ms.
 \end{enumerate}
 
 \paragraph{Implementation notes.} The timings were obtained after two performance
@@ -657,10 +675,9 @@ if any, in which AMG on the SEM system --- full or condensed --- wins.
         like $n$, whereas the Cholesky factorisation grows like $n^{3/2}$ in time and
         $n\log n$ in memory in 2D. \emph{Rough extrapolation, to be verified:} if the AMG
         iteration counts stay constant and the direct cost keeps growing like
-        $n^{1.53}$, the solver costs measured at $n=16\,384$ and $N=8$
-        already put SC AMG level with the full direct solve (Table~\ref{tab:sc-cost}),
-        so it would pull ahead as soon as the mesh is refined, and put the crossover of
-        AMG on the full system near $n\approx 9\times10^{5}$. Both assumptions
+        $n^{1.56}$, the solver costs measured at $n=16\,384$ and $N=8$
+        put the crossover with the full direct solve near $n\approx 2\times10^{4}$ for SC AMG and
+        near $n\approx 2\times10^{6}$ for AMG on the full system. Both assumptions
         must be checked: the iteration counts of aggregation AMG on high-order matrices
         usually grow slowly under refinement, and the factorisation exponent depends on
         the ordering. Report where, and whether, the curves cross.
@@ -671,7 +688,7 @@ if any, in which AMG on the SEM system --- full or condensed --- wins.
         memory, not time, is usually what stops the direct solver first.
   \item \textbf{Match the stopping tolerance to the discretisation error.} A relative
         residual of $10^{-12}$ is far below the discretisation error at low order
-        ($\|e\|_\infty\approx 3.1\times10^{-3}$ at $N=2$). Stop CG when the algebraic
+        ($\|e\|_\infty\approx 7.3\times10^{-1}$ at $N=2$). Stop CG when the algebraic
         error is a fixed fraction (e.g.\ $0.1$) of the discretisation error and report
         iterations and time against $N$; the direct solver cannot exploit this, AMG can.
   \item \textbf{Use a preconditioner designed for high order.} The iteration growth on the

@@ -31,5 +31,5 @@ end
     xip = x[ip]
     yip = y[ip]
     qn[ip,1] = 0.0
-    qe[ip,1] = sin(2xip)*cos(3yip) + sin(xip)*cos(yip)
+    qe[ip,1] = user_fft_exact(xip, yip)
 end

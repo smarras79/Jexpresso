@@ -164,6 +164,13 @@ def pow10(x):
 
 
 x_scamg, x_fullamg = crossover("sc_amg"), crossover("sem_amg")
+ps_fft_digits = int(min(-math.log10(max(abs(get("ps", n, "linf") - get("fft", n, "linf")) / get("fft", n, "linf"), 1e-16)) for n in NOPS))
+sem_over_fft = get("sem", n1, "linf") / get("fft", n1, "linf")
+THREE = ("sem", "sc_direct", "sc_amg")
+cost3_max = max(get(x, n, "cost") for x in THREE for n in NOPS)
+cost3_below = all(get(x, n, "cost") < get(x, n, "sem_setup") for x in THREE for n in NOPS)
+tts3_ratio = max(max(get(x, n, "total") for x in THREE) / min(get(x, n, "total") for x in THREE) for n in NOPS)
+amg_vs_dir = get("sem_amg", n1, "total") / get("sem", n1, "total")
 
 T = []
 w = T.append
@@ -195,12 +202,22 @@ We solve
 \end{equation}
 with the manufactured solution
 \begin{equation}
-  u(x,y)=\sin 2x\,\cos 3y+\sin x\,\cos y,\qquad f=-\nabla^2u=13\sin 2x\,\cos 3y+2\sin x\,\cos y .
+  \begin{gathered}
+  u(x,y)=A\Big(p(x)\,p(y)-\frac{1}{c^2-1}\Big),\qquad p(s)=\frac{1}{c-\cos s},\\
+  f=-\nabla^2u=-A\big(p''(x)\,p(y)+p(x)\,p''(y)\big),
+  \end{gathered}
   \label{eq:sc-exact}
 \end{equation}
-Both $u$ and $f$ have zero mean, so $u$ is the zero-mean solution of
-\eqref{eq:sc-poisson}; every solver returns the zero-mean solution (the constants
-span the null space of the periodic Laplacian).
+where $p''(s)=-\cos s/(c-\cos s)^2+2\sin^2 s/(c-\cos s)^3$, $c=(r+r^{-1})/2$ with
+$r=0.8$, and $A=(c-1)^2(c+1)/2$ scales the peak to $u(0,0)=1$. The periodic Poisson
+kernel $p$ has the Fourier series
+$p(s)=(c^2-1)^{-1/2}\big(1+2\sum_{k\ge1}r^k\cos ks\big)$. The Fourier coefficients of $u$
+therefore decay geometrically, like $r^{|k_x|+|k_y|}$, and $u$ is not band-limited: a
+Fourier method on an $N_g\times N_g$ grid has a grid-dependent error, about
+$r^{N_g/2}$, as does the SEM. Since the mean of $p$ is $(c^2-1)^{-1/2}$, $u$ has zero
+mean, and so does $f$ (the integral of a Laplacian over a period). $u$ is therefore
+the zero-mean solution of \eqref{eq:sc-poisson}, which is the one every solver
+returns (the constants span the null space of the periodic Laplacian).
 
 \paragraph{SEM.} The mesh has $""" + f"{nel}\\times{nel}" + r"""$ quadrilateral elements of polynomial order
 $N=""" + f"{n0},\\dots,{n1}" + r"""$ on the Legendre--Gauss--Lobatto nodes, i.e.\ $n=(""" + f"{nel}" + r"""N)^2$
@@ -467,9 +484,15 @@ On the same grid and right-hand side as the pseudo-spectral solver:
 \begin{enumerate}
   \item \emph{Setup} (\texttt{FFTPoissonSolver}): FFTW plans for the real-to-complex
         transform (\texttt{plan\_rfft}) and the unnormalised inverse
-        (\texttt{plan\_brfft}), with the planner flag \texttt{FFTW.MEASURE}. That is
-        the driver default (\texttt{:fft\_plan => "measure"}): FFTW times candidate
-        algorithms and keeps the fastest. On the half spectrum, $m_x=0,\dots,N_g/2$
+        (\texttt{plan\_brfft}). The benchmark sets \texttt{:fft\_plan => "estimate"},
+        so the planner flag is \texttt{FFTW.ESTIMATE}: FFTW picks the algorithm by
+        heuristics, in milliseconds, and the same one on every run. The driver
+        default, \texttt{FFTW.MEASURE}, times candidate algorithms instead. That
+        planning takes 0.5--0.9\,s on grids of $512^2$--$1024^2$ and makes the
+        transform pair about 1.2--1.7 times faster, so it pays off only when a plan
+        is reused over many solves. FFTW also keeps a MEASURE plan for the rest of
+        the Julia session, which would make the planning cost depend on what ran
+        before. On the half spectrum, $m_x=0,\dots,N_g/2$
         and $m_y\in(-N_g/2,N_g/2]$, the code stores
         $\Lambda^{-1}=1/\big(\lambda\,N_g^2\big)$ with
         $\lambda=(2\pi m_x/L_x)^2+(2\pi m_y/L_y)^2$, and $0$ for $m_x=m_y=0$.
@@ -645,9 +668,8 @@ w(r"""\begin{figure}[htbp]
 """ + axis("unknowns $n$", ylab, "log", "log", "dofs", "linf", SOLVERS) + r"""
   \\[2pt]\ref{scleg}
   \caption{Error against the exact solution versus order (left) and number of unknowns
-           (right). The four SEM curves coincide (the same discrete solution); the Fourier
-           solvers are at round-off because \eqref{eq:sc-exact} is a trigonometric
-           polynomial.}
+           (right). The four SEM curves coincide (the same discrete solution), and so do the
+           pseudo-spectral and FFT curves.}
   \label{fig:sc-error}
 \end{figure}
 
@@ -680,7 +702,7 @@ w(r"""\paragraph{Findings.}
         most """ + sci(err_diff_sc) + r""", those of the AMG solves by amounts consistent with the CG
         tolerance. The SEM error falls exponentially with the order, from
         """ + sci(get("sem", n0, "linf")) + r""" at $N=""" + f"{n0}" + r"""$ to """ + sci(get("sem", n1, "linf")) + r""" at $N=""" + f"{n1}" + r"""$
-        (Table~\ref{tab:sc-accuracy}), where it reaches the round-off floor of the solves.
+        (Table~\ref{tab:sc-accuracy}).
   \item \textbf{Static condensation makes AMG far more effective.} On the full SEM system
         the CG iterations grow from """ + f"{it_full[0]}" + r""" to """ + f"{it_full[-1]}" + r""" between $N=""" + f"{n0}" + r"""$ and
         $N=""" + f"{n1}" + r"""$: smoothed aggregation, designed for low-order stencils, degrades as the
@@ -700,20 +722,23 @@ w(r"""\paragraph{Findings.}
         system is not competitive. Over this range the Cholesky factorisation of the full
         system grows as $n^{""" + f"{fac_exp:.2f}" + r"""}$, as expected ($n^{3/2}$) for nested-dissection
         orderings in two dimensions.
-  \item \textbf{The SEM infrastructure dominates the time-to-solution} of all four SEM
-        solves: reading the mesh and building the high-order nodes, the metric terms and
-        the matrices takes """ + f"{min(infra):.1f}" + r"""--""" + f"{max(infra):.1f}" + r"""\,s, against at most
-        """ + tt(max(get(s, n, "cost") for s in SOLVERS[:4] for n in NOPS)) + r""" for any solver cost
-        (Table~\ref{tab:sc-total}). The choice of linear solver changes the
-        time-to-solution by at most a factor of two here.
+  \item \textbf{The SEM infrastructure dominates the time-to-solution} of SEM direct,
+        SC direct and SC AMG: reading the mesh and building the high-order nodes, the
+        metric terms and the matrices takes """ + f"{min(infra):.1f}" + r"""--""" + f"{max(infra):.1f}" + r"""\,s, against at most
+        """ + tt(cost3_max) + r""" for the cost of these three solvers""" + ("" if cost3_below else r""" (it exceeds the infrastructure at some orders)""") + r""", so their
+        times-to-solution differ by at most a factor of """ + f"{tts3_ratio:.2f}" + r"""
+        (Table~\ref{tab:sc-total}). SEM AMG is the exception: its cost grows to
+        """ + tt(get("sem_amg", n1, "cost")) + r""" at $N=""" + f"{n1}" + r"""$, and its time-to-solution there is
+        """ + f"{amg_vs_dir:.1f}" + r"""$\times$ that of SEM direct.
   \item \textbf{Spectral baselines.} The pseudo-spectral and FFT solvers compute the same
-        Fourier solution (agreement $\approx10^{-13}$) and represent \eqref{eq:sc-exact}
-        exactly, so their error is round-off at every size; this problem favours a global
-        Fourier basis and is not a fair accuracy comparison with the SEM. The
-        pseudo-spectral round-off grows like $\varepsilon N^2$ with the number $N$ of grid
-        points per direction (the eigenvectors of $D^{(2)}$ are computed numerically for a
-        matrix of norm $\approx(N/2)^2$); the FFT's does not. Their time-to-solution at the
-        largest size is """ + tt(get("ps", n1, "total")) + r""" and """ + tt(get("fft", n1, "total")) + r""".
+        Fourier solution: their errors agree to """ + f"{ps_fft_digits}" + r""" digits. Their error falls
+        geometrically with the grid, from """ + sci(get("fft", n0, "linf")) + r""" on the
+        $""" + f"{nel*n0}^2" + r"""$ grid to """ + sci(get("fft", n1, "linf")) + r""" on the $""" + f"{nel*n1}^2" + r"""$ grid, consistent with
+        the $r^{N_g/2}$ decay of the Fourier coefficients of \eqref{eq:sc-exact}. At
+        the same number of unknowns it is """ + f"{sem_over_fft:.0f}" + r"""$\times$ smaller than the SEM
+        error at $N=""" + f"{n1}" + r"""$. The analytic, periodic solution suits a global Fourier basis,
+        which converges geometrically in $N_g$, while the SEM gains its accuracy element by
+        element. Their time-to-solution at the largest size is """ + tt(get("ps", n1, "total")) + r""" and """ + tt(get("fft", n1, "total")) + r""".
 \end{enumerate}
 
 \paragraph{Implementation notes.} The timings were obtained after two performance
