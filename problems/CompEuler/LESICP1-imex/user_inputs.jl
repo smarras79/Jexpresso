@@ -3,11 +3,17 @@
 
  Section 2.1 of the setup document, sounding input_sounding_teamx_u00_flat.
 
- THE DECK IS NOW LESICP2-64x64x60-imex WITH THE u00 SOUNDING, and nothing
- else: same 64x64x60 mesh, same "two_block uniformish" stretch, same
- Smagorinsky with the :lwall_damping floor, same erf filter at 0.15, same
- IMEX/ARS343 with the scalar Schur stage solve at dt 0.2, same 9000-10800 s
- statistics window. The two cases differ only in the mean wind.
+ THE DECK IS LESICP2-64x64x60-imex WITH THE u00 SOUNDING: same 64x64x60
+ mesh, same "two_block uniformish" stretch, same theta diffusion x2.1
+ (Pr_t = 1/3 equivalent), same erf filter at 0.05, same IMEX/ARS343 with the
+ scalar Schur stage solve at dt 0.2, same 9000-10800 s statistics window.
+
+ ONE CLOSURE DIFFERENCE: :lwall_damping is OFF here and on in u10. The
+ Mason-Thomson l -> kappa*z limit is a shear-driven log-layer result; with
+ U = 0 there is no log layer, and the damped wall node (l ~ 1.4 m) cannot
+ shed the surface flux. 16x16x60 probe, 1200 s: with damping the wall node
+ runs up to 30 K colder than the node above it; without, +-1.7 K throughout,
+ vertical viscous CFL 0.15 at dt 0.2 (jobs 1351368/1351369).
 
  WHAT IT USED TO BE, and why none of it survived:
    * mesh LESICP_128x128x125_10kmX10kmX5km.msh -- does not exist in the repo
@@ -357,10 +363,13 @@ function user_inputs()
         # monotone, so that node contributes ~0 to the rate budget instead of
         # roughly 30% of it. See sgs_mixing_length2 in kernel/physics/SGS.jl and
         # test/sgs/test_wall_damping.jl.
-        # DBG_WALLDAMP=false drops the Mason-Thomson limit (free-convection probe).
-        :lwall_damping        => parse(Bool, get(ENV, "DBG_WALLDAMP", "true")),
-        # DBG_VISC_TH scales the theta diffusion (spin-up probe).
-        :μ                    => [0.0, 1.0, 1.0, 1.0, parse(Float64, get(ENV, "DBG_VISC_TH", "1.0"))],
+        # OFF for free convection, see the header. The note above describes the
+        # damped path, which u10 uses. DBG_WALLDAMP=true restores it.
+        :lwall_damping        => parse(Bool, get(ENV, "DBG_WALLDAMP", "false")),
+        # theta diffusion x2.1: kappa_t = 3 nu_t with Pr_t = 0.7, i.e. Pr_t = 1/3,
+        # the convective-BL standard. At 1.0 this case dies at t ~ 385 s (job
+        # 1324103). Same value as u10. DBG_VISC_TH overrides.
+        :μ                    => [0.0, 1.0, 1.0, 1.0, parse(Float64, get(ENV, "DBG_VISC_TH", "2.1"))],
         :les_filter_width     => :geometric,
         #---------------------------------------------------------------------------
         # MOST GUARD RAILS. Stated explicitly here rather than left to the
@@ -521,7 +530,9 @@ function user_inputs()
         # do not "restore" it. DBG_FILTER=1 turns it on for a one-off A/B.
         #---------------------------------------------------------------------------
         :lfilter             => true, #parse(Bool, get(ENV, "DBG_FILTER", "false")),
-        # 0.15, the same as the u10 case. 0.05 was tried on the reasoning that
+        # 0.05, the same as the u10 case. With mu_theta 2.1 and no wall damping
+        # the 16x16x60 probe is indistinguishable at 0.05 and 0.15 (jobs
+        # 1351368/1351369). HISTORY, at mu_theta 1 with damping: 0.05 was tried on the reasoning that
         # the u10 value exists to hold down a SHEAR instability -- MOST drag on
         # a 10 m/s wind builds a wall shear layer that rolls up -- and that with
         # U = 0 there is no shear layer. That reasoning was wrong: job 1323888
@@ -531,8 +542,8 @@ function user_inputs()
         # plumes grow from the smallest scales the grid has, and at 160 m
         # elements those are not resolved either. The filter's job here is
         # de-aliasing, which does not care whether there is a mean wind.
-        :mu_x                => parse(Float64, get(ENV, "DBG_MU", "0.15")),
-        :mu_y                => parse(Float64, get(ENV, "DBG_MU", "0.15")),
+        :mu_x                => parse(Float64, get(ENV, "DBG_MU", "0.05")),
+        :mu_y                => parse(Float64, get(ENV, "DBG_MU", "0.05")),
 	:mu_z                => parse(Float64, get(ENV, "DBG_MUZ", "0.1")),
         :filter_type         => "erf",
         #---------------------------------------------------------------------------
