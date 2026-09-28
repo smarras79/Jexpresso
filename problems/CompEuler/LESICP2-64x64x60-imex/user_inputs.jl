@@ -326,7 +326,13 @@ function user_inputs()
         # roughly 30% of it. See sgs_mixing_length2 in kernel/physics/SGS.jl and
         # test/sgs/test_wall_damping.jl.
         :lwall_damping        => true,
-        :μ                    => [0.0, 1.0, 1.0, 1.0, 1.0],
+        # theta diffusion x2.1: with Pr_t = 0.7 that is kappa_t = 3 nu_t, i.e.
+        # Pr_t = 1/3, the standard convective-BL value (Deardorff 1980; WRF,
+        # PALM, CM1). At 1.0 (kappa_t = 1.43 nu_t) the u00 wall node cannot shed
+        # the surface flux and the run dies at t ~ 385 s; here it only makes the
+        # wall layer cleaner (16x16x60 probe: wall-node2 theta +-1.5 K vs +-5 K).
+        # The Richardson cutoff stays at Ri = Pr_t = 0.7. DBG_VISC_TH overrides.
+        :μ                    => [0.0, 1.0, 1.0, 1.0, parse(Float64, get(ENV, "DBG_VISC_TH", "2.1"))],
         :les_filter_width     => :geometric,
         #---------------------------------------------------------------------------
         # MOST GUARD RAILS. Stated explicitly here rather than left to the
@@ -485,14 +491,13 @@ function user_inputs()
         # do not "restore" it. DBG_FILTER=1 turns it on for a one-off A/B.
         #---------------------------------------------------------------------------
         :lfilter             => true, #parse(Bool, get(ENV, "DBG_FILTER", "false")),
-        # 0.15, not 0.05: at 160 m elements the initial wall shear layer rolls
-        # up from t ~ 450 s and cannot break into 3D turbulence; at 0.05 it
-        # grew to 18 m/s by 700 s and the run died (job 1295872). The 16x16x60
-        # probe at this resolution saturates at 13 m/s and recovers with 0.15;
-        # larger initial perturbations or a log-law initial wind do not save
-        # it. The 30x30 deck at 80 m elements runs at 0.05. DBG_MU overrides.
-        :mu_x                => parse(Float64, get(ENV, "DBG_MU", "0.15")),
-        :mu_y                => parse(Float64, get(ENV, "DBG_MU", "0.15")),
+        # 0.05. The 0.15 that used to be here (job 1295872 died at 0.05) was
+        # needed by the OLD configuration: dt 0.5, five-field GMRES, biased
+        # perturbation. With dt 0.2, Schur and the zero-mean perturbation the
+        # 16x16x60 probe runs 1800 s at 0.05 with mu_theta = 1 (peak 14.9 m/s)
+        # and with 2.1 (peak 13.1 m/s), jobs 1324891/1324892. DBG_MU overrides.
+        :mu_x                => parse(Float64, get(ENV, "DBG_MU", "0.05")),
+        :mu_y                => parse(Float64, get(ENV, "DBG_MU", "0.05")),
 	:mu_z                => 0.1,
         :filter_type         => "erf",
         #---------------------------------------------------------------------------
