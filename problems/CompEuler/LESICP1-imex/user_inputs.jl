@@ -357,7 +357,8 @@ function user_inputs()
         # monotone, so that node contributes ~0 to the rate budget instead of
         # roughly 30% of it. See sgs_mixing_length2 in kernel/physics/SGS.jl and
         # test/sgs/test_wall_damping.jl.
-        :lwall_damping        => true,
+        # DBG_WALLDAMP=false drops the Mason-Thomson limit (free-convection probe).
+        :lwall_damping        => parse(Bool, get(ENV, "DBG_WALLDAMP", "true")),
         # DBG_VISC_TH scales the theta diffusion (spin-up probe).
         :μ                    => [0.0, 1.0, 1.0, 1.0, parse(Float64, get(ENV, "DBG_VISC_TH", "1.0"))],
         :les_filter_width     => :geometric,
