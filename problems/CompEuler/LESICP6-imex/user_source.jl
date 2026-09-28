@@ -79,8 +79,11 @@ function user_source!(S,
         S[3] -= f * u_vel
 
         if lgeostrophic == true
-            U_geo = qe[2]/qe[1] #10.0
-            V_geo = qe[3]/qe[1] #0.0
+            # Protocol section 1.7: u_geo, v_geo are the FREE-ATMOSPHERE wind of
+            # this case (u10_ridge1000), a constant -- not the local sounding
+            # wind, which is 0 below 1000 m in u10_ridge1000.
+            U_geo = 10.0
+            V_geo = 0.0
             S[2] -= q[1] * f * V_geo
             S[3] += q[1] * f * U_geo
         end
