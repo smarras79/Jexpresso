@@ -785,7 +785,13 @@ function _je_prefetch_geometry!(inputs, local_comm::MPI.Comm,
     # or none.
     _je_all_ranks(already, local_comm) && return
 
-    have_inputs = (flds !== nothing) && (JEXPRESSO_COUPLING_DATA[] !== nothing)
+    # The cache holds the grid as mod_mesh_read_gmsh! built it, BEFORE sem_setup
+    # applies :xscale/:xdisp/:yscale/:ydisp. Locating Alya's points on it would
+    # then use the wrong geometry, so a deck that rescales does not prefetch.
+    rescaled = get(inputs, :xscale, 1.0) != 1.0 || get(inputs, :xdisp, 0.0) != 0.0 ||
+               get(inputs, :yscale, 1.0) != 1.0 || get(inputs, :ydisp, 0.0) != 0.0
+
+    have_inputs = (flds !== nothing) && (JEXPRESSO_COUPLING_DATA[] !== nothing) && !rescaled
     if !_je_all_ranks(!already && have_inputs, local_comm)
         JEXPRESSO_PREFETCHED_ALYA_COORDS[] = nothing
         if rank == 0
@@ -803,13 +809,24 @@ function _je_prefetch_geometry!(inputs, local_comm::MPI.Comm,
         nsd_val = haskey(flds, "__SD_nsd__") ? Int(flds["__SD_nsd__"]) :
                                                Int(get(inputs, :nsd, 2))
 
+        # extract_local_alya_coordinates reads the nodes from `coords` (3 × npoin),
+        # as on the live mesh. The CACHED `coords` cannot be used: the cache is
+        # written by mod_mesh_read_gmsh! before mod_mesh_mesh_driver fills
+        # `coords` from x/y/z, so it holds zeros. Rebuild it from the cached
+        # x/y/z the same way mod_mesh_mesh_driver does.
+        npoin_c  = haskey(flds, "npoin") ? Int(flds["npoin"]) :
+                                           length(get(flds, "x", Float64[]))
+        coords_c = zeros(Float64, 3, npoin_c)
+        for (d, key) in enumerate(("x", "y", "z"))
+            v = get(flds, key, Float64[])
+            length(v) >= npoin_c && (coords_c[d, :] .= @view(v[1:npoin_c]))
+        end
+
         # Use a NamedTuple instead of St_mesh{...} — extract_local_alya_coordinates
-        # only accesses x/y/z/nelem/ngl/connijk/nsd via duck typing.  A NamedTuple
+        # only accesses coords/nelem/ngl/connijk/nsd via duck typing.  A NamedTuple
         # avoids the expensive @kwdef constructor JIT of a 150+-field struct.
         mesh_tmp = (
-            x       = Vector{Float64}(haskey(flds,"x")       ? flds["x"]       : Float64[]),
-            y       = Vector{Float64}(haskey(flds,"y")       ? flds["y"]       : Float64[]),
-            z       = Vector{Float64}(haskey(flds,"z")       ? flds["z"]       : Float64[]),
+            coords  = coords_c,
             nelem   = haskey(flds,"nelem")   ? Int(flds["nelem"])   : 0,
             ngl     = haskey(flds,"ngl")     ? Int(flds["ngl"])     : 0,
             connijk = haskey(flds,"connijk") ? flds["connijk"]      : Array{Int64}(undef,0,0,0,0),
@@ -2478,15 +2495,18 @@ function setup_coupling_callback(is_coupled, params, inputs)
     _y_e         = cpg.y_e_scratch::Vector{Float64}
     _alya_coords = cpg.alya_local_coords::Matrix{Float64}
     _owner_ranks = cpg.alya_owner_ranks::Vector{Int32}
-    _mesh_x      = @view(mesh.coords[1,:])::Vector{Float64}
-    _mesh_y      = @view(mesh.coords[2,:])::Vector{Float64}
+    # Plain Vector{Float64} copies, taken once like the element geometry in
+    # cpg: the exchange kernels are typed on Vector{Float64}, and a row of the
+    # (3, npoin) coords matrix is a SubArray.
+    _mesh_x      = Vector{Float64}(mesh.coords[1,:])
+    _mesh_y      = Vector{Float64}(mesh.coords[2,:])
 
     if cpg.ndime == 3
         _elem_z      = cpg.elem_z::Matrix{Float64}
         _ψζ          = cpg.ψζ_scratch::Vector{Float64}
         _dψζ         = cpg.dψζ_scratch::Vector{Float64}
         _z_e         = cpg.z_e_scratch::Vector{Float64}
-        _mesh_z      = @view(mesh.coords[3,:])::Vector{Float64}
+        _mesh_z      = Vector{Float64}(mesh.coords[3,:])
         _elem_bboxes3 = cpg.elem_bboxes::Vector{NTuple{6,Float64}}
         _bins3        = cpg.interp_bins::ElemBins3D
 
