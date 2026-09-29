@@ -280,8 +280,13 @@ function _cache_fingerprint(inputs, nparts::Int)
             v = inputs[k]
             # Stringify non-trivial values so JLD2 round-trips cleanly and
             # equality stays meaningful across Julia / package versions.
+            # Printed as seen from inside this module: plain `string(v)`
+            # qualifies a Jexpresso type by where the module was loaded —
+            # `Main.Jexpresso.ContGal()` from the script src/Jexpresso.jl,
+            # `Jexpresso.ContGal()` after `using Jexpresso` — so switching
+            # between the two ways of launching threw every cache away.
             fp[string(k)] = (v isa Number || v isa AbstractString || v isa Bool) ?
-                            v : string(v)
+                            v : sprint(print, v; context = :module => @__MODULE__)
         end
     end
     if haskey(inputs, :gmsh_filename)
@@ -693,8 +698,8 @@ function je_prefetch_caches!(inputs, nparts::Int,
         # shape changes that would otherwise crash JLD2.load() before
         # the fingerprint mismatch could even be checked.  Auto-deletes
         # the stale / mismatched / unopenable file inside the helper.
-        valid_mesh, _ = _check_cache_validity(mesh_path, inputs, nparts;
-                                              gmsh_path=gmsh_path)
+        valid_mesh, why_mesh = _check_cache_validity(mesh_path, inputs, nparts;
+                                                     gmsh_path=gmsh_path)
         if valid_mesh
             rank == 0 && (print("[prefetch] mesh cache … "); flush(stdout))
             t0 = time_ns()
@@ -714,8 +719,9 @@ function je_prefetch_caches!(inputs, nparts::Int,
                 try; isfile(mesh_path) && rm(mesh_path; force=true); catch _; end
             end
             flush(stdout)
-        elseif isfile(mesh_path) || isfile(_mesh_cache_path(inputs, nparts))
-            # _check_cache_validity already deleted the bad file.
+        elseif why_mesh === :mismatch
+            # _check_cache_validity has already deleted the file, so ask it
+            # what it found rather than looking for the file.
             rank == 0 && println("[prefetch] mesh cache … incompatible / stale (will rebuild)")
         end
     end
@@ -728,8 +734,8 @@ function je_prefetch_caches!(inputs, nparts::Int,
         # Same fingerprint-only pre-check as the mesh path. Avoids the
         # AssemblerCache/St_metrics reconstruct failure that previously
         # forced a manual clean_cache.sh.
-        valid_sem, _ = _check_cache_validity(sem_path, inputs, nparts;
-                                             gmsh_path=gmsh_path)
+        valid_sem, why_sem = _check_cache_validity(sem_path, inputs, nparts;
+                                                   gmsh_path=gmsh_path)
         if valid_sem
             rank == 0 && (print("[prefetch] SEM cache  … "); flush(stdout))
             t0 = time_ns()
@@ -756,7 +762,7 @@ function je_prefetch_caches!(inputs, nparts::Int,
                 try; isfile(sem_path) && rm(sem_path; force=true); catch _; end
             end
             flush(stdout)
-        elseif isfile(sem_path) || isfile(_preprocess_cache_path(inputs, Nξ, Qξ, nparts))
+        elseif why_sem === :mismatch
             rank == 0 && println("[prefetch] SEM cache  … incompatible / stale (will rebuild)")
         end
     end
