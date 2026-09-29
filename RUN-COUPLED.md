@@ -403,7 +403,16 @@ Julia ranks, separated by `:`, so they share `MPI_COMM_WORLD`. Use the launcher
 that belongs to the MPI both codes were built against.
 
 The `JEXPRESSO_COUPLED=1` environment variable tells Jexpresso it is running
-coupled. The example case is `CompEuler thetaAlya` (2D) or `CompEuler 3dAlya` (3D).
+coupled. The example case is `CompEuler 3dAlya` (3D), which matches the proxy as
+shipped: same domain (`hexa_TFI_10x1x10.msh` spans exactly the proxy's
+`rem_min`/`rem_max`) and the same 2000 steps.
+
+`CompEuler thetaAlya` (2D) needs a 2D proxy first. In
+`AlyaProxy/alya_all2all_time_loop.f90` set `ndime = 2`,
+`rem_min = [-5000.0, 0.0, 0.0]`, `rem_max = [5000.0, 10000.0, 0.0]` and
+`rem_nx = [10, 10, 1]` (the domain of its `hexa_TFI_10x10.msh`), then rebuild
+`Alya.x`. Against the 3D proxy Jexpresso stops at setup with `nfields mismatch`:
+it sends two velocity components and the proxy expects `ndime = 3`.
 
 > **Export it, don't pass it with `-x` after the `:`.** Not every launcher
 > honours `-x VAR=value` inside a *secondary* MPMD app context. When it is
@@ -419,16 +428,16 @@ coupled. The example case is `CompEuler thetaAlya` (2D) or `CompEuler 3dAlya` (3
 ```bash
 export JEXPRESSO_COUPLED=1
 
-# 2D: 2 Alya ranks + 2 Jexpresso ranks
+# 3D: 2 Alya ranks + 2 Jexpresso ranks
 mpirun -np 2 ./AlyaProxy/Alya.x : -np 2 \
-    julia --project=. ./src/Jexpresso.jl CompEuler thetaAlya
+    julia --project=. ./src/Jexpresso.jl CompEuler 3dAlya
 ```
 
 ```bash
-# 3D
+# 2D (only with the 2D proxy described above)
 export JEXPRESSO_COUPLED=1
 mpirun -np 2 ./AlyaProxy/Alya.x : -np 2 \
-    julia --project=. ./src/Jexpresso.jl CompEuler 3dAlya
+    julia --project=. ./src/Jexpresso.jl CompEuler thetaAlya
 ```
 
 > **`prterun` error (OpenMPI 5)?** OpenMPI's launcher sometimes cannot resolve
@@ -467,7 +476,8 @@ REBUILD_SYSIMAGE=1 ./run_coupled.sh   # force sysimage rebuild first
 ```
 
 It also passes `--startup-file=no` and per-rank output tagging (`-prepend-rank`
-on MPICH, `--output tag` on OpenMPI; disable with `TAG_OUTPUT=0`). Without
+on MPICH, `--output tag` on OpenMPI 5, `--tag-output` on OpenMPI 4; disable
+with `TAG_OUTPUT=0`). Without
 tagging, a parallel run's stdout is block-buffered and interleaved, which is
 the main reason a working run can look like a hang.
 
@@ -483,6 +493,18 @@ is empty and finishes in about a second. Coupled, the wall-clock time is
 Jexpresso's: a full SEM right-hand side plus one coupling exchange **per
 timestep**, for `(tend - tinit) / Δt` steps — 2000 of them with the `3dAlya`
 defaults.
+
+Alya receives exactly its own number of steps, and nothing in the protocol
+checks that the two agree
+([COUPLING-ALGORITHM.md §4.3](COUPLING-ALGORITHM.md#43-the-step-contract)).
+Check it in the log. Alya prints `Steps: 2000` at startup, and Jexpresso prints
+this at the end of its solve:
+
+```
+ # Coupling: 2000 exchanges sent to Alya
+```
+
+The two numbers must be equal.
 
 **Telling "slow" from "deadlocked".** The `t=` lines only appear at
 `:diagnostics_at_times`, which for `3dAlya` is every 100 time units — 200
@@ -504,11 +526,14 @@ Alya grid point. Locating those points — bin lookup, bounding-box test, Newton
 solve for the reference coordinates — depends only on the two geometries, so on
 a static mesh Jexpresso now does it **once** and reuses the result, leaving one
 dot product per point per equation each step. You will see this line on the
-first exchange:
+first exchange, with totals over all Jexpresso ranks:
 
 ```
 [coupling] interpolation cache built: 1000/1000 points located in elements ...
 ```
+
+The two numbers should be equal. A point that is not located takes the value of
+its nearest mesh node instead of the interpolant.
 
 The cache is disabled automatically when the mesh can change under it
 (`:ladapt` or `:lamr`), and can be turned off with
@@ -517,8 +542,13 @@ The cache is disabled automatically when the mesh can change under it
 If it is still slower than you want, the exchange frequency is the next lever —
 but note that it currently happens on **every** step regardless of the
 `:Δt_couple` entry in the example `user_inputs.jl`, which nothing reads yet.
-Until that is implemented, use a larger `:Δt` or a shorter `:tend` while
-experimenting.
+
+For a shorter run while experimenting, change the number of steps on **both**
+sides: `:Δt`/`:tend` in the case's `user_inputs.jl` **and** `dt`/`tend` in
+`AlyaProxy/alya_all2all_time_loop.f90`, then rebuild `Alya.x`. Changing only
+Jexpresso's side breaks the one-exchange-per-Alya-step contract: with fewer
+steps Alya waits forever for the rest, and with more the extra messages have no
+receive.
 
 ---
 
@@ -613,6 +643,11 @@ only when coupled.
   `JEXPRESSO_COUPLED` did not reach the Julia ranks, so Jexpresso is running
   standalone on a `COMM_WORLD` that contains Alya. `export` it (Section 6)
   rather than passing `-x` after the `:`.
+- **Jexpresso finishes its solve but the job never exits**, and Alya never
+  prints `Alya: time loop complete`. The two time loops disagree on the number
+  of steps: compare `# Coupling: N exchanges sent to Alya` with Alya's
+  `Steps:` line, and make `:Δt`/`:tend` match the proxy's `dt`/`tend`
+  (Section 6, "What a coupled run actually costs").
 - **`prterun` / launcher cannot find Julia.** Use the explicit `$JULIA_BIN`
   form shown in Section 6.
 - **Stale or conflicting MPI binding on the Julia side.** Remove the recorded

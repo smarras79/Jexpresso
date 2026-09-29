@@ -1,16 +1,31 @@
-
 # Coupling Algorithm: Jexpresso -- Alya
 
-This document describes the coupling algorithm between Jexpresso (Julia SEM solver) and Alya (Fortran CFD code), from the initial handshake through the time-loop exchange of interpolated fields. It focuses exclusively on the coupling logic and the data that flows between the two codes.
+This document describes the protocol between Jexpresso (Julia SEM solver) and
+Alya (Fortran CFD code), as implemented by the Alya proxy in
+[`AlyaProxy/alya_all2all_time_loop.f90`](AlyaProxy/alya_all2all_time_loop.f90)
+(built as `AlyaProxy/Alya.x`) and by Jexpresso in
+[`src/kernel/coupling/couplingStructs.jl`](src/kernel/coupling/couplingStructs.jl).
+It covers only the coupling logic and the data that flows between the two
+codes. For how to build and launch a coupled run, see
+[RUN-COUPLED.md](RUN-COUPLED.md).
+
+In one sentence: at every time step Jexpresso interpolates its velocity onto
+Alya's structured grid and sends each Alya rank the values at the points that
+rank owns. Data flows one way, Jexpresso → Alya; Alya sends nothing back.
+
+References below name functions rather than line numbers. Unless another file
+is given, Julia functions are in `couplingStructs.jl`.
 
 ---
 
-## 1. Handshake
+## 1. Launch and handshake
 
-Both codes are launched as a single MPMD MPI job sharing one `MPI_COMM_WORLD`:
+Both codes are launched as a single MPMD MPI job sharing one `MPI_COMM_WORLD`,
+**Alya first**:
 
-```
-mpirun -np 2 ./AlyaProxy/Alya.x : -x JEXPRESSO_COUPLED=1 -np 2 julia --project=. ./src/Jexpresso.jl CompEuler thetaAlya
+```bash
+export JEXPRESSO_COUPLED=1
+mpirun -np 2 ./AlyaProxy/Alya.x : -np 2 julia --project=. ./src/Jexpresso.jl CompEuler 3dAlya
 ```
 
 > **Prerequisite — one MPI for both codes.** Because Alya (Fortran) and
@@ -22,411 +37,243 @@ mpirun -np 2 ./AlyaProxy/Alya.x : -x JEXPRESSO_COUPLED=1 -np 2 julia --project=.
 > **reconcile them if they differ** (rebind MPI.jl or recompile Alya), and verify
 > the match before launching.
 
-Alya ranks occupy world ranks `0 .. N_alya-1`; Jexpresso occupies `N_alya .. N_alya+N_jexpresso-1`.
+Alya ranks occupy world ranks `0 .. NA-1` and Jexpresso ranks
+`NA .. NA+NJ-1`. Two facts follow from that layout, and both codes rely on them:
+
+- **Alya's world rank 0 is the root** of every setup broadcast and of the name
+  gather. Put Alya first on the `mpirun` line.
+- **Alya's rank 0 is a master that owns no grid points.** The grid is split over
+  its ranks `1 .. NA-1`, so `NA ≥ 2`. With one Alya rank no point has an owner;
+  Jexpresso stops with an error rather than run uncoupled
+  (`extract_local_alya_coordinates`).
+
+`JEXPRESSO_COUPLED=1` is what makes Jexpresso split its communicator
+(`src/run.jl`). Without it Jexpresso runs standalone on the whole world,
+Alya's ranks included, and deadlocks in its first collective. Export it for the
+whole job; `-x` after the `:` is not honoured by every launcher.
 
 ### 1.1 Communicator split
 
-Each code calls `MPI_Comm_split` with its own color to create a local communicator:
+Each code splits `MPI_COMM_WORLD` by its own color:
 
-- **Alya:** `MPI_Comm_split(MPI_COMM_WORLD, 1, rank, PAR_COMM_FINAL)` -- `alya_all2all_time_loop.f90:78`
-- **Jexpresso:** `MPI.Comm_split(world, appid, wrank)` -- `Jexpresso-mini-coupled.jl:31`
+- **Alya:** `MPI_Comm_split(MPI_COMM_WORLD, 1, rank, PAR_COMM_FINAL)`
+- **Jexpresso:** `MPI.Comm_split(world, APPID, wrank)` in
+  `je_init_mpi_and_split_comm`, with `APPID` from the environment (default 2).
 
-### 1.2 Application name exchange
+Jexpresso then knows it is coupled because its communicator is smaller than the
+world (`lsize < wsize`). From here on, every Jexpresso-internal collective must
+use that local communicator, `get_mpi_comm()`; only the operations in this
+document use the world (§7).
 
-Every rank sends a 128-character application name to world rank 0 via `MPI_Gather`:
+### 1.2 Application names
 
-```
-rank -> "ALYA      ..."   (128 bytes)     alya_all2all_time_loop.f90:85-87
-rank -> "JEXPRESSO ..."   (128 bytes)     Jexpresso-mini-coupled.jl:42
-```
-
-This confirms how many ranks belong to each code.
-
-### 1.3 Coupling detection
-
-In `drivers.jl:20`, Jexpresso calls `je_perform_coupling_handshake(world, lsize)` (`couplingStructs.jl:826-845`). The logic is simple: if `wsize > nparts` (more world ranks than Jexpresso ranks), coupling is active.
-
-**Code path:** `drivers.jl:20` -> `couplingStructs.jl:826`
+Every rank sends a 128-character name to world rank 0 with `MPI_Gather`:
+`"ALYA"` from Alya, `"JEXPRESSO"` from `je_perform_coupling_handshake`. Alya's
+rank 0 prints them under `=== Coupling labels (world size= N ) ===`.
 
 ---
 
-## 2. Receiving Alya's Grid Metadata
+## 2. Setup: what is exchanged, in order
 
-Once the handshake confirms coupled mode, the driver calls `setup_coupling_and_mesh()` (`drivers.jl:25`), which immediately calls `je_receive_alya_data(world, lsize)` (`couplingStructs.jl:847`).
+Every row is an operation that **both** codes perform, in exactly this order.
+One side skipping or reordering a row deadlocks the job.
 
-Alya rank 0 broadcasts the following scalars to all ranks in `MPI_COMM_WORLD`, using `MPI_Bcast`. The broadcasts must happen in exactly this order on both sides:
-
-| # | Quantity | Fortran source | Julia receiver | Type |
+| # | Operation on `MPI_COMM_WORLD` | Alya (Fortran) | Jexpresso (Julia) | Payload |
 |---|---|---|---|---|
-| 1 | `ndime` | `alya_all2all_time_loop.f90:124` | `couplingStructs.jl:857-859` | `Int32` |
-| 2 | `rem_min(1), rem_max(1), rem_nx(1)` | `:127-129` (idime=1) | `:865-869` | `Float32, Float32, Int32` |
-| 3 | `rem_min(2), rem_max(2), rem_nx(2)` | `:127-129` (idime=2) | `:865-869` | `Float32, Float32, Int32` |
-| 4 | `rem_min(3), rem_max(3), rem_nx(3)` | `:127-129` (idime=3) | `:865-869` | `Float32, Float32, Int32` |
-| 5 | `neqs` | `:133` | `:872-874` | `Int32` |
-| 6 | `nsteps` | `:135` | `:877-879` | `Int32` |
+| 1 | `Comm_split` | color 1 | color `APPID` = 2 | — |
+| 2 | `Gather` to world rank 0 | `app_name` | `je_perform_coupling_handshake` | 128 chars |
+| 3 | `Bcast` from world rank 0 | `ndime` | `je_receive_alya_data` | 1 × `Int32` |
+| 4 | `Bcast` × 3, for `d = 1:3` | `rem_min(d)`, `rem_max(d)`, `rem_nx(d)` | `je_receive_alya_data` | `Float64`, `Float64`, `Int32` |
+| 5 | `Allreduce(SUM)` | `alya_to_world` | `je_receive_alya_data` (zeros) | `NA` × `Int32` |
+| 6 | `Barrier` | before the `Alltoall` | `setup_coupling_and_mesh` or `je_early_coupling_sync!` | — |
+| 7 | `Alltoall` | sends zeros | points it will send to each world rank | 1 × `Int32` per rank |
+| 8 | point-to-point, tag 0 | `MPI_Recv` from each Jexpresso rank with points | `je_send_node_list` | the global IDs of those points, `Int32` |
 
-**Physical meaning:**
+Nothing else is exchanged before the time loop. In particular **neither side
+sends `neqs`, the number of steps, `Δt` or `tend`**; see §4.
 
-- `ndime`: spatial dimension (2 or 3)
-- `rem_min[1:3]`, `rem_max[1:3]`: bounding box of the Alya structured grid
-- `rem_nx[1:3]`: number of grid nodes in each direction
-- `neqs`: number of field variables per grid node (4 for the compressible Euler system: rho, rho*u, rho*v, rho*theta)
-- `nsteps`: total number of time steps Alya will perform
+- `ndime` is the spatial dimension (the proxy sends 3).
+- `rem_min`, `rem_max`, `rem_nx` describe Alya's structured grid: bounding box
+  and number of nodes per direction. All three components are always sent; a 2D
+  grid has `rem_nx(3) = 1`.
+- `alya_to_world[a]` is the world rank of Alya rank `a`. Jexpresso uses it to
+  address messages and to tell Alya's workers from its master (world rank 0).
+- After row 7, Alya's `npoin_recv(j)` is the number of points world rank `j`
+  will send it every step.
+- The ID list of row 8 tells Alya where each value it will receive belongs.
+  Alya receives it once and uses it at every step.
 
-Jexpresso stores these in the global dictionary `JEXPRESSO_COUPLING_DATA` (`couplingStructs.jl:889-897`).
-
----
-
-## 3. Alya-to-World Rank Mapping
-
-Immediately after the grid metadata broadcasts, all ranks collectively build a map from Alya local rank indices to world rank indices:
-
-```
-alya_to_world[arank] = world_rank
-```
-
-Each Alya rank sets its own entry; all other entries are zero. An `MPI_Allreduce(MPI_SUM)` combines them into the complete map.
-
-- **Fortran:** `alya_all2all_time_loop.f90:140-145`
-- **Julia:** `couplingStructs.jl:882-887`
-
-This map is essential because Jexpresso needs to know which world rank to send data to for a given Alya rank.
+Proxy values: `rem_min = [-5000, -3000, 0]`, `rem_max = [5000, 1500, 10000]`,
+`rem_nx = [10, 10, 10]`. These are the bounds of the mesh the `3dAlya` case
+reads, `hexa_TFI_10x1x10.msh`, so all 1000 points lie inside Jexpresso's domain.
 
 ---
 
-## 4. Extracting Alya Grid Coordinates on Each Jexpresso Rank
+## 3. Which points each Jexpresso rank sends
 
-After receiving the grid metadata, Jexpresso sets up its own SEM mesh (`sem_setup`) and then determines which Alya grid points fall within each Jexpresso rank's spatial domain. This is done by `extract_local_alya_coordinates()` (`couplingStructs.jl:534-801`).
+`extract_local_alya_coordinates` decides, for every Jexpresso rank, which Alya
+grid points it is responsible for. Alya sends no coordinates: Jexpresso rebuilds
+the grid from the metadata of §2.
 
-### 4.1 Computing Alya grid coordinates
-
-Alya does **not** send actual coordinate arrays. Instead, Jexpresso reconstructs every Alya grid point from the metadata:
+**Coordinates and IDs.** For 0-based structured indices `(i1, i2, i3)`:
 
 ```
-dx = (rem_max[d] - rem_min[d]) / (rem_nx[d] - 1)    for each dimension d
-
-For a point with structured indices (i1, i2, i3) (all 0-based):
-    x = rem_min[1] + i1 * dx
-    y = rem_min[2] + i2 * dy
-    z = rem_min[3] + i3 * dz
+x = rem_min[1] + i1*dx,   dx = (rem_max[1] - rem_min[1]) / (rem_nx[1] - 1)   (same for y, z)
+id = i1 + rem_nx[1]*(i2 + rem_nx[2]*i3) + 1                                   (1-based)
 ```
 
-The flat (1-based) index is `ipoin = i1 + nx1*(i2 + nx2*i3) + 1`.
+**Selection.** Each rank keeps the points that lie in its part of the mesh: in
+its bounding box in 3D, in one of its elements in 2D (after index-space cropping
+and block-wise tests). Points on a shared face are claimed by several ranks; an
+`Allreduce(MAX)` on the Jexpresso communicator keeps exactly one claimant. A
+second pass gives the points that no rank claimed to the lowest rank whose
+bounding box contains them. `verify_coupling_communication_pattern` prints the
+result: `[VERIFY] … CHECK 2` must report `All Alya points accounted for`, or
+some Alya points lie outside Jexpresso's domain and will receive nothing.
 
-### 4.2 Spatial filtering with index-space cropping and binning
+**Owner.** Alya assigns points to its workers `1 .. NA-1` in contiguous chunks
+of the ID range, the first `mod(nmax, NA-1)` workers taking one extra point.
+Jexpresso applies the same rule to find the Alya rank that receives each point.
 
-Rather than looping over all `nmax = nx1 * nx2 * nx3` Alya points, the function uses two levels of pruning:
+**Order.** Points are sorted by `(owner, id)`. The ID list of §2 row 8 and every
+later field message use this same order, which is how Alya matches values to
+points.
 
-1. **Index-space cropping** (`couplingStructs.jl:614-657`): For each dimension, compute the range of Alya grid indices whose physical coordinates could overlap the local Jexpresso bounding box. Only scan indices in `[i_lo, i_hi]` per dimension.
-
-2. **Block-based spatial bins** (`couplingStructs.jl:713-763`): The cropped index range is divided into blocks of size `block_size` (default 64x64x64). For each block:
-   - Compute the block's physical bounding box.
-   - If the block is entirely outside the local domain: skip it.
-   - If the block is entirely inside: accept all points without per-point checks.
-   - Otherwise: check each point individually against the local bounding box.
-
-### 4.3 Determining the Alya owner rank
-
-For each accepted point, Jexpresso computes which Alya rank "owns" it. Alya distributes points in contiguous chunks across its ranks:
-
-```julia
-# couplingStructs.jl:604-609
-r     = mod(nmax, nranks_alya)
-npoin = div(nmax, nranks_alya)
-# First r ranks get (npoin+1) points; remaining get npoin points
-if ipoin <= r * (npoin + 1)
-    alya_rank = div(ipoin - 1, npoin + 1) + 1
-else
-    alya_rank = r + div(ipoin - r*(npoin+1) - 1, npoin) + 1
-end
-alya_world_rank = alya2world[alya_rank]
-```
-
-### 4.4 Sorting for consistent ordering
-
-After extraction, the local point list is sorted by `(owner_rank, global_id)` (`couplingStructs.jl:786-791`). This ensures that points sent to each Alya rank arrive in ascending flat-index order, consistent with the `MPI_Gatherv` displacement layout on the Alya side.
-
-### 4.5 Output
-
-The function returns three arrays:
-
-- `alya_local_coords[n_local, ndime]`: physical coordinates of each accepted point
-- `alya_local_ids[n_local]`: 1-based global Alya point ID
-- `alya_owner_ranks[n_local]`: 0-based world rank of the owning Alya rank
+**When.** Normally inside `setup_coupling_and_mesh`, after `sem_setup`. If a
+mesh cache from an earlier run exists, it is done before `with_mpi` instead
+(`je_prefetch_caches!` → `_je_prefetch_geometry!`), and rows 6–8 then run early
+too (`je_early_coupling_sync!`), so that Alya is released from its barrier while
+Jexpresso is still compiling. A case that rescales its grid (`:xscale`,
+`:xdisp`, `:yscale`, `:ydisp`) never takes the early path, because the cache
+holds the grid before rescaling.
 
 ---
 
-## 5. Building `npoin_recv` and `npoin_send`
+## 4. Time loop: one exchange per step
 
-With the extracted point list in hand, `setup_coupling_and_mesh()` (`couplingStructs.jl:94-129`) builds the communication-count arrays that Alya needs.
+### 4.1 Alya
 
-### 5.1 Building `npoin_recv` from the extracted points
+The proxy computes its step count locally from hard-coded values:
+`t0 = 0`, `dt = 0.5`, `tend = 1000`, so `nsteps = int((tend - t0)/dt) = 2000`.
+Its rank 0 prints it at startup (`Steps: 2000`). At every step it:
 
-```julia
-# couplingStructs.jl:97-102
-npoin_recv = zeros(Int32, wsize)   # one entry per world rank
-for owner_wrank in alya_owner_ranks
-    npoin_recv[owner_wrank + 1] += 1
-end
+1. posts one `MPI_Irecv` per Jexpresso rank with `npoin_recv > 0`:
+   `npoin_recv * nfields` doubles, tag 0, where `nfields = ndime`;
+2. waits for all of them (`MPI_Waitall`);
+3. scatters the values into its own chunk of the grid using the ID list;
+4. every `out_dt = 100` time units, gathers the grid on its rank 0 and writes
+   `alya_grid_NNNNNN.vts`, with the received fields as `var1`, `var2`, `var3`.
+
+### 4.2 Jexpresso
+
+`setup_coupling_callback` registers a `DiscreteCallback` that fires after every
+accepted step with `t > tinit + :couple_time_tol`. Each call runs
+`je_perform_coupling_exchange_3d` (or `je_perform_coupling_exchange` in 2D):
+
+1. **Output variables.** The state is converted with the case's `user_uout!`.
+   For `3dAlya` that is `(ρ, u, v, w, θ)`.
+2. **Interpolation.** Each local Alya point is located in the SEM mesh (element
+   bins, bounding-box test, Newton solve for the reference coordinates) and the
+   tensor-product Lagrange interpolant is evaluated there. Locating the points
+   depends only on the two grids, so on a static mesh it is done once, at the
+   first exchange (`[coupling] interpolation cache built: …`); every later step
+   is one dot product per point and variable. The cache is off under `:lamr` or
+   `:ladapt`, or with `:lcouple_cache_interp => false`. A point that no element
+   contains takes its nearest node's value.
+3. **Packing.** Columns `2 : neqs-1`, the velocity, are packed point by point
+   (`[u1, v1, w1, u2, v2, w2, …]`) into one buffer per destination Alya rank
+   (`pack_velocity_data!`). `neqs - 2 == ndime` is asserted at setup, because
+   that is the `nfields` Alya expects.
+4. **Send.** One `MPI.Isend` per destination, tag 0, then `MPI.Waitall`
+   (`coupling_exchange_data!`).
+
+With `SEND_COORDS = true` (top of `couplingStructs.jl`) Jexpresso sends the
+interpolated mesh coordinates instead of the velocity: same buffer shape, and
+Alya's VTS files should then reproduce its own grid coordinates. It is a check
+of the point location and interpolation.
+
+### 4.3 The step contract
+
+The only thing that keeps the two loops in step is that **Jexpresso performs
+exactly `nsteps` exchanges**. Neither side tells the other how many steps it
+takes:
+
+- Fewer (a larger `:Δt`, a shorter `:tend`): Alya waits forever in
+  `MPI_Waitall` while Jexpresso waits in the final barrier.
+- More: Alya never receives the extra messages. While they are small enough to
+  be sent eagerly they are silently lost, and if the extra exchange comes first
+  every step reaches Alya one step late (§6). Once a message is too large to be
+  sent eagerly, Jexpresso blocks in `MPI_Waitall` while Alya waits in the final
+  barrier.
+
+So `(:tend - :tinit) / :Δt` in the case's `user_inputs.jl` must equal Alya's
+`nsteps`. Change both sides together: `t0`/`dt`/`tend` in
+`alya_all2all_time_loop.f90`, then rebuild `Alya.x`. Two more things add steps
+on the Jexpresso side and must be avoided:
+
+- **Output times off the step grid.** Every entry of `:diagnostics_at_times`
+  must be `tinit` plus a multiple of `:Δt`; otherwise the integrator shortens a
+  step to land on it, and that is one more exchange.
+- **Adaptive time stepping** (`:ode_adaptive_solver => true`).
+
+Jexpresso's integrator warm-up in `time_loop!` runs one throw-away step with the
+real callback set. The exchange is suspended for that step
+(`CouplingData.exchange_enabled`), so only the real steps exchange. At the end
+of the solve Jexpresso prints
+
+```
+ # Coupling: 2000 exchanges sent to Alya
 ```
 
-`npoin_recv[r+1]` tells Jexpresso how many points it needs to exchange with world rank `r`. This is computed directly from the extracted point ownership -- no separate counting pass over the full grid is needed.
-
-### 5.2 Exchanging counts with Alya via `MPI_Alltoall`
-
-Both codes participate in a collective `MPI_Alltoall` on `MPI_COMM_WORLD`:
-
-```julia
-# Jexpresso (couplingStructs.jl:120-123)
-send_counts_to_alya = Vector{Int32}(npoin_recv)  # what I will send
-recv_counts_from_alya = zeros(Int32, wsize)
-MPI.Alltoall!(send_counts_to_alya, recv_counts_from_alya, 1, world)
-```
-
-```fortran
-! Alya (alya_all2all_time_loop.f90:158-166)
-npoin_send = 0   ! Alya initializes to 0 (never initiates)
-call MPI_Alltoall(npoin_send, 1, MPI_INTEGER4, &
-                  npoin_recv, 1, MPI_INTEGER4, MPI_COMM_WORLD, ierr)
-```
-
-After `Alltoall`:
-- **Alya** has `npoin_recv[j]` = number of points it will receive from Jexpresso world rank `j`.
-- **Jexpresso** has `recv_counts_from_alya[j]` = 0 for all `j` (since Alya sent zeros), but this is expected -- the return exchange uses the same point counts as the forward exchange.
-
-### 5.3 Setting `npoin_send`
-
-Because the coupling is symmetric (Alya sends back exactly the same points it receives), Jexpresso sets:
-
-```julia
-# couplingStructs.jl:128-129
-npoin_send   = copy(npoin_recv)
-send_to_ranks = copy(recv_from_ranks)
-```
-
-### 5.4 Buffer allocation
-
-With the final counts known, `allocate_coupling_buffers()` (`couplingStructs.jl:803-824`) creates per-destination send/receive buffers:
-
-- `send_bufs[r]`: `npoin_send[r] * neqs` doubles (field values to send to world rank `r`)
-- `recv_bufs[r]`: `npoin_recv[r] * neqs` doubles (field values to receive from world rank `r`)
-- `send_coord_bufs[r]`: `npoin_send[r] * ndime` doubles (coordinates to send to world rank `r`)
+which must equal Alya's `Steps:` line.
 
 ---
 
-## 6. Time-Loop: Interpolation and Exchange
+## 5. Shutdown
 
-The coupling exchange happens at every time step via a `DiscreteCallback` registered in the ODE solver (`TimeIntegrators.jl:124-149`).
-
-### 6.1 Coupling callback trigger
-
-```julia
-# TimeIntegrators.jl:136
-coupling_condition(u_state, t, integrator) = t > t0 + tol0
-```
-
-The callback fires at every step after the initial time. When it fires, it calls `je_perform_coupling_exchange()` (`couplingAuxiliaryFunctions.jl:841-869`).
-
-### 6.2 Solution preparation
-
-Before interpolation, the conservative state vector `u` is converted to output (primitive) variables:
-
-```julia
-# couplingAuxiliaryFunctions.jl:847-849
-u2uaux!(u_mat, u, neqs, npoin)                        # reshape flat vector to [npoin x neqs]
-call_user_uout(qout, u_mat, u_mat, 0, SOL_VARS_TYPE, npoin, neqs, neqs)
-```
-
-The `user_uout!` function (defined in `user_primitives.jl:24-30`) converts conservative to primitive variables:
-
-```
-qout[ip, 1] = rho          = u[1]
-qout[ip, 2] = velocity_x   = u[2] / u[1]    (= rho*u / rho)
-qout[ip, 3] = velocity_y   = u[3] / u[1]    (= rho*v / rho)
-qout[ip, 4] = theta        = u[4] / u[1]    (= rho*theta / rho)
-```
-
-### 6.3 Interpolation onto Alya coordinates
-
-`interpolate_solution_to_alya_coords()` (`couplingAuxiliaryFunctions.jl:619-704`) interpolates the SEM solution to each local Alya grid point.
-
-**Algorithm for each Alya point `(px, py)`:**
-
-1. **Find the containing SEM element:**
-   - Build spatial bins over element bounding boxes (`couplingStructs.jl:457-501`).
-   - Look up candidate elements from the bin containing `(px, py)`.
-   - For each candidate, do a quick bounding-box check, then map `(px, py)` to reference coordinates.
-
-2. **Map to reference coordinates via Newton iteration** (`couplingAuxiliaryFunctions.jl:735-787`):
-   - Starting from `(xi, eta) = (0, 0)`, iterate:
-     ```
-     Evaluate basis and derivatives at (xi, eta)
-     Compute physical position:  x_curr = sum( psi_i * x_elem_i )
-     Compute Jacobian:           J = [dx/dxi  dx/deta; dy/dxi  dy/deta]
-     Residual:                   r = (px - x_curr, py - y_curr)
-     Newton update:              (xi, eta) += J^{-1} * r
-     ```
-   - Accept if `|r| < 1e-12` and `|xi|, |eta| <= 1 + 1e-10`.
-
-3. **Evaluate Lagrange basis and interpolate** (`couplingAuxiliaryFunctions.jl:674-687`):
-   - Compute 1D basis values at `xi_ref` and `eta_ref` using the barycentric formula.
-   - The 2D basis is the tensor product: `psi_{ij}(xi, eta) = psi_i(xi) * psi_j(eta)`.
-   - Interpolate each equation:
-     ```
-     u_interp[pt, q] = sum_{i,j} psi_i(xi_ref) * psi_j(eta_ref) * qout[node_{ij}, q]
-     ```
-
-4. **Fallback:** If no element contains the point (should not happen if domains overlap correctly), use nearest-neighbor (`couplingAuxiliaryFunctions.jl:693-700`).
-
-**Result:** `u_interp[n_local, neqs]` -- interpolated primitive variables at every local Alya grid point.
-
-### 6.4 Packing data and coordinates into send buffers
-
-`pack_interpolated_data!()` (`couplingAuxiliaryFunctions.jl:465-508`) packs the interpolated values **and** the Alya grid coordinates into per-destination buffers.
-
-For each local Alya point `i`:
-
-```julia
-owner_rank = alya_owner_ranks[i]     # 0-based world rank
-
-# Pack neqs field values contiguously
-send_bufs[owner_rank+1][offset+1 : offset+neqs] = u_interp[i, 1:neqs]
-
-# Pack ndime coordinate values contiguously
-send_coord_bufs[owner_rank+1][coffset+1 : coffset+ndime] = alya_local_coords[i, 1:ndime]
-```
-
-**Why send coordinates?** Different Jexpresso ranks extract Alya points in an order determined by spatial binning, not by flat grid index. When Alya receives data from multiple Jexpresso ranks and concatenates the buffers, the values are not in flat-index order. By also receiving the coordinates, Alya can compute the correct grid position for each value: `ix = nint((x - rem_min) / dx)`.
-
-### 6.5 MPI exchange
-
-`coupling_exchange_data!()` (`couplingAuxiliaryFunctions.jl:348-401`) performs the non-blocking MPI exchange.
-
-**Jexpresso posts receives** for the return field from Alya:
-
-```julia
-# For each Alya rank that sends to us:
-tag = TAG_DATA + my_world_rank          # = 2000 + wrank
-MPI.Irecv!(recv_bufs[src+1], src, tag, comm_world)
-```
-
-**Jexpresso posts sends** of interpolated data and coordinates:
-
-```julia
-# For each Alya rank we send to:
-tag_data  = TAG_DATA  + dest_world_rank   # = 2000 + dest
-tag_coord = TAG_COORD + dest_world_rank   # = 3000 + dest
-MPI.Isend(send_bufs[dest+1],       dest, tag_data,  comm_world)
-MPI.Isend(send_coord_bufs[dest+1], dest, tag_coord, comm_world)
-```
-
-**Alya posts matching receives** (`alya_all2all_time_loop.f90:286-321`):
-
-```fortran
-! Data receive from each sender:
-tag = TAG_DATA + rank                    ! 2000 + my_world_rank
-MPI_Irecv(recvbuf_all(offset+1), npoin_recv(i)*neqs, ..., i, tag, ...)
-
-! Coordinate receive from each sender:
-tag = TAG_COORD + rank                   ! 3000 + my_world_rank
-MPI_Irecv(recvcoord_all(offset+1), npoin_recv(i)*ndime, ..., i, tag, ...)
-```
-
-**Alya posts sends** of its return field (`alya_all2all_time_loop.f90:326-340`):
-
-```fortran
-tag = TAG_DATA + i                       ! 2000 + dest_world_rank
-MPI_Isend(sendbuf_all(offset+1), npoin_recv(i)*neqs, ..., i, tag, ...)
-```
-
-All operations complete with `MPI_Waitall`.
-
-### 6.6 Tag matching summary
-
-| Message | Sender | Receiver | Tag formula |
-|---|---|---|---|
-| Interpolated field data | Jexpresso rank J | Alya rank A (world W) | `2000 + W` |
-| Grid coordinates | Jexpresso rank J | Alya rank A (world W) | `3000 + W` |
-| Return field from Alya | Alya rank A (world W) | Jexpresso rank J (world V) | `2000 + V` |
-
-The tag always contains the **receiver's** world rank, ensuring uniqueness when multiple senders communicate with the same receiver.
-
-### 6.7 Receiving Alya's return field
-
-After `MPI_Waitall`, `unpack_received_data!()` (`couplingAuxiliaryFunctions.jl:527-577`) processes the field received from Alya. In the current implementation this is a placeholder -- the physical coupling (applying Alya's field as forcing or boundary conditions on Jexpresso) is application-dependent and left for future development.
+After its loop Alya prints `Alya: time loop complete, syncing with Julia...` and
+waits in `MPI_Barrier(MPI_COMM_WORLD)`. Jexpresso issues the matching
+`MPI.Barrier(world)` at the end of its `with_mpi` block in `src/run.jl`, after
+the solve and its output. Then both call `MPI_Finalize`.
 
 ---
 
-## 7. Summary: Step-by-Step Coupling Flow
+## 6. How messages are matched
 
-```
-INITIALIZATION (one-time)
-=========================
+Every point-to-point message uses tag 0 on `MPI_COMM_WORLD`. They are told
+apart by order. MPI never lets a message overtake an earlier one from the same
+sender with the same tag and communicator. From each Jexpresso rank, Alya
+therefore receives the ID list first (the blocking `MPI_Recv` of §2 row 8), then
+exactly one field message per step, in step order. That is also why an extra or
+missing exchange shifts every later message rather than failing.
 
-1. Handshake
-   drivers.jl:20  ->  couplingStructs.jl:826
-   All ranks: MPI_Gather(app_name)
-   Jexpresso detects coupling: wsize > nparts
+---
 
-2. Receive Alya's grid metadata
-   drivers.jl:25  ->  couplingStructs.jl:75  ->  couplingStructs.jl:847
-   Alya rank 0: MPI_Bcast(ndime, rem_min, rem_max, rem_nx, neqs, nsteps)
-   All ranks:   MPI_Allreduce(alya_to_world map)
+## 7. Rules for code that runs in a coupled job
 
-3. Setup SEM mesh
-   couplingStructs.jl:84
-   Standard Jexpresso mesh partitioning (independent of coupling)
+- **Never run a Jexpresso-internal collective on `MPI.COMM_WORLD`.** Use
+  `get_mpi_comm()`: it is Jexpresso's own communicator under coupling and
+  `COMM_WORLD` standalone. A collective on `COMM_WORLD` waits for Alya's ranks,
+  which never arrive. This typically shows up only at the first diagnostic
+  output, and never in a standalone test.
+- **Take all of the Jexpresso ranks, or none, into a world operation.** The
+  prefetch and early-sync paths first agree across ranks (`_je_all_ranks`) on
+  whether to enter one.
+- **Anything that adds or removes steps changes the exchange count** (§4.3).
 
-4. Extract local Alya coordinates
-   couplingStructs.jl:90-92  ->  couplingStructs.jl:534
-   Each Jexpresso rank: identify Alya grid points inside local domain
-   Result: coordinates, global IDs, owner Alya ranks
+---
 
-5. Build communication arrays
-   couplingStructs.jl:94-129
-   Build npoin_recv from extracted ownership
-   MPI_Alltoall to inform Alya of incoming point counts
-   Set npoin_send = npoin_recv (symmetric exchange)
-   Allocate send/recv/coord buffers
+## 8. Code map
 
-6. Store coupling object
-   couplingStructs.jl:163-181
-   CouplingData struct holds all arrays and buffers
-   Attached to params for use in time loop
-
-
-TIME LOOP (every step)
-======================
-
-7. Coupling callback fires
-   TimeIntegrators.jl:136-148
-   Condition: t > t0 + tol
-
-8. Prepare solution
-   couplingAuxiliaryFunctions.jl:847-849
-   Convert conservative -> primitive variables
-   [rho, rho*u, rho*v, rho*theta] -> [rho, u, v, theta]
-
-9. Interpolate onto Alya coordinates
-   couplingAuxiliaryFunctions.jl:852-856  ->  :619
-   For each local Alya point:
-     Find containing SEM element (spatial bins)
-     Newton iteration: (px,py) -> (xi,eta) in reference space
-     Evaluate tensor-product Lagrange basis
-     u_interp = sum( psi_ij * qout[node_ij] )
-
-10. Pack into send buffers
-    couplingAuxiliaryFunctions.jl:859  ->  :465
-    Pack neqs field values + ndime coordinates per point
-    Grouped by destination Alya rank
-
-11. MPI exchange
-    couplingAuxiliaryFunctions.jl:862  ->  :348
-    Jexpresso -> Alya: field data (tag 2000+dest) + coordinates (tag 3000+dest)
-    Alya -> Jexpresso: return field (tag 2000+dest)
-    All non-blocking (Irecv/Isend + Waitall)
-
-12. Unpack received Alya data
-    couplingAuxiliaryFunctions.jl:865  ->  :527
-    (Placeholder for applying Alya's field to Jexpresso solution)
-```
+| Stage | Jexpresso | Alya proxy (`alya_all2all_time_loop.f90`) |
+|---|---|---|
+| Split, coupled or not | `src/run.jl` → `je_init_mpi_and_split_comm` | `MPI_Comm_split` |
+| Names | `je_perform_coupling_handshake` | STEP 0: HANDSHAKE |
+| Grid metadata, rank map | `je_receive_alya_data` | STEP 2: GRID METADATA; Alya -> World rank map |
+| Points and owners | `extract_local_alya_coordinates` | point range of each worker (`i_start`, `i_end`) |
+| Counts, ID list | `setup_coupling_and_mesh` or `je_early_coupling_sync!`; `je_send_node_list` | STEP 3: COUNT EXCHANGE; STEP 3b: RECEIVE … NODE LIST |
+| Mesh + coupling object | `problems/drivers.jl` → `setup_coupling_and_mesh` | — |
+| Per-step exchange | `setup_coupling_callback` → `je_perform_coupling_exchange_3d` → `coupling_exchange_data!` | TIME LOOP: `MPI_Irecv` + `MPI_Waitall` |
+| Callback registration, warm-up | `time_loop!` in `src/kernel/solvers/TimeIntegrators.jl` | — |
+| Output | Jexpresso's own VTK | `write_alya_grid_vts` → `alya_grid_NNNNNN.vts` |
+| Shutdown | `MPI.Barrier(world)` in `src/run.jl` | `MPI_Barrier(MPI_COMM_WORLD)` |

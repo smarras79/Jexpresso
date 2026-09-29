@@ -1,5 +1,11 @@
 # Jexpresso-Alya Coupling Algorithm Documentation
 
+> **Historical design note.** This is the 2024 plan that the coupling was built
+> from; several functions it names (`build_coupling_communication_arrays`,
+> `allocate_coupling_buffers`, …) no longer exist. The protocol as implemented
+> is described in [COUPLING-ALGORITHM.md](../../../COUPLING-ALGORITHM.md), and
+> how to run it in [RUN-COUPLED.md](../../../RUN-COUPLED.md).
+
 **Version:** 1.0  
 **Date:** 2024  
 **Authors:** Jexpresso Development Team
