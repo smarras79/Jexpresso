@@ -2499,6 +2499,15 @@ function setup_coupling_callback(is_coupled, params, inputs)
     t0   = params.tspan[1]
     tol0 = get(inputs, :couple_time_tol, 1e-12)
 
+    # The exchange fires on EVERY step and only reads the state, so the callback
+    # must leave the integrator alone:
+    #   save_positions = (false, false) — the default (true, true) copies the
+    #     whole state into the returned solution before and after each firing:
+    #     2 copies per step (4000 for 3dAlya) held until solve returns, and never
+    #     read. Memory grows with the length of the run.
+    #   u_modified!(integrator, false) — otherwise the integrator assumes u was
+    #     changed, and an FSAL method (Tsit5, BS3, …) pays one extra RHS
+    #     evaluation per step to refresh its first stage.
     @inline coupling_condition(u_state, t, integrator) = cpg.exchange_enabled && t > t0 + tol0
 
     neqs = params.neqs
@@ -2545,9 +2554,11 @@ function setup_coupling_callback(is_coupled, params, inputs)
                 _alya_coords, _owner_ranks,
                 _mesh_x, _mesh_y, _mesh_z,
                 inputs, neqs, _elem_bboxes3, _bins3)
+            u_modified!(integrator, false)
         end
 
-        return DiscreteCallback(coupling_condition, do_coupling_exchange_3d!)
+        return DiscreteCallback(coupling_condition, do_coupling_exchange_3d!;
+                                save_positions = (false, false))
     else
         _elem_bboxes = cpg.elem_bboxes::Vector{NTuple{4,Float64}}
         _bins        = cpg.interp_bins::ElemBins
@@ -2559,8 +2570,10 @@ function setup_coupling_callback(is_coupled, params, inputs)
                 _ψξ, _ψη, _dψξ, _dψη, _α, _x_e, _y_e,
                 _alya_coords, _owner_ranks, _mesh_x, _mesh_y,
                 inputs, neqs, _elem_bboxes, _bins)
+            u_modified!(integrator, false)
         end
 
-        return DiscreteCallback(coupling_condition, do_coupling_exchange!)
+        return DiscreteCallback(coupling_condition, do_coupling_exchange!;
+                                save_positions = (false, false))
     end
 end
