@@ -652,6 +652,15 @@ function time_loop!(inputs, params, u, args...)
             # only deviation is `tstops = [t0_w + Δt_w]` (just one point)
             # to keep the warmup cheap.
             warm_saveat = range(t0_w, t0_w + Δt_w, length = inputs[:ndiagnostics_outputs])
+            # COUPLED RUNS: the warm-up step must not talk to Alya. Alya posts
+            # exactly one receive per step of its own time loop, so an exchange
+            # fired here is one message more than it will ever receive: every
+            # later step then reaches Alya one step late, and the run's last
+            # send has no receive at all — dropped while it is small enough to
+            # go eagerly, a hang in Waitall (Alya already in its final barrier)
+            # once it is not. The callback stays in the set, so the integrator
+            # is still specialised on the real CallbackSet type.
+            is_coupled && coupling !== nothing && (coupling.exchange_enabled = false)
             with_logger(NullLogger()) do
                 try
                     solve(warmup_prob,
@@ -665,6 +674,7 @@ function time_loop!(inputs, params, u, args...)
                     rank == 0 && @warn "integrator warm-up failed; continuing without it" exception=e
                 end
             end
+            is_coupled && coupling !== nothing && (coupling.exchange_enabled = true)
             u .= u_snap
             params.qp.qnm1 .= qnm1_snap
             params.qp.qnm2 .= qnm2_snap
@@ -781,6 +791,14 @@ function time_loop!(inputs, params, u, args...)
                   saveat = range(inputs[:tinit],
                                  inputs[:tend],
                                  length=inputs[:ndiagnostics_outputs]))
+        end
+
+        # One exchange per step is the whole contract with Alya, which receives
+        # exactly its own step count ("Steps:" in its startup output). A
+        # different number here means the two time loops disagree.
+        if is_coupled && coupling !== nothing && rank == 0
+            println(" # Coupling: ", coupling.nexchange, " exchanges sent to Alya")
+            flush(stdout)
         end
 
         # End-of-simulation per-function timing & allocation summary.

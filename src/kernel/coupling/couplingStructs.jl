@@ -553,6 +553,18 @@ mutable struct CouplingData
     # --------------------------------------------------------------------------
     send_coords::Bool
 
+    # --------------------------------------------------------------------------
+    # exchange_enabled: false suspends the per-step exchange. time_loop! turns
+    # it off around its throw-away warm-up step: Alya posts exactly one receive
+    # per step of ITS time loop, so a warm-up exchange is a message it never
+    # receives (see the warm-up in TimeIntegrators.jl).
+    #
+    # nexchange: exchanges sent so far. Reported at the end of the run so it can
+    # be checked against Alya's step count — the two must be equal.
+    # --------------------------------------------------------------------------
+    exchange_enabled::Bool
+    nexchange::Int
+
     send_bufs::Union{Nothing, Vector{Vector{Float64}}}
 
     alya_local_coords::Union{Nothing, Matrix{Float64}}
@@ -619,6 +631,7 @@ mutable struct CouplingData
                           comm_world, lrank, neqs, ndime, send_coords=false)
         new(npoin_recv, npoin_send, recv_from_ranks, send_to_ranks,
             comm_world, lrank, neqs, ndime, send_coords,
+            true, 0,
             nothing,
             nothing, nothing, nothing,
             nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing,
@@ -2215,6 +2228,7 @@ function coupling_exchange_data!(cpg::CouplingData)
         push!(send_requests, MPI.Isend(cpg.send_bufs[dest_rank+1], dest_rank, 0, cpg.comm_world))
     end
     isempty(send_requests) || MPI.Waitall(send_requests)
+    cpg.nexchange += 1
 end
 
 # Full per-step exchange.  Branches on cpg.send_coords (set once at startup):
@@ -2474,7 +2488,7 @@ function setup_coupling_callback(is_coupled, params, inputs)
     t0   = params.tspan[1]
     tol0 = get(inputs, :couple_time_tol, 1e-12)
 
-    @inline coupling_condition(u_state, t, integrator) = t > t0 + tol0
+    @inline coupling_condition(u_state, t, integrator) = cpg.exchange_enabled && t > t0 + tol0
 
     neqs = params.neqs
     mesh = params.mesh
