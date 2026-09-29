@@ -263,6 +263,11 @@ function user_inputs()
         :statistics_time      => (parse(Float64, get(ENV, "DBG_STAT_START", string(tend/3))):
                                   parse(Float64, get(ENV, "DBG_STAT_EVERY", "10.0")):tend),
         :lesprofile_vars      => ["u_mean", "v_mean", "w_mean", "t_mean", "p_mean"],
+        # DBG_PROJ=1: statistics also on structured planes (src/io/les_projection.jl):
+        # an xz plane averaged over y, and an xy slice at z = 100 m.
+        (haskey(ENV, "DBG_PROJ") ? (:les_projection => [
+            (plane = "xz", npts = (33, 101), range2 = (5.0, 1005.0)),
+            (plane = "xy", npts = (33, 33), at = 100.0)],) : ())...,
         # ALL 38, AND THE COUNT IS LOAD-BEARING. This list sizes the stress
         # cache, while user_les_profiles! in user_primitives.jl writes prof[1]
         # through prof[38] unconditionally. Shortening it to the 26 entries

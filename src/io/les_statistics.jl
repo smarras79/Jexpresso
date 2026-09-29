@@ -581,6 +581,10 @@ function les_statistics(u, params, ::Any)
     fill_sgs_cache!(params)
     sgs_stress = params.sgs_stress
 
+    # Statistics on the user-defined structured planes (:les_projection), from
+    # the same uaux / qe / SGS cache. No communication until the end.
+    les_projection_accumulate!(params)
+
     # Single pass: accumulate means + raw products, two Allreduces
     horizontal_mean!(cache, uaux, qe, sgs_stress, ET, comm)
     # Accumulate raw products (NOT yet fluctuations) so that Reynolds decomposition
@@ -1132,6 +1136,9 @@ Allreduced during accumulation in `horizontal_mean!`.
 """
 function les_finalize!(params, t)
     isnothing(params.les_stat_cache) && return
+
+    # Collective (chunked Reduce), so before any rank-0-only return below.
+    les_projection_finalize!(params, t)
 
     cache = params.les_stat_cache
     ns    = cache.n_samples
