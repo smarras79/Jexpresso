@@ -149,13 +149,17 @@ fi
 # block-buffered and interleaved: a working run can show nothing for a long
 # time and then dump everything at once, which is indistinguishable from a
 # hang. Tagging each line with its rank makes progress visible and shows which
-# side of the coupling produced what. The flag is launcher-specific.
+# side of the coupling produced what. The flag is launcher-specific, and
+# differs between Open MPI 4 and 5: 4.x (whose mpirun reports itself as
+# "(OpenRTE) 4.x") rejects `--output tag` outright ("unknown option"), so the
+# job would never start.
 # Set TAG_OUTPUT=0 to turn it off.
 LAUNCH_FLAGS=()
 if [ "${TAG_OUTPUT:-1}" != "0" ]; then
     case "$("$MPIRUN" --version 2>&1 | head -2 | tr '[:upper:]' '[:lower:]')" in
-        *"open mpi"*|*openmpi*|*prterun*) LAUNCH_FLAGS+=(--output tag) ;;
-        *mpich*|*hydra*)                  LAUNCH_FLAGS+=(-prepend-rank) ;;
+        *"(openrte) "*|*"(open mpi) "[1-4].*) LAUNCH_FLAGS+=(--tag-output) ;;
+        *"open mpi"*|*openmpi*|*prterun*)     LAUNCH_FLAGS+=(--output tag) ;;
+        *mpich*|*hydra*)                      LAUNCH_FLAGS+=(-prepend-rank) ;;
     esac
 fi
 
