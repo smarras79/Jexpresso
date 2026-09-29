@@ -300,9 +300,11 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             loginit = get(ENV, "DBG_LOGINIT", "0") in ("1", "true")
             logz    = parse(Float64, get(ENV, "DBG_LOGZ", "150.0"))
             z0m     = 0.1
+            # DBG_PERT_ZTOP moves the top of the perturbed layer (protocol: 800 m).
+            pert_ztop = parse(Float64, get(ENV, "DBG_PERT_ZTOP", "800.0"))
             for ip = 1:mesh.npoin
                 randnoise = 0.0
-                if mesh.z[ip] < 800.0
+                if mesh.z[ip] < pert_ztop
                     randnoise = amp*(2*rand() - 1.0)
                 end
                 θ     = data_interpolate[ip,1] + randnoise  # theta from column 2
