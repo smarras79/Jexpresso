@@ -28,6 +28,10 @@ export JEXPRESSO_COUPLED=1
 mpirun -np 2 ./AlyaProxy/Alya.x : -np 2 julia --project=. ./src/Jexpresso.jl CompEuler 3dAlya
 ```
 
+(`mpirun` here is the launcher of the MPI both codes use. With MPI.jl on the
+MPICH bundled with Julia, `MPICH_jll`, that is the `mpiexec` shipped with it;
+`run_coupled.sh` picks the right one either way — see RUN-COUPLED.md §6.)
+
 > **Prerequisite — one MPI for both codes.** Because Alya (Fortran) and
 > Jexpresso (Julia) share a single `MPI_COMM_WORLD`, they must be built and run
 > against the **same MPI implementation, version, and ABI** — Alya via `mpif90`,

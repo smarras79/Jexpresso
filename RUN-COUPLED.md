@@ -26,6 +26,21 @@ uses, (2) making them match, (3) compiling Alya, and (4) launching the coupled
 run. For general (non-coupled) MPI setup of Jexpresso, see
 [INSTALL.md, Section 5 — "Running in parallel with MPI"](INSTALL.md#5-running-in-parallel-with-mpi).
 
+> **Shortcut: MPI.jl on its default binding, the MPICH bundled with Julia
+> (`MPICH_jll`).** Then there is nothing to reconcile and no system MPI to
+> install — only `gfortran`. `compilef90.sh` builds Alya against that very MPICH,
+> and `run_coupled.sh` launches with the `mpiexec` that ships with it:
+>
+> ```bash
+> cd AlyaProxy && bash compilef90.sh && cd ..
+> ./run_coupled.sh 2 2
+> ```
+>
+> Section 2 shows how to check the binding (`binary = MPICH_jll`), and Section 4
+> what the two scripts do. On macOS the
+> [hostname fix](INSTALL.md#55-macos-hostname-fix-mpich-and-mpich_jll-only) for
+> MPICH applies to it as well.
+
 ---
 
 ## 1. Identify the MPI used by the Fortran side (Alya)
@@ -69,12 +84,16 @@ julia --project=. -e '
 
 - `binary = "system"` means MPI.jl uses a system MPI; `identify_implementation()`
   then prints which one (e.g. `(OpenMPI, v"5.0.6")`).
-- `binary = "MPItrampoline_jll"` (or another `*_jll`) means MPI.jl uses the
-  **bundled native MPI** — this is **not** what you want for coupling unless you
-  also build Alya against that exact JLL (see the note in Section 4).
+- `binary = "MPICH_jll"` — MPI.jl's default — means MPI.jl uses the MPICH that
+  ships with Julia. That works for coupling as it is: `compilef90.sh` builds
+  Alya against that same MPICH and `run_coupled.sh` launches with its own
+  `mpiexec` (Section 4). Skip to Section 5.
+- `binary = "MPItrampoline_jll"` or `"OpenMPI_jll"` means another bundled MPI,
+  which the coupling scripts do not support. Bind MPI.jl to a system MPI
+  (Section 3, Option A) or back to `MPICH_jll`.
 
-**This must report the same implementation and version you wrote down in
-Section 1.** If it doesn't, fix it in the next step.
+**For a system MPI, this must report the same implementation and version you
+wrote down in Section 1.** If it doesn't, fix it in the next step.
 
 ---
 
@@ -140,10 +159,10 @@ MPIF90=/opt/homebrew/Cellar/open-mpi/5.0.8/bin/mpif90 bash compilef90.sh
 cd ..
 ```
 
-If that MPI provides no `mpif90` at all (for instance MPI.jl is on the bundled
-`MPItrampoline_jll`), you cannot easily build Alya against it — install a matching
-**system** MPI and use Option A instead. See the
-[note on the JLL route in Section 4](#4-choose-a-consistent-mpi-for-coupling).
+If MPI.jl is on the MPICH bundled with Julia (`MPICH_jll`), there is no system
+wrapper to find and none is needed: `compilef90.sh` builds against that MPICH
+directly (Section 4). For the other bundled MPIs (`MPItrampoline_jll`,
+`OpenMPI_jll`) install a matching **system** MPI and use Option A instead.
 
 ### Confirm the match
 
@@ -164,17 +183,24 @@ For a coupled run, pick **one** of the following — the same choice applies to
   `lib`. On macOS, also apply the
   [hostname `/etc/hosts` fix](INSTALL.md#55-macos-hostname-fix-mpich-and-mpich_jll-only)
   required for any MPICH-based MPI.
+- **The MPICH bundled with Julia (`MPICH_jll`) for both** *(MPI.jl's default;
+  no system MPI needed, only `gfortran`).* Leave MPI.jl as it is.
+  `compilef90.sh` sees the binding and builds `Alya.x` against that very MPICH;
+  `run_coupled.sh` launches with the `mpiexec` that ships with it, started with
+  the library path MPI.jl gives it. The macOS hostname fix above applies here
+  too.
 
-> **About the `MPICH_jll` *native* route.** The bundled-JLL route in
-> [INSTALL.md Section 5, Route C](INSTALL.md#5-running-in-parallel-with-mpi) is
-> for **standalone** Jexpresso. It is **not** appropriate for coupling in the
-> general case, because Alya is a separately compiled Fortran binary linked
-> against a *system* MPI — and that system MPI is almost never ABI-identical to
-> the JLL. Use a **system** OpenMPI or MPICH for coupled runs so both codes link
-> the very same library. (The only exception: if you deliberately build `Alya.x`
-> against the *same* MPICH that is ABI-compatible with `MPItrampoline_jll`, you
-> may launch with MPI.jl's bundled `mpiexec` as shown in Section 6 — advanced,
-> macOS-only.)
+> **Same installation, not just the same family.** Two builds of MPICH in one
+> job — a Homebrew MPICH for Alya and Julia's `MPICH_jll`, say — are two
+> installations, and they are not guaranteed to form a working world. So with
+> MPI.jl on `MPICH_jll`, Alya is built against `MPICH_jll` itself, and
+> `run_coupled.sh` refuses to launch an `Alya.x` that loads its `libmpi` from
+> anywhere else. The JLL's own `bin/mpifort` cannot do this build: it still
+> points at the directory the JLL was built in, `/workspace/destdir`. So
+> `compilef90.sh` gives `gfortran` the JLL's include and library directories
+> directly and sets rpaths, so that `Alya.x` runs with no environment set.
+> The JLL ships no `mpi_f08` module; the build uses `mpif.h`, which the proxy
+> supports.
 
 ---
 
@@ -200,7 +226,10 @@ implementation's `mpif90` **by prefix, not by `PATH`** (Homebrew can only *link*
 one MPI at a time, so `which mpif90` may well be the other one's), verifies the
 wrapper really is what it claims, picks the Fortran binding the MPI actually
 provides, and checks the finished binary against MPI.jl — exiting non-zero if
-they disagree.
+they disagree. When MPI.jl is on the MPICH bundled with Julia (`MPICH_jll`),
+there is no wrapper to find: it builds against that MPICH directly and checks
+that `Alya.x` loads that very `libmpi` (Section 4). If Julia cannot be asked,
+the script prints Julia's error rather than guessing.
 
 To build against a specific implementation instead, name it:
 
@@ -452,11 +481,12 @@ mpirun -np 2 ./AlyaProxy/Alya.x : -np 2 \
 >      : -np 2 "$JULIA_BIN" --project=. ./src/Jexpresso.jl CompEuler 3dAlya
 > ```
 
-### MPICH_jll bundled launcher (advanced, macOS)
+### The MPICH bundled with Julia (`MPICH_jll`)
 
-Only valid if `Alya.x` was built against an MPICH that is ABI-compatible with
-`MPItrampoline_jll` (see the note in Section 4). Here the launcher comes from
-MPI.jl, and the env var is passed with MPICH's `-env`:
+With MPI.jl on `MPICH_jll` and `Alya.x` built against it (Section 4),
+`run_coupled.sh` needs nothing more: it launches with MPI.jl's own `mpiexec`.
+By hand, the launcher comes from MPI.jl, and the env var is passed with MPICH's
+`-env`:
 
 ```bash
 julia --project=. -e '

@@ -43,16 +43,52 @@ CASE="${4:-3dAlya}"
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
 JULIA="${JULIA:-julia}"
+
+# Resolve the REAL julia binary. A juliaup shim on PATH is a shell wrapper that
+# OpenMPI 5's prterun cannot always launch (RUN-COUPLED.md §6).
+JULIA_BIN="$("$JULIA" -e 'print(joinpath(Sys.BINDIR, "julia"))')"
+
+# What MPI.jl is bound to — asked once, used to pick the launcher when MPIRUN is
+# not given and by the preflight below. Tagged lines, so that nothing else
+# Julia prints can be taken for an answer.
+#
+# On MPI.jl's default binding, the MPICH bundled with Julia (MPICH_jll), no
+# mpirun on PATH belongs to that MPICH: the launcher is the mpiexec that ships
+# with it, started with the PATH and library path MPI.jl gives it — minus
+# Julia's own lib/julia, whose compiler runtime must not replace Alya.x's.
+JL_OUT=""
+if [ -z "${MPIRUN:-}" ] || [ "${SKIP_CHECKS:-0}" != "1" ]; then
+    JL_OUT="$("$JULIA_BIN" --project=. --startup-file=no -e '
+        using MPIPreferences, MPI
+        impl, _ = MPI.identify_implementation()
+        println("info=", impl, "|", MPI.API.libmpi, "|", MPIPreferences.binary)
+        if MPIPreferences.binary == "MPICH_jll"
+            cmd = MPI.mpiexec()
+            println("mpiexec=", cmd.exec[1])
+            own = normpath(joinpath(Sys.BINDIR, Base.LIBDIR, "julia"))
+            libvar = MPI.API.MPICH_jll.JLLWrappers.LIBPATH_env
+            for e in something(cmd.env, String[])
+                k, v = split(e, "="; limit = 2)
+                k == "PATH" && println("path=", v)
+                k == libvar && println("libpath=", k, "=",
+                    join(filter(d -> normpath(d) != own, split(v, ":")), ":"))
+            end
+        end' 2>/dev/null || true)"
+fi
+jl_tag() { printf '%s\n' "$JL_OUT" | sed -n "/^$1=/{s/^$1=//p;q;}"; }
+
+if [ -z "${MPIRUN:-}" ] && [ -n "$(jl_tag mpiexec)" ]; then
+    MPIRUN="$(jl_tag mpiexec)"
+    _path="$(jl_tag path)";       [ -n "$_path" ]    && export PATH="$_path"
+    _libpath="$(jl_tag libpath)"; [ -n "$_libpath" ] && export "$_libpath"
+    echo "==> MPI.jl uses the MPICH bundled with Julia (MPICH_jll): launching with its mpiexec"
+fi
 MPIRUN="${MPIRUN:-$(command -v mpirun || command -v mpiexec || true)}"
 
 if [ -z "$MPIRUN" ]; then
     echo "ERROR: no mpirun/mpiexec on PATH. Set MPIRUN=/path/to/mpirun." >&2
     exit 1
 fi
-
-# Resolve the REAL julia binary. A juliaup shim on PATH is a shell wrapper that
-# OpenMPI 5's prterun cannot always launch (RUN-COUPLED.md §6).
-JULIA_BIN="$("$JULIA" -e 'print(joinpath(Sys.BINDIR, "julia"))')"
 
 if [ ! -x AlyaProxy/Alya.x ]; then
     echo "ERROR: AlyaProxy/Alya.x not built. Build it with the mpif90 that matches" >&2
@@ -78,12 +114,7 @@ if [ "${SKIP_CHECKS:-0}" != "1" ]; then
         ALYA_LIBS=""
     fi
 
-    JL_INFO="$("$JULIA_BIN" --project=. -e '
-        using MPIPreferences
-        using MPI
-        impl, _ = MPI.identify_implementation()
-        println(impl, "|", MPI.API.libmpi, "|", MPIPreferences.binary)
-    ' 2>/dev/null | tail -1)"
+    JL_INFO="$(jl_tag info)"
 
     JL_IMPL="${JL_INFO%%|*}"
     JL_REST="${JL_INFO#*|}"
@@ -105,6 +136,26 @@ if [ "${SKIP_CHECKS:-0}" != "1" ]; then
     A_FAM="$(fam "$ALYA_LIBS")"
     J_FAM="$(fam "$JL_IMPL $JL_LIBMPI")"
     L_FAM="$(fam "$("$MPIRUN" --version 2>&1 | head -2)")"
+
+    # MPI.jl on the MPICH bundled with Julia: the same family is not enough.
+    # Alya.x must load that very libmpi — any other MPICH build (a Homebrew
+    # one, say) is a different installation in the same job. macOS records the
+    # library as @rpath/..., so the directory is looked for among the rpaths.
+    if [ "$JL_BINARY" = MPICH_jll ]; then
+        _jll_lib="$(dirname "$JL_LIBMPI")"
+        if command -v otool >/dev/null 2>&1; then
+            _seen="$(otool -l AlyaProxy/Alya.x 2>/dev/null | grep -F "$_jll_lib" || true)"
+        else
+            _seen="$(ldd AlyaProxy/Alya.x 2>/dev/null | grep -i libmpi | grep -F "$_jll_lib" || true)"
+        fi
+        if [ -z "$_seen" ]; then
+            echo "ERROR: MPI.jl uses the MPICH bundled with Julia (MPICH_jll), but" >&2
+            echo "       Alya.x was built against another MPI. Rebuild it — the script" >&2
+            echo "       builds against MPICH_jll by itself:" >&2
+            echo "         cd AlyaProxy && bash compilef90.sh && cd .." >&2
+            exit 1
+        fi
+    fi
 
     if [ -n "$A_FAM" ] && [ -n "$J_FAM" ] && [ "$A_FAM" != "$J_FAM" ]; then
         echo "ERROR: Alya.x is linked against $A_FAM but MPI.jl is bound to $J_FAM." >&2

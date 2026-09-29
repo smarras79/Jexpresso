@@ -163,9 +163,10 @@ fi
 stage "Stage 1 — what MPI.jl is bound to (serial, no launcher involved)"
 # ---------------------------------------------------------------------------
 if [ ! -f LocalPreferences.toml ]; then
-    warn "no LocalPreferences.toml in the project root — MPI.jl is on its default"
-    info "binding (the bundled JLL), which is almost never what a coupled run wants."
-    info "See RUN-COUPLED.md §3 / INSTALL.md §5.2."
+    info "no LocalPreferences.toml in the project root — MPI.jl is on its default"
+    info "binding, the MPICH bundled with Julia (MPICH_jll). That works for coupling:"
+    info "AlyaProxy/compilef90.sh builds Alya.x against it, and run_coupled.sh and the"
+    info "stages below launch with its own mpiexec. See RUN-COUPLED.md §4."
 fi
 
 run_timeout "$TIMEOUT" "$JULIA_BIN" --project=. -e '
@@ -202,6 +203,41 @@ case "$LAST_RC" in
     JL_FAMILY=unknown; JL_LIBMPI=""
     ;;
 esac
+
+# MPI.jl on the MPICH bundled with Julia: no mpirun on PATH belongs to that
+# MPICH — the mpiexec shipped with it does. Every stage below uses that one,
+# started with the PATH and library path MPI.jl gives it (minus Julia's own
+# lib/julia), exactly as run_coupled.sh does.
+JLL_ROUTE=0
+if [ "${JL_BINARY:-}" = MPICH_jll ]; then
+    run_timeout "$TIMEOUT" "$JULIA_BIN" --project=. --startup-file=no -e '
+        using MPI
+        cmd = MPI.mpiexec()
+        println("mpiexec=", cmd.exec[1])
+        own = normpath(joinpath(Sys.BINDIR, Base.LIBDIR, "julia"))
+        libvar = MPI.API.MPICH_jll.JLLWrappers.LIBPATH_env
+        for e in something(cmd.env, String[])
+            k, v = split(e, "="; limit = 2)
+            k == "PATH" && println("path=", v)
+            k == libvar && println("libpath=", k, "=",
+                join(filter(d -> normpath(d) != own, split(v, ":")), ":"))
+        end'
+    _jll_mpiexec="$(printf '%s\n' "$LAST_OUT" | sed -n 's/^mpiexec=//p')"
+    if [ -n "$_jll_mpiexec" ]; then
+        JLL_ROUTE=1
+        LAUNCHER="$_jll_mpiexec"
+        _p="$(printf '%s\n' "$LAST_OUT" | sed -n 's/^path=//p')"
+        [ -n "$_p" ] && export PATH="$_p"
+        _l="$(printf '%s\n' "$LAST_OUT" | sed -n 's/^libpath=//p')"
+        [ -n "$_l" ] && export "$_l"
+        LAUNCHER_BANNER="$("$LAUNCHER" --version 2>&1 | head -3)"
+        LAUNCHER_FAMILY="$(mpi_family "$LAUNCHER_BANNER")"
+        info "MPI.jl is on MPICH_jll: every stage below launches with its own mpiexec"
+        info "launcher: $LAUNCHER"
+    else
+        warn "could not get MPI.jl's own mpiexec; the stages below use $LAUNCHER"
+    fi
+fi
 
 # ---------------------------------------------------------------------------
 stage "Stage 2 — do the launcher and MPI.jl belong to the same MPI?"
@@ -282,7 +318,11 @@ stage "Stage 2c — MPI_Init works from a NATIVE binary (C), 1 and $NP ranks"
 # launcher's daemon, hangs. A C binary has no such bundled libraries, so if C
 # passes here and Julia hangs in Stage 3/4, the fault is on the Julia side.
 MPICC="$(command -v mpicc 2>/dev/null || true)"
-if [ -z "$MPICC" ]; then
+if [ "$JLL_ROUTE" = 1 ]; then
+    info "MPI.jl is on MPICH_jll: an mpicc on PATH belongs to another MPI, so the"
+    info "native-binary comparison does not apply here — Stages 3-5 test this"
+    info "MPICH directly (Stage 5 with Alya.x, a native binary)."
+elif [ -z "$MPICC" ]; then
     info "no mpicc — skipping the native-binary comparison"
 else
     CSRC="$TMPDIR_LOCAL/mpi_hello.c"
@@ -692,15 +732,38 @@ else
         printf '%s\n' "$LINKED" | sed 's/^/          /'
         AX_FAMILY="$(mpi_family "$LINKED")"
         if [ -n "${JL_FAMILY:-}" ] && [ "$JL_FAMILY" != unknown ] && [ "$AX_FAMILY" != unknown ]; then
-            if [ "$AX_FAMILY" = "$JL_FAMILY" ]; then
+            if [ "$AX_FAMILY" = "$JL_FAMILY" ] && [ "$JLL_ROUTE" = 1 ]; then
+                # Same installation, checked rather than eyeballed: Alya.x must
+                # load its libmpi from MPICH_jll's own lib directory (macOS
+                # records @rpath/..., so look among the binary's rpaths).
+                _jll_lib="$(dirname "$JL_LIBMPI")"
+                if command -v otool >/dev/null 2>&1; then
+                    _seen="$(otool -l AlyaProxy/Alya.x 2>/dev/null | grep -F "$_jll_lib" || true)"
+                else
+                    _seen="$(ldd AlyaProxy/Alya.x 2>/dev/null | grep -i libmpi | grep -F "$_jll_lib" || true)"
+                fi
+                if [ -n "$_seen" ]; then
+                    pass "Alya.x loads MPICH_jll's own libmpi — the MPICH that MPI.jl uses"
+                else
+                    fail "Alya.x is MPICH, but not the MPICH_jll that MPI.jl uses ($_jll_lib)."
+                    info "Rebuild it; compilef90.sh builds against MPICH_jll by itself:"
+                    info "  cd AlyaProxy && bash compilef90.sh"
+                    FAMILY_MISMATCH=1
+                fi
+            elif [ "$AX_FAMILY" = "$JL_FAMILY" ]; then
                 pass "Alya.x and MPI.jl are both $AX_FAMILY"
                 info "MPI.jl libmpi: ${JL_LIBMPI:-unknown}"
                 info "Compare the paths above by eye — same family but different"
                 info "installs still deadlocks. They must be the SAME library file."
             else
                 fail "Alya.x is $AX_FAMILY but MPI.jl is $JL_FAMILY — coupled runs cannot work."
-                info "Rebuild Alya.x with the matching mpif90 (RUN-COUPLED.md §5):"
-                info "  cd AlyaProxy && MPIF90=<wrapper-of-$JL_FAMILY> bash compilef90.sh"
+                if [ "$JLL_ROUTE" = 1 ]; then
+                    info "Rebuild it; compilef90.sh builds against MPICH_jll by itself:"
+                    info "  cd AlyaProxy && bash compilef90.sh"
+                else
+                    info "Rebuild Alya.x with the matching mpif90 (RUN-COUPLED.md §5):"
+                    info "  cd AlyaProxy && MPIF90=<wrapper-of-$JL_FAMILY> bash compilef90.sh"
+                fi
                 FAMILY_MISMATCH=1
             fi
         fi
