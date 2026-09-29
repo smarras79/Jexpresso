@@ -9,6 +9,12 @@ LocalPreferences.toml
 *.code-workspace
 jexpresso_mpi_stack.txt
 
+# Alya proxy: the binary AlyaProxy/compilef90.sh builds is linked against the
+# local MPI, so it is never shared; the coupled run writes its VTS files into
+# the directory it is launched from.
+AlyaProxy/Alya.x
+alya_grid_*.vts
+
 # meshes/ is the link to the smarras79/JexpressoMeshes repository — local to
 # each developer, never part of this repository. It therefore does not exist
 # on a CI runner: a case that CI runs must keep its mesh inside this repo,
