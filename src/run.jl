@@ -33,7 +33,10 @@ using ArgParse
 #  julia > include(./src/Jexpresso.jl)
 #
 #--------------------------------------------------------
-function parse_commandline()
+# Defined once per session: a coupled precompile workload runs this file more
+# than once while the package image is generated, and redefining a method is
+# not allowed then.
+@isdefined(parse_commandline) || function parse_commandline()
     s = ArgParseSettings()
 
     @add_arg_table s begin
@@ -67,9 +70,13 @@ end
 # another MPI code such as Alya. In standalone runs the two paths are
 # functionally equivalent; the env-gated path is opt-in to guarantee no
 # behavioural drift when JEXPRESSO_COUPLED is unset.
+#
+# Plain globals, not consts: this file runs again for every run_case, and a
+# coupled precompile workload runs it inside the package image, so a const
+# would be redefined — to a different value when the mode changes.
 #--------------------------------------------------------
-const _JEXPRESSO_COUPLED_ENV = lowercase(get(ENV, "JEXPRESSO_COUPLED", ""))
-const JEXPRESSO_COUPLING_ENABLED = _JEXPRESSO_COUPLED_ENV in ("1", "true", "yes", "on")
+_JEXPRESSO_COUPLED_ENV = lowercase(get(ENV, "JEXPRESSO_COUPLED", ""))
+JEXPRESSO_COUPLING_ENABLED = _JEXPRESSO_COUPLED_ENV in ("1", "true", "yes", "on")
 
 if JEXPRESSO_COUPLING_ENABLED
     _world, _local_comm, _wsize, _wrank, _lsize, _lrank, _is_coupled =
@@ -103,6 +110,16 @@ else
     case_name_dir = string(dirname(@__DIR__()), "/problems", "/", parsed_equations, "/", parsed_equations_case_name)
 end
 
+# A coupled launch starts new processes that compile Jexpresso before their
+# first step, unless the package image already holds this case's coupled code
+# (the coupled precompile workload, src/Jexpresso.jl). Say which.
+if JEXPRESSO_COUPLING_ENABLED && !JEXPRESSO_DRY_COUPLING[] && rank == 0 &&
+   _COUPLED_PRECOMPILE_CASE[] != string(parsed_equations, "/", parsed_equations_case_name)
+    println(" # Not precompiled for coupled runs: this launch compiles Jexpresso first.")
+    println(" #   See \"Precompiling a coupled case\" in RUN-COUPLED.md.")
+    flush(stdout)
+end
+
 user_input_file      = string(case_name_dir, "/user_inputs.jl")
 user_flux_file       = string(case_name_dir, "/user_flux.jl")
 user_source_file     = string(case_name_dir, "/user_source.jl")
@@ -126,18 +143,21 @@ user_plot_file       = string(case_name_dir, "/user_plot.jl")
 # entire RHS + integrator from scratch, which is the ~30 s freeze at
 # "# Precompile warm-up (1 step solve)" on a second identical run_case.
 #
-# Reload when the case directory changed (different case → its functions
-# really must be redefined) or when any of these files was edited (mtime
-# bump → pick up the user's change). Otherwise reuse the already-compiled
-# code: an unchanged re-run is then launch-cost-only.
+# Reload everything when the case directory changed (different case → its
+# functions really must be redefined), and otherwise only the files that were
+# edited (mtime bump → pick up the user's change). Everything else keeps its
+# already-compiled code: an unchanged re-run is launch-cost-only, and editing
+# user_inputs.jl redefines user_inputs() alone rather than the RHS hooks —
+# which matters most when the RHS came compiled in the package image.
 _case_load_files = [driver_file, user_input_file, user_flux_file,
                     user_source_file, user_bc_file, user_initialize_file,
                     user_primitives_file]
 isfile(user_analytic_file) && push!(_case_load_files, user_analytic_file)
 isfile(user_plot_file)     && push!(_case_load_files, user_plot_file)
-_need_case_reload = (_LOADED_CASE_DIR[] != case_name_dir) ||
-    any(f -> get(_CASE_FILE_MTIMES, f, -1.0) != mtime(f), _case_load_files)
-if _need_case_reload
+_new_case         = _LOADED_CASE_DIR[] != case_name_dir
+_case_files_stale = [f for f in _case_load_files
+                     if _new_case || get(_CASE_FILE_MTIMES, f, -1.0) != mtime(f)]
+if !isempty(_case_files_stale)
     # NOTE a previous version of this evicted the OUTGOING case's hook methods
     # with Base.delete_method before including the new ones, to stop a hook two
     # cases spell differently (theta's `user_source!(…, ::CL, ::PERT)` vs
@@ -157,8 +177,12 @@ if _need_case_reload
     # The dispatch bug it was meant to fix is instead handled per case, by having
     # each case define its hooks at the SAME signatures its siblings use so the
     # include really does overwrite them (see problems/AdvDiff/kopriva/user_source.jl).
-    for _f in _case_load_files
-        include(_f)
+    for _f in _case_files_stale
+        if ccall(:jl_generating_output, Cint, ()) == 1
+            _include_untracked(_f)     # see its definition in Jexpresso.jl
+        else
+            include(_f)
+        end
         _CASE_FILE_MTIMES[_f] = mtime(_f)
     end
     _LOADED_CASE_DIR[] = case_name_dir
@@ -279,6 +303,12 @@ mod_inputs_user_inputs!(inputs, rank)
 if rank == 0
     @printf("DONE (%.2f s)\n", (time_ns() - _t_defaults) / 1e9)
     flush(stdout)
+end
+
+# The coupled precompile workload writes its output where no one looks, instead
+# of over the case's own output files.
+if JEXPRESSO_DRY_COUPLING[]
+    inputs[:output_dir] = mktempdir()
 end
 
 #--------------------------------------------------------

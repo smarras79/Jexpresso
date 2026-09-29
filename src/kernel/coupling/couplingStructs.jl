@@ -432,6 +432,22 @@ const JEXPRESSO_EARLY_SYNC_DONE      = Ref{Bool}(false)
 const JEXPRESSO_EARLY_NPOIN_SEND     = Ref{Union{Nothing, Vector{Int32}}}(nothing)
 const JEXPRESSO_EARLY_SEND_TO_RANKS  = Ref{Union{Nothing, Vector{Int32}}}(nothing)
 
+# Put every coupling Ref back to its state at load time. The coupled precompile
+# workload calls this after each dry run: whatever these hold when the package
+# image is written is what every later session starts with — an MPI
+# communicator from the precompile process, or an early sync marked done that
+# a real run then skips, leaving Alya waiting for it.
+function je_reset_coupling_state!()
+    JEXPRESSO_MPI_COMM[]            = nothing
+    JEXPRESSO_MPI_COMM_WORLD[]      = nothing
+    JEXPRESSO_COUPLING_DATA[]       = nothing
+    je_clear_prefetched_caches!()
+    JEXPRESSO_EARLY_SYNC_DONE[]     = false
+    JEXPRESSO_EARLY_NPOIN_SEND[]    = nothing
+    JEXPRESSO_EARLY_SEND_TO_RANKS[] = nothing
+    return nothing
+end
+
 function set_mpi_comm(comm::MPI.Comm)
     JEXPRESSO_MPI_COMM[] = comm
 end
@@ -444,6 +460,59 @@ function set_mpi_comm_world(comm::MPI.Comm)
 end
 function get_mpi_comm_world()
     return JEXPRESSO_MPI_COMM_WORLD[] === nothing ? MPI.COMM_WORLD : JEXPRESSO_MPI_COMM_WORLD[]
+end
+
+# ===========================================================================
+# DRY COUPLING — the coupled precompile workload (src/Jexpresso.jl)
+# ===========================================================================
+#
+# Precompilation runs in a single process, with no Alya to couple to. To bake
+# a coupled case into the package image anyway, the workload runs it "dry":
+# every coupling function below runs exactly as in a real coupled run — the
+# same code on the same types, which is what the image has to hold — while
+# Alya's side is simulated in this process:
+#
+#   * the world is virtual: Alya's master and one worker at world ranks 0 and
+#     1, the Jexpresso ranks after them (_je_world_size/_je_world_rank);
+#   * Alya's grid, which a real Alya broadcasts, is a few points per direction
+#     inside Jexpresso's own mesh (_je_dry_alya_grid!);
+#   * nothing is sent to Alya, and nothing is waited for.
+#
+# Only the workload sets this, and it resets it before the image is written.
+const JEXPRESSO_DRY_COUPLING = Ref{Bool}(false)
+const _DRY_NALYA = 2   # a master, which owns no points, and one worker
+
+_je_dry() = JEXPRESSO_DRY_COUPLING[]
+
+_je_world_size(world) = _je_dry() ? _DRY_NALYA + MPI.Comm_size(get_mpi_comm()) :
+                                    MPI.Comm_size(world)
+_je_world_rank(world) = _je_dry() ? _DRY_NALYA + MPI.Comm_rank(get_mpi_comm()) :
+                                    MPI.Comm_rank(world)
+
+# Alya's grid for a dry run: 4 points per direction, inset by a tenth of the
+# domain on each side of its global bounding box so that every point lies
+# inside an element. Filled in on first use, when a mesh exists; a no-op in a
+# real run, where Alya's broadcast has already filled these entries.
+function _je_dry_alya_grid!(coupling_data, mesh, local_comm)
+    get(coupling_data, :dry, false) === true || return
+    haskey(coupling_data, :ndime) && return
+    ndime   = Int(mesh.nsd)
+    rem_min = zeros(Float64, 3)
+    rem_max = zeros(Float64, 3)
+    rem_nx  = ones(Int32, 3)
+    for d in 1:ndime
+        lo    = MPI.Allreduce(minimum(@view(mesh.coords[d, :])), MPI.MIN, local_comm)
+        hi    = MPI.Allreduce(maximum(@view(mesh.coords[d, :])), MPI.MAX, local_comm)
+        inset = 0.1 * (hi - lo)
+        rem_min[d] = lo + inset
+        rem_max[d] = hi - inset
+        rem_nx[d]  = 4
+    end
+    coupling_data[:ndime]   = ndime
+    coupling_data[:rem_min] = rem_min
+    coupling_data[:rem_max] = rem_max
+    coupling_data[:rem_nx]  = rem_nx
+    return
 end
 
 """
@@ -481,9 +550,12 @@ function je_init_mpi_and_split_comm()
     set_mpi_comm(local_comm)
     set_mpi_comm_world(world)
 
-    is_coupled = (lsize < wsize)
+    is_coupled = (lsize < wsize) || _je_dry()
 
-    if lrank == 0 && is_coupled
+    if lrank == 0 && _je_dry()
+        println("[Jexpresso] Dry coupling (precompile workload): Alya is simulated in this process.")
+        flush(stdout)
+    elseif lrank == 0 && is_coupled
         println("[Jexpresso] Coupled mode detected:")
         println("            World size = $wsize, Local size = $lsize, APPID = $appid")
         println("            Handshake deferred to driver.")
@@ -900,7 +972,7 @@ function je_early_coupling_sync!(local_comm::MPI.Comm, world::MPI.Comm)
     JEXPRESSO_EARLY_SYNC_DONE[] && return
 
     rank  = MPI.Comm_rank(local_comm)
-    wsize = MPI.Comm_size(world)
+    wsize = _je_world_size(world)
 
     # MPI.Barrier(world) / MPI.Alltoall!(world) below are collectives over the
     # FULL MPMD world — Alya is already blocked in the matching pair. Every
@@ -930,8 +1002,10 @@ function je_early_coupling_sync!(local_comm::MPI.Comm, world::MPI.Comm)
     t0 = time_ns()
 
     recv_counts_dummy = zeros(Int32, wsize)
-    MPI.Barrier(world)
-    MPI.Alltoall!(Vector{Int32}(npoin_send), recv_counts_dummy, 1, world)
+    if !_je_dry()
+        MPI.Barrier(world)
+        MPI.Alltoall!(Vector{Int32}(npoin_send), recv_counts_dummy, 1, world)
+    end
     je_send_node_list(Int32.(alya_local_ids), alya_owner_ranks, send_to_ranks, world)
 
     JEXPRESSO_EARLY_NPOIN_SEND[]    = npoin_send
@@ -946,11 +1020,11 @@ end
 # ===========================================================================
 
 function je_perform_coupling_handshake(world, nparts)
-    wsize = MPI.Comm_size(world)
-    wrank = MPI.Comm_rank(world)
+    wsize = _je_world_size(world)
+    wrank = _je_world_rank(world)
     wsize <= nparts && return false
     local_chars = Vector{UInt8}(rpad("JEXPRESSO", 128, ' '))
-    MPI.Gather!(local_chars, nothing, 0, world)
+    _je_dry() || MPI.Gather!(local_chars, nothing, 0, world)
     if wrank == nparts
         println("[Driver] Handshake complete - Jexpresso ready.")
         flush(stdout)
@@ -959,12 +1033,23 @@ function je_perform_coupling_handshake(world, nparts)
 end
 
 function je_receive_alya_data(world, nparts)
-    wsize = MPI.Comm_size(world)
+    wsize = _je_world_size(world)
     wsize <= nparts && (@warn "je_receive_alya_data called but not in coupled mode"; return)
 
     # Idempotency guard: if coupling data was already received (e.g. from run.jl
     # before driver() was called), skip the MPI operations entirely.
     JEXPRESSO_COUPLING_DATA[] !== nothing && return
+
+    # Dry run: nothing to receive. The virtual Alya sits at world ranks
+    # 0 (master) and 1 (worker); its grid is filled in from the mesh once one
+    # exists (_je_dry_alya_grid!).
+    if _je_dry()
+        set_coupling_data(Dict{Symbol,Any}(
+            :dry        => true,
+            :alya2world => Int32.(0:_DRY_NALYA-1),
+        ))
+        return
+    end
 
     ndime_buf = Vector{Int32}(undef, 1)
     MPI.Bcast!(ndime_buf, 0, world)
@@ -1005,12 +1090,12 @@ function je_send_node_list(alya_local_ids::Vector{Int32},
                            send_to_ranks::Vector{Int32},
                            world::MPI.Comm)
     lrank = MPI.Comm_rank(get_mpi_comm())
-    wrank = MPI.Comm_rank(world)
+    wrank = _je_world_rank(world)
     send_requests = MPI.Request[]
     for dest_rank in send_to_ranks
         mask    = alya_owner_ranks .== dest_rank
         gid_buf = Int32.(alya_local_ids[mask])
-        push!(send_requests, MPI.Isend(gid_buf, dest_rank, 0, world))
+        _je_dry() || push!(send_requests, MPI.Isend(gid_buf, dest_rank, 0, world))
         println("[je_send_node_list] lrank=$lrank (wrank=$wrank) → Alya world rank $dest_rank: ",
                 "$(length(gid_buf)) node IDs")
     end
@@ -1617,6 +1702,7 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
                                         block_size::NTuple{3,Int}=(64,64,64),
                                         use_cropping::Bool=true,
                                         ξ_nodes::Union{Nothing,Vector{Float64}}=nothing)
+    _je_dry_alya_grid!(coupling_data, mesh, local_comm)
     ndime      = coupling_data[:ndime]
     alya2world = coupling_data[:alya2world]
     @assert ndime == 2 || ndime == 3 "Only ndime==2 or ndime==3 supported"
@@ -1673,7 +1759,7 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
     tol = 1e-10
 
     lrank = MPI.Comm_rank(local_comm)
-    wrank = MPI.Comm_rank(world_comm)
+    wrank = _je_world_rank(world_comm)
 
     use_elem_containment = (ξ_nodes !== nothing && ndime == 2)
     if use_elem_containment
@@ -1896,12 +1982,13 @@ end
 # ===========================================================================
 
 function build_alya_point_ownership_map(mesh, coupling_data, local_comm, world_comm)
+    _je_dry_alya_grid!(coupling_data, mesh, local_comm)
     ndime      = coupling_data[:ndime]
     rem_min    = coupling_data[:rem_min]
     rem_max    = coupling_data[:rem_max]
     rem_nx     = coupling_data[:rem_nx]
     alya2world = coupling_data[:alya2world]
-    wrank = MPI.Comm_rank(world_comm)
+    wrank = _je_world_rank(world_comm)
     lrank = MPI.Comm_rank(local_comm)
     rem_dx = zeros(Float64, 3)
     for idim in 1:ndime
@@ -2020,7 +2107,7 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
     coupling_data = get_coupling_data()
     local_comm    = get_mpi_comm()
     lrank         = MPI.Comm_rank(local_comm)
-    wsize         = MPI.Comm_size(world)
+    wsize         = _je_world_size(world)
 
     # Sign-of-life print: appears as soon as setup_coupling_and_mesh has been
     # JIT-compiled.  This breaks up the otherwise-silent period between
@@ -2065,8 +2152,10 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
         lrank == 0 && (println("[setup_coupling] Alltoall to exchange point counts…"); flush(stdout))
 
         recv_counts_from_alya = zeros(Int32, wsize)
-        MPI.Barrier(world)
-        MPI.Alltoall!(Vector{Int32}(npoin_send), recv_counts_from_alya, 1, world)
+        if !_je_dry()
+            MPI.Barrier(world)
+            MPI.Alltoall!(Vector{Int32}(npoin_send), recv_counts_from_alya, 1, world)
+        end
 
         je_send_node_list(Int32.(alya_local_ids), alya_owner_ranks, send_to_ranks, world)
     end
@@ -2252,6 +2341,7 @@ function coupling_exchange_data!(cpg::CouplingData)
     send_requests = MPI.Request[]
     for dest_rank in cpg.send_to_ranks
         cpg.npoin_send[dest_rank+1] > 0 || continue
+        _je_dry() && continue
         push!(send_requests, MPI.Isend(cpg.send_bufs[dest_rank+1], dest_rank, 0, cpg.comm_world))
     end
     isempty(send_requests) || MPI.Waitall(send_requests)
@@ -2431,8 +2521,8 @@ end
 function verify_coupling_communication_pattern(npoin_send, alya_owner_ranks, alya_local_ids,
                                                coupling_data, local_comm, world_comm)
     lrank       = MPI.Comm_rank(local_comm)
-    wrank       = MPI.Comm_rank(world_comm)
-    wsize       = MPI.Comm_size(world_comm)
+    wrank       = _je_world_rank(world_comm)
+    wsize       = _je_world_size(world_comm)
     nranks_alya = length(coupling_data[:alya2world])
     total_local = length(alya_owner_ranks)
 

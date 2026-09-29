@@ -120,6 +120,7 @@ using GridapP4est
 using P4est_wrapper
 
 using PrecompileTools
+import Preferences   # the coupled precompile workload's case (bottom of this file)
 
 
 TInt   = Int64
@@ -336,6 +337,28 @@ include(joinpath( "auxiliary", "checks.jl"))
 # run.jl (included at module-body time when invoked as a script) reads it.
 const _LOADED_CASE_DIR  = Ref{String}("")
 const _CASE_FILE_MTIMES = Dict{String,Float64}()
+
+# The case the coupled precompile workload baked into this package image, as
+# "eqs/eqs_case" ("" for none). Set by the workload at the bottom of this file
+# and serialised with the image; run.jl compares it with a coupled launch.
+const _COUPLED_PRECOMPILE_CASE = Ref{String}("")
+
+# run.jl loads a case's files with this while a package image is being
+# generated (a precompile workload). A plain include() records the file as a
+# dependency of the image, so editing the case's user_inputs.jl would mark all
+# of Jexpresso stale and rerun the whole workload at the next `using`. Loaded
+# this way, an edited case file is just reloaded at run time, as in any
+# session (run.jl compares mtimes).
+function _include_untracked(path::AbstractString)
+    tls  = task_local_storage()
+    prev = get(tls, :SOURCE_PATH, nothing)
+    tls[:SOURCE_PATH] = path    # as include() does, for includes inside the file
+    try
+        return Base.include_string(@__MODULE__, read(path, String), path)
+    finally
+        prev === nothing ? delete!(tls, :SOURCE_PATH) : (tls[:SOURCE_PATH] = prev)
+    end
+end
 
 # ──────────────────────────────────────────────────────────────────────
 # Lazy dependency loaders.
@@ -578,6 +601,46 @@ function run_case(eqs::AbstractString, eqs_case::AbstractString;
 end
 
 
+"""
+    Jexpresso.set_coupled_precompile!(eqs, eqs_case)
+    Jexpresso.set_coupled_precompile!(nothing)
+
+Bake a coupled case into Jexpresso's package image, so that a coupled launch
+whose ranks load the package (`using Jexpresso; Jexpresso.run_case(eqs,
+eqs_case)`, as `run_coupled.sh` does) starts without compiling it first.
+`nothing` turns it off.
+
+The choice is stored in `LocalPreferences.toml` and marks the image stale;
+the next precompile — `Pkg.precompile()`, or the next `using Jexpresso` —
+runs the case dry to build it (the coupled workload at the bottom of
+src/Jexpresso.jl). That precompile takes several minutes, and happens again
+whenever Jexpresso's source changes.
+"""
+function set_coupled_precompile!(eqs::AbstractString, eqs_case::AbstractString)
+    isdir(joinpath(dirname(@__DIR__), "problems", eqs, eqs_case)) ||
+        throw(ArgumentError("no case problems/$eqs/$eqs_case"))
+    Preferences.set_preferences!(@__MODULE__,
+        "coupled_precompile" => string(eqs, "/", eqs_case); force = true)
+    return nothing
+end
+function set_coupled_precompile!(::Nothing)
+    Preferences.delete_preferences!(@__MODULE__, "coupled_precompile"; force = true)
+    return nothing
+end
+
+# One dry run of a coupled case, "eqs/eqs_case", for the coupled workload.
+function _dry_coupled_run(spec::AbstractString)
+    eqs, eqs_case = split(spec, '/')
+    push!(empty!(ARGS), String(eqs), String(eqs_case), "false")
+    # The case's relative paths, e.g. its gmsh file, are relative to the
+    # repository root, where a real launch starts.
+    cd(dirname(@__DIR__)) do
+        include(joinpath(@__DIR__, "run.jl"))
+    end
+    return nothing
+end
+
+
 # PERF: precompile workload — runs `test/CI-runs/CompEuler/sod1d`
 # one driver pass through during `Pkg.precompile()` so PrecompileTools
 # records every method that fires inside the integrator + RHS chain
@@ -668,9 +731,44 @@ end
     # practice and is a provider that actually exists there.
     _run_workload = lowercase(get(ENV, "JEXPRESSO_PRECOMPILE_WORKLOAD", "0")) in
                     ("1", "true", "yes", "on")
+
+    # ── Coupled workload ────────────────────────────────────────────────
+    # A coupled launch starts new Julia processes, and each compiles Jexpresso
+    # before its first step: about 60 % of a 3dAlya launch. Code compiled by a
+    # standalone run does not help, because a coupled run calls different
+    # specialisations — `params` carries the CouplingData and the integrator
+    # the coupling callback. So this workload runs a coupled case dry (see
+    # JEXPRESSO_DRY_COUPLING in couplingStructs.jl): no Alya, but the same code
+    # on the same types.
+    #
+    # It runs the case twice. The first run builds the case's mesh and SEM
+    # caches if they do not exist yet; the second loads them, which is the path
+    # every later real launch takes.
+    #
+    # The case comes from a preference, not an environment variable. That way,
+    # whatever triggers the next precompile (a REPL, an mpiexec rank, Pkg)
+    # bakes in the same case, and changing it marks the image stale. Set it
+    # with Jexpresso.set_coupled_precompile!("CompEuler", "3dAlya"), or with
+    # `PRECOMPILE_COUPLED=1 ./run_coupled.sh …`.
+    #
+    # It replaces the sod1d workload rather than adding to it. run.jl cannot
+    # load two cases while the image is generated, because the second case's
+    # hooks would redefine the first's methods, which is an error then.
+    #
+    # The function, not @load_preference: the macro looks the package up when it
+    # expands, and run as the script src/Jexpresso.jl this module is not one.
+    _coupled_case = Preferences.load_preference(Base.PkgId(@__MODULE__).uuid,
+                                                "coupled_precompile", "")
+    _run_coupled  = !isempty(_coupled_case)
+    if _run_coupled && !isdir(joinpath(dirname(@__DIR__), "problems", _coupled_case))
+        @warn "coupled_precompile = \"$_coupled_case\" names no case under problems/; skipping the coupled workload"
+        _run_coupled = false
+    end
+
     _fi_provider_was_set = haskey(ENV, "FI_PROVIDER")
     _fi_provider_prev    = get(ENV, "FI_PROVIDER", "")
-    if _run_workload && !_fi_provider_was_set
+    _pin_provider        = _run_workload || _run_coupled
+    if _pin_provider && !_fi_provider_was_set
         # Linux: `shm` is the network-free happy path.
         # macOS: `shm` does not exist there, and `tcp` needs an interface that
         # can host an endpoint — loopback frequently cannot, failing with
@@ -681,7 +779,30 @@ end
     end
 
     @compile_workload begin
-        if _run_workload
+        if _run_coupled
+            _env_coupled = get(ENV, "JEXPRESSO_COUPLED", nothing)
+            ENV["JEXPRESSO_COUPLED"] = "1"
+            JEXPRESSO_DRY_COUPLING[] = true
+            try
+                for _ in 1:2
+                    _dry_coupled_run(_coupled_case)   # lean driver pass (3 steps)
+                    je_reset_coupling_state!()
+                end
+                _COUPLED_PRECOMPILE_CASE[] = _coupled_case
+            catch e
+                # The image is still sound without the workload's code, so a
+                # failing workload must not fail precompilation — and with it
+                # every `using Jexpresso`. Say so, and go on.
+                @warn "the coupled precompile workload for $_coupled_case failed; the package image will not include it" exception = (e, catch_backtrace())
+            finally
+                # Nothing from the dry runs may reach the image (see
+                # je_reset_coupling_state!).
+                je_reset_coupling_state!()
+                JEXPRESSO_DRY_COUPLING[] = false
+                _env_coupled === nothing ? delete!(ENV, "JEXPRESSO_COUPLED") :
+                                           (ENV["JEXPRESSO_COUPLED"] = _env_coupled)
+            end
+        elseif _run_workload
             push!(empty!(ARGS), "CompEuler", "sod1d", "true")
             include(joinpath(@__DIR__, "run.jl"))   # lean driver pass (3 steps)
         end
@@ -689,9 +810,9 @@ end
 
     # Undo the temporary FI_PROVIDER override (no-op if we never set it, or
     # if the user had pinned it — we left theirs untouched above).
-    if _run_workload && !_fi_provider_was_set
+    if _pin_provider && !_fi_provider_was_set
         delete!(ENV, "FI_PROVIDER")
-    elseif _run_workload
+    elseif _pin_provider
         ENV["FI_PROVIDER"] = _fi_provider_prev
     end
 end
