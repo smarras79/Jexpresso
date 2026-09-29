@@ -309,30 +309,52 @@ function les_projection_accumulate!(params)
     nstr  = length(params.inputs[:lesstress_vars])
     mbuf = zeros(nprof); sbuf = zeros(nstr)
 
+    # LES_PROJ is a Ref{Any}: `pl` is not inferable here, so the hot loop is
+    # behind a function barrier. Without it every access in the loop is dynamic
+    # and one statistics call cost ~40 s at 1024 ranks instead of ~0.2 s.
     for pl in LES_PROJ[]
-        @inbounds for p in eachindex(pl.elem)
-            e = pl.elem[p]
-            fill!(qp, 0.0); fill!(qep, 0.0); fill!(sp, 0.0)
-            for c in 1:ngl
-                wz = pl.Lz[c, p]
-                for b in 1:ngl
-                    wyz = pl.Ly[b, p] * wz
-                    for a in 1:ngl
-                        w  = pl.Lx[a, p] * wyz
-                        ip = connijk[e, a, b, c]
-                        for v in 1:nu; qp[v]  += w * uaux[ip, v]; end
-                        for v in 1:nq; qep[v] += w * qe[ip, v];   end
-                        for v in 1:ns; sp[v]  += w * sgs[ip, v];  end
-                    end
+        t0 = time()
+        _proj_accumulate_plane!(pl::LESProjPlane, uaux, qe, sgs, connijk, ngl,
+                                qp, qep, sp, mbuf, sbuf, ET)
+        # timing of the first few calls on rank 0, so the cost is on record
+        if pl.nsamples <= 3 && MPI.Comm_rank(get_mpi_comm()) == 0
+            @printf(" # %s: statistics call %d took %.3f s on rank 0 (%d points)\n",
+                    pl.name, pl.nsamples, time() - t0, length(pl.elem))
+            flush(stdout)
+        end
+    end
+end
+
+function _proj_accumulate_plane!(pl::LESProjPlane, uaux, qe, sgs, connijk, ngl::Int,
+                                 qp, qep, sp, mbuf, sbuf, ET)
+    nu, nq, ns = length(qp), length(qep), length(sp)
+    nprof, nstr = length(mbuf), length(sbuf)
+    elem = pl.elem; slot = pl.slot
+    Lx = pl.Lx; Ly = pl.Ly; Lz = pl.Lz
+    sum_mean = pl.sum_mean; sum_str = pl.sum_str
+    @inbounds for p in eachindex(elem)
+        e = elem[p]
+        fill!(qp, 0.0); fill!(qep, 0.0); fill!(sp, 0.0)
+        for c in 1:ngl
+            wz = Lz[c, p]
+            for b in 1:ngl
+                wyz = Ly[b, p] * wz
+                for a in 1:ngl
+                    w  = Lx[a, p] * wyz
+                    ip = connijk[e, a, b, c]
+                    for v in 1:nu; qp[v]  += w * uaux[ip, v]; end
+                    for v in 1:nq; qep[v] += w * qe[ip, v];   end
+                    for v in 1:ns; sp[v]  += w * sgs[ip, v];  end
                 end
             end
-            user_les_profiles!(mbuf, sbuf, qp, qep, sp, ET)
-            s = pl.slot[p]
-            for v in 1:nprof; pl.sum_mean[s, v] += mbuf[v]; end
-            for v in 1:nstr;  pl.sum_str[s, v]  += sbuf[v]; end
         end
-        pl.nsamples += 1
+        user_les_profiles!(mbuf, sbuf, qp, qep, sp, ET)
+        s = slot[p]
+        for v in 1:nprof; sum_mean[s, v] += mbuf[v]; end
+        for v in 1:nstr;  sum_str[s, v]  += sbuf[v]; end
     end
+    pl.nsamples += 1
+    return nothing
 end
 
 """
