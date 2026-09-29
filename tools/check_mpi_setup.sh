@@ -87,6 +87,8 @@ mpi_family() {
     case "$s" in
         *"open mpi"*|*openmpi*|*open-mpi*|*prterun*|*orterun*) echo openmpi ;;
         *mvapich*|*"intel(r) mpi"*|*"intel mpi"*|*"cray mpich"*|*mpich*) echo mpich ;;
+        # Hydra is MPICH's launcher; its --version banner names no vendor.
+        *hydra*) echo mpich ;;
         # Fall back to the library soname when the path carries no vendor name.
         *libmpi.40*|*libmpi_mpifh.40*|*libmpi.so.40*) echo openmpi ;;
         *libmpi.12*|*libmpifort.12*|*libmpi.so.12*)   echo mpich ;;
@@ -717,8 +719,14 @@ else
         # time loop to completion. That makes it a clean pass/fail test of the
         # SAME launcher driving a Fortran MPI binary — which is what separates
         # "MPI is broken here" from "MPI.jl / Julia is broken here".
+        #
+        # Both Alya runs below happen in the scratch directory: Alya writes
+        # alya_grid_*.vts into its working directory, and the project root may
+        # hold a real coupled run's, which this check must not overwrite or
+        # delete.
+        cd "$TMPDIR_LOCAL" || exit 1
         info "Alya alone with $NP ranks (no Julia — should run to completion)…"
-        run_timeout "$TIMEOUT" "$LAUNCHER" -np "$NP" ./AlyaProxy/Alya.x
+        run_timeout "$TIMEOUT" "$LAUNCHER" -np "$NP" "$PROJECT_ROOT/AlyaProxy/Alya.x"
         case "$LAST_RC" in
           0)   # Exiting 0 is not enough: ranks that never joined a shared world
                # each run happily as their own world of size 1. Alya's rank 0
@@ -745,28 +753,58 @@ else
           *)   warn "Alya alone exited $LAST_RC:"
                printf '%s\n' "$LAST_OUT" | tail -15 | sed 's/^/        /' ;;
         esac
-        # Clean up the .vts files that run just produced.
-        rm -f alya_grid_*.vts 2>/dev/null || true
 
-        info "MPMD smoke test: 1 Alya rank + 1 Julia rank sharing one world…"
-        run_timeout "$TIMEOUT" "$LAUNCHER" -np 1 ./AlyaProxy/Alya.x \
-            : -np 1 "$JULIA_BIN" --project=. "$HELLO"
+        # MPMD: 1 Alya rank + 1 Julia rank in one world. The Julia side must
+        # speak the coupling setup (COUPLING-ALGORITHM.md §2) — Alya's first
+        # call is a collective MPI_Comm_split, so a plain hello program would
+        # deadlock against it even on a perfect setup. It announces zero points
+        # for every rank, so Alya posts no receives, runs its whole time loop
+        # and meets it again at the final barrier.
+        HANDSHAKE="$TMPDIR_LOCAL/coupling_handshake.jl"
+        cat > "$HANDSHAKE" <<'EOF'
+using MPI
+MPI.Init()
+world = MPI.COMM_WORLD
+wrank = MPI.Comm_rank(world); wsize = MPI.Comm_size(world)
+nj    = MPI.Comm_size(MPI.Comm_split(world, 2, wrank))  # Alya splits with color 1
+MPI.Gather!(Vector{UInt8}(rpad("JEXPRESSO", 128, ' ')), nothing, 0, world)
+ndime = zeros(Int32, 1); MPI.Bcast!(ndime, 0, world)
+for _ in 1:3                                           # rem_min, rem_max, rem_nx
+    MPI.Bcast!(zeros(Float64, 1), 0, world)
+    MPI.Bcast!(zeros(Float64, 1), 0, world)
+    MPI.Bcast!(zeros(Int32, 1), 0, world)
+end
+MPI.Allreduce(zeros(Int32, wsize - nj), MPI.SUM, world)  # Alya -> world rank map
+MPI.Barrier(world)
+MPI.Alltoall!(zeros(Int32, wsize), zeros(Int32, wsize), 1, world)  # no points
+MPI.Barrier(world)                                     # Alya's final barrier
+println("HANDSHAKE rank=", wrank, " size=", wsize, " ndime=", ndime[1])
+flush(stdout)
+MPI.Finalize()
+EOF
+        info "MPMD smoke test: 1 Alya rank + 1 Julia rank through the coupling setup…"
+        run_timeout "$TIMEOUT" "$LAUNCHER" -np 1 "$PROJECT_ROOT/AlyaProxy/Alya.x" \
+            : -np 1 "$JULIA_BIN" --project="$PROJECT_ROOT" "$HANDSHAKE"
         case "$LAST_RC" in
-          124) hang "MPMD launch never got both sides through MPI_Init."
+          124) hang "MPMD launch never got both sides through the coupling setup."
                if [ "${CSTAGE_BAD:-0}" = "1" ]; then
                    info "Expected — every launch hangs on this machine. Fix the MPI"
                    info "installation (Stage 2d) before reading anything into this."
                else
-                   info "If Stage 4 passed, the Julia side is fine and Alya.x is linked"
-                   info "against a different MPI — recompile it (RUN-COUPLED.md §5)."
+                   info "If Stage 4 and 'Alya alone' passed, either Alya.x and Julia are"
+                   info "different MPIs (recompile it, RUN-COUPLED.md §5), or the proxy's"
+                   info "setup sequence no longer matches COUPLING-ALGORITHM.md §2."
                fi ;;
-          *)   if printf '%s\n' "$LAST_OUT" | grep -q 'size=2'; then
-                   pass "MPMD world formed correctly (size=2)"
+          *)   # Printed only after the final barrier: both sides went through
+               # the whole setup and Alya's time loop in one world.
+               if printf '%s\n' "$LAST_OUT" | grep -q 'HANDSHAKE .*size=2'; then
+                   pass "MPMD: Alya and Julia completed the coupling setup in one world (size=2)"
                else
-                   warn "MPMD launch returned $LAST_RC without a size=2 world:"
+                   warn "MPMD launch returned $LAST_RC without completing the coupling setup:"
                    printf '%s\n' "$LAST_OUT" | tail -20 | sed 's/^/        /'
                fi ;;
         esac
+        cd "$PROJECT_ROOT" || exit 1
     fi
 fi
 
