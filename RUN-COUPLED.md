@@ -496,8 +496,10 @@ julia --project=. -e '
 
 ### Convenience script
 
-[`run_coupled.sh`](run_coupled.sh) wraps the system-MPI launch above, and also
-builds a PackageCompiler sysimage to remove Julia's cold-start JIT cost:
+[`run_coupled.sh`](run_coupled.sh) wraps the system-MPI launch above, and can
+also build a PackageCompiler sysimage. Read
+[where the time goes](#where-the-time-goes-and-running-from-the-repl) for
+what that image does and does not remove today:
 
 ```bash
 ./run_coupled.sh               # 2 Alya ranks + 2 Julia ranks (default)
@@ -579,6 +581,88 @@ sides: `:Δt`/`:tend` in the case's `user_inputs.jl` **and** `dt`/`tend` in
 Jexpresso's side breaks the one-exchange-per-Alya-step contract: with fewer
 steps Alya waits forever for the rest, and with more the extra messages have no
 receive.
+
+### Where the time goes, and running from the REPL
+
+These timings are for `3dAlya` (2000 steps) with 2 Jexpresso ranks, run back to
+back on one 4-core Linux machine. Your absolute times will differ; the
+proportions are what carry over.
+
+**The coupling itself costs about 5 %.** The same launch without Alya took
+421 s:
+
+```bash
+mpiexec -n 2 julia --project=. src/Jexpresso.jl CompEuler 3dAlya   # JEXPRESSO_COUPLED unset
+```
+
+The coupled launch, in the same form, took 442 s. The coupling adds one
+interpolation to Alya's
+1000 points and one small message per step. Alya's ranks also busy-wait
+inside MPI, so each keeps a core at 100 % for the whole run. That is harmless
+with a core per rank, and expensive if the ranks outnumber your cores.
+
+**What makes every launch slow is compilation.** Each rank is a new Julia
+process, and it compiles Jexpresso before its first step. A coupled launch
+(ranks started as in the REPL snippet below, caches in place) spent 60 % of its
+time before the first step:
+
+| phase | ends at |
+|---|---|
+| Julia started, packages loaded, `MPI_Init` | 26 s |
+| driver compiled (`Entering with_mpi block … DONE`) | 112 s |
+| mesh and SEM set up from `.jexpresso_cache` | 151 s |
+| parameters, `Precompile warm-up`, integrator warm-up | 239 s |
+| 2000 time steps, about 82 ms each | 403 s |
+
+In a REPL, a second `Jexpresso.run_case` in the same session reuses all of that
+compiled code, which is why a standalone case feels fast there. A coupled job
+cannot do the same. `mpiexec` starts the ranks, so the REPL process is never one
+of them, and `Alya.x` runs once per job.
+
+**Launching from the REPL** still works, but it starts new processes:
+
+```julia
+julia> using MPI    # the REPL started as `julia --project=.` in the repository root
+julia> ranks = `$(Base.julia_cmd()) --project=. --startup-file=no -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "3dAlya")'`
+julia> withenv("JEXPRESSO_COUPLED" => "1") do
+           run(`$(mpiexec()) -prepend-rank -n 2 ./AlyaProxy/Alya.x : -n 2 $ranks`)
+       end
+```
+
+- `-prepend-rank` is the MPICH flag. On Open MPI, use the tagging flag listed
+  under the convenience script above.
+- `withenv` keeps `JEXPRESSO_COUPLED` out of the REPL's own environment, so a
+  `run_case` typed there afterwards still runs standalone.
+
+These ranks load the precompiled package (`using Jexpresso`) instead of
+compiling the script `src/Jexpresso.jl`. Each rank gets going about 25 s sooner
+(26 s instead of 51 s), but then compiles the same code as before. The package
+image holds no compiled code for this case: the precompile workload is off by
+default, and when it is on it runs the 1D `sod1d` case.
+
+**Removing the compilation** needs compiled code that matches the coupled run,
+stored in a sysimage or in the package image. None exists yet:
+
+- `REBUILD_SYSIMAGE=1` (`create_Jexpresso_sysimage.jl`) traces
+  `precompile_jexpresso.jl`, and that file no longer runs a case. It includes
+  `src/Jexpresso.jl`, which starts a case only when it is the program being run.
+  The image holds the dependencies, so packages load faster, but none of
+  Jexpresso's compiled code.
+- Code compiled by a standalone run would not match a coupled one anyway. The
+  parameter NamedTuple carries `coupling`, which is `nothing` standalone and a
+  `CouplingData` when coupled. The right-hand side and the integrator are
+  therefore different specializations in the two modes.
+
+To compare with a standalone run in the REPL:
+
+```julia
+julia> using Jexpresso
+julia> @time Jexpresso.run_case("CompEuler", "3dAlya")   # compiles, like every coupled launch
+julia> @time Jexpresso.run_case("CompEuler", "3dAlya")   # reuses the compiled code
+```
+
+Both calls run on a single process, so each time step takes longer than it does
+with two ranks.
 
 ---
 
