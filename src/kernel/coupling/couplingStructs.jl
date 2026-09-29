@@ -1168,6 +1168,11 @@ end
                                         ψξ::Vector{Float64}, ψη::Vector{Float64},
                                         dψξ::Vector{Float64}, dψη::Vector{Float64},
                                         α::Vector{Float64})
+    # Converged once the residual is down to round-off. x_c sums ngl² terms of
+    # size up to S = max |node coordinate|, so its error is ~eps·S; an absolute
+    # 1e-12 is below that for a domain in metres (S ~ 10³–10⁴), Newton then never
+    # "converges", and the point silently falls back to its nearest node.
+    tol = 1e-12 * max(1.0, maximum(abs, x_elem), maximum(abs, y_elem))
     ξ, η = 0.0, 0.0
     for _ in 1:20
         evaluate_lagrange_1d!(ψξ, ξ, ξ_nodes, ω)
@@ -1184,7 +1189,7 @@ end
             idx += 1
         end
         rx = px - x_c; ry = py - y_c
-        sqrt(rx*rx + ry*ry) < 1e-12 && return ξ, η, true
+        sqrt(rx*rx + ry*ry) < tol && return ξ, η, true
         det_J = dxdξ*dydη - dxdη*dydξ
         abs(det_J) < 1e-15 && return ξ, η, false
         inv_d = 1.0 / det_J
@@ -1204,6 +1209,8 @@ end
                                            ψξ::Vector{Float64}, ψη::Vector{Float64}, ψζ::Vector{Float64},
                                            dψξ::Vector{Float64}, dψη::Vector{Float64}, dψζ::Vector{Float64},
                                            α::Vector{Float64})
+    # Round-off-relative convergence test, as in physical_to_reference.
+    tol = 1e-12 * max(1.0, maximum(abs, x_elem), maximum(abs, y_elem), maximum(abs, z_elem))
     ξ, η, ζ = 0.0, 0.0, 0.0
     for _ in 1:20
         evaluate_lagrange_1d!(ψξ, ξ, ξ_nodes, ω)
@@ -1229,7 +1236,7 @@ end
             idx += 1
         end
         rx = px - x_c; ry = py - y_c; rz = pz - z_c
-        sqrt(rx*rx + ry*ry + rz*rz) < 1e-12 && return ξ, η, ζ, true
+        sqrt(rx*rx + ry*ry + rz*rz) < tol && return ξ, η, ζ, true
         # 3×3 Jacobian determinant (rule of Sarrus).
         det_J = dxdξ*(dydη*dzdζ - dydζ*dzdη) -
                 dxdη*(dydξ*dzdζ - dydζ*dzdξ) +
@@ -1579,6 +1586,20 @@ function interpolate_cached!(u_interp::Matrix{Float64},
                 u_interp[ipt, q] = val
             end
         end
+    end
+end
+
+# Report the cache totals over ALL Jexpresso ranks: a point that no rank locates
+# takes its nearest node's value instead of the interpolant, so the two numbers
+# should be equal. Collective on the Jexpresso communicator; every rank builds
+# its cache at the same exchange.
+function _report_interp_cache(cpg::CouplingData, nloc::Int, n_points::Int)
+    tot = MPI.Allreduce(Int[nloc, n_points], MPI.SUM, get_mpi_comm())
+    if cpg.lrank == 0
+        println("[coupling] interpolation cache built: $(tot[1])/$(tot[2]) ",
+                "points located in elements (rest use nearest-node). ",
+                "Per-step point search now skipped.")
+        flush(stdout)
     end
 end
 
@@ -2263,12 +2284,7 @@ function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
                                       elem_bboxes, bins, e_conn, elem_x, elem_y,
                                       ψξ, ψη, dψξ, dψη, α, x_e, y_e,
                                       mesh_x, mesh_y)
-        if cpg.lrank == 0
-            println("[coupling] interpolation cache built: $nloc/$(size(alya_coords,1)) ",
-                    "points located in elements (rest use nearest-node). ",
-                    "Per-step point search now skipped.")
-            flush(stdout)
-        end
+        _report_interp_cache(cpg, nloc, size(alya_coords, 1))
     end
 
     if cpg.send_coords
@@ -2352,12 +2368,7 @@ function je_perform_coupling_exchange_3d(u, u_mat, t, cpg::CouplingData,
                                       elem_bboxes, bins, e_conn, elem_x, elem_y, elem_z,
                                       ψξ, ψη, ψζ, dψξ, dψη, dψζ, α,
                                       x_e, y_e, z_e, mesh_x, mesh_y, mesh_z)
-        if cpg.lrank == 0
-            println("[coupling] interpolation cache built: $nloc/$(size(alya_coords,1)) ",
-                    "points located in elements (rest use nearest-node). ",
-                    "Per-step point search now skipped.")
-            flush(stdout)
-        end
+        _report_interp_cache(cpg, nloc, size(alya_coords, 1))
     end
 
     if cpg.send_coords
