@@ -496,16 +496,24 @@ julia --project=. -e '
 
 ### Convenience script
 
-[`run_coupled.sh`](run_coupled.sh) wraps the system-MPI launch above, and can
-also build a PackageCompiler sysimage. Read
-[where the time goes](#where-the-time-goes-and-running-from-the-repl) for
-what that image does and does not remove today:
+[`run_coupled.sh`](run_coupled.sh) wraps the launch above. Its Julia ranks
+load Jexpresso as a package (`using Jexpresso; Jexpresso.run_case(...)`), and
+it brings the package image up to date before it launches, so that the ranks
+never start compiling it all at once inside the job:
 
 ```bash
-./run_coupled.sh               # 2 Alya ranks + 2 Julia ranks (default)
-./run_coupled.sh 2 4           # 2 Alya ranks + 4 Julia ranks
-REBUILD_SYSIMAGE=1 ./run_coupled.sh   # force sysimage rebuild first
+./run_coupled.sh                        # 2 Alya ranks + 2 Julia ranks (default)
+./run_coupled.sh 2 4                    # 2 Alya ranks + 4 Julia ranks
+PRECOMPILE_COUPLED=1 ./run_coupled.sh   # bake this case into the package image first
+SCRIPT=1 ./run_coupled.sh               # run src/Jexpresso.jl as a script instead
 ```
+
+- `PRECOMPILE_COUPLED=1` is explained in
+  [Precompiling a coupled case](#precompiling-a-coupled-case).
+- `SCRIPT=1` compiles everything at every launch. It suits an edit-and-run
+  session, since nothing has to be precompiled after each edit.
+- `REBUILD_SYSIMAGE=1` builds a sysimage of the dependencies only (see the same
+  section).
 
 It also passes `--startup-file=no` and per-rank output tagging (`-prepend-rank`
 on MPICH, `--output tag` on OpenMPI 5, `--tag-output` on OpenMPI 4; disable
@@ -635,23 +643,71 @@ julia> withenv("JEXPRESSO_COUPLED" => "1") do
   `run_case` typed there afterwards still runs standalone.
 
 These ranks load the precompiled package (`using Jexpresso`) instead of
-compiling the script `src/Jexpresso.jl`. Each rank gets going about 25 s sooner
-(26 s instead of 51 s), but then compiles the same code as before. The package
-image holds no compiled code for this case: the precompile workload is off by
-default, and when it is on it runs the 1D `sod1d` case.
+compiling the script `src/Jexpresso.jl`. On its own, that only gets each rank
+going about 25 s sooner (26 s instead of 51 s). The compilation itself goes
+away once the case is precompiled for coupled runs, as described next.
 
-**Removing the compilation** needs compiled code that matches the coupled run,
-stored in a sysimage or in the package image. None exists yet:
+### Precompiling a coupled case
 
-- `REBUILD_SYSIMAGE=1` (`create_Jexpresso_sysimage.jl`) traces
-  `precompile_jexpresso.jl`, and that file no longer runs a case. It includes
-  `src/Jexpresso.jl`, which starts a case only when it is the program being run.
-  The image holds the dependencies, so packages load faster, but none of
-  Jexpresso's compiled code.
-- Code compiled by a standalone run would not match a coupled one anyway. The
-  parameter NamedTuple carries `coupling`, which is `nothing` standalone and a
-  `CouplingData` when coupled. The right-hand side and the integrator are
-  therefore different specializations in the two modes.
+Jexpresso can compile a coupled case ahead of time, into its package image, so
+that a launch starts computing almost at once. Precompilation runs in a single
+process with no Alya, so it runs the case *dry*. Every coupling function runs as
+in a real coupled run, which gives the image the code and types it has to hold.
+Alya is simulated in the same process: a virtual world with Alya at ranks 0 and
+1, Alya's grid made of a few points inside Jexpresso's mesh, and no messages.
+The case runs twice, for three steps each time. The first run builds the
+case's mesh and SEM caches if they do not exist yet; the second loads them,
+which is the path every later launch takes.
+
+Turn it on once per checkout:
+
+```bash
+PRECOMPILE_COUPLED=1 ./run_coupled.sh 2 2
+```
+
+From Julia, `Jexpresso.set_coupled_precompile!("CompEuler", "3dAlya")` does the
+same, and `Jexpresso.set_coupled_precompile!(nothing)` turns it off. The choice
+is kept in `LocalPreferences.toml`, so every later precompile bakes in the same
+case, wherever it is triggered: `Pkg.precompile()`, a `using Jexpresso` in the
+REPL, or `run_coupled.sh`. It only helps launches whose ranks load the package:
+`run_coupled.sh` and the REPL recipe above do, while `SCRIPT=1` and
+`julia src/Jexpresso.jl` do not. A coupled launch that runs without it prints
+`Not precompiled for coupled runs`.
+
+On `3dAlya` with 2 + 2 ranks, on the same machine as above:
+
+| | case not precompiled | case precompiled |
+|---|---|---|
+| first time step starts at | 239 s | 73 s |
+| whole launch | 402 s | 232 s |
+
+The results are unchanged: Alya's output files were byte-identical.
+
+What it costs:
+
+- Precompiling Jexpresso takes several minutes instead of about one (6.5
+  minutes on the machine above). It happens again whenever Jexpresso's source
+  changes, before the next launch or at the next `using Jexpresso`.
+- The package image grows from 17 MB to 150–180 MB, and every
+  `using Jexpresso`, including those of standalone runs, loads it about 8 s
+  more slowly.
+- Editing the case's own files does not make the image stale. The edited file
+  is reloaded at launch instead. For `user_inputs.jl` that costs nothing, but
+  an edited hook that the right-hand side calls (`user_flux.jl`,
+  `user_source.jl`, …) is recompiled at every launch until you rebuild with
+  `PRECOMPILE_COUPLED=1 ./run_coupled.sh`. That flag always rebuilds.
+
+About 30 s of compilation remains, in the warm-ups. Jexpresso's solution,
+metric and right-hand-side structs carry their array sizes in their types
+(`St_metrics{Float64, (50, 5, 5, 5), …}`). A rank of a 2-rank launch holds 50
+of the 100 elements, while the single-process precompile holds all 100, so
+every specialization on those types is still compiled at launch.
+
+The sysimage (`REBUILD_SYSIMAGE=1`, `create_Jexpresso_sysimage.jl`) holds only
+the dependencies. Its trace script, `precompile_jexpresso.jl`, includes
+`src/Jexpresso.jl`, which starts a case only when it is the program being run.
+The sysimage makes packages load faster, but it contains none of Jexpresso's
+compiled code.
 
 To compare with a standalone run in the REPL:
 

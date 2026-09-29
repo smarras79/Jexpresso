@@ -579,7 +579,10 @@ mpiexec -np 2 ./AlyaProxy/Alya.x \
         ./src/Jexpresso.jl CompEuler 3dAlya
 ```
 
-or `./run_coupled.sh 2 2`, which applies the sysimage and preflight checks.
+or `./run_coupled.sh 2 2`, which also runs the preflight checks. For the
+biggest saving on repeated coupled launches, precompile the case itself —
+`PRECOMPILE_COUPLED=1 ./run_coupled.sh 2 2`, see [RUN-COUPLED.md,
+"Precompiling a coupled case"](RUN-COUPLED.md#precompiling-a-coupled-case).
 
 **Things that cost you time:** a VPN connected during a run (renumbers the
 interface `FI_TCP_IFACE` is pinned to); the repo on iCloud Drive or a network
