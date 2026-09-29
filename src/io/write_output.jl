@@ -52,7 +52,7 @@ end
 #------------------------------------------------------------------
 function call_user_uout(uout, u, qe, mp, ET, npoin, nvar, noutvar; μ_dsgs_pnode=nothing)
 
-    if function_exists(@__MODULE__, :user_uout!)
+    if case_defines_user_uout()
         for ip=1:npoin
             user_uout!(ip, ET, @view(uout[ip,1:noutvar]), @view(u[ip,:]), @view(qe[ip,:]);
                        mp=mp, μ_dsgs_pnode=μ_dsgs_pnode)
@@ -72,6 +72,22 @@ function function_exists(module_name::Module, function_name::Symbol)
     return isdefined(module_name, function_name) &&
            isa(getfield(module_name, function_name), Function) &&
            !isempty(methods(getfield(module_name, function_name)))
+end
+# A plain function_exists(:user_uout!) is not enough in a REPL session:
+# run_case never deletes the previous case's hook methods (see run.jl), so a
+# user_uout! left behind by e.g. CompEuler/theta would still be found — and
+# called — when a later case (e.g. AdvDiff/advection2d_dg) defines none,
+# writing past the end of its narrower uout row. Only use user_uout! if one of
+# its methods was defined by a file of the case currently loaded.
+function case_defines_user_uout()
+    function_exists(@__MODULE__, :user_uout!) || return false
+    case_dir = _LOADED_CASE_DIR[]
+    isempty(case_dir) && return true   # no case bookkeeping: keep old behavior
+    case_dir = joinpath(normpath(case_dir), "")   # trailing separator
+    for m in methods(getfield(@__MODULE__, :user_uout!))
+        startswith(normpath(string(m.file)), case_dir) && return true
+    end
+    return false
 end
 #------------------------------------------------------------------
 # END Callback for missing user_uout!()
