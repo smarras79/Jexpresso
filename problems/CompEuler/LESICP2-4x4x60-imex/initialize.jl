@@ -362,11 +362,17 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 q.qn[ip,6] = Press
                 
                 #Store initial data_interpolate state for plotting and analysis of perturbations
-                q.qe[ip,1] = q.qn[ip,1]
-                q.qe[ip,2] = q.qn[ip,2]
-                q.qe[ip,3] = q.qn[ip,3]
-                q.qe[ip,4] = q.qn[ip,4]
-                q.qe[ip,5] = q.qn[ip,5]
+                # Reference state = the UNPERTURBED sounding. qe is never updated, and the
+                # IMEX operator linearises about it (theta_bar = rho*theta/rho); copying the
+                # perturbed qn here froze +-0.25 K node noise into theta_bar below 800 m for
+                # the whole run and put an element-periodic zigzag into w'theta'.
+                θe = θ - randnoise
+                ρe = perfectGasLaw_θPtoρ(PhysConst; Press=Press, θ=θe)
+                q.qe[ip,1] = ρe
+                q.qe[ip,2] = ρe*u
+                q.qe[ip,3] = ρe*v
+                q.qe[ip,4] = ρe*w
+                q.qe[ip,5] = ρe*θe
                 q.qe[ip,6] = q.qn[ip,6]
             end
         end
