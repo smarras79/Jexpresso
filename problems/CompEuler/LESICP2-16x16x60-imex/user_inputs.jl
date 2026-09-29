@@ -480,7 +480,7 @@ function user_inputs()
         # Filter parameters. OFF, and that is a standing choice for this case --
         # do not "restore" it. DBG_FILTER=1 turns it on for a one-off A/B.
         #---------------------------------------------------------------------------
-        :lfilter             => true, #parse(Bool, get(ENV, "DBG_FILTER", "false")),
+        :lfilter             => parse(Bool, get(ENV, "DBG_FILTER", "true")),
         # DBG_MU overrides the horizontal filter strength for the spin-up probe.
         :mu_x                => parse(Float64, get(ENV, "DBG_MU", "0.05")),
         :mu_y                => parse(Float64, get(ENV, "DBG_MU", "0.05")),
