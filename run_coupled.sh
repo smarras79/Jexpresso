@@ -42,7 +42,8 @@ CASE="${4:-3dAlya}"
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
-JULIA="${JULIA:-julia}"
+#JULIA="${JULIA:-julia}"
+JULIA="/Applications/Julia-1.11.app/Contents/Resources/julia/bin/julia"
 
 # Resolve the REAL julia binary. A juliaup shim on PATH is a shell wrapper that
 # OpenMPI 5's prterun cannot always launch (RUN-COUPLED.md §6).
