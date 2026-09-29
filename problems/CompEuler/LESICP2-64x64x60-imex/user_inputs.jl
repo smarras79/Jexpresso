@@ -426,6 +426,14 @@ function user_inputs()
                                    "wpwpup", "wpwpvp", "wpwpwp",
                                    "upuptp", "vpvptp", "wpwptp"],
         :lesspectra_vars      => [],
+        # TABLES output grid (setup document, section 5): x = [0, 10240] m at
+        # dx = 20 m (513 points, the full domain), z = [5, 3000] m at dz = 10 m
+        # (5, 15, ..., 2995: 300 points, the levels of the official
+        # interpolation_tables.py). Averaged over y at 512 cell-centred samples
+        # (dy = 20 m) and over time. The solution polynomial is evaluated at these
+        # points, so the output needs no smoothing and no re-interpolation; see
+        # src/io/les_projection.jl.
+        :les_projection       => [(plane = "xz", npts = (513, 300), range2 = (5.0, 2995.0))],
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
