@@ -285,6 +285,9 @@ function user_inputs()
         # for that time (iter_29 = 9000 s on this deck's cadence). Used to re-run
         # the statistics window in one segment after the 9540 s crash.
         (haskey(ENV, "DBG_RESTART_IOUT") ? (:restart_vtk_iout => parse(Int, ENV["DBG_RESTART_IOUT"]),) : ())...,
+        # DBG_RESTART_DIR reads the snapshot from another run's output dir, so a
+        # restart can write to a fresh JEXPRESSO_OUTDIR without touching the old run.
+        (haskey(ENV, "DBG_RESTART_DIR") ? (:restart_vtk_input_dir => ENV["DBG_RESTART_DIR"],) : ())...,
 	# EVERY range needs its own `...`; the third was missing one, which made this
 	# a tuple of 28 Floats followed by a StepRangeLen and killed the run in
 	# time_loop! (collect(Float64, ...) cannot convert a range to a Float64).
