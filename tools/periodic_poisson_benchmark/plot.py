@@ -32,9 +32,9 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 
 THEMES = {
     "light": dict(surface="#fcfcfb", text1="#0b0b0b", text2="#52514e", grid="#e4e3dd",
-                  axis="#b5b3aa", s=["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"]),
+                  axis="#b5b3aa", s=["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#8a5cd1"]),
     "dark":  dict(surface="#1a1a19", text1="#ffffff", text2="#c3c2b7", grid="#34342f",
-                  axis="#5d5c55", s=["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300"]),
+                  axis="#5d5c55", s=["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#a07ce8"]),
 }
 MARKERS = ["circle", "square", "triangle", "diamond", "tridown", "ring"]
 # solver key → legend label, in the fixed categorical order

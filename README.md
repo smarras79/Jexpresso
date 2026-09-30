@@ -1013,6 +1013,9 @@ At fixed SEM order N, one curve per solver as the mesh is refined: where the AMG
 </picture>
 <!-- ppb_highres_v2:end -->
 
+### The same comparison in 3D, at cluster scale
+In 2D, sparse direct solvers stay ahead at the sizes above. The 3D version of the comparison in [tools/poisson3d_benchmark](tools/poisson3d_benchmark/README.md) reaches about 1.7·10⁷ unknowns, where nested-dissection Cholesky costs O(n²) in time and O(n^(4/3)) in memory, against O(n) for AMG. It runs as one SLURM job per configuration on NJIT's Wulver, and uses the same seven solvers (including Jacobi-CG, the CEED BP5 solver) and the same timing protocol. Its Kronecker-product assembly is checked against Jexpresso's own periodic SEM solve in 2D (agreement to about 1e-12).
+
 ## Laguerre semi-infinite element test suite
 This section contains instructions to run all of the test cases presented in
 

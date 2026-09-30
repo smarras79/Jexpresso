@@ -406,18 +406,21 @@ Cholesky and fall back to UMFPACK LU. The matrix is therefore symmetrised,
 (B + Bᵀ)/2 (bitwise symmetric: floating-point addition commutes), before
 either solver sees it, and factorised explicitly with Cholesky. A relative
 asymmetry above 1e-10 is not round-off and is reported; a B that is not
-positive definite falls back to LU with a warning.
+positive definite falls back to LU with a warning. `perm` (optional) is a
+fill-reducing ordering of the (pinned) skeleton matrix for the Cholesky
+factorisation, e.g. METIS nested dissection; by default CHOLMOD chooses its
+own (AMD).
 """
 function el_skeleton_solve(B::SparseMatrixCSC, rhs::AbstractVector;
                            solver = :direct, amg_method = "sa", amg_rtol = 1e-12,
-                           singular::Bool = false)
+                           singular::Bool = false, perm = nothing)
     s  = Symbol(lowercase(string(solver)))
     s in (:direct, :amg) ||
         error(" # el_skeleton_solve: :EL_skeleton_solver => \"$solver\"; expected \"direct\" or \"amg\".")
     Bp = singular ? B[2:end, 2:end] : B
     bs = singular ? rhs[2:end] : rhs
     if s === :direct
-        F  = jx_phase(() -> _el_skeleton_cholesky(_el_symmetrise(Bp)), :sc_factor)
+        F  = jx_phase(() -> _el_skeleton_cholesky(_el_symmetrise(Bp); perm = perm), :sc_factor)
         us = jx_phase(() -> F \ bs, :sc_skeleton)
     else
         S  = jx_phase(() -> jx_amg_setup(_el_symmetrise(Bp); method = amg_method), :sc_factor)
@@ -438,8 +441,9 @@ end
 
 # Sparse Cholesky (CHOLMOD) of the symmetric skeleton matrix; LU if it is not
 # positive definite (B is SPD whenever the problem is well posed)
-function _el_skeleton_cholesky(Bsym::SparseMatrixCSC)
-    F = cholesky(Symmetric(Bsym); check = false)
+function _el_skeleton_cholesky(Bsym::SparseMatrixCSC; perm = nothing)
+    F = perm === nothing ? cholesky(Symmetric(Bsym); check = false) :
+                           cholesky(Symmetric(Bsym); check = false, perm = perm)
     issuccess(F) && return F
     @warn " # el_skeleton_solve: skeleton matrix B is not positive definite; using sparse LU."
     return lu(Bsym)
