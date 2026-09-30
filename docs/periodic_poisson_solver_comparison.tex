@@ -100,15 +100,16 @@ The four SEM solvers share one discretisation, built by the driver before the li
 solve (\texttt{sem\_setup}). This subsection describes that code path and the reduction
 to the periodic system that all four solve.
 
-\paragraph{Mesh.} The deck reads a Gmsh mesh of $16\times16$ straight-sided
-quadrilaterals on $[0,1]^2$ whose boundary edges are tagged periodic in $x$ and in $y$.
-With refinement level $L>0$ (\texttt{:linitial\_refine}, \texttt{:init\_refine\_lvl}$\,=L$)
-the mesh is refined uniformly $L$ times by p4est
-(\texttt{UniformlyRefinedForestOfOctreesDiscreteModel}), giving $n_e\times n_e$ elements
-with $n_e=16\cdot2^L$. The high-order nodes are added on the edges and in the
-interiors. The node coordinates are then mapped by
-$x\leftarrow(x+x_{\rm disp})\,x_{\rm scale}/2$ with $x_{\rm disp}=0$, $x_{\rm scale}=4\pi$,
-and likewise in $y$, which gives $[0,2\pi]^2$. The local node numbering is not merged
+\paragraph{Mesh.} The deck uses Jexpresso's built-in Cartesian grid
+(\texttt{:lcartesian\_grid}): $16\times16$ straight-sided quadrilaterals on
+$[0,2\pi]^2$, built by Gridap's \texttt{CartesianDiscreteModel}, with the boundary edges
+labelled \texttt{periodicx} (at $x=0,2\pi$) and \texttt{periodicy} (at $y=0,2\pi$), as
+the physical names of a periodic Gmsh grid would label them. It then follows the same
+path as a Gmsh grid, which gives the same solution to round-off. With refinement level
+$L>0$ (\texttt{:linitial\_refine}, \texttt{:init\_refine\_lvl}$\,=L$) the mesh is refined
+uniformly $L$ times by p4est (\texttt{UniformlyRefinedForestOfOctreesDiscreteModel}),
+giving $n_e\times n_e$ elements with $n_e=16\cdot2^L$. The high-order nodes are added on
+the edges and in the interiors. The local node numbering is not merged
 across the periodic seams. Instead, the periodic restructuring gives the two (or four,
 at a corner) local copies of a seam node the same global number in
 \texttt{mesh.ip2gip}.

@@ -56,15 +56,18 @@ function user_inputs()
         :interpolation_nodes  => "lgl",
         :nop                  => 4,          # polynomial order
         #---------------------------------------------------------------------------
-        # Mesh: 16×16 quads on the unit square, periodic in x and y, mapped to
-        # [0,2π]² (x ← (x + xdisp)·xscale/2, so xscale = 4π).
+        # Mesh: Jexpresso's built-in Cartesian grid (no GMSH file), 16×16 quads
+        # on [0,2π]², periodic in x and y (the sides are named like the physical
+        # names of a periodic GMSH grid). :linitial_refine / :init_refine_lvl
+        # refine it uniformly. The equivalent GMSH grid,
+        # square_periodic_16x16.msh on the unit square with :xscale = :yscale
+        # = 4π, gives the same solution to round-off (~1e-12).
         #---------------------------------------------------------------------------
-        :lread_gmsh           => true,
-        :gmsh_filename        => "./problems/Elliptic/poisson_periodic_sem/square_periodic_16x16.msh",
-        :xscale               => 4π,
-        :yscale               => 4π,
-        :xdisp                => 0.0,
-        :ydisp                => 0.0,
+        :lcartesian_grid      => true,
+        :nelx                 => 16, :xmin => 0.0, :xmax => 2π,
+        :nely                 => 16, :ymin => 0.0, :ymax => 2π,
+        :cartesian_bdy        => Dict(:xmin => "periodicx", :xmax => "periodicx",
+                                      :ymin => "periodicy", :ymax => "periodicy"),
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------

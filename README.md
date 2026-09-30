@@ -106,7 +106,7 @@ The results match the GMSH grids to round-off:
 - The 3D rising bubble `CompEuler/3d`.
 - The periodic Poisson problem, with and without static condensation and `:linitial_refine`.
 
-Example: `problems/CompEuler/theta_cartesian`. The mesh caches are not used for built-in grids, which are cheap to build.
+Examples: `problems/CompEuler/theta_cartesian` and the periodic Poisson deck `problems/Elliptic/poisson_periodic_sem`. The mesh caches are not used for built-in grids, which are cheap to build.
 
 # Equations:
 Jexpresso uses arbitrarily high-order (3rd and above) **continuous spectral elements** to solve
