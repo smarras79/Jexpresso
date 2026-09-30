@@ -22,7 +22,7 @@ function make_extra_mesh_1D(nelem, nop, θmin, θmax, backend, inputs, lper)
     dims3 = (nelem)
     dims4 = (nelem, 0, nop+1)
     dims5 = (2,npoin)
-    extra_mesh = St_extra_mesh{TInt, TFloat, NSD_1D(), dims1, dims2, dims3, dims4, dims5, nelem, npoin, backend}()
+    extra_mesh = St_extra_mesh{TInt, TFloat, NSD_1D(), backend}(; dims1, dims2, dims3, dims4, dims5, nelem, npoin)
     Δθe = KernelAbstractions.zeros(backend, TFloat, nelem)
     Δθe .= (θmax-θmin)/nelem
     extra_mesh.extra_coords[1,1]      = θmin
@@ -117,7 +117,7 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
         dims3 = (6)
         dims4 = (6, 0, nop+1)
         dims5 = (3,npoin)
-        extra_mesh = St_extra_mesh{TInt, TFloat, NSD_2D(), dims1, dims2, dims3, dims4, dims5, 6, npoin, backend}()
+        extra_mesh = St_extra_mesh{TInt, TFloat, NSD_2D(), backend}(; dims1, dims2, dims3, dims4, dims5, nelem = 6, npoin)
         Δθe = (θmax-θmin)/nelemθ
         Δϕe = (ϕmax-ϕmin)/nelemϕ
         extra_mesh.extra_nop             .= nop
@@ -761,7 +761,7 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
         dims4 = (nelemθ*nelemϕ, 0, nop+1)
         dims5 = (3,npoin)
         ip = 5
-        extra_mesh = St_extra_mesh{TInt, TFloat, NSD_2D(), dims1, dims2, dims3, dims4, dims5, nelemθ*nelemϕ, npoin, backend}()
+        extra_mesh = St_extra_mesh{TInt, TFloat, NSD_2D(), backend}(; dims1, dims2, dims3, dims4, dims5, nelem = nelemθ*nelemϕ, npoin)
         Δθe = (θmax-θmin)/nelemθ
         Δϕe = (ϕmax-ϕmin)/nelemϕ
         extra_mesh.extra_nop             .= nop

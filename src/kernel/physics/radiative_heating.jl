@@ -1,4 +1,7 @@
-Base.@kwdef mutable struct Atmosphere_State{T <: AbstractFloat, dim}
+Base.@kwdef mutable struct Atmosphere_State{T <: AbstractFloat}
+    # array shapes (fields, not type parameters: see the top of src/kernel/globalStructs.jl)
+    dim
+
     t_current = zeros(T, dim)   # full current temperature (perturbation + background)
     t_back    = zeros(T, dim)   # background-state temperature (for lateral wall BCs)
     p_lay = zeros(T, dim)

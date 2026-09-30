@@ -1,7 +1,16 @@
 export St_extra_mesh
 export St_mesh
 
-Base.@kwdef mutable struct St_extra_mesh{TInt, TFloat, NSD, dims1, dims2, dims3, dims4, dims5, nelem, npoin, backend}
+Base.@kwdef mutable struct St_extra_mesh{TInt, TFloat, NSD, backend}
+
+    # array shapes (fields, not type parameters: see the top of src/kernel/globalStructs.jl)
+    dims1
+    dims2
+    dims3
+    dims4
+    dims5
+    nelem
+    npoin
 
     extra_coords  = KernelAbstractions.zeros(backend,TFloat, dims1)
     extra_coords_cart = KernelAbstractions.zeros(backend,TFloat, dims5)

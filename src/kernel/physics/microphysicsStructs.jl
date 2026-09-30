@@ -1,7 +1,10 @@
 #-------------------------------------------------------------------------------------------
 # Microphysics (mp) variables:
 #-------------------------------------------------------------------------------------------
-Base.@kwdef mutable struct St_Microphysics{T <: AbstractFloat, dims1, backend}
+Base.@kwdef mutable struct St_Microphysics{T <: AbstractFloat, backend}
+
+    # array shapes (fields, not type parameters: see the top of src/kernel/globalStructs.jl)
+    dims1
 
     # WIP
     
@@ -27,12 +30,17 @@ function allocate_Microphysics(nelem, npoin, ngl, T, backend; lmoist=false)
         dims1 = (Int64(1))        
     end
     
-    mp = St_Microphysics{T, dims1, backend}()
+    mp = St_Microphysics{T, backend}(; dims1)
     
     return mp
 end
 
-Base.@kwdef mutable struct St_SamMicrophysics{T <:AbstractFloat, dims1, dims2, dims3, backend, VT1, VT2}
+Base.@kwdef mutable struct St_SamMicrophysics{T <:AbstractFloat, backend, VT1, VT2}
+
+    # array shapes (fields, not type parameters: see the top of src/kernel/globalStructs.jl)
+    dims1
+    dims2
+    dims3
 
     Tabs::VT1    = KernelAbstractions.zeros(backend,  T, dims1) #Absolute temperature
     qn::VT1      = KernelAbstractions.zeros(backend,  T, dims1) #total cloud
@@ -81,7 +89,7 @@ function allocate_SamMicrophysics(nelem, npoin, ngl, T, backend , SD; lmoist=fal
 
     VT1 = typeof(KernelAbstractions.zeros(backend, T, dims1))
     VT2 = typeof(KernelAbstractions.zeros(backend, T, dims3))
-    mp = St_SamMicrophysics{T, dims1, dims2, dims3, backend, VT1, VT2}()
+    mp = St_SamMicrophysics{T, backend, VT1, VT2}(; dims1, dims2, dims3)
 
     return mp
 end

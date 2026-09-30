@@ -697,11 +697,21 @@ What it costs:
   `user_source.jl`, …) is recompiled at every launch until you rebuild with
   `PRECOMPILE_COUPLED=1 ./run_coupled.sh`. That flag always rebuilds.
 
-About 30 s of compilation remains, in the warm-ups. Jexpresso's solution,
-metric and right-hand-side structs carry their array sizes in their types
-(`St_metrics{Float64, (50, 5, 5, 5), …}`). A rank of a 2-rank launch holds 50
-of the 100 elements, while the single-process precompile holds all 100, so
-every specialization on those types is still compiled at launch.
+Jexpresso's structs used to carry their array sizes in their types, for
+example `St_metrics{Float64, (50, 5, 5, 5), …}`, so every partition size was a
+different type. A rank of a 2-rank launch holds 50 of the 100 elements, so it
+could not use the code the single-process precompile had compiled for all 100,
+and its warm-ups compiled for about 30 s. The sizes are now ordinary fields (see
+the top of `src/kernel/globalStructs.jl`), and a launch compiles for about a
+second. Measured back to back on another, slower machine, with the case
+precompiled:
+
+- The first time step starts at 25 s instead of 52 s, about 3 s after Julia has
+  loaded.
+- The whole launch takes 123 s instead of 154 s.
+- The time per step is unchanged (48–50 ms), and so is Alya's output.
+
+What remains is loading the package image, about 22 s.
 
 The sysimage (`REBUILD_SYSIMAGE=1`, `create_Jexpresso_sysimage.jl`) holds only
 the dependencies. Its trace script, `precompile_jexpresso.jl`, includes

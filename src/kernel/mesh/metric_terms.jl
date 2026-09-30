@@ -1,4 +1,8 @@
-Base.@kwdef mutable struct St_metrics{TFloat <: AbstractFloat, dims1, dims2, backend}
+Base.@kwdef mutable struct St_metrics{TFloat <: AbstractFloat, backend}
+
+    # array shapes (fields, not type parameters: see the top of src/kernel/globalStructs.jl)
+    dims1
+    dims2
 
     dxdξ = KernelAbstractions.zeros(backend,TFloat, dims1)
     dxdη = KernelAbstractions.zeros(backend,TFloat, dims1)
@@ -78,7 +82,7 @@ function allocate_metrics(SD, nelem, nfaces_bdy, Q, T, backend)
         dims2 = (nfaces_bdy, Q+1, Q+1)
     end
 
-    metrics = St_metrics{T, dims1, dims2, backend}()
+    metrics = St_metrics{T, backend}(; dims1, dims2)
     
     return metrics
 end
@@ -97,7 +101,7 @@ function allocate_metrics_laguerre(SD, nelem, nfaces_bdy, Q, Qgr, T, backend)
         dims2 = (nfaces_bdy, Q+1, Q+1)
     end
 
-    metrics = St_metrics{T, dims1, dims2, backend}()
+    metrics = St_metrics{T, backend}(; dims1, dims2)
     
     return metrics
 end
