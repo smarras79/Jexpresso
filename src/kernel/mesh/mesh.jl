@@ -5497,12 +5497,13 @@ function build_dg_faces_2D!(mesh::St_mesh)
     # cell_face_ids position g → slice lfid. Discovered from the interior
     # faces, where both (e, lf) are known geometrically, and then USED to
     # place the physical boundary faces below — a boundary facet touches one
-    # element, so there is no second slice to match it against, and the
-    # coordinate route is closed under DG (poin_in_bdy_edge carries CG point
-    # ids, and mesh.x has been renumbered). The map is well defined because
-    # every element's (i,j) lattice is laid out from the same corner slot
-    # map; that is asserted below rather than assumed, since the boundary
-    # list now depends on it.
+    # element, so there is no second slice to match it against. The census
+    # at the end of this function checks every such placement against an
+    # independent route: the boundary-edge table, whose point ids
+    # (poin_in_bdy_edge) are rebuilt from connijk under DG, matched to a
+    # slice by exact id. The map is well defined because every element's
+    # (i,j) lattice is laid out from the same corner slot map; that is
+    # asserted below rather than assumed, since the boundary list depends on it.
     conv_map = zeros(Int, 4)
     function note_conv!(e, f, lf)
         length(mesh.cell_face_ids) >= e && length(mesh.cell_face_ids[e]) == 4 || return
@@ -5720,42 +5721,6 @@ function build_dg_faces_2D!(mesh::St_mesh)
         (mesh.dg_ncfp_h1[r] != 0 && mesh.dg_ncfp_h2[r] != 0) || error("build_dg_faces_2D!: parent face (element $(mesh.dg_ncfp_p[r]), slice $(mesh.dg_ncfp_lfp[r])) is missing a child half")
     end
 
-    # --- census: every element side claimed by exactly one face object -------
-    claimed = zeros(Int, mesh.nelem, 4)
-    for f = 1:length(mesh.dg_face_eL)
-        claimed[mesh.dg_face_eL[f], mesh.dg_face_lfL[f]] += 1
-        claimed[mesh.dg_face_eR[f], mesh.dg_face_lfR[f]] += 1
-    end
-    for idx = 1:n_ncf
-        claimed[mesh.dg_ncf_c[idx], mesh.dg_ncf_lfc[idx]] += 1
-    end
-    for r = 1:n_pf
-        claimed[mesh.dg_ncfp_p[r], mesh.dg_ncfp_lfp[r]] += 1
-    end
-    n_wall = 0
-    for iedge_bdy = 1:length(mesh.bdy_edge_type)
-        tag = mesh.bdy_edge_type[iedge_bdy]
-        (tag == "periodicx" || tag == "periodicz") && continue
-        e = mesh.bdy_edge_in_elem[iedge_bdy]
-        lf, _ = slice_of(e, @view mesh.poin_in_bdy_edge[iedge_bdy, 1:ngl])
-        lf != 0 || error("build_dg_faces_2D!: boundary edge $iedge_bdy (element $e, tag $tag) matches no slice of connijk")
-        claimed[e, lf] += 1
-        n_wall += 1
-    end
-    n_bad = 0
-    for e = 1:mesh.nelem, lf = 1:4
-        if claimed[e, lf] != 1
-            n_bad += 1
-            n_bad <= 10 && println(" # build_dg_faces_2D!: element $e slice $lf claimed $(claimed[e, lf]) times")
-        end
-    end
-    n_bad == 0 || error("build_dg_faces_2D!: face census failed — $n_bad element sides are not claimed exactly once (listed above); a missing or duplicated face would couple wrongly and silently")
-
-    println(" # build_dg_faces_2D!: ", n_int, " interior + ", n_per, " periodic = ",
-            length(mesh.dg_face_eL), " conforming faces; ", n_pf, " mortar parent faces (",
-            n_ncf, " child halves); ", n_wall, " wall sides; census ",
-            4 * mesh.nelem, "/", 4 * mesh.nelem, " element sides claimed once")
-
     # --- physical boundary faces: facet_cell_ids entries with ONE cell -----
     #
     # Everything the gmsh file tags that is not a periodic pair: the faces
@@ -5787,6 +5752,11 @@ function build_dg_faces_2D!(mesh::St_mesh)
         # skipped in silence, because on a domain meant to be closed it is
         # the difference between a wall and an open side, and the run would
         # otherwise look healthy while draining.
+        # On an adapted mesh the mortar facets arrive here too: each coarse
+        # parent facet and each hanging half-facet has one cell and no tag.
+        # They are coupled by the mortar loop in surface_rhs_el!; the census
+        # below tells them apart from free walls and accounts for every
+        # untagged facet.
         if tag === nothing
             n_untagged += 1
             continue
@@ -5804,9 +5774,64 @@ function build_dg_faces_2D!(mesh::St_mesh)
         push_bfac!(e, lf, String(tag))
         n_bdy += 1
     end
-    println(" # build_dg_faces_2D!: ", n_bdy, " physical boundary faces (",
-            n_per_facets, " periodic facets already paired above, ",
-            n_untagged, " untagged => free/transmissive)")
+
+    # --- census: every element side claimed by exactly one face object -------
+    claimed = zeros(Int, mesh.nelem, 4)
+    wall = falses(mesh.nelem, 4)
+    for f = 1:length(mesh.dg_face_eL)
+        claimed[mesh.dg_face_eL[f], mesh.dg_face_lfL[f]] += 1
+        claimed[mesh.dg_face_eR[f], mesh.dg_face_lfR[f]] += 1
+    end
+    for idx = 1:n_ncf
+        claimed[mesh.dg_ncf_c[idx], mesh.dg_ncf_lfc[idx]] += 1
+    end
+    for r = 1:n_pf
+        claimed[mesh.dg_ncfp_p[r], mesh.dg_ncfp_lfp[r]] += 1
+    end
+    n_wall = 0
+    for iedge_bdy = 1:length(mesh.bdy_edge_type)
+        tag = mesh.bdy_edge_type[iedge_bdy]
+        (tag == "periodicx" || tag == "periodicz") && continue
+        e = mesh.bdy_edge_in_elem[iedge_bdy]
+        lf, _ = slice_of(e, @view mesh.poin_in_bdy_edge[iedge_bdy, 1:ngl])
+        lf != 0 || error("build_dg_faces_2D!: boundary edge $iedge_bdy (element $e, tag $tag) matches no slice of connijk")
+        claimed[e, lf] += 1
+        wall[e, lf] = true
+        n_wall += 1
+    end
+    # Every boundary-flux row sits on a wall side found above, at most once.
+    # The two routes share no input (topology and the conv_map there; the
+    # boundary-edge table and exact point ids here), so this also checks
+    # each row's placement.
+    onwall = falses(mesh.nelem, 4)
+    for b = 1:length(mesh.dg_bfac_e)
+        e = mesh.dg_bfac_e[b]; lf = mesh.dg_bfac_lf[b]
+        wall[e, lf] || error("build_dg_faces_2D!: boundary-flux row $b (element $e, slice $lf, tag $(mesh.dg_bfac_tag[b])) is not on a domain-boundary side — it would add a boundary flux to a face that is already coupled")
+        onwall[e, lf] && error("build_dg_faces_2D!: element $e slice $lf carries two boundary-flux rows")
+        onwall[e, lf] = true
+    end
+    n_bad = 0
+    for e = 1:mesh.nelem, lf = 1:4
+        if claimed[e, lf] != 1
+            n_bad += 1
+            n_bad <= 10 && println(" # build_dg_faces_2D!: element $e slice $lf claimed $(claimed[e, lf]) times")
+        end
+    end
+    n_bad == 0 || error("build_dg_faces_2D!: face census failed — $n_bad element sides are not claimed exactly once (listed above); a missing or duplicated face would couple wrongly and silently")
+
+    # Every one-cell facet is periodic, a tagged wall (a flux row), an
+    # untagged wall (free/transmissive), or a mortar facet (a coarse parent
+    # facet or a hanging half-facet). An unexplained one is coupled by
+    # nothing that knows about it.
+    n_free = n_wall - n_bdy
+    n_untagged == n_free + n_pf + n_ncf || error("build_dg_faces_2D!: $n_untagged untagged one-cell facets, but $n_free untagged walls + $n_pf mortar parent facets + $n_ncf hanging half-facets = $(n_free + n_pf + n_ncf) — an unexplained facet")
+    println(" # build_dg_faces_2D!: ", n_int, " interior + ", n_per, " periodic = ",
+            length(mesh.dg_face_eL), " conforming faces; ", n_pf, " mortar parent faces (",
+            n_ncf, " child halves); ", n_wall, " wall sides (", n_bdy, " with a boundary flux, ",
+            n_free, " free/transmissive); census ",
+            4 * mesh.nelem, "/", 4 * mesh.nelem, " element sides claimed once")
+    println(" # build_dg_faces_2D!: one-cell facets: ", n_per_facets, " periodic, ", n_bdy,
+            " tagged walls, ", n_free, " untagged walls, ", n_pf + n_ncf, " mortar")
 end
 
 function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D, elm2pelm)
