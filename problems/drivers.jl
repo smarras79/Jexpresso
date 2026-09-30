@@ -328,6 +328,7 @@ function driver(nparts,
 
         @time solution = time_loop!(inputs, params, u, partitioned_model,
                                     is_coupled, coupling)
+        JX_LAST_RUN[] = (mesh = params.mesh, t = solution.t[end], u = solution.u[end], qp = params.qp)
 
         # PLOT NOTICE: Plotting is called from inside time_loop using callbacks.
 

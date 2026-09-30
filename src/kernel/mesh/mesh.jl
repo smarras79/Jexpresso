@@ -1696,6 +1696,90 @@ function remap_cubed_sphere_nodes!(mesh::St_mesh, inputs::Dict{Symbol,Any})
 end
 
 
+#=============================================================================
+ Built-in Cartesian grid (no GMSH file)
+
+ A deck that sets  :lcartesian_grid => true  gets an nelx × nely (× nelz)
+ grid of straight-sided quads (hexes) on [xmin,xmax] × [ymin,ymax] (×
+ [zmin,zmax]), built by Gridap's CartesianDiscreteModel instead of read from
+ a .msh file. Everything downstream is unchanged: the model goes through the
+ same high-order node construction, partitioning (serial, MPI, :linitial_refine)
+ and boundary tagging as a GMSH model.
+
+ Boundary names. Jexpresso reads a boundary's type from the name of the GMSH
+ physical group on it (user_bc.jl dispatches on these names; "periodicx",
+ "periodicy"/"periodicz" switch on periodicity). The Cartesian model is given
+ the same kind of labeling: one tag per name, on the facets (edges in 2D,
+ faces in 3D) of the sides carrying it, and nothing else (no interior or
+ corner tags). The names come from :cartesian_bdy, keyed by side:
+     :cartesian_bdy => Dict(:xmin => "free_slipz", :xmax => "free_slipz",
+                            :ymin => "free_slipx", :ymax => "free_slipx")
+ Sides that are not given keep a default name: xmin/xmax "left"/"right";
+ in 2D ymin/ymax "bottom"/"top"; in 3D ymin/ymax "front"/"back" and
+ zmin/zmax "bottom"/"top". Periodic directions are named as in GMSH decks,
+ e.g. :xmin => "periodicx", :xmax => "periodicx".
+=============================================================================#
+_jx_uses_cartesian_grid(inputs) = get(inputs, :lcartesian_grid, false) == true
+
+const _JX_CARTESIAN_DEFAULT_BDY = Dict(
+    2 => Dict(:xmin => "left", :xmax => "right", :ymin => "bottom", :ymax => "top"),
+    3 => Dict(:xmin => "left", :xmax => "right", :ymin => "front", :ymax => "back",
+              :zmin => "bottom", :zmax => "top"))
+
+"""
+    jx_cartesian_model(inputs) -> UnstructuredDiscreteModel
+
+The serial Gridap model of the built-in Cartesian grid described by the deck
+(see the comment block above), labelled like a GMSH model.
+"""
+function jx_cartesian_model(inputs)
+    D = Int(inputs[:nsd])
+    D in (2, 3) || error(" # ERROR jx_cartesian_model: :nsd => $D; the built-in Cartesian grid is 2D or 3D.")
+    ax = D == 2 ? (:x, :y) : (:x, :y, :z)
+    lo = [Float64(inputs[Symbol(a, :min)]) for a in ax]
+    hi = [Float64(inputs[Symbol(a, :max)]) for a in ax]
+    ne = [Int(inputs[Symbol(:nel, a)]) for a in ax]
+    all(ne .>= 1) && all(hi .> lo) ||
+        error(" # ERROR jx_cartesian_model: need nel ≥ 1 and max > min in every direction (got nel=$ne, min=$lo, max=$hi).")
+    domain = Tuple(vcat([[lo[k], hi[k]] for k in 1:D]...))
+    cmodel = UnstructuredDiscreteModel(CartesianDiscreteModel(domain, Tuple(ne)))
+
+    names = copy(_JX_CARTESIAN_DEFAULT_BDY[D])
+    for (k, v) in get(inputs, :cartesian_bdy, Dict())
+        haskey(names, Symbol(k)) || error(" # ERROR jx_cartesian_model: :cartesian_bdy side $k; expected one of $(sort(collect(keys(names)))).")
+        names[Symbol(k)] = String(v)
+    end
+
+    # side of every boundary facet entity, from the facet centroids
+    labels = get_face_labeling(cmodel)
+    topo   = get_grid_topology(cmodel)
+    f2v    = Gridap.Geometry.get_faces(topo, D - 1, 0)
+    vxyz   = Gridap.Geometry.get_vertex_coordinates(topo)
+    fent   = labels.d_to_dface_to_entity[D]          # facets are dimension D-1
+    tol    = 1e-8 * maximum(hi .- lo)
+    name_to_ents = Dict{String, Vector{Int32}}()
+    seen = Set{Int32}()
+    for f in eachindex(fent)
+        e = fent[f]
+        e in seen && continue
+        c = sum(vxyz[v] for v in f2v[f]) / length(f2v[f])
+        for k in 1:D, (bound, side) in ((lo[k], Symbol(ax[k], :min)), (hi[k], Symbol(ax[k], :max)))
+            if abs(c[k] - bound) <= tol
+                push!(get!(name_to_ents, names[side], Int32[]), e)
+                push!(seen, e)
+            end
+        end
+    end
+    tag_names = sort(collect(keys(name_to_ents)))
+    newlabels = FaceLabeling(labels.d_to_dface_to_entity, [name_to_ents[n] for n in tag_names], tag_names)
+    return Gridap.Geometry.UnstructuredDiscreteModel(get_grid(cmodel), topo, newlabels)
+end
+
+# The serial model of the grid: the built-in Cartesian one, or the .msh file.
+_jx_serial_model(inputs) = _jx_uses_cartesian_grid(inputs) ?
+    jx_cartesian_model(inputs) : GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
+
+
 function _flatten_model_to_cell_dim(model::Gridap.Geometry.DiscreteModel{Dc,Dp}) where {Dc,Dp}
     Dc == Dp && return model
     # Squashing a curved surface would silently collapse it (a sphere onto its
@@ -1820,7 +1904,9 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             # uses the distributed-Gridap constructor GmshDiscreteModel(parts,
             # ...), which is collective and reads through its own MPI-aware
             # path.
-            partitioned_model = if inputs[:lxy_partition]
+            # (a built-in Cartesian grid always takes this path: the serial
+            # model is built in memory and partitioned in x-y)
+            partitioned_model = if inputs[:lxy_partition] || _jx_uses_cartesian_grid(inputs)
                 # Visible marker for the Gridap mesh-read window (the
                 # silent-wall first-call-JIT phase that previously looked
                 # like a hang). YELLOW_FG is from Crayons.Box, already in
@@ -1833,7 +1919,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                 _t_gmsh = time_ns()
 
                 smodel_root = rank == 0 ?
-                    GmshDiscreteModel(inputs[:gmsh_filename], renumber=true) :
+                    _jx_serial_model(inputs) :
                     nothing
                 smodel = MPI.bcast(smodel_root, 0, comm)
 
@@ -1875,7 +1961,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             # first call to UniformlyRefinedForestOfOctreesDiscreteModel.
             _ensure_amr_loaded!()
             @outputrootonly begin
-                gmodel = _flatten_model_to_cell_dim(GmshDiscreteModel(inputs[:gmsh_filename], renumber=true))
+                gmodel = _flatten_model_to_cell_dim(_jx_serial_model(inputs))
                 partitioned_model = UniformlyRefinedForestOfOctreesDiscreteModel(parts, gmodel, inputs[:init_refine_lvl])
             end
             cell_gids = local_views(partition(get_cell_gids(partitioned_model))).item_ref[]
@@ -1884,7 +1970,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         elseif ladaptive == true && linitial_refine == false
             _ensure_amr_loaded!()
             @outputrootonly begin
-                gmodel = _flatten_model_to_cell_dim(GmshDiscreteModel(inputs[:gmsh_filename], renumber=true))
+                gmodel = _flatten_model_to_cell_dim(_jx_serial_model(inputs))
                 partitioned_model_coarse = OctreeDistributedDiscreteModel(parts,gmodel)
             end
             function set_id_refined(flags, indices, target_gid)

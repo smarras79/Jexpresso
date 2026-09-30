@@ -576,6 +576,10 @@ export @timers
 # Deck overrides for the next run_case (see its `inputs` keyword): applied by
 # run.jl right after the case's user_inputs() is read, reset after the run.
 const JX_INPUT_OVERRIDES = Ref{Any}(nothing)
+# The mesh and final state of the last time-dependent run in this session:
+# (mesh, t, u, qp), set by the driver after the time loop, for comparing runs
+# in the REPL (e.g. the same case on a GMSH and on a built-in Cartesian grid).
+const JX_LAST_RUN = Ref{Any}(nothing)
 
 """
     Jexpresso.run_case(eqs, eqs_case; CI_MODE=false, inputs=nothing)

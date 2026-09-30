@@ -46,7 +46,10 @@ using JLD2
 # inside Jexpresso (0..nparts-1) — the rank suffix in the cache filename
 # does not collide with Alya.
 # ───────────────────────────────────────────────────────────────────────────
-_use_mesh_cache(inputs) = get(inputs, :luse_mesh_cache, true) !== false
+# The caches are keyed on the .msh file; a built-in Cartesian grid has none
+# (it is built in memory, which is cheap), so it never uses them.
+_use_mesh_cache(inputs) = get(inputs, :luse_mesh_cache, true) !== false &&
+                          get(inputs, :lcartesian_grid, false) != true
 
 # True when the run adapts the mesh in space — pre-adaptation before t=0,
 # initial refinement, runtime AMR, or an AMR restart off a p4est checkpoint.

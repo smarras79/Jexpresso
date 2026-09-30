@@ -863,6 +863,32 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         end
     end
     
+    #
+    # Built-in Cartesian grid (no GMSH file): :lcartesian_grid => true with
+    # :nelx/:xmin/:xmax, :nely/:ymin/:ymax (and :nelz/:zmin/:zmax in 3D), and
+    # optionally :cartesian_bdy => Dict(:xmin => "name", …) for the boundary
+    # names (see jx_cartesian_model in src/kernel/mesh/mesh.jl). It is built
+    # in memory and then takes exactly the path of a GMSH grid, so
+    # :lread_gmsh is switched on here.
+    #
+    if get(inputs, :lcartesian_grid, false) == true
+        if !haskey(inputs, :nsd)
+            inputs[:nsd] = haskey(inputs, :nelz) ? 3 : 2
+        end
+        req = inputs[:nsd] == 3 ? (:nelx, :xmin, :xmax, :nely, :ymin, :ymax, :nelz, :zmin, :zmax) :
+                                  (:nelx, :xmin, :xmax, :nely, :ymin, :ymax)
+        missing_keys = [k for k in req if !haskey(inputs, k)]
+        isempty(missing_keys) ||
+            error(" # ERROR: :lcartesian_grid => true needs $(join(missing_keys, ", ")) in user_inputs.")
+        inputs[:lread_gmsh] = true
+        if !haskey(inputs, :gmsh_filename)
+            inputs[:gmsh_filename] = "none (built-in Cartesian grid)"
+        end
+        if inputs[:gmsh_filename_c] == "none"
+            inputs[:gmsh_filename_c] = inputs[:gmsh_filename]
+        end
+    end
+
     #Grid entries:
     if(!haskey(inputs, :lread_gmsh) || inputs[:lread_gmsh] == false)
         

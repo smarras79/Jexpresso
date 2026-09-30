@@ -87,6 +87,27 @@ Please cite Jexpresso using:
 }
 ```
 
+# Grids: GMSH files or a built-in Cartesian grid
+A case reads its grid from a GMSH file (`:lread_gmsh => true`, `:gmsh_filename => "…msh"`), whose physical names are the boundary types that `user_bc.jl` dispatches on. For a simple box, the deck can instead ask Jexpresso to build a Cartesian grid of straight-sided quads (2D) or hexahedra (3D), with no file:
+
+```julia
+:lcartesian_grid => true,
+:nelx => 10, :xmin => -5000.0, :xmax =>  5000.0,
+:nely => 10, :ymin =>     0.0, :ymax => 10000.0,
+# 3D: also :nelz, :zmin, :zmax
+:cartesian_bdy => Dict(:xmin => "free_slipz", :xmax => "free_slipz",
+                       :ymin => "free_slipx", :ymax => "free_slipx"),
+```
+
+`:cartesian_bdy` names the sides exactly as the physical names of a GMSH file would. Periodic directions use the usual names (`"periodicx"`, `"periodicy"`/`"periodicz"`). Sides left out keep a default name: `"left"`/`"right"` for x, `"bottom"`/`"top"` for y in 2D, and `"front"`/`"back"` for y, `"bottom"`/`"top"` for z in 3D. The grid is built with Gridap's `CartesianDiscreteModel` and then follows the same path as a GMSH grid: high-order nodes, serial or MPI partitioning, `:linitial_refine`, periodicity, and the usual `:xscale`/`:xdisp` mappings.
+
+The results match the GMSH grids to round-off:
+- `CompEuler/theta` over its full CI run (2000 time steps): about 1e-11 relative, serial and on 2 MPI ranks.
+- The 3D rising bubble `CompEuler/3d`.
+- The periodic Poisson problem, with and without static condensation and `:linitial_refine`.
+
+Example: `problems/CompEuler/theta_cartesian`. The mesh caches are not used for built-in grids, which are cheap to build.
+
 # Equations:
 Jexpresso uses arbitrarily high-order (3rd and above) **continuous spectral elements** to solve
 
