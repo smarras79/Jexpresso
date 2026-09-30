@@ -10,9 +10,9 @@
  identical configuration.
 
  USAGE
-   one configuration (what each SLURM job runs):
-     julia --project=. -t 8 tools/poisson3d_benchmark/bench3d.jl \
-           --solver sem_amg --ne 32 --nop 4 --outdir ppb3d/parts/sem_amg_ne32_N4
+   one solver over a range of sizes (what slurm/run_wulver3d.sbatch runs, per solver):
+     julia --project=. -t 16 tools/poisson3d_benchmark/bench3d.jl \
+           --solver sem_amg --nop 4 --nes 4,8,16,32 --blas-threads 16 --outdir ppb3d/parts/sem_amg --resume
    a local sweep (one session, rows appended, resumable):
      julia --project=. -t 4 tools/poisson3d_benchmark/bench3d.jl \
            --solvers sem,sem_amg,sc_amg,fft --nes 4,8,16 --nops 2,4 --outdir ppb3d_local --resume
@@ -33,8 +33,8 @@
  COLUMNS of results.csv: the row of P3D.run_config (errors; assembly, rhs,
  setup, solve and total seconds; CG iterations; nnz of K, of the Cholesky
  factor, of the skeleton matrix) plus julia_threads, blas_threads, the peak
- resident memory of the process (maxrss_gb: per configuration when each runs
- in its own process, as under SLURM; the running maximum in a local sweep),
+ resident memory of the process (maxrss_gb: the running maximum of the
+ session, so sizes are swept in increasing order),
  and status ("ok", or the error of a configuration that failed).
 =============================================================================#
 using Jexpresso, Printf, LinearAlgebra
@@ -88,10 +88,11 @@ function main(args)
     o = parse_args(args)
     mkpath(o[:outdir]); csv = joinpath(o[:outdir], "results.csv")
     rows = Dict{Symbol, Any}[]
-    if o[:resume] && isfile(csv)                      # keep what is there
+    if o[:resume] && isfile(csv)                      # keep what finished; failed rows are rerun
         lines = readlines(csv); hdr = Symbol.(split(lines[1], ","))
         for l in lines[2:end]
-            push!(rows, Dict{Symbol, Any}(zip(hdr, split(l, ","))))
+            r = Dict{Symbol, Any}(zip(hdr, split(l, ",")))
+            get(r, :status, "") == "ok" && push!(rows, r)
         end
     end
     done = Set((string(r[:solver]), parse(Int, string(r[:ne])), parse(Int, string(r[:nop]))) for r in rows)
