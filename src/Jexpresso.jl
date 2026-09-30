@@ -360,6 +360,72 @@ function _include_untracked(path::AbstractString)
     end
 end
 
+# The coupled precompile workload bakes its case's hooks (user_source!,
+# user_flux!, initialize, …) into the package image, so they exist in every
+# process that loads it. Another case's files replace only the hooks they
+# define at exactly the same signature, and a baked hook at a more specific
+# one still wins dispatch: 3dAlya's user_source!(…, ::CL, ::TOTAL) outranks
+# kopriva's user_source!(…, ::CL, ::AbstractPert), and kopriva would run
+# 3dAlya's source term. A baked method cannot be deleted (see the note in
+# run.jl), so run.jl calls this after loading any other case: each baked method
+# the case left in place is redefined, at its own signature, to `invoke` the
+# method dispatch would pick without the baked ones. The compiler inlines the
+# `invoke`, so a call costs the same as before. Returns how many methods it
+# redirected.
+const _BAKED_HOOK_REDIRECTS = Dict{Any,Tuple{Method,Any}}()  # baked signature => (redirecting method, signature it invokes)
+
+function _redirect_baked_hooks!(case_dir::AbstractString)
+    baked = _COUPLED_PRECOMPILE_CASE[]
+    isempty(baked) && return 0
+    baked_dir = joinpath(normpath(joinpath(dirname(@__DIR__), "problems", baked)), "")
+    joinpath(normpath(case_dir), "") == baked_dir && return 0
+    mod = @__MODULE__
+    n   = 0
+    for name in names(mod; all = true)
+        startswith(string(name), '#') && continue     # keyword bodies, closures
+        isdefined(mod, name) || continue
+        f = getfield(mod, name)
+        (f isa Function && parentmodule(f) === mod && nameof(f) === name) || continue
+        ms = collect(methods(f))
+        # Still the image's, or already redirected for an earlier case.
+        baked_ms = filter(m -> startswith(normpath(string(m.file)), baked_dir) ||
+                               get(_BAKED_HOOK_REDIRECTS, m.sig, (nothing,))[1] === m, ms)
+        isempty(baked_ms) && continue
+        others = filter(m -> !any(b -> b === m, baked_ms), ms)
+        for mb in baked_ms
+            # Without the baked methods, a call that reaches mb would go to the
+            # most specific of the others whose signature covers mb's, if any.
+            cover = filter(m -> mb.sig <: m.sig, others)
+            i = findfirst(m -> all(c -> m.sig <: c.sig, cover), cover)
+            i === nothing && continue
+            to = cover[i].sig
+            r  = get(_BAKED_HOOK_REDIRECTS, mb.sig, nothing)
+            r !== nothing && r[1] === mb && r[2] == to && continue   # already goes there
+            mr = _redirect_method!(f, mb, to)
+            mr === nothing && continue
+            _BAKED_HOOK_REDIRECTS[mb.sig] = (mr, to)
+            n += 1
+        end
+    end
+    return n
+end
+
+# Redefine method `mb` of `f`, at its own signature, as an `invoke` of the
+# method of `f` at signature `to`. Returns the new method, or nothing for a
+# signature with type parameters or a vararg, which this does not rebuild.
+function _redirect_method!(f::Function, mb::Method, @nospecialize(to))
+    mb.sig isa DataType || return nothing
+    types = mb.sig.parameters[2:end]
+    any(t -> t isa Core.TypeofVararg, types) && return nothing
+    args  = [Symbol("x", i) for i in eachindex(types)]
+    tosig = Base.rewrap_unionall(Tuple{Base.unwrap_unionall(to).parameters[2:end]...}, to)
+    Core.eval(@__MODULE__,
+        :(function $(nameof(f))($((:($a::$t) for (a, t) in zip(args, types))...); kw...)
+              invoke($f, $tosig, $(args...); kw...)
+          end))
+    return only(filter(m -> m.sig == mb.sig, collect(methods(f))))
+end
+
 # ──────────────────────────────────────────────────────────────────────
 # Lazy dependency loaders.
 #

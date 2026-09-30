@@ -697,6 +697,15 @@ What it costs:
   `user_source.jl`, …) is recompiled at every launch until you rebuild with
   `PRECOMPILE_COUPLED=1 ./run_coupled.sh`. That flag always rebuilds.
 
+Other cases still run their own hooks with this image. The image holds the
+coupled case's hooks, and another case's files replace only those they define
+at exactly the same signature. A baked hook at a more specific signature
+would still be called: 3dAlya's `user_source!(…, ::CL, ::TOTAL)` outranks
+kopriva's `user_source!(…, ::CL, ::AbstractPert)`. So after loading any other
+case, Jexpresso redirects each such hook to the case's own method and prints
+`Redirected N hook methods of CompEuler/3dAlya`. A redirected call costs the
+same as a direct one.
+
 Jexpresso's structs used to carry their array sizes in their types, for
 example `St_metrics{Float64, (50, 5, 5, 5), …}`, so every partition size was a
 different type. A rank of a 2-rank launch holds 50 of the 100 elements, so it

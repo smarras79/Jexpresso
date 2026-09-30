@@ -187,6 +187,14 @@ if !isempty(_case_files_stale)
     end
     _LOADED_CASE_DIR[] = case_name_dir
 end
+# The hooks of a case the coupled precompile baked into the package image must
+# not outrank this case's own (see _redirect_baked_hooks! in Jexpresso.jl).
+_n_redirected = _redirect_baked_hooks!(case_name_dir)
+if _n_redirected > 0 && rank == 0
+    println(" # Redirected ", _n_redirected, _n_redirected == 1 ? " hook method" : " hook methods",
+            " of ", _COUPLED_PRECOMPILE_CASE[], ", precompiled into the package image, to this case's")
+    flush(stdout)
+end
 #--------------------------------------------------------
 # Read User Inputs:
 #--------------------------------------------------------
