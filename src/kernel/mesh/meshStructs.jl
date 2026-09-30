@@ -309,8 +309,8 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     # with a ghost state built from the case's user_bc_dirichlet! and
     # sends the pair through the same numerical_flux! as an interior face.
     # The strong (node-overwriting) CG path is switched off under DiscGal
-    # in BCs.jl — poin_in_bdy_edge carries CG point ids, which have no
-    # meaning in the duplicated-DOF numbering.
+    # in BCs.jl: clamping a node value is the CG way of imposing a boundary
+    # condition, not the DG one.
     # Empty under ContGal/FD, and on a fully periodic DG mesh.
     # ------------------------------------------------------------------
     dg_bfac_e::Vector{TInt}     = TInt[]     # the one element owning the face
