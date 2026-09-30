@@ -68,8 +68,8 @@ set -e
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SRC_DIR/.." && pwd)"
 OUT="$SRC_DIR/Alya.x"
-JULIA="${JULIA:-julia}"
-
+#JULIA="${JULIA:-julia}"
+JULIA="/Applications/Julia-1.11.app/Contents/Resources/julia/bin/julia"
 usage() { sed -n '2,/^#===/p' "${BASH_SOURCE[0]}" | sed 's/^#//;s/^ //'; exit 0; }
 
 MPI_WANT="${MPI:-auto}"
