@@ -59,14 +59,12 @@ end
 # DG (DiscGal): boundary conditions are FLUXES, not node values.
 #
 # The strong path above overwrites uaux/RHS at the points listed in
-# poin_in_bdy_edge. Under DiscGal that array is meaningless twice over: it
-# carries CG point ids, while mesh.x/connijk were renumbered to the
-# duplicated-DOF DG numbering (add_high_order_nodes_2D_gmsh_dg!), so the
-# writes would land on whatever DG node happens to share the index; and even
-# with correct ids, clamping a node value and zeroing its RHS is the CG way
-# of imposing a boundary condition, not the DG one. DG imposes it weakly,
-# through the numerical flux on the boundary faces built by
-# build_dg_faces_2D! and consumed by surface_rhs_el! (see dg_boundary_ghost!).
+# poin_in_bdy_edge. Under DiscGal that list holds DG point ids (in 2D it is
+# rebuilt from connijk right after the boundary edges are extracted), but
+# clamping a node value and zeroing its RHS is the CG way of imposing a
+# boundary condition, not the DG one. DG imposes it weakly, through the
+# numerical flux on the boundary faces built by build_dg_faces_2D! and
+# consumed by surface_rhs_el! (see dg_boundary_ghost!).
 #
 # This is a no-op rather than an error because it is also the right answer
 # for the periodic DG cases, whose boundary edges are all periodic tags that
