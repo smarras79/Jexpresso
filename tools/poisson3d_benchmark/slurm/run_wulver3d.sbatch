@@ -35,7 +35,8 @@ NES_N4="4,6,8,12,16,24,32,48,64";     NES_N4_DIRECT="4,6,8,12,16,24,32"
 echo "--- 1. MPI preferences FIRST (before any compilation) ---"
 julia --project=. -e 'using MPIPreferences; MPIPreferences.use_system_binary()' || exit 1
 echo "--- 2. Serial precompile (one process, many cores internally) ---"
-julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()' || exit 1
+# resolve first: an existing Manifest.toml may predate packages added to Project.toml
+julia --project=. -e 'using Pkg; Pkg.resolve(); Pkg.instantiate(); Pkg.precompile()' || exit 1
 echo "--- 3. Serial warm-up and checks (2D against Jexpresso, 3D convergence) ---"
 julia --project=. -e 'using MPI; using Jexpresso' || exit 1
 julia --project=. -t 4 tools/poisson3d_benchmark/verify_2d.jl || exit 1

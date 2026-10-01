@@ -2,7 +2,7 @@
 
 The 2D benchmark in `tools/periodic_poisson_benchmark` is too small for iterative solvers to overtake the sparse direct solve. In 2D, nested-dissection Cholesky costs O(n^1.5), against O(n) for a good iterative method. In 3D it costs O(n²) in time and O(n^(4/3)) in memory, so the crossover moves to sizes a cluster can reach.
 
-This directory runs the same comparison in 3D, up to about 1.7·10⁷ unknowns, in one SLURM job on one node of NJIT's Wulver.
+This directory runs the same comparison in 3D, up to about 1.7·10⁷ unknowns, in one SLURM job on one node of NJIT's Wulver, with threaded solvers, and with distributed-memory (MPI) solvers: MUMPS and hypre BoomerAMG.
 
 ## The problem
 
@@ -81,7 +81,60 @@ The settings are the few variables at the top of the script: `OUTDIR` (default `
 - BLAS threads parallelize CHOLMOD's supernodal factorization and the dense kernels.
 - AlgebraicMultigrid.jl and the CG iterations run on one thread, so threads favour the direct solvers.
 - The seven processes share the node's memory bandwidth, so timings are slightly pessimistic for all of them. For cleaner timings, set `SOLVERS` to one solver and `THREADS=128`, and submit once per solver.
-- Distributed-memory (MPI) solves are not included; they would need PETSc or MUMPS.
+- For distributed-memory (MPI) solvers, see the next section.
+
+## The MPI version: MUMPS and BoomerAMG
+
+The solvers above run in one process, with threads. `mpi/` solves the same problem with distributed-memory solvers on MPI ranks:
+
+| key | solver |
+|---|---|
+| `mumps` | MUMPS sparse Cholesky (SPD LDLᵀ), distributed matrix input (ICNTL(18) = 3), METIS nested-dissection ordering, no low-rank compression: exact |
+| `boomeramg` | hypre PCG, preconditioned by one BoomerAMG V-cycle |
+| `jacobi` | hypre PCG with diagonal scaling (the CEED BP5 solver) |
+
+How it works (`mpi/poisson3d_mpi.jl`):
+- **Same system:** the same SEM operator, right-hand side, exact solution and pinned unknown as the serial benchmark.
+- **Assembly without communication:** every row of K = Mz⊗My⊗Kx + Mz⊗Ky⊗Mx + Kz⊗My⊗Mx follows from the periodic 1D matrices, so each rank builds its own rows.
+- **Partition:** the (ne·N)³ nodes are split into boxes over an MPI process grid (`MPI.Dims_create`, e.g. 8×4×4 for 128 ranks). Each rank's nodes are numbered contiguously, which is the row range hypre and MUMPS expect.
+- **BoomerAMG settings:** HMIS coarsening, extended+i interpolation (at most 4 entries per row), l1-scaled symmetric Gauss-Seidel smoothing, strong threshold 0.5. With 0.5, a 2.6·10⁵-unknown case takes 14 iterations at N = 4 and 13 at N = 2; 0.25 converges the same but sets up slower, and 0.7 needs 20 iterations.
+- **CG stopping test:** 10⁻¹² relative preconditioned residual, as in the serial benchmark.
+- **MUMPS ordering:** sequential METIS on the host. The MUMPS_jll binary has no parallel ordering: PT-SCOTCH returns INFOG(1) = −38 and ParMETIS fails.
+- **MUMPS right-hand side and solution:** both are gathered on the host. That costs two n-vectors on rank 0 and is negligible next to the factorization.
+- **Timing:** every phase starts and ends at a barrier, so a time is the slowest rank's.
+- **No Jexpresso on the ranks:** the ranks do not load Jexpresso (several hundred MB per rank). The LGL nodes and weights are computed with Kopriva's algorithm, the one Jexpresso implements, in a separate small environment (`mpi/Project.toml`: MPI, HYPRE.jl, MUMPS.jl).
+
+**Verified** (`mpi/verify_mpi.jl`, rerun by the SLURM job):
+- **Against the serial benchmark:** the errors equal those of the serial, Jexpresso-based `sem` solve at the same (ne, N), for ne = 4, 6 and N = 2, 3, 4, to within 4.5·10⁻¹².
+- **Solver agreement:** the three MPI solvers agree to 2·10⁻¹³.
+- **h-convergence:** the rate is 4.02 at N = 3, over 4³ → 16³ elements.
+- **Rank count:** the results are the same on 1, 3 and 4 ranks, including uneven splits, to 3·10⁻¹³.
+
+**Running it on Wulver:**
+```bash
+cd /project/smarras/smarras/Jexpresso      # checkout of sm/elementLearning
+sbatch tools/poisson3d_benchmark/slurm/run_wulver3d_mpi.sbatch
+```
+This is the same Jexpresso job template as `run_wulver3d.sbatch` (one node, 128 tasks):
+1. MPIPreferences `use_system_binary()` for both environments;
+2. resolve and precompile both environments;
+3. a serial warm-up, then a small serial reference run (`bench3d.jl --solvers sem`), then `verify_mpi.jl` on 8 ranks against that reference;
+4. `mpirun -np 128` for each solver in turn, so timings are clean: the N = 2 sweep, then the N = 4 sweep, into `ppb3d_wulver_mpi/parts/<solver>/`, with logs in `ppb3d_wulver_mpi/logs/`;
+5. `plot3d.py`, which draws the same figures as for the threaded run (memory summed over ranks).
+
+**Sizes:**
+- The iterative solvers go to 5.7·10⁷ unknowns.
+- MUMPS stops at 2.1·10⁶ unknowns, which fits one node's 500 GB.
+- With more nodes (`--nodes`, and `NP`), add sizes to `NES_*_DIRECT`: MUMPS spreads the factor over all ranks.
+- Resubmitting resumes.
+
+**Local run:**
+```bash
+julia --project=tools/poisson3d_benchmark/mpi -e 'using Pkg; Pkg.instantiate()'
+julia --project=tools/poisson3d_benchmark/mpi -e 'using MPI; run(`$(MPI.mpiexec()) -n 4 julia --project=tools/poisson3d_benchmark/mpi tools/poisson3d_benchmark/mpi/verify_mpi.jl`)'
+julia --project=tools/poisson3d_benchmark/mpi -e 'using MPI; run(`$(MPI.mpiexec()) -n 4 julia --project=tools/poisson3d_benchmark/mpi tools/poisson3d_benchmark/mpi/bench3d_mpi.jl --solvers mumps,boomeramg,jacobi --nop 2 --nes 4,8,16 --outdir ppb3d_mpi_local`)'
+python3 tools/poisson3d_benchmark/plot3d.py ppb3d_mpi_local
+```
 
 ## Outputs (in `OUTDIR`)
 

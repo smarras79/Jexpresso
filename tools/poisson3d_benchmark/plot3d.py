@@ -3,7 +3,7 @@
 
     python3 tools/poisson3d_benchmark/plot3d.py OUTDIR
 
-Reads every OUTDIR/parts/*/results.csv (one per SLURM job) and, if present,
+Reads every OUTDIR/parts/*/results.csv (one per solver) and, if present,
 OUTDIR/results.csv; a configuration (solver, d, ne, N) seen twice keeps its
 last occurrence. Writes OUTDIR/results.csv, OUTDIR/results.md and, per SEM
 order N, into OUTDIR/assets (light and dark SVG):
@@ -12,9 +12,9 @@ order N, into OUTDIR/assets (light and dark SVG):
                        the reference slopes n (optimal iterative) and n^2
                        (3D sparse direct with nested dissection)
   ppb3d_total_N<N>     time-to-solution (assembly + rhs + setup + solve) vs n
-  ppb3d_memory_N<N>    peak resident memory of the run vs n
+  ppb3d_memory_N<N>    peak resident memory of the run vs n (MPI: summed over ranks)
   ppb3d_iters_N<N>     CG iterations vs n (AMG and Jacobi preconditioners)
-  ppb3d_error_N<N>     L-inf error vs n (the five SEM solvers share one curve)
+  ppb3d_error_N<N>     L-inf error vs n (the SEM solvers share one curve)
 
 No dependencies (uses the SVG chart of ../periodic_poisson_benchmark/plot.py).
 """
@@ -32,8 +32,12 @@ SOLVERS = [  # key, label, (colour index, marker)
     ("sc_amg",     "SC AMG",      (3, "diamond")),
     ("ps",         "pseudo-sp.",  (4, "tridown")),
     ("fft",        "FFT",         (5, "ring")),
+    # MPI solvers (mpi/bench3d_mpi.jl), same discretisation as the SEM solvers
+    ("mumps",      "MUMPS (MPI)",        (0, "circle")),
+    ("boomeramg",  "BoomerAMG-CG (MPI)", (1, "square")),
+    ("jacobi",     "Jacobi-CG (MPI)",    (6, "square")),
 ]
-SEM = {"sem", "sem_amg", "sem_jacobi", "sc_direct", "sc_amg"}
+SEM = {"sem", "sem_amg", "sem_jacobi", "sc_direct", "sc_amg", "mumps", "boomeramg", "jacobi"}
 LABEL = {k: l for k, l, _ in SOLVERS}
 
 
@@ -49,12 +53,13 @@ def merge(outdir):
             hdr = hdr or rd.fieldnames
             for r in rd:
                 byconf[(r["solver"], r["d"], r["ne"], r["nop"])] = r
+            hdr = hdr + [k for k in rd.fieldnames if k not in hdr]
     rows = sorted(byconf.values(), key=lambda r: (int(r["d"]), int(r["nop"]), int(r["n"] or 0),
                                                   [k for k, _, _ in SOLVERS].index(r["solver"])))
     if not rows:
         sys.exit(f"plot3d.py: no results in {outdir}")
     with open(top, "w", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=hdr)
+        w = csv.DictWriter(fh, fieldnames=hdr, restval="")
         w.writeheader()
         w.writerows(rows)
     print(f"merged {len(rows)} configurations from {len(files)} file(s) -> {top}")
@@ -77,18 +82,18 @@ def t_str(x):
 
 def write_md(path, rows):
     with open(path, "w") as fh:
-        fh.write("| solver | d | elements | N | unknowns n | CG its | ‖e‖∞ | assembly | setup | solve | time-to-solution | factor nnz | peak memory | threads (julia/BLAS) | status |\n")
-        fh.write("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|\n")
+        fh.write("| solver | d | elements | N | unknowns n | CG its | ‖e‖∞ | assembly | setup | solve | time-to-solution | factor nnz | peak memory | threads (julia/BLAS) | MPI ranks | status |\n")
+        fh.write("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|\n")
         for r in rows:
             ok = r["status"] == "ok"
-            fh.write("| {} | {} | {}^{} | {} | {:,} | {} | {} | {} | {} | {} | **{}** | {} | {} GB | {}/{} | {} |\n".format(
+            fh.write("| {} | {} | {}^{} | {} | {:,} | {} | {} | {} | {} | {} | **{}** | {} | {} GB | {}/{} | {} | {} |\n".format(
                 LABEL.get(r["solver"], r["solver"]), r["d"], r["ne"], r["d"], r["nop"], int(fnum(r["n"])),
                 r["iters"] if ok and fnum(r["iters"]) > 0 else "—",
                 f"{fnum(r['linf']):.2e}" if ok else "—",
                 t_str(r["assembly"]) if ok else "—", t_str(r["setup"]) if ok else "—",
                 t_str(r["solve"]) if ok else "—", t_str(r["total"]) if ok else "—",
                 f"{int(fnum(r['factor_nnz'])):,}" if fnum(r["factor_nnz"]) > 0 else "—",
-                r["maxrss_gb"], r["julia_threads"], r["blas_threads"], r["status"]).replace(",", " "))
+                r.get("maxrss_gb", ""), r.get("julia_threads", ""), r.get("blas_threads", ""), r.get("nranks") or "1", r["status"]).replace(",", " "))
     print("wrote", path)
 
 
@@ -144,8 +149,8 @@ def plots(rows, assets):
             if cost:
                 yd = decades([p[1] for _, pts, _ in cost for p in pts])
                 refs = []
-                for key, slope, lab in (("sem_amg", 1.0, "∝ n"), ("sem", 2.0, "∝ n²")):
-                    first = [pts[0] for l, pts, _ in cost if l == LABEL[key]]
+                for keys, slope, lab in ((("sem_amg", "boomeramg"), 1.0, "∝ n"), (("sem", "mumps"), 2.0, "∝ n²")):
+                    first = [pts[0] for l, pts, _ in cost if l in [LABEL[k] for k in keys]]
                     if first:
                         refs.append((first[0][0], first[0][1], slope, lab))
                 figure(assets, "ppb3d_cost" + sfx, f"Solver cost vs unknowns, N = {N}", sub,
@@ -161,7 +166,7 @@ def plots(rows, assets):
                 figure(assets, "ppb3d_memory" + sfx, f"Peak memory vs unknowns, N = {N}", sub,
                        f"Peak resident memory of the run versus unknowns at SEM order {N}.",
                        mem, "peak memory, GB (log scale)", decades([p[1] for _, pts, _ in mem for p in pts]))
-            its = ser("iters", solvers={"sem_amg", "sem_jacobi", "sc_amg"})
+            its = ser("iters", solvers={"sem_amg", "sem_jacobi", "sc_amg", "boomeramg", "jacobi"})
             if its:
                 figure(assets, "ppb3d_iters" + sfx, f"CG iterations vs unknowns, N = {N}", sub,
                        f"Conjugate-gradient iterations to a relative preconditioned residual of 1e-12 versus unknowns at SEM order {N}.",
@@ -177,10 +182,10 @@ def plots(rows, assets):
                     byn.setdefault(n, e)
                 pts = [(n, e) for n, e in sorted(byn.items()) if e > 0]
                 if pts:
-                    err.append(("SEM (all 5)" if k == "sem" else lab, pts, (c, m, False)))
+                    err.append(("SEM (all solvers)" if k == "sem" else lab, pts, (c, m, False)))
             if err:
                 figure(assets, "ppb3d_error" + sfx, f"Error vs unknowns, N = {N}", sub,
-                       f"L-infinity error against the exact solution versus unknowns at SEM order {N}; the five SEM solvers share one curve.",
+                       f"L-infinity error against the exact solution versus unknowns at SEM order {N}; the SEM solvers share one curve.",
                        err, "L∞ error (log scale)", decades([p[1] for _, pts, _ in err for p in pts]))
 
 

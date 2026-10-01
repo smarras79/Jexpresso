@@ -1014,7 +1014,7 @@ At fixed SEM order N, one curve per solver as the mesh is refined: where the AMG
 <!-- ppb_highres_v2:end -->
 
 ### The same comparison in 3D, at cluster scale
-In 2D, sparse direct solvers stay ahead at the sizes above. The 3D version of the comparison in [tools/poisson3d_benchmark](tools/poisson3d_benchmark/README.md) reaches about 1.7·10⁷ unknowns, where nested-dissection Cholesky costs O(n²) in time and O(n^(4/3)) in memory, against O(n) for AMG. It runs as one SLURM job on one node of NJIT's Wulver (`sbatch tools/poisson3d_benchmark/slurm/run_wulver3d.sbatch`), and uses the same seven solvers (including Jacobi-CG, the CEED BP5 solver) and the same timing protocol. Its Kronecker-product assembly is checked against Jexpresso's own periodic SEM solve in 2D (agreement to about 1e-12).
+In 2D, sparse direct solvers stay ahead at the sizes above. The 3D version of the comparison in [tools/poisson3d_benchmark](tools/poisson3d_benchmark/README.md) reaches about 1.7·10⁷ unknowns, where nested-dissection Cholesky costs O(n²) in time and O(n^(4/3)) in memory, against O(n) for AMG. It runs as one SLURM job on one node of NJIT's Wulver (`sbatch tools/poisson3d_benchmark/slurm/run_wulver3d.sbatch`), and uses the same seven solvers (including Jacobi-CG, the CEED BP5 solver) and the same timing protocol. An MPI version (`sbatch tools/poisson3d_benchmark/slurm/run_wulver3d_mpi.sbatch`) solves the same system with MUMPS, hypre BoomerAMG + CG and Jacobi-CG on all ranks. Its errors match the serial solve to about 1e-12. Its Kronecker-product assembly is checked against Jexpresso's own periodic SEM solve in 2D (agreement to about 1e-12).
 
 ## Laguerre semi-infinite element test suite
 This section contains instructions to run all of the test cases presented in
