@@ -29,11 +29,18 @@ MPIENV=tools/poisson3d_benchmark/mpi          # Julia environment: MPI, HYPRE, M
 OUTDIR=ppb3d_wulver_mpi             # results, figures, per-solver logs
 NP=${SLURM_NTASKS:-128}             # MPI ranks
 SOLVERS="boomeramg jacobi mumps"
-# Elements per direction; unknowns n = (ne*N)^3, from 4.1e3 to 5.7e7.
-# MUMPS stops at n = 2.1e6 on one node (the next size needs about 400 GB for
-# the factor alone); the iterative solvers go on to 5.7e7.
-NES_N2="8,12,16,24,32,48,64,96,128,192";  NES_N2_DIRECT="8,12,16,24,32,48,64"
-NES_N4="4,6,8,12,16,24,32,48,64,96";      NES_N4_DIRECT="4,6,8,12,16,24,32"
+# Sweep as in the 2D benchmark: mesh levels of LEVELS^3 elements, each with
+# the SEM orders NOPS (unknowns n = (ne*N)^3). Configurations above MAXN
+# unknowns are not run: MUMPS stops at 2.2e6 on one node (the next sizes need
+# 400 GB and more for the factor), the iterative solvers at 6e7.
+LEVELS="8 16 32 64"
+NOPS="2 3 4 5 6 7 8"
+MAXN=60000000;  MAXN_DIRECT=2200000
+nops_for() {   # nops_for ne maxn -> the orders N of NOPS with (ne*N)^3 <= maxn, comma-separated
+    local out=""
+    for N in $NOPS; do [ $(( ($1*N)**3 )) -le $2 ] && out="$out${out:+,}$N"; done
+    echo "$out"
+}
 
 echo "--- 1. MPI preferences FIRST (before any compilation) ---"
 julia --project=. -e 'using MPIPreferences; MPIPreferences.use_system_binary()' || exit 1
@@ -63,11 +70,11 @@ echo "--- Setup complete, launching $NP ranks ---"
 export JULIA_PKG_PRECOMPILE_AUTO=0  # ranks must never attempt to precompile
 mkdir -p "$OUTDIR/logs"
 for S in $SOLVERS; do
-    case $S in mumps) n2=$NES_N2_DIRECT; n4=$NES_N4_DIRECT ;; *) n2=$NES_N2; n4=$NES_N4 ;; esac
-    for sweep in "2 $n2" "4 $n4"; do
-        set -- $sweep
+    case $S in mumps) maxn=$MAXN_DIRECT ;; *) maxn=$MAXN ;; esac
+    for ne in $LEVELS; do           # one mpirun per mesh level, orders in increasing order
+        nops=$(nops_for $ne $maxn); [ -n "$nops" ] || continue
         mpirun -bind-to core -np $NP julia --project=$MPIENV tools/poisson3d_benchmark/mpi/bench3d_mpi.jl \
-               --solver $S --nop $1 --nes $2 --outdir "$OUTDIR/parts/$S" --resume \
+               --solver $S --nes $ne --nops $nops --outdir "$OUTDIR/parts/$S" --resume \
                2>&1 | tee -a "$OUTDIR/logs/$S.log" | grep --line-buffered "^P3DMPI  $S"
         # (full output in the log; the result line of each configuration also here)
     done
@@ -79,12 +86,11 @@ echo "--- Summary ---"
 cat "$OUTDIR/results.md"
 missing=0                           # configurations without a row: the run was killed (memory, time)
 for S in $SOLVERS; do
-    case $S in mumps) n2=$NES_N2_DIRECT; n4=$NES_N4_DIRECT ;; *) n2=$NES_N2; n4=$NES_N4 ;; esac
-    for sweep in "2 $n2" "4 $n4"; do
-        set -- $sweep
-        for ne in ${2//,/ }; do
-            awk -F, -v s=$S -v ne=$ne -v N=$1 'NR>1 && $1==s && $4==ne && $5==N {f=1} END {exit !f}' "$OUTDIR/results.csv" ||
-                { echo "MISSING: $S ne=$ne N=$1 (no result: see $OUTDIR/logs/$S.log)"; missing=$((missing+1)); }
+    case $S in mumps) maxn=$MAXN_DIRECT ;; *) maxn=$MAXN ;; esac
+    for ne in $LEVELS; do
+        for N in $(nops_for $ne $maxn | tr ',' ' '); do
+            awk -F, -v s=$S -v ne=$ne -v N=$N 'NR>1 && $1==s && $4==ne && $5==N {f=1} END {exit !f}' "$OUTDIR/results.csv" ||
+                { echo "MISSING: $S ne=$ne N=$N (no result: see $OUTDIR/logs/$S.log)"; missing=$((missing+1)); }
         done
     done
 done

@@ -26,11 +26,19 @@ export JULIA_PKG_PRECOMPILE_AUTO=1  # allow precompile during setup only
 OUTDIR=ppb3d_wulver                 # results, figures, per-solver logs
 SOLVERS="sem sem_amg sem_jacobi sc_direct sc_amg ps fft"
 THREADS=16                          # per solver process: 7 x 16 = 112 of 128 cores
-# Elements per direction; unknowns n = (ne*N)^3, from 4.1e3 to 1.7e7.
-# The direct solvers (sem, sc_direct) stop at NES_DIRECT (n = 2.1e6): the next
-# size needs about 400 GB for the factor alone, and 1.7e7 about 2.5 TB.
-NES_N2="8,12,16,24,32,48,64,96,128";  NES_N2_DIRECT="8,12,16,24,32,48,64"
-NES_N4="4,6,8,12,16,24,32,48,64";     NES_N4_DIRECT="4,6,8,12,16,24,32"
+# Sweep as in the 2D benchmark: mesh levels of LEVELS^3 elements, each with
+# the SEM orders NOPS (the Fourier solvers on the (ne*N)^3 grid, the same
+# unknowns n = (ne*N)^3). Configurations above MAXN unknowns are not run:
+# the direct solvers (sem, sc_direct) stop at 2.2e6 (the next sizes need
+# 400 GB and more for the factor), the others at 1.7e7.
+LEVELS="8 16 32 64"
+NOPS="2 3 4 5 6 7 8"
+MAXN=17000000;  MAXN_DIRECT=2200000
+nops_for() {   # nops_for ne maxn -> the orders N of NOPS with (ne*N)^3 <= maxn, comma-separated
+    local out=""
+    for N in $NOPS; do [ $(( ($1*N)**3 )) -le $2 ] && out="$out${out:+,}$N"; done
+    echo "$out"
+}
 
 echo "--- 1. MPI preferences FIRST (before any compilation) ---"
 julia --project=. -e 'using MPIPreferences; MPIPreferences.use_system_binary()' || exit 1
@@ -46,12 +54,12 @@ echo "--- Setup complete, launching the solvers ---"
 export JULIA_PKG_PRECOMPILE_AUTO=0  # the runs must never attempt to precompile
 mkdir -p "$OUTDIR/logs"
 for S in $SOLVERS; do
-    case $S in sem|sc_direct) n2=$NES_N2_DIRECT; n4=$NES_N4_DIRECT ;; *) n2=$NES_N2; n4=$NES_N4 ;; esac
-    (   # one process per N so that each sweeps its sizes in increasing order
-        for sweep in "2 $n2" "4 $n4"; do
-            set -- $sweep
+    case $S in sem|sc_direct) maxn=$MAXN_DIRECT ;; *) maxn=$MAXN ;; esac
+    (   # one process per mesh level, orders in increasing order
+        for ne in $LEVELS; do
+            nops=$(nops_for $ne $maxn); [ -n "$nops" ] || continue
             julia --project=. -t $THREADS tools/poisson3d_benchmark/bench3d.jl \
-                  --solver $S --nop $1 --nes $2 --blas-threads $THREADS \
+                  --solver $S --nes $ne --nops $nops --blas-threads $THREADS \
                   --outdir "$OUTDIR/parts/$S" --resume
         done
     ) > "$OUTDIR/logs/$S.log" 2>&1 &

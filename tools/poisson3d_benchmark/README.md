@@ -67,12 +67,12 @@ It follows the Jexpresso job script:
 1. `module load Julia/1.11.9` and `module load GCC MPICH`, then `MPIPreferences.use_system_binary()`;
 2. `Pkg.instantiate(); Pkg.precompile()`, one serial process;
 3. a serial warm-up (`using MPI; using Jexpresso`), then `verify_2d.jl` and `verify_3d.jl`; the job stops if any of these fails;
-4. the seven solvers side by side, one Julia process each with `THREADS = 16` Julia and BLAS threads (7 × 16 = 112 cores). Each sweeps its sizes in increasing order, first for N = 2, then for N = 4, into `OUTDIR/parts/<solver>/results.csv`, with a log in `OUTDIR/logs/<solver>.log`;
+4. the seven solvers side by side, one Julia process each with `THREADS = 16` Julia and BLAS threads (7 × 16 = 112 cores). Each runs the sweep below, one mesh level after the other with the orders in increasing order, into `OUTDIR/parts/<solver>/results.csv`, with a log in `OUTDIR/logs/<solver>.log`;
 5. when all have finished, `plot3d.py` merges the results and draws the figures.
 
-The settings are the few variables at the top of the script: `OUTDIR` (default `ppb3d_wulver`), `SOLVERS`, `THREADS` and the element counts per direction, `NES_N2` and `NES_N4`:
-- The default sizes are n = (ne·N)³ from 4.1·10³ to 1.7·10⁷ unknowns.
-- The direct solvers (`sem`, `sc_direct`) stop at 2.1·10⁶ unknowns (`NES_*_DIRECT`). The next size would need about 400 GB for the Cholesky factor alone, and 1.7·10⁷ about 2.5 TB, beyond one node. The iterative and Fourier solvers go on to 1.7·10⁷. This is the crossover the benchmark is meant to show.
+The settings are the few variables at the top of the script: `OUTDIR` (default `ppb3d_wulver`), `SOLVERS`, `THREADS`, the sweep and its size limits:
+- **The sweep is the 2D benchmark's:** mesh levels of `LEVELS` = 8³, 16³, 32³ and 64³ elements, each with the SEM orders `NOPS` = 2…8. The Fourier solvers run on the (ne·N)³ grid, which has the same number of unknowns n = (ne·N)³.
+- **Size limits:** configurations above `MAXN` unknowns are not run. The direct solvers (`sem`, `sc_direct`) stop at 2.2·10⁶ unknowns (`MAXN_DIRECT`): the next sizes would need 400 GB and more for the Cholesky factor, beyond one node. The iterative and Fourier solvers go on to 1.7·10⁷. This is the crossover the benchmark is meant to show.
 
 **Resubmitting** the same script resumes: configurations with an `ok` row are skipped, and failed or unfinished ones are rerun (for example after the time limit).
 
@@ -120,13 +120,13 @@ This is the same Jexpresso job template as `run_wulver3d.sbatch` (one node, 128 
 1. MPIPreferences `use_system_binary()` for both environments;
 2. resolve and precompile both environments;
 3. a serial warm-up, then a small serial reference run (`bench3d.jl --solvers sem`), then `verify_mpi.jl` on 8 ranks against that reference;
-4. `mpirun -np 128` for each solver in turn, so timings are clean: the N = 2 sweep, then the N = 4 sweep, into `ppb3d_wulver_mpi/parts/<solver>/`, with logs in `ppb3d_wulver_mpi/logs/`;
+4. `mpirun -bind-to core -np 128` for each solver in turn, so timings are clean, one `mpirun` per mesh level (a killed run only loses the rest of that level), into `ppb3d_wulver_mpi/parts/<solver>/`, with logs in `ppb3d_wulver_mpi/logs/`. The sweep is the same as in the threaded run: `LEVELS` = 8³, 16³, 32³, 64³ elements × `NOPS` = 2…8;
 5. `plot3d.py`, which draws the same figures as for the threaded run (memory summed over ranks).
 
 **Sizes:**
-- The iterative solvers go to 5.7·10⁷ unknowns.
-- MUMPS stops at 2.1·10⁶ unknowns, which fits one node's 500 GB.
-- With more nodes (`--nodes`, and `NP`), add sizes to `NES_*_DIRECT`: MUMPS spreads the factor over all ranks.
+- The iterative solvers go to 6·10⁷ unknowns (`MAXN`).
+- MUMPS stops at 2.2·10⁶ unknowns (`MAXN_DIRECT`), which fits one node's 500 GB.
+- With more nodes (`--nodes`, and `NP`), raise `MAXN_DIRECT`: MUMPS spreads the factor over all ranks.
 - Resubmitting resumes.
 
 **Local run:**
@@ -149,6 +149,9 @@ python3 tools/poisson3d_benchmark/plot3d.py ppb3d_mpi_local
   - status.
 - `assets/`: per SEM order N, light and dark SVG figures:
   - `ppb3d_cost_N<N>`: setup + solve against n, with dashed slopes n and n²;
+  - **the figures of the 2D benchmark:**
+    - per mesh level, `ppb3d_error_vs_solve_time_ne<ne>`, `ppb3d_error_vs_cost_ne<ne>` (setup + solve), `ppb3d_error_vs_total_time_ne<ne>` and `ppb3d_error_vs_order_ne<ne>`;
+    - for all levels, `ppb3d_error_vs_Ng`: error against unknowns per direction ∛n = ne·N, one SEM curve per mesh, the Fourier solvers and the predicted 0.5^(∛n/2);
   - `ppb3d_total_N<N>`, `ppb3d_memory_N<N>`, `ppb3d_iters_N<N>`, `ppb3d_error_N<N>`.
 - `parts/<solver>/`: each solver's own results.
 - `logs/<solver>.log`: each solver's output (setup and checks go to `ppb3d.<jobid>.out` in the submit directory).
