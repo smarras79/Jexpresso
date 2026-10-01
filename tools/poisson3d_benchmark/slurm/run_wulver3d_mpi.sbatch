@@ -65,10 +65,25 @@ for S in $SOLVERS; do
         set -- $sweep
         mpirun -np $NP julia --project=$MPIENV tools/poisson3d_benchmark/mpi/bench3d_mpi.jl \
                --solver $S --nop $1 --nes $2 --outdir "$OUTDIR/parts/$S" --resume \
-               >> "$OUTDIR/logs/$S.log" 2>&1
+               2>&1 | tee -a "$OUTDIR/logs/$S.log" | grep --line-buffered "^P3DMPI  $S"
+        # (full output in the log; the result line of each configuration also here)
     done
 done
 
 echo "--- Merging results and drawing the figures ---"
 python3 tools/poisson3d_benchmark/plot3d.py "$OUTDIR"
+echo "--- Summary ---"
+cat "$OUTDIR/results.md"
+missing=0                           # configurations without a row: the run was killed (memory, time)
+for S in $SOLVERS; do
+    case $S in mumps) n2=$NES_N2_DIRECT; n4=$NES_N4_DIRECT ;; *) n2=$NES_N2; n4=$NES_N4 ;; esac
+    for sweep in "2 $n2" "4 $n4"; do
+        set -- $sweep
+        for ne in ${2//,/ }; do
+            awk -F, -v s=$S -v ne=$ne -v N=$1 'NR>1 && $1==s && $4==ne && $5==N {f=1} END {exit !f}' "$OUTDIR/results.csv" ||
+                { echo "MISSING: $S ne=$ne N=$1 (no result: see $OUTDIR/logs/$S.log)"; missing=$((missing+1)); }
+        done
+    done
+done
+echo "missing configurations: $missing"
 echo "results: $OUTDIR/results.md, figures: $OUTDIR/assets"
