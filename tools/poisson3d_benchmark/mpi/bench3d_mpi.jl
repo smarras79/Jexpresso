@@ -39,7 +39,7 @@ using .P3DMPI
 
 const COLS = (:solver, :d, :r, :ne, :nop, :Ng, :n, :solved, :linf, :l2rel, :assembly, :rhs, :setup,
               :solve, :total, :iters, :nnz, :factor_nnz, :skeleton_nnz, :ordering,
-              :julia_threads, :blas_threads, :nranks, :grid, :mumps_mem_gb, :maxrss_rank_gb,
+              :julia_threads, :blas_threads, :nranks, :grid, :mumps_mem_gb, :mumps_retries, :maxrss_rank_gb,
               :maxrss_gb, :status)
 
 function parse_args(args)

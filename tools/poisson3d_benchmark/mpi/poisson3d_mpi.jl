@@ -349,7 +349,18 @@ function mumps_solve!(T, info, sys, P, comm; ordering = :metis, mem_relax = 50)
         check(job) = (mumps.infog[1] < 0 && error("MUMPS job $job failed: INFOG(1) = $(mumps.infog[1]), INFOG(2) = $(mumps.infog[2])"))
         phase(T, :setup, comm) do
             MUMPS.set_job!(mumps, 1); MUMPS.invoke_mumps!(mumps); check(1)     # analysis (ordering)
-            MUMPS.set_job!(mumps, 2); MUMPS.invoke_mumps!(mumps); check(2)     # factorisation
+            # factorisation. INFOG(1) = -9 / -8: the work array estimated by the
+            # analysis is too small (happens for small problems on many ranks):
+            # enlarge it (ICNTL(14)) and refactorise, as the MUMPS guide says.
+            # The retries are part of the setup time.
+            relax = mem_relax; info[:mumps_retries] = 0
+            while true
+                MUMPS.set_job!(mumps, 2); MUMPS.invoke_mumps!(mumps)
+                (mumps.infog[1] in (-8, -9) && info[:mumps_retries] < 5) || break
+                relax *= 2; info[:mumps_retries] += 1
+                seticntl(14, relax)
+            end
+            check(2)
         end
         phase(T, :solve, comm) do
             MPI.Gatherv!(sys.b, me == 0 ? MPI.VBuffer(bglob, counts) : nothing, comm; root = 0)
@@ -413,6 +424,7 @@ function run_config(solver::Symbol, ne::Int, N::Int; r::Float64 = R_DEFAULT, rto
             iters = get(info, :iters, 0),
             nnz = solver === :mumps ? 2 * nnz_glob - n : nnz_glob,       # full matrix (MUMPS gets the upper half)
             factor_nnz = get(info, :factor_nnz, 0), skeleton_nnz = 0,
+            mumps_retries = get(info, :mumps_retries, 0),
             ordering = solver === :mumps ? ordering : (solver === :boomeramg ? Symbol("hmis_theta", theta) : :none),
             nranks = MPI.Comm_size(comm), grid = join(P.dims, "x"),
             mumps_mem_gb = round(get(info, :mumps_mem_gb, 0.0), digits = 3),

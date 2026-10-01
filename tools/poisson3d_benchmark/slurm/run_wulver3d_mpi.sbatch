@@ -53,9 +53,12 @@ echo "--- 3. Serial warm-up, then checks against the serial (Jexpresso) benchmar
 julia --project=$MPIENV -e 'using MPI, HYPRE, MUMPS' || exit 1
 julia --project=. tools/poisson3d_benchmark/bench3d.jl --solvers sem --nes 4,6 --nops 2,3,4 \
       --outdir "$OUTDIR/reference" || exit 1
-mpirun -np 8 julia --project=$MPIENV tools/poisson3d_benchmark/mpi/verify_mpi.jl \
+mpirun -bind-to core -np 8 julia --project=$MPIENV tools/poisson3d_benchmark/mpi/verify_mpi.jl \
        --reference "$OUTDIR/reference/results.csv" || exit 1
 
+# Ranks are pinned to cores (-bind-to core): unpinned, ranks that wait in MPI
+# get moved and descheduled, and small problems (all communication) then took
+# tens of ms per CG iteration instead of a few.
 echo "--- Setup complete, launching $NP ranks ---"
 export JULIA_PKG_PRECOMPILE_AUTO=0  # ranks must never attempt to precompile
 mkdir -p "$OUTDIR/logs"
@@ -63,7 +66,7 @@ for S in $SOLVERS; do
     case $S in mumps) n2=$NES_N2_DIRECT; n4=$NES_N4_DIRECT ;; *) n2=$NES_N2; n4=$NES_N4 ;; esac
     for sweep in "2 $n2" "4 $n4"; do
         set -- $sweep
-        mpirun -np $NP julia --project=$MPIENV tools/poisson3d_benchmark/mpi/bench3d_mpi.jl \
+        mpirun -bind-to core -np $NP julia --project=$MPIENV tools/poisson3d_benchmark/mpi/bench3d_mpi.jl \
                --solver $S --nop $1 --nes $2 --outdir "$OUTDIR/parts/$S" --resume \
                2>&1 | tee -a "$OUTDIR/logs/$S.log" | grep --line-buffered "^P3DMPI  $S"
         # (full output in the log; the result line of each configuration also here)
