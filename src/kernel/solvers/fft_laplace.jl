@@ -20,7 +20,8 @@
 #
 #  and ONE of two grid sources, selected by :fft_use_mesh:
 #
-#   • :fft_use_mesh => false (default) — SYNTHETIC grid (2D, mesh-independent):
+#   • :fft_use_mesh => false (default) — SYNTHETIC grid (mesh-independent;
+#     2D, or 3D for a 3D deck, :nsd => 3, with :fft_P, :fft_Lz, :fft_z0 too):
 #       :fft_N, :fft_M          points per direction (any size; :fft_M defaults
 #                               to :fft_N; products of 2,3,5,7 are fastest)
 #       :fft_Lx, :fft_Ly        domain lengths            (default 2π)
@@ -98,6 +99,31 @@ function write_fft_vtk(path, x, y, u, uex, err)
             println(io, "LOOKUP_TABLE default")
             @inbounds for j = 1:M, i = 1:N
                 println(io, err[i,j])
+            end
+        end
+    end
+    return path
+end
+
+# 3D grid: the same STRUCTURED_POINTS file with DIMENSIONS N M P
+function write_fft_vtk(path, lines::NTuple{3, Vector{Float64}}, u::Array{Float64, 3}, uex, err)
+    x, y, z = lines
+    sp(v) = length(v) > 1 ? v[2] - v[1] : 1.0
+    open(path, "w") do io
+        println(io, "# vtk DataFile Version 3.0")
+        println(io, "Jexpresso FFT Laplace/Poisson solution")
+        println(io, "ASCII")
+        println(io, "DATASET STRUCTURED_POINTS")
+        println(io, "DIMENSIONS $(length(x)) $(length(y)) $(length(z))")
+        println(io, "ORIGIN $(x[1]) $(y[1]) $(z[1])")
+        println(io, "SPACING $(sp(x)) $(sp(y)) $(sp(z))")
+        println(io, "POINT_DATA $(length(u))")
+        for (name, a) in (("u", u), ("u_exact", uex), ("error", err))
+            a === nothing && continue
+            println(io, "SCALARS $name double 1")
+            println(io, "LOOKUP_TABLE default")
+            @inbounds for v in a            # x fastest, as VTK expects
+                println(io, v)
             end
         end
     end
@@ -225,8 +251,10 @@ function fft_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
         return fft_linsolve_on_mesh!(sem, params, inputs, OUTPUT_DIR, has_exact)
     end
 
+    Int(get(inputs, :nsd, 2)) == 3 && return _fft_linsolve_3d!(inputs, OUTPUT_DIR, has_exact)
+
     #=====================================================================
-      Synthetic-grid mode (mesh-independent, 2D)
+      Synthetic-grid mode (mesh-independent, 2D; 3D: _fft_linsolve_3d!)
     =====================================================================#
     N  = Int(get(inputs, :fft_N, 64))
     M  = Int(get(inputs, :fft_M, N))
@@ -250,6 +278,34 @@ function fft_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
     if !(inputs[:outformat] isa NONE)          # :outformat => "none" skips the file
         vtkpath = joinpath(OUTPUT_DIR, "fft_laplace.vtk")
         write_fft_vtk(vtkpath, x, y, u, uex, err)
+        println(string(" # FFT solution written to ", vtkpath))
+    end
+    return u
+end
+
+# ── Synthetic 3D grid (a 3D deck): N × M × P points of the box ───────────────
+function _fft_linsolve_3d!(inputs, OUTPUT_DIR, has_exact::Bool)
+    N  = Int(get(inputs, :fft_N, 64))
+    M  = Int(get(inputs, :fft_M, N))
+    P  = Int(get(inputs, :fft_P, N))
+    all(>(0), (N, M, P)) || error(" # fft_linsolve!: :fft_N=$N, :fft_M=$M, :fft_P=$P must be positive")
+    Ls = (Float64(get(inputs, :fft_Lx, 2π)), Float64(get(inputs, :fft_Ly, 2π)),
+          Float64(get(inputs, :fft_Lz, 2π)))
+    x0 = (Float64(get(inputs, :fft_x0, 0.0)), Float64(get(inputs, :fft_y0, 0.0)),
+          Float64(get(inputs, :fft_z0, 0.0)))
+    lines = periodic_grid_lines((N, M, P), Ls, x0)
+
+    println(YELLOW_FG(string(" # Solve -∇²u = f by FFT (FFTW): ",
+                             N, "×", M, "×", P, " synthetic periodic grid ..............")))
+    F = jx_phase(() -> _fft_sample_rhs(lines), :rhs)
+    u = _fft_solve_timed(F, Ls, inputs)
+    println(YELLOW_FG(string(" # Solve -∇²u = f by FFT ............................................ DONE")))
+
+    uex = nothing; err = nothing
+    has_exact && ((uex, err) = fft_report_grid_error(u, lines, Ls))
+    if !(inputs[:outformat] isa NONE)
+        vtkpath = joinpath(OUTPUT_DIR, "fft_laplace.vtk")
+        write_fft_vtk(vtkpath, lines, u, uex, err)
         println(string(" # FFT solution written to ", vtkpath))
     end
     return u

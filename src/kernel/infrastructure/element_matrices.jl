@@ -743,6 +743,165 @@ function _DSS_laplace_sparse(connijk::AbstractArray{<:Integer}, Lel::AbstractArr
 end
 
 
+"""
+    DSS_laplace_sparse_3D(mesh, metrics, dψ, ω, N, Q, T; afun = nothing) -> L
+
+Sparse stiffness matrix of -∇·(a∇u) on a 3D hexahedral mesh, on the LOCAL
+nodes (as DSS_laplace_sparse in 2D: periodic seam copies are not coupled
+here), assembled straight into (row, column, value) triplets with no element
+matrices: an (N+1)³ × (N+1)³ dense element matrix per element is 4 MB at
+N = 8, while the matrix has only O(N) entries per row.
+
+With collocation quadrature (inexact LGL, Q = N) ψ_i(ξ_k) = δ_ik, so at the
+quadrature point q = (k,l,m) the gradient of ψ_(a,b,c) is non-zero only for
+the nodes on the three grid lines through q (the same structure the
+radiative-transfer operator uses, sparse_lhs_assembly_3Dby2D):
+
+    ∇ψ_(a,l,m)(q) = dψ[a,k] ∇ξ,  ∇ψ_(k,b,m)(q) = dψ[b,l] ∇η,  ∇ψ_(k,l,c)(q) = dψ[c,m] ∇ζ.
+
+With W_de(q) = a(q) ω_k ω_l ω_m J(q) (∇ξ_d·∇ξ_e)(q):
+  • the diagonal blocks (d = e) couple nodes on one grid line:
+      L[(a,l,m),(a',l,m)] += Σ_k W_11(k,l,m) dψ[a,k] dψ[a',k]   (and y, z);
+  • the mixed blocks (d ≠ e) couple nodes on two lines through one point:
+      L[(a,l,m),(k,b,m)] += W_12(k,l,m) dψ[a,k] dψ[b,l]   (and its transpose, xz, yz).
+The mixed blocks vanish where ∇ξ, ∇η, ∇ζ are orthogonal (affine Cartesian
+elements) and are assembled only for the elements where they do not: where
+the largest cross term exceeds 1e-10 of the largest diagonal one. (The metric
+computed from the node coordinates of a Cartesian element carries cross
+terms of round-off size, up to ~1e-13 relative; a skewed or curved element
+has them of order 0.01-1.) Every
+element's triplet count is known beforehand, so the triplet arrays are sized
+exactly once and filled by element in parallel at fixed offsets
+(deterministic, bitwise the same for any number of threads); entries
+|v| ≤ eps are dropped, as in 2D. Each entry multiplies the two basis
+derivatives first, dψ[a,k]·dψ[b,k] (commutative, so (a,b) and (b,a) are
+bitwise equal): the matrix is EXACTLY symmetric, which lets `factorize` pick
+Cholesky, as for the 2D matrix.
+"""
+function DSS_laplace_sparse_3D(mesh, metrics, dψ, ω, N, Q, ::Type{T}; afun = nothing) where {T}
+    Q == N || error(" # DSS_laplace_sparse_3D: needs collocation quadrature (inexact LGL, Q = N); ",
+                    "got Q = $Q, N = $N.")
+    return _DSS_laplace_sparse_3D(mesh.connijk, metrics.Je,
+                                  metrics.dξdx, metrics.dξdy, metrics.dξdz,
+                                  metrics.dηdx, metrics.dηdy, metrics.dηdz,
+                                  metrics.dζdx, metrics.dζdy, metrics.dζdz,
+                                  Matrix{T}(dψ), Vector{T}(ω), mesh.coords,
+                                  Int(mesh.nelem), Int(mesh.ngl), Int(mesh.npoin), afun)
+end
+
+@inline _dot3(u::NTuple{3}, v::NTuple{3}) = u[1]*v[1] + u[2]*v[2] + u[3]*v[3]
+
+function _DSS_laplace_sparse_3D(connijk::AbstractArray{<:Integer, 4}, Je::AbstractArray{T, 4},
+                                ξx::AbstractArray{T, 4}, ξy::AbstractArray{T, 4}, ξz::AbstractArray{T, 4},
+                                ηx::AbstractArray{T, 4}, ηy::AbstractArray{T, 4}, ηz::AbstractArray{T, 4},
+                                ζx::AbstractArray{T, 4}, ζy::AbstractArray{T, 4}, ζz::AbstractArray{T, 4},
+                                dψ::Matrix{T}, ω::Vector{T}, coords::AbstractMatrix,
+                                nelem::Int, ngl::Int, npoin::Int, afun::F) where {T, F}
+    n1 = ngl
+    # pass 1: which elements need the mixed blocks (non-orthogonal metric)
+    mixed = Vector{Bool}(undef, nelem)
+    Threads.@threads :static for iel = 1:nelem
+        gmax = zero(T); cmax = zero(T)
+        @inbounds for m = 1:n1, l = 1:n1, k = 1:n1
+            a1 = (ξx[iel,k,l,m], ξy[iel,k,l,m], ξz[iel,k,l,m])
+            a2 = (ηx[iel,k,l,m], ηy[iel,k,l,m], ηz[iel,k,l,m])
+            a3 = (ζx[iel,k,l,m], ζy[iel,k,l,m], ζz[iel,k,l,m])
+            gmax = max(gmax, _dot3(a1, a1), _dot3(a2, a2), _dot3(a3, a3))
+            cmax = max(cmax, abs(_dot3(a1, a2)), abs(_dot3(a1, a3)), abs(_dot3(a2, a3)))
+        end
+        mixed[iel] = cmax > 1e-10 * gmax
+    end
+    nd = 3 * n1^4 - 2 * n1^3            # diagonal blocks (the node diagonal emitted once)
+    nm = 6 * n1^5                       # mixed blocks
+    offs = Vector{Int}(undef, nelem + 1); offs[1] = 0
+    @inbounds for iel = 1:nelem
+        offs[iel+1] = offs[iel] + nd + (mixed[iel] ? nm : 0)
+    end
+    ntrip = offs[end]
+    Iv = Vector{Int}(undef, ntrip); Jv = Vector{Int}(undef, ntrip); Vv = Vector{T}(undef, ntrip)
+
+    # per-thread buffers: W[k,l,m,1:6] = W_11, W_22, W_33, W_12, W_13, W_23
+    Wb = [Array{T, 4}(undef, n1, n1, n1, 6) for _ in 1:Threads.nthreads()]
+    Threads.@threads :static for iel = 1:nelem
+        W = Wb[Threads.threadid()]
+        @inbounds for m = 1:n1, l = 1:n1, k = 1:n1
+            acoef = afun === nothing ? one(T) :
+                    T(afun(coords[1, connijk[iel,k,l,m]], coords[2, connijk[iel,k,l,m]],
+                           coords[3, connijk[iel,k,l,m]]))
+            wJ = acoef * ω[k] * ω[l] * ω[m] * Je[iel,k,l,m]
+            a1x, a1y, a1z = ξx[iel,k,l,m], ξy[iel,k,l,m], ξz[iel,k,l,m]
+            a2x, a2y, a2z = ηx[iel,k,l,m], ηy[iel,k,l,m], ηz[iel,k,l,m]
+            a3x, a3y, a3z = ζx[iel,k,l,m], ζy[iel,k,l,m], ζz[iel,k,l,m]
+            W[k,l,m,1] = wJ * (a1x*a1x + a1y*a1y + a1z*a1z)
+            W[k,l,m,2] = wJ * (a2x*a2x + a2y*a2y + a2z*a2z)
+            W[k,l,m,3] = wJ * (a3x*a3x + a3y*a3y + a3z*a3z)
+            W[k,l,m,4] = wJ * (a1x*a2x + a1y*a2y + a1z*a2z)
+            W[k,l,m,5] = wJ * (a1x*a3x + a1y*a3y + a1z*a3z)
+            W[k,l,m,6] = wJ * (a2x*a3x + a2y*a3y + a2z*a3z)
+        end
+        p = offs[iel]
+        @inbounds begin
+            # x lines (with the full node diagonal: x + y + z contributions)
+            for m = 1:n1, l = 1:n1, b = 1:n1, a = 1:n1
+                s = zero(T)
+                for k = 1:n1
+                    s += W[k,l,m,1] * (dψ[a,k] * dψ[b,k])
+                end
+                if a == b
+                    for q = 1:n1
+                        s += W[a,q,m,2] * (dψ[l,q] * dψ[l,q])
+                    end
+                    for q = 1:n1
+                        s += W[a,l,q,3] * (dψ[m,q] * dψ[m,q])
+                    end
+                end
+                p += 1; Iv[p] = connijk[iel,a,l,m]; Jv[p] = connijk[iel,b,l,m]; Vv[p] = s
+            end
+            # y lines, off-diagonal pairs
+            for m = 1:n1, i = 1:n1, b = 1:n1, a = 1:n1
+                a == b && continue
+                s = zero(T)
+                for q = 1:n1
+                    s += W[i,q,m,2] * (dψ[a,q] * dψ[b,q])
+                end
+                p += 1; Iv[p] = connijk[iel,i,a,m]; Jv[p] = connijk[iel,i,b,m]; Vv[p] = s
+            end
+            # z lines, off-diagonal pairs
+            for l = 1:n1, i = 1:n1, b = 1:n1, a = 1:n1
+                a == b && continue
+                s = zero(T)
+                for q = 1:n1
+                    s += W[i,l,q,3] * (dψ[a,q] * dψ[b,q])
+                end
+                p += 1; Iv[p] = connijk[iel,i,l,a]; Jv[p] = connijk[iel,i,l,b]; Vv[p] = s
+            end
+            if mixed[iel]
+                for m = 1:n1, l = 1:n1, k = 1:n1, c = 1:n1, a = 1:n1
+                    # xy, xz, yz couplings through the point (k,l,m), both orders
+                    v = W[k,l,m,4] * dψ[a,k] * dψ[c,l]
+                    p += 1; Iv[p] = connijk[iel,a,l,m]; Jv[p] = connijk[iel,k,c,m]; Vv[p] = v
+                    p += 1; Iv[p] = connijk[iel,k,c,m]; Jv[p] = connijk[iel,a,l,m]; Vv[p] = v
+                    v = W[k,l,m,5] * dψ[a,k] * dψ[c,m]
+                    p += 1; Iv[p] = connijk[iel,a,l,m]; Jv[p] = connijk[iel,k,l,c]; Vv[p] = v
+                    p += 1; Iv[p] = connijk[iel,k,l,c]; Jv[p] = connijk[iel,a,l,m]; Vv[p] = v
+                    v = W[k,l,m,6] * dψ[a,l] * dψ[c,m]
+                    p += 1; Iv[p] = connijk[iel,k,a,m]; Jv[p] = connijk[iel,k,l,c]; Vv[p] = v
+                    p += 1; Iv[p] = connijk[iel,k,l,c]; Jv[p] = connijk[iel,k,a,m]; Vv[p] = v
+                end
+            end
+        end
+    end
+    # drop |v| ≤ eps in place (as the 2D assembly does), then assemble
+    k = 0
+    @inbounds for t = 1:ntrip
+        if abs(Vv[t]) > eps(Float64)
+            k += 1; Iv[k] = Iv[t]; Jv[k] = Jv[t]; Vv[k] = Vv[t]
+        end
+    end
+    resize!(Iv, k); resize!(Jv, k); resize!(Vv, k)
+    return sparse(Iv, Jv, Vv, npoin, npoin)
+end
+
 function DSS_laplace_sparse_threaded(mesh, Lel)
     #
     # CSC aasembly
@@ -1358,28 +1517,38 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
             # inputs[:diffusivity] => (x,y)->a  to assemble -∇·(a∇u). Absent →
             # a = 1 (plain Laplacian, unchanged behaviour for all problems).
             afun = get(inputs, :diffusivity, nothing)
-            Le = build_laplace_matrix(SD,
-                                      basis.ψ, basis.dψ,
-                                      ω, mesh.nelem,
-                                      mesh,
-                                      metrics,
-                                      N, Q, TFloat; afun=afun)
-            
-            if (inputs[:lsparse])
-                println(" # DSS sparse")
-                L = DSS_laplace_sparse(mesh, Le)
-                println(" # DSS sparse .................... DONE")
+            if SD isa NSD_3D
+                # 3D: straight to the sparse matrix (no element matrices),
+                # inputs[:diffusivity] => (x,y,z)->a
+                inputs[:lsparse] ||
+                    error(" # matrix_wrapper: the 3D Laplacian is assembled sparse only (:lsparse => true).")
+                println(" # DSS sparse (3D)")
+                L = DSS_laplace_sparse_3D(mesh, metrics, basis.dψ, ω, N, Q, TFloat; afun = afun)
+                println(" # DSS sparse (3D) ............... DONE")
             else
-                L = KernelAbstractions.zeros(backend,
-                                             TFloat,
-                                             Int64(mesh.npoin),
-                                             Int64(mesh.npoin))
+                Le = build_laplace_matrix(SD,
+                                          basis.ψ, basis.dψ,
+                                          ω, mesh.nelem,
+                                          mesh,
+                                          metrics,
+                                          N, Q, TFloat; afun=afun)
+            
+                if (inputs[:lsparse])
+                    println(" # DSS sparse")
+                    L = DSS_laplace_sparse(mesh, Le)
+                    println(" # DSS sparse .................... DONE")
+                else
+                    L = KernelAbstractions.zeros(backend,
+                                                 TFloat,
+                                                 Int64(mesh.npoin),
+                                                 Int64(mesh.npoin))
 
-                DSS_laplace!(L, SD,
-                             Le, ω,
-                             mesh, metrics,
-                             N, TFloat;
-                             llump=inputs[:llump])
+                    DSS_laplace!(L, SD,
+                                 Le, ω,
+                                 mesh, metrics,
+                                 N, TFloat;
+                                 llump=inputs[:llump])
+                end
             end
             
         else

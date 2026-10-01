@@ -63,3 +63,29 @@ end
 jx_amg_options(inputs) = (method = get(inputs, :amg_method, "sa"),
                           rtol   = Float64(get(inputs, :amg_rtol, 1e-12)),
                           itmax  = Int(get(inputs, :amg_itmax, 1000)))
+
+# ── Fill-reducing ordering of the sparse Cholesky factorisations ──────────────
+# :sparse_ordering => "cholmod" (default: CHOLMOD's own, AMD) | "metis" (METIS
+# nested dissection: near-optimal fill on 3D meshes, n^(4/3)).
+function jx_sparse_ordering(inputs)
+    o = Symbol(lowercase(string(get(inputs, :sparse_ordering, "cholmod"))))
+    o in (:cholmod, :metis) ||
+        error(" # :sparse_ordering => \"$o\"; expected \"cholmod\" or \"metis\".")
+    return o
+end
+
+# METIS is installed with Jexpresso (a dependency of Gridap's partitioning)
+# but is not a direct dependency: it is loaded by package id on first use.
+const _JX_METIS_ID = Base.PkgId(Base.UUID("2679e427-3c69-5b7f-982b-ece356f1e94b"), "Metis")
+
+"""
+    jx_metis_perm(A) -> Vector{Int}
+
+METIS nested-dissection fill-reducing permutation of the exactly symmetric
+sparse matrix `A`, for `cholesky(Symmetric(A); perm = p)`.
+"""
+function jx_metis_perm(A::SparseMatrixCSC)
+    Metis = Base.require(_JX_METIS_ID)
+    p, _ = Base.invokelatest(Metis.permutation, A)
+    return Vector{Int}(p)
+end

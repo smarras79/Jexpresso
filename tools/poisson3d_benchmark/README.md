@@ -2,7 +2,7 @@
 
 The 2D benchmark in `tools/periodic_poisson_benchmark` is too small for iterative solvers to overtake the sparse direct solve. In 2D, nested-dissection Cholesky costs O(n^1.5), against O(n) for a good iterative method. In 3D it costs O(n²) in time and O(n^(4/3)) in memory, so the crossover moves to sizes a cluster can reach.
 
-This directory runs the same comparison in 3D, up to about 1.7·10⁷ unknowns, in one SLURM job on one node of NJIT's Wulver, with threaded solvers, and with distributed-memory (MPI) solvers: MUMPS and hypre BoomerAMG.
+This directory runs the same comparison in 3D, up to about 1.7·10⁷ unknowns, in one SLURM job on one node of NJIT's Wulver. The threaded run goes through Jexpresso itself (`run_case` on a 3D deck). A separate MPI run uses distributed-memory solvers: MUMPS and hypre BoomerAMG.
 
 ## The problem
 
@@ -14,47 +14,37 @@ $$u = A\big(p(x)p(y)p(z) - (c^2-1)^{-3/2}\big),\qquad p(s) = \frac{1}{c - \cos s
 
 This is the 3D version of the 2D test problem. u has zero mean, A scales its peak to 1, and its Fourier coefficients decay like r^(|kx|+|ky|+|kz|), so it is not band-limited. The 3D default is r = 0.5. With the 2D value r = 0.8, the product of three sharp peaks is not resolved at feasible sizes.
 
-## The discretization, and why it is assembled here
+## The runs go through Jexpresso
 
-Jexpresso's linear-solve path is 2D-only: the Laplacian assembly, the periodic reduction and the static condensation all assume two dimensions, and they store every element matrix densely. On a Cartesian mesh with GLL quadrature (Jexpresso's default "inexact" quadrature, Q = N), the SEM stiffness matrix is exactly a sum of Kronecker products of assembled 1D matrices:
+The threaded 3D benchmark runs Jexpresso's own solvers on the 3D deck `problems/Elliptic/poisson_periodic_sem_3d`. It calls `Jexpresso.run_case("Elliptic", "poisson_periodic_sem_3d"; inputs = overrides)` once per configuration, as the 2D study does with `poisson_periodic_sem` (`jexpresso3d.jl`; `bench3d.jl --engine jexpresso`, the default). The deck uses the built-in Cartesian grid: `:nelx = :nely = :nelz = ne` hexahedra on [0,2π]³, periodic in x, y and z, with the exact solution above (r = 0.5).
 
-$$K = M_z\otimes M_y\otimes K_x + M_z\otimes K_y\otimes M_x + K_z\otimes M_y\otimes M_x,\qquad M = M_z\otimes M_y\otimes M_x \ \text{(lumped)}.$$
-
-That is the same operator Jexpresso builds, and the operator of the CEED bake-off problem BP5. `poisson3d.jl` assembles it in seconds for 10⁷ unknowns.
-
-Everything else comes from Jexpresso:
-- the LGL nodes and weights (Kopriva's algorithm);
-- the Lagrange basis derivatives;
-- AMG (`jx_amg_setup`/`jx_amg_solve`);
-- the skeleton solve of static condensation (`el_skeleton_solve`);
-- the pseudo-spectral axis operators (`_collocation_axis` with Kopriva's `FourierDerivativeMatrix`);
-- the FFT solver (`FFTPoissonSolver`).
-
-**Verified** (the SLURM job reruns both checks before the benchmark):
-- **`verify_2d.jl`**, the same code in 2D against Jexpresso's own periodic SEM solve on 16×16 elements: the errors agree to within 4·10⁻¹² at every N = 2…8. The discretizations are the same.
-- **`verify_3d.jl`**:
-  - the error falls exponentially in N: 0.45 at N = 2 down to 1.8·10⁻⁴ at N = 8, on 4³ elements;
-  - the h-convergence rate is 4.03 at N = 3, as expected (N + 1 = 4);
-  - the five SEM solvers agree to 3·10⁻¹³, and pseudo-spectral and FFT agree to 3·10⁻¹⁵.
-
-## The seven solvers
-
-| key | solver |
+| key | Jexpresso path (deck flags as in 2D) |
 |---|---|
-| `sem` | sparse Cholesky (CHOLMOD) of the full SEM system, with METIS nested-dissection ordering |
-| `sem_amg` | smoothed-aggregation AMG + CG, full system |
-| `sem_jacobi` | Jacobi-preconditioned CG, full system (the CEED BP5 solver) |
-| `sc_direct` | element-level static condensation; skeleton system by Cholesky (METIS ordering) |
-| `sc_amg` | the same condensation; skeleton system by AMG + CG |
-| `ps` | pseudo-spectral Fourier collocation, matrix diagonalization, O(N_g⁴) in 3D |
-| `fft` | FFT (FFTW, planned with `ESTIMATE`) |
+| `sem` | `sem_setup` (3D Laplacian: `DSS_laplace_sparse_3D`) → `periodic_sem_system` → `periodic_sem_factorize` (sparse Cholesky, METIS ordering: `:sparse_ordering => "metis"`) → `periodic_sem_direct_solve` |
+| `sem_amg` | … → `periodic_sem_amg_solve` (`jx_amg_setup` / `jx_amg_solve`: smoothed-aggregation AMG + CG) |
+| `sc_direct` | … → `periodic_sem_sc_solve` → `elementLearning_Axb!` (static condensation) → `el_skeleton_solve` (Cholesky, METIS ordering) |
+| `sc_amg` | the same, skeleton by AMG + CG (`:EL_skeleton_solver => "amg"`) |
+| `ps` | `pseudospectral_linsolve!` → `FourierCollocationPoissonSolver3D` (O(N_g⁴)) |
+| `fft` | `fft_linsolve!` → `FFTPoissonSolver` (FFTW, `ESTIMATE`) |
 
-Solver details:
-- **Singular systems:** the SEM systems pin one unknown and are shifted to zero M-weighted mean afterwards.
-- **CG tolerance:** CG stops at 10⁻¹² relative preconditioned residual.
-- **Static condensation:** it is the algorithm of `elementLearning_Axb!` (S^e = A_bb − A_bo A_oo⁻¹ A_ob per element, then assembly of the skeleton system, then recovery of the interiors), done at element level with a dense Cholesky factorization of A_oo per element.
+The timings are Jexpresso's per-phase timers of that run (`JX_TIMINGS`): `assembly` = `sem_setup` (high-order mesh, metrics, mass and Laplacian; SEM only), then `rhs`, `setup` and `solve` as the solvers record them. CG stops at 10⁻¹² relative preconditioned residual. Jexpresso's metric type carries the array sizes, so a new mesh size recompiles: every configuration is warmed up on itself, and only the second run is recorded.
 
-**Why METIS.** CHOLMOD's own default here is AMD ordering. In 3D, AMD's fill grows like n^1.6. At n = 46 656, N = 3, AMD gives a factor with 88 M nonzeros in 6.7 s, against 31 M nonzeros in 1.5 s with METIS. METIS nested dissection gives the near-optimal n^(4/3). A fair direct baseline needs it, so it is the default (`ORDERING=amd` restores CHOLMOD's choice). METIS is loaded from Jexpresso's existing dependencies.
+**What was added to Jexpresso for 3D** (2D results are bit-for-bit unchanged, checked for all four SEM solvers):
+- **`DSS_laplace_sparse_3D`** (`src/kernel/infrastructure/element_matrices.jl`): the 3D stiffness matrix, assembled straight into sparse triplets with no element matrices. With collocation (Q = N), a basis function's gradient at a quadrature point is non-zero only along the three grid lines through it, the structure the radiative-transfer operator uses (`sparse_lhs_assembly_3Dby2D`). It handles general (skewed, curved) hexahedra, with an optional diffusivity a(x,y,z). It is exactly symmetric, so `factorize` picks Cholesky. It is type-stable, sizes its triplet arrays exactly once, and fills them in parallel. Against a brute-force dense quadrature on sheared elements it agrees to 3·10⁻¹⁴.
+- **The periodic solve in 3D** (`periodic_sem.jl`): periodic boundary faces are detected, and the right-hand side takes z.
+- **Static condensation in 3D** (`elementLearningStructs.jl`, `periodic_sem_sc_solve`):
+  - (ngl−2)³ interior nodes per element, with a boundary-first connectivity built from `connijk`.
+  - The per-element blocks that held the same values in pairs now share storage (4 arrays instead of 9), in 2D too.
+  - A build with no model allocates no inference buffers, and no skeleton-matrix copy for them.
+- **The 3D pseudo-spectral solver** (`fourier_collocation.jl`): a solve allocates nothing; the FFT and pseudo-spectral drivers have a 3D grid for a 3D deck.
+- **`:sparse_ordering => "metis"`**: opt-in METIS nested-dissection ordering for both sparse Cholesky factorizations (full system and skeleton). The default stays CHOLMOD's own (AMD). In 3D, AMD's fill grows like n^1.6; at 13 824 unknowns (N = 4) Jexpresso's SEM direct setup takes 1.6 s with AMD and 0.53 s with METIS.
+
+**The Kronecker engine** (`poisson3d.jl`, `bench3d.jl --engine kronecker`) is now an independent cross-check. On a Cartesian mesh with GLL quadrature, the SEM stiffness matrix is exactly K = M_z⊗M_y⊗K_x + M_z⊗K_y⊗M_x + K_z⊗M_y⊗M_x, built from Jexpresso's 1D LGL and Lagrange routines. It also has Jacobi-CG (`sem_jacobi`, the CEED BP5 solver) and 2D.
+
+**Verified** (the SLURM job reruns all of these before the benchmark):
+- **`verify_3d_jexpresso.jl`**: Jexpresso's six 3D solvers against the Kronecker engine, on 4³ elements at N = 2, 3 and 6³ at N = 4. The SEM errors agree to within 6.8·10⁻¹³; FFT and pseudo-spectral agree bit for bit or to 2·10⁻¹⁶.
+- **`verify_2d.jl`**: the Kronecker engine in 2D against `Jexpresso.run_case` on the 2D deck (16×16 elements, N = 2…8), run live. The errors agree to within 7·10⁻¹².
+- **`verify_3d.jl`**: the Kronecker engine converges as it should. The error falls exponentially in N, the h-convergence rate is 4.03 at N = 3, and the five SEM solvers agree to 3·10⁻¹³.
 
 ## Running it on Wulver
 
@@ -66,21 +56,25 @@ sbatch tools/poisson3d_benchmark/slurm/run_wulver3d.sbatch
 It follows the Jexpresso job script:
 1. `module load Julia/1.11.9` and `module load GCC MPICH`, then `MPIPreferences.use_system_binary()`;
 2. `Pkg.instantiate(); Pkg.precompile()`, one serial process;
-3. a serial warm-up (`using MPI; using Jexpresso`), then `verify_2d.jl` and `verify_3d.jl`; the job stops if any of these fails;
-4. the seven solvers side by side, one Julia process each with `THREADS = 16` Julia and BLAS threads (7 × 16 = 112 cores). Each runs the sweep below, one mesh level after the other with the orders in increasing order, into `OUTDIR/parts/<solver>/results.csv`, with a log in `OUTDIR/logs/<solver>.log`;
+3. a serial warm-up (`using MPI; using Jexpresso`), then `verify_2d.jl`, `verify_3d.jl` and `verify_3d_jexpresso.jl`; the job stops if any of these fails;
+4. Jexpresso's six solvers side by side, one Julia process each with `THREADS = 21` Julia and BLAS threads (6 × 21 = 126 cores). Each runs the sweep below through `run_case`, one mesh level after the other with the orders in increasing order, into `OUTDIR/parts/<solver>/results.csv`, with a log in `OUTDIR/logs/<solver>.log`;
 5. when all have finished, `plot3d.py` merges the results and draws the figures.
 
 The settings are the few variables at the top of the script: `OUTDIR` (default `ppb3d_wulver`), `SOLVERS`, `THREADS`, the sweep and its size limits:
 - **The sweep is the 2D benchmark's:** mesh levels of `LEVELS` = 8³, 16³, 32³ and 64³ elements, each with the SEM orders `NOPS` = 2…8. The Fourier solvers run on the (ne·N)³ grid, which has the same number of unknowns n = (ne·N)³.
-- **Size limits:** configurations above `MAXN` unknowns are not run. The direct solvers (`sem`, `sc_direct`) stop at 2.2·10⁶ unknowns (`MAXN_DIRECT`): the next sizes would need 400 GB and more for the Cholesky factor, beyond one node. The iterative and Fourier solvers go on to 1.7·10⁷. This is the crossover the benchmark is meant to show.
+- **Size limits:** configurations above these caps are not run.
+  - The direct solvers (`sem`, `sc_direct`) stop at 2.2·10⁶ unknowns (`MAXN_DIRECT`): the next sizes would need 400 GB and more for the Cholesky factor, beyond one node.
+  - The iterative SEM solvers (`sem_amg`, `sc_amg`) stop at 7.1·10⁶ (`MAXN_SEM`). Jexpresso's 3D SEM infrastructure (high-order mesh, metrics, matrices) took 4.1 GB at 2.6·10⁵ unknowns. That projects to about 110 GB at 7.1·10⁶ and about 260 GB at 1.7·10⁷, too much with two of them on one node.
+  - The Fourier solvers go on to 1.7·10⁷ (`MAXN`).
+  - Between 2.2·10⁶ and 7.1·10⁶ only the iterative SEM solvers run: this is the crossover the benchmark is meant to show.
 
 **Resubmitting** the same script resumes: configurations with an `ok` row are skipped, and failed or unfinished ones are rerun (for example after the time limit).
 
 **What the parallelism means:**
-- Julia threads parallelize the element loops of static condensation.
+- Julia threads parallelize Jexpresso's 3D Laplacian assembly.
 - BLAS threads parallelize CHOLMOD's supernodal factorization and the dense kernels.
 - AlgebraicMultigrid.jl and the CG iterations run on one thread, so threads favour the direct solvers.
-- The seven processes share the node's memory bandwidth, so timings are slightly pessimistic for all of them. For cleaner timings, set `SOLVERS` to one solver and `THREADS=128`, and submit once per solver.
+- The six processes share the node's memory bandwidth, so timings are slightly pessimistic for all of them. For cleaner timings, set `SOLVERS` to one solver and `THREADS=128`, and submit once per solver.
 - For distributed-memory (MPI) solvers, see the next section.
 
 ## The MPI version: MUMPS and BoomerAMG
@@ -159,11 +153,20 @@ python3 tools/poisson3d_benchmark/plot3d.py ppb3d_mpi_local
 ## Running locally
 
 ```bash
-julia --project=. -t 4 tools/poisson3d_benchmark/verify_3d.jl
+julia --project=. -t 4 tools/poisson3d_benchmark/verify_3d_jexpresso.jl
 julia --project=. -t 4 tools/poisson3d_benchmark/bench3d.jl \
-      --solvers sem,sem_amg,sem_jacobi,sc_direct,sc_amg,ps,fft --nes 4,8,12 --nops 2,4 \
+      --solvers sem,sem_amg,sc_direct,sc_amg,ps,fft --nes 4,8 --nops 2,3,4 \
       --outdir ppb3d_local --resume
 python3 tools/poisson3d_benchmark/plot3d.py ppb3d_local
 ```
 
-The timing protocol is the one from 2D: a discarded warm-up run (`--warmup small`: 2³ elements, same solver and N), garbage collection, then the recorded second run. The pseudo-spectral solver needs an even grid size ne·N.
+or one configuration straight through Jexpresso:
+
+```julia
+using Jexpresso
+Jexpresso.run_case("Elliptic", "poisson_periodic_sem_3d";
+                   inputs = Dict(:nop => 4, :nelx => 8, :nely => 8, :nelz => 8,
+                                 :linsolve_amg => true, :sparse_ordering => "metis"))
+```
+
+The timing protocol is the one from 2D: a discarded first run (with `--engine jexpresso`, the identical configuration; with `--engine kronecker`, `--warmup small` uses 2³ elements), garbage collection, then the recorded second run. The pseudo-spectral solver needs an even grid size ne·N. `--engine kronecker` adds `sem_jacobi` and `--d 2`.

@@ -1,6 +1,9 @@
 #=============================================================================
- tools/poisson3d_benchmark/bench3d.jl — run configurations of the 3D (or 2D)
- periodic Poisson solver comparison (poisson3d.jl) and write results.csv.
+ tools/poisson3d_benchmark/bench3d.jl — run configurations of the 3D
+ periodic Poisson solver comparison and write results.csv: by default through
+ Jexpresso (run_case on problems/Elliptic/poisson_periodic_sem_3d, see
+ jexpresso3d.jl); with --engine kronecker through the standalone Kronecker
+ assembly of poisson3d.jl (the cross-check; also 2D and Jacobi-CG).
 
  One Julia session per call. Every configuration (solver, ne, N) follows the
  protocol of the 2D benchmark: a first run that is discarded (compilation,
@@ -18,6 +21,11 @@
            --solvers sem,sem_amg,sc_amg,fft --nes 4,8,16 --nops 2,4 --outdir ppb3d_local --resume
 
  OPTIONS
+   --engine jexpresso|kronecker     jexpresso (default): Jexpresso.run_case on the 3D deck
+                                    problems/Elliptic/poisson_periodic_sem_3d (jexpresso3d.jl),
+                                    solvers sem sem_amg sc_direct sc_amg ps fft;
+                                    kronecker: the standalone cross-check (poisson3d.jl),
+                                    also sem_jacobi, --d 2, --r, --ordering
    --solver S / --solvers S1,S2     sem sem_amg sem_jacobi sc_direct sc_amg ps fft
    --ne n / --nes n1,n2             elements per direction
    --nop N / --nops N1,N2           SEM order (Fourier grids: ne*N points per direction)
@@ -25,7 +33,8 @@
    --r 0.5                          Fourier decay rate of the exact solution
    --ordering metis|amd             fill-reducing ordering of the Cholesky factorisations
    --rtol 1e-12                     CG tolerance (preconditioned residual)
-   --warmup small|same
+   --warmup small|same              (kronecker engine; jexpresso always warms up on the
+                                    same configuration)
    --blas-threads n                 BLAS threads (CHOLMOD supernodes, dense kernels);
                                     Julia threads (element loops) are set with `julia -t`
    --outdir DIR   --resume
@@ -39,15 +48,16 @@
 =============================================================================#
 using Jexpresso, Printf, LinearAlgebra
 include(joinpath(@__DIR__, "poisson3d.jl"))
+include(joinpath(@__DIR__, "jexpresso3d.jl"))
 using .P3D
 
 const COLS = (:solver, :d, :r, :ne, :nop, :Ng, :n, :solved, :linf, :l2rel, :assembly, :rhs, :setup,
               :solve, :total, :iters, :nnz, :factor_nnz, :skeleton_nnz, :ordering,
-              :julia_threads, :blas_threads, :maxrss_gb, :status)
+              :julia_threads, :blas_threads, :maxrss_gb, :engine, :status)
 
 function parse_args(args)
     o = Dict{Symbol, Any}(:d => 3, :r => nothing, :ordering => :metis, :rtol => 1e-12, :warmup => :small,
-                          :outdir => "ppb3d_results", :resume => false)
+                          :outdir => "ppb3d_results", :resume => false, :engine => :jexpresso)
     ints(s) = parse.(Int, split(s, ','))
     i = 1
     nxt() = (i += 1; args[i])
@@ -64,12 +74,23 @@ function parse_args(args)
         elseif a == "--blas-threads";      BLAS.set_num_threads(parse(Int, nxt()))
         elseif a == "--outdir";            o[:outdir] = nxt()
         elseif a == "--resume";            o[:resume] = true
+        elseif a == "--engine";            o[:engine] = Symbol(nxt())
         else error("unknown option $a (see the header of bench3d.jl)")
         end
         i += 1
     end
     haskey(o, :solvers) && haskey(o, :nes) && haskey(o, :nops) || error("need --solver(s), --ne(s), --nop(s)")
-    o[:r] === nothing && (o[:r] = P3D.R_DEFAULT[o[:d]])
+    if o[:engine] === :jexpresso
+        o[:d] == 3 || error("--engine jexpresso runs the 3D deck: --d 3")
+        o[:r] in (nothing, JX3D.R) || error("--engine jexpresso: r is the deck's ($(JX3D.R))")
+        bad = setdiff(o[:solvers], JX3D.SOLVERS)
+        isempty(bad) || error("--engine jexpresso has no solver(s) $bad (Jexpresso's: $(JX3D.SOLVERS))")
+        o[:r] = JX3D.R
+    elseif o[:engine] === :kronecker
+        o[:r] === nothing && (o[:r] = P3D.R_DEFAULT[o[:d]])
+    else
+        error("--engine jexpresso | kronecker")
+    end
     return o
 end
 
@@ -105,9 +126,18 @@ function main(args)
                 s, d, ne, N, n, Threads.nthreads(), BLAS.get_num_threads())
         row = Dict{Symbol, Any}(c => "" for c in COLS)
         try
-            run_config(s, d, o[:warmup] === :same ? ne : min(ne, 2), N; kw...)   # warm-up, discarded
-            GC.gc(); GC.gc()
-            res = run_config(s, d, ne, N; kw...)                                    # recorded
+            if o[:engine] === :jexpresso
+                # warm-up = the identical configuration: Jexpresso's metric
+                # type carries the array sizes, so another mesh size would
+                # leave the recorded run's specialisations uncompiled
+                JX3D.run_config(s, ne, N; rtol = o[:rtol], ordering = o[:ordering])              # warm-up
+                GC.gc(); GC.gc()
+                res = JX3D.run_config(s, ne, N; rtol = o[:rtol], ordering = o[:ordering])       # recorded
+            else
+                run_config(s, d, o[:warmup] === :same ? ne : min(ne, 2), N; kw...)   # warm-up, discarded
+                GC.gc(); GC.gc()
+                res = run_config(s, d, ne, N; kw...)                                    # recorded
+            end
             for (k, v) in pairs(res); row[k] = v; end
             row[:status] = "ok"
         catch e
@@ -118,6 +148,7 @@ function main(args)
                              :status => "error: " * first(replace(msg, '\n' => ' ', ',' => ';'), 200)))
         end
         row[:julia_threads] = Threads.nthreads(); row[:blas_threads] = BLAS.get_num_threads()
+        row[:engine] = o[:engine]
         row[:maxrss_gb] = round(Sys.maxrss() / 2^30, digits = 3)
         push!(rows, row)
         write_csv(csv, rows)

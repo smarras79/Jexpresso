@@ -56,7 +56,10 @@
  is how it is computed: dense physical-space matrices here, O(N³) per solve,
  against the FFT's O(N² log N).
 
- Only 2-D grids with EVEN Nx, Ny (Algorithm 18). This file depends on
+ 2-D grids (FourierCollocationPoissonSolver) and 3-D grids
+ (FourierCollocationPoissonSolver3D, the same per-axis operators applied
+ along each of the three axes: six dense mode products per solve, O(N⁴)),
+ with EVEN Nx, Ny[, Nz] (Algorithm 18). This file depends on
  LinearAlgebra and on FourierDerivativeMatrix only, so it is unit-tested
  standalone by test/poisson_periodic/test_pseudospectral_poisson.jl.
 =============================================================================#
@@ -148,4 +151,83 @@ One-shot wrapper: build the solver for `size(f)` and `Ls`, solve once.
 function fourier_collocation_poisson_solve(f::AbstractMatrix{<:Real}, Ls::NTuple{2, Real})
     S = FourierCollocationPoissonSolver(size(f), Ls)
     return fourier_collocation_poisson_solve!(Matrix{Float64}(undef, size(f)), S, Matrix{Float64}(f))
+end
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 3-D grids: -(D⁽²⁾ₓ ⊗ I ⊗ I + I ⊗ D⁽²⁾ᵧ ⊗ I + I ⊗ I ⊗ D⁽²⁾_z) u = f by matrix
+# diagonalisation, Û = F ×₁ Qₓᵀ ×₂ Qᵧᵀ ×₃ Q_zᵀ, Û ./= (λˣ_i + λʸ_j + λᶻ_k),
+# u = Û ×₁ Qₓ ×₂ Qᵧ ×₃ Q_z. Each mode product is one BLAS call per z-slice
+# (x and y) or one call on the (Nx·Ny) × Nz reshape (z); the reshapes of the
+# work arrays are built once, so a solve allocates nothing.
+# ─────────────────────────────────────────────────────────────────────────────
+"""
+    FourierCollocationPoissonSolver3D
+
+The 3-D pseudo-spectral Poisson solver on an Nx × Ny × Nz grid; built by
+`FourierCollocationPoissonSolver((Nx, Ny, Nz), (Lx, Ly, Lz))`, applied by
+[`fourier_collocation_poisson_solve!`](@ref).
+"""
+struct FourierCollocationPoissonSolver3D
+    dims  :: NTuple{3, Int}
+    Ls    :: NTuple{3, Float64}
+    Qx    :: Matrix{Float64}
+    Qy    :: Matrix{Float64}
+    Qz    :: Matrix{Float64}
+    invλ  :: Array{Float64, 3}        # 1/(λˣ_i + λʸ_j + λᶻ_k); 0 on the mean mode
+    W1    :: Array{Float64, 3}        # work arrays
+    W2    :: Array{Float64, 3}
+    W1z   :: Matrix{Float64}          # W1, W2 as (Nx·Ny) × Nz (shared memory)
+    W2z   :: Matrix{Float64}
+    fmean :: Base.RefValue{Float64}
+end
+
+function FourierCollocationPoissonSolver(dims::NTuple{3, Integer}, Ls::NTuple{3, Real};
+                                         derivative_matrix = FourierDerivativeMatrix)
+    Nx, Ny, Nz = Int(dims[1]), Int(dims[2]), Int(dims[3])
+    Lx, Ly, Lz = Float64(Ls[1]), Float64(Ls[2]), Float64(Ls[3])
+    Qx, λx, cx = _collocation_axis(Nx, Lx, derivative_matrix)
+    Qy, λy, cy = _collocation_axis(Ny, Ly, derivative_matrix)
+    Qz, λz, cz = _collocation_axis(Nz, Lz, derivative_matrix)
+    invλ = Array{Float64, 3}(undef, Nx, Ny, Nz)
+    @inbounds for k = 1:Nz, j = 1:Ny, i = 1:Nx
+        invλ[i, j, k] = (cx[i] && cy[j] && cz[k]) ? 0.0 : 1.0 / (λx[i] + λy[j] + λz[k])
+    end
+    W1 = zeros(Nx, Ny, Nz); W2 = zeros(Nx, Ny, Nz)
+    return FourierCollocationPoissonSolver3D((Nx, Ny, Nz), (Lx, Ly, Lz), Qx, Qy, Qz, invλ,
+                                             W1, W2, reshape(W1, Nx * Ny, Nz), reshape(W2, Nx * Ny, Nz),
+                                             Ref(0.0))
+end
+
+"""
+    fourier_collocation_poisson_solve!(u, S::FourierCollocationPoissonSolver3D, f) -> u
+
+Overwrite the Nx × Ny × Nz array `u` with the zero-mean pseudo-spectral
+solution of -∇²u = f. The mean removed from `f` is stored in `S.fmean[]`.
+Allocation-free; `u` and `f` may alias.
+"""
+function fourier_collocation_poisson_solve!(u::Array{Float64, 3},
+                                            S::FourierCollocationPoissonSolver3D,
+                                            f::Array{Float64, 3})
+    size(f) == S.dims || throw(DimensionMismatch("f has size $(size(f)), solver expects $(S.dims)"))
+    size(u) == S.dims || throw(DimensionMismatch("u has size $(size(u)), solver expects $(S.dims)"))
+    S.fmean[] = sum(f) / length(f)
+    Nz = S.dims[3]
+    W1, W2 = S.W1, S.W2
+    @inbounds for k = 1:Nz                                   # ×₁ Qₓᵀ
+        mul!(view(W1, :, :, k), transpose(S.Qx), view(f, :, :, k))
+    end
+    @inbounds for k = 1:Nz                                   # ×₂ Qᵧᵀ
+        mul!(view(W2, :, :, k), view(W1, :, :, k), S.Qy)
+    end
+    mul!(S.W1z, S.W2z, S.Qz)                                 # ×₃ Q_zᵀ
+    W1 .*= S.invλ                                            # divide by the eigenvalues
+    mul!(S.W2z, S.W1z, transpose(S.Qz))                      # ×₃ Q_z
+    @inbounds for k = 1:Nz                                   # ×₂ Qᵧ
+        mul!(view(W1, :, :, k), view(W2, :, :, k), transpose(S.Qy))
+    end
+    @inbounds for k = 1:Nz                                   # ×₁ Qₓ
+        mul!(view(u, :, :, k), S.Qx, view(W1, :, :, k))
+    end
+    return u
 end

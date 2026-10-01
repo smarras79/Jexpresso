@@ -146,9 +146,11 @@ end
 # =============================================================================
 function allocate_elemLearning(nelem, ngl, length∂O, length∂τ, lengthΓ,
                                T, backend;
-                               Nsamp=1, lEL_Sample=false)
-    elnbdypoints = 4*(ngl-2) + 4
-    nvo          = (ngl-2)^2
+                               Nsamp=1, lEL_Sample=false, nsd::Int=2)
+    # nsd = 2: (k+1)² nodes per element, 4k on its boundary, (k-1)² inside;
+    # nsd = 3: (k+1)³ nodes, (k+1)³-(k-1)³ on the boundary, (k-1)³ inside.
+    nvo          = (ngl-2)^nsd
+    elnbdypoints = ngl^nsd - nvo
     k            = ngl - 1
 
     dims_vovo  = (nvo,          nvo,          nelem)
@@ -157,9 +159,19 @@ function allocate_elemLearning(nelem, ngl, length∂O, length∂τ, lengthΓ,
     dims_∂Ovo  = (elnbdypoints, nvo,          nelem)
     dims_T1    = (elnbdypoints, elnbdypoints)
     dims_T2    = (nvo,          elnbdypoints)
-    dimsML1    = ((k+1)^2,        Nsamp)
-    dimsML2    = (4*k*(k-1)^2,    Nsamp)
+    dimsML1    = (ngl^nsd,          Nsamp)          # 2D: (k+1)²
+    dimsML2    = (nvo*elnbdypoints, Nsamp)          # 2D: 4k(k-1)²
     dims0      = (nelem, 2)
+
+    # The per-element blocks hold the same values in pairs (elementLearning_Axb!
+    # writes A_{vo,vo} to Avovo and AIoIo, A_{vo,vb} to Avovb, Avo∂τ and AIo∂τ,
+    # its ∂O columns to Avo∂O and AIo∂O, A_{∂O,vo} to A∂Ovo and A∂OIo, and
+    # nothing else writes them): each set shares ONE array, 4 per-element
+    # arrays instead of 9 (bitwise the same results, less than half the memory).
+    Avovo = KernelAbstractions.zeros(backend, T, dims_vovo)
+    Avovb = KernelAbstractions.zeros(backend, T, dims_vovb)
+    Avo∂O = KernelAbstractions.zeros(backend, T, dims_vovb)
+    A∂Ovo = KernelAbstractions.zeros(backend, T, dims_∂Ovo)
 
     return St_elemLearning{T,
                            dims0,
@@ -172,7 +184,10 @@ function allocate_elemLearning(nelem, ngl, length∂O, length∂τ, lengthΓ,
                            dimsML1,
                            dimsML2,
                            lEL_Sample,
-                           backend}()
+                           backend}(; Avovo = Avovo, AIoIo = Avovo,
+                                      Avovb = Avovb, Avo∂τ = Avovb, AIo∂τ = Avovb,
+                                      Avo∂O = Avo∂O, AIo∂O = Avo∂O,
+                                      A∂Ovo = A∂Ovo, A∂OIo = A∂Ovo)
 end
 
 
@@ -212,6 +227,25 @@ struct EL_InferBuffers
     fvo_ie       :: Vector{Float64}    # (nelintpoints,)        interior load scratch
     invAvovo_buf :: Matrix{Float64}    # (nelintpoints, nelintpoints)  inv scratch for t^{ie}
 end
+
+"""
+    EL_InferBuffers(nfeatures, nelintpoints, elnbdypoints)
+
+Zero-size inference buffers, for a build with no model (sampling, or static
+condensation as a solver): inference is impossible there, so nothing sized by
+the mesh or the skeleton is allocated.
+"""
+EL_InferBuffers(nfeatures::Int, nelintpoints::Int, elnbdypoints::Int) = EL_InferBuffers(
+    Matrix{Float32}(undef, 0, 0), Matrix{Float32}(undef, 0, 0),
+    Matrix{Float32}(undef, 0, 0), Matrix{Float32}(undef, 0, 0),
+    Vector{Float64}(undef, 0),
+    Array{Float64, 3}(undef, 0, 0, 0), Vector{Int}(undef, 0),
+    Matrix{Float64}(undef, 0, 0), spzeros(Float64, Int32, 0, 0),
+    Vector{Int}(undef, 0), Vector{Int}(undef, 0),
+    Matrix{Float64}(undef, 0, 0), Vector{Float64}(undef, 0),
+    Vector{Float64}(undef, 0), Matrix{Float64}(undef, 0, 0),
+    Vector{Float64}(undef, 0), Vector{Float64}(undef, 0),
+    Matrix{Float64}(undef, 0, 0))
 
 """
     EL_InferBuffers(mesh, A_∂τ∂τ, nfeatures, nelintpoints, elnbdypoints)
@@ -375,8 +409,10 @@ function EL_WorkBuffers(mesh, A::SparseMatrixCSC, A_∂τ∂τ::SparseMatrixCSC,
         Vector{T}(undef, nelintpoints),                             # rhs_ie
         Vector{T}(undef, nelintpoints),                             # uvo_ie
         Matrix{T}(undef, nelintpoints, nelintpoints),               # invAIoIo_buf
-        EL_InferBuffers(mesh, A_∂τ∂τ, nfeatures,
-                        nelintpoints, elnbdypoints),                # infer
+        NNfile === nothing ?                                        # infer: no model ⇒
+            EL_InferBuffers(nfeatures, nelintpoints, elnbdypoints) :  # never used, empty
+            EL_InferBuffers(mesh, A_∂τ∂τ, nfeatures,
+                            nelintpoints, elnbdypoints),
         model, m_type, m_inname, m_outname,
     )
 end
@@ -408,19 +444,24 @@ either solver sees it, and factorised explicitly with Cholesky. A relative
 asymmetry above 1e-10 is not round-off and is reported; a B that is not
 positive definite falls back to LU with a warning. `perm` (optional) is a
 fill-reducing ordering of the (pinned) skeleton matrix for the Cholesky
-factorisation, e.g. METIS nested dissection; by default CHOLMOD chooses its
-own (AMD).
+factorisation, e.g. METIS nested dissection; `ordering = :metis` computes
+that one (jx_metis_perm, inside the :sc_factor phase); by default CHOLMOD
+chooses its own (AMD).
 """
 function el_skeleton_solve(B::SparseMatrixCSC, rhs::AbstractVector;
                            solver = :direct, amg_method = "sa", amg_rtol = 1e-12,
-                           singular::Bool = false, perm = nothing)
+                           singular::Bool = false, perm = nothing, ordering::Symbol = :cholmod)
     s  = Symbol(lowercase(string(solver)))
     s in (:direct, :amg) ||
         error(" # el_skeleton_solve: :EL_skeleton_solver => \"$solver\"; expected \"direct\" or \"amg\".")
     Bp = singular ? B[2:end, 2:end] : B
     bs = singular ? rhs[2:end] : rhs
     if s === :direct
-        F  = jx_phase(() -> _el_skeleton_cholesky(_el_symmetrise(Bp); perm = perm), :sc_factor)
+        F  = jx_phase(:sc_factor) do
+                 Bsym = _el_symmetrise(Bp)
+                 p = perm === nothing && ordering === :metis ? jx_metis_perm(Bsym) : perm
+                 _el_skeleton_cholesky(Bsym; perm = p)
+             end
         us = jx_phase(() -> F \ bs, :sc_skeleton)
     else
         S  = jx_phase(() -> jx_amg_setup(_el_symmetrise(Bp); method = amg_method), :sc_factor)
@@ -476,10 +517,11 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
                               skeleton_solver=:direct,
                               amg_method="sa",
                               amg_rtol=1e-12,
+                              skeleton_ordering::Symbol=:cholmod,
                               record_tensors::Bool=true)
 
     mesh.lengthO  = mesh.length∂O + mesh.lengthIo
-    nelintpoints  = (mesh.ngl - 2)^2
+    nelintpoints  = size(EL.Avovo, 1)          # (ngl-2)^2 in 2D, (ngl-2)^3 in 3D
     nelpoints     = size(mesh.conn, 2)
     elnbdypoints  = nelpoints - nelintpoints
 
@@ -492,7 +534,7 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
     # =========================================================================
     # SECTION 1: Sparse skeleton submatrices
     # =========================================================================
-    A_∂τ∂τ = A[mesh.∂τ, mesh.∂τ]
+    # (A_∂τ∂τ, used only by the inference, is extracted in that branch)
     A_∂O∂τ = A[mesh.∂O, mesh.∂τ]
 
     # =========================================================================
@@ -639,7 +681,8 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
         wbuf.u∂O         .= el_skeleton_solve(B_∂O∂O, wbuf.rhs∂O;
                                               solver = skeleton_solver,
                                               amg_method = amg_method, amg_rtol = amg_rtol,
-                                              singular = mesh.lengthΓ == 0)
+                                              singular = mesh.lengthΓ == 0,
+                                              ordering = skeleton_ordering)
         _t_recover = time_ns()
 
         @inbounds for io = 1:mesh.length∂O;  u[mesh.∂O[io]] = wbuf.u∂O[io];  end
@@ -705,6 +748,7 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
         # in Sections 1–2 above, which is one-time setup for a fixed operator A).
         # Stashed in JX_LAST_EL_INFER_TIME so the EL diagnostics can compare the
         # per-solve surrogate cost against the direct solve on equal footing.
+        A_∂τ∂τ = A[mesh.∂τ, mesh.∂τ]
         _t_infer0 = time_ns()
         elementLearning_infer!(u, mesh,
                                wbuf.model, wbuf.model_type,
@@ -1115,7 +1159,8 @@ end
 # Static-condensation solve options from a case deck (both EL branches).
 el_skeleton_options(inputs) = (skeleton_solver = Symbol(lowercase(string(get(inputs, :EL_skeleton_solver, "direct")))),
                                amg_method      = get(inputs, :amg_method, "sa"),
-                               amg_rtol        = Float64(get(inputs, :amg_rtol, 1e-12)))
+                               amg_rtol        = Float64(get(inputs, :amg_rtol, 1e-12)),
+                               ordering        = jx_sparse_ordering(inputs))
 
 """
     el_static_condensation_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat, rank)

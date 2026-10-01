@@ -35,30 +35,39 @@
  split into a one-time sparse factorisation (periodic_sem_factorize, setup)
  and the triangular solves (periodic_sem_direct_solve, the timed solve step).
 
- Scope: 2D, serial, every boundary edge periodic. A mesh that is periodic in
- one direction only (Dirichlet on the other boundary) is refused, not solved
- wrongly.
+ Scope: 2D and 3D, serial, every boundary edge (2D) or face (3D) periodic.
+ A mesh that is periodic in one direction only (Dirichlet on another
+ boundary) is refused, not solved wrongly. In 3D sem.matrix.L comes from
+ DSS_laplace_sparse_3D (element_matrices.jl).
 =============================================================================#
 
 const _PERIODIC_EDGE_TAGS = ("periodicx", "periodicz", "periodic1", "periodic3")
+const _PERIODIC_FACE_TAGS = ("periodicx", "periodicy", "periodicz", "periodic1", "periodic2", "periodic3")
 
 """
     sem_mesh_is_periodic(mesh) -> Bool
 
-`true` when every boundary edge of the (2D) mesh is periodic. Errors on a mesh
-that mixes periodic and non-periodic boundary edges, which the linear solves
-do not support yet.
+`true` when every boundary edge (2D) or face (3D) of the mesh is periodic.
+Errors on a mesh that mixes periodic and non-periodic boundaries, which the
+linear solves do not support yet.
 """
 function sem_mesh_is_periodic(mesh)
-    mesh.nsd == 2 || return false
-    nb = Int(mesh.nedges_bdy)
-    nb == 0 && return false
-    types = @view mesh.bdy_edge_type[1:nb]
-    nper  = count(t -> t in _PERIODIC_EDGE_TAGS, types)
+    if mesh.nsd == 2
+        nb = Int(mesh.nedges_bdy); tags = _PERIODIC_EDGE_TAGS; what = "edges"
+        nb == 0 && return false
+        types = @view mesh.bdy_edge_type[1:nb]
+    elseif mesh.nsd == 3
+        nb = Int(mesh.nfaces_bdy); tags = _PERIODIC_FACE_TAGS; what = "faces"
+        nb == 0 && return false
+        types = @view mesh.bdy_face_type[1:nb]
+    else
+        return false
+    end
+    nper  = count(t -> t in tags, types)
     nper == 0  && return false
     nper == nb && return true
     error(" # standard_linsolve!: the mesh has $nper periodic and $(nb - nper) non-periodic ",
-          "boundary edges. Linear solves on partially periodic meshes are not supported yet.")
+          "boundary $what. Linear solves on partially periodic meshes are not supported yet.")
 end
 
 """
@@ -107,9 +116,14 @@ end
 Sparse factorisation of the periodic system with its first unknown pinned
 (K[2:end, 2:end], symmetric positive definite): the one-time setup of the
 direct solve. `factorize` picks what `K \\ b` would use — a sparse Cholesky
-factorisation for this exactly symmetric matrix.
+factorisation for this exactly symmetric matrix, with CHOLMOD's own
+fill-reducing ordering (AMD). `ordering = :metis` (deck: :sparse_ordering =>
+"metis") factorises with METIS nested dissection instead, whose fill grows
+like n^(4/3) in 3D against markedly faster for AMD.
 """
-periodic_sem_factorize(K) = factorize(K[2:end, 2:end])
+periodic_sem_factorize(K, ordering::Symbol = :cholmod) =
+    ordering === :metis ? (Kp = K[2:end, 2:end]; cholesky(Symmetric(Kp); perm = jx_metis_perm(Kp))) :
+                          factorize(K[2:end, 2:end])
 
 """
     periodic_sem_direct_solve(F, b, w) -> u (per class)
@@ -139,6 +153,18 @@ function _periodic_sem_rhs(coords::AbstractMatrix, qn, qe, npoin::Int, CL, SV,
     return f
 end
 
+function _periodic_sem_rhs(coords::AbstractMatrix, qn, qe, npoin::Int, CL, SV,
+                           xmin::Float64, xmax::Float64, ymin::Float64, ymax::Float64,
+                           zmin::Float64, zmax::Float64)
+    f = Vector{Float64}(undef, npoin)
+    for ip = 1:npoin
+        f[ip] = user_source!(0.0, qn[ip], qe[ip], npoin, CL, SV;
+                             neqs=1, x=coords[1,ip], y=coords[2,ip], z=coords[3,ip],
+                             xmax=xmax, xmin=xmin, ymax=ymax, ymin=ymin, zmax=zmax, zmin=zmin)
+    end
+    return f
+end
+
 function periodic_sem_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
 
     inputs[:backend] == CPU() ||
@@ -149,10 +175,16 @@ function periodic_sem_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
     f = jx_phase(:rhs) do
         # St_mesh fields and the inputs Dict are untyped: hand the concrete
         # values to the loop through a function barrier (_periodic_sem_rhs).
-        _periodic_sem_rhs(mesh.coords, params.qp.qn, params.qp.qe, npoin,
-                          inputs[:CL], inputs[:SOL_VARS_TYPE],
-                          Float64(mesh.xmin), Float64(mesh.xmax),
-                          Float64(mesh.ymin), Float64(mesh.ymax))
+        mesh.nsd == 3 ?
+            _periodic_sem_rhs(mesh.coords, params.qp.qn, params.qp.qe, npoin,
+                              inputs[:CL], inputs[:SOL_VARS_TYPE],
+                              Float64(mesh.xmin), Float64(mesh.xmax),
+                              Float64(mesh.ymin), Float64(mesh.ymax),
+                              Float64(mesh.zmin), Float64(mesh.zmax)) :
+            _periodic_sem_rhs(mesh.coords, params.qp.qn, params.qp.qe, npoin,
+                              inputs[:CL], inputs[:SOL_VARS_TYPE],
+                              Float64(mesh.xmin), Float64(mesh.xmax),
+                              Float64(mesh.ymin), Float64(mesh.ymax))
     end
 
     # setup: the periodic reduction (which also forms b = M f)
@@ -181,7 +213,7 @@ function periodic_sem_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
         label = "AMG-CG periodic SEM solve"
     else
         F = jx_phase(:setup) do
-            jx_phase(() -> periodic_sem_factorize(sys.K), :factorize)
+            jx_phase(() -> periodic_sem_factorize(sys.K, jx_sparse_ordering(inputs)), :factorize)
         end
         println(YELLOW_FG(string(" # Solve x=inv(A)*b: sparse storage ..............")))
         uc = jx_robust_solve("direct SEM (triangular solves, periodic)",
@@ -236,6 +268,26 @@ function periodic_sem_amg_solve(sys, inputs)
     return uc
 end
 
+# 3D element connectivity in periodic-class numbering, each element's boundary
+# nodes first (any local index 1 or ngl), its (ngl-2)³ interior nodes last,
+# each group in connijk's (i fastest) order: the layout elementLearning_Axb!
+# expects. (2D uses mesh.conn, which is already boundary-first.)
+function _sc_conn_3d(connijk::AbstractArray{<:Integer, 4}, cls::Vector{Int}, nelem::Int, ngl::Int)
+    order = NTuple{3, Int}[]
+    onb(i) = i == 1 || i == ngl
+    for k = 1:ngl, j = 1:ngl, i = 1:ngl
+        (onb(i) || onb(j) || onb(k)) && push!(order, (i, j, k))
+    end
+    for k = 2:ngl-1, j = 2:ngl-1, i = 2:ngl-1
+        push!(order, (i, j, k))
+    end
+    conn = Matrix{Int}(undef, nelem, ngl^3)
+    @inbounds for (a, (i, j, k)) in enumerate(order), e = 1:nelem
+        conn[e, a] = cls[connijk[e, i, j, k]]
+    end
+    return conn
+end
+
 """
     periodic_sem_sc_solve(sem, sys, inputs) -> u (per class)
 
@@ -243,7 +295,7 @@ The element-learning STATIC CONDENSATION (elementLearning_Axb! with the local
 operators T^ie computed from the SEM matrix, not predicted by the network)
 applied to the periodic SEM system.
 
-elementLearning_Axb! works on a mesh-like description: the element
+elementLearning_Axb! works on a mesh-like description (2D or 3D): the element
 connectivity `conn` (element-boundary nodes first, interior last), the
 Dirichlet set Γ, the internal skeleton ∂O, the skeleton ∂τ = Γ ∪ ∂O and the
 strictly interior nodes Io. For the periodic system all of them are expressed
@@ -260,13 +312,16 @@ M-weighted mean — the gauge of every other periodic solve.
 function periodic_sem_sc_solve(sem, sys, inputs)
     mesh  = sem.mesh
     ngl   = Int(mesh.ngl);  nelem = Int(mesh.nelem)
-    nint  = (ngl - 2)^2
-    nb    = ngl^2 - nint
+    nsd   = Int(mesh.nsd)
+    npel  = ngl^nsd
+    nint  = (ngl - 2)^nsd
+    nb    = npel - nint
     m     = length(sys.b)
     opts  = el_skeleton_options(inputs)
 
     pm, EL, wbuf = jx_phase(:sc_alloc) do
-        conn  = Int[sys.cls[mesh.conn[e, a]] for e in 1:nelem, a in 1:ngl^2]
+        conn  = nsd == 3 ? _sc_conn_3d(mesh.connijk, sys.cls, nelem, ngl) :
+                           Int[sys.cls[mesh.conn[e, a]] for e in 1:nelem, a in 1:npel]
         skel  = sort!(unique(vec(conn[:, 1:nb])))
         inter = vec(conn[:, nb+1:end])
         # mesh.conn must list each element's boundary nodes first: every
@@ -282,8 +337,10 @@ function periodic_sem_sc_solve(sem, sys, inputs)
         pm.Io    = inter;      pm.lengthIo = length(inter)
         pm.O     = vcat(inter, skel);  pm.lengthO = m
         EL   = allocate_elemLearning(nelem, ngl, pm.length∂O, pm.length∂τ, 0,
-                                     Float64, CPU(); Nsamp = 1, lEL_Sample = true)
-        wbuf = EL_WorkBuffers(pm, sys.K, sys.K[skel, skel], ngl^2, nint, nb, nothing)
+                                     Float64, CPU(); Nsamp = 1, lEL_Sample = true, nsd = nsd)
+        # no model (NNfile = nothing): the inference buffers, and the skeleton
+        # submatrix they would copy, are not allocated
+        wbuf = EL_WorkBuffers(pm, sys.K, spzeros(0, 0), npel, nint, nb, nothing)
         pm, EL, wbuf
     end
 
@@ -292,10 +349,11 @@ function periodic_sem_sc_solve(sem, sys, inputs)
                              opts.skeleton_solver, " ..............")))
     u = zeros(Float64, m, 1)
     elementLearning_Axb!(u, nothing, pm, sys.K, reshape(copy(sys.b), m, 1), EL,
-                         zeros(Float64, 1, ngl^2), nothing, nothing,
+                         zeros(Float64, 1, npel), nothing, nothing,
                          zeros(pm.length∂O), zeros(0), wbuf;
                          skeleton_solver = opts.skeleton_solver,
                          amg_method = opts.amg_method, amg_rtol = opts.amg_rtol,
+                         skeleton_ordering = opts.ordering,
                          record_tensors = false)
     uc = vec(u)
     uc .-= sum(sys.w .* uc) / sum(sys.w)

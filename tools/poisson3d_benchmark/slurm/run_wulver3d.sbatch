@@ -12,8 +12,9 @@
 # =============================================================================
 #  3D periodic Poisson solver comparison on one Wulver node (128 cores, 500 GB):
 #      sbatch tools/poisson3d_benchmark/slurm/run_wulver3d.sbatch
-#  The seven solvers run side by side, one Julia process each with THREADS
-#  threads, each sweeping the sizes below; then the figures are drawn.
+#  Jexpresso's six solvers run side by side, one Julia process each with
+#  THREADS threads, each sweeping the sizes below through run_case on the 3D
+#  deck; then the figures are drawn.
 #  Resubmitting resumes: finished configurations are skipped.
 # =============================================================================
 module load Julia/1.11.9
@@ -29,16 +30,21 @@ export JULIA_PKG_PRECOMPILE_AUTO=1  # allow precompile during setup only
 export UCX_ERROR_SIGNALS=""
 
 OUTDIR=ppb3d_wulver                 # results, figures, per-solver logs
-SOLVERS="sem sem_amg sem_jacobi sc_direct sc_amg ps fft"
-THREADS=16                          # per solver process: 7 x 16 = 112 of 128 cores
+# Jexpresso's six solvers of the 3D deck problems/Elliptic/poisson_periodic_sem_3d
+# (bench3d.jl --engine jexpresso, the default): run_case on that deck
+SOLVERS="sem sem_amg sc_direct sc_amg ps fft"
+THREADS=21                          # per solver process: 6 x 21 = 126 of 128 cores
 # Sweep as in the 2D benchmark: mesh levels of LEVELS^3 elements, each with
 # the SEM orders NOPS (the Fourier solvers on the (ne*N)^3 grid, the same
-# unknowns n = (ne*N)^3). Configurations above MAXN unknowns are not run:
-# the direct solvers (sem, sc_direct) stop at 2.2e6 (the next sizes need
-# 400 GB and more for the factor), the others at 1.7e7.
+# unknowns n = (ne*N)^3). Configurations above the caps are not run:
+#   direct (sem, sc_direct)       2.2e6: the next sizes need 400 GB and more for the factor;
+#   iterative SEM (sem_amg, sc_amg) 7.1e6: Jexpresso's 3D SEM infrastructure (high-order
+#                                 mesh, metrics, matrices) took 4.1 GB at 2.6e5 unknowns,
+#                                 ~110 GB at 7.1e6, ~260 GB at 1.7e7 (two run side by side);
+#   Fourier (ps, fft)             1.7e7.
 LEVELS="8 16 32 64"
 NOPS="2 3 4 5 6 7 8"
-MAXN=17000000;  MAXN_DIRECT=2200000
+MAXN_DIRECT=2200000;  MAXN_SEM=7100000;  MAXN=17000000
 nops_for() {   # nops_for ne maxn -> the orders N of NOPS with (ne*N)^3 <= maxn, comma-separated
     local out=""
     for N in $NOPS; do [ $(( ($1*N)**3 )) -le $2 ] && out="$out${out:+,}$N"; done
@@ -50,16 +56,17 @@ julia --project=. -e 'using MPIPreferences; MPIPreferences.use_system_binary()' 
 echo "--- 2. Serial precompile (one process, many cores internally) ---"
 # resolve first: an existing Manifest.toml may predate packages added to Project.toml
 julia --project=. -e 'using Pkg; Pkg.resolve(); Pkg.instantiate(); Pkg.precompile()' || exit 1
-echo "--- 3. Serial warm-up and checks (2D against Jexpresso, 3D convergence) ---"
+echo "--- 3. Serial warm-up and checks (2D and 3D against Jexpresso, 3D convergence) ---"
 julia --project=. -e 'using MPI; using Jexpresso' || exit 1
 julia --project=. -t 4 tools/poisson3d_benchmark/verify_2d.jl || exit 1
 julia --project=. -t 4 tools/poisson3d_benchmark/verify_3d.jl || exit 1
+julia --project=. -t 4 tools/poisson3d_benchmark/verify_3d_jexpresso.jl || exit 1   # Jexpresso 3D vs Kronecker
 
 echo "--- Setup complete, launching the solvers ---"
 export JULIA_PKG_PRECOMPILE_AUTO=0  # the runs must never attempt to precompile
 mkdir -p "$OUTDIR/logs"
 for S in $SOLVERS; do
-    case $S in sem|sc_direct) maxn=$MAXN_DIRECT ;; *) maxn=$MAXN ;; esac
+    case $S in sem|sc_direct) maxn=$MAXN_DIRECT ;; sem_amg|sc_amg) maxn=$MAXN_SEM ;; *) maxn=$MAXN ;; esac
     (   # one process per mesh level, orders in increasing order
         for ne in $LEVELS; do
             nops=$(nops_for $ne $maxn); [ -n "$nops" ] || continue

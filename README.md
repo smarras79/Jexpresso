@@ -106,7 +106,7 @@ The results match the GMSH grids to round-off:
 - The 3D rising bubble `CompEuler/3d`.
 - The periodic Poisson problem, with and without static condensation and `:linitial_refine`.
 
-Examples: `problems/CompEuler/theta_cartesian` and the periodic Poisson deck `problems/Elliptic/poisson_periodic_sem`. The mesh caches are not used for built-in grids, which are cheap to build.
+Examples: `problems/CompEuler/theta_cartesian` and the periodic Poisson decks `problems/Elliptic/poisson_periodic_sem` (2D) and `problems/Elliptic/poisson_periodic_sem_3d` (3D). The mesh caches are not used for built-in grids, which are cheap to build.
 
 # Equations:
 Jexpresso uses arbitrarily high-order (3rd and above) **continuous spectral elements** to solve
@@ -1014,7 +1014,7 @@ At fixed SEM order N, one curve per solver as the mesh is refined: where the AMG
 <!-- ppb_highres_v2:end -->
 
 ### The same comparison in 3D, at cluster scale
-In 2D, sparse direct solvers stay ahead at the sizes above. The 3D version of the comparison in [tools/poisson3d_benchmark](tools/poisson3d_benchmark/README.md) reaches about 1.7·10⁷ unknowns, where nested-dissection Cholesky costs O(n²) in time and O(n^(4/3)) in memory, against O(n) for AMG. It runs as one SLURM job on one node of NJIT's Wulver (`sbatch tools/poisson3d_benchmark/slurm/run_wulver3d.sbatch`), and uses the same seven solvers (including Jacobi-CG, the CEED BP5 solver) and the same timing protocol. An MPI version (`sbatch tools/poisson3d_benchmark/slurm/run_wulver3d_mpi.sbatch`) solves the same system with MUMPS, hypre BoomerAMG + CG and Jacobi-CG on all ranks. Its errors match the serial solve to about 1e-12. Its Kronecker-product assembly is checked against Jexpresso's own periodic SEM solve in 2D (agreement to about 1e-12).
+In 2D, sparse direct solvers stay ahead at the sizes above. The 3D version of the comparison in [tools/poisson3d_benchmark](tools/poisson3d_benchmark/README.md) reaches about 1.7·10⁷ unknowns, where nested-dissection Cholesky costs O(n²) in time and O(n^(4/3)) in memory, against O(n) for AMG. It runs as one SLURM job on one node of NJIT's Wulver (`sbatch tools/poisson3d_benchmark/slurm/run_wulver3d.sbatch`), and runs Jexpresso's six solvers through `run_case` on the 3D deck `problems/Elliptic/poisson_periodic_sem_3d`, with the same timing protocol. (Jexpresso's Laplacian assembly, periodic solve, static condensation and pseudo-spectral solver now work in 3D.) An MPI version (`sbatch tools/poisson3d_benchmark/slurm/run_wulver3d_mpi.sbatch`) solves the same system with MUMPS, hypre BoomerAMG + CG and Jacobi-CG on all ranks. Its errors match the serial solve to about 1e-12. An independent Kronecker-product assembly cross-checks Jexpresso's 3D solves (agreement to 7e-13).
 
 ## Laguerre semi-infinite element test suite
 This section contains instructions to run all of the test cases presented in
