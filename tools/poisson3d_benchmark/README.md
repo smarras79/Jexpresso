@@ -102,6 +102,7 @@ How it works (`mpi/poisson3d_mpi.jl`):
 - **MUMPS ordering:** sequential METIS on the host. The MUMPS_jll binary has no parallel ordering: PT-SCOTCH returns INFOG(1) = −38 and ParMETIS fails.
 - **MUMPS right-hand side and solution:** both are gathered on the host. That costs two n-vectors on rank 0 and is negligible next to the factorization.
 - **Timing:** every phase starts and ends at a barrier, so a time is the slowest rank's.
+- **MPICH_jll is pinned to 4.3** (`mpi/Project.toml`). With the system MPI, the MPI-dependent binaries (HYPRE_jll, MUMPS_jll, SCALAPACK32_jll) still load the Fortran MPI library of MPICH_jll on top of the system `libmpi`, so the two must be the same MPICH series. Wulver has MPICH 4.3.0; MPICH_jll 5 fails there with `libmpifort.so: undefined symbol: MPIR_fortran_false`. On a cluster with another MPICH version, change that compat entry to match.
 - **No Jexpresso on the ranks:** the ranks do not load Jexpresso (several hundred MB per rank). The LGL nodes and weights are computed with Kopriva's algorithm, the one Jexpresso implements, in a separate small environment (`mpi/Project.toml`: MPI, HYPRE.jl, MUMPS.jl).
 
 **Verified** (`mpi/verify_mpi.jl`, rerun by the SLURM job):

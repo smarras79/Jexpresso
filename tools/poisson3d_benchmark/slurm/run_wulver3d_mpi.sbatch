@@ -37,8 +37,12 @@ NES_N4="4,6,8,12,16,24,32,48,64,96";      NES_N4_DIRECT="4,6,8,12,16,24,32"
 
 echo "--- 1. MPI preferences FIRST (before any compilation) ---"
 julia --project=. -e 'using MPIPreferences; MPIPreferences.use_system_binary()' || exit 1
-# a fresh checkout has no packages installed in $MPIENV yet: install them
-# first, without compiling, so that the preference is still set before any compilation
+# Install the packages of $MPIENV first, without compiling, so that the
+# preference is still set before any compilation. Its manifest is resolved
+# afresh every time (it is generated, not in git): MPICH_jll must stay at 4.3
+# (Project.toml compat) to match Wulver's MPICH 4.3; a stale manifest with
+# MPICH_jll 5 fails with "libmpifort.so: undefined symbol: MPIR_fortran_false".
+rm -f $MPIENV/Manifest.toml
 JULIA_PKG_PRECOMPILE_AUTO=0 julia --project=$MPIENV -e 'using Pkg; Pkg.instantiate()' || exit 1
 julia --project=$MPIENV -e 'using MPIPreferences; MPIPreferences.use_system_binary()' || exit 1
 echo "--- 2. Serial precompile (one process, many cores internally) ---"
