@@ -22,6 +22,11 @@ cd /project/smarras/smarras/Jexpresso/        # checkout of sm/elementLearning
 
 export JULIA_NUM_THREADS=1          # each benchmark process sets its own (-t)
 export JULIA_PKG_PRECOMPILE_AUTO=1  # allow precompile during setup only
+# Wulver's MPICH uses UCX (ch4:ucx), whose SIGSEGV handler steals the signals
+# Julia's GC uses for safepoints: threaded runs then die with "Segmentation
+# fault: invalid permissions for mapped object" in ijl_gc_safepoint. Leave
+# those signals to Julia (MPI.jl's documented setting for UCX):
+export UCX_ERROR_SIGNALS=""
 
 OUTDIR=ppb3d_wulver                 # results, figures, per-solver logs
 SOLVERS="sem sem_amg sem_jacobi sc_direct sc_amg ps fft"
