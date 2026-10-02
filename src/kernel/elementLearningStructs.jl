@@ -620,6 +620,10 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
 
             copyto!(wbuf.invAvovo_buf, @view(EL.Avovo[:, :, iel]))
             invAvovo = inv(wbuf.invAvovo_buf)
+            # A_{vo,vo} is not needed again in this call: keep its inverse in
+            # its place (EL.AIoIo shares the array), so the interior recovery
+            # below reuses it instead of inverting the block a second time
+            copyto!(@view(EL.Avovo[:, :, iel]), invAvovo)
 
             LinearAlgebra.mul!(wbuf.BC_local, invAvovo,
                                @view(EL.Avo∂τ[:, :, iel]))
@@ -716,9 +720,8 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
             #               = t^ie - T^ie u_{v^{ie,b}} .
             wbuf.rhs_ie .= @view(EL.fvo[:, iel]) .- wbuf.AIou∂O_ie .- wbuf.AIoΓg_ie
 
-            copyto!(wbuf.invAIoIo_buf, @view(EL.AIoIo[:, :, iel]))
-            invAIoIo = inv(wbuf.invAIoIo_buf)
-            LinearAlgebra.mul!(wbuf.uvo_ie, invAIoIo, wbuf.rhs_ie)
+            # (A_{Io,Io})^{-1}, stored by the condensation above
+            LinearAlgebra.mul!(wbuf.uvo_ie, @view(EL.AIoIo[:, :, iel]), wbuf.rhs_ie)
 
             for ii = 1:nelintpoints
                 u[mesh.conn[iel, elnbdypoints+ii]] = wbuf.uvo_ie[ii]
@@ -732,8 +735,7 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
         record_tensors || return nothing
         EL.input_tensor[:, isamp] .= vec(avisc)
         let iel = 1
-            copyto!(wbuf.invAvovo_buf, @view(EL.Avovo[:, :, iel]))
-            invAvovo = inv(wbuf.invAvovo_buf)
+            invAvovo = @view(EL.Avovo[:, :, iel])      # holds (A_{vo,vo})^{-1} (condensation)
             LinearAlgebra.mul!(EL.Tie,  invAvovo, @view(EL.Avovb[:, :, iel]), -1.0, 0.0)
             LinearAlgebra.mul!(EL.T1,   transpose(@view(EL.Avovb[:, :, iel])), EL.Tie, -1.0, 0.0)
             EL.output_tensor[:, isamp] .= -vec(EL.Tie)

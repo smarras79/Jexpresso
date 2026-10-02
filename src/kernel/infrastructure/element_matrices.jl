@@ -614,6 +614,24 @@ function DSS_mass!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::Abstrac
     end
 end
 
+"""
+    DSS_mass_collocation_3D!(M, ω, Je, connijk, nelem, ngl)
+
+The lumped 3D mass vector of collocation quadrature (Inexact, Q = N) straight
+from the weights: M[connijk[e,i,j,k]] += ω_i ω_j ω_k J[e,i,j,k]. With
+ψ_i(ξ_k) = δ_ik the element mass matrix of build_mass_matrix!(::NSD_3D,
+::Inexact) is diagonal with exactly this entry, and DSS_mass! sums its rows,
+so the result is bitwise the same, with (N+1)³ instead of (N+1)⁹ operations
+per element and no element matrices.
+"""
+function DSS_mass_collocation_3D!(M::AbstractVector{T}, ω::AbstractVector, Je::AbstractArray{T, 4},
+                                  connijk::AbstractArray{<:Integer, 4}, nelem::Int, ngl::Int) where {T}
+    @inbounds for iel = 1:nelem, k = 1:ngl, j = 1:ngl, i = 1:ngl
+        M[connijk[iel, i, j, k]] += (ω[i] * ω[j] * ω[k]) * Je[iel, i, j, k]
+    end
+    return M
+end
+
 function DSS_mass!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T; llump=false)
     
     for iel=1:nelem
@@ -1422,14 +1440,23 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
+    lcoll3d = SD isa NSD_3D && QT isa Inexact && backend == CPU() && N == Q && !inputs[:ladapt]
+
     if typeof(SD) == NSD_1D
         Me = KernelAbstractions.zeros(backend, TFloat, (N+1)^2, Int64(mesh.nelem))
     elseif typeof(SD) == NSD_2D
         Me = KernelAbstractions.zeros(backend, TFloat, (N+1)^2, (N+1)^2, Int64(mesh.nelem))
     elseif typeof(SD) == NSD_3D
-        Me = KernelAbstractions.zeros(backend, TFloat, (N+1)^3, (N+1)^3, Int64(mesh.nelem))
+        # 3D collocation (Inexact, Q = N) on the CPU without AMR: the lumped
+        # mass is assembled straight from the weights (DSS_mass_collocation_3D!),
+        # no dense (N+1)³×(N+1)³ element matrices (17 GB and (N+1)⁹ operations
+        # per element at N = 8 on 16³ elements)
+        Me = lcoll3d ? KernelAbstractions.zeros(backend, TFloat, 1, 1, 1) :
+                       KernelAbstractions.zeros(backend, TFloat, (N+1)^3, (N+1)^3, Int64(mesh.nelem))
     end
-    if (backend == CPU())
+    if lcoll3d
+        # nothing to build: see DSS_mass_collocation_3D!
+    elseif (backend == CPU())
         build_mass_matrix!(Me, SD, QT, basis.ψ, ω, mesh.nelem, metrics.Je, mesh.Δx, N, Q, TFloat)
     else
         if (SD == NSD_1D())
@@ -1459,7 +1486,11 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
 
         end
 
-        DSS_mass!(M, SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, N, TFloat; llump=inputs[:llump])
+        if lcoll3d
+            DSS_mass_collocation_3D!(M, ω, metrics.Je, mesh.connijk, Int(mesh.nelem), Int(mesh.ngl))
+        else
+            DSS_mass!(M, SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, N, TFloat; llump=inputs[:llump])
+        end
     else
         # backend -> GPU
         if SD == NSD_1D()
