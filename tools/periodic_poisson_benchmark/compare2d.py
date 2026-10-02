@@ -4,7 +4,8 @@
     python3 tools/periodic_poisson_benchmark/compare2d.py OUTDIR [REFERENCE.csv ...]
 
 1. Merges OUTDIR/parts/*/results.csv (one per solver, written by pipeline.jl)
-   into OUTDIR/results.csv, sorted by level, order and solver.
+   into OUTDIR/results.csv, sorted by level, order and solver; without parts
+   (a single pipeline.jl run into OUTDIR) it reads OUTDIR/results.csv.
 2. For every REFERENCE.csv (a results.csv of an earlier run, e.g. last week's
    ppb_highres/results.csv; default: the committed 16x16 one,
    tools/periodic_poisson_benchmark/results.csv), compares the L-inf and
@@ -38,8 +39,12 @@ def key(r):
 
 def merge(outdir):
     files = sorted(glob.glob(os.path.join(outdir, "parts", "*", "results.csv")))
-    if not files:
-        sys.exit(f"compare2d.py: no {outdir}/parts/*/results.csv")
+    if not files:                                   # a single-process run (pipeline.jl --outdir OUTDIR)
+        top = os.path.join(outdir, "results.csv")
+        if not os.path.isfile(top):
+            sys.exit(f"compare2d.py: no {outdir}/parts/*/results.csv and no {top}")
+        print(f"using {top}")
+        return read(top)[1]
     hdr, byk = None, {}
     for f in files:
         h, rows = read(f)
