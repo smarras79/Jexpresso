@@ -22,8 +22,8 @@ The threaded 3D benchmark runs Jexpresso's own solvers on the 3D deck `problems/
 |---|---|
 | `sem` | `sem_setup` (3D Laplacian: `DSS_laplace_sparse_3D`) → `periodic_sem_system` → `periodic_sem_factorize` (sparse Cholesky, METIS ordering: `:sparse_ordering => "metis"`) → `periodic_sem_direct_solve` |
 | `sem_amg` | … → `periodic_sem_amg_solve` (`jx_amg_setup` / `jx_amg_solve`: smoothed-aggregation AMG + CG) |
-| `sc_direct` | … → `periodic_sem_sc_solve` → `elementLearning_Axb!` (static condensation) → `el_skeleton_solve` (Cholesky, METIS ordering) |
-| `sc_amg` | the same, skeleton by AMG + CG (`:EL_skeleton_solver => "amg"`) |
+| `sc_direct` | … → `periodic_sem_sc_solve` → `elementLearning_Axb!` → `el_sc_solve!` (threaded condensation into the skeleton matrix B) → Cholesky of B (METIS ordering) |
+| `sc_amg` | … → `elementLearning_Axb!` → `el_sc_schur_cg!` (`:EL_skeleton_solver => "amg"`): CG on the skeleton Schur complement, matrix-free, with tensor-product interior solves, preconditioned by the full-system AMG restricted to the skeleton |
 | `ps` | `pseudospectral_linsolve!` → `FourierCollocationPoissonSolver3D` (O(N_g⁴)) |
 | `fft` | `fft_linsolve!` → `FFTPoissonSolver` (FFTW, `ESTIMATE`) |
 
@@ -39,6 +39,21 @@ The timings are Jexpresso's per-phase timers of that run (`JX_TIMINGS`): `assemb
 - **The 3D pseudo-spectral solver** (`fourier_collocation.jl`): a solve allocates nothing; the FFT and pseudo-spectral drivers have a 3D grid for a 3D deck.
 - **3D lumped mass without element matrices** (`DSS_mass_collocation_3D!`): with collocation (Q = N) the element mass matrix is diagonal, but `build_mass_matrix!(::NSD_3D, ::Inexact)` built it dense, (N+1)³ × (N+1)³ per element with (N+1)⁹ operations (17 GB at N = 8 on 16³ elements). The mass vector is now assembled straight from the weights, bit for bit the same, on the CPU without AMR. `sem_setup` at 6³ elements, N = 6 went from 17.1 to 2.3 s; at 8³, N = 6 from 46.6 to 9.7 s.
 - **Static-condensation recovery reuses the condensation's inverse**: `elementLearning_Axb!` inverted each element's interior block twice, once to condense and once to recover the interiors. The condensation now keeps the inverse in place of the block (no extra memory) and the recovery uses it, bit for bit the same. The recovery at 6³ elements, N = 6 went from 0.099 to 0.013 s.
+- **Static condensation rewritten for speed and memory** (`src/kernel/solvers/static_condensation.jl`), used whenever the condensation is a solver (`:lstatic_condensation`), 2D and 3D. The element-learning sampling still runs the original loop, as does `:EL_sc_kernel => "legacy"`.
+  - **`el_sc_solve!`** (`sc_direct`, and `sc_amg` with `:EL_sc_amg => "assembled"`):
+    - **Per-element algebra:** each element's interior block is factored with Cholesky (LAPACK `potrf`), and its Schur-complement contribution is formed with BLAS (`trsm`, `syrk`). This replaces a dense `inv` and a scalar triple loop.
+    - **Only active boundary nodes enter:** with collocation the interior couples only to the face-interior nodes. Edge and vertex pairs were stored zeros in B, which made AMG-CG on B twice as expensive.
+    - **Assembly into B's own pattern:** B is assembled directly into its sparsity pattern, with the elements coloured so the threaded assembly has no write conflicts. The old route went through triplets and `sparse()`, 14 GB of triplets at 16³ elements, N = 8.
+    - **Exactly symmetric B:** no symmetrization copy and no pinned-submatrix copy.
+    - **Nothing stored per element:** the recovery refactors each interior block instead.
+    - **Speed:** the condensation is 12–20× faster than the legacy loop (4³ elements at N = 5, 8³ at N = 6).
+  - **`el_sc_schur_cg!`** (`sc_amg`, the default `:EL_sc_amg => "schur"`) uses the SEM tensor product:
+    - **Fast-diagonalization interior solves:** on an affine hexahedron the interior block is c_x ω̂⊗ω̂⊗K̂ + c_y ω̂⊗K̂⊗ω̂ + c_z K̂⊗ω̂⊗ω̂. Fast diagonalization inverts it in O(N⁴) from three numbers per element, read off the matrix and checked entry by entry.
+    - **Matrix-free Schur complement:** S p = (Â [p; −Â_oo⁻¹ Â_ob p])_b, one sparse matvec plus the interior solves per iteration. B is never formed.
+    - **Preconditioner:** the full-system AMG V-cycle restricted to the skeleton. Since (A⁻¹)_bb = S⁻¹, it is as good for S as the V-cycle is for A.
+    - **Fallback:** elements that are not affine fall back to `el_sc_solve!`.
+    - **Result:** SC AMG costs one full-system AMG setup and about as many iterations as SEM AMG-CG (57 against 63 at 8³ elements, N = 6), with no skeleton matrix. The assembled-B route needed 34 iterations, but each was much more expensive, and its AMG setup was on a far denser matrix.
+- **AMG-CG matrix-vector products are threaded** (`JXSymCSC`, `amg.jl`): for an exactly symmetric matrix, (A x)_j is the dot product of column j with x, so the product is threaded with no write conflicts. The AMG V-cycle (AlgebraicMultigrid.jl) stays serial.
 - **`:sparse_ordering => "metis"`**: opt-in METIS nested-dissection ordering for both sparse Cholesky factorizations (full system and skeleton). The default stays CHOLMOD's own (AMD). In 3D, AMD's fill grows like n^1.6; at 13 824 unknowns (N = 4) Jexpresso's SEM direct setup takes 1.6 s with AMD and 0.53 s with METIS.
 
 **The Kronecker engine** (`poisson3d.jl`, `bench3d.jl --engine kronecker`) is now an independent cross-check. On a Cartesian mesh with GLL quadrature, the SEM stiffness matrix is exactly K = M_z⊗M_y⊗K_x + M_z⊗K_y⊗M_x + K_z⊗M_y⊗M_x, built from Jexpresso's 1D LGL and Lagrange routines. It also has Jacobi-CG (`sem_jacobi`, the CEED BP5 solver) and 2D.

@@ -36,10 +36,35 @@ preconditioner (the one-time setup of the AMG solve).
 """
 function jx_amg_setup(A::SparseMatrixCSC; method = :sa)
     m   = _amg_method(method)
-    Ai  = SparseMatrixCSC{Float64, Int}(A)          # AlgebraicMultigrid wants Int indices
+    # AlgebraicMultigrid wants Int indices (no copy when A already has them)
+    Ai  = A isa SparseMatrixCSC{Float64, Int} ? A : SparseMatrixCSC{Float64, Int}(A)
     ml  = m === :sa ? AlgebraicMultigrid.smoothed_aggregation(Ai) :
                       AlgebraicMultigrid.ruge_stuben(Ai)
-    return (A = Ai, ml = ml, P = AlgebraicMultigrid.aspreconditioner(ml), method = m)
+    # CG's matrix-vector product: threaded column dot products when A is
+    # exactly symmetric (A x = Aᵀ x), else SparseArrays' serial product
+    op  = issymmetric(Ai) ? JXSymCSC(Ai) : Ai
+    return (A = Ai, op = op, ml = ml, P = AlgebraicMultigrid.aspreconditioner(ml), method = m)
+end
+
+# An exactly symmetric CSC matrix as a CG operator: (A x)_j = Σ_p A[rowval[p], j] x[rowval[p]],
+# one column per output entry, threaded without write conflicts
+struct JXSymCSC{Ti}
+    A :: SparseMatrixCSC{Float64, Ti}
+end
+Base.size(S::JXSymCSC) = size(S.A)
+Base.size(S::JXSymCSC, d) = size(S.A, d)
+Base.eltype(::JXSymCSC) = Float64
+function LinearAlgebra.mul!(y::AbstractVector, S::JXSymCSC, x::AbstractVector)
+    A = S.A;  n = size(A, 2);  nt = Threads.nthreads()
+    Threads.@threads :static for c = 1:nt
+        lo = div((c - 1) * n, nt) + 1;  hi = div(c * n, nt)
+        @inbounds for j = lo:hi
+            s = 0.0
+            for p = A.colptr[j]:A.colptr[j+1]-1;  s += A.nzval[p] * x[A.rowval[p]];  end
+            y[j] = s
+        end
+    end
+    return y
 end
 
 """
@@ -48,7 +73,7 @@ end
 AMG-preconditioned CG solve of `S.A x = b` (S from `jx_amg_setup`).
 """
 function jx_amg_solve(S, b::AbstractVector; rtol::Real = 1e-12, itmax::Int = 1000)
-    x, st = Krylov.cg(S.A, Vector{Float64}(b); M = S.P, ldiv = true,
+    x, st = Krylov.cg(S.op, Vector{Float64}(b); M = S.P, ldiv = true,
                       rtol = Float64(rtol), atol = 0.0, itmax = itmax, history = true)
     r0 = isempty(st.residuals) ? NaN : first(st.residuals)
     rel = isempty(st.residuals) || r0 == 0 ? 0.0 : last(st.residuals) / r0

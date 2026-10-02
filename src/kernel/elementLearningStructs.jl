@@ -146,12 +146,15 @@ end
 # =============================================================================
 function allocate_elemLearning(nelem, ngl, length∂O, length∂τ, lengthΓ,
                                T, backend;
-                               Nsamp=1, lEL_Sample=false, nsd::Int=2)
+                               Nsamp=1, lEL_Sample=false, nsd::Int=2, blocks::Bool=true)
     # nsd = 2: (k+1)² nodes per element, 4k on its boundary, (k-1)² inside;
     # nsd = 3: (k+1)³ nodes, (k+1)³-(k-1)³ on the boundary, (k-1)³ inside.
     nvo          = (ngl-2)^nsd
     elnbdypoints = ngl^nsd - nvo
     k            = ngl - 1
+    # blocks = false: no per-element blocks (the static-condensation solve,
+    # el_sc_solve!, keeps nothing per element); their element dimension is 0
+    nelem        = blocks ? nelem : 0
 
     dims_vovo  = (nvo,          nvo,          nelem)
     dims_fvo   = (nvo,          nelem)
@@ -518,12 +521,40 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
                               amg_method="sa",
                               amg_rtol=1e-12,
                               skeleton_ordering::Symbol=:cholmod,
-                              record_tensors::Bool=true)
+                              record_tensors::Bool=true,
+                              sc_kernel::Symbol=:fast,
+                              sc_amg::Symbol=:schur,
+                              amg_itmax::Int=1000,
+                              tp1d=nothing)
 
     mesh.lengthO  = mesh.length∂O + mesh.lengthIo
     nelintpoints  = size(EL.Avovo, 1)          # (ngl-2)^2 in 2D, (ngl-2)^3 in 3D
     nelpoints     = size(mesh.conn, 2)
     elnbdypoints  = nelpoints - nelintpoints
+
+    # ── Static condensation as a SOLVER (no ML tensors): the threaded kernel
+    #    el_sc_solve! (solvers/static_condensation.jl), which needs no
+    #    per-element blocks; the loop below if it does not apply ─────────────
+    if EL.lEL_Sample && !record_tensors && sc_kernel === :fast
+        @inbounds for iΓ = 1:mesh.lengthΓ;  gΓ[iΓ] = RHS[mesh.Γ[iΓ], 1];  end
+        f = RHS isa AbstractVector ? RHS : view(RHS, :, 1)
+        # AMG-CG: matrix-free Schur complement with tensor-product (fast-
+        # diagonalization) interior solves, when the elements allow it
+        # (tp1d = (1D GLL stiffness, weights); 3D affine hexahedra)
+        Symbol(lowercase(string(skeleton_solver))) === :amg && sc_amg === :schur &&
+            tp1d !== nothing &&
+            el_sc_schur_cg!(u, A, f, mesh.conn, elnbdypoints, mesh.∂O, mesh.Γ, gΓ,
+                            tp1d[1], tp1d[2]; amg_method = amg_method, amg_rtol = amg_rtol,
+                            itmax = amg_itmax) && return nothing
+        el_sc_solve!(u, A, f, mesh.conn, elnbdypoints, mesh.∂O, mesh.Γ, gΓ;
+                     solver = skeleton_solver, amg_method = amg_method,
+                     amg_rtol = amg_rtol, ordering = skeleton_ordering) && return nothing
+        JX_EL_QUIET[] || @warn " # static condensation: el_sc_solve! does not apply " *
+                               "(non-symmetric A or a non-standard skeleton); legacy loop."
+    end
+    size(EL.Avovo, 3) == mesh.nelem ||
+        error(" # elementLearning_Axb!: per-element blocks not allocated " *
+              "(allocate_elemLearning(...; blocks = false)), but the legacy loop needs them.")
 
     # ── DOF → position lookup tables ─────────────────────────────────────────
     ∂O_pos = Dict{Int,Int}(mesh.∂O[i] => i for i in 1:mesh.length∂O)
@@ -1162,7 +1193,21 @@ end
 el_skeleton_options(inputs) = (skeleton_solver = Symbol(lowercase(string(get(inputs, :EL_skeleton_solver, "direct")))),
                                amg_method      = get(inputs, :amg_method, "sa"),
                                amg_rtol        = Float64(get(inputs, :amg_rtol, 1e-12)),
-                               ordering        = jx_sparse_ordering(inputs))
+                               ordering        = jx_sparse_ordering(inputs),
+                               # "fast": el_sc_solve! (threaded, nothing stored per
+                               # element); "legacy": the loop of elementLearning_Axb!
+                               kernel          = _el_sc_kernel(get(inputs, :EL_sc_kernel, "fast")),
+                               # AMG skeleton solver: "schur" (matrix-free Schur complement,
+                               # tensor-product interior solves, full-system AMG restricted
+                               # to the skeleton; 3D affine elements) | "assembled" (AMG of B)
+                               amg_mode        = _el_sc_amg_mode(get(inputs, :EL_sc_amg, "schur")),
+                               amg_itmax       = Int(get(inputs, :amg_itmax, 1000)))
+_el_sc_amg_mode(k) = (s = Symbol(lowercase(string(k)));
+                      s in (:schur, :assembled) || error(" # :EL_sc_amg => \"$k\"; expected \"schur\" or \"assembled\".");
+                      s)
+_el_sc_kernel(k) = (s = Symbol(lowercase(string(k)));
+                    s in (:fast, :legacy) || error(" # :EL_sc_kernel => \"$k\"; expected \"fast\" or \"legacy\".");
+                    s)
 
 """
     el_static_condensation_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat, rank)
@@ -1211,8 +1256,11 @@ function el_static_condensation_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, T
     A = sem.matrix.L
     EL, wbuf = jx_phase(:sc_alloc) do
         EL = allocate_elemLearning(nelem, ngl, mesh.length∂O, mesh.length∂τ, mesh.lengthΓ,
-                                   TFloat, inputs[:backend]; Nsamp = 1, lEL_Sample = true)
-        wbuf = EL_WorkBuffers(mesh, A, A[mesh.∂τ, mesh.∂τ], ngl^2,
+                                   TFloat, inputs[:backend]; Nsamp = 1, lEL_Sample = true,
+                                   blocks = opts.kernel === :legacy)
+        # no model (NNfile = nothing): the inference buffers, and the skeleton
+        # submatrix they would copy, are not allocated
+        wbuf = EL_WorkBuffers(mesh, A, spzeros(0, 0), ngl^2,
                               nelintpoints, elnbdypoints, nothing)
         EL, wbuf
     end
@@ -1224,7 +1272,8 @@ function el_static_condensation_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, T
                          zeros(mesh.length∂O), zeros(mesh.lengthΓ), wbuf;
                          skeleton_solver = opts.skeleton_solver,
                          amg_method = opts.amg_method, amg_rtol = opts.amg_rtol,
-                         record_tensors = false)
+                         skeleton_ordering = opts.ordering,
+                         record_tensors = false, sc_kernel = opts.kernel)
     _el_sc_record_phases!()
     opts.skeleton_solver === :amg && _el_print_amg_stats()
     println(YELLOW_FG(string(" # Static condensation ...................................... DONE")))

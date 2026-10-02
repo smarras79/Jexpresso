@@ -337,7 +337,8 @@ function periodic_sem_sc_solve(sem, sys, inputs)
         pm.Io    = inter;      pm.lengthIo = length(inter)
         pm.O     = vcat(inter, skel);  pm.lengthO = m
         EL   = allocate_elemLearning(nelem, ngl, pm.length∂O, pm.length∂τ, 0,
-                                     Float64, CPU(); Nsamp = 1, lEL_Sample = true, nsd = nsd)
+                                     Float64, CPU(); Nsamp = 1, lEL_Sample = true, nsd = nsd,
+                                     blocks = opts.kernel === :legacy)
         # no model (NNfile = nothing): the inference buffers, and the skeleton
         # submatrix they would copy, are not allocated
         wbuf = EL_WorkBuffers(pm, sys.K, spzeros(0, 0), npel, nint, nb, nothing)
@@ -354,7 +355,9 @@ function periodic_sem_sc_solve(sem, sys, inputs)
                          skeleton_solver = opts.skeleton_solver,
                          amg_method = opts.amg_method, amg_rtol = opts.amg_rtol,
                          skeleton_ordering = opts.ordering,
-                         record_tensors = false)
+                         record_tensors = false, sc_kernel = opts.kernel,
+                         sc_amg = opts.amg_mode, amg_itmax = opts.amg_itmax,
+                         tp1d = nsd == 3 ? (sc_gll_stiffness(sem.basis.dψ, sem.ω), sem.ω) : nothing)
     uc = vec(u)
     uc .-= sum(sys.w .* uc) / sum(sys.w)
     _el_sc_record_phases!()

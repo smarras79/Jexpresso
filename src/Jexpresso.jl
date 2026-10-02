@@ -277,6 +277,7 @@ include(joinpath("kernel", "operators", "asm_preconditioner.jl"))
 include(joinpath( "kernel", "solvers", "Axb.jl"))
 
 include(joinpath( "kernel", "solvers", "amg.jl"))
+include(joinpath( "kernel", "solvers", "static_condensation.jl"))
 
 include(joinpath( "kernel", "solvers", "periodic_sem.jl"))
 
