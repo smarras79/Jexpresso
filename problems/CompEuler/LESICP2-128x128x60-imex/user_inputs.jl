@@ -71,7 +71,9 @@ function user_inputs()
     # Read into a local rather than inline because two keys below have to agree
     # about it -- switching it on also switches the linearisation to :PS,
     # without which the implicit operator would carry no diffusion at all.
-    _vdiff = parse(Bool, get(ENV, "DBG_VDIFF", "true"))
+    # Production path, as LESICP2-64x64x60-imex: scalar Schur stage solve with
+    # explicit vertical diffusion. Measured here at 1024 ranks: 4.0 s/step at dt 0.2.
+    _vdiff = parse(Bool, get(ENV, "DBG_VDIFF", "false"))
 
     #---------------------------------------------------------------------------
     # TWO INDEPENDENT SWITCHES: the first picks the INTEGRATOR, the second only
@@ -87,7 +89,7 @@ function user_inputs()
     # 0.25 = the 64x64x60 deck's 0.5 halved because h_x halved. AN ESTIMATE.
     # Replace it with 65-70% of the "wedge neutral up to" figure the run
     # prints at t = 0 -- see the header.
-    dt_imex     = parse(Float64, get(ENV, "DBG_DT",        "0.25"))
+    dt_imex     = parse(Float64, get(ENV, "DBG_DT",        "0.2"))
     rtol        = parse(Float64, get(ENV, "DBG_RTOL",      "1.0e-6"))
     # Krylov basis costs (restart+4)*npoin*nvar*8 B/rank: ~19 MB on the scalar
     # Schur system, ~95 MB on the five-field one (npoin/rank ~ 70k at 256 ranks).
@@ -262,11 +264,21 @@ function user_inputs()
         :tinit                => 0.0,
         :tend                 => tend,
 	:lrestart             => false,
+        # DBG_RESTART_VTK=true continues from a dump; DBG_RESTART_IOUT picks it (index
+        # into :diagnostics_at_times, entry 5 = 9000 s); DBG_RESTART_DIR reads it from
+        # another run's output dir.
+        :lrestart_vtk         => parse(Bool, get(ENV, "DBG_RESTART_VTK", "false")),
+        (haskey(ENV, "DBG_RESTART_IOUT") ? (:restart_vtk_iout => parse(Int, ENV["DBG_RESTART_IOUT"]),) : ())...,
+        (haskey(ENV, "DBG_RESTART_DIR") ? (:restart_vtk_input_dir => ENV["DBG_RESTART_DIR"],) : ())...,
 	:restart_time         => 9000.0,
 	# EVERY range needs its own `...`; the third was missing one, which made this
 	# a tuple of 28 Floats followed by a StepRangeLen and killed the run in
 	# time_loop! (collect(Float64, ...) cannot convert a range to a Float64).
-	:diagnostics_at_times => (0.0:100.0:1000.0..., 1000.0:500.0:9000.0..., 9000.0:10.0:tend...),
+	# One dump is 22 GB on this grid. Every 2000 s through spin-up (2000-8000),
+	# then every 600 s in the statistics window (9000, 9600, 10200, 10800):
+	# 8 dumps, ~176 GB. Entry 5 is t = 9000 s (DBG_RESTART_IOUT=5).
+	:diagnostics_at_times => (sort(unique(vcat(collect(2000.0:2000.0:min(8000.0, tend)),
+	                                            collect(9000.0:600.0:tend))))...,),
 	:lsource              => true,
         :sounding_file        =>"./data_files/input_sounding_teamx_u10_flat_noheader.dat",
         #---------------------------------------------------------------------------
@@ -299,7 +311,8 @@ function user_inputs()
         # roughly 30% of it. See sgs_mixing_length2 in kernel/physics/SGS.jl and
         # test/sgs/test_wall_damping.jl.
         :lwall_damping        => true,
-        :μ                    => [0.0, 1.0, 1.0, 1.0, 1.0],
+        # theta diffusion x2.1 (kappa_t = 3 nu_t, Pr_t = 1/3), as the 64x64x60 deck.
+        :μ                    => [0.0, 1.0, 1.0, 1.0, parse(Float64, get(ENV, "DBG_VISC_TH", "2.1"))],
         :les_filter_width     => :geometric,
         #---------------------------------------------------------------------------
         # MOST GUARD RAILS. Stated explicitly here rather than left to the
@@ -388,6 +401,9 @@ function user_inputs()
                                    "wpwpup", "wpwpvp", "wpwpwp",
                                    "upuptp", "vpvptp", "wpwptp"],
         :lesspectra_vars      => [],
+        # TABLES output grid (x 0:20:10240, z 5:10:2995), averaged over y (512
+        # samples) and time; see src/io/les_projection.jl.
+        :les_projection       => [(plane = "xz", npts = (513, 300), range2 = (5.0, 2995.0))],
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
