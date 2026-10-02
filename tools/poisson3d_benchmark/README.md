@@ -162,7 +162,15 @@ julia --project=. -t 4 tools/poisson3d_benchmark/bench3d.jl \
 python3 tools/poisson3d_benchmark/plot3d.py ppb3d_local
 ```
 
-or one configuration straight through Jexpresso:
+To run one configuration and look at it in ParaView:
+
+```bash
+julia --project=. -t 4 tools/poisson3d_benchmark/run_one3d.jl --solver sem --ne 8 --nop 4 --outdir vis3d
+```
+
+The SEM solvers write `vis3d/Elliptic/poisson_periodic_sem_3d/output/iter_1.pvtu` (field `u`). `ps` and `fft` write `pseudospectral_laplace.vtk` or `fft_laplace.vtk` there, on the uniform (ne·N)³ grid, with the fields `u`, `u_exact` and `error`. The script prints the path and the L∞ error.
+
+Or one configuration straight through Jexpresso:
 
 ```julia
 using Jexpresso
