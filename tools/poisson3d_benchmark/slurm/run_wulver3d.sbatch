@@ -32,19 +32,24 @@ export UCX_ERROR_SIGNALS=""
 OUTDIR=ppb3d_wulver                 # results, figures, per-solver logs
 # Jexpresso's six solvers of the 3D deck problems/Elliptic/poisson_periodic_sem_3d
 # (bench3d.jl --engine jexpresso, the default): run_case on that deck
-SOLVERS="sem sem_amg sc_direct sc_amg ps fft"
+# The iterative SEM solvers only (direct solvers are never used for large
+# problems; run them by hand with --solver sem / sc_direct if wanted):
+#   sem_amg  AMG-CG on the full SEM system
+#   sc_amg   static condensation: Schur-complement CG, tensor-product interiors
+#   pmg_amg  p-multigrid CG (SEM levels N, N/2, ..., 1) + AMG on p = 1
+#   pmg_gmg  p-multigrid CG + geometric h-multigrid on the p = 1 grid
+SOLVERS="sem_amg sc_amg pmg_amg pmg_gmg ps fft"
 THREADS=21                          # per solver process: 6 x 21 = 126 of 128 cores
 # Sweep as in the 2D benchmark: mesh levels of LEVELS^3 elements, each with
 # the SEM orders NOPS (the Fourier solvers on the (ne*N)^3 grid, the same
 # unknowns n = (ne*N)^3). Configurations above the caps are not run:
-#   direct (sem, sc_direct)       2.2e6: the next sizes need 400 GB and more for the factor;
-#   iterative SEM (sem_amg, sc_amg) 7.1e6: Jexpresso's 3D SEM infrastructure (high-order
+#   iterative SEM (sem_amg, sc_amg, pmg_*) 7.1e6: Jexpresso's 3D SEM infrastructure (high-order
 #                                 mesh, metrics, matrices) took 4.1 GB at 2.6e5 unknowns,
 #                                 ~110 GB at 7.1e6, ~260 GB at 1.7e7 (two run side by side);
 #   Fourier (ps, fft)             1.7e7.
 LEVELS="8 16 32 64"
 NOPS="2 3 4 5 6 7 8"
-MAXN_DIRECT=2200000;  MAXN_SEM=7100000;  MAXN=17000000
+MAXN_SEM=7100000;  MAXN=17000000
 nops_for() {   # nops_for ne maxn -> the orders N of NOPS with (ne*N)^3 <= maxn, comma-separated
     local out=""
     for N in $NOPS; do [ $(( ($1*N)**3 )) -le $2 ] && out="$out${out:+,}$N"; done
@@ -66,7 +71,7 @@ echo "--- Setup complete, launching the solvers ---"
 export JULIA_PKG_PRECOMPILE_AUTO=0  # the runs must never attempt to precompile
 mkdir -p "$OUTDIR/logs"
 for S in $SOLVERS; do
-    case $S in sem|sc_direct) maxn=$MAXN_DIRECT ;; sem_amg|sc_amg) maxn=$MAXN_SEM ;; *) maxn=$MAXN ;; esac
+    case $S in ps|fft) maxn=$MAXN ;; *) maxn=$MAXN_SEM ;; esac
     (   # one process per mesh level, orders in increasing order
         for ne in $LEVELS; do
             nops=$(nops_for $ne $maxn); [ -n "$nops" ] || continue

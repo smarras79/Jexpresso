@@ -24,6 +24,8 @@ The threaded 3D benchmark runs Jexpresso's own solvers on the 3D deck `problems/
 | `sem_amg` | … → `periodic_sem_amg_solve` (`jx_amg_setup` / `jx_amg_solve`: smoothed-aggregation AMG + CG) |
 | `sc_direct` | … → `periodic_sem_sc_solve` → `elementLearning_Axb!` → `el_sc_solve!` (threaded condensation into the skeleton matrix B) → Cholesky of B (METIS ordering) |
 | `sc_amg` | … → `elementLearning_Axb!` → `el_sc_schur_cg!` (`:EL_skeleton_solver => "amg"`): CG on the skeleton Schur complement, matrix-free, with tensor-product interior solves, preconditioned by the full-system AMG restricted to the skeleton |
+| `pmg_amg` | … → `periodic_sem_pmg_solve` (`:linsolve_pmg => "amg"`): CG on the full SEM system, preconditioned by a p-multigrid V-cycle over the SEM orders N, N/2, …, 1, with AMG on the p = 1 level |
+| `pmg_gmg` | the same with `:linsolve_pmg => "gmg"`: geometric h-multigrid on the p = 1 grid in place of AMG |
 | `ps` | `pseudospectral_linsolve!` → `FourierCollocationPoissonSolver3D` (O(N_g⁴)) |
 | `fft` | `fft_linsolve!` → `FFTPoissonSolver` (FFTW, `ESTIMATE`) |
 
@@ -53,6 +55,20 @@ The timings are Jexpresso's per-phase timers of that run (`JX_TIMINGS`): `assemb
     - **Preconditioner:** the full-system AMG V-cycle restricted to the skeleton. Since (A⁻¹)_bb = S⁻¹, it is as good for S as the V-cycle is for A.
     - **Fallback:** elements that are not affine fall back to `el_sc_solve!`.
     - **Result:** SC AMG costs one full-system AMG setup and about as many iterations as SEM AMG-CG (57 against 63 at 8³ elements, N = 6), with no skeleton matrix. The assembled-B route needed 34 iterations, but each was much more expensive, and its AMG setup was on a far denser matrix.
+- **p-multigrid** (`src/kernel/solvers/pmultigrid.jl`, `jx_pmg_setup` / `jx_pmg_cg`): a preconditioner built for high-order spectral elements.
+  - **Levels:** the SEM orders N → ⌊N/2⌋ → … → 1, all on the same elements.
+    - The order-N level is the matrix K of the solve itself (`sem_setup` → `DSS_laplace_sparse_3D` → periodic reduction).
+    - Each coarser order is rediscretized with Jexpresso's LGL basis of that order (`basis_structs_ξ_ω!`, `build_Interpolation_basis!`) and the element geometry from the metrics: on a box element, A_e = c_x ω̂⊗ω̂⊗K̂ + c_y ω̂⊗K̂⊗ω̂ + c_z K̂⊗ω̂⊗ω̂.
+    - The tensor form is checked against K's diagonal, and Jexpresso's per-element axis orientation is honored.
+  - **Transfers between orders:** the tensor-product Lagrange interpolation ℓ_a^(p)(ξ_k^(q)), applied element by element in three 1D passes. The work is threaded, with elements coloured for the restriction.
+  - **Smoother:** Chebyshev–Jacobi of degree 3 on [0.25, 1.1]·λ_max(D⁻¹A), with λ_max from power iteration. It needs only threaded matvecs, no Gauss–Seidel sweep, and keeps the V-cycle symmetric.
+  - **Coarse level** (p = 1, the element vertices):
+    - `amg`: smoothed-aggregation AMG.
+    - `gmg`: geometric h-multigrid with trilinear interpolation and Galerkin coarse operators, coarsening by 2 down to at most 512 nodes, then a sparse Cholesky solve.
+  - **Singular system:** CG runs on the singular periodic system, with the mean projected out in the preconditioner.
+  - **Applicability:** uniform axis-aligned box elements on a fully periodic box; anything else stops with an error.
+  - **Cost:** 9–13 CG iterations at N = 4–6, against 29–63 for AMG-CG on the SEM matrix.
+  - **Tuning:** `:pmg_degree` and `:pmg_lower`.
 - **AMG-CG matrix-vector products are threaded** (`JXSymCSC`, `amg.jl`): for an exactly symmetric matrix, (A x)_j is the dot product of column j with x, so the product is threaded with no write conflicts. The AMG V-cycle (AlgebraicMultigrid.jl) stays serial.
 - **`:sparse_ordering => "metis"`**: opt-in METIS nested-dissection ordering for both sparse Cholesky factorizations (full system and skeleton). The default stays CHOLMOD's own (AMD). In 3D, AMD's fill grows like n^1.6; at 13 824 unknowns (N = 4) Jexpresso's SEM direct setup takes 1.6 s with AMD and 0.53 s with METIS.
 
@@ -74,16 +90,15 @@ It follows the Jexpresso job script:
 1. `module load Julia/1.11.9` and `module load GCC MPICH`, then `MPIPreferences.use_system_binary()`;
 2. `Pkg.instantiate(); Pkg.precompile()`, one serial process;
 3. a serial warm-up (`using MPI; using Jexpresso`), then `verify_2d.jl`, `verify_3d.jl` and `verify_3d_jexpresso.jl`; the job stops if any of these fails;
-4. Jexpresso's six solvers side by side, one Julia process each with `THREADS = 21` Julia and BLAS threads (6 × 21 = 126 cores). Each runs the sweep below through `run_case`, one mesh level after the other with the orders in increasing order, into `OUTDIR/parts/<solver>/results.csv`, with a log in `OUTDIR/logs/<solver>.log`;
+4. six of Jexpresso's solvers side by side (`SOLVERS`: the iterative SEM solvers `sem_amg`, `sc_amg`, `pmg_amg`, `pmg_gmg`, and `ps`, `fft`; the direct solvers `sem` and `sc_direct` are left out, since they are never used for large problems; run them by hand with `bench3d.jl --solver sem` if wanted), one Julia process each with `THREADS = 21` Julia and BLAS threads (6 × 21 = 126 cores). Each runs the sweep below through `run_case`, one mesh level after the other with the orders in increasing order, into `OUTDIR/parts/<solver>/results.csv`, with a log in `OUTDIR/logs/<solver>.log`;
 5. when all have finished, `plot3d.py` merges the results and draws the figures.
 
 The settings are the few variables at the top of the script: `OUTDIR` (default `ppb3d_wulver`), `SOLVERS`, `THREADS`, the sweep and its size limits:
 - **The sweep is the 2D benchmark's:** mesh levels of `LEVELS` = 8³, 16³, 32³ and 64³ elements, each with the SEM orders `NOPS` = 2…8. The Fourier solvers run on the (ne·N)³ grid, which has the same number of unknowns n = (ne·N)³.
 - **Size limits:** configurations above these caps are not run.
-  - The direct solvers (`sem`, `sc_direct`) stop at 2.2·10⁶ unknowns (`MAXN_DIRECT`): the next sizes would need 400 GB and more for the Cholesky factor, beyond one node.
-  - The iterative SEM solvers (`sem_amg`, `sc_amg`) stop at 7.1·10⁶ (`MAXN_SEM`). Jexpresso's 3D SEM infrastructure (high-order mesh, metrics, matrices) took 4.1 GB at 2.6·10⁵ unknowns. That projects to about 110 GB at 7.1·10⁶ and about 260 GB at 1.7·10⁷, too much with two of them on one node.
+  - The iterative SEM solvers (`sem_amg`, `sc_amg`, `pmg_amg`, `pmg_gmg`) stop at 7.1·10⁶ (`MAXN_SEM`). Jexpresso's 3D SEM infrastructure (high-order mesh, metrics, matrices) took 4.1 GB at 2.6·10⁵ unknowns. That projects to about 110 GB at 7.1·10⁶ and about 260 GB at 1.7·10⁷, too much with two of them on one node.
   - The Fourier solvers go on to 1.7·10⁷ (`MAXN`).
-  - Between 2.2·10⁶ and 7.1·10⁶ only the iterative SEM solvers run: this is the crossover the benchmark is meant to show.
+- **Figures:** `plot3d.py` leaves the direct solvers out of the figures; their rows stay in `results.md`. Pass `--direct` to draw them.
 
 **Resubmitting** the same script resumes: configurations with an `ok` row are skipped, and failed or unfinished ones are rerun (for example after the time limit).
 

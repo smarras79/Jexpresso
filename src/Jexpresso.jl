@@ -278,6 +278,7 @@ include(joinpath( "kernel", "solvers", "Axb.jl"))
 
 include(joinpath( "kernel", "solvers", "amg.jl"))
 include(joinpath( "kernel", "solvers", "static_condensation.jl"))
+include(joinpath( "kernel", "solvers", "pmultigrid.jl"))
 
 include(joinpath( "kernel", "solvers", "periodic_sem.jl"))
 

@@ -29,7 +29,7 @@ module JX3D
 
 using Jexpresso
 
-const SOLVERS = (:sem, :sem_amg, :sc_direct, :sc_amg, :ps, :fft)
+const SOLVERS = (:sem, :sem_amg, :pmg_amg, :pmg_gmg, :sc_direct, :sc_amg, :ps, :fft)
 const R = 0.5                         # the deck's PPB3_R
 
 function overrides(solver::Symbol, ne::Int, N::Int; rtol = 1e-12, amg_method = "sa", itmax = 100_000,
@@ -39,6 +39,7 @@ function overrides(solver::Symbol, ne::Int, N::Int; rtol = 1e-12, amg_method = "
         :fft_N => ne * N,                    # Fourier grids: (ne·N)³, the SEM's unknowns
         :lfft => solver === :fft, :lpseudospectral => solver === :ps,
         :linsolve_amg => solver === :sem_amg,
+        :linsolve_pmg => solver === :pmg_amg ? "amg" : solver === :pmg_gmg ? "gmg" : "none",
         :lstatic_condensation => solver in (:sc_direct, :sc_amg),
         :EL_skeleton_solver => solver === :sc_amg ? "amg" : "direct",
         :amg_method => amg_method, :amg_rtol => rtol, :amg_itmax => itmax,
@@ -60,7 +61,7 @@ function run_config(solver::Symbol, ne::Int, N::Int; rtol = 1e-12, amg_method = 
                                           ordering = ordering))
     T = Jexpresso.JX_TIMINGS; err = Jexpresso.JX_LAST_SOLVE_ERR[]
     g(k) = Float64(get(T, k, 0.0))
-    sem = solver in (:sem, :sem_amg, :sc_direct, :sc_amg)
+    sem = solver in (:sem, :sem_amg, :pmg_amg, :pmg_gmg, :sc_direct, :sc_amg)
     Ng = ne * N; n = Ng^3
     solved = solver in (:sc_direct, :sc_amg) ? n - (ne * (N - 1))^3 : (sem ? n - 1 : n)
     asm = sem ? g(:sem_setup) : 0.0
@@ -68,7 +69,7 @@ function run_config(solver::Symbol, ne::Int, N::Int; rtol = 1e-12, amg_method = 
             linf = err.linf, l2rel = err.l2rel,
             assembly = asm, rhs = g(:rhs), setup = g(:setup), solve = g(:solve),
             total = asm + g(:rhs) + g(:setup) + g(:solve),
-            iters = solver in (:sem_amg, :sc_amg) ? Jexpresso.JX_AMG_STATS[].iters : 0,
+            iters = solver in (:sem_amg, :sc_amg, :pmg_amg, :pmg_gmg) ? Jexpresso.JX_AMG_STATS[].iters : 0,
             nnz = 0, factor_nnz = 0, skeleton_nnz = 0,
             ordering = solver in (:sem, :sc_direct) ? ordering : :none)
 end

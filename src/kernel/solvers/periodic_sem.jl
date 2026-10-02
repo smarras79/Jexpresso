@@ -208,6 +208,9 @@ function periodic_sem_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
     if get(inputs, :lstatic_condensation, false)
         uc = periodic_sem_sc_solve(sem, sys, inputs)
         label = string("static condensation (", el_skeleton_options(inputs).skeleton_solver, ")")
+    elseif _pmg_kind(inputs) !== :none
+        uc = periodic_sem_pmg_solve(sem, sys, inputs)
+        label = string("p-multigrid CG periodic SEM solve (", _pmg_kind(inputs), ")")
     elseif get(inputs, :linsolve_amg, false)
         uc = periodic_sem_amg_solve(sys, inputs)
         label = "AMG-CG periodic SEM solve"
@@ -265,6 +268,43 @@ function periodic_sem_amg_solve(sys, inputs)
              u
          end)
     _el_print_amg_stats()
+    return uc
+end
+
+# :linsolve_pmg => "none" (default) | "amg" | "gmg"  (p-multigrid CG, pmultigrid.jl)
+function _pmg_kind(inputs)
+    k = Symbol(lowercase(string(get(inputs, :linsolve_pmg, "none"))))
+    k in (:none, :amg, :gmg) || error(" # :linsolve_pmg => \"$k\"; expected \"none\", \"amg\" or \"gmg\".")
+    return k
+end
+
+"""
+    periodic_sem_pmg_solve(sem, sys, inputs) -> u (per class)
+
+CG on the full periodic SEM system, preconditioned by the p-multigrid V-cycle
+(jx_pmg_setup: SEM levels N, N/2, …, 1, then AMG ("amg") or geometric
+h-multigrid ("gmg") on the p = 1 level); the result shifted to zero
+M-weighted mean. Records :setup (the hierarchy) and :solve (CG).
+:pmg_degree (Chebyshev degree, default 3) and :pmg_lower (lower end of the
+smoothed spectrum, fraction of λ_max, default 0.25) tune the smoother.
+"""
+function periodic_sem_pmg_solve(sem, sys, inputs)
+    opts = jx_amg_options(inputs)
+    M  = jx_phase(:setup) do
+             jx_pmg_setup(sem, sys.K, sys.cls; coarse = _pmg_kind(inputs),
+                          degree = Int(get(inputs, :pmg_degree, 3)),
+                          lower = Float64(get(inputs, :pmg_lower, 0.25)),
+                          amg_method = opts.method)
+         end
+    uc = jx_time_solve("p-multigrid CG on the full periodic SEM system", () -> begin
+             u = jx_pmg_cg(sys.K, sys.b, M; rtol = opts.rtol, itmax = opts.itmax)
+             u .-= sum(sys.w .* u) / sum(sys.w)
+             u
+         end)
+    st = JX_AMG_STATS[]
+    println(GREEN_FG(string(" # p-multigrid (", st.method, ", orders ", join(M.orders, "→"),
+                            ", ", st.levels, " levels): CG converged in ", st.iters,
+                            " iterations, relative residual ", st.rel_resid)))
     return uc
 end
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Merge and plot the 3D periodic Poisson solver comparison.
 
-    python3 tools/poisson3d_benchmark/plot3d.py OUTDIR
+    python3 tools/poisson3d_benchmark/plot3d.py OUTDIR [--direct]
 
 Reads every OUTDIR/parts/*/results.csv (one per solver) and, if present,
 OUTDIR/results.csv; a configuration (solver, d, ne, N) seen twice keeps its
@@ -27,6 +27,9 @@ order N varying; drawn when a level has two or more orders):
                                      all levels (one SEM curve per mesh; Fourier
                                      solvers; the predicted r^(ne*N/2))
 
+The direct solvers (sem, sc_direct, mumps) stay in the tables but are left
+out of the figures unless --direct is given.
+
 No dependencies (uses the SVG chart of ../periodic_poisson_benchmark/plot.py).
 """
 import csv, glob, math, os, sys
@@ -38,6 +41,8 @@ import plot as P  # noqa: E402
 SOLVERS = [  # key, label, (colour index, marker)
     ("sem",        "SEM direct",  (0, "circle")),
     ("sem_amg",    "SEM AMG",     (1, "square")),
+    ("pmg_amg",    "p-MG + AMG",  (0, "circle")),
+    ("pmg_gmg",    "p-MG + GMG",  (2, "triangle")),
     ("sem_jacobi", "SEM Jacobi",  (6, "square")),
     ("sc_direct",  "SC direct",   (2, "triangle")),
     ("sc_amg",     "SC AMG",      (3, "diamond")),
@@ -48,7 +53,11 @@ SOLVERS = [  # key, label, (colour index, marker)
     ("boomeramg",  "BoomerAMG-CG (MPI)", (1, "square")),
     ("jacobi",     "Jacobi-CG (MPI)",    (6, "square")),
 ]
-SEM = {"sem", "sem_amg", "sem_jacobi", "sc_direct", "sc_amg", "mumps", "boomeramg", "jacobi"}
+SEM = {"sem", "sem_amg", "pmg_amg", "pmg_gmg", "sem_jacobi", "sc_direct", "sc_amg", "mumps", "boomeramg", "jacobi"}
+# direct solvers: kept in results.csv / results.md, left out of the figures
+# (never used for large problems) unless --direct is given; they share the
+# colours of the p-multigrid solvers
+DIRECT = {"sem", "sc_direct", "mumps"}
 LABEL = {k: l for k, l, _ in SOLVERS}
 
 
@@ -177,7 +186,7 @@ def plots(rows, assets):
                 figure(assets, "ppb3d_memory" + sfx, f"Peak memory vs unknowns, N = {N}", sub,
                        f"Peak resident memory of the run versus unknowns at SEM order {N}.",
                        mem, "peak memory, GB (log scale)", decades([p[1] for _, pts, _ in mem for p in pts]))
-            its = ser("iters", solvers={"sem_amg", "sem_jacobi", "sc_amg", "boomeramg", "jacobi"})
+            its = ser("iters", solvers={"sem_amg", "pmg_amg", "pmg_gmg", "sem_jacobi", "sc_amg", "boomeramg", "jacobi"})
             if its:
                 figure(assets, "ppb3d_iters" + sfx, f"CG iterations vs unknowns, N = {N}", sub,
                        f"Conjugate-gradient iterations to a relative preconditioned residual of 1e-12 versus unknowns at SEM order {N}.",
@@ -334,5 +343,7 @@ if __name__ == "__main__":
     outdir = sys.argv[1]
     rows = merge(outdir)
     write_md(os.path.join(outdir, "results.md"), rows)
+    if "--direct" not in sys.argv[2:]:
+        rows = [r for r in rows if r["solver"] not in DIRECT]
     plots(rows, os.path.join(outdir, "assets"))
     level_plots(rows, os.path.join(outdir, "assets"))
