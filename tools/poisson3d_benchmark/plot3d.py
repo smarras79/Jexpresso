@@ -74,8 +74,13 @@ def merge(outdir):
             for r in rd:
                 byconf[(r["solver"], r["d"], r["ne"], r["nop"])] = r
             hdr = hdr + [k for k in rd.fieldnames if k not in hdr]
+    order = {k: i for i, (k, _, _) in enumerate(SOLVERS)}
+    unknown = sorted({r["solver"] for r in byconf.values()} - set(order))
+    if unknown:   # e.g. results of a newer benchmark read by an older copy of this script
+        print(f"plot3d.py: solver(s) {unknown} not known to this script: kept in the tables, "
+              "not drawn (update the checkout to plot them)")
     rows = sorted(byconf.values(), key=lambda r: (int(r["d"]), int(r["nop"]), int(r["n"] or 0),
-                                                  [k for k, _, _ in SOLVERS].index(r["solver"])))
+                                                  order.get(r["solver"], len(order))))
     if not rows:
         sys.exit(f"plot3d.py: no results in {outdir}")
     with open(top, "w", newline="") as fh:

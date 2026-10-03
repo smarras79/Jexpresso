@@ -356,6 +356,133 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
     end
 end
 
+# Covariant metric terms of the 3D elements lo:hi (CPU), with the caller's
+# per-thread buffers temp_coords ((N+1)³) and temp_basis ((Q+1) × 3)
+function _metric_terms_3d_elements!(metrics, mesh, ψ, dψ, N1, Q1, lo, hi, temp_coords, temp_basis)
+    @inbounds for iel = lo:hi
+        
+        # Cache all coordinate data for current element upfront
+        connijk_iel = @view mesh.connijk[iel, :, :, :]
+        coord_idx = 1
+        for k = 1:N1, j = 1:N1, i = 1:N1
+            ip = connijk_iel[i, j, k]
+            temp_coords[coord_idx] = (mesh.coords[1,ip], mesh.coords[2,ip], mesh.coords[3,ip])
+            coord_idx += 1
+        end
+        
+        # Cache all metric views for current element
+        dxdξ_iel = @view metrics.dxdξ[iel, :, :, :]
+        dxdη_iel = @view metrics.dxdη[iel, :, :, :]
+        dxdζ_iel = @view metrics.dxdζ[iel, :, :, :]
+        dydξ_iel = @view metrics.dydξ[iel, :, :, :]
+        dydη_iel = @view metrics.dydη[iel, :, :, :]
+        dydζ_iel = @view metrics.dydζ[iel, :, :, :]
+        dzdξ_iel = @view metrics.dzdξ[iel, :, :, :]
+        dzdη_iel = @view metrics.dzdη[iel, :, :, :]
+        dzdζ_iel = @view metrics.dzdζ[iel, :, :, :]
+        
+        # Optimized triple loop with better memory access
+        coord_idx = 1
+        for k = 1:N1, j = 1:N1, i = 1:N1
+            xijk, yijk, zijk = temp_coords[coord_idx]
+            coord_idx += 1
+            
+            # Precompute basis function values for current (i,j,k)
+            @simd for idx = 1:Q1
+                temp_basis[idx, 1] = dψ[i, idx]  # dψ_i
+                temp_basis[idx, 2] =  ψ[j, idx]  # ψ_j  
+                temp_basis[idx, 3] = dψ[j, idx]  # dψ_j
+            end
+            
+            # More cache-friendly nested loops
+            @turbo for n = 1:Q1
+                ψ_k_n = ψ[k, n]
+                dψ_k_n = dψ[k, n]
+                for m = 1:Q1
+                    ψ_j_m = temp_basis[m, 2]  # ψ[j, m]
+                    dψ_j_m = temp_basis[m, 3]  # dψ[j, m]
+                    for l = 1:Q1
+                        dψ_i_l = temp_basis[l, 1]  # dψ[i, l]
+                        ψ_i_l = ψ[i, l]
+                        
+                        # Compute coefficients once
+                        a = dψ_i_l * ψ_j_m * ψ_k_n
+                        b = ψ_i_l * dψ_j_m * ψ_k_n
+                        c = ψ_i_l * ψ_j_m * dψ_k_n
+                        
+                        # Vectorized updates
+                        dxdξ_iel[l, m, n] += a * xijk
+                        dxdη_iel[l, m, n] += b * xijk
+                        dxdζ_iel[l, m, n] += c * xijk
+
+                        dydξ_iel[l, m, n] += a * yijk
+                        dydη_iel[l, m, n] += b * yijk
+                        dydζ_iel[l, m, n] += c * yijk
+
+                        dzdξ_iel[l, m, n] += a * zijk
+                        dzdη_iel[l, m, n] += b * zijk
+                        dzdζ_iel[l, m, n] += c * zijk
+                    end
+                end
+            end
+        end
+        
+        # Optimized Jacobian calculations with better memory access
+        Je_iel   = @view metrics.Je[iel, :, :, :]
+        dξdx_iel = @view metrics.dξdx[iel, :, :, :]
+        dξdy_iel = @view metrics.dξdy[iel, :, :, :]
+        dξdz_iel = @view metrics.dξdz[iel, :, :, :]
+        dηdx_iel = @view metrics.dηdx[iel, :, :, :]
+        dηdy_iel = @view metrics.dηdy[iel, :, :, :]
+        dηdz_iel = @view metrics.dηdz[iel, :, :, :]
+        dζdx_iel = @view metrics.dζdx[iel, :, :, :]
+        dζdy_iel = @view metrics.dζdy[iel, :, :, :]
+        dζdz_iel = @view metrics.dζdz[iel, :, :, :]
+        
+        @turbo for n = 1:Q1, m = 1:Q1, l = 1:Q1
+            # Load derivatives once with better naming
+            dxdξ = dxdξ_iel[l, m, n]
+            dydη = dydη_iel[l, m, n]
+            dzdζ = dzdζ_iel[l, m, n]
+            dydξ = dydξ_iel[l, m, n]
+            dzdη = dzdη_iel[l, m, n]
+            dxdζ = dxdζ_iel[l, m, n]
+            dxdη = dxdη_iel[l, m, n]
+            dydζ = dydζ_iel[l, m, n]
+            dzdξ = dzdξ_iel[l, m, n]
+
+            # Compute cross products first
+            cross1 = dydη * dzdζ - dydζ * dzdη
+            cross2 = dxdζ * dzdη - dxdη * dzdζ
+            cross3 = dxdη * dydζ - dxdζ * dydη
+            cross4 = dydζ * dzdξ - dydξ * dzdζ
+            cross5 = dxdξ * dzdζ - dxdζ * dzdξ
+            cross6 = dxdζ * dydξ - dxdξ * dydζ
+            cross7 = dydξ * dzdη - dydη * dzdξ
+            cross8 = dxdη * dzdξ - dxdξ * dzdη
+            cross9 = dxdξ * dydη - dxdη * dydξ
+
+            # Calculate Jacobian determinant using precomputed cross products
+            Je_val = dxdξ * cross1 + dydξ * cross2 + dzdξ * cross3
+            
+            Je_iel[l, m, n] = Je_val
+            Jinv = 1.0 / Je_val
+            
+            # Calculate inverse Jacobian terms using precomputed values
+            dξdx_iel[l, m, n] = cross1 * Jinv
+            dξdy_iel[l, m, n] = cross2 * Jinv
+            dξdz_iel[l, m, n] = cross3 * Jinv
+            dηdx_iel[l, m, n] = cross4 * Jinv
+            dηdy_iel[l, m, n] = cross5 * Jinv
+            dηdz_iel[l, m, n] = cross6 * Jinv
+            dζdx_iel[l, m, n] = cross7 * Jinv
+            dζdy_iel[l, m, n] = cross8 * Jinv
+            dζdz_iel[l, m, n] = cross9 * Jinv
+        end
+    end
+    return nothing
+end
+
 function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, T, MT::COVAR, SD::NSD_3D; backend = CPU())
     
     comm = get_mpi_comm()
@@ -374,130 +501,16 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
         Q1 = Q + 1
         ngl = mesh.ngl
         
-        # Pre-allocate temporary arrays for better memory access patterns
-        temp_coords = Vector{NTuple{3,Float64}}(undef, N1*N1*N1)
-        temp_basis = Matrix{Float64}(undef, Q1, 3)  # For storing ψ and dψ values
-        
-        @inbounds for iel = 1:mesh.nelem
-            
-            # Cache all coordinate data for current element upfront
-            connijk_iel = @view mesh.connijk[iel, :, :, :]
-            coord_idx = 1
-            for k = 1:N1, j = 1:N1, i = 1:N1
-                ip = connijk_iel[i, j, k]
-                temp_coords[coord_idx] = (mesh.coords[1,ip], mesh.coords[2,ip], mesh.coords[3,ip])
-                coord_idx += 1
-            end
-            
-            # Cache all metric views for current element
-            dxdξ_iel = @view metrics.dxdξ[iel, :, :, :]
-            dxdη_iel = @view metrics.dxdη[iel, :, :, :]
-            dxdζ_iel = @view metrics.dxdζ[iel, :, :, :]
-            dydξ_iel = @view metrics.dydξ[iel, :, :, :]
-            dydη_iel = @view metrics.dydη[iel, :, :, :]
-            dydζ_iel = @view metrics.dydζ[iel, :, :, :]
-            dzdξ_iel = @view metrics.dzdξ[iel, :, :, :]
-            dzdη_iel = @view metrics.dzdη[iel, :, :, :]
-            dzdζ_iel = @view metrics.dzdζ[iel, :, :, :]
-            
-            # Optimized triple loop with better memory access
-            coord_idx = 1
-            for k = 1:N1, j = 1:N1, i = 1:N1
-                xijk, yijk, zijk = temp_coords[coord_idx]
-                coord_idx += 1
-                
-                # Precompute basis function values for current (i,j,k)
-                @simd for idx = 1:Q1
-                    temp_basis[idx, 1] = dψ[i, idx]  # dψ_i
-                    temp_basis[idx, 2] =  ψ[j, idx]  # ψ_j  
-                    temp_basis[idx, 3] = dψ[j, idx]  # dψ_j
-                end
-                
-                # More cache-friendly nested loops
-                @turbo for n = 1:Q1
-                    ψ_k_n = ψ[k, n]
-                    dψ_k_n = dψ[k, n]
-                    for m = 1:Q1
-                        ψ_j_m = temp_basis[m, 2]  # ψ[j, m]
-                        dψ_j_m = temp_basis[m, 3]  # dψ[j, m]
-                        for l = 1:Q1
-                            dψ_i_l = temp_basis[l, 1]  # dψ[i, l]
-                            ψ_i_l = ψ[i, l]
-                            
-                            # Compute coefficients once
-                            a = dψ_i_l * ψ_j_m * ψ_k_n
-                            b = ψ_i_l * dψ_j_m * ψ_k_n
-                            c = ψ_i_l * ψ_j_m * dψ_k_n
-                            
-                            # Vectorized updates
-                            dxdξ_iel[l, m, n] += a * xijk
-                            dxdη_iel[l, m, n] += b * xijk
-                            dxdζ_iel[l, m, n] += c * xijk
-
-                            dydξ_iel[l, m, n] += a * yijk
-                            dydη_iel[l, m, n] += b * yijk
-                            dydζ_iel[l, m, n] += c * yijk
-
-                            dzdξ_iel[l, m, n] += a * zijk
-                            dzdη_iel[l, m, n] += b * zijk
-                            dzdζ_iel[l, m, n] += c * zijk
-                        end
-                    end
-                end
-            end
-            
-            # Optimized Jacobian calculations with better memory access
-            Je_iel   = @view metrics.Je[iel, :, :, :]
-            dξdx_iel = @view metrics.dξdx[iel, :, :, :]
-            dξdy_iel = @view metrics.dξdy[iel, :, :, :]
-            dξdz_iel = @view metrics.dξdz[iel, :, :, :]
-            dηdx_iel = @view metrics.dηdx[iel, :, :, :]
-            dηdy_iel = @view metrics.dηdy[iel, :, :, :]
-            dηdz_iel = @view metrics.dηdz[iel, :, :, :]
-            dζdx_iel = @view metrics.dζdx[iel, :, :, :]
-            dζdy_iel = @view metrics.dζdy[iel, :, :, :]
-            dζdz_iel = @view metrics.dζdz[iel, :, :, :]
-            
-            @turbo for n = 1:Q1, m = 1:Q1, l = 1:Q1
-                # Load derivatives once with better naming
-                dxdξ = dxdξ_iel[l, m, n]
-                dydη = dydη_iel[l, m, n]
-                dzdζ = dzdζ_iel[l, m, n]
-                dydξ = dydξ_iel[l, m, n]
-                dzdη = dzdη_iel[l, m, n]
-                dxdζ = dxdζ_iel[l, m, n]
-                dxdη = dxdη_iel[l, m, n]
-                dydζ = dydζ_iel[l, m, n]
-                dzdξ = dzdξ_iel[l, m, n]
-
-                # Compute cross products first
-                cross1 = dydη * dzdζ - dydζ * dzdη
-                cross2 = dxdζ * dzdη - dxdη * dzdζ
-                cross3 = dxdη * dydζ - dxdζ * dydη
-                cross4 = dydζ * dzdξ - dydξ * dzdζ
-                cross5 = dxdξ * dzdζ - dxdζ * dzdξ
-                cross6 = dxdζ * dydξ - dxdξ * dydζ
-                cross7 = dydξ * dzdη - dydη * dzdξ
-                cross8 = dxdη * dzdξ - dxdξ * dzdη
-                cross9 = dxdξ * dydη - dxdη * dydξ
-
-                # Calculate Jacobian determinant using precomputed cross products
-                Je_val = dxdξ * cross1 + dydξ * cross2 + dzdξ * cross3
-                
-                Je_iel[l, m, n] = Je_val
-                Jinv = 1.0 / Je_val
-                
-                # Calculate inverse Jacobian terms using precomputed values
-                dξdx_iel[l, m, n] = cross1 * Jinv
-                dξdy_iel[l, m, n] = cross2 * Jinv
-                dξdz_iel[l, m, n] = cross3 * Jinv
-                dηdx_iel[l, m, n] = cross4 * Jinv
-                dηdy_iel[l, m, n] = cross5 * Jinv
-                dηdz_iel[l, m, n] = cross6 * Jinv
-                dζdx_iel[l, m, n] = cross7 * Jinv
-                dζdy_iel[l, m, n] = cross8 * Jinv
-                dζdz_iel[l, m, n] = cross9 * Jinv
-            end
+        # Elements in parallel: each writes only its own metric entries; one
+        # coordinate and basis buffer per thread (static chunks of elements)
+        nt  = Threads.nthreads()
+        nel = mesh.nelem
+        coord_bufs = [Vector{NTuple{3,Float64}}(undef, N1*N1*N1) for _ = 1:nt]
+        basis_bufs = [Matrix{Float64}(undef, Q1, 3) for _ = 1:nt]   # ψ and dψ values
+        Threads.@threads :static for c = 1:nt
+            _metric_terms_3d_elements!(metrics, mesh, ψ, dψ, N1, Q1,
+                                       div((c - 1) * nel, nt) + 1, div(c * nel, nt),
+                                       coord_bufs[c], basis_bufs[c])
         end
         
         # Optimized boundary face calculations with better memory management
