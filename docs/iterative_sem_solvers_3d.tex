@@ -1,0 +1,298 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{tabularx,array}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\usepackage[hyphens]{url}
+\usepackage{hyperref}
+\setlength{\parskip}{3pt}
+\setlength{\emergencystretch}{3em}\sloppy  % long code names: stretch the spaces instead of overflowing
+
+% Jexpresso notation
+\newcommand{\ngl}{\mathtt{ngl}}
+\newcommand{\nelem}{\mathtt{nelem}}
+\newcommand{\npoin}{\mathtt{npoin}}
+\newcommand{\iel}{\mathtt{iel}}
+\newcommand{\connijk}{\mathtt{connijk}}
+\newcommand{\Je}{J^{e}}
+\newcommand{\K}{\mathbf{K}}
+\newcommand{\M}{\mathbf{M}}
+\newcommand{\uu}{\mathbf{u}}
+\newcommand{\bb}{\mathbf{b}}
+\newcommand{\rr}{\mathbf{r}}
+\newcommand{\zz}{\mathbf{z}}
+\newcommand{\Khat}{\widehat{K}}
+\newcommand{\What}{\widehat{\omega}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newtheorem{remark}{Remark}
+
+\title{\vspace{-2.5em}Iterative solvers for the 3D periodic SEM Poisson problem in Jexpresso:\\
+SEM AMG, SC AMG, p-MG AMG and p-MG GMG}
+\author{Jexpresso --- \code{sm/elementLearning}}
+\date{}
+
+\begin{document}
+\maketitle
+\vspace{-2.5em}
+
+\section{The discrete problem}\label{sec:problem}
+
+The deck \code{problems/Elliptic/poisson\_periodic\_sem\_3d} solves $-\nabla^2 u = f$ on the
+periodic box $\Omega=[0,2\pi]^3$ with \code{sem\_setup}. The mesh has $\nelem = n_e^3$ hexahedra,
+each with $\ngl = N+1$ Legendre--Gauss--Lobatto (LGL) points $\xi_i$ per direction, with weights $\omega_i$.
+The basis is the tensor product of the 1D Lagrange polynomials $\psi_i(\xi)$, whose
+derivatives $\psi'_i(\xi_k)$ are Jexpresso's \code{basis.dpsi[i,k]}. Local node $(i,j,k)$ of
+element $\iel$ has global number $\connijk[\iel,i,j,k]$.
+
+The quadrature is collocated (\code{Inexact}, $Q=N$), so the mass matrix is diagonal:
+\begin{equation}
+  \M_{I} \;=\; \sum_{\iel}\ \sum_{(i,j,k)\mapsto I} \omega_i\,\omega_j\,\omega_k\,\Je_{ijk},
+  \label{eq:mass}
+\end{equation}
+where $\Je_{ijk}$ is the Jacobian of element $\iel$ at node $(i,j,k)$ (Jexpresso's \code{metrics.Je}). The
+stiffness matrix is the direct stiffness summation (DSS) of the element matrices
+(\code{DSS\_laplace\_sparse\_3D}):
+\begin{equation}
+  \K_{IJ} \;=\; \sum_{\iel}\ \sum_{l,m,n} \omega_l\omega_m\omega_n\,\Je_{lmn}\;
+  \nabla\psi_I(\xi_l,\eta_m,\zeta_n)\cdot\nabla\psi_J(\xi_l,\eta_m,\zeta_n).
+  \label{eq:stiff}
+\end{equation}
+Here $\nabla = (\xi_x\partial_\xi + \eta_x\partial_\eta + \zeta_x\partial_\zeta,\ \dots)$, with the
+inverse metric terms \code{d$\xi$dx}, \dots, \code{d$\zeta$dz}. Periodicity identifies the nodes of
+opposite faces into classes. The solve uses the class numbering, $\K = P^{T} L P$
+(\code{periodic\_sem\_system}), and $\K$ is singular, with the constants in its null space.
+The right-hand side $\bb = \M f$ is compatible ($\mathbf{1}^T\bb = 0$), and the solution is
+fixed by a zero $\M$-weighted mean.
+
+\paragraph{Tensor structure on box elements.} On an axis-aligned box element the metric terms are
+constant, $\xi_y=\xi_z=\eta_x=\dots=0$. Equation~\eqref{eq:stiff} then factors into 1D matrices:
+\begin{equation}
+  A_{\iel} \;=\; c^{\iel}_x\, \What\otimes\What\otimes\Khat \;+\; c^{\iel}_y\, \What\otimes\Khat\otimes\What
+  \;+\; c^{\iel}_z\, \Khat\otimes\What\otimes\What ,
+  \label{eq:tensor}
+\end{equation}
+(the index $i$ runs fastest). Here
+\begin{equation}
+  \Khat_{ab} = \sum_k \omega_k\,\psi'_a(\xi_k)\,\psi'_b(\xi_k), \qquad \What=\mathrm{diag}(\omega_k),
+  \qquad c^{\iel}_x = \Je\,\xi_x^2,\quad c^{\iel}_y = \Je\,\eta_y^2,\quad c^{\iel}_z = \Je\,\zeta_z^2 .
+  \label{eq:1d}
+\end{equation}
+Because $\What$ is diagonal, each row of $A_{\iel}$ couples a node only to the nodes on the three grid
+lines through it. After assembly a row of $\K$ has between $3N+1$ nonzeros (a node inside an element)
+and $6N+1$ (an element vertex, whose three lines each cross two elements). Two of the four solvers below (SC AMG and the two p-MG solvers) exploit~\eqref{eq:tensor}.
+
+All four solvers run preconditioned conjugate gradients (CG) on the same matrix $\K$. They stop at
+a relative preconditioned residual $\sqrt{\rr^T\zz}\,/\sqrt{\rr_0^T\zz_0}\le 10^{-12}$ and agree with the
+sparse direct solve to round-off (\code{verify\_3d\_jexpresso.jl}). They differ only in the
+preconditioner, and in whether CG works on all of $\K$ or only on its skeleton.
+
+\section{The four solvers}
+
+\subsection{SEM AMG (\code{sem\_amg}, \code{:linsolve\_amg => true})}
+\begin{itemize}
+  \item \textbf{Operator:} the full system $\K\uu=\bb$, with one class pinned: CG on $\K_{2:,2:}$ (\code{periodic\_sem\_amg\_solve}).
+  \item \textbf{Preconditioner:} one V-cycle of smoothed-aggregation AMG (AlgebraicMultigrid.jl,
+        \code{jx\_amg\_setup}), built from the entries of $\K$ alone.
+  \item \textbf{Cost:} the matrix--vector product in CG is threaded (\code{JXSymCSC}); the AMG setup and
+        V-cycle are serial.
+\end{itemize}
+AMG knows nothing about the SEM. Aggregation-based AMG is designed for M-matrices with
+connectivity like a low-order stencil. The high-order matrix $\K$ is different:
+\begin{itemize}
+  \item the GLL stiffness $\Khat$ has positive off-diagonal entries;
+  \item the strongest couplings run along the GLL lines;
+  \item the nodes cluster near element boundaries, $\Delta\xi\sim N^{-2}$.
+\end{itemize}
+The aggregates therefore approximate the smooth modes poorly, and the iteration count grows with
+$N$: 29 at $4^3$ elements, $N=4$; 63 at $8^3$, $N=6$; 59 at $16^3$, $N=4$.
+
+\subsection{SC AMG (\code{sc\_amg}, \code{:lstatic\_condensation => true}, \code{:EL\_skeleton\_solver => "amg"})}
+Split the unknowns into element interiors $o$ ($(N-1)^3$ per element) and the skeleton $b$: the
+element-boundary nodes, $\partial O$ in the element-learning notation. Eliminating the interiors
+gives the Schur complement on the skeleton:
+\begin{equation}
+  S\,\uu_b = \bb_b - \sum_{\iel} A_{bo}A_{oo}^{-1}\bb_o,\qquad
+  S = A_{bb} - \sum_{\iel} A_{bo}\,A_{oo}^{-1}A_{ob},\qquad
+  \uu_o = A_{oo}^{-1}(\bb_o - A_{ob}\uu_b).
+  \label{eq:schur}
+\end{equation}
+Here $A_{oo}$ is the interior block of element $\iel$ (Jexpresso's \code{Avovo}), and $A_{ob}$ the
+interior--boundary block (\code{Avovb}). The default implementation, \code{el\_sc\_schur\_cg!},
+never forms $S$:
+\begin{itemize}
+  \item \textbf{Interior solves by fast diagonalization.} Take the interior part of~\eqref{eq:tensor},
+        $A_{oo} = c_x\What_o\otimes\What_o\otimes\Khat_o + \dots$ (rows and columns $2{:}N$ of the 1D matrices).
+        Solve the 1D generalized eigenproblem $\Khat_o s = \lambda\What_o s$, with $S_1^T\What_o S_1=I$. Then
+        \begin{equation}
+          A_{oo}^{-1} = (S_1\otimes S_1\otimes S_1)\,\mathrm{diag}\!\Big(\frac{1}{c_x\lambda_i+c_y\lambda_j+c_z\lambda_k}\Big)\,(S_1\otimes S_1\otimes S_1)^T,
+          \label{eq:fdm}
+        \end{equation}
+        which costs $O(N^4)$ per element. Only $(c_x,c_y,c_z)$ is stored per element; these are read off
+        $\K$ and checked entry by entry against~\eqref{eq:tensor}.
+  \item \textbf{Matrix-free Schur complement:} $S\mathbf{p} = \big(\K\,[\mathbf{p};\,-A_{oo}^{-1}A_{ob}\mathbf{p}]\big)_b$,
+        one sparse matvec plus the interior solves~\eqref{eq:fdm}.
+  \item \textbf{Preconditioner:} the SEM AMG V-cycle of the \emph{full} $\K$, $P^{-1}$, restricted to the skeleton:
+        $\zz_b = (P^{-1}[\rr_b;0])_b$. For an SPD matrix, $(\K^{-1})_{bb}=S^{-1}$ exactly. So if
+        $c_1\K\le P\le c_2\K$, then $(P^{-1})_{bb}$ is spectrally equivalent to $S^{-1}$ with the same
+        constants, and $\kappa\big((P^{-1})_{bb}S\big)\le\kappa(P^{-1}\K)$.
+\end{itemize}
+SC AMG therefore inherits SEM AMG's convergence: 57 iterations against 59--63, a few fewer because
+CG runs on the smaller space. Each iteration costs one matvec, the interior solves and one full
+V-cycle. Its setup is the same AMG hierarchy as SEM AMG's.
+
+The alternative, \code{:EL\_sc\_amg => "assembled"}, assembles $S$ (\code{el\_sc\_solve!}) and gives it to AMG. That
+needs fewer iterations (34 at $8^3$, $N=6$), but $S$ is far denser than $\K$. A face node of the skeleton couples
+to all the active boundary nodes of both neighbouring elements, about 10 times the nonzeros of $\K$ at
+$N=8$. Each iteration, and the setup, therefore cost much more.
+
+\subsection{p-MG + AMG and p-MG + GMG (\code{pmg\_amg}, \code{pmg\_gmg}, \code{:linsolve\_pmg => "amg" | "gmg"})}
+These run CG on the full singular $\K$, preconditioned by one p-multigrid V-cycle (\code{pmultigrid.jl},
+\code{jx\_pmg\_setup}, \code{jx\_pmg\_cg}). The hierarchy follows the SEM order rather than the matrix entries.
+
+\paragraph{p-levels.} The orders are $p_0=N,\ p_{\ell+1}=\lfloor p_\ell/2\rfloor$, down to $p=1$ (for example $8\to4\to2\to1$), all on
+the same $\nelem$ elements:
+\begin{itemize}
+  \item $\ell=0$: $\K$ itself, built by \code{sem\_setup}.
+  \item $\ell>0$: a rediscretization of the same operator with the LGL basis of order $p$, built by Jexpresso:
+        \code{basis\_structs\_$\xi$\_$\omega$!(LGL(), p)} gives $\xi^{(p)}_k,\omega^{(p)}_k$;
+        \code{build\_Interpolation\_basis!} gives $\psi^{(p)\prime}_a(\xi^{(p)}_k)$; the coefficients $c^{\iel}$
+        come from \code{metrics}. $A^{(p)}$ is the DSS of~\eqref{eq:tensor} with $\Khat^{(p)},\What^{(p)}$.
+  \item \textbf{Check:} the order-$N$ form of~\eqref{eq:tensor} must reproduce $\mathrm{diag}(\K)$, and each element's
+        local axes must map to $\pm x,\pm y,\pm z$.
+\end{itemize}
+
+\paragraph{Transfers.} Prolongation from order $p_c$ to $p_f$ is the tensor-product Lagrange interpolation
+\begin{equation}
+  \Pi_{kl} = \psi^{(p_c)}_{l}\big(\xi^{(p_f)}_{k}\big),\qquad
+  \uu^{(p_f)}_{\iel} = (\Pi\otimes\Pi\otimes\Pi)\,\uu^{(p_c)}_{\iel},
+  \label{eq:transfer}
+\end{equation}
+applied element by element in three 1D passes. Every fine node is written by one owning element. Restriction is
+the transpose. It accumulates element by element, with the elements coloured so that the threads never
+write the same coarse node.
+
+\paragraph{Smoother.} On every level, Chebyshev--Jacobi of degree 3 targets the upper part
+$[0.25\,\lambda_{\max},\,1.1\,\lambda_{\max}]$ of the spectrum of $D^{-1}A^{(p)}$. Here $D=\mathrm{diag}(A^{(p)})$,
+and $\lambda_{\max}$ comes from 20 power iterations. Each Chebyshev step is
+\[
+  \mathbf{x}\leftarrow\mathbf{x}+\mathbf{d},\qquad
+  \mathbf{r}\leftarrow\mathbf{r}-D^{-1}A\mathbf{d},\qquad
+  \mathbf{d}\leftarrow\rho_{k+1}\rho_k\,\mathbf{d}+\tfrac{2\rho_{k+1}}{\delta}\,\mathbf{r}.
+\]
+It needs only threaded matvecs, and it is a fixed polynomial in $D^{-1}A$, so pre- and post-smoothing keep
+the V-cycle symmetric, as CG requires.
+
+\paragraph{Why this works for high order.} A Jacobi-type smoother removes the components of the error
+that oscillate on the scale of the GLL spacing. What remains is well represented by a polynomial of
+half the order: the same operator, rediscretized with $p/2$, is spectrally close on that subspace.
+The hierarchy ends at $p=1$: the trilinear SEM with two-point GLL (trapezoidal) quadrature. There,
+$\Khat^{(1)}=\tfrac12\begin{bmatrix}1&-1\\-1&1\end{bmatrix}$ and $\What^{(1)}=I$, so~\eqref{eq:tensor} is the
+7-point Laplacian on the element vertices: a symmetric M-matrix on an $n_e^3$ grid, exactly the problem
+AMG and geometric multigrid are designed for.
+
+\paragraph{The $p=1$ level: the only difference between the two variants.}
+\begin{itemize}
+  \item \textbf{p-MG + AMG:} one smoothed-aggregation AMG V-cycle on $A^{(1)}$, with one node pinned.
+  \item \textbf{p-MG + GMG:} geometric h-multigrid on the periodic $n_e^3$ vertex grid:
+        \begin{itemize}
+          \item trilinear interpolation $P_h$ (weights $1$ and $\tfrac12$ per direction);
+          \item Galerkin coarse operators $A_{2h}=P_h^TA_hP_h$;
+          \item coarsening by 2 while every dimension is even and the grid has more than 512 nodes;
+          \item a sparse Cholesky solve of the pinned coarsest operator.
+        \end{itemize}
+\end{itemize}
+Both variants share the p-levels, so the iteration counts are nearly equal (12 against 10 at $16^3$, $N=4$). GMG needs
+no aggregation setup and its transfers are known in advance, so its setup is cheaper. AMG needs no
+structured grid.
+
+\paragraph{The singular system.} CG runs on $\K$ itself. The V-cycle subtracts the mean from its input and output.
+Interpolation reproduces constants, so coarse right-hand sides stay compatible. The coarsest solves pin one node,
+which solves a compatible singular system exactly.
+
+\subsection{Side by side}
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\linewidth}{@{}lYYYY@{}}
+\toprule
+ & SEM AMG & SC AMG & p-MG + AMG & p-MG + GMG \\
+\midrule
+CG operator & $\K$ (pinned) & $S$ on the skeleton, matrix-free & $\K$ (singular) & $\K$ (singular)\\
+preconditioner & AMG V-cycle of $\K$ & AMG V-cycle of $\K$, restricted to $b$ & p-V-cycle $N\to\dots\to1$, AMG at $p=1$ & p-V-cycle $N\to\dots\to1$, GMG at $p=1$ \\
+uses the SEM structure & no & yes: $A_{oo}^{-1}$ by fast diagonalization~\eqref{eq:fdm} & yes: levels~\eqref{eq:tensor}, transfers~\eqref{eq:transfer} & yes, and the vertex grid\\
+smoother & Gauss--Seidel (AMG) & Gauss--Seidel (AMG) & Chebyshev--Jacobi; AMG at $p=1$ & Chebyshev--Jacobi on all levels\\
+threaded & matvec & matvec, interior solves & all p-levels & all levels\\
+needs & any SPD $\K$ & box elements, else assembled $S$ & box elements, periodic box & same, plus $n_e$ divisible by 2\\
+\bottomrule
+\end{tabularx}
+\caption{The four iterative solvers. ``Box elements'' means axis-aligned hexahedra with constant metric terms, the
+structure assumed by~\eqref{eq:tensor}.}
+\end{table}
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{@{}lrrrrrrrr@{}}
+\toprule
+ & \multicolumn{4}{c}{$8^3$ elements, $N=6$ ($1.1\cdot10^5$ unknowns)} & \multicolumn{4}{c}{$16^3$ elements, $N=4$ ($2.6\cdot10^5$ unknowns)}\\
+\cmidrule(lr){2-5}\cmidrule(l){6-9}
+ & iters & setup [s] & solve [s] & & iters & setup [s] & solve [s] & \\
+\midrule
+SEM AMG     & 63 & 3.1 & 3.5 & & 59 & 7.6 & 5.3 & \\
+SC AMG      & 57 & 2.6 & 3.2 & & 57 & 8.8 & 5.9 & \\
+p-MG + AMG  & 13 & 1.3 & 0.8 & & 12 & 3.2 & 1.1 & \\
+p-MG + GMG  & 13 & --  & --  & & 10 & 1.3 & 0.8 & \\
+\bottomrule
+\end{tabular}
+\caption{Local measurements, 4 threads on a shared 4-core container; the timings are noisy, the iteration
+counts are not. ``setup'' includes the periodic reduction (0.3--2\,s). The p-MG + GMG timings at $8^3$
+were not recorded. The Wulver sweep (\code{run\_wulver3d.sbatch}) gives the definitive numbers.}
+\end{table}
+
+\section{Why there is no SC GMG}\label{sec:noscgmg}
+
+\paragraph{1. Geometric multigrid needs a grid hierarchy for the operator it solves.}
+GMG rests on three geometric ingredients:
+\begin{itemize}
+  \item a sequence of meshes on which the \emph{same} discrete operator can be rebuilt;
+  \item transfers that interpolate between them;
+  \item a local smoother that removes the high-frequency error on each.
+\end{itemize}
+The p-MG levels and the $p=1$ vertex grid have all three, because every level discretizes $-\nabla^2$
+with the SEM. The Schur complement $S$ in~\eqref{eq:schur} has none of them:
+\begin{itemize}
+  \item It lives only on the skeleton, the union of element faces, which is not a volume mesh.
+  \item It is the discrete Steklov--Poincar\'e (Dirichlet-to-Neumann) operator of the elements: dense within each
+        element's boundary and nonlocal, with a condition number growing like $h^{-1}$ rather than $h^{-2}$.
+  \item A coarser skeleton is not the skeleton of a coarser SEM. Halving $n_e$ turns half of the fine skeleton
+        into interiors of the coarse elements, so the coarse Schur complement eliminates nodes that are unknowns
+        on the fine level.
+  \item The transfers between two skeleton levels must therefore include the discrete harmonic extension
+        $-A_{oo}^{-1}A_{ob}$ into the eliminated interiors. That is substructuring (balancing domain
+        decomposition, BDDC, Schur-complement multigrid), not geometric multigrid.
+  \item A pointwise smoother on $S$ needs $\mathrm{diag}(S)$. That is only available element by element
+        through $A_{bo}A_{oo}^{-1}A_{ob}$, the work the matrix-free path avoids.
+\end{itemize}
+A geometric multigrid applied to $S$ itself is therefore a different method, not a variant of the ones implemented.
+
+\paragraph{2. Its benefit is already available through the restriction identity.}
+SC AMG never applies AMG to $S$. It restricts the full-system V-cycle, $\zz_b=(P^{-1}[\rr_b;0])_b$, which is a
+valid preconditioner for $S$ \emph{whatever} multigrid $P$ is, because $(\K^{-1})_{bb}=S^{-1}$. An ``SC GMG'' in
+the same spirit would replace $P$ by the p-MG + GMG V-cycle:
+\begin{itemize}
+  \item it would inherit p-MG's iteration counts, a few fewer than on the full system;
+  \item each iteration would cost one p-MG V-cycle (on the full grid) plus one sparse matvec and the interior solves~\eqref{eq:fdm} for $S\mathbf{p}$;
+  \item p-MG + GMG on $\K$ costs one V-cycle plus one matvec.
+\end{itemize}
+On this problem it would solve the same system with the same preconditioner and a little more work per
+iteration, so it cannot beat \code{pmg\_gmg}. Condensation pays off in the SC \emph{direct} solver, where it
+removes the interior fill from the factorization, and in element learning, where the per-element operators
+$T^{\iel}=A_{oo}^{-1}A_{ob}$ are the quantity predicted by the network. It does not pay off with a multigrid
+preconditioner that already handles the interior modes through its smoother.
+
+\paragraph{3. In code.} This preconditioner can be added: \code{\_sc\_pcg} calls the preconditioner only through
+\code{ldiv!}, and \code{JXPMG} implements \code{ldiv!} on the full singular system. It was not added, so that
+\code{sc\_amg} stays comparable with the earlier runs, and because of point~2.
+
+\end{document}
