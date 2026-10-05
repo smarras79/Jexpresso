@@ -12,7 +12,7 @@
 # =============================================================================
 #  3D periodic Poisson solver comparison on one Wulver node (128 cores, 500 GB):
 #      sbatch tools/poisson3d_benchmark/slurm/run_wulver3d.sbatch
-#  Jexpresso's six solvers run side by side, one Julia process each with
+#  Jexpresso's seven solvers run side by side, one Julia process each with
 #  THREADS threads, each sweeping the sizes below through run_case on the 3D
 #  deck; then the figures are drawn.
 #  Resubmitting resumes: finished configurations are skipped.
@@ -30,7 +30,7 @@ export JULIA_PKG_PRECOMPILE_AUTO=1  # allow precompile during setup only
 export UCX_ERROR_SIGNALS=""
 
 OUTDIR=ppb3d_wulver                 # results, figures, per-solver logs
-# Jexpresso's six solvers of the 3D deck problems/Elliptic/poisson_periodic_sem_3d
+# Jexpresso's solvers of the 3D deck problems/Elliptic/poisson_periodic_sem_3d
 # (bench3d.jl --engine jexpresso, the default): run_case on that deck
 # The iterative SEM solvers only (direct solvers are never used for large
 # problems; run them by hand with --solver sem / sc_direct if wanted):
@@ -38,12 +38,13 @@ OUTDIR=ppb3d_wulver                 # results, figures, per-solver logs
 #   sc_amg   static condensation: Schur-complement CG, tensor-product interiors
 #   pmg_amg  p-multigrid CG (SEM levels N, N/2, ..., 1) + AMG on p = 1
 #   pmg_gmg  p-multigrid CG + geometric h-multigrid on the p = 1 grid
-SOLVERS="sem_amg sc_amg pmg_amg pmg_gmg ps fft"
-THREADS=21                          # per solver process: 6 x 21 = 126 of 128 cores
+#   sc_pmg   static condensation: Schur-complement CG preconditioned by p-MG + GMG
+SOLVERS="sem_amg sc_amg sc_pmg pmg_amg pmg_gmg ps fft"
+THREADS=18                          # per solver process: 7 x 18 = 126 of 128 cores
 # Sweep as in the 2D benchmark: mesh levels of LEVELS^3 elements, each with
 # the SEM orders NOPS (the Fourier solvers on the (ne*N)^3 grid, the same
 # unknowns n = (ne*N)^3). Configurations above the caps are not run:
-#   iterative SEM (sem_amg, sc_amg, pmg_*) 7.1e6: Jexpresso's 3D SEM infrastructure (high-order
+#   iterative SEM (sem_amg, sc_amg, sc_pmg, pmg_*) 7.1e6: Jexpresso's 3D SEM infrastructure (high-order
 #                                 mesh, metrics, matrices) took 4.1 GB at 2.6e5 unknowns,
 #                                 ~110 GB at 7.1e6, ~260 GB at 1.7e7 (two run side by side);
 #   Fourier (ps, fft)             1.7e7.

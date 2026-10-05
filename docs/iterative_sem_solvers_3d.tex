@@ -29,7 +29,7 @@
 \newtheorem{remark}{Remark}
 
 \title{\vspace{-2.5em}Iterative solvers for the 3D periodic SEM Poisson problem in Jexpresso:\\
-SEM AMG, SC AMG, p-MG AMG and p-MG GMG}
+SEM AMG, SC AMG, SC p-MG GMG, p-MG AMG and p-MG GMG}
 \author{Jexpresso --- \code{sm/elementLearning}}
 \date{}
 
@@ -81,14 +81,15 @@ constant, $\xi_y=\xi_z=\eta_x=\dots=0$. Equation~\eqref{eq:stiff} then factors i
 \end{equation}
 Because $\What$ is diagonal, each row of $A_{\iel}$ couples a node only to the nodes on the three grid
 lines through it. After assembly a row of $\K$ has between $3N+1$ nonzeros (a node inside an element)
-and $6N+1$ (an element vertex, whose three lines each cross two elements). Two of the four solvers below (SC AMG and the two p-MG solvers) exploit~\eqref{eq:tensor}.
+and $6N+1$ (an element vertex, whose three lines each cross two elements). Four of the five solvers
+below (SC AMG, SC p-MG GMG and the two p-MG solvers) exploit~\eqref{eq:tensor}.
 
-All four solvers run preconditioned conjugate gradients (CG) on the same matrix $\K$. They stop at
+All five solvers run preconditioned conjugate gradients (CG) on the same matrix $\K$. They stop at
 a relative preconditioned residual $\sqrt{\rr^T\zz}\,/\sqrt{\rr_0^T\zz_0}\le 10^{-12}$ and agree with the
 sparse direct solve to round-off (\code{verify\_3d\_jexpresso.jl}). They differ only in the
 preconditioner, and in whether CG works on all of $\K$ or only on its skeleton.
 
-\section{The four solvers}
+\section{The solvers}
 
 \subsection{SEM AMG (\code{sem\_amg}, \code{:linsolve\_amg => true})}
 \begin{itemize}
@@ -215,19 +216,19 @@ which solves a compatible singular system exactly.
 
 \begin{table}[H]
 \centering\small
-\begin{tabularx}{\linewidth}{@{}lYYYY@{}}
+\begin{tabularx}{\linewidth}{@{}lYYYYY@{}}
 \toprule
- & SEM AMG & SC AMG & p-MG + AMG & p-MG + GMG \\
+ & SEM AMG & SC AMG & SC p-MG GMG & p-MG + AMG & p-MG + GMG \\
 \midrule
-CG operator & $\K$ (pinned) & $S$ on the skeleton, matrix-free & $\K$ (singular) & $\K$ (singular)\\
-preconditioner & AMG V-cycle of $\K$ & AMG V-cycle of $\K$, restricted to $b$ & p-V-cycle $N\to\dots\to1$, AMG at $p=1$ & p-V-cycle $N\to\dots\to1$, GMG at $p=1$ \\
-uses the SEM structure & no & yes: $A_{oo}^{-1}$ by fast diagonalization~\eqref{eq:fdm} & yes: levels~\eqref{eq:tensor}, transfers~\eqref{eq:transfer} & yes, and the vertex grid\\
-smoother & Gauss--Seidel (AMG) & Gauss--Seidel (AMG) & Chebyshev--Jacobi; AMG at $p=1$ & Chebyshev--Jacobi on all levels\\
-threaded & matvec & matvec, interior solves & all p-levels & all levels\\
-needs & any SPD $\K$ & box elements, else assembled $S$ & box elements, periodic box & same, plus $n_e$ divisible by 2\\
+CG operator & $\K$ (pinned) & $S$ on the skeleton, matrix-free & as SC AMG & $\K$ (singular) & $\K$ (singular)\\
+preconditioner & AMG V-cycle of $\K$ & AMG V-cycle of $\K$, restricted to $b$ & p-MG + GMG V-cycle of $\K$, restricted to $b$ & p-V-cycle $N\to\dots\to1$, AMG at $p=1$ & p-V-cycle $N\to\dots\to1$, GMG at $p=1$ \\
+uses the SEM structure & no & yes: $A_{oo}^{-1}$ by fast diagonalization~\eqref{eq:fdm} & yes: \eqref{eq:fdm}, \eqref{eq:tensor}, \eqref{eq:transfer} & yes: levels~\eqref{eq:tensor}, transfers~\eqref{eq:transfer} & yes, and the vertex grid\\
+smoother & Gauss--Seidel (AMG) & Gauss--Seidel (AMG) & Chebyshev--Jacobi & Chebyshev--Jacobi; AMG at $p=1$ & Chebyshev--Jacobi on all levels\\
+threaded & matvec & matvec, interior solves & everything but the coarsest solve & all p-levels & all levels\\
+needs & any SPD $\K$ & box elements, else assembled $S$ & box elements, periodic box & box elements, periodic box & same; h-levels while $n_e$ stays even\\
 \bottomrule
 \end{tabularx}
-\caption{The four iterative solvers. ``Box elements'' means axis-aligned hexahedra with constant metric terms, the
+\caption{The five iterative solvers. ``Box elements'' means axis-aligned hexahedra with constant metric terms, the
 structure assumed by~\eqref{eq:tensor}.}
 \end{table}
 
@@ -241,17 +242,19 @@ structure assumed by~\eqref{eq:tensor}.}
 \midrule
 SEM AMG     & 63 & 3.1 & 3.5 & & 59 & 7.6 & 5.3 & \\
 SC AMG      & 57 & 2.6 & 3.2 & & 57 & 8.8 & 5.9 & \\
+SC p-MG GMG & 19 & 0.4 & 0.35 & & 15 & 2.1 & 0.59 & \\
 p-MG + AMG  & 13 & 1.3 & 0.8 & & 12 & 3.2 & 1.1 & \\
-p-MG + GMG  & 13 & --  & --  & & 10 & 1.3 & 0.8 & \\
+p-MG + GMG  & 13 & 1.0 & 0.36 & & 10 & 1.3--2.6 & 0.64--0.8 & \\
 \bottomrule
 \end{tabular}
 \caption{Local measurements, 4 threads on a shared 4-core container; the timings are noisy, the iteration
-counts are not. ``setup'' includes the periodic reduction (0.3--2\,s). The p-MG + GMG timings at $8^3$
-were not recorded. The Wulver sweep (\code{run\_wulver3d.sbatch}) gives the definitive numbers.}
+counts are not. ``setup'' includes the periodic reduction (0.3--2\,s). Where two runs of the same
+configuration differ, the range is given. The Wulver sweep (\code{run\_wulver3d.sbatch}) gives the definitive numbers.}
 \end{table}
 
-\section{Why there is no SC GMG}\label{sec:noscgmg}
+\section{Static condensation and geometric multigrid}\label{sec:noscgmg}
 
+\subsection{Why there is no geometric multigrid of $S$}
 \paragraph{1. Geometric multigrid needs a grid hierarchy for the operator it solves.}
 GMG rests on three geometric ingredients:
 \begin{itemize}
@@ -276,23 +279,63 @@ with the SEM. The Schur complement $S$ in~\eqref{eq:schur} has none of them:
 \end{itemize}
 A geometric multigrid applied to $S$ itself is therefore a different method, not a variant of the ones implemented.
 
-\paragraph{2. Its benefit is already available through the restriction identity.}
-SC AMG never applies AMG to $S$. It restricts the full-system V-cycle, $\zz_b=(P^{-1}[\rr_b;0])_b$, which is a
-valid preconditioner for $S$ \emph{whatever} multigrid $P$ is, because $(\K^{-1})_{bb}=S^{-1}$. An ``SC GMG'' in
-the same spirit would replace $P$ by the p-MG + GMG V-cycle:
-\begin{itemize}
-  \item it would inherit p-MG's iteration counts, a few fewer than on the full system;
-  \item each iteration would cost one p-MG V-cycle (on the full grid) plus one sparse matvec and the interior solves~\eqref{eq:fdm} for $S\mathbf{p}$;
-  \item p-MG + GMG on $\K$ costs one V-cycle plus one matvec.
-\end{itemize}
-On this problem it would solve the same system with the same preconditioner and a little more work per
-iteration, so it cannot beat \code{pmg\_gmg}. Condensation pays off in the SC \emph{direct} solver, where it
-removes the interior fill from the factorization, and in element learning, where the per-element operators
-$T^{\iel}=A_{oo}^{-1}A_{ob}$ are the quantity predicted by the network. It does not pay off with a multigrid
-preconditioner that already handles the interior modes through its smoother.
+\paragraph{2. What can be done instead: restrict a geometric multigrid of $\K$.}
+SC AMG never applies AMG to $S$. It restricts the full-system V-cycle, $\zz_b=(P^{-1}[\rr_b;0])_b$. That is a
+valid preconditioner for $S$ \emph{whatever} SPD multigrid $P$ is, because $(\K^{-1})_{bb}=S^{-1}$, and
+$\kappa\big((P^{-1})_{bb}S\big)\le\kappa(P^{-1}\K)$. Taking for $P$ the p-MG + GMG V-cycle gives a static condensation
+with a geometric multigrid without ever building a hierarchy for $S$: the solver below.
 
-\paragraph{3. In code.} This preconditioner can be added: \code{\_sc\_pcg} calls the preconditioner only through
-\code{ldiv!}, and \code{JXPMG} implements \code{ldiv!} on the full singular system. It was not added, so that
-\code{sc\_amg} stays comparable with the earlier runs, and because of point~2.
+\subsection{SC p-MG GMG (\code{sc\_pmg}, \code{:EL\_sc\_precond => "pmg\_gmg"})}
+\begin{itemize}
+  \item \textbf{Operator:} the same matrix-free Schur complement as SC AMG (\code{el\_sc\_schur\_cg!}), with the
+        interior solves~\eqref{eq:fdm} and the recovery $\uu_o=A_{oo}^{-1}(\bb_o-A_{ob}\uu_b)$.
+  \item \textbf{Preconditioner:} the p-MG + GMG V-cycle of the \emph{full} singular $\K$ (\code{jx\_pmg\_setup}, coarse
+        level \code{:gmg}), in $\K$'s own numbering, restricted to the skeleton unknowns:
+        \[
+          \zz_b = \big(\,\mathcal{V}_{\rm pMG}\,[\rr_b;\,0_o;\,0_{\rm pin}]\,\big)_b .
+        \]
+        The pinned skeleton node and the interiors get a zero residual. The V-cycle's mean projection is harmless:
+        a zero-extended skeleton vector is never constant, so the restricted operator stays SPD.
+  \item \textbf{Setup:} the p-multigrid hierarchy, built in \code{periodic\_sem\_sc\_solve} because it needs the SEM
+        mesh and metrics, and timed as the skeleton setup (\code{:sc\_factor}). No AMG and no assembled $S$.
+  \item \textbf{Code:} \code{\_sc\_pcg} takes any full-system preconditioner through \code{ldiv!};
+        \code{:EL\_sc\_precond => "pmg\_amg"} uses the p-MG + AMG V-cycle instead.
+\end{itemize}
+
+\paragraph{Measured behaviour.} SC p-MG GMG needs \emph{more} iterations than p-MG + GMG on the full system:
+19 against 13 at $8^3$, $N=6$, and 15 against 10 at $16^3$, $N=4$. The bound
+$\kappa\big((P^{-1})_{bb}S\big)\le\kappa(P^{-1}\K)$ allows that: it limits the condition number, not the clustering of the
+eigenvalues. For SC AMG the two counts were nearly equal (57 against 59--63). An iteration costs one V-cycle on the
+full grid, one sparse matvec and the interior solves~\eqref{eq:fdm}, against one V-cycle and one matvec for p-MG +
+GMG. Even so, the measured solve times are on par (0.35 against 0.36\,s at $8^3$, 0.59 against 0.64--0.8\,s at $16^3$),
+within the noise of these runs. So this is the most competitive static condensation in the comparison, at the
+level of the best full-system solver. It does not beat it, as expected: the preconditioner is the same, and
+condensation only removes interior unknowns that the Chebyshev smoother already handles cheaply. Condensation
+pays off more clearly in the SC \emph{direct} solver, where it removes the interior fill from the factorization,
+and in element learning, where the per-element operators $T^{\iel}=A_{oo}^{-1}A_{ob}$ are what the network predicts.
+
+\section{Reuse of the local operators on a regular mesh}\label{sec:reuse}
+On a uniform Cartesian mesh every element is the same box, so $c^{\iel}_x,c^{\iel}_y,c^{\iel}_z$ in~\eqref{eq:tensor}
+are the same for every element, up to a permutation of the axes where the local orientation differs. Then
+$A_{oo}$, $A_{ob}$, $A_{oo}^{-1}$, $T^{\iel}=A_{oo}^{-1}A_{ob}$ and $A_{bo}A_{oo}^{-1}A_{ob}$ are the same matrices, in local
+numbering, on every element. A single element's factorization could serve the whole domain. What each path does:
+\begin{itemize}
+  \item \textbf{Schur-CG} (\code{el\_sc\_schur\_cg!}: SC AMG, SC p-MG GMG) forms and inverts no local matrix. The only
+        factorization is the 1D generalized eigenproblem $\Khat_o s=\lambda\What_o s$, solved once for the whole
+        domain. Each element keeps three numbers $c^{\iel}$, and $A_{oo}^{-1}$ is \emph{applied}
+        by~\eqref{eq:fdm}: $O(N^4)$ per element, necessarily per element because every element has its own data.
+        The one redundant step is the setup check: each element's $A_{oo}$ is extracted from $\K$ and compared
+        entry by entry with~\eqref{eq:tensor}.
+  \item \textbf{Assembled condensation} (\code{el\_sc\_solve!}: SC direct, and SC AMG with
+        \code{:EL\_sc\_amg => "assembled"}) does recompute on every element: it extracts $A_{oo}$ and $A_{ob}$ from $\K$
+        and repeats the Cholesky factorization (\code{potrf}), $W=L^{-1}A_{ob}$ (\code{trsm}) and $W^TW$ (\code{syrk}),
+        which are identical on a uniform mesh. This work is threaded and small next to the skeleton
+        factorization: 0.004\,s against 0.18\,s at $4^3$, $N=5$, and 0.09\,s against 1.9\,s (AMG setup of $S$) at
+        $8^3$, $N=6$. Computing it once per distinct $(c_x,c_y,c_z)$ would save at most a few percent of these
+        solvers' time.
+  \item \textbf{The legacy element-learning loop} inverts $A_{oo}$ with a dense \code{inv} on every element. This is the
+        expensive version. It is used for sampling, where the coefficient $a(\mathbf{x})$ usually varies from element
+        to element, so the local operators genuinely differ.
+\end{itemize}
 
 \end{document}

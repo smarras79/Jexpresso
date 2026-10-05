@@ -525,7 +525,8 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
                               sc_kernel::Symbol=:fast,
                               sc_amg::Symbol=:schur,
                               amg_itmax::Int=1000,
-                              tp1d=nothing)
+                              tp1d=nothing,
+                              sc_precond=nothing)
 
     mesh.lengthO  = mesh.length∂O + mesh.lengthIo
     nelintpoints  = size(EL.Avovo, 1)          # (ngl-2)^2 in 2D, (ngl-2)^3 in 3D
@@ -545,7 +546,7 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
             tp1d !== nothing &&
             el_sc_schur_cg!(u, A, f, mesh.conn, elnbdypoints, mesh.∂O, mesh.Γ, gΓ,
                             tp1d[1], tp1d[2]; amg_method = amg_method, amg_rtol = amg_rtol,
-                            itmax = amg_itmax) && return nothing
+                            itmax = amg_itmax, precond = sc_precond) && return nothing
         el_sc_solve!(u, A, f, mesh.conn, elnbdypoints, mesh.∂O, mesh.Γ, gΓ;
                      solver = skeleton_solver, amg_method = amg_method,
                      amg_rtol = amg_rtol, ordering = skeleton_ordering) && return nothing
@@ -1201,7 +1202,15 @@ el_skeleton_options(inputs) = (skeleton_solver = Symbol(lowercase(string(get(inp
                                # tensor-product interior solves, full-system AMG restricted
                                # to the skeleton; 3D affine elements) | "assembled" (AMG of B)
                                amg_mode        = _el_sc_amg_mode(get(inputs, :EL_sc_amg, "schur")),
-                               amg_itmax       = Int(get(inputs, :amg_itmax, 1000)))
+                               amg_itmax       = Int(get(inputs, :amg_itmax, 1000)),
+                               # preconditioner of the Schur-complement CG ("schur" mode):
+                               # "amg" (full-system AMG, default) | "pmg_gmg" | "pmg_amg"
+                               # (p-multigrid V-cycle, pmultigrid.jl; 3D periodic box elements)
+                               precond         = _el_sc_precond(get(inputs, :EL_sc_precond, "amg")))
+_el_sc_precond(k) = (s = Symbol(lowercase(string(k)));
+                     s in (:amg, :pmg_gmg, :pmg_amg) ||
+                         error(" # :EL_sc_precond => \"$k\"; expected \"amg\", \"pmg_gmg\" or \"pmg_amg\".");
+                     s)
 _el_sc_amg_mode(k) = (s = Symbol(lowercase(string(k)));
                       s in (:schur, :assembled) || error(" # :EL_sc_amg => \"$k\"; expected \"schur\" or \"assembled\".");
                       s)

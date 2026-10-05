@@ -46,6 +46,7 @@ SOLVERS = [  # key, label, (colour index, marker)
     ("sem_jacobi", "SEM Jacobi",  (6, "square")),
     ("sc_direct",  "SC direct",   (2, "triangle")),
     ("sc_amg",     "SC AMG",      (3, "diamond")),
+    ("sc_pmg",     "SC p-MG GMG", (6, "diamond")),
     ("ps",         "pseudo-spectral", (4, "tridown")),
     ("fft",        "FFT",         (5, "ring")),
     # MPI solvers (mpi/bench3d_mpi.jl), same discretisation as the SEM solvers
@@ -53,7 +54,7 @@ SOLVERS = [  # key, label, (colour index, marker)
     ("boomeramg",  "BoomerAMG-CG (MPI)", (1, "square")),
     ("jacobi",     "Jacobi-CG (MPI)",    (6, "square")),
 ]
-SEM = {"sem", "sem_amg", "pmg_amg", "pmg_gmg", "sem_jacobi", "sc_direct", "sc_amg", "mumps", "boomeramg", "jacobi"}
+SEM = {"sem", "sem_amg", "pmg_amg", "pmg_gmg", "sem_jacobi", "sc_direct", "sc_amg", "sc_pmg", "mumps", "boomeramg", "jacobi"}
 # direct solvers: kept in results.csv / results.md, left out of the figures
 # (never used for large problems) unless --direct is given; they share the
 # colours of the p-multigrid solvers
@@ -191,7 +192,7 @@ def plots(rows, assets):
                 figure(assets, "ppb3d_memory" + sfx, f"Peak memory vs unknowns, N = {N}", sub,
                        f"Peak resident memory of the run versus unknowns at SEM order {N}.",
                        mem, "peak memory, GB (log scale)", decades([p[1] for _, pts, _ in mem for p in pts]))
-            its = ser("iters", solvers={"sem_amg", "pmg_amg", "pmg_gmg", "sem_jacobi", "sc_amg", "boomeramg", "jacobi"})
+            its = ser("iters", solvers={"sem_amg", "pmg_amg", "pmg_gmg", "sem_jacobi", "sc_amg", "sc_pmg", "boomeramg", "jacobi"})
             if its:
                 figure(assets, "ppb3d_iters" + sfx, f"CG iterations vs unknowns, N = {N}", sub,
                        f"Conjugate-gradient iterations to a relative preconditioned residual of 1e-12 versus unknowns at SEM order {N}.",

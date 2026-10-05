@@ -388,6 +388,18 @@ function periodic_sem_sc_solve(sem, sys, inputs)
     println(YELLOW_FG(string(" # Static condensation (T^ie from the SEM matrix) on the periodic system: ",
                              m, " unknowns → ", pm.length∂O, " skeleton unknowns; skeleton solver: ",
                              opts.skeleton_solver, " ..............")))
+    # Schur-complement CG preconditioned by p-multigrid (:EL_sc_precond =>
+    # "pmg_gmg" | "pmg_amg"): the V-cycle of the full system, built here (it
+    # needs the SEM mesh and metrics) and timed as the skeleton setup
+    pmg = nothing
+    if nsd == 3 && opts.skeleton_solver === :amg && opts.amg_mode === :schur && opts.precond !== :amg
+        pmg = jx_phase(:sc_factor) do
+                  jx_pmg_setup(sem, sys.K, sys.cls; coarse = opts.precond === :pmg_gmg ? :gmg : :amg,
+                               degree = Int(get(inputs, :pmg_degree, 3)),
+                               lower = Float64(get(inputs, :pmg_lower, 0.25)),
+                               amg_method = opts.amg_method)
+              end
+    end
     u = zeros(Float64, m, 1)
     elementLearning_Axb!(u, nothing, pm, sys.K, reshape(copy(sys.b), m, 1), EL,
                          zeros(Float64, 1, npel), nothing, nothing,
@@ -397,7 +409,8 @@ function periodic_sem_sc_solve(sem, sys, inputs)
                          skeleton_ordering = opts.ordering,
                          record_tensors = false, sc_kernel = opts.kernel,
                          sc_amg = opts.amg_mode, amg_itmax = opts.amg_itmax,
-                         tp1d = nsd == 3 ? (sc_gll_stiffness(sem.basis.dψ, sem.ω), sem.ω) : nothing)
+                         tp1d = nsd == 3 ? (sc_gll_stiffness(sem.basis.dψ, sem.ω), sem.ω) : nothing,
+                         sc_precond = pmg)
     uc = vec(u)
     uc .-= sum(sys.w .* uc) / sum(sys.w)
     _el_sc_record_phases!()

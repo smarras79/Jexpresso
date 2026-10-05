@@ -22,8 +22,9 @@ worst = 0.0
 println("  solver      ne  N   Jexpresso L∞             Kronecker L∞             |difference|")
 for (ne, N) in ((4, 2), (4, 3), (6, 4)), s in JX3D.SOLVERS
     ej = JX3D.run_config(s, ne, N).linf
-    # the p-multigrid solvers solve the SEM system K: compared with the Kronecker SEM solve
-    ek = P3D.run_config(s in (:pmg_amg, :pmg_gmg) ? :sem : s, 3, ne, N; r = JX3D.R).linf
+    # the p-multigrid solvers solve the SEM system K: compared with the Kronecker SEM solve;
+    # sc_pmg (SC with a p-MG preconditioner) with the Kronecker SC solve
+    ek = P3D.run_config(s in (:pmg_amg, :pmg_gmg) ? :sem : s === :sc_pmg ? :sc_amg : s, 3, ne, N; r = JX3D.R).linf
     dif = abs(ej - ek)
     global worst = max(worst, dif)
     @printf("  %-10s  %2d  %d   %.15e   %.15e   %.1e\n", s, ne, N, ej, ek, dif)

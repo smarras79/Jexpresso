@@ -24,6 +24,7 @@ The threaded 3D benchmark runs Jexpresso's own solvers on the 3D deck `problems/
 | `sem_amg` | … → `periodic_sem_amg_solve` (`jx_amg_setup` / `jx_amg_solve`: smoothed-aggregation AMG + CG) |
 | `sc_direct` | … → `periodic_sem_sc_solve` → `elementLearning_Axb!` → `el_sc_solve!` (threaded condensation into the skeleton matrix B) → Cholesky of B (METIS ordering) |
 | `sc_amg` | … → `elementLearning_Axb!` → `el_sc_schur_cg!` (`:EL_skeleton_solver => "amg"`): CG on the skeleton Schur complement, matrix-free, with tensor-product interior solves, preconditioned by the full-system AMG restricted to the skeleton |
+| `sc_pmg` | the same Schur-complement CG as `sc_amg`, preconditioned by the p-MG + GMG V-cycle of the full system restricted to the skeleton (`:EL_sc_precond => "pmg_gmg"`; `"pmg_amg"` is also accepted) |
 | `pmg_amg` | … → `periodic_sem_pmg_solve` (`:linsolve_pmg => "amg"`): CG on the full SEM system, preconditioned by a p-multigrid V-cycle over the SEM orders N, N/2, …, 1, with AMG on the p = 1 level |
 | `pmg_gmg` | the same with `:linsolve_pmg => "gmg"`: geometric h-multigrid on the p = 1 grid in place of AMG |
 | `ps` | `pseudospectral_linsolve!` → `FourierCollocationPoissonSolver3D` (O(N_g⁴)) |
@@ -90,13 +91,13 @@ It follows the Jexpresso job script:
 1. `module load Julia/1.11.9` and `module load GCC MPICH`, then `MPIPreferences.use_system_binary()`;
 2. `Pkg.instantiate(); Pkg.precompile()`, one serial process;
 3. a serial warm-up (`using MPI; using Jexpresso`), then `verify_2d.jl`, `verify_3d.jl` and `verify_3d_jexpresso.jl`; the job stops if any of these fails;
-4. six of Jexpresso's solvers side by side (`SOLVERS`: the iterative SEM solvers `sem_amg`, `sc_amg`, `pmg_amg`, `pmg_gmg`, and `ps`, `fft`; the direct solvers `sem` and `sc_direct` are left out, since they are never used for large problems; run them by hand with `bench3d.jl --solver sem` if wanted), one Julia process each with `THREADS = 21` Julia and BLAS threads (6 × 21 = 126 cores). Each runs the sweep below through `run_case`, one mesh level after the other with the orders in increasing order, into `OUTDIR/parts/<solver>/results.csv`, with a log in `OUTDIR/logs/<solver>.log`;
+4. seven of Jexpresso's solvers side by side (`SOLVERS`: the iterative SEM solvers `sem_amg`, `sc_amg`, `sc_pmg`, `pmg_amg`, `pmg_gmg`, and `ps`, `fft`; the direct solvers `sem` and `sc_direct` are left out, since they are never used for large problems; run them by hand with `bench3d.jl --solver sem` if wanted), one Julia process each with `THREADS = 18` Julia and BLAS threads (7 × 18 = 126 cores). Each runs the sweep below through `run_case`, one mesh level after the other with the orders in increasing order, into `OUTDIR/parts/<solver>/results.csv`, with a log in `OUTDIR/logs/<solver>.log`;
 5. when all have finished, `plot3d.py` merges the results and draws the figures.
 
 The settings are the few variables at the top of the script: `OUTDIR` (default `ppb3d_wulver`), `SOLVERS`, `THREADS`, the sweep and its size limits:
 - **The sweep is the 2D benchmark's:** mesh levels of `LEVELS` = 8³, 16³, 32³ and 64³ elements, each with the SEM orders `NOPS` = 2…8. The Fourier solvers run on the (ne·N)³ grid, which has the same number of unknowns n = (ne·N)³.
 - **Size limits:** configurations above these caps are not run.
-  - The iterative SEM solvers (`sem_amg`, `sc_amg`, `pmg_amg`, `pmg_gmg`) stop at 7.1·10⁶ (`MAXN_SEM`). Jexpresso's 3D SEM infrastructure (high-order mesh, metrics, matrices) took 4.1 GB at 2.6·10⁵ unknowns. That projects to about 110 GB at 7.1·10⁶ and about 260 GB at 1.7·10⁷, too much with two of them on one node.
+  - The iterative SEM solvers (`sem_amg`, `sc_amg`, `sc_pmg`, `pmg_amg`, `pmg_gmg`) stop at 7.1·10⁶ (`MAXN_SEM`). Jexpresso's 3D SEM infrastructure (high-order mesh, metrics, matrices) took 4.1 GB at 2.6·10⁵ unknowns. That projects to about 110 GB at 7.1·10⁶ and about 260 GB at 1.7·10⁷, too much with two of them on one node.
   - The Fourier solvers go on to 1.7·10⁷ (`MAXN`).
 - **Figures:** `plot3d.py` leaves the direct solvers out of the figures; their rows stay in `results.md`. Pass `--direct` to draw them.
 

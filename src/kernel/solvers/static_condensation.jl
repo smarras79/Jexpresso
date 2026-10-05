@@ -654,7 +654,7 @@ end
 
 """
     el_sc_schur_cg!(u, A, f, conn, nb, ∂O, Γ, gΓ, K̂, ω; amg_method = "sa",
-                    amg_rtol = 1e-12, itmax = 1000) -> Bool
+                    amg_rtol = 1e-12, itmax = 1000, precond = nothing) -> Bool
 
 Static condensation with AMG-CG, leveraging the SEM tensor product (see the
 section header): CG on the skeleton Schur complement, applied matrix-free
@@ -665,12 +665,20 @@ hexahedron of that tensor form (then use el_sc_solve!). Records :sc_extract
 (checks, c's), :sc_condense (condensed right-hand side), :sc_factor (AMG
 hierarchy), :sc_skeleton (CG) and :sc_recover; the CG iterations in
 JX_AMG_STATS.
+
+`precond`: a preconditioner of the FULL (singular) system A, in A's own
+numbering, applied with ldiv! — e.g. the p-multigrid V-cycle JXPMG
+(jx_pmg_setup), built by the caller (its setup is the caller's to time).
+It replaces the AMG V-cycle, restricted to the skeleton the same way:
+z_b = (P⁻¹ [r_b; 0])_b, valid for any SPD-on-the-range P since
+(A⁻¹)_bb = S⁻¹.
 """
 function el_sc_schur_cg!(u::AbstractArray, A::SparseMatrixCSC{Float64}, f::AbstractVector,
                          conn::AbstractMatrix{<:Integer}, nb::Int,
                          ∂O::AbstractVector{<:Integer}, Γ::AbstractVector{<:Integer},
                          gΓ::AbstractVector, K̂::AbstractMatrix, ω::AbstractVector;
-                         amg_method = "sa", amg_rtol::Real = 1e-12, itmax::Int = 1000)
+                         amg_method = "sa", amg_rtol::Real = 1e-12, itmax::Int = 1000,
+                         precond = nothing)
     t0 = time_ns()
     nt = Threads.nthreads()
     R  = _sc_roles(A, conn, nb, ∂O, Γ, gΓ, nt)
@@ -699,19 +707,29 @@ function el_sc_schur_cg!(u::AbstractArray, A::SparseMatrixCSC{Float64}, f::Abstr
     rhs = Float64[t[unk[k]] - y[unk[k]] for k = 1:ns]
     JX_TIMINGS[:sc_condense] = (time_ns() - t0) / 1e9
 
-    # ── AMG of the full system without the fixed nodes ───────────────────────
-    keep = findall(!=(Int8(2)), role)
-    kpos = zeros(Int, n);  kpos[keep] = 1:length(keep)
-    P = jx_phase(:sc_factor) do
-        Ak = A[keep, keep]
-        sgn < 0 && (Ak.nzval .*= -1)
-        jx_amg_setup(Ak; method = amg_method)
+    # ── preconditioner: the caller's full-system one (numbering of A, sign of
+    #    A: Â⁻¹ = sgn·A⁻¹), or AMG of the full system without the fixed nodes ──
+    if precond === nothing
+        keep = findall(!=(Int8(2)), role)
+        kpos = zeros(Int, n);  kpos[keep] = 1:length(keep)
+        S = jx_phase(:sc_factor) do
+            Ak = A[keep, keep]
+            sgn < 0 && (Ak.nzval .*= -1)
+            jx_amg_setup(Ak; method = amg_method)
+        end
+        Pl = S.P;  psgn = 1.0
+        stats = (levels = length(S.ml.levels) + 1, method = Symbol(string(S.method, "+schur")))
+    else
+        kpos = collect(1:n)
+        Pl = precond;  psgn = sgn
+        stats = (levels = precond isa JXPMG ? length(precond.levels) : 0,
+                 method = precond isa JXPMG ? Symbol("pmg_", precond.kind, "+schur") : :precond_schur)
     end
     ub = jx_phase(:sc_skeleton) do
         nt > 1 && BLAS.set_num_threads(1)
         try
-            _sc_pcg(ns, rhs, unk, kpos, length(keep), A, sgn, P, F, fw, conn, nb, no, intr,
-                    xt, y, Float64(amg_rtol), itmax, nt)
+            _sc_pcg(ns, rhs, unk, kpos, length(kpos) - count(iszero, kpos), A, sgn, Pl, psgn, stats,
+                    F, fw, conn, nb, no, intr, xt, y, Float64(amg_rtol), itmax, nt)
         finally
             BLAS.set_num_threads(nblas)
         end
@@ -731,14 +749,17 @@ end
 
 # Preconditioned CG on the skeleton (the stopping test of Krylov.cg:
 # sqrt(rᵀ M⁻¹ r) ≤ rtol · its initial value)
-function _sc_pcg(ns, b, unk, kpos, nk, A, sgn, P, F, fw, conn, nb, no, intr, xt, y, rtol, itmax, nt)
+# Pl: the full-system preconditioner (ldiv!), in the numbering kpos (1:nk);
+# psgn: its sign relative to the condensed operator
+function _sc_pcg(ns, b, unk, kpos, nk, A, sgn, Pl, psgn, stats, F, fw, conn, nb, no, intr,
+                 xt, y, rtol, itmax, nt)
     x = zeros(ns);  r = copy(b);  z = zeros(ns);  p = zeros(ns);  q = zeros(ns)
     rk = zeros(nk);  zk = zeros(nk)
     precond! = (z, r) -> begin
         fill!(rk, 0.0)
         @inbounds for k = 1:ns;  rk[kpos[unk[k]]] = r[k];  end
-        LinearAlgebra.ldiv!(zk, P.P, rk)
-        @inbounds for k = 1:ns;  z[k] = zk[kpos[unk[k]]];  end
+        LinearAlgebra.ldiv!(zk, Pl, rk)
+        @inbounds for k = 1:ns;  z[k] = psgn * zk[kpos[unk[k]]];  end
         z
     end
     schur! = (q, p) -> begin                       # q = S p
@@ -763,8 +784,7 @@ function _sc_pcg(ns, b, unk, kpos, nk, A, sgn, P, F, fw, conn, nb, no, intr, xt,
         it += 1
     end
     rel = γ0 > 0 ? sqrt(γ / γ0) : 0.0
-    JX_AMG_STATS[] = (iters = it, rel_resid = rel, levels = length(P.ml.levels) + 1,
-                      method = Symbol(string(P.method, "+schur")))
+    JX_AMG_STATS[] = (iters = it, rel_resid = rel, levels = stats.levels, method = stats.method)
     rel <= rtol || @warn " # Schur-complement CG did not converge to rtol=$rtol in $itmax iterations " *
                          "(final relative residual $rel)."
     return x
