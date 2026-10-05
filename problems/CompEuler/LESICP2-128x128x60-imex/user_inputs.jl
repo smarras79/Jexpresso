@@ -313,6 +313,10 @@ function user_inputs()
         :lwall_damping        => true,
         # theta diffusion x2.1 (kappa_t = 3 nu_t, Pr_t = 1/3), as the 64x64x60 deck.
         :μ                    => [0.0, 1.0, 1.0, 1.0, parse(Float64, get(ENV, "DBG_VISC_TH", "2.1"))],
+        # Turbulent Prandtl number for f_Ri and θ diffusion (sgs.Pr_t), as the
+        # 64x64x60 deck. Consistent arm: DBG_PRT=1/3 with DBG_VISC_TH=1.0 keeps θ
+        # diffusion at 3 μ_t and moves the f_Ri cutoff from Ri = 0.7 to 1/3.
+        :Pr_t                 => parse(Float64, get(ENV, "DBG_PRT", "0.7")),
         :les_filter_width     => :geometric,
         #---------------------------------------------------------------------------
         # MOST GUARD RAILS. Stated explicitly here rather than left to the
