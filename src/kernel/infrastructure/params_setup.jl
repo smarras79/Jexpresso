@@ -268,6 +268,13 @@ function params_setup(sem,
         # Both closures now honour it. Vreman's limiter is a no-op when this is
         # false, so the key means the same thing for either model.
         sgs.lwall_damping = inputs[:lwall_damping] == true
+        # Optional turbulent Prandtl number. One value for the Lilly cutoff in
+        # f_Ri (mixing off at Ri = Pr_t) and for the θ diffusivity μ_t/Pr_t, so
+        # the two stay consistent. Default: PhysConst.Pr_t = 0.7.
+        if haskey(inputs, :Pr_t)
+            sgs.Pr_t = inputs[:Pr_t]
+            MPI.Comm_rank(MPI.COMM_WORLD) == 0 && println(" # SGS Pr_t = ", sgs.Pr_t, " (inputs[:Pr_t])")
+        end
         # DynSGS only. Adding the Smagorinsky viscosity to the residual one is
         # opt-in and off by default; see the field's comment in sgsStructs.jl
         # for why a wall-modelled PBL is the case where it is worth asking for.

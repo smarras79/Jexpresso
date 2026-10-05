@@ -266,7 +266,9 @@ function fill_sgs_cache!(params)
     dηdx = params.metrics.dηdx;  dηdy = params.metrics.dηdy;  dηdz = params.metrics.dηdz
     dζdx = params.metrics.dζdx;  dζdy = params.metrics.dζdy;  dζdz = params.metrics.dζdz
     PhysConst = PhysicalConst{Float64}()
-    Pr_t = PhysConst.Pr_t;  μ_mol = PhysConst.μ_mol;  κ_mol = PhysConst.κ_mol
+    # κ_t must use the Pr_t the model ran with (inputs[:Pr_t] may override it).
+    Pr_t = params.sgs isa AbstractSGSModel ? Float64(params.sgs.Pr_t) : PhysConst.Pr_t
+    μ_mol = PhysConst.μ_mol;  κ_mol = PhysConst.κ_mol
     ET   = params.SOL_VARS_TYPE
 
     uprim  = params.les_stat_cache.sgs_uprim

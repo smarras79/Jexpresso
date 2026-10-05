@@ -336,6 +336,10 @@ function user_inputs()
         # wall layer cleaner (16x16x60 probe: wall-node2 theta +-1.5 K vs +-5 K).
         # The Richardson cutoff stays at Ri = Pr_t = 0.7. DBG_VISC_TH overrides.
         :μ                    => [0.0, 1.0, 1.0, 1.0, parse(Float64, get(ENV, "DBG_VISC_TH", "2.1"))],
+        # Turbulent Prandtl number for f_Ri and θ diffusion (sgs.Pr_t). The
+        # consistent-Pr_t arm runs DBG_PRT=1/3 with DBG_VISC_TH=1.0: θ diffusion
+        # stays 3 μ_t, and f_Ri shuts off at Ri = 1/3 instead of 0.7.
+        :Pr_t                 => parse(Float64, get(ENV, "DBG_PRT", "0.7")),
         :les_filter_width     => :geometric,
         #---------------------------------------------------------------------------
         # MOST GUARD RAILS. Stated explicitly here rather than left to the
