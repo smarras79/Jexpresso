@@ -4,8 +4,8 @@
  Section 2.1 of the setup document, sounding input_sounding_teamx_u00_flat.
 
  THE DECK IS LESICP2-64x64x60-imex WITH THE u00 SOUNDING: same 64x64x60
- mesh, same "two_block uniformish" stretch, same theta diffusion x2.1
- (Pr_t = 1/3 equivalent), same erf filter at 0.05, same IMEX/ARS343 with the
+ mesh, same "two_block uniformish" stretch, same theta diffusion
+ (Pr_t = 1/3, mu[5] = 1.0), same erf filter at 0.05, same IMEX/ARS343 with the
  scalar Schur stage solve at dt 0.2, same 9000-10800 s statistics window.
 
  ONE CLOSURE DIFFERENCE: :lwall_damping is OFF here and on in u10. The
@@ -369,10 +369,17 @@ function user_inputs()
         # OFF for free convection, see the header. The note above describes the
         # damped path, which u10 uses. DBG_WALLDAMP=true restores it.
         :lwall_damping        => parse(Bool, get(ENV, "DBG_WALLDAMP", "false")),
-        # theta diffusion x2.1: kappa_t = 3 nu_t with Pr_t = 0.7, i.e. Pr_t = 1/3,
-        # the convective-BL standard. At 1.0 this case dies at t ~ 385 s (job
-        # 1324103). Same value as u10. DBG_VISC_TH overrides.
-        :μ                    => [0.0, 1.0, 1.0, 1.0, parse(Float64, get(ENV, "DBG_VISC_TH", "2.1"))],
+        # theta diffusion: kappa_t = mu[5] nu_t / Pr_t = 3 nu_t (Pr_t = 1/3, the
+        # convective-BL standard). It was mu[5] = 2.1 with Pr_t = 0.7, the same
+        # kappa_t but an f_Ri cutoff at Ri = 0.7; the consistent Pr_t = 1/3 lifts
+        # the inversion theta'theta' 0.50 -> 0.67 with unchanged means (64x64x60,
+        # jobs 1355826 vs 1375935). kappa_t = 1.43 nu_t (old mu[5] = 1, Pr_t 0.7)
+        # dies at t ~ 385 s (job 1324103). LESICP standard. DBG_VISC_TH overrides.
+        :μ                    => [0.0, 1.0, 1.0, 1.0, parse(Float64, get(ENV, "DBG_VISC_TH", "1.0"))],
+        # Turbulent Prandtl number (sgs.Pr_t): one value for the f_Ri cutoff
+        # (mixing off at Ri = Pr_t) and for θ diffusion μ[5]·μ_t/Pr_t. LESICP
+        # standard: Pr_t = 1/3 with μ[5] = 1.0, i.e. κ_t = 3 ν_t. DBG_PRT overrides.
+        :Pr_t                 => parse(Float64, get(ENV, "DBG_PRT", "0.3333333333333333")),
         :les_filter_width     => :geometric,
         #---------------------------------------------------------------------------
         # MOST GUARD RAILS. Stated explicitly here rather than left to the

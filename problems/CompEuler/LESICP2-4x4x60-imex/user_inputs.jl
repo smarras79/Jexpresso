@@ -247,7 +247,7 @@ function user_inputs()
         # DBG_WALLDAMP=false: no near-wall limit, (C_s*Delta)^2 everywhere.
         :lwall_damping        => parse(Bool, get(ENV, "DBG_WALLDAMP", "true")),
         :μ                    => [0.0, 1.0, 1.0, 1.0, 1.0],
-        :Pr_t                 => parse(Float64, get(ENV, "DBG_PRT", "0.7")),   # sgs.Pr_t: f_Ri cutoff and θ diffusion
+        :Pr_t                 => parse(Float64, get(ENV, "DBG_PRT", "0.3333333333333333")),   # sgs.Pr_t: f_Ri cutoff and θ diffusion
         :les_filter_width     => :geometric,
         # MOST guard rails -- these ARE the defaults; written out because this
         # is the deck you reach for when one of them is suspected. See

@@ -319,8 +319,12 @@ function user_inputs()
         # roughly 30% of it. See sgs_mixing_length2 in kernel/physics/SGS.jl and
         # test/sgs/test_wall_damping.jl.
         :lwall_damping        => true,
-        # DBG_VISC_TH scales the theta diffusion (2.1 with Pr_t = 0.7 is kappa_t = 3 nu_t).
+        # DBG_VISC_TH scales the theta diffusion (1.0 with Pr_t = 1/3 is kappa_t = 3 nu_t).
         :μ                    => [0.0, 1.0, 1.0, 1.0, parse(Float64, get(ENV, "DBG_VISC_TH", "1.0"))],
+        # Turbulent Prandtl number (sgs.Pr_t): one value for the f_Ri cutoff
+        # (mixing off at Ri = Pr_t) and for θ diffusion μ[5]·μ_t/Pr_t. LESICP
+        # standard: Pr_t = 1/3 with μ[5] = 1.0, i.e. κ_t = 3 ν_t. DBG_PRT overrides.
+        :Pr_t                 => parse(Float64, get(ENV, "DBG_PRT", "0.3333333333333333")),
         :les_filter_width     => :geometric,
         #---------------------------------------------------------------------------
         # MOST GUARD RAILS. Stated explicitly here rather than left to the

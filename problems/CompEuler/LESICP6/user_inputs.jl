@@ -71,6 +71,10 @@ function user_inputs()
         # values ([0.0, 10, 10, 10, 10]) were AV constants and inflated C_s by sqrt(μ).
         # Tune the closure through :C_s instead.
         :μ                    => [0.0, 1.0, 1.0, 1.0, 1.0],
+        # Turbulent Prandtl number (sgs.Pr_t): one value for the f_Ri cutoff
+        # (mixing off at Ri = Pr_t) and for θ diffusion μ[5]·μ_t/Pr_t. LESICP
+        # standard: Pr_t = 1/3 with μ[5] = 1.0, i.e. κ_t = 3 ν_t. DBG_PRT overrides.
+        :Pr_t                 => parse(Float64, get(ENV, "DBG_PRT", "0.3333333333333333")),
         #---------------------------------------------------------------------------
         #LES statistics
         #---------------------------------------------------------------------------

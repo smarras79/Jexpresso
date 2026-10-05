@@ -182,6 +182,10 @@ function user_inputs()
         :lrichardson          => true,
         :lwall_damping        => true,
         :μ                    => [0.0, 1.0, 1.0, 1.0, 1.0],
+        # Turbulent Prandtl number (sgs.Pr_t): one value for the f_Ri cutoff
+        # (mixing off at Ri = Pr_t) and for θ diffusion μ[5]·μ_t/Pr_t. LESICP
+        # standard: Pr_t = 1/3 with μ[5] = 1.0, i.e. κ_t = 3 ν_t. DBG_PRT overrides.
+        :Pr_t                 => parse(Float64, get(ENV, "DBG_PRT", "0.3333333333333333")),
         :les_filter_width     => :geometric,
         # MOST guard rails -- these ARE the defaults; written out because this
         # is the deck you reach for when one of them is suspected. See

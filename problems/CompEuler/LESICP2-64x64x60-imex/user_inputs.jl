@@ -329,17 +329,14 @@ function user_inputs()
         # roughly 30% of it. See sgs_mixing_length2 in kernel/physics/SGS.jl and
         # test/sgs/test_wall_damping.jl.
         :lwall_damping        => true,
-        # theta diffusion x2.1: with Pr_t = 0.7 that is kappa_t = 3 nu_t, i.e.
-        # Pr_t = 1/3, the standard convective-BL value (Deardorff 1980; WRF,
-        # PALM, CM1). At 1.0 (kappa_t = 1.43 nu_t) the u00 wall node cannot shed
-        # the surface flux and the run dies at t ~ 385 s; here it only makes the
-        # wall layer cleaner (16x16x60 probe: wall-node2 theta +-1.5 K vs +-5 K).
-        # The Richardson cutoff stays at Ri = Pr_t = 0.7. DBG_VISC_TH overrides.
-        :μ                    => [0.0, 1.0, 1.0, 1.0, parse(Float64, get(ENV, "DBG_VISC_TH", "2.1"))],
-        # Turbulent Prandtl number for f_Ri and θ diffusion (sgs.Pr_t). The
-        # consistent-Pr_t arm runs DBG_PRT=1/3 with DBG_VISC_TH=1.0: θ diffusion
-        # stays 3 μ_t, and f_Ri shuts off at Ri = 1/3 instead of 0.7.
-        :Pr_t                 => parse(Float64, get(ENV, "DBG_PRT", "0.7")),
+        # theta diffusion: kappa_t = mu[5] nu_t / Pr_t = 3 nu_t (Pr_t = 1/3, the
+        # convective-BL standard). It was mu[5] = 2.1 with Pr_t = 0.7, the same
+        # kappa_t but an f_Ri cutoff at Ri = 0.7; the consistent Pr_t = 1/3 lifts
+        # the inversion theta'theta' 0.50 -> 0.67 with unchanged means (64x64x60,
+        # jobs 1355826 vs 1375935). LESICP standard. DBG_VISC_TH overrides.
+        :μ                    => [0.0, 1.0, 1.0, 1.0, parse(Float64, get(ENV, "DBG_VISC_TH", "1.0"))],
+        # Turbulent Prandtl number for f_Ri and θ diffusion (sgs.Pr_t). DBG_PRT overrides.
+        :Pr_t                 => parse(Float64, get(ENV, "DBG_PRT", "0.3333333333333333")),
         :les_filter_width     => :geometric,
         #---------------------------------------------------------------------------
         # MOST GUARD RAILS. Stated explicitly here rather than left to the
