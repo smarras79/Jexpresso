@@ -36,7 +36,7 @@ using KernelAbstractions
 # UnicodePlots, Geodesy) and were not referenced anywhere in the source
 # tree. Removed to cut the per-rank baseline. Re-add at the REPL if
 # you need them interactively.
-using Revise
+#using Revise
 # using BenchmarkTools
 using Dates
 using CSV, DataFrames
@@ -134,6 +134,10 @@ include(joinpath( "..", "problems", "AbstractEquations.jl"))
 include(joinpath( "macros", "je_macros.jl"))
 
 include(joinpath( "auxiliary", "timing.jl"))
+
+# Optional Extrae (Paraver) instrumentation. Submodule `Profiling`; OFF
+# unless JEXPRESSO_EXTRAE is set. See tools/Extrae/README.md.
+include(joinpath( "kernel", "infrastructure", "Profiling.jl"))
 
 include(joinpath( "kernel", "abstractTypes.jl"))
 

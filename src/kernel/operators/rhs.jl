@@ -387,6 +387,16 @@ function _dsgs_boundary_pairs!(params, SD)
 end
 
 function rhs!(du, u, params, time)
+    Profiling.is_active() || return _rhs_impl!(du, u, params, time)
+    Profiling.region_begin(Profiling.PHASE_RHS)
+    try
+        return _rhs_impl!(du, u, params, time)
+    finally
+        Profiling.region_end()
+    end
+end
+
+function _rhs_impl!(du, u, params, time)
     backend = params.inputs[:backend]
     # for @timers, do not delete
     timers = params.timers
@@ -753,7 +763,9 @@ if (params.inputs[:lvisc])
     @inbounds params.RHS .+= params.RHS_visc
 end
 #@info maximum(params.RHS), maximum(params.RHS_lag), maximum(params.RHS_visc_lag)
+Profiling.mark(Profiling.PHASE_RHS_COMM)       # RHS MPI assembly (assemble_mpi!)
 DSS_global_RHS!(@view(params.RHS[:,:]), params.g_dss_cache, params.neqs)
+Profiling.mark(Profiling.PHASE_RHS)            # back to RHS compute
 
 k1 = RHStodu_gpu!(backend)
 k1(params.RHS,du,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs),
@@ -1012,8 +1024,10 @@ function _build_rhs!(RHS, u, params, time)
                                        params.mp.Tabs, params.mp.qn,
                                        params.ω, neqs, params.inputs, AD, SD) 
 
+    Profiling.mark(Profiling.PHASE_RHS_COMM)       # RHS MPI assembly (assemble_mpi!)
     @timeit_debug JEXPRESSO_TIMER "DSS_global_RHS" DSS_global_RHS!(@view(params.RHS[:,:]), params.g_dss_cache, params.neqs)
-    
+    Profiling.mark(Profiling.PHASE_RHS)            # back to RHS compute
+
     #if (rem(time, Δt) == 0 && time > 0.0)
     if (time > 0.0)
         params.qp.qnm1 .= params.qp.qnm2

@@ -94,6 +94,11 @@ else
     nparts = MPI.Comm_size(comm)
 end
 
+# Begin optional Extrae tracing (no-op unless JEXPRESSO_EXTRAE is set). Done
+# right after MPI init so MPI auto-instrumentation and our custom events share
+# the same session. See src/kernel/infrastructure/Profiling.jl.
+Profiling.init(rank)
+
 #--------------------------------------------------------
 # Parse command line args:
 #--------------------------------------------------------
@@ -410,12 +415,16 @@ inputs = inputs isa NamedTuple ?
 # byte-for-byte the historical one.
 #--------------------------------------------------------
 if JEXPRESSO_COUPLING_ENABLED
+    # Trace the one-time coupling handshake / data-receive as a Paraver region
+    # (no-op unless JEXPRESSO_EXTRAE is set).
+    Profiling.region_begin(Profiling.PHASE_CPL_SETUP)
     _is_coupled = je_perform_coupling_handshake(_world, nparts)
     if _is_coupled
         je_receive_alya_data(_world, nparts)
         je_prefetch_caches!(inputs, nparts, _local_comm, _world)
         je_early_coupling_sync!(_local_comm, _world)
     end
+    Profiling.region_end()
 end
 
 #--------------------------------------------------------
@@ -467,3 +476,7 @@ else
                TFloat)
     end
 end
+
+# Close the optional Extrae tracing session and flush the Paraver trace
+# (no-op unless JEXPRESSO_EXTRAE is set).
+Profiling.finish()
