@@ -171,6 +171,10 @@ include(joinpath( "kernel", "physics", "sgsStructs.jl"))
 
 include(joinpath( "kernel", "physics", "SGS.jl"))
 
+# Integrator-independent shallow-water state limiting plus OrdinaryDiffEq
+# stage/accepted-step adapters.
+include(joinpath( "kernel", "physics", "shallow_water_limiter.jl"))
+
 include(joinpath( "kernel", "physics", "CM_MOST.jl"))
 
 include(joinpath( "kernel", "physics", "atmos_to_rad.jl"))

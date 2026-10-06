@@ -24,6 +24,12 @@ function user_inputs()
         :case                 => "double_gyre_reduced_gravity_dsgs",
         :lsource              => true,
         :SOL_VARS_TYPE        => TOTAL(),
+        # Enforce H >= swe_hmin after every SSPRK stage and again after each
+        # accepted step. The latter is also the integrator-independent path
+        # used if this case is changed to an algorithm without stage hooks.
+        :swe_limiter          => "clip",
+        :swe_limiter_schedule => "stage",
+        :swe_hmin             => 1.0e-3,
         #---------------------------------------------------------------------------
         # Integration and quadrature properties: identical to ReducedGravity.
         #---------------------------------------------------------------------------

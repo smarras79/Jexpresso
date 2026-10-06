@@ -745,6 +745,21 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :ode_adaptive_solver))
         inputs[:ode_adaptive_solver] = false
     end
+
+    # Shallow-water positivity limiting. The limiter is opt-in so existing
+    # cases retain bit-for-bit time-integration behavior. `stage` requires an
+    # algorithm with a stage_limiter! hook; `step` uses a universal accepted-
+    # step callback; `stage_and_step` enables both; `auto` prefers stages and
+    # falls back to accepted steps.
+    if !haskey(inputs, :swe_limiter)
+        inputs[:swe_limiter] = "none"
+    end
+    if !haskey(inputs, :swe_limiter_schedule)
+        inputs[:swe_limiter_schedule] = "none"
+    end
+    if !haskey(inputs, :swe_hmin)
+        inputs[:swe_hmin] = 1.0e-3
+    end
     if(!haskey(inputs, :output_dir))
         inputs[:output_dir] = "none"
     end

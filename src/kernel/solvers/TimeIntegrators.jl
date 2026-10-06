@@ -201,6 +201,21 @@ function time_loop!(inputs, params, u, args...)
     is_coupled = length(args) >= 2 ? args[2] : false
     coupling   = length(args) >= 3 ? args[3] : nothing
     println_rank(" # Solving ODE  ................................ "; msg_rank = rank)
+
+    # Install the shallow-water limiter independently of the chosen ODE
+    # algorithm. Algorithms exposing a stage_limiter! hook get stage-level
+    # protection; an accepted-step callback below supplies the universal
+    # fallback. Sanitize the initial/restart state before the very first RHS.
+    ode_alg, swe_stage_limiter_active, swe_step_limiter_active =
+        configure_shallow_water_limiter(inputs[:ode_solver], inputs)
+    if shallow_water_limiter_enabled(inputs)
+        apply_shallow_water_limiter!(u, params, params.tspan[1])
+        rank == 0 && println(" # Shallow-water limiter: ",
+                            inputs[:swe_limiter], " / ", inputs[:swe_limiter_schedule],
+                            " (stage=", swe_stage_limiter_active,
+                            ", accepted-step=", swe_step_limiter_active,
+                            ", hmin=", inputs[:swe_hmin], ")")
+    end
     
     # FullSpecialize: SciMLBase's default AutoSpecialize wraps rhs! in a
     # FunctionWrapper that type-erases `params` to ::Any. That defeats
@@ -437,6 +452,11 @@ function time_loop!(inputs, params, u, args...)
     cb         = DiscreteCallback(condition, affect!)
     cb_amr     = DiscreteCallback(condition, affect!)
     cb_restart = DiscreteCallback(restart_condition, do_restart!)
+    cb_swe_limiter = swe_step_limiter_active ?
+        DiscreteCallback(shallow_water_step_limiter_condition,
+                         shallow_water_step_limiter_affect!;
+                         save_positions = (false, false)) :
+        nothing
     # Coupled-mode exchange callback: fires once per accepted timestep,
     # sends Julia's interpolated solution to Alya so its MPI.Waitall in
     # the time loop can advance. Without this Alya hangs and never
@@ -536,7 +556,11 @@ function time_loop!(inputs, params, u, args...)
             DiscreteCallback(min_h_condition, min_h_affect!) :
             nothing
 
-        _cbs = Any[cb, cb_restart, cb_les_stat, cb_les_online]
+        # Put the state limiter first so subsequent diagnostics, output and
+        # coupling callbacks observe the corrected accepted solution.
+        _cbs = Any[]
+        cb_swe_limiter !== nothing && push!(_cbs, cb_swe_limiter)
+        append!(_cbs, (cb, cb_restart, cb_les_stat, cb_les_online))
         lrad                                  && push!(_cbs, cb_rad)
         is_coupled && cb_coupling !== nothing  && push!(_cbs, cb_coupling)
         cb_heartbeat !== nothing               && push!(_cbs, cb_heartbeat)
@@ -597,7 +621,7 @@ function time_loop!(inputs, params, u, args...)
             with_logger(NullLogger()) do
                 try
                     solve(warmup_prob,
-                          inputs[:ode_solver], dt = dt,
+                          ode_alg, dt = dt,
                           callback = callbacks_main,
                           tstops = [t0_w + Δt_w],
                           save_everystep = false,
@@ -662,7 +686,7 @@ function time_loop!(inputs, params, u, args...)
 
         solution = with_logger(solve_logger) do
             solve(prob,
-                  inputs[:ode_solver], dt=dt,
+                  ode_alg, dt=dt,
                   #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
                   callback = callbacks_main, tstops = tstops_all,
                   save_everystep = false,
@@ -694,8 +718,11 @@ function time_loop!(inputs, params, u, args...)
             dt         = Float32(inputs[:Δt]/(2.0^(ad_lvl_max)))
             println_rank(" #  dt=", dt; msg_rank = rank)
             @mpi_time solution = solve(prob,
-                                inputs[:ode_solver], dt=Float32(dt),
-                                callback = CallbackSet(cb_amr, cb_restart), tstops = dosetimes,
+                                ode_alg, dt=Float32(dt),
+                                callback = cb_swe_limiter === nothing ?
+                                    CallbackSet(cb_amr, cb_restart) :
+                                    CallbackSet(cb_swe_limiter, cb_amr, cb_restart),
+                                tstops = dosetimes,
                                 save_everystep = false,
                                 adaptive=inputs[:ode_adaptive_solver],
                                 saveat = []);
