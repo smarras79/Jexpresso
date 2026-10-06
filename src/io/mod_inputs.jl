@@ -654,6 +654,20 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :tend))
         inputs[:tend] = 0.0  #end time is 0.0 by default
     end
+    # A time-dependent run needs a positive, finite :Δt that survives the
+    # Float32 conversion of the warm-up solves (TimeIntegrators.jl). Checked
+    # here, on every rank alike, so a bad value stops the run at once with
+    # the value in the message: a zero Δt otherwise surfaced as an
+    # OrdinaryDiffEq "Fixed timestep methods require a choice of dt" inside
+    # the warm-up, and a negative one as a NaN field after the first step.
+    if !inputs[:llinsolve] && Float64(inputs[:tend]) > Float64(inputs[:tinit])
+        Δt = inputs[:Δt]
+        ok = Δt isa Real && isfinite(Δt) && Δt > 0 && Float32(Δt) > 0
+        ok || error(" # :Δt => " * repr(Δt) * " (" * string(typeof(Δt)) * ") is not a usable time step for " *
+                    "tinit = " * string(inputs[:tinit]) * ", tend = " * string(inputs[:tend]) *
+                    ": it must be a positive, finite number, at least 1e-38. Check the :Δt line of the case's user_inputs.jl (an expression " *
+                    "or a pasted Unicode minus sign − instead of - can turn 5.0e-5 into something else).")
+    end
 
     if( !haskey(inputs, :diagnostics_at_times) )
         inputs[:diagnostics_at_times] = inputs[:tend]
