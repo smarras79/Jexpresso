@@ -87,6 +87,35 @@ function precompile_warmup_enabled(inputs)
     return get(inputs, :lprecompile_warmup, true) == true
 end
 
+# A warm-up `solve` that threw (err = (exception, backtrace), or nothing).
+# It is reported OUTSIDE the NullLogger the warm-up runs under (inside it the
+# warning was swallowed, so a failure left no trace at all), by every rank it
+# happened on.
+#
+# With more than one rank it must not be stepped over: the solve exchanges
+# halos and Allreduces in every RHS call, so a rank that throws leaves the
+# others waiting in a collective it never joins, and the MPI.Barrier after
+# the warm-up never completes: a hang with an empty error log (seen: a
+# 256-rank MHD run sat at "# Precompile warm-up" for an hour). The run is
+# aborted instead, with the error. A single rank continues uncompiled.
+function _warmup_failure!(err, label, rank, comm)
+    err === nothing && return nothing
+    e, bt = err
+    println(stderr, "\n # rank ", rank, ": ", label, " failed:\n",
+            sprint(showerror, e, bt; context = :limit => true))
+    flush(stderr)
+    if MPI.Comm_size(comm) > 1
+        println(stderr, " # rank ", rank, ": aborting all ranks (the others would wait forever in ",
+                "a collective of the solve). The same error would stop the run itself; to ",
+                "see it there, disable the warm-up: JEXPRESSO_PRECOMPILE_WARMUP=0 or ",
+                ":lprecompile_warmup => false.")
+        flush(stderr)
+        MPI.Abort(comm, 1)
+    end
+    rank == 0 && @warn string(label, " failed; continuing without it") exception = e
+    return nothing
+end
+
 """
     precompile_warmup_run!(inputs, params, u, partitioned_model, is_coupled, coupling)
 
@@ -164,6 +193,7 @@ function precompile_warmup_run!(inputs, params, u,
     # Silence all log output during the warm-up step. Also silences the
     # SciMLBase "Using arrays or dicts..." warning so it doesn't appear
     # twice (warm-up + real solve).
+    warmup_err = Ref{Any}(nothing)
     with_logger(NullLogger()) do
         try
             solve(warmup_prob,
@@ -174,12 +204,10 @@ function precompile_warmup_run!(inputs, params, u,
                   save_end = false,
                   adaptive = false)
         catch e
-            # Warm-up failure must not prevent the real run. Surface a
-            # one-line warning on rank 0 and continue uncompiled - the
-            # real solve will JIT on its first step as before.
-            rank == 0 && @warn "precompile warm-up failed; continuing without it" exception=e
+            warmup_err[] = (e, catch_backtrace())
         end
     end
+    _warmup_failure!(warmup_err[], "precompile warm-up", rank, comm)
 
     # Restore u and the qnm1/qnm2 history slots so the real solve sees
     # the same initial condition the caller passed in.
@@ -661,6 +689,7 @@ function time_loop!(inputs, params, u, args...)
             # once it is not. The callback stays in the set, so the integrator
             # is still specialised on the real CallbackSet type.
             is_coupled && coupling !== nothing && (coupling.exchange_enabled = false)
+            warm_err = Ref{Any}(nothing)
             with_logger(NullLogger()) do
                 try
                     solve(warmup_prob,
@@ -671,9 +700,10 @@ function time_loop!(inputs, params, u, args...)
                           adaptive = inputs[:ode_adaptive_solver],
                           saveat = warm_saveat)
                 catch e
-                    rank == 0 && @warn "integrator warm-up failed; continuing without it" exception=e
+                    warm_err[] = (e, catch_backtrace())
                 end
             end
+            _warmup_failure!(warm_err[], "integrator warm-up", rank, comm)
             is_coupled && coupling !== nothing && (coupling.exchange_enabled = true)
             u .= u_snap
             params.qp.qnm1 .= qnm1_snap
