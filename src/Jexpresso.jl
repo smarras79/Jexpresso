@@ -116,8 +116,10 @@ using PartitionedArrays
 using GridapGmsh
 
 import Jansson_jll
-using GridapP4est
-using P4est_wrapper
+# GridapP4est / P4est_wrapper are NOT loaded here: AMR is an optional package
+# extension (ext/JexpressoP4estExt.jl). The hooks it implements, the
+# adaptivity flag constants and the loader live in
+# src/kernel/Adaptivity/p4est_hooks.jl, included below.
 
 using PrecompileTools
 import Preferences   # the coupled precompile workload's case (bottom of this file)
@@ -192,6 +194,8 @@ include(joinpath( "kernel", "physics", "radiative_heating.jl"))
 include(joinpath( "kernel", "physics", "optical_depth_integral.jl"))
 
 include(joinpath( "kernel", "mesh", "Geom.jl"))
+
+include(joinpath( "kernel", "Adaptivity", "p4est_hooks.jl"))
 
 include(joinpath( "kernel", "mesh", "mesh.jl"))
 
@@ -565,22 +569,8 @@ function _ensure_hdf5_loaded!()
 end
 
 # ─── AMR / p4est forest ──────────────────────────────────────────────
-# GridapP4est + P4est_wrapper are touched only by the AMR-style paths:
-#   * mesh.jl  :: UniformlyRefinedForestOfOctreesDiscreteModel,
-#                 OctreeDistributedDiscreteModel, GridapP4est.pXest_copy
-#   * mesh.jl  :: load_p4est_checkpoint_model (uses P4est_wrapper.p8est_*)
-#   * sem_setup.jl :: AMR restart branch
-#   * TimeIntegrators.jl :: write_p4est_checkpoint
-# All gated by `inputs[:ladapt]`, `inputs[:linitial_refine]`,
-# `inputs[:lamr]`, or `inputs[:lrestart_amr]`.
-const _AMR_LOADED = Ref(true)
-# GridapP4est and P4est_wrapper are loaded eagerly at module load time
-# (top of Jexpresso.jl) to avoid Julia world-age errors: the @eval lazy-
-# load approach bumped the world counter after mesh.jl was compiled,
-# making OctreeDistributedDiscreteModel inaccessible from compiled code.
-function _ensure_amr_loaded!()
-    return nothing
-end
+# Optional package extension: see src/kernel/Adaptivity/p4est_hooks.jl
+# (hooks, _ensure_amr_loaded!) and ext/JexpressoP4estExt.jl.
 
 # PERF: only evaluate run.jl at module-body time when this file was
 # invoked as a Julia SCRIPT (`julia src/Jexpresso.jl CompEuler 3d`).

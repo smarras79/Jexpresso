@@ -11,6 +11,50 @@ AMR is built on `GridapP4est`/p4est: the mesh is a forest of octrees, and
 refining/coarsening an element replaces it with a p4est octree operation
 rather than a full remesh.
 
+## 0. Installing the AMR extension
+
+`GridapP4est` is an **optional** dependency: a weak dependency in
+`Project.toml`, with every call into it in the package extension
+`ext/JexpressoP4estExt.jl` (implementation in `ext/JexpressoP4estExt/impl.jl`).
+A plain install therefore never builds `P4est_wrapper`, which is what lets
+Jexpresso install and run on Windows. To run AMR cases, install it once:
+
+```bash
+julia --project=. tools/setup_amr.jl
+```
+
+This instantiates `envs/amr/` — an environment holding `GridapP4est` (pinned to
+the patched fork via `[sources]`, see INSTALL.md §7) — with the root
+environment's MPI binding, and precompiles the extension. Re-run it with
+`--rebuild` after rebinding MPI, or `--fresh` after switching between a system
+and a JLL MPI (INSTALL.md §5.3).
+
+After that, launch AMR cases exactly like any other case. When a deck sets any
+of `:lamr`, `:ladapt`, `:lpreadapt`, `:linitial_refine`, `:lrestart_amr`,
+`src/run.jl` calls `Jexpresso._ensure_amr_loaded!()` before the driver starts.
+It looks for `GridapP4est` on the current `LOAD_PATH`, then in `envs/amr/`
+(appended to `LOAD_PATH`, so every package the root environment already has
+still comes from the root Manifest), loads it, and with it the extension. This
+works both for `using Jexpresso; Jexpresso.run_case(...)` and for the script
+form `julia --project=. src/Jexpresso.jl ...` (which is not a package, so
+there the same `impl.jl` is included by hand). Without `envs/amr/` an AMR deck
+stops before the mesh is built, with a message pointing here.
+
+If you call the driver yourself instead of going through `run_case`/run.jl,
+call `Jexpresso._ensure_amr_loaded!()` (or `using GridapP4est`) at top level
+first: methods that a package load defines are invisible to code that was
+already running when it happened (Julia's world age), so loading p4est from
+inside a running driver would be too late.
+
+For code inside Jexpresso, the rule is: never name `GridapP4est` or
+`P4est_wrapper` in `src/`. Add a hook to
+`src/kernel/Adaptivity/p4est_hooks.jl` (a `function name end` stub with a
+docstring) and its method to `ext/JexpressoP4estExt/impl.jl`. Generic Gridap /
+GridapDistributed functions that `GridapP4est` extends — `Gridap.Adaptivity.adapt`,
+`GridapDistributed.redistribute`, `get_cell_gids`, … — need no hook. The
+adaptivity flags `nothing_flag`, `refine_flag`, `coarsen_flag` are defined by
+Jexpresso itself, so user `initialize.jl` files can use them unconditionally.
+
 ## 1. Minimal setup: `:lamr`
 
 The smallest AMR-enabled case needs three keys in `user_inputs.jl`:

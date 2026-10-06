@@ -462,9 +462,7 @@ function time_loop!(inputs, params, u, args...)
             # Julia closures capture `partitioned_model` by binding — it always
             # reflects the current forest after each AMR iteration.
             if get(inputs, :lamr, false)
-                # PERF: GridapP4est is lazy-loaded; ensure it's in
-                # scope before the p8est_save underlying this call.
-                _ensure_amr_loaded!()
+                _assert_amr_loaded()
                 write_p4est_checkpoint(inputs[:output_dir], idx, partitioned_model)
             end
         end

@@ -1364,11 +1364,8 @@ end
 
 
 const get_d_to_face_to_parent_face = Gridap.Adaptivity.get_d_to_face_to_parent_face
-# PERF: dropped `const Finalize = GridapP4est.Finalize` — never
-# referenced anywhere in src/, and `const pXest_copy = ...` is now
-# resolved at call time via `GridapP4est.pXest_copy(...)` so that the
-# top-level `using GridapP4est` can be deferred to AMR runs (see
-# Jexpresso._ensure_amr_loaded!()).
+# GridapP4est is an optional extension: the octree-model constructors used
+# below are the amr_* hooks of src/kernel/Adaptivity/p4est_hooks.jl.
 const get_glue_components = GridapDistributed.get_glue_components
 
 
@@ -1871,21 +1868,19 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             end
             model = local_views(partitioned_model).item_ref[]
         elseif linitial_refine == true
-            # PERF: GridapP4est is `using`-d lazily; load it before the
-            # first call to UniformlyRefinedForestOfOctreesDiscreteModel.
-            _ensure_amr_loaded!()
+            _assert_amr_loaded()
             @outputrootonly begin
                 gmodel = _flatten_model_to_cell_dim(GmshDiscreteModel(inputs[:gmsh_filename], renumber=true))
-                partitioned_model = UniformlyRefinedForestOfOctreesDiscreteModel(parts, gmodel, inputs[:init_refine_lvl])
+                partitioned_model = amr_uniformly_refined_model(parts, gmodel, inputs[:init_refine_lvl])
             end
             cell_gids = local_views(partition(get_cell_gids(partitioned_model))).item_ref[]
             dmodel = local_views(partitioned_model).item_ref[]
             model  = DiscreteModelPortion(dmodel, own_to_local(cell_gids))
         elseif ladaptive == true && linitial_refine == false
-            _ensure_amr_loaded!()
+            _assert_amr_loaded()
             @outputrootonly begin
                 gmodel = _flatten_model_to_cell_dim(GmshDiscreteModel(inputs[:gmsh_filename], renumber=true))
-                partitioned_model_coarse = OctreeDistributedDiscreteModel(parts,gmodel)
+                partitioned_model_coarse = amr_octree_model(parts,gmodel)
             end
             function set_id_refined(flags, indices, target_gid)
                 l2g = local_to_global(indices)
@@ -1923,12 +1918,12 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             dtopology      = get_grid_topology(dmodel)
         end
     else
-        # AMR re-adapt path: caller passed `adapt_flags`. All of the
-        # GridapP4est constructors below need the package in scope.
-        _ensure_amr_loaded!()
+        # AMR re-adapt path: caller passed `adapt_flags`. The octree model
+        # calls below need the GridapP4est extension.
+        _assert_amr_loaded()
         if (omesh.lneed_redistribute)
             @outputrootonly begin
-                partitioned_model, glue_redistribute = redistribute(partitioned_model_coarse)
+                partitioned_model, glue_redistribute = GridapDistributed.redistribute(partitioned_model_coarse)
             end
         else
             ref_coarse_flags = map(parts,partition(get_cell_gids(partitioned_model_coarse.dmodel))) do rank,indices
@@ -1941,17 +1936,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                                     Gridap.Geometry.UnstructuredDiscreteModel(get_grid(adapt_model), get_grid_topology(adapt_model), get_face_labeling(adapt_model))
                                 end
             gdmodel = GridapDistributed.GenericDistributedDiscreteModel(discrete_model,get_cell_gids(partitioned_model_coarse))
-            discrete_partitioned_model_coarse = OctreeDistributedDiscreteModel(
-                                            partitioned_model_coarse.parts,
-                                            gdmodel,
-                                            partitioned_model_coarse.non_conforming_glue,
-                                            partitioned_model_coarse.coarse_model,
-                                            partitioned_model_coarse.ptr_pXest_connectivity,
-                                            GridapP4est.pXest_copy(partitioned_model_coarse.pXest_type, partitioned_model_coarse.ptr_pXest),
-                                            partitioned_model_coarse.pXest_type,
-                                            partitioned_model_coarse.pXest_refinement_rule_type,
-                                            partitioned_model_coarse.owns_ptr_pXest_connectivity,
-                                            partitioned_model_coarse.gc_ref)
+            discrete_partitioned_model_coarse = amr_copy_octree_model(partitioned_model_coarse, gdmodel)
             @outputrootonly begin
                 partitioned_model, glue_adapt = Gridap.Adaptivity.adapt(discrete_partitioned_model_coarse,ref_coarse_flags)
             end
@@ -5959,125 +5944,9 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
 end
 
 
-"""
-    read_ad_lvl_from_p4est(pXest_type, ptr_pXest) -> Vector{TInt}
-
-Walk the local trees of a p4est/p8est forest and return the level of every
-local leaf quadrant, in p4est ordering.  This ordering matches the
-Jexpresso mesh element ordering when the mesh is built directly from
-the same forest (e.g. after an AMR restart via `load_p4est_checkpoint_model`).
-
-Dispatches on 2D (`p4est_tree_t`/`p4est_quadrant_t`) vs 3D
-(`p8est_tree_t`/`p8est_quadrant_t`) — these have different memory layouts,
-so reading a 2D forest with the 3D struct types silently misreads garbage.
-Mirrors the same 2D/3D dispatch already used by write_p4est_checkpoint /
-load_p4est_checkpoint_model.
-"""
-function read_ad_lvl_from_p4est(pXest_type, ptr_pXest)
-    TreeT, QuadT = pXest_type isa GridapP4est.P4estType ?
-        (P4est_wrapper.p4est_tree_t, P4est_wrapper.p4est_quadrant_t) :
-        (P4est_wrapper.p8est_tree_t, P4est_wrapper.p8est_quadrant_t)
-
-    forest    = unsafe_load(ptr_pXest)
-    trees_arr = unsafe_load(forest.trees)          # sc_array_t of {p4est,p8est}_tree_t
-    levels    = TInt[]
-    for t in forest.first_local_tree:forest.last_local_tree
-        tree_ptr = Ptr{TreeT}(
-            trees_arr.array + t * trees_arr.elem_size)
-        tree   = unsafe_load(tree_ptr)
-        n_quads = Int(tree.quadrants.elem_count)
-        for q in 0:n_quads-1
-            quad_ptr = Ptr{QuadT}(
-                tree.quadrants.array + q * tree.quadrants.elem_size)
-            quad = unsafe_load(quad_ptr)
-            push!(levels, TInt(quad.level))
-        end
-    end
-    return levels
-end
-
-"""
-    load_p4est_checkpoint_model(base_model, forest_file) -> OctreeDistributedDiscreteModel
-
-Load a p4est forest checkpoint saved by `write_p4est_checkpoint` and build a full
-`OctreeDistributedDiscreteModel` from it.
-
-`base_model` should be the coarse (or preadapted) `OctreeDistributedDiscreteModel`
-built from the original .msh file — its `coarse_model` and `ptr_pXest_connectivity`
-provide the geometric context for the loaded forest.  All MPI ranks call collectively.
-"""
-function load_p4est_checkpoint_model(base_model, forest_file::String)
-    # PERF: the `::OctreeDistributedDiscreteModel` annotation was
-    # dropped from the signature so this function parses without
-    # `using GridapP4est`. The lazy load below guarantees the package
-    # is available for the `OctreeDistributedDiscreteModel(...)` and
-    # `P4est_wrapper.p8est_*` references in the body. Callers always
-    # pass a real OctreeDistributedDiscreteModel — there is only one
-    # method, so dispatch behaviour is unchanged.
-    _ensure_amr_loaded!()
-    pXest_type = base_model.pXest_type
-    parts      = base_model.parts
-
-    # Load forest (MPI-collective). p4est_load/p8est_load also fill
-    # *connectivity_ref with a freshly allocated connectivity that we leave
-    # to be GCed — we use the Gridap-managed connectivity from base_model
-    # throughout.
-    # Dispatch on 2D (p4est_load) vs 3D (p8est_load) to avoid passing the
-    # wrong struct type — mirrors write_p4est_checkpoint's save-side dispatch.
-    if pXest_type isa GridapP4est.P4estType
-        connectivity_ref = Ref{Ptr{P4est_wrapper.p4est_connectivity_t}}()
-        loaded_ptr_pXest = P4est_wrapper.p4est_load(
-            forest_file,
-            get_mpi_comm(),
-            Csize_t(0),      # no per-quadrant data stored
-            Cint(0),         # do not read payload
-            C_NULL,
-            connectivity_ref)
-    else
-        connectivity_ref = Ref{Ptr{P4est_wrapper.p8est_connectivity_t}}()
-        loaded_ptr_pXest = P4est_wrapper.p8est_load(
-            forest_file,
-            get_mpi_comm(),
-            Csize_t(0),      # no per-quadrant data stored
-            Cint(0),         # do not read payload
-            C_NULL,
-            connectivity_ref)
-    end
-
-    # Ghost layer and lnodes for a non-conforming (AMR) forest
-    ptr_ghost  = GridapP4est.setup_pXest_ghost(pXest_type, loaded_ptr_pXest)
-    ptr_lnodes = GridapP4est.setup_pXest_lnodes_nonconforming(pXest_type, loaded_ptr_pXest, ptr_ghost)
-
-    # Build Gridap distributed mesh from the loaded forest.
-    # base_model.coarse_model (GmshDiscreteModel) provides physical coordinates.
-    fmodel, nc_glue = GridapP4est.setup_non_conforming_distributed_discrete_model(
-        pXest_type,
-        GridapP4est.PXestUniformRefinementRuleType(),
-        parts,
-        base_model.coarse_model,
-        base_model.ptr_pXest_connectivity,
-        loaded_ptr_pXest,
-        ptr_ghost,
-        ptr_lnodes)
-
-    GridapP4est.pXest_ghost_destroy(pXest_type, ptr_ghost)
-    GridapP4est.pXest_lnodes_destroy(pXest_type, ptr_lnodes)
-
-    Dc = num_cell_dims(base_model.dmodel)
-    Dp = num_point_dims(base_model.dmodel)
-
-    return OctreeDistributedDiscreteModel(Dc, Dp,
-        parts,
-        fmodel,
-        nc_glue,
-        base_model.coarse_model,
-        base_model.ptr_pXest_connectivity,
-        loaded_ptr_pXest,
-        pXest_type,
-        GridapP4est.PXestUniformRefinementRuleType(),
-        false,         # does not own connectivity (base_model owns it)
-        base_model)    # gc_ref: keep base_model alive
-end
+# read_ad_lvl_from_p4est / load_p4est_checkpoint_model: AMR restart helpers,
+# implemented in ext/JexpressoP4estExt/impl.jl (hooks declared in
+# src/kernel/Adaptivity/p4est_hooks.jl).
 
 function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
     

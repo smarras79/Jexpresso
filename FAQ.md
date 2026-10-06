@@ -130,11 +130,11 @@ julia --project=. -e '
 refinement steps that follow it: the registered `0.3.11` lacks ARM64
 `@cfunction` support and has a p4est-iterator struct-stride mismatch (ARM64 on
 Julia ≥ 1.11, x86_64 on Julia ≥ 1.12). The fork is now **pinned automatically**
-via a `[sources]` block in `Project.toml`, so a fresh `Pkg.instantiate()`
-resolves it. Verify with:
+via a `[sources]` block in `envs/amr/Project.toml`, so `tools/setup_amr.jl`
+(INSTALL.md §3c) resolves it. Verify with:
 
 ```bash
-julia --project=. -e 'using Pkg; Pkg.status("GridapP4est")'
+julia --project=envs/amr -e 'using Pkg; Pkg.status("GridapP4est")'
 # expected: "...#arm64-cfunction-fix"
 ```
 
@@ -263,8 +263,11 @@ specific `libmpi`, and they are bound at different times:
 | Component | Bound when… | By… |
 |---|---|---|
 | `MPI` | `Pkg.build("MPI")` | `LocalPreferences.toml` (`MPIPreferences`) |
-| `P4est_jll` | the Manifest is **resolved** (`Pkg.instantiate()` on a missing `Manifest.toml`) | the MPI variant recorded in the Manifest |
-| `P4est_wrapper` | `Pkg.build("P4est_wrapper")` / first `Pkg.instantiate()` | whatever `mpicc` and `libp4est` it finds at build time |
+| `P4est_jll` | `envs/amr/Manifest.toml` is **resolved** (`tools/setup_amr.jl` on a missing Manifest, or `--fresh`) | the MPI variant recorded in that Manifest |
+| `P4est_wrapper` | `tools/setup_amr.jl` (first run, or `--rebuild`/`--fresh`) | whatever `mpicc` and `libp4est` it finds at build time |
+
+(`P4est_jll`/`P4est_wrapper` come with the optional AMR support and live in
+`envs/amr/`, not in the root environment — see INSTALL.md §3c.)
 
 Typical ways to end up mismatched:
 
@@ -277,10 +280,11 @@ Typical ways to end up mismatched:
 - Used the bare `use_jll_binary()` (which selects `MPItrampoline_jll`) while
   `P4est_jll` resolved to the `MPICH_jll` variant.
 
-**Confirm.** List every `libmpi` the process loads:
+**Confirm.** List every `libmpi` the process loads (`_ensure_amr_loaded!()`
+pulls in p4est, which plain `using Jexpresso` no longer does):
 
 ```bash
-DYLD_PRINT_LIBRARIES=1 julia --project=. -e 'using Jexpresso' 2>&1 | grep -i 'libmpi\.'
+DYLD_PRINT_LIBRARIES=1 julia --project=. -e 'using Jexpresso; Jexpresso._ensure_amr_loaded!()' 2>&1 | grep -i 'libmpi\.'
 ```
 
 Two different directories — e.g. `/opt/homebrew/Cellar/mpich/.../libmpi.12.dylib`
@@ -305,15 +309,15 @@ which mpicc                                  # must print nothing (drop the Home
 rm -f LocalPreferences.toml
 julia --project=. -e 'using MPIPreferences; MPIPreferences.use_jll_binary("MPICH_jll")'
 
-rm -f Manifest.toml
+rm -f Manifest.toml envs/amr/Manifest.toml
 rm -rf ~/.julia/compiled/v1.11/P4est_jll ~/.julia/compiled/v1.11/P4est_wrapper ~/.julia/compiled/v1.11/GridapP4est ~/.julia/compiled/v1.11/MPI ~/.julia/compiled/v1.11/Jexpresso
 julia --project=. -e 'ENV["JULIA_PKG_PRECOMPILE_AUTO"]=0; using Pkg; Pkg.instantiate()'
-julia --project=. -e 'using Pkg; Pkg.status("GridapP4est")'   # fork URL must show
 
-julia --project=. -e 'using Pkg; Pkg.build("MPI"; verbose=true); Pkg.build("P4est_wrapper"; verbose=true); Pkg.build("GridapP4est"; verbose=true)'
+julia --project=. -e 'using Pkg; Pkg.build("MPI"; verbose=true)'
 julia --project=. -e 'using Pkg; Pkg.precompile()'
+julia --project=. tools/setup_amr.jl --fresh   # its status line must show the fork URL
 
-DYLD_PRINT_LIBRARIES=1 julia --project=. -e 'using Jexpresso' 2>&1 | grep -i 'libmpi\.'
+DYLD_PRINT_LIBRARIES=1 julia --project=. -e 'using Jexpresso; Jexpresso._ensure_amr_loaded!()' 2>&1 | grep -i 'libmpi\.'
 #   expect exactly one line: ~/.julia/artifacts/<hash>/lib/libmpi.12.dylib
 julia --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler","theta_amr")' 2>&1 | grep -n -A12 'ERROR'
 #   should print nothing
@@ -334,7 +338,7 @@ Homebrew's `mpiexec`.
   next to the system one (Linux dedupes by soname; macOS resolves `@rpath` by
   path). To use a system MPI with AMR on a Mac you must build p4est yourself
   against it and point `P4est_wrapper` at the install with `P4EST_ROOT_DIR`
-  before `Pkg.build("P4est_wrapper")`.
+  before `julia --project=. tools/setup_amr.jl --rebuild`.
 - The bare `use_jll_binary()` — selects `MPItrampoline_jll`, a shim over
   MPICH; has been seen to end with two copies loaded as well.
 
@@ -344,8 +348,9 @@ first `instantiate`.
 
 **Rule of thumb.** Any change to `LocalPreferences.toml` that switches between
 a system MPI and a JLL MPI needs `rm -f Manifest.toml` + `Pkg.instantiate()`
-*before* the `Pkg.build`s; a change within the same route (e.g. Homebrew
-OpenMPI → Homebrew MPICH) needs only the builds. Either way, build in a shell
+*before* the `Pkg.build`s, and `tools/setup_amr.jl --fresh`; a change within
+the same route (e.g. Homebrew OpenMPI → Homebrew MPICH) needs only the builds
+and `tools/setup_amr.jl --rebuild`. Either way, build in a shell
 where `which mpicc` prints nothing.
 
 ---
@@ -364,19 +369,19 @@ Stacktrace:
 **Cause.** The *registry* `GridapP4est 0.3.11` is in use instead of the
 patched fork (`Hwang1229/GridapP4est.jl#arm64-cfunction-fix`) that fixes
 `@cfunction` closures on ARM64. The fork is selected by a `[sources]` block in
-`Project.toml`, and one of two things went wrong:
+`envs/amr/Project.toml`, and one of two things went wrong:
 
 1. The block is missing (a merge dropped it, or you are on a branch that never
    had it).
-2. The block is present, but `Manifest.toml` was resolved before it was added.
+2. The block is present, but `envs/amr/Manifest.toml` was resolved before it was added.
    `Pkg.instantiate()` reuses an existing Manifest and will not switch the
    package source on its own.
 
 **Confirm.**
 
 ```bash
-grep -A2 '^\[sources' Project.toml
-julia --project=. -e 'using Pkg; Pkg.status("GridapP4est")'
+grep -A3 '^\[sources' envs/amr/Project.toml
+julia --project=envs/amr -e 'using Pkg; Pkg.status("GridapP4est")'
 ```
 
 The `status` line must include the fork URL:
@@ -387,42 +392,38 @@ The `status` line must include the fork URL:
 
 Plain `GridapP4est v0.3.11` with no URL is the registry version.
 
-**Fix.** Ensure `Project.toml` ends with:
+**Fix.** Ensure the `[sources]` block of `envs/amr/Project.toml` contains:
 
 ```toml
-[sources]
 GridapP4est = {url = "https://github.com/Hwang1229/GridapP4est.jl", rev = "arm64-cfunction-fix"}
 ```
 
-then force a fresh resolve and rebuild the MPI-linked pieces (a fresh Manifest
-also brings a fresh `P4est_jll`/`P4est_wrapper`):
+then force a fresh resolve and rebuild of the AMR environment (a fresh
+Manifest also brings a fresh `P4est_jll`/`P4est_wrapper`):
 
 ```bash
 which mpicc                                  # must print nothing
-rm -f Manifest.toml
-julia --project=. -e 'ENV["JULIA_PKG_PRECOMPILE_AUTO"]=0; using Pkg; Pkg.instantiate()'
-julia --project=. -e 'using Pkg; Pkg.status("GridapP4est")'     # URL must appear now
-julia --project=. -e 'using Pkg; Pkg.build("MPI"; verbose=true); Pkg.build("P4est_wrapper"; verbose=true); Pkg.build("GridapP4est"; verbose=true)'
-julia --project=. -e 'using Pkg; Pkg.precompile()'
+julia --project=. tools/setup_amr.jl --fresh # its status line must show the URL now
 ```
 
-`LocalPreferences.toml` can stay as it is; only the Manifest needs to go.
+`LocalPreferences.toml` can stay as it is; only `envs/amr/Manifest.toml` needs to go.
 
 ---
 
 ### "P4est_jll not found in current path" when I try to inspect it
 
 Not an error in your setup. `P4est_jll` and `P4est_wrapper` are indirect
-dependencies (via `GridapP4est`), so `using P4est_jll` from the project fails
-even though they are installed. Query them through the Manifest instead:
+dependencies (via `GridapP4est`, in the optional `envs/amr/` environment), so
+`using P4est_jll` fails even though they are installed. Query them through
+that environment's Manifest instead:
 
 ```bash
-julia --project=. -e 'using Pkg; Pkg.status("P4est_jll"; mode=Pkg.PKGMODE_MANIFEST)'
-julia --project=. -e 'using Pkg; Pkg.status("P4est_wrapper"; mode=Pkg.PKGMODE_MANIFEST)'
+julia --project=envs/amr -e 'using Pkg; Pkg.status("P4est_jll"; mode=Pkg.PKGMODE_MANIFEST)'
+julia --project=envs/amr -e 'using Pkg; Pkg.status("P4est_wrapper"; mode=Pkg.PKGMODE_MANIFEST)'
 ```
 
-`Pkg.build("P4est_wrapper")` works on indirect dependencies, which is why the
-INSTALL.md recipes can call it directly.
+`tools/setup_amr.jl --rebuild` rebuilds them (`Pkg.build("GridapP4est")`
+builds its dependencies too).
 
 Note also that `~/.julia/scratchspaces/44cfe95a-1eb2-52ea-b672-e2afdf69b78f/`
 is **Pkg.jl's own** scratchspace — it only holds `build.log` files for every
@@ -483,6 +484,7 @@ Fix, step by step:
 4. Rebuild the packages that link against native libraries:
    ```bash
    julia --project=. -e 'using Pkg; Pkg.build()'
+   julia --project=. tools/setup_amr.jl --rebuild   # only with AMR support
    ```
 5. Precompile:
    ```bash
@@ -499,11 +501,11 @@ xattr -dr com.apple.quarantine ~/.julia/artifacts   # clear if present
 ```
 
 If you're on Apple Silicon and running an AMR case, the patched `GridapP4est`
-fork is already pinned for you via a `[sources]` block in `Project.toml` — see
+fork is already pinned for you via a `[sources]` block in `envs/amr/Project.toml` — see
 [INSTALL.md, Section 7](INSTALL.md#7-amr-on-macos-apple-silicon-the-patched-gridapp4est-fork).
 Its missing ARM64 `@cfunction`/struct-stride support is a separate issue from
 this artifact-corruption one, but both surface on the same machines, so verify
-`Pkg.status("GridapP4est")` shows the `#arm64-cfunction-fix` fork after
+`julia --project=envs/amr -e 'using Pkg; Pkg.status("GridapP4est")'` shows the `#arm64-cfunction-fix` fork after
 reinstantiating.
 
 ### A run is "stuck" for ~30–60 s before the time loop advances

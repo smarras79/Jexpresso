@@ -1,0 +1,29 @@
+# Environment that adds Jexpresso's optional AMR dependency (GridapP4est).
+#
+# GridapP4est is a weak dependency of Jexpresso (see the root Project.toml),
+# so the root environment never installs it. This environment does. Set it up
+# once with
+#
+#   julia --project=. tools/setup_amr.jl
+#
+# and keep launching as before (`julia --project=. src/Jexpresso.jl ...` or
+# `using Jexpresso; Jexpresso.run_case(...)`): when a case turns AMR on,
+# Jexpresso appends this directory to LOAD_PATH, loads GridapP4est from here
+# and activates ext/JexpressoP4estExt.jl. Every package the root environment
+# already has is still taken from the root Manifest.
+#
+# MPIPreferences is listed so this environment can read the MPI binding in its
+# own LocalPreferences.toml, which tools/setup_amr.jl copies from the root:
+# P4est_jll's MPI variant is chosen when this Manifest is resolved.
+
+[deps]
+GridapP4est = "c2c8e14b-f5fd-423d-9666-1dd9ad120af9"
+Jexpresso = "b6c1962e-2b89-11f0-398d-4f31b209be71"
+MPIPreferences = "3da0fdf6-3ccc-4f1b-acd9-58baa6c99267"
+
+[compat]
+GridapP4est = "0.3.11"
+
+[sources]
+GridapP4est = {url = "https://github.com/Hwang1229/GridapP4est.jl", rev = "arm64-cfunction-fix"}
+Jexpresso = {path = "../.."}

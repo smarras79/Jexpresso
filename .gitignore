@@ -41,3 +41,8 @@ logs/
 # to append instead), so tracking them makes every run dirty the tree.
 problems/*/smoothVortex/errors/
 problems/*/smoothVortex/errors.prev/
+
+# envs/amr/ (the optional AMR environment, see tools/setup_amr.jl) is resolved
+# per machine, against that machine's MPI binding, like the root environment.
+envs/amr/Manifest.toml
+envs/amr/LocalPreferences.toml

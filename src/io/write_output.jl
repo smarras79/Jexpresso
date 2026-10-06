@@ -1,5 +1,4 @@
 using WriteVTK
-using P4est_wrapper
 
 include("./plotting/jeplots.jl")
 
@@ -1552,30 +1551,9 @@ function read_vtk_restart!(q, mesh, inputs, PhysConst; output_dir="")
     end
 end
 
-"""
-    write_p4est_checkpoint(output_dir, iter, partitioned_model)
-
-Save the p4est forest topology to `output_dir/iter_N/iter_N.p4est`.
-Called alongside each VTK write to enable AMR restarts.
-Only called when `inputs[:lamr] == true`.
-"""
-function write_p4est_checkpoint(output_dir::String, iter::Int, partitioned_model)
-    comm  = MPI.COMM_WORLD
-    rank  = MPI.Comm_rank(comm)
-    dir   = joinpath(output_dir, "iter_$(iter)")
-    fname = joinpath(dir, "iter_$(iter).p4est")
-    if rank == 0
-        mkpath(dir)
-    end
-    MPI.Barrier(comm)
-    # save_data=0: no per-quadrant payload, forest topology only
-    # Dispatch on 2D (p4est_save) vs 3D (p8est_save) to avoid passing the wrong struct type.
-    if partitioned_model.pXest_type isa GridapP4est.P4estType
-        @outputrootonly P4est_wrapper.p4est_save(fname, partitioned_model.ptr_pXest, Cint(0))
-    else
-        @outputrootonly P4est_wrapper.p8est_save(fname, partitioned_model.ptr_pXest, Cint(0))
-    end
-end
+# write_p4est_checkpoint(output_dir, iter, partitioned_model): implemented in
+# ext/JexpressoP4estExt/impl.jl (hook declared in
+# src/kernel/Adaptivity/p4est_hooks.jl).
 
 """
     read_vtk_amr_restart!(q, mesh, inputs; output_dir="", varnames=<gigales 7-var set>)

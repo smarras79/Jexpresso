@@ -184,6 +184,7 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
             end
 
             # Build OctreeDistributedDiscreteModel from the loaded forest
+            _assert_amr_loaded()
             @outputrootonly loaded_model = load_p4est_checkpoint_model(partitioned_model, forest_file)
 
             # Build Jexpresso mesh struct from loaded model using the AMR-adapt path

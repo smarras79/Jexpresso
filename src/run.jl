@@ -364,6 +364,17 @@ if rank == 0
 end
 
 #--------------------------------------------------------
+# AMR runs need the optional GridapP4est extension (ext/JexpressoP4estExt.jl).
+# Load it here, at top level, before the driver starts: methods a package
+# load defines are not visible to code that is already running, so loading
+# from inside the driver would be too late (see
+# src/kernel/Adaptivity/p4est_hooks.jl). Non-AMR runs never touch it.
+#--------------------------------------------------------
+if _adaptive_mesh_run(inputs)
+    _ensure_amr_loaded!()
+end
+
+#--------------------------------------------------------
 # Typed cache of :energy_equation for hot-path callers (user_flux!,
 # user_primitives!, user_uout!). Reading the non-const module-global
 # `inputs` from inside per-quadrature-point loops costs ~38 ns per

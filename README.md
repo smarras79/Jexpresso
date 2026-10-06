@@ -59,6 +59,10 @@ The Jexpresso core team uses Claude whereas some external developers have been s
 # Installation:
 Follow the instructins in [INSTALL.md](INSTALL.md)
 
+Adaptive mesh refinement (AMR) is optional: it needs `GridapP4est`, which is
+installed separately with `julia --project=. tools/setup_amr.jl` (INSTALL.md §3c).
+Without it Jexpresso installs and runs every non-AMR case, including on Windows.
+
 Run into trouble? Check the [FAQ.md](FAQ.md) for common installation and run errors.
 
 If you use Jexpresso please drop us a line to let us know. We'd like to add a link to your paper or work on this page.
