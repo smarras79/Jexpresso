@@ -30,6 +30,170 @@ function numerical_flux!(Fstar, FL, FR, qL, qR, λ, neqs, ::upwind_flux)
     end
 end
 
+# Full interface (2D DG faces and FV): normal fluxes FnL/FnR, max speed λ,
+# signal-speed bounds sL ≤ sR, unit normal (nx, ny) from L to R.
+# Fluxes that only need λ fall through to their 8-argument method.
+numerical_flux!(Fstar, FL, FR, qL, qR, λ, sL, sR, nx, ny, neqs, nflux::AbstractNumericalFlux) =
+    numerical_flux!(Fstar, FL, FR, qL, qR, λ, neqs, nflux)
+
+_needs_wave_bounds(::AbstractNumericalFlux) = false
+_needs_wave_bounds(::hll_flux{ScalarLaw})   = true
+_needs_wave_bounds(::hllc_flux{ScalarLaw})  = true
+
+# Default signal-speed bounds ±λ (HLL = Rusanov); a case may define its own.
+user_wave_speed_bounds(q, qe, SD, SVT; nx = 1.0, ny = 0.0, neqs = 1) =
+    (λ = user_max_wave_speed(q, qe, SD, SVT; nx = nx, ny = ny, neqs = neqs); (-λ, λ))
+
+# Face bounds over both traces, only for fluxes that use them
+@inline function _face_wave_bounds(qL, qR, qeL, qeR, SD, SVT, nx, ny, neqs, nflux)
+    _needs_wave_bounds(nflux) || return (0.0, 0.0)
+    aL, bL = user_wave_speed_bounds(qL, qeL, SD, SVT; nx = nx, ny = ny, neqs = neqs)
+    aR, bR = user_wave_speed_bounds(qR, qeR, SD, SVT; nx = nx, ny = ny, neqs = neqs)
+    return min(aL, aR), max(bL, bR)
+end
+
+numerical_flux!(Fstar, FL, FR, qL, qR, λ, neqs,
+                nflux::Union{hll_flux, hllc_flux, roe_flux}) =
+    error(" # numerical_flux!: $(typeof(nflux)) is implemented for the 2D DG and FV face loops only.")
+
+# HLL: F_L if 0 ≤ s_L, F_R if s_R ≤ 0, else (s_R F_L − s_L F_R + s_L s_R Δq)/(s_R − s_L)
+@inline function _hll!(Fstar, FL, FR, qL, qR, sL, sR, neqs)
+    if sL >= 0
+        @inbounds for ieq = 1:neqs;  Fstar[ieq] = FL[ieq];  end
+    elseif sR <= 0
+        @inbounds for ieq = 1:neqs;  Fstar[ieq] = FR[ieq];  end
+    else
+        a = 1 / (sR - sL)
+        @inbounds for ieq = 1:neqs
+            Fstar[ieq] = (sR*FL[ieq] - sL*FR[ieq] + sL*sR*(qR[ieq] - qL[ieq])) * a
+        end
+    end
+    return Fstar
+end
+
+function numerical_flux!(Fstar, FL, FR, qL, qR, λ, sL, sR, nx, ny, neqs, ::hll_flux{ScalarLaw})
+    _hll!(Fstar, FL, FR, qL, qR, sL, sR, neqs)
+end
+
+function numerical_flux!(Fstar, FL, FR, qL, qR, λ, sL, sR, nx, ny, neqs, ::hllc_flux{ScalarLaw})
+    _hll!(Fstar, FL, FR, qL, qR, sL, sR, neqs)
+end
+
+# Murman–Roe: a = ΔF/Δq, F* = ½(F_L + F_R) − ½|a|Δq (λ for a when Δq ≈ 0).
+# No entropy fix: use HLL or Rusanov for transonic rarefactions.
+function numerical_flux!(Fstar, FL, FR, qL, qR, λ, sL, sR, nx, ny, neqs, ::roe_flux{ScalarLaw})
+    @inbounds for ieq = 1:neqs
+        dq = qR[ieq] - qL[ieq]
+        a  = abs(dq) > 1e-14 * max(abs(qL[ieq]), abs(qR[ieq]), 1.0) ? (FR[ieq] - FL[ieq]) / dq : λ
+        Fstar[ieq] = 0.5*(FL[ieq] + FR[ieq]) - 0.5*abs(a)*dq
+    end
+    return Fstar
+end
+
+# 2D Euler, state (ρ, ρu, ρv, ρE), p = (γ−1)(ρE − ½ρ|u|²)
+@inline function _euler_prim(q, γ)
+    ρ = q[1];  u = q[2]/ρ;  v = q[3]/ρ
+    p = (γ - 1) * (q[4] - 0.5*ρ*(u*u + v*v))
+    return ρ, u, v, p
+end
+
+function _check_euler(neqs, ρL, ρR, pL, pR)
+    neqs == 4 || error(" # EulerIdealGas fluxes need the 2D energy-form state (ρ, ρu, ρv, ρE): neqs = 4, got $neqs.")
+    (ρL > 0 && ρR > 0 && pL > 0 && pR > 0) ||
+        error(" # EulerIdealGas flux: non-physical trace (ρL, ρR, pL, pR) = ($ρL, $ρR, $pL, $pR).")
+end
+
+# Einfeldt signal speeds from the traces and the Roe average
+@inline function _euler_bounds(ρL, uL, vL, pL, ρR, uR, vR, pR, qL, qR, nx, ny, γ)
+    cL = sqrt(γ*pL/ρL);  cR = sqrt(γ*pR/ρR)
+    vnL = uL*nx + vL*ny;  vnR = uR*nx + vR*ny
+    HL = (qL[4] + pL)/ρL;  HR = (qR[4] + pR)/ρR
+    r  = sqrt(ρR/ρL)
+    ũ  = (uL + r*uR)/(1 + r);  ṽ = (vL + r*vR)/(1 + r);  H̃ = (HL + r*HR)/(1 + r)
+    c̃  = sqrt(max((γ - 1)*(H̃ - 0.5*(ũ*ũ + ṽ*ṽ)), 0.0))
+    ṽn = ũ*nx + ṽ*ny
+    return min(vnL - cL, ṽn - c̃), max(vnR + cR, ṽn + c̃), vnL, vnR
+end
+
+function numerical_flux!(Fstar, FL, FR, qL, qR, λ, sL_, sR_, nx, ny, neqs, f::hll_flux{EulerIdealGas})
+    γ = f.phys.γ
+    ρL, uL, vL, pL = _euler_prim(qL, γ);  ρR, uR, vR, pR = _euler_prim(qR, γ)
+    _check_euler(neqs, ρL, ρR, pL, pR)
+    sL, sR, _, _ = _euler_bounds(ρL, uL, vL, pL, ρR, uR, vR, pR, qL, qR, nx, ny, γ)
+    _hll!(Fstar, FL, FR, qL, qR, sL, sR, neqs)
+end
+
+# HLLC (Toro): F* = F_K + s_K (q*_K − q_K) on the side K of the contact speed S*
+function numerical_flux!(Fstar, FL, FR, qL, qR, λ, sL_, sR_, nx, ny, neqs, f::hllc_flux{EulerIdealGas})
+    γ = f.phys.γ
+    ρL, uL, vL, pL = _euler_prim(qL, γ);  ρR, uR, vR, pR = _euler_prim(qR, γ)
+    _check_euler(neqs, ρL, ρR, pL, pR)
+    sL, sR, vnL, vnR = _euler_bounds(ρL, uL, vL, pL, ρR, uR, vR, pR, qL, qR, nx, ny, γ)
+    if sL >= 0
+        @inbounds for ieq = 1:4;  Fstar[ieq] = FL[ieq];  end
+        return Fstar
+    elseif sR <= 0
+        @inbounds for ieq = 1:4;  Fstar[ieq] = FR[ieq];  end
+        return Fstar
+    end
+    mL = ρL*(sL - vnL);  mR = ρR*(sR - vnR)
+    sS = (pR - pL + mL*vnL - mR*vnR) / (mL - mR)
+    if sS >= 0      # left star region
+        ρ, u, v, vn, s, q, F, p = ρL, uL, vL, vnL, sL, qL, FL, pL
+    else            # right star region
+        ρ, u, v, vn, s, q, F, p = ρR, uR, vR, vnR, sR, qR, FR, pR
+    end
+    k  = ρ*(s - vn)/(s - sS)
+    d  = sS - vn
+    q1 = k
+    q2 = k*(u + d*nx)
+    q3 = k*(v + d*ny)
+    q4 = k*(q[4]/ρ + d*(sS + p/(ρ*(s - vn))))
+    @inbounds begin
+        Fstar[1] = F[1] + s*(q1 - q[1])
+        Fstar[2] = F[2] + s*(q2 - q[2])
+        Fstar[3] = F[3] + s*(q3 - q[3])
+        Fstar[4] = F[4] + s*(q4 - q[4])
+    end
+    return Fstar
+end
+
+# Roe: F* = ½(F_L + F_R) − ½ Σ_k |λ̃_k| α_k r̃_k with Roe averages (ρ̃, ũ, ṽ, H̃, c̃),
+# acoustic, entropy and shear waves; Harten fix |λ| < δ = 0.1c̃ → (λ² + δ²)/(2δ).
+function numerical_flux!(Fstar, FL, FR, qL, qR, λ, sL_, sR_, nx, ny, neqs, f::roe_flux{EulerIdealGas})
+    γ = f.phys.γ
+    ρL, uL, vL, pL = _euler_prim(qL, γ);  ρR, uR, vR, pR = _euler_prim(qR, γ)
+    _check_euler(neqs, ρL, ρR, pL, pR)
+    HL = (qL[4] + pL)/ρL;  HR = (qR[4] + pR)/ρR
+    r  = sqrt(ρR/ρL)
+    ρ̃  = r*ρL
+    ũ  = (uL + r*uR)/(1 + r);  ṽ = (vL + r*vR)/(1 + r);  H̃ = (HL + r*HR)/(1 + r)
+    k̃  = 0.5*(ũ*ũ + ṽ*ṽ)
+    c̃  = sqrt(max((γ - 1)*(H̃ - k̃), eps()))
+    ṽn = ũ*nx + ṽ*ny;  ṽt = -ũ*ny + ṽ*nx
+    Δρ = ρR - ρL;  Δp = pR - pL
+    Δvn = (uR*nx + vR*ny) - (uL*nx + vL*ny)
+    Δvt = (-uR*ny + vR*nx) - (-uL*ny + vL*nx)
+    α1 = (Δp - ρ̃*c̃*Δvn)/(2c̃*c̃)
+    α4 = (Δp + ρ̃*c̃*Δvn)/(2c̃*c̃)
+    α2 = Δρ - Δp/(c̃*c̃)
+    α3 = ρ̃*Δvt
+    δ  = 0.1*c̃
+    fix(l) = (a = abs(l); a < δ ? (l*l + δ*δ)/(2δ) : a)
+    l1 = fix(ṽn - c̃);  l4 = fix(ṽn + c̃);  l2 = abs(ṽn)
+    D1 = l1*α1*1           + l2*α2*1     + l4*α4*1
+    D2 = l1*α1*(ũ - c̃*nx)  + l2*(α2*ũ - α3*ny) + l4*α4*(ũ + c̃*nx)
+    D3 = l1*α1*(ṽ - c̃*ny)  + l2*(α2*ṽ + α3*nx) + l4*α4*(ṽ + c̃*ny)
+    D4 = l1*α1*(H̃ - c̃*ṽn)  + l2*(α2*k̃ + α3*ṽt) + l4*α4*(H̃ + c̃*ṽn)
+    @inbounds begin
+        Fstar[1] = 0.5*(FL[1] + FR[1]) - 0.5*D1
+        Fstar[2] = 0.5*(FL[2] + FR[2]) - 0.5*D2
+        Fstar[3] = 0.5*(FL[3] + FR[3]) - 0.5*D3
+        Fstar[4] = 0.5*(FL[4] + FR[4]) - 0.5*D4
+    end
+    return Fstar
+end
+
 # Ghost ("+" side) trace of a physical boundary face, from the case's
 # Dirichlet routine.
 #
@@ -156,8 +320,9 @@ function surface_rhs_el!(params, uaux, connijk, qe, mesh, time,
 
             λ = max(user_max_wave_speed(qL, @view(qe[ipL,:]), SD, SVT; nx=nx, ny=ny, neqs=neqs),
                     user_max_wave_speed(qR, @view(qe[ipR,:]), SD, SVT; nx=nx, ny=ny, neqs=neqs))
+            sL, sR = _face_wave_bounds(qL, qR, @view(qe[ipL,:]), @view(qe[ipR,:]), SD, SVT, nx, ny, neqs, nflux)
 
-            numerical_flux!(Fstar, FnL, FnR, qL, qR, λ, neqs, nflux)
+            numerical_flux!(Fstar, FnL, FnR, qL, qR, λ, sL, sR, nx, ny, neqs, nflux)
 
             @inbounds for ieq = 1:neqs
                 params.rhs_el[eL, iL, jL, ieq] += ω[k]  * Jf * (FnL[ieq] - Fstar[ieq])
@@ -199,8 +364,9 @@ function surface_rhs_el!(params, uaux, connijk, qe, mesh, time,
 
             λ = max(user_max_wave_speed(qL, @view(qe[ip,:]), SD, SVT; nx=nx, ny=ny, neqs=neqs),
                     user_max_wave_speed(qB, @view(qe[ip,:]), SD, SVT; nx=nx, ny=ny, neqs=neqs))
+            sL, sR = _face_wave_bounds(qL, qB, @view(qe[ip,:]), @view(qe[ip,:]), SD, SVT, nx, ny, neqs, nflux)
 
-            numerical_flux!(Fstar, FnL, FnR, qL, qB, λ, neqs, nflux)
+            numerical_flux!(Fstar, FnL, FnR, qL, qB, λ, sL, sR, nx, ny, neqs, nflux)
 
             @inbounds for ieq = 1:neqs
                 params.rhs_el[e, i, j, ieq] += ω[k] * Jf * (FnL[ieq] - Fstar[ieq])
