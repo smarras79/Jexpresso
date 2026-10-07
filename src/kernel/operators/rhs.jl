@@ -898,7 +898,12 @@ function _build_rhs!(RHS, u, params, time)
 
     end
 
-    if AD == DiscGal()
+    if AD == DiscGal() && params.inputs[:lfv]
+        # FV (fv.jl): face-flux balance replaces rhs_el; no volume term
+        @timeit_debug JEXPRESSO_TIMER "fv_rhs" fv_surface_rhs!(
+            params, params.uaux, params.mesh.connijk, params.qp.qe, params.mesh, time,
+            nelem, ngl, neqs, CL, params.SOL_VARS_TYPE, params.inputs[:numerical_flux], SD)
+    elseif AD == DiscGal()
         @timeit_debug JEXPRESSO_TIMER "surface_rhs" surface_rhs_el!(
             params, params.uaux, params.mesh.connijk, params.qp.qe, params.mesh, time,
             nelem, ngl, neqs, CL, params.SOL_VARS_TYPE, params.inputs[:numerical_flux], SD)

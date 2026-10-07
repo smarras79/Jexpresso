@@ -248,6 +248,11 @@ function driver(nparts,
         end
         
         qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
+        # FV: project the nodal initial state onto cell averages
+        if get(inputs, :lfv, false)
+            fv_cell_averages!(qp.qn, sem.mesh.connijk, sem.matrix.M, sem.mesh.nelem, sem.mesh.ngl)
+            fv_cell_averages!(qp.qe, sem.mesh.connijk, sem.matrix.M, sem.mesh.nelem, sem.mesh.ngl)
+        end
         if rank == 0
             @printf("DONE (%.2f s)\n", (time_ns() - _t_init) / 1e9)
             flush(stdout)
