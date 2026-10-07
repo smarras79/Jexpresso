@@ -217,9 +217,15 @@ function hevi_verify_fast(params, opfull::HEVIOperator, opvert::HEVIOperator,
         horiz        = MPI.Allreduce(horiz,        MPI.MAX, comm)
     end
 
+    # Part 1 holds only on a FLAT mesh. With :lwarp a field that is uniform on
+    # a computational level is not uniform in physical x, and the full operator
+    # answers it through the terrain cross-metrics (dζ/dx d/dζ) that the
+    # vertical one does not carry -- a real horizontal response, not an index
+    # error. Report rel_vertical there, but judge the operator on part 2 only.
+    warped = hasproperty(params, :inputs) && get(params.inputs, :lwarp, false) == true
     return (rel_vertical = rel_vertical, horiz_response = horiz,
             theta_compared = !skipθ,
-            ok = rel_vertical < 1.0e-10 && horiz > 0.0)
+            ok = (warped || rel_vertical < 1.0e-10) && horiz > 0.0)
 end
 
 """

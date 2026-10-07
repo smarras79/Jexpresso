@@ -658,33 +658,54 @@ function build_column_topology(mesh, comm; rtol::Real = 1.0e-6)
         MPI.Allreduce!(ztop, MPI.MAX, comm)
     end
 
-    # Normalised height -> level catalogue. On a flat mesh this is just z
-    # rescaled; on a terrain-following mesh it is the computational level,
-    # which is what actually lines up between columns.
-    ζ = Vector{Float64}(undef, npoin)
-    @inbounds for ip = 1:npoin
-        c = gcol_of[ip]
-        span = ztop[c] - zbot[c]
-        ζ[ip] = span > 0 ? (z[ip] - zbot[c]) / span : 0.0
-    end
-    ζcat = global_catalogue(ζ, comm, rtol; label = "normalised height")
-    nlev = length(ζcat)
-
     # Local columns, in ascending global id so the ordering is reproducible.
     present = sort!(unique(gcol_of))
     ncol    = length(present)
     slot    = Dict{Int,Int}(g => i for (i, g) in enumerate(present))
 
-    node = zeros(Int, nlev, ncol)
+    # Level of a node within its column. If every column is held WHOLE by one
+    # rank (:lxy_partition), the level is simply the node's rank in z within
+    # its column -- exact for any vertical extrusion, however the terrain warp
+    # relaxes with height. Otherwise fall back to a global catalogue of the
+    # normalised height (z - zbot)/(ztop - zbot), which lines up between
+    # columns only when the warp is linear in the computational coordinate.
+    members = [Int[] for _ = 1:ncol]
     @inbounds for ip = 1:npoin
-        ic = slot[gcol_of[ip]]
-        il = catalogue_index(ζcat, ζ[ip])
-        if node[il, ic] != 0 && node[il, ic] != ip
-            error("HEVI: two distinct local nodes ($(node[il,ic]) and $ip) landed in the same ",
-                  "(column $(present[ic]), level $il) slot. The mesh is not a clean vertical ",
-                  "extrusion, or rtol=$rtol is too coarse for its horizontal spacing.")
+        push!(members[slot[gcol_of[ip]]], ip)
+    end
+    nloc_max = isempty(members) ? 0 : maximum(length, members)
+    nlev_g   = MPI.Comm_size(comm) > 1 ? MPI.Allreduce(nloc_max, MPI.MAX, comm) : nloc_max
+    whole    = all(m -> length(m) == nlev_g, members)
+    whole    = MPI.Comm_size(comm) > 1 ? MPI.Allreduce(Int(whole), MPI.MIN, comm) == 1 : whole
+
+    if whole
+        nlev = nlev_g
+        node = zeros(Int, nlev, ncol)
+        @inbounds for ic = 1:ncol
+            m = members[ic]
+            node[:, ic] .= m[sortperm(@view z[m])]
         end
-        node[il, ic] = ip
+    else
+        ζ = Vector{Float64}(undef, npoin)
+        @inbounds for ip = 1:npoin
+            c = gcol_of[ip]
+            span = ztop[c] - zbot[c]
+            ζ[ip] = span > 0 ? (z[ip] - zbot[c]) / span : 0.0
+        end
+        ζcat = global_catalogue(ζ, comm, rtol; label = "normalised height")
+        nlev = length(ζcat)
+
+        node = zeros(Int, nlev, ncol)
+        @inbounds for ip = 1:npoin
+            ic = slot[gcol_of[ip]]
+            il = catalogue_index(ζcat, ζ[ip])
+            if node[il, ic] != 0 && node[il, ic] != ip
+                error("HEVI: two distinct local nodes ($(node[il,ic]) and $ip) landed in the same ",
+                      "(column $(present[ic]), level $il) slot. The mesh is not a clean vertical ",
+                      "extrusion, or rtol=$rtol is too coarse for its horizontal spacing.")
+            end
+            node[il, ic] = ip
+        end
     end
 
     nheld  = [count(!iszero, @view node[:, ic]) for ic = 1:ncol]

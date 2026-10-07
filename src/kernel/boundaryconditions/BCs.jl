@@ -1,5 +1,22 @@
 include("custom_bcs.jl")
 
+"""
+    face_node_column(connijk, e, ip, i, j, ngl) -> (a, b)
+
+Element-local horizontal indices of the boundary-face node `ip` on the bottom
+(k = 1) layer of element `e`, so that `connijk[e,a,b,k]` walks up the node's
+own column. A face's (i,j) ordering is not the element's: indexing connijk
+with the face indices pairs the wall node with another column. Returns (i,j)
+unchanged if `ip` is not on the element's k = 1 layer.
+"""
+@inline function face_node_column(connijk, e, ip, i, j, ngl)
+    @inbounds connijk[e,i,j,1] == ip && return i, j
+    @inbounds for bb in 1:ngl, aa in 1:ngl
+        connijk[e,aa,bb,1] == ip && return aa, bb
+    end
+    return i, j
+end
+
 function apply_boundary_conditions_dirichlet!(u, uaux, t,qe,
                                               coords, 
                                               nx, ny, nz,
@@ -705,7 +722,8 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                         for j = 1:ngl
                             ip  = poin_in_bdy_face[iface,i,j]
                             e   = bdy_face_in_elem[iface]
-                            ip1 = connijk[e,i,j,2]
+                            a, b = face_node_column(connijk, e, ip, i, j, ngl)
+                            ip1 = connijk[e,a,b,2]
                             if (Tabs[ip] < 1)
                                 θ = 0.0
                                 θ1 = 0.0
@@ -728,8 +746,16 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                             ip  = poin_in_bdy_face[iface,i,j]
                             e   = bdy_face_in_elem[iface]
 
-                            #Inside point
-                            ip1 = connijk[e,i,j,ifirst_wall_node]
+                            # Inside point, IN THE WALL NODE'S OWN COLUMN. The
+                            # face's (i,j) is not the element's (i,j): on the
+                            # LESICP meshes only 20% of the wall nodes have
+                            # poin_in_bdy_face[iface,i,j] == connijk[e,i,j,1].
+                            # Indexing connijk with the face's (i,j) took the
+                            # inside point -- and with it the whole MOST
+                            # stress and heat flux -- from another column of
+                            # the element, then deposited it on this node.
+                            a, b = face_node_column(connijk, e, ip, i, j, ngl)
+                            ip1 = connijk[e,a,b,ifirst_wall_node]
                             
                             θ = 0.0   
                             θ1 = 0.0 
@@ -749,7 +775,7 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
 
                             # if (false)
                             if (bdy_face_type[iface] == "MOST")
-                                ipsfc    = connijk[e,i,j,1]
+                                ipsfc    = connijk[e,a,b,1]      # == ip
                                 if SOL_VARS_TYPE == TOTAL()
                                     ρ        = uaux[ip1, 1]
                                     u_inside = uaux[ip1, 2]/ρ

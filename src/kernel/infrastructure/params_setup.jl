@@ -292,6 +292,26 @@ function params_setup(sem,
             # shifted wall distance is worse than the cost of one Allreduce.
             wall0    = MPI.Allreduce(minimum(@view coords_h[idir, :]), MPI.MIN, comm)
             zw       = max.(@view(coords_h[idir, :]) .- wall0, 0.0)
+            # Over terrain (:lwarp) the wall is not the domain floor: measure the
+            # height above the surface of each node's own column instead. The
+            # warp moves z only, so a column's nodes share their horizontal
+            # coordinates exactly, and with :lxy_partition every column lives
+            # whole on one rank -- its local minimum IS the surface.
+            terrain_wall = inputs[:lwarp] && get(inputs, :lxy_partition, false) == true
+            if terrain_wall
+                hdirs = idir == 3 ? (1, 2) : (1,)
+                colkey(ip) = ntuple(k -> round(coords_h[hdirs[k], ip]; digits=3), length(hdirs))
+                zsurf_col = Dict{NTuple{length(hdirs),Float64},Float64}()
+                @inbounds for ip in axes(coords_h, 2)
+                    key = colkey(ip)
+                    zsurf_col[key] = min(get(zsurf_col, key, Inf), coords_h[idir, ip])
+                end
+                @inbounds for ip in axes(coords_h, 2)
+                    zw[ip] = max(coords_h[idir, ip] - zsurf_col[colkey(ip)], 0.0)
+                end
+                hmax = MPI.Allreduce(maximum(values(zsurf_col)) - wall0, MPI.MAX, comm)
+                rank == 0 && @info ":lwall_damping over terrain: wall distance from each column's surface (surface relief $(round(hmax, digits=2)) m)"
+            end
 
             # Wall-distance floor. l -> kappa*z assumes the eddy viscosity is
             # evaluated at cell centres, never on the wall face; a nodal SEM has
@@ -317,10 +337,11 @@ function params_setup(sem,
                 rank == 0 && @info ":lwall_damping wall-distance floor z_eff = $(round(0.5*z1, digits=3)) m"
             end
             KernelAbstractions.copyto!(backend, sgs.zwall, TFloat.(zw))
-            if inputs[:lwarp] && rank == 0
-                @warn(":lwall_damping uses height above the domain floor, but :lwarp is on. " *
-                      "Over terrain that is not the distance to the wall, so the near-wall " *
-                      "limit will under-damp above the hill.")
+            if inputs[:lwarp] && !terrain_wall && rank == 0
+                @warn(":lwall_damping uses height above the domain floor, but :lwarp is on " *
+                      "without :lxy_partition (columns may be split across ranks). Over terrain " *
+                      "that is not the distance to the wall, so the near-wall limit will " *
+                      "under-damp above the hill.")
             end
         end
 

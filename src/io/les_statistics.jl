@@ -94,7 +94,8 @@ function build_les_bottom_cache(mesh, metrics, inputs)
         for i in 1:ngl, j in 1:ngl
             ip_sfc = poin_bdy[iface, i, j]
             gip2owner[ip_sfc] == rank || continue
-            ip1 = connijk_arr[e, i, j, ifirst_wall_node]
+            a, b = face_node_column(connijk_arr, e, ip_sfc, i, j, ngl)   # the face's (i,j) is not the element's
+            ip1 = connijk_arr[e, a, b, ifirst_wall_node]
             nx_f = metrics_nx[iface, i, j]
             ny_f = metrics_ny[iface, i, j]
             nz_f = metrics_nz[iface, i, j]

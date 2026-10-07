@@ -30,6 +30,8 @@ function _wall_watch_procmem()
     return rss, vsz
 end
 
+const WALL_WATCH_ORDER_CHECKED = Ref(false)
+
 function wall_watch_report(params, u, t, step; io = stdout, thresh = 12.0)
     mesh   = params.mesh
     inputs = params.inputs
@@ -61,6 +63,32 @@ function wall_watch_report(params, u, t, step; io = stdout, thresh = 12.0)
         end
     end
 
+    # One-off: does the face's (i,j) order match the element's (i,j,1)?
+    # BCs.jl used to pair poin_in_bdy_face[iface,i,j] with connijk[e,i,j,ifw]; if the
+    # orders differ the wall node and its "node 2" sit in different columns.
+    if !WALL_WATCH_ORDER_CHECKED[]
+        WALL_WATCH_ORDER_CHECKED[] = true
+        nok = 0; ntr = 0; nk1 = 0; noth = 0
+        for iface = 1:mesh.nfaces_bdy
+            mesh.bdy_face_type[iface] == "MOST" || continue
+            e = mesh.bdy_face_in_elem[iface]
+            for i = 1:ngl, j = 1:ngl
+                ip = mesh.poin_in_bdy_face[iface,i,j]
+                if ip == mesh.connijk[e,i,j,1]
+                    nok += 1
+                elseif ip == mesh.connijk[e,j,i,1]
+                    ntr += 1
+                elseif ip in @view mesh.connijk[e,:,:,1]
+                    nk1 += 1
+                else
+                    noth += 1
+                end
+            end
+        end
+        g = MPI.Allreduce([nok, ntr, nk1, noth], MPI.SUM, comm)
+        rank == 0 && @printf(io, " # wall-watch face order: face(i,j)==elem(i,j,1) %d | ==elem(j,i,1) %d | elsewhere on k=1 %d | not on k=1 %d\n", g...)
+    end
+
     best   = -Inf
     rec    = zeros(Float64, 14)     # x y u v u1 v1 w1 rho th th1 mu mu1 z1 rho1
     n_wall = 0; n_run = 0; sum_off = 0.0
@@ -75,7 +103,8 @@ function wall_watch_report(params, u, t, step; io = stdout, thresh = 12.0)
         e = mesh.bdy_face_in_elem[iface]
         for i = 1:ngl, j = 1:ngl
             ip  = mesh.poin_in_bdy_face[iface,i,j]
-            ip1 = mesh.connijk[e,i,j,ifw]
+            a, b = face_node_column(mesh.connijk, e, ip, i, j, ngl)
+            ip1 = mesh.connijk[e,a,b,ifw]
             ρ,  uu,  vv,  ww,  th  = state(ip)
             ρ1, uu1, vv1, ww1, th1 = state(ip1)
             uh  = hypot(uu,  vv)

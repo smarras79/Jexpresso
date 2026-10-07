@@ -402,7 +402,7 @@ function les_projection_finalize!(params, t)
         rank == 0 || continue
 
         cnt = G[:, 1]
-        any(cnt .== 0) && @warn "$(pl.name): $(count(==(0), cnt)) cells received no samples"
+        any(cnt .== 0) && @info "$(pl.name): $(count(==(0), cnt)) cells received no samples (outside the mesh, e.g. under terrain) -- written as NaN"
         den = max.(cnt, 1) .* ns                   # count was per sample
         means = G[:, 2:1+nprof] ./ den
         raw   = G[:, 2+nprof:end] ./ den
@@ -412,6 +412,12 @@ function les_projection_finalize!(params, t)
             user_les_stress!(pbuf, @view(raw[i, :]), @view(means[i, :]))
             stress[i, :] .= pbuf
         end
+        # Cells no rank sampled lie outside the mesh -- under the terrain on a
+        # warped mesh. They have no value: NaN, as the official TABLES
+        # interpolation writes below the surface, not a misleading 0.
+        empty = cnt .== 0
+        means[empty, :]  .= NaN
+        stress[empty, :] .= NaN
 
         # ---- plane: rectilinear VTK, the normal axis a single coordinate ----
         a1, a2, an = pl.axes
@@ -448,12 +454,17 @@ function les_projection_finalize!(params, t)
                     fill!(mz, 0.0); fill!(rz, 0.0); dsum = 0.0
                     for j1 in 1:n1
                         i = (j2 - 1)*n1 + j1
+                        empty[i] && continue           # below the terrain
                         mz .+= @view G[i, 2:1+nprof]
                         rz .+= @view G[i, 2+nprof:end]
                         dsum += den[i]
                     end
-                    mz ./= dsum; rz ./= dsum
-                    user_les_stress!(sz, rz, mz)
+                    if dsum > 0
+                        mz ./= dsum; rz ./= dsum
+                        user_les_stress!(sz, rz, mz)
+                    else
+                        fill!(mz, NaN); fill!(sz, NaN)
+                    end
                     @printf(io, "%.6e", pl.coord2[j2])
                     for v in 1:nprof; @printf(io, "  %.6e", mz[v]); end
                     for v in 1:nstr;  @printf(io, "  %.6e", sz[v]); end

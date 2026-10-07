@@ -211,7 +211,16 @@ function warp_mesh_3D!(mesh,inputs)
         end
 
         mesh.coords[3,ip] = sigma[ip] + damping_factor * (z_warped - sigma[ip])
-       
+
+    end
+
+    # KEEP THE TWO COPIES OF THE VERTICAL COORDINATE IN STEP, as stretching.jl
+    # does after it writes coords[3,:]. The 3D metric terms are built from
+    # mesh.x/y/z, and so are the initial sounding interpolation and the
+    # :les_projection locator: without this the discretisation ran on the FLAT
+    # grid while the column topology and the wall model saw the terrain.
+    @inbounds for ip = 1:mesh.npoin
+        mesh.z[ip] = mesh.coords[3, ip]
     end
     
     #= Parameters for damping control (in normalized vertical coordinates) 
