@@ -101,7 +101,7 @@ The question this deck exists to answer does not need the full run: the step
 corner is where `ffs_step` failed in *every* row of its sweep, and it fails
 early or not at all. **`:tend => 2.0e-4` (4000 steps) already answers it.**
 
-`JEXPRESSO_STEP_HEARTBEAT=1` turns on a per-step trace without editing the deck.
+`:lstep_heartbeat => true` in the deck turns on a per-step trace.
 
 ## What to look at
 

@@ -34,8 +34,8 @@ Each case runs in **CI mode**: the solver reads
 CI mode also forces the settings the comparison depends on —
 `:outformat => "hdf5"`, `:output_dir => "none"`, `:loverwrite_output => true`
 and a single write at `:tend` — announcing each override it applies. Nothing
-is printed during the solve as a result; run with `JEXPRESSO_STEP_HEARTBEAT=1`
-to see progress and the step rate. A deck copied out of
+is printed during the solve as a result; set `:lstep_heartbeat => true`
+in the deck to see progress and the step rate. A deck copied out of
 `problems/` therefore produces comparable output even though it asks for VTK
 somewhere else. `JEXPRESSO_CI_OUTPUT=0` disables the overrides.
 

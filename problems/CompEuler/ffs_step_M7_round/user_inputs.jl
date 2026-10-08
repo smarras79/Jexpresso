@@ -179,8 +179,7 @@ function user_inputs()
         # same step count and the same per-step cost as ffs_step, so the
         # same order of wall clock. A long silence after "Integrator warm-up
         # with real callbacks" is the run working, not a hang.
-        # `JEXPRESSO_STEP_HEARTBEAT=1` turns on a per-step trace without
-        # editing this deck.
+        # `:lstep_heartbeat => true` turns on a per-step trace.
         #
         # FOR A FIRST LOOK, the question this deck exists to answer does not
         # need the full run: the step corner is where ffs_step failed in

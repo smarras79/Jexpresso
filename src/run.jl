@@ -298,7 +298,7 @@ if parsed_CI_mode == "true" &&
     # NOTE: CI mode deliberately does NOT switch on :lstep_heartbeat. With a
     # single write at :tend nothing is printed during the solve, so a slow run
     # looks like a hung one — but per-step output is noise in a healthy run.
-    # Set JEXPRESSO_STEP_HEARTBEAT=1 when you need to see progress or measure
+    # Set :lstep_heartbeat => true when you need to see progress or measure
     # the step rate (first 5 steps, then every 100th; see TimeIntegrators.jl).
 end
 
