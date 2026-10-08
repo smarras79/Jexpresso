@@ -31,7 +31,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #
     # Check that necessary inputs exist in the Dict inside .../IO/user_inputs.jl
     #
-    mod_inputs_check(inputs, :nop, Int8(4), "w")  #Polynomial order
+    get(inputs, :AD, nothing) == FV() || mod_inputs_check(inputs, :nop, Int8(4), "w")  #Polynomial order (none for FV)
     
     if(!haskey(inputs, :backend))
         inputs[:backend] = CPU()
@@ -653,6 +653,15 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
     if(!haskey(inputs, :tend))
         inputs[:tend] = 0.0  #end time is 0.0 by default
+    end
+    # Δt must be positive, finite and nonzero in Float32 (warm-up); checked on all ranks
+    if !inputs[:llinsolve] && Float64(inputs[:tend]) > Float64(inputs[:tinit])
+        Δt = inputs[:Δt]
+        ok = Δt isa Real && isfinite(Δt) && Δt > 0 && Float32(Δt) > 0
+        ok || error(" # :Δt => " * repr(Δt) * " (" * string(typeof(Δt)) * ") is not a usable time step for " *
+                    "tinit = " * string(inputs[:tinit]) * ", tend = " * string(inputs[:tend]) *
+                    ": it must be a positive, finite number, at least 1e-38. Check the :Δt line of the case's user_inputs.jl (an expression " *
+                    "or a pasted Unicode minus sign − instead of - can turn 5.0e-5 into something else).")
     end
 
     if( !haskey(inputs, :diagnostics_at_times) )
@@ -1517,9 +1526,22 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :AD))
         inputs[:AD] = ContGal()
     else
-        if inputs[:AD] != ContGal() && inputs[:AD] != FD() && inputs[:AD] != DiscGal()
-            @mystop(" :AD can only be ContGal(), DiscGal(), or FD() at the moment.")
+        if inputs[:AD] != ContGal() && inputs[:AD] != FD() && inputs[:AD] != DiscGal() && inputs[:AD] != FV()
+            @mystop(" :AD can only be ContGal(), DiscGal(), FV() or FD() at the moment.")
         end
+    end
+    # :AD => FV(): order-zero DG on the :nop => 2 DG layout (lowest the mesh builder supports)
+    inputs[:lfv] = inputs[:AD] == FV()
+    if inputs[:lfv]
+        inputs[:AD]  = DiscGal()
+        inputs[:nop] = 2
+        inputs[:lexact_integration] = false
+        get(inputs, :lvisc, false) &&
+            @mystop(" :AD => FV() is inviscid for now: set :lvisc => false.")
+        get(inputs, :lsource, false) &&
+            @mystop(" :AD => FV() has no source term yet: set :lsource => false.")
+        get(inputs, :lkep, false) &&
+            @mystop(" :AD => FV() has no volume term: :lkep does not apply (set it false).")
     end
 
     if(!haskey(inputs, :numerical_flux))
