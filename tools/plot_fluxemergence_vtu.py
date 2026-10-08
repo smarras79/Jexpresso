@@ -100,20 +100,21 @@ def _cluster(v, tol):
     return ids, np.bincount(ids, weights=v) / np.bincount(ids)
 
 
-def read_pvtu(path):
-    """Merge the rank pieces of iter_N.pvtu (all point fields); nodes shared by ranks are merged."""
+def read_pvtu(path, keep=None):
+    """Merge the rank pieces of iter_N.pvtu (point fields in keep, default all); nodes shared by ranks are merged."""
     pieces = [os.path.join(os.path.dirname(path), p.get("Source")) for p in ET.parse(path).getroot().iter("Piece")]
-    xs, ys, quads, vals, t, n0 = [], [], [], {}, None, 0
+    xs, ys, quads, vals, t, n0, seen = [], [], [], {}, None, 0, set()
     for f in pieces:
         d = read_vtu(f)
         P = next(v for (s, _), v in d.items() if s == "Points").reshape(-1, 3)
         if not np.all(d[("Cells", "types")] == 9):
             raise ValueError(f"{f}: only VTK_QUAD cells are supported")
         quads.append(d[("Cells", "connectivity")].reshape(-1, 4).astype(np.int64) + n0)
-        xs.append(P[:, 0]); ys.append(P[:, 1])
+        xs.append(P[:, 0].copy()); ys.append(P[:, 1].copy())  # copies: the piece's raw bytes can be freed
         for (sec, nm), v in d.items():
-            if sec == "PointData" and v.ndim == 1:
-                vals.setdefault(nm, []).append(np.asarray(v, float))
+            seen.update([nm] if sec == "PointData" else [])
+            if sec == "PointData" and v.ndim == 1 and (keep is None or nm in keep):
+                vals.setdefault(nm, []).append(np.array(v, float))
         if ("FieldData", "TimeValue") in d:
             t = float(d[("FieldData", "TimeValue")][0])
         n0 += len(P)
@@ -125,13 +126,14 @@ def read_pvtu(path):
     fields = {nm: np.concatenate(v)[first] for nm, v in vals.items() if len(v) == len(pieces)}
     if "log10_ρ" not in fields and "ρ" in fields:
         fields["log10_ρ"] = np.log10(np.maximum(fields["ρ"], 1e-300))
+        seen.add("log10_ρ")
     return dict(x=x[first], y=y[first], quads=inv.ravel()[q], ix=ix[first], iy=iy[first], xc=xc, yc=yc,
-                t=t, fields=fields)
+                t=t, fields=fields, names=sorted(seen))
 
 
 def _field(g, name, path):
     if name not in g["fields"]:
-        raise KeyError(f"no point field '{name}'. Available: " + ", ".join(sorted(g["fields"])))
+        raise KeyError(f"no point field '{name}'. Available: " + ", ".join(g["names"]))
     return g["fields"][name]
 
 
@@ -198,16 +200,45 @@ def flux_function_lsq(g, tri, Bx, Bz):
     return A
 
 
+def grid2d(g, v):
+    """v on the tensor-product node grid, shape (ny, nx); None if the nodes do not form one."""
+    nx, ny = len(g["xc"]), len(g["yc"])
+    if nx * ny != len(g["x"]):
+        return None
+    Z = np.empty((ny, nx))
+    Z[g["iy"], g["ix"]] = v
+    return Z
+
+
+def fill(ax, g, tri, v, cmap, vmin, vmax, shading):
+    """Field on the native nodes: as a structured grid when they form one (4x faster), else on triangles.
+    contourf: 256 bands, out-of-range values in the end colors; drawn at zorder -1, a bitmap in pdf/svg."""
+    ax.set_rasterization_zorder(0)
+    Z, norm = grid2d(g, v), Normalize(vmin, vmax)
+    kw = dict(cmap=cmap, norm=norm, zorder=-1)
+    if shading == "gouraud":
+        if Z is not None:
+            ax.pcolormesh(g["xc"], g["yc"], np.clip(Z, vmin, vmax), shading="gouraud", **kw)
+        else:
+            ax.tripcolor(Triangulation(g["x"], g["y"], tri()), np.clip(v, vmin, vmax), shading="gouraud", **kw)
+    else:
+        kw.update(levels=np.linspace(vmin, vmax, 257), extend="both", antialiased=False)
+        if Z is not None:
+            ax.contourf(g["xc"], g["yc"], Z, **kw)
+        else:
+            ax.tricontourf(Triangulation(g["x"], g["y"], tri()), v, **kw)
+
+
 def plot_one(path, a, out):
-    g = read_pvtu(path)
+    g = read_pvtu(path, {a.var, a.bx, a.bz, "ρ", *(a.vec_fields if a.vectors else ())})
     field, Bx, Bz = _field(g, a.var, path), _field(g, a.bx, path), _field(g, a.bz, path)
-    tri = triangles(g)
-    T = Triangulation(g["x"], g["y"], tri)
+    cache = {}
+    tri = lambda: cache.setdefault("tri", triangles(g))
     A = flux_function_integrate(g, Bx, Bz) if a.a_method in ("auto", "integrate") else None
     if A is None:
         if a.a_method == "integrate":
             raise ValueError("the nodes are not a tensor-product grid; use --a-method lsq")
-        A = flux_function_lsq(g, tri, Bx, Bz)
+        A = flux_function_lsq(g, tri(), Bx, Bz)
     An = (A - A.min()) / max(np.ptp(A), 1e-300)
 
     vmin, vmax = a.clim if a.clim else (np.nanmin(field), np.nanmax(field))
@@ -216,16 +247,13 @@ def plot_one(path, a, out):
     vmax = vmax if vmax > vmin else vmin + 1.0
     Lx, Ly = np.ptp(g["x"]), np.ptp(g["y"])
     fig, ax = plt.subplots(figsize=(a.width, a.width * Ly / Lx + 1.2))
-    if a.shading == "gouraud":
-        ax.tripcolor(T, np.clip(field, vmin, vmax), shading="gouraud", cmap=a.cmap, vmin=vmin, vmax=vmax,
-                     rasterized=True)
-    else:  # linear in the scalar per triangle, 256 bands like ParaView; out-of-range values take the end colors
-        pc = ax.tricontourf(T, field, levels=np.linspace(vmin, vmax, 257), cmap=a.cmap, vmin=vmin, vmax=vmax,
-                            extend="both", antialiased=False)
-        pc.set_rasterized(True)
+    fill(ax, g, tri, field, a.cmap, vmin, vmax, a.shading)
     if np.ptp(A) > 0:
-        ax.tricontour(T, An, levels=np.arange(1, a.nlevels + 1) / (a.nlevels + 1),
-                      colors="k", linewidths=a.linewidth)
+        lev, An2 = np.arange(1, a.nlevels + 1) / (a.nlevels + 1), grid2d(g, An)
+        if An2 is not None:
+            ax.contour(g["xc"], g["yc"], An2, levels=lev, colors="k", linewidths=a.linewidth)
+        else:
+            ax.tricontour(Triangulation(g["x"], g["y"], tri()), An, levels=lev, colors="k", linewidths=a.linewidth)
     if a.vectors:
         velocity_vectors(ax, g, a, path)
     ax.set_aspect("equal")
@@ -241,11 +269,15 @@ def plot_one(path, a, out):
 
 
 def resolve_cmap(name):
-    """RainbowDesaturated (any spelling, _r reverses) or a matplotlib colormap name."""
+    """RainbowDesaturated (any spelling, _r reverses) or a matplotlib colormap; ParaView's "Inferno (matplotlib)" works."""
+    name = re.sub(r"\s*\(matplotlib\)\s*$", "", name, flags=re.I)
     key = name.lower().replace(" ", "").replace("_", "").replace("-", "")
     if key in ("rainbowdesaturated", "rainbowdesaturatedr"):
         return RAINBOW_DESATURATED.reversed() if key.endswith("dr") else RAINBOW_DESATURATED
-    return plt.get_cmap(name)
+    try:
+        return plt.get_cmap(name)
+    except ValueError:
+        return plt.get_cmap(name.lower())
 
 
 def pvtu_time(path):
