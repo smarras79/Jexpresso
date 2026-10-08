@@ -4,13 +4,12 @@ Reads the MPI output (iter_N.pvtu -> iter_N/iter_N_*.vtu) of each run on its nat
   python3 tools/plot_orszagtang_vtu.py [--base output/MHD/orszagTangBormanis2024] [--res 128 256 512] [--time 1.0]
                                        [--symmetric] [--single [--no-grid]] [--no-colorbar]
 Needs numpy and matplotlib (reuses tools/plot_fluxemergence_vtu.py)."""
-import argparse, gc, os, re, sys
+import argparse, os, re, sys
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from plot_fluxemergence_vtu import (read_pvtu, triangles, resolve_cmap, pvtu_time, greek, ascii_name, step_of)
+from plot_fluxemergence_vtu import (read_pvtu, triangles, resolve_cmap, pvtu_time, greek, ascii_name, step_of, fill)
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
-from matplotlib.tri import Triangulation
 
 
 def snapshots(d):
@@ -42,17 +41,6 @@ def save(fig, out, dpi):
     fig.savefig(out, dpi=dpi, bbox_inches="tight")
 
 
-def draw(ax, T, v, cmap, norm, shading):
-    """One field on the native triangulation; values outside the color range take the end colors."""
-    if shading == "gouraud":
-        ax.tripcolor(T, np.clip(v, norm.vmin, norm.vmax), shading="gouraud", cmap=cmap, norm=norm, rasterized=True)
-    else:
-        pc = ax.tricontourf(T, v, levels=np.linspace(norm.vmin, norm.vmax, 257), cmap=cmap, norm=norm,
-                            extend="both", antialiased=False)
-        pc.set_rasterized(True)
-    ax.set_aspect("equal")
-
-
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--base", default="output/MHD/orszagTangBormanis2024", help="holds output-<R>x<R>/ run directories")
@@ -66,7 +54,8 @@ def main():
     p.add_argument("--colorbar", action=argparse.BooleanOptionalAction, default=True, help="draw the colorbar (default on)")
     p.add_argument("--single", action="store_true", help="also write one figure per panel (same color range)")
     p.add_argument("--grid", action=argparse.BooleanOptionalAction, default=True, help="write the combined figure (default on)")
-    p.add_argument("--cmap", default="RainbowDesaturated", help="RainbowDesaturated (default) or a matplotlib name; _r reverses")
+    p.add_argument("--cmap", default="inferno", help="inferno (default, ParaView's \"Inferno (matplotlib)\"), RainbowDesaturated "
+                   "or any matplotlib name; _r reverses")
     p.add_argument("--shading", choices=("contourf", "gouraud"), default="contourf")
     p.add_argument("--out", default=None, help="output file (default <base>/OT_<vars>_t<time>.<format>)")
     p.add_argument("--format", default="png", help="png, pdf, svg, ...")
@@ -101,16 +90,14 @@ def main():
         if f is None:
             sys.exit(f"{d}: no snapshot at t = {a.time:g} (has t = {', '.join(f'{t:g}' for t in sorted(s))})")
 
-    panels = []  # (Triangulation, [field per column], extent)
+    panels = []  # (node grid g, [field per column], extent)
     for f in files:
-        g = read_pvtu(f)
+        g = read_pvtu(f, set(names) | {"ρ"})
         miss = [n for n in names if n not in g["fields"]]
         if miss:
-            sys.exit(f"{f}: no point field {miss}. Available: " + ", ".join(sorted(g["fields"])))
-        panels.append((Triangulation(g["x"], g["y"], triangles(g)), [g["fields"][n] for n in names],
-                       (g["x"].min(), g["x"].max(), g["y"].min(), g["y"].max())))
+            sys.exit(f"{f}: no point field {miss}. Available: " + ", ".join(g["names"]))
+        panels.append((g, [g["fields"][n] for n in names], (g["x"].min(), g["x"].max(), g["y"].min(), g["y"].max())))
         print(f" t = {a.time:g}: {f} ({len(g['x'])} nodes)")
-        del g; gc.collect()
     if a.clim:
         vmin, vmax = a.clim
     else:
@@ -129,10 +116,11 @@ def main():
     if a.grid:
         fig, axs = plt.subplots(nr, 2, figsize=(a.width, a.width / 2 * nr * aspect + (1.0 if a.colorbar else 0.6)),
                                 sharex=True, sharey=True, squeeze=False, layout="constrained")
-        for i, (T, vs, ext) in enumerate(panels):
+        for i, (g, vs, ext) in enumerate(panels):
             for j, v in enumerate(vs):
                 ax = axs[i, j]
-                draw(ax, T, v, cmap, norm, a.shading)
+                fill(ax, g, lambda g=g: triangles(g), v, cmap, vmin, vmax, a.shading)
+                ax.set_aspect("equal")
                 ax.set_xlim(ext[0], ext[1]); ax.set_ylim(ext[2], ext[3])
                 if i == 0:
                     ax.set_title(_title(names[j]))
@@ -149,11 +137,12 @@ def main():
         print(f" -> {out}")
     if a.single:
         root = os.path.splitext(a.out)[0] if a.out else stem
-        for i, (T, vs, ext) in enumerate(panels):
+        for i, (g, vs, ext) in enumerate(panels):
             for j, v in enumerate(vs):
                 w = a.width / 2
                 fig, ax = plt.subplots(figsize=(w, w * aspect + (1.0 if a.colorbar else 0.5)), layout="constrained")
-                draw(ax, T, v, cmap, norm, a.shading)
+                fill(ax, g, lambda g=g: triangles(g), v, cmap, vmin, vmax, a.shading)
+                ax.set_aspect("equal")
                 ax.set_xlim(ext[0], ext[1]); ax.set_ylim(ext[2], ext[3])
                 ax.set_xlabel(a.xlabel); ax.set_ylabel(a.ylabel)
                 ax.set_title(f"{_title(names[j])}   {labels[i]}   t = {a.time:g}")
