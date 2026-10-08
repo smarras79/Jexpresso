@@ -236,6 +236,27 @@ def plot_one(path, a, out):
     print(f" {path} -> {out}")
 
 
+def resolve_cmap(name):
+    """RainbowDesaturated (any spelling, _r reverses) or a matplotlib colormap name."""
+    key = name.lower().replace(" ", "").replace("_", "").replace("-", "")
+    if key in ("rainbowdesaturated", "rainbowdesaturatedr"):
+        return RAINBOW_DESATURATED.reversed() if key.endswith("dr") else RAINBOW_DESATURATED
+    return plt.get_cmap(name)
+
+
+def pvtu_time(path):
+    """TimeValue of iter_N.pvtu (from its FieldData, else from its first piece); None if absent."""
+    root = ET.parse(path).getroot()
+    for da in root.iter("DataArray"):
+        if da.get("Name") == "TimeValue" and (da.text or "").strip():
+            return float(da.text.split()[0])
+    piece = next(root.iter("Piece"), None)
+    if piece is None:
+        return None
+    d = read_vtu(os.path.join(os.path.dirname(path), piece.get("Source")))
+    return float(d[("FieldData", "TimeValue")][0]) if ("FieldData", "TimeValue") in d else None
+
+
 def parse_steps(text):
     """'5,10,20-40' -> {5, 10, 20, ..., 40}"""
     out = set()
@@ -284,14 +305,10 @@ def main():
     a.vec_fields = [greek(v) for v in a.vec_fields]
     if a.clim is None and a.var == "log10_ρ":
         a.clim = (-8.1, 0.0)
-    key = a.cmap.lower().replace(" ", "").replace("_", "").replace("-", "")
-    if key in ("rainbowdesaturated", "rainbowdesaturatedr"):
-        a.cmap = RAINBOW_DESATURATED.reversed() if key == "rainbowdesaturatedr" else RAINBOW_DESATURATED
-    else:
-        try:
-            a.cmap = plt.get_cmap(a.cmap)
-        except ValueError as e:
-            p.error(str(e))
+    try:
+        a.cmap = resolve_cmap(a.cmap)
+    except ValueError as e:
+        p.error(str(e))
     if a.outdir:
         os.makedirs(a.outdir, exist_ok=True)
 
