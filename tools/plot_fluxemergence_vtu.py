@@ -2,6 +2,7 @@
 """log10(rho/rho0) and magnetic field lines from Jexpresso MPI output (iter_N.pvtu -> iter_N/iter_N_*.vtu), on the native grid.
 Field lines: isolines A_n = k/(N+1), k = 1..N, of the flux function A (Bx = dA/dz, Bz = -dA/dx), A_n = (A - Amin)/(Amax - Amin).
   python3 tools/plot_fluxemergence_vtu.py output/MHD/<case>/output-<date> [--steps 5,10,20-40] [--vectors] [--outdir figs] [--format pdf]
+                                          [--var Bx --symmetric] [--no-colorbar]
 Needs numpy and matplotlib; scipy only for --a-method lsq."""
 import argparse, base64, gc, os, re, sys
 import xml.etree.ElementTree as ET
@@ -210,6 +211,8 @@ def plot_one(path, a, out):
     An = (A - A.min()) / max(np.ptp(A), 1e-300)
 
     vmin, vmax = a.clim if a.clim else (np.nanmin(field), np.nanmax(field))
+    if a.symmetric:
+        vmax = max(abs(vmin), abs(vmax)); vmin = -vmax
     vmax = vmax if vmax > vmin else vmin + 1.0
     Lx, Ly = np.ptp(g["x"]), np.ptp(g["y"])
     fig, ax = plt.subplots(figsize=(a.width, a.width * Ly / Lx + 1.2))
@@ -230,7 +233,8 @@ def plot_one(path, a, out):
     ax.set_xlabel(a.xlabel); ax.set_ylabel(a.ylabel)
     label = r"$\log_{10}(\rho/\rho_0)$" if a.var == "log10_ρ" else a.var
     ax.set_title(label + (f"   t = {g['t']:g}{a.time_unit}" if g["t"] is not None else ""))
-    fig.colorbar(plt.cm.ScalarMappable(Normalize(vmin, vmax), a.cmap), ax=ax, shrink=0.8, pad=0.02)
+    if a.colorbar:
+        fig.colorbar(plt.cm.ScalarMappable(Normalize(vmin, vmax), a.cmap), ax=ax, shrink=0.8, pad=0.02)
     fig.savefig(out, dpi=a.dpi, bbox_inches="tight")
     plt.close(fig)
     print(f" {path} -> {out}")
@@ -278,6 +282,8 @@ def main():
     p.add_argument("--steps", type=parse_steps, help="only these N of iter_N.pvtu, e.g. 5,10,20-40")
     p.add_argument("--var", default="log10_ρ", help="colored point field (default log10_ρ; rho/beta/psi accepted)")
     p.add_argument("--clim", type=float, nargs=2, default=None, help="color range (default -8.1 0 for log10_ρ)")
+    p.add_argument("--symmetric", action="store_true", help="color range symmetric about zero: [-m, m], m = max |range|")
+    p.add_argument("--colorbar", action=argparse.BooleanOptionalAction, default=True, help="draw the colorbar (default on)")
     p.add_argument("--cmap", default="RainbowDesaturated", help="RainbowDesaturated (default) or a matplotlib name; _r reverses")
     p.add_argument("--shading", choices=("contourf", "gouraud"), default="contourf",
                    help="contourf: 256 bands, scalar-linear per triangle (default); gouraud: faster, blends colors")
