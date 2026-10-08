@@ -550,12 +550,8 @@ The two numbers must be equal.
 `:diagnostics_at_times`, which for `3dAlya` is every 100 time units — 200
 timesteps apart. A run that is merely slow looks exactly like one that is stuck.
 Turn on the per-step heartbeat, which prints the first five steps and then every
-hundredth:
-
-```bash
-export JEXPRESSO_STEP_HEARTBEAT=1
-./run_coupled.sh 2 2
-```
+hundredth, by adding `:lstep_heartbeat => true` to the Jexpresso deck
+(`user_inputs.jl`) and rerunning `./run_coupled.sh 2 2`.
 
 If the `#   step N   t = ...` lines keep coming, it is running and you are
 measuring throughput. If they stop, it is genuinely blocked — and the step

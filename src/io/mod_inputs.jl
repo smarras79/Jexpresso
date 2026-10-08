@@ -634,6 +634,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :ndiagnostics_outputs))
         inputs[:ndiagnostics_outputs] = 0
     end
+    inputs[:lstep_heartbeat] = get(inputs, :lstep_heartbeat, false) == true   # per-step progress line
     if(!haskey(inputs, :Δt))
         inputs[:Δt] = 0.1  #Initial time is 0.0 by default
     end

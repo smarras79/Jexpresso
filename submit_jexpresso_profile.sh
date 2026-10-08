@@ -137,7 +137,6 @@ export JEXPRESSO_HEVI_PROFILE="${JEXPRESSO_HEVI_PROFILE:-1}"
 export JEXPRESSO_HEVI_PROFILE_EVERY="${JEXPRESSO_HEVI_PROFILE_EVERY:-50}"
 export JEXPRESSO_HEVI_PROFILE_SKIP="${JEXPRESSO_HEVI_PROFILE_SKIP:-10}"
 export JEXPRESSO_PRECOMPILE_PASS="${JEXPRESSO_PRECOMPILE_PASS:-1}"
-export JEXPRESSO_STEP_HEARTBEAT=1
 # THE SCHUR ARM IS THIS SCRIPT'S DEFAULT: explicit vertical diffusion, so
 # `use_schur = !_vdiff` in the deck leaves the scalar Schur stage solve on.
 # `:-0` rather than a bare 0 so `DBG_VDIFF=1 sbatch ...` still reaches the deck
