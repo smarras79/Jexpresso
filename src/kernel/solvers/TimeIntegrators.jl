@@ -170,6 +170,8 @@ function precompile_warmup_run!(inputs, params, u,
     params.dsgs_qnm1 .= dsgs_qnm1_snapshot
     params.dsgs_qnm2 .= dsgs_qnm2_snapshot
     params.dsgs_thist[] = dsgs_thist_snapshot
+    reset_shallow_water_limiter_diagnostics!(params.swe_limiter_diag;
+                                              reset_step_counter=true)
 
     # The VTK write path is JIT-compiled on first use by the IC write in
     # time_loop! (when :lwrite_initial is true) or by the first diagnostic
@@ -210,6 +212,11 @@ function time_loop!(inputs, params, u, args...)
         configure_shallow_water_limiter(inputs[:ode_solver], inputs)
     if shallow_water_limiter_enabled(inputs)
         apply_shallow_water_limiter!(u, params, params.tspan[1])
+        if shallow_water_limiter_diagnostic_enabled(inputs)
+            # Report an invalid initial/restart state separately, rather than
+            # mixing it into the first accepted timestep's stage statistics.
+            report_shallow_water_limiter_diagnostics!(params, params.tspan[1])
+        end
         rank == 0 && println(" # Shallow-water limiter: ",
                             inputs[:swe_limiter], " / ", inputs[:swe_limiter_schedule],
                             " (stage=", swe_stage_limiter_active,
@@ -457,6 +464,13 @@ function time_loop!(inputs, params, u, args...)
                          shallow_water_step_limiter_affect!;
                          save_positions = (false, false)) :
         nothing
+    cb_swe_limiter_diagnostic =
+        shallow_water_limiter_enabled(inputs) &&
+        shallow_water_limiter_diagnostic_enabled(inputs) ?
+        DiscreteCallback(shallow_water_limiter_diagnostic_condition,
+                         shallow_water_limiter_diagnostic_affect!;
+                         save_positions = (false, false)) :
+        nothing
     # Coupled-mode exchange callback: fires once per accepted timestep,
     # sends Julia's interpolated solution to Alya so its MPI.Waitall in
     # the time loop can advance. Without this Alya hangs and never
@@ -560,6 +574,8 @@ function time_loop!(inputs, params, u, args...)
         # coupling callbacks observe the corrected accepted solution.
         _cbs = Any[]
         cb_swe_limiter !== nothing && push!(_cbs, cb_swe_limiter)
+        cb_swe_limiter_diagnostic !== nothing &&
+            push!(_cbs, cb_swe_limiter_diagnostic)
         append!(_cbs, (cb, cb_restart, cb_les_stat, cb_les_online))
         lrad                                  && push!(_cbs, cb_rad)
         is_coupled && cb_coupling !== nothing  && push!(_cbs, cb_coupling)
@@ -645,6 +661,8 @@ function time_loop!(inputs, params, u, args...)
             # own first-5-steps detail (the warmup just consumed one).
             _step_count[] = 0
             _min_h_step_count[] = 0
+            reset_shallow_water_limiter_diagnostics!(params.swe_limiter_diag;
+                                                      reset_step_counter=true)
             MPI.Barrier(comm)
             #rank == 0 && (print(YELLOW_FG(@sprintf("DONE (%.2f s)\n", (time_ns() - _t_wm) / 1e9))); flush(stdout))
         end
@@ -717,11 +735,14 @@ function time_loop!(inputs, params, u, args...)
             ad_lvl_max = MPI.Allreduce(maximum(prob.p.mesh.ad_lvl; init=0), MPI.MAX, comm)
             dt         = Float32(inputs[:Δt]/(2.0^(ad_lvl_max)))
             println_rank(" #  dt=", dt; msg_rank = rank)
+            _amr_cbs = Any[]
+            cb_swe_limiter !== nothing && push!(_amr_cbs, cb_swe_limiter)
+            cb_swe_limiter_diagnostic !== nothing &&
+                push!(_amr_cbs, cb_swe_limiter_diagnostic)
+            append!(_amr_cbs, (cb_amr, cb_restart))
             @mpi_time solution = solve(prob,
                                 ode_alg, dt=Float32(dt),
-                                callback = cb_swe_limiter === nothing ?
-                                    CallbackSet(cb_amr, cb_restart) :
-                                    CallbackSet(cb_swe_limiter, cb_amr, cb_restart),
+                                callback = CallbackSet(_amr_cbs...),
                                 tstops = dosetimes,
                                 save_everystep = false,
                                 adaptive=inputs[:ode_adaptive_solver],

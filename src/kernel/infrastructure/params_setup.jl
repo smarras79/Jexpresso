@@ -429,6 +429,7 @@ function params_setup(sem,
 
     # setup timer
     timers = Dict{String, MPIFunctionTimer}()
+    swe_limiter_diag = ShallowWaterLimiterDiagnostics()
 
     # LES statistics z-level cache (computed once, shared across timesteps)
     nprofiles        = length(inputs[:lesprofile_vars])
@@ -481,6 +482,7 @@ function params_setup(sem,
                   les_bottom_cache,
                   sgs,
                   sgs_stress,
+                  swe_limiter_diag,
                   timers,
                   coupling = coupling)
 
@@ -523,6 +525,7 @@ function params_setup(sem,
                   sgs,
                   sgs_stress,
                   OUTPUT_DIR,
+                  swe_limiter_diag,
                   timers,
                   sem.interp, sem.project, sem.nparts, sem.distribute,
                   coupling = coupling)

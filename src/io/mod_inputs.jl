@@ -760,6 +760,14 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if !haskey(inputs, :swe_hmin)
         inputs[:swe_hmin] = 1.0e-3
     end
+    # Debugging aid for the non-conservative clip limiter. Events are
+    # accumulated during stages and summarized after accepted timesteps.
+    if !haskey(inputs, :swe_limiter_diagnostic)
+        inputs[:swe_limiter_diagnostic] = false
+    end
+    if !haskey(inputs, :swe_limiter_diagnostic_interval)
+        inputs[:swe_limiter_diagnostic_interval] = 1
+    end
     if(!haskey(inputs, :output_dir))
         inputs[:output_dir] = "none"
     end

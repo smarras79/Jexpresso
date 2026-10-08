@@ -15,7 +15,7 @@ function user_inputs()
         # where H is the active-layer thickness.
         #---------------------------------------------------------------------------
         :ode_solver           => SSPRK54(),
-        :Δt                   => 600.0,
+        :Δt                   => 300.0,
         :tinit                => 0.0,
         :tend                 => 6.0 * year,
         :diagnostics_at_times => (0:30*day:6.0*year),
@@ -29,12 +29,16 @@ function user_inputs()
         # used if this case is changed to an algorithm without stage hooks.
         :swe_limiter          => "clip",
         :swe_limiter_schedule => "stage",
-        :swe_hmin             => 1.0e-3,
+        :swe_hmin             => 1.0e-6,
+        # Accumulate every stage clipping event and print one MPI-global
+        # summary after each accepted timestep that required correction.
+        :swe_limiter_diagnostic => true,
+        :swe_limiter_diagnostic_interval => 1,
         #---------------------------------------------------------------------------
         # Integration and quadrature properties: identical to ReducedGravity.
         #---------------------------------------------------------------------------
         :interpolation_nodes  => "lgl",
-        :nop                  => 3,
+        :nop                  => 4,
         #---------------------------------------------------------------------------
         # Stabilization: the DSGS_SW configuration from SoliWaveIslandDSGS.
         #
