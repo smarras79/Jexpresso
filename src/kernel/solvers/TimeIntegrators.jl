@@ -303,14 +303,13 @@ function time_loop!(inputs, params, u, args...)
     # IC write must never interact with that. It also doubles as the JIT
     # warm-up of the write_output/write_vtk path.
     #
-    # File number: the slot of tinit in dosetimes (1 for a t=0 start). The
-    # diagnostic callback never fires at the initial time, so this slot is
-    # otherwise unused and the sequence is contiguous: iter_1 (IC), iter_2
-    # (first diagnostic hit), ...
+    # File number: the slot of tinit in dosetimes (iter_k is always dosetimes[k],
+    # which VTK restart relies on). When tinit is not in dosetimes the IC is
+    # iter_0; it used to be iter_1, overwritten by the first diagnostic.
     #
     # When skipped, say so and why — never silently.
     #------------------------------------------------------------------------
-    idx = something(findfirst(x -> x == inputs[:tinit], dosetimes), 1)
+    idx = something(findfirst(x -> x == inputs[:tinit], dosetimes), 0)
     if !lwrite_init
         println_rank(" # Skipping initial-condition write (restart run)"; msg_rank = rank)
     elseif get(inputs, :lwrite_initial, true) != true

@@ -44,10 +44,10 @@ function user_inputs()
         # the late-time flows: the emerged loop reaches V_A ≈ 4-7 C_s and the
         # lateral downflows 4-5 C_s (paper Sec. 4.1), i.e. |v| + c_f ≈ 10 C_s
         # and CFL ≈ 0.15. The paper's own Courant number is 0.23.
-        :Δt                   => 5.0e-4,
+        :Δt                   => 5.0e-3, #e-04,
         :tinit                => 0.0,
-        :tend                 => 54.0,  # paper Fig. 5 runs to t = 54 τ₀ (snapshots of Fig. 2 at t = 51 τ₀)
-        :diagnostics_at_times => (54.0), #(0.0:1.0:54.0),
+        :tend                 => 50.0,  # paper Fig. 5 runs to t = 54 τ₀ (snapshots of Fig. 2 at t = 51 τ₀)
+        :diagnostics_at_times => (10,20,30,40,50.0), #(0.0:1.0:54.0),
         :restart_time         => 0.0,
         :lrestart             => false,
         :lsource              => true,   # gravity + GLM ψ damping + absorbing layer (user_source.jl)
@@ -202,7 +202,7 @@ function user_inputs()
         # all. (:outformat => "vtk" writes one field per distinct
         # coefficient, mu_dsgs_<slots...>.)
         :plot_dsgs           => true,
-        :plot_dsgs_vars      => ["ρ", "ρE"],  # ν (ρ, ρv, B, ψ slots) and the energy coefficient
+        :plot_dsgs_vars      => ["ρ", "B", "ρE"],  # ν (ρ, ρv, B, ψ slots) and the energy coefficient
         :plot_dsgs_log10     => true,
         :plot_dsgs_floor     => 1.0e-6,
         :plot_profile_x      => 40.0,         # paper Fig. 5: x = X_max/2

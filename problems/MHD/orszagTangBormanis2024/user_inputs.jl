@@ -29,9 +29,13 @@ function user_inputs()
         # LGL spacing at :nop => 4 on a 1/32 element is ≈ 5.4e-3. The margin
         # is deliberate — the vortex steepens into shocks by t ≈ 0.5 and the
         # local wave speeds grow. The reference simulation of the paper used
-        # Δt = 8e-4 on its 128² finite-volume grid.
-        :Δt                   => 1.5e-4,
-        #:Δt                   => _ot_dt(),
+        # Δt = 8e-4 on its 128² finite-volume grid
+        :Δt                   =>  2.5e-5,  #256 nop4
+        #:Δt                   =>  5.0e-5,  #256 nop4
+        #:Δt                   => 0.16254-4,  #256 nop4
+        #:Δt                   => 0.3250e-4,  #128 nop4
+        #:Δt                   => 0.75e-4, # 64 nop4
+        #:Δt                   => 1.5e-4,  # 32 nop4
         :tinit                => 0.0,
         # JEXPRESSO_OT_TEND shortens the run without editing the deck — a
         # smoke test of a change to the model is one short run, not 143 000
@@ -163,7 +167,7 @@ function user_inputs()
         # AMR (off)
         #---------------------------------------------------------------------------
         :linitial_refine     => true,
-        :init_refine_lvl     => 2,
+        :init_refine_lvl     => 4,
         :ladapt              => false,
         #---------------------------------------------------------------------------
     ) #Dict
