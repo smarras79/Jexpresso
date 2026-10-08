@@ -155,7 +155,7 @@ function user_inputs()
         :lcfl_dt              => true,           # take Δt from the CFL condition
         :cfl                  => 1.0,
         :tinit                => 0.0,
-        :tend                 => 20*24*3600,       # 144 h = 6 days, as in the test
+        :tend                 => 6*24*3600,       # 144 h = 6 days, as in the test
         :ndiagnostics_outputs => 48,             # a VTK dump every 6 h
         :ndiagnostics_prints  => 200,            # steps between diagnostic lines
         :case                 => "swsphere",
@@ -184,7 +184,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => true,
         :ivisc_equations      => [2, 3, 4],
-        :μ                    => 1.0e5,      # set to 1.0e5 together with :lvisc => true
+        :μ                    => 1.5e5,      # set to 1.0e5 together with :lvisc => true
         #---------------------------------------------------------------------------
         # ... AND the modal filter, which is what actually keeps the run alive
         # here (see the table at the top). The two mechanisms compose, and the
@@ -194,10 +194,97 @@ function user_inputs()
         # at least 5e5 — that combination does complete 3 days. Just do not read
         # the vorticity off it: at 5e5 half of max|ζ| is gone by day 3.
         #---------------------------------------------------------------------------
-        :lfilter              => false,
+        :lfilter              => true,
         :filter_alpha         => 0.05,
         :filter_order         => 8,
         :filter_kcut          => 2/3,
+        #---------------------------------------------------------------------------
+        # POD — PROPER ORTHOGONAL DECOMPOSITION, and the basis of a reduced-order
+        # model built on this run.
+        #
+        # POD answers: of all the spatial structures this flow could be written
+        # in terms of, which ONE captures the most of it on average? Then which
+        # second one, among those orthogonal to the first? The answer is the
+        # eigenbasis of the two-point correlation of the snapshots, ordered by
+        # energy, and it is OPTIMAL — no other basis of the same size captures
+        # more of the flow in the mean square. That is what makes it the first
+        # step of a ROM: expanding
+        #
+        #     q(x,t) ≈ q̄(x) + Σ_{i≤r} a_i(t) φ_i(x)
+        #
+        # and projecting the equations onto {φ_i} gives r ODEs for the a_i, and
+        # the error that truncation leaves behind is known in advance from the
+        # discarded eigenvalues. The machinery is in src/kernel/rom/ — see
+        # docs/POD.md for what it writes and how to read it.
+        #
+        # WHY THIS CASE. The Galewsky jet is the natural test: it starts from a
+        # balanced zonal jet that is barotropically UNSTABLE, so the flow is a
+        # small perturbation growing on a steady background and then rolling up
+        # into a train of vortices. A decomposition of it therefore has
+        # something definite to find — the mean carries the jet, and the leading
+        # modes are the unstable wave, which appears as a PAIR of modes of
+        # nearly equal energy in quadrature (a travelling wave needs two
+        # standing patterns to be written down; look for λ₁ ≈ λ₂ in the
+        # spectrum, and for a circle in the (a₁,a₂) phase portrait).
+        #
+        # WHAT IT COSTS. The snapshots are held in memory for the run and
+        # decomposed once at the end: 101 snapshots of ζ and h here are 24 MB
+        # and a fraction of a second of eigen-solve. Set :lpod => false to turn
+        # all of it off.
+        #
+        # The plots come out as equirectangular (plate carrée) maps: longitude
+        # and latitude used directly as the plot axes, which is the standard way
+        # spherical shallow-water results are shown and the only projection that
+        # adds nothing of its own to the picture.
+        #---------------------------------------------------------------------------
+        # THIS LINE IS THE WHOLE MINIMUM. POD is a property of the framework and
+        # not of this case: :lpod => true on its own decomposes every solution
+        # variable over the whole run, sampled at the output cadence, and writes
+        # the modes, the spectrum, the coefficients and a .jld2 basis — here or
+        # in any other 1-D, 2-D, 3-D or manifold case. Everything below is an
+        # override. See problems/AdvDiff/PODbenchmark for the reference
+        # benchmark, whose POD is known in closed form.
+        :lpod                 => true,
+        # WHICH FIELDS. :vorticity is the one this test is judged on and the one
+        # whose modes are worth looking at — h barely moves while the instability
+        # grows. A field may also be named directly ("phi", "phiu", …, or any of
+        # the case's output variables); :all is every solution variable, one
+        # target each, and :state is the four of them stacked into ONE vector
+        # target, which is the basis a Galerkin ROM of this system would be
+        # projected onto. On the shell, :u, :v and :velocity are the
+        # tangent-basis velocity components.
+        :pod_fields           => [:vorticity, "h", :velocity],
+        # HOW MANY SNAPSHOTS, over what window. This has its own clock: it is
+        # NOT tied to :ndiagnostics_outputs, because the VTK cadence is chosen to
+        # keep a movie small while a decomposition wants dense, uniform sampling.
+        # 101 snapshots over 20 days is one every 4.8 h.
+        :pod_nsnapshots       => 100,
+        :pod_tstart           => 0.0,          # start of the POD window [s].
+        #:pod_tstart          => 4*24*3600,    # …set it past the laminar phase to
+                                               #    decompose the instability alone
+        # HOW MANY MODES are kept, saved and drawn. 0 = every mode the snapshots
+        # can support (which is at most :pod_nsnapshots + 1, however fine the grid).
+        :pod_nmodes           => 24,
+        :pod_nmodes_plot      => 6,
+        # Decompose the FLUCTUATION about the temporal mean, not the field. With
+        # this false the first mode comes out as essentially the mean — a wasted
+        # mode that hides the dynamics behind it.
+        :pod_subtract_mean    => true,
+        # :auto = the SVD of the mass-weighted snapshot matrix in serial (which
+        # resolves a far deeper tail of the spectrum), the method of snapshots
+        # under MPI (where the correlation matrix costs one Allreduce and the
+        # field never has to be gathered).
+        :pod_method           => :auto,
+        # Resolution of the equirectangular raster the modes are drawn on. 720×360
+        # is ½°, about three times finer than this grid, which is what keeps the
+        # element edges from showing.
+        :pod_nlon             => 720,
+        :pod_nlat             => 360,
+        :pod_write_vtk        => true,         # modes as point data on the sphere
+        :pod_write_png        => true,         # the three standard figures
+        :pod_write_data       => true,         # CSV spectrum/coefficients + .jld2 basis
+        :pod_time_scale       => 1.0/86400.0,  # seconds → days on the coefficient plots
+        :pod_time_label       => "t [days]",
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------

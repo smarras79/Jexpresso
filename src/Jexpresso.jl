@@ -120,6 +120,7 @@ using GridapP4est
 using P4est_wrapper
 
 using PrecompileTools
+import Preferences   # the coupled precompile workload's case (bottom of this file)
 
 
 TInt   = Int64
@@ -175,6 +176,13 @@ include(joinpath( "kernel", "physics", "SGS.jl"))
 # stage/accepted-step adapters.
 include(joinpath( "kernel", "physics", "shallow_water_limiter.jl"))
 
+# Node-wise realizability repair for the compressible Euler state. Own module,
+# own directory: Positivity.jl is self-contained numerics with no Jexpresso
+# dependency, positivity_driver.jl is the adapter. OFF unless a deck sets
+# :lpositivity => true. See src/kernel/positivity/README.md.
+include(joinpath( "kernel", "positivity", "Positivity.jl"))
+include(joinpath( "kernel", "positivity", "positivity_driver.jl"))
+
 include(joinpath( "kernel", "physics", "CM_MOST.jl"))
 
 include(joinpath( "kernel", "physics", "atmos_to_rad.jl"))
@@ -227,10 +235,18 @@ include(joinpath( "kernel", "boundaryconditions", "BCs.jl"))
 
 include(joinpath( "kernel", "operators", "operators.jl"))
 
+include(joinpath( "kernel", "operators", "dg_fluxes.jl"))
+include(joinpath( "kernel", "operators", "fv.jl"))
+
 include(joinpath( "kernel", "operators", "rhs.jl"))
 
 # SEM right-hand side on the spherical shell (+ the modal filter).
 include(joinpath( "kernel", "operators", "sphere_rhs.jl"))
+
+# Stochastic small-scale forcing and large-scale dissipation on the shell
+# (Scott & Polvani 2007). Needs St_sphere_params and the DSS helper from
+# sphere_rhs.jl, so it is included straight after it.
+include(joinpath( "kernel", "operators", "sphere_forcing.jl"))
 
 include(joinpath( "kernel", "operators", "rhs_2point.jl"))
 
@@ -243,6 +259,13 @@ include(joinpath( "kernel", "operators", "rhs_laguerre.jl"))
 include(joinpath( "kernel", "operators", "filter.jl"))
 
 include(joinpath( "kernel", "solvers", "TimeIntegrators.jl"))
+
+# Proper Orthogonal Decomposition and the reduced-order-model basis it builds.
+# pod_core.jl is the decomposition itself and depends on nothing in Jexpresso;
+# pod.jl is what samples a running case and writes the result out. Included
+# BEFORE the time loop, which records snapshots through them.
+include(joinpath( "kernel", "rom", "pod_core.jl"))
+include(joinpath( "kernel", "rom", "pod.jl"))
 
 # SSP-RK3 time loop for the spherical shell, with the Lagrange projection
 # applied at every stage.
@@ -284,6 +307,13 @@ include(joinpath( "io", "mod_print_io.jl"))
 
 include(joinpath( "io", "write_output.jl"))
 
+# Nodal fields on a pixel raster (flat and spherical), and the POD figures
+# drawn on them.
+# After write_output.jl, which is what brings Plots into the module (jeplots.jl).
+include(joinpath( "io", "plotting", "mesh_raster.jl"))
+
+include(joinpath( "io", "plotting", "pod_plots.jl"))
+
 include(joinpath( "io", "diagnostics.jl"))
 
 include(joinpath( "io", "Extract_topo.jl"))
@@ -312,6 +342,94 @@ include(joinpath( "auxiliary", "checks.jl"))
 # run.jl (included at module-body time when invoked as a script) reads it.
 const _LOADED_CASE_DIR  = Ref{String}("")
 const _CASE_FILE_MTIMES = Dict{String,Float64}()
+
+# The case the coupled precompile workload baked into this package image, as
+# "eqs/eqs_case" ("" for none). Set by the workload at the bottom of this file
+# and serialised with the image; run.jl compares it with a coupled launch.
+const _COUPLED_PRECOMPILE_CASE = Ref{String}("")
+
+# run.jl loads a case's files with this while a package image is being
+# generated (a precompile workload). A plain include() records the file as a
+# dependency of the image, so editing the case's user_inputs.jl would mark all
+# of Jexpresso stale and rerun the whole workload at the next `using`. Loaded
+# this way, an edited case file is just reloaded at run time, as in any
+# session (run.jl compares mtimes).
+function _include_untracked(path::AbstractString)
+    tls  = task_local_storage()
+    prev = get(tls, :SOURCE_PATH, nothing)
+    tls[:SOURCE_PATH] = path    # as include() does, for includes inside the file
+    try
+        return Base.include_string(@__MODULE__, read(path, String), path)
+    finally
+        prev === nothing ? delete!(tls, :SOURCE_PATH) : (tls[:SOURCE_PATH] = prev)
+    end
+end
+
+# The coupled precompile workload bakes its case's hooks (user_source!,
+# user_flux!, initialize, …) into the package image, so they exist in every
+# process that loads it. Another case's files replace only the hooks they
+# define at exactly the same signature, and a baked hook at a more specific
+# one still wins dispatch: 3dAlya's user_source!(…, ::CL, ::TOTAL) outranks
+# kopriva's user_source!(…, ::CL, ::AbstractPert), and kopriva would run
+# 3dAlya's source term. A baked method cannot be deleted (see the note in
+# run.jl), so run.jl calls this after loading any other case: each baked method
+# the case left in place is redefined, at its own signature, to `invoke` the
+# method dispatch would pick without the baked ones. The compiler inlines the
+# `invoke`, so a call costs the same as before. Returns how many methods it
+# redirected.
+const _BAKED_HOOK_REDIRECTS = Dict{Any,Tuple{Method,Any}}()  # baked signature => (redirecting method, signature it invokes)
+
+function _redirect_baked_hooks!(case_dir::AbstractString)
+    baked = _COUPLED_PRECOMPILE_CASE[]
+    isempty(baked) && return 0
+    baked_dir = joinpath(normpath(joinpath(dirname(@__DIR__), "problems", baked)), "")
+    joinpath(normpath(case_dir), "") == baked_dir && return 0
+    mod = @__MODULE__
+    n   = 0
+    for name in names(mod; all = true)
+        startswith(string(name), '#') && continue     # keyword bodies, closures
+        isdefined(mod, name) || continue
+        f = getfield(mod, name)
+        (f isa Function && parentmodule(f) === mod && nameof(f) === name) || continue
+        ms = collect(methods(f))
+        # Still the image's, or already redirected for an earlier case.
+        baked_ms = filter(m -> startswith(normpath(string(m.file)), baked_dir) ||
+                               get(_BAKED_HOOK_REDIRECTS, m.sig, (nothing,))[1] === m, ms)
+        isempty(baked_ms) && continue
+        others = filter(m -> !any(b -> b === m, baked_ms), ms)
+        for mb in baked_ms
+            # Without the baked methods, a call that reaches mb would go to the
+            # most specific of the others whose signature covers mb's, if any.
+            cover = filter(m -> mb.sig <: m.sig, others)
+            i = findfirst(m -> all(c -> m.sig <: c.sig, cover), cover)
+            i === nothing && continue
+            to = cover[i].sig
+            r  = get(_BAKED_HOOK_REDIRECTS, mb.sig, nothing)
+            r !== nothing && r[1] === mb && r[2] == to && continue   # already goes there
+            mr = _redirect_method!(f, mb, to)
+            mr === nothing && continue
+            _BAKED_HOOK_REDIRECTS[mb.sig] = (mr, to)
+            n += 1
+        end
+    end
+    return n
+end
+
+# Redefine method `mb` of `f`, at its own signature, as an `invoke` of the
+# method of `f` at signature `to`. Returns the new method, or nothing for a
+# signature with type parameters or a vararg, which this does not rebuild.
+function _redirect_method!(f::Function, mb::Method, @nospecialize(to))
+    mb.sig isa DataType || return nothing
+    types = mb.sig.parameters[2:end]
+    any(t -> t isa Core.TypeofVararg, types) && return nothing
+    args  = [Symbol("x", i) for i in eachindex(types)]
+    tosig = Base.rewrap_unionall(Tuple{Base.unwrap_unionall(to).parameters[2:end]...}, to)
+    Core.eval(@__MODULE__,
+        :(function $(nameof(f))($((:($a::$t) for (a, t) in zip(args, types))...); kw...)
+              invoke($f, $tosig, $(args...); kw...)
+          end))
+    return only(filter(m -> m.sig == mb.sig, collect(methods(f))))
+end
 
 # ──────────────────────────────────────────────────────────────────────
 # Lazy dependency loaders.
@@ -554,6 +672,46 @@ function run_case(eqs::AbstractString, eqs_case::AbstractString;
 end
 
 
+"""
+    Jexpresso.set_coupled_precompile!(eqs, eqs_case)
+    Jexpresso.set_coupled_precompile!(nothing)
+
+Bake a coupled case into Jexpresso's package image, so that a coupled launch
+whose ranks load the package (`using Jexpresso; Jexpresso.run_case(eqs,
+eqs_case)`, as `run_coupled.sh` does) starts without compiling it first.
+`nothing` turns it off.
+
+The choice is stored in `LocalPreferences.toml` and marks the image stale;
+the next precompile — `Pkg.precompile()`, or the next `using Jexpresso` —
+runs the case dry to build it (the coupled workload at the bottom of
+src/Jexpresso.jl). That precompile takes several minutes, and happens again
+whenever Jexpresso's source changes.
+"""
+function set_coupled_precompile!(eqs::AbstractString, eqs_case::AbstractString)
+    isdir(joinpath(dirname(@__DIR__), "problems", eqs, eqs_case)) ||
+        throw(ArgumentError("no case problems/$eqs/$eqs_case"))
+    Preferences.set_preferences!(@__MODULE__,
+        "coupled_precompile" => string(eqs, "/", eqs_case); force = true)
+    return nothing
+end
+function set_coupled_precompile!(::Nothing)
+    Preferences.delete_preferences!(@__MODULE__, "coupled_precompile"; force = true)
+    return nothing
+end
+
+# One dry run of a coupled case, "eqs/eqs_case", for the coupled workload.
+function _dry_coupled_run(spec::AbstractString)
+    eqs, eqs_case = split(spec, '/')
+    push!(empty!(ARGS), String(eqs), String(eqs_case), "false")
+    # The case's relative paths, e.g. its gmsh file, are relative to the
+    # repository root, where a real launch starts.
+    cd(dirname(@__DIR__)) do
+        include(joinpath(@__DIR__, "run.jl"))
+    end
+    return nothing
+end
+
+
 # PERF: precompile workload — runs `test/CI-runs/CompEuler/sod1d`
 # one driver pass through during `Pkg.precompile()` so PrecompileTools
 # records every method that fires inside the integrator + RHS chain
@@ -644,9 +802,44 @@ end
     # practice and is a provider that actually exists there.
     _run_workload = lowercase(get(ENV, "JEXPRESSO_PRECOMPILE_WORKLOAD", "0")) in
                     ("1", "true", "yes", "on")
+
+    # ── Coupled workload ────────────────────────────────────────────────
+    # A coupled launch starts new Julia processes, and each compiles Jexpresso
+    # before its first step: about 60 % of a 3dAlya launch. Code compiled by a
+    # standalone run does not help, because a coupled run calls different
+    # specialisations — `params` carries the CouplingData and the integrator
+    # the coupling callback. So this workload runs a coupled case dry (see
+    # JEXPRESSO_DRY_COUPLING in couplingStructs.jl): no Alya, but the same code
+    # on the same types.
+    #
+    # It runs the case twice. The first run builds the case's mesh and SEM
+    # caches if they do not exist yet; the second loads them, which is the path
+    # every later real launch takes.
+    #
+    # The case comes from a preference, not an environment variable. That way,
+    # whatever triggers the next precompile (a REPL, an mpiexec rank, Pkg)
+    # bakes in the same case, and changing it marks the image stale. Set it
+    # with Jexpresso.set_coupled_precompile!("CompEuler", "3dAlya"), or with
+    # `PRECOMPILE_COUPLED=1 ./run_coupled.sh …`.
+    #
+    # It replaces the sod1d workload rather than adding to it. run.jl cannot
+    # load two cases while the image is generated, because the second case's
+    # hooks would redefine the first's methods, which is an error then.
+    #
+    # The function, not @load_preference: the macro looks the package up when it
+    # expands, and run as the script src/Jexpresso.jl this module is not one.
+    _coupled_case = Preferences.load_preference(Base.PkgId(@__MODULE__).uuid,
+                                                "coupled_precompile", "")
+    _run_coupled  = !isempty(_coupled_case)
+    if _run_coupled && !isdir(joinpath(dirname(@__DIR__), "problems", _coupled_case))
+        @warn "coupled_precompile = \"$_coupled_case\" names no case under problems/; skipping the coupled workload"
+        _run_coupled = false
+    end
+
     _fi_provider_was_set = haskey(ENV, "FI_PROVIDER")
     _fi_provider_prev    = get(ENV, "FI_PROVIDER", "")
-    if _run_workload && !_fi_provider_was_set
+    _pin_provider        = _run_workload || _run_coupled
+    if _pin_provider && !_fi_provider_was_set
         # Linux: `shm` is the network-free happy path.
         # macOS: `shm` does not exist there, and `tcp` needs an interface that
         # can host an endpoint — loopback frequently cannot, failing with
@@ -657,7 +850,30 @@ end
     end
 
     @compile_workload begin
-        if _run_workload
+        if _run_coupled
+            _env_coupled = get(ENV, "JEXPRESSO_COUPLED", nothing)
+            ENV["JEXPRESSO_COUPLED"] = "1"
+            JEXPRESSO_DRY_COUPLING[] = true
+            try
+                for _ in 1:2
+                    _dry_coupled_run(_coupled_case)   # lean driver pass (3 steps)
+                    je_reset_coupling_state!()
+                end
+                _COUPLED_PRECOMPILE_CASE[] = _coupled_case
+            catch e
+                # The image is still sound without the workload's code, so a
+                # failing workload must not fail precompilation — and with it
+                # every `using Jexpresso`. Say so, and go on.
+                @warn "the coupled precompile workload for $_coupled_case failed; the package image will not include it" exception = (e, catch_backtrace())
+            finally
+                # Nothing from the dry runs may reach the image (see
+                # je_reset_coupling_state!).
+                je_reset_coupling_state!()
+                JEXPRESSO_DRY_COUPLING[] = false
+                _env_coupled === nothing ? delete!(ENV, "JEXPRESSO_COUPLED") :
+                                           (ENV["JEXPRESSO_COUPLED"] = _env_coupled)
+            end
+        elseif _run_workload
             push!(empty!(ARGS), "CompEuler", "sod1d", "true")
             include(joinpath(@__DIR__, "run.jl"))   # lean driver pass (3 steps)
         end
@@ -665,9 +881,9 @@ end
 
     # Undo the temporary FI_PROVIDER override (no-op if we never set it, or
     # if the user had pinned it — we left theirs untouched above).
-    if _run_workload && !_fi_provider_was_set
+    if _pin_provider && !_fi_provider_was_set
         delete!(ENV, "FI_PROVIDER")
-    elseif _run_workload
+    elseif _pin_provider
         ENV["FI_PROVIDER"] = _fi_provider_prev
     end
 end

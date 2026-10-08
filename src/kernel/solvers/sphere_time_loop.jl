@@ -171,7 +171,7 @@ end
 # Any. This is the same function-barrier trick the shell kernels use, moved up
 # to the integrator boundary.
 #---------------------------------------------------------------------------------
-struct St_sphere_ode_params{TMesh, TMetrics, TParams, TQe, TSVT}
+struct St_sphere_ode_params{TMesh, TMetrics, TParams, TQe, TSVT, TForcing}
     mesh::TMesh
     metrics::TMetrics
     sp::TParams
@@ -179,6 +179,14 @@ struct St_sphere_ode_params{TMesh, TMetrics, TParams, TQe, TSVT}
     SVT::TSVT
     lproject::Bool
     driftmax::Base.RefValue{Float64}
+    #
+    # The Scott & Polvani stochastic forcing, or `nothing` — which is what every
+    # case but that one has. Parameterised rather than Union{Nothing,...} so the
+    # RHS and the step limiter specialise on it and a case without forcing pays
+    # nothing: sphere_forcing_apply!(..., ::Nothing, ...) inlines to a no-op.
+    # LAST, so the existing positional constructor calls stay readable.
+    #
+    forcing::TForcing
 end
 
 
@@ -187,6 +195,13 @@ end
 #
 function _sphere_ode_rhs!(du, u, p::St_sphere_ode_params, t)
     sphere_rhs!(du, u, p.qe, p.mesh, p.metrics, p.sp, p.SVT)
+    #
+    # The forcing and the large-scale dissipation are added to the ASSEMBLED
+    # tendency, after the DSS and the M⁻¹ scaling that sphere_rhs! ends with —
+    # they are nodal fields, not weak-form integrals. See sphere_forcing.jl.
+    # A no-op when the case asked for no forcing.
+    #
+    sphere_forcing_apply!(du, u, p.qe, p.forcing, Int(p.mesh.npoin))
     return nothing
 end
 
@@ -216,6 +231,13 @@ end
 function _sphere_step_limiter!(u, integrator, p::St_sphere_ode_params, t)
     sphere_filter!(u, p.mesh, p.metrics, p.sp)
     p.lproject && project_momentum_to_sphere!(u, p.mesh; ivar = 2)
+    #
+    # Redraw the forcing for the NEXT step, on the state this one just finished
+    # — which is the state the next one starts from, so the amplitude of Eq. (5)
+    # is normalised against exactly the u the forcing will act on. Once per
+    # step, deliberately: the RK stages must all see the same random field.
+    #
+    sphere_forcing_step!(p.forcing, u, p.mesh, p.metrics, p.sp)
     return nothing
 end
 
@@ -252,7 +274,7 @@ end
 # body is entered only on the ~35 print steps and 24 output steps instead of all
 # 6913 — the conditions themselves are the old hand-written loop's, unchanged.
 #---------------------------------------------------------------------------------
-mutable struct St_sphere_monitor{TQ, TMesh, TMetrics, TParams, TIn, TSVT}
+mutable struct St_sphere_monitor{TQ, TMesh, TMetrics, TParams, TIn, TSVT, TPod, TForcing}
     q::TQ
     mesh::TMesh
     metrics::TMetrics
@@ -272,6 +294,21 @@ mutable struct St_sphere_monitor{TQ, TMesh, TMetrics, TParams, TIn, TSVT}
     tnext::Float64
     iout::Int
     verbose::Bool
+    #
+    # The POD snapshot recorder, or `nothing` when :lpod is off. It carries its
+    # OWN sampling clock (src/kernel/rom/pod.jl): the VTK cadence is chosen to
+    # keep a movie small, while a decomposition wants snapshots spaced uniformly
+    # and densely enough to resolve what it is decomposing, and the two have no
+    # reason to agree.
+    #
+    pod::TPod
+    #
+    # The stochastic forcing, or `nothing`. Read-only here: the monitor reports
+    # the energy input rate it realised, which is the one number that says
+    # whether the forcing is doing what the deck asked for. LAST field, after
+    # pod, so the positional constructor calls read in wiring order.
+    #
+    forcing::TForcing
 end
 
 #
@@ -295,7 +332,8 @@ function (due::St_sphere_monitor_due)(u, t, integrator)
     mon   = due.mon
     istep = integrator.stats.naccept
     return (istep % mon.nprint == 0 || istep >= mon.nsteps) ||
-           (mon.iout < mon.nout && t >= mon.tnext - 1.0e-9*integrator.dt)
+           (mon.iout < mon.nout && t >= mon.tnext - 1.0e-9*integrator.dt) ||
+           pod_due(mon.pod, t, integrator.dt)
 end
 
 function (mon::St_sphere_monitor)(integrator)
@@ -324,9 +362,9 @@ function (mon::St_sphere_monitor)(integrator)
             dζ   = MPI.Allreduce(dζ,   MPI.MAX, comm)
         end
         if mon.verbose
-            @printf(" #   step %6d  t = %10.1f s (%6.3f d)  δmass/mass = %9.2e  δE/E = %9.2e  |(φu)·x̂| = %9.2e  max|ζ| = %9.3e  max|ζ-ζ₀| = %9.3e\n",
+            @printf(" #   step %6d  t = %10.1f s (%6.3f d)  δmass/mass = %9.2e  δE/E = %9.2e  |(φu)·x̂| = %9.2e  max|ζ| = %9.3e  max|ζ-ζ₀| = %9.3e%s\n",
                     istep, t, t/86400, (mass-mon.mass0)/mon.mass0, (ener-mon.ener0)/mon.ener0,
-                    drift, ζmax, dζ)
+                    drift, ζmax, dζ, sphere_forcing_report(mon.forcing))
             flush(stdout)
         end
         # mass is a reduced quantity, so this fires on every rank at once.
@@ -343,6 +381,16 @@ function (mon::St_sphere_monitor)(integrator)
         _sphere_write!(mon.q, mon.mesh, mon.inputs, mon.OUTPUT_DIR, mon.iout, t, mon.SVT;
                        verbose = mon.verbose, extra = ("vorticity" => mon.ζ,))
         mon.tnext += mon.outdt
+    end
+
+    #--- POD snapshot. Nothing is written: the snapshots are held in memory and
+    #    decomposed once, after the last step (pod_finalize! below).
+    if mon.pod !== nothing && pod_due(mon.pod, t, integrator.dt)
+        # mon.ζ holds the vorticity of whichever earlier step last needed it, so
+        # it has to be refreshed here even though the branches above may have
+        # just done so — this step is not necessarily one of theirs.
+        mon.pod.lvort && sphere_relative_vorticity!(mon.ζ, u, mon.mesh, mon.metrics, mon.sp)
+        pod_record!(mon.pod, u, t, mon.mesh; ζ = mon.ζ)
     end
 
     return nothing
@@ -482,6 +530,15 @@ function _sphere_march!(mesh::St_mesh,
 
     mass0, ener0, _ = sphere_diagnostics(q.qn, mesh, metrics)
 
+    #
+    # POD. `nothing` unless the deck sets :lpod => true, in which case this
+    # allocates the snapshot buffers and reports what it will sample.
+    #
+    pod = pod_recorder(inputs, mesh, t, tend;
+                       verbose = verbose, dt_step = Δt,
+                       qvars = q.qvars, qoutvars = q.qoutvars, neqs = neqs,
+                       nsd = 2, lshell = true)
+
     # the initial condition
     sphere_relative_vorticity!(ζ, q.qn, mesh, metrics, sp)
     copyto!(ζ0, ζ)
@@ -489,11 +546,32 @@ function _sphere_march!(mesh::St_mesh,
                    lwrite = get(inputs, :lwrite_initial, true) == true,
                    extra = ("vorticity" => ζ,))
 
-    params = St_sphere_ode_params(mesh, metrics, sp, q.qe, SVT, lproject, Ref(0.0))
+    # The first snapshot, taken here rather than in the callback because the
+    # callback only runs after a step. `pod_due` is what decides: a deck that
+    # asked for a POD window starting later than :tinit — to leave a transient
+    # out of the decomposition — is not due yet and records nothing.
+    pod_due(pod, t, Δt) && pod_record!(pod, q.qn, t, mesh; ζ = ζ)
+
+    #
+    # The stochastic forcing, if the deck asked for one. Built here because it
+    # normalises its amplitude over Δt (Eq. 5 of sphere_forcing.jl), which is
+    # only known once the CFL step above has been taken. `nothing` otherwise.
+    #
+    forcing = build_sphere_forcing(mesh, metrics, sp, inputs; Δt = Δt, verbose = verbose)
+
+    params = St_sphere_ode_params(mesh, metrics, sp, q.qe, SVT, lproject, Ref(0.0), forcing)
+
+    #
+    # Build the FIRST forcing field here. The step limiter prepares the field for
+    # the next step, so without this the first step would be forced by the zeros
+    # the struct was allocated with — on a case that starts from rest, a wasted
+    # step and a discontinuity in the injection rate at step 2.
+    #
+    sphere_forcing_step!(forcing, q.qn, mesh, metrics, sp)
 
     monitor = St_sphere_monitor(q, mesh, metrics, sp, inputs, SVT, OUTPUT_DIR,
                                 ζ, ζ0, mass0, ener0, npoin, nsteps, nprint,
-                                nout, outdt, t + outdt, 0, verbose)
+                                nout, outdt, t + outdt, 0, verbose, pod, forcing)
 
     # save_positions = (false,false): the monitor only reads the state, so there
     # is no need to snapshot it around the callback.
@@ -542,6 +620,14 @@ function _sphere_march!(mesh::St_mesh,
                      " #       has no upwinding to supply any;\n",
                      " #     * a larger :μ, or a smaller :cfl if the step really is the problem."))
     end
+
+    #
+    # THE DECOMPOSITION, once the run is over and the snapshots are all in.
+    # After the retcode check above on purpose: a run that blew up has a
+    # snapshot set that ends in whatever the blow-up looked like, and a POD of
+    # that describes the failure rather than the flow.
+    #
+    pod_finalize!(pod, mesh, metrics.M, OUTPUT_DIR; verbose = verbose)
 
     # Collective, so outside the verbose gate: sphere_diagnostics reduces across
     # ranks and calling it on rank 0 alone would hang the others.

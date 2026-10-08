@@ -71,17 +71,17 @@ end
 # =============================================================================
 #  St_elemLearning — struct holds ONLY per-element blocks and ML tensors.
 # =============================================================================
-Base.@kwdef mutable struct St_elemLearning{T <: AbstractFloat,
-                                           dims0,
-                                           dims_vovo,
-                                           dims_∂Ovo,
-                                           dims_vovb,
-                                           dims_T2,
-                                           dims_T1,
-                                           dimsML1,
-                                           dimsML2,
-                                           lELSample,
-                                           backend}
+Base.@kwdef mutable struct St_elemLearning{T <: AbstractFloat, lELSample, backend}
+
+    # array shapes (fields, not type parameters: see the top of src/kernel/globalStructs.jl)
+    dims0
+    dims_vovo
+    dims_∂Ovo
+    dims_vovb
+    dims_T2
+    dims_T1
+    dimsML1
+    dimsML2
 
     # ── Per-element: interior × interior  (nvo × nvo × nelem) ────────────────
     Avovo   = KernelAbstractions.zeros(backend, T, dims_vovo)
@@ -130,17 +130,8 @@ function allocate_elemLearning(nelem, ngl, length∂O, length∂τ, lengthΓ,
     dimsML2    = (4*k*(k-1)^2,    Nsamp)
     dims0      = (nelem, 2)
 
-    return St_elemLearning{T,
-                           dims0,
-                           dims_vovo,
-                           dims_∂Ovo,
-                           dims_vovb,
-                           dims_T2,
-                           dims_T1,
-                           dimsML1,
-                           dimsML2,
-                           lEL_Sample,
-                           backend}()
+    return St_elemLearning{T, lEL_Sample, backend}(; dims0, dims_vovo, dims_∂Ovo, dims_vovb,
+                                                     dims_T2, dims_T1, dimsML1, dimsML2)
 end
 
 
@@ -911,7 +902,7 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
             for ip = 1:npoin
                 user_source!(RHS[ip], params.qp.qn[ip], params.qp.qe[ip],
                              npoin, inputs[:CL], inputs[:SOL_VARS_TYPE];
-                             neqs=1, x=sem.mesh.x[ip], y=sem.mesh.y[ip],
+                             neqs=1, x=sem.mesh.coords[1,ip], y=sem.mesh.coords[2,ip],
                              xmax=sem.mesh.xmax, xmin=sem.mesh.xmin,
                              ymax=sem.mesh.ymax, ymin=sem.mesh.ymin)
             end
@@ -978,7 +969,7 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
                                    params.qp.qe[ip],
                                    npoin,
                                    inputs[:CL], inputs[:SOL_VARS_TYPE];
-                                   neqs=1, x=sem.mesh.x[ip], y=sem.mesh.y[ip],
+                                   neqs=1, x=sem.mesh.coords[1,ip], y=sem.mesh.coords[2,ip],
                                    xmax=sem.mesh.xmax, xmin=sem.mesh.xmin,
                                    ymax=sem.mesh.ymax, ymin=sem.mesh.ymin)
         end

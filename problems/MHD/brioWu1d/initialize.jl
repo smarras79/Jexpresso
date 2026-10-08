@@ -16,7 +16,11 @@ function initialize(SD, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
     println(" Initialize fields for 1D ideal MHD (brioWu1d: Brio-Wu shock tube) ............ ")
 
     qvars    = ["ρ", "ρu", "ρv", "ρE", "ρw", "Bx", "By", "Bz"]
-    qoutvars = ["ρ", "u", "v", "p", "By"]
+    # Every solution quantity of the 1D system, in the order user_uout!
+    # fills them. Bx is constant (0.75) by construction and is plotted as the
+    # check that it stays so; the reference table of user_analytic.jl carries
+    # ρ, u, v, w, p, By, Bz, so all of those get a reference curve.
+    qoutvars = ["ρ", "u", "v", "w", "p", "Bx", "By", "Bz"]
     q = define_q(SD,
                  mesh.nelem, mesh.npoin, mesh.ngl,
                  qvars,

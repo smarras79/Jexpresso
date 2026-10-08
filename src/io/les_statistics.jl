@@ -1,4 +1,9 @@
-Base.@kwdef mutable struct LESStatCache{T <: AbstractFloat, nz, dims_buf, dims_stress, backend, VT1, VT2}
+Base.@kwdef mutable struct LESStatCache{T <: AbstractFloat, backend, VT1, VT2}
+    # array shapes (fields, not type parameters: see the top of src/kernel/globalStructs.jl)
+    nz
+    dims_buf
+    dims_stress
+
     z_levels        ::Vector{Float64}       = zeros(Float64, nz)
     z_groups        ::Vector{Vector{Int64}} = [Int64[] for _ in 1:nz]
     npts_per_z      ::Vector{Int64}         = zeros(Int64,   nz)
@@ -185,7 +190,7 @@ function build_les_stat_cache(mesh, nprofiles::Int, nstress::Int, T, backend)
 
     comm = get_mpi_comm()
 
-    z         = Array(mesh.z)  # ensure CPU array
+    z         = Array(@view(mesh.coords[3,:]))  # ensure CPU array
     gip2owner = Array(mesh.gip2owner)
 
     # Gather all unique z values across all ranks
@@ -226,7 +231,7 @@ function build_les_stat_cache(mesh, nprofiles::Int, nstress::Int, T, backend)
     dims_stress = (Int64(nz), Int64(nstress))
     VT1   = typeof(KernelAbstractions.zeros(backend, T, dims_buf[2]))
     VT2   = typeof(KernelAbstractions.zeros(backend, T, dims_buf...))
-    cache = LESStatCache{T, Int64(nz), dims_buf, dims_stress, backend, VT1, VT2}()
+    cache = LESStatCache{T, backend, VT1, VT2}(; nz = Int64(nz), dims_buf, dims_stress)
     copyto!(cache.z_levels,   z_levels)
     copyto!(cache.z_groups,   z_groups)
     copyto!(cache.npts_per_z, npts_per_z)
@@ -682,7 +687,7 @@ function compute_les_spectra!(cs, uaux, qe, mesh, ET, comm, params)
     sc   = cs.spec_cache
     rank = MPI.Comm_rank(comm)
     nxz  = length(cs.xz_coords)
-    y    = Array(mesh.y)
+    y    = Array(@view(mesh.coords[2,:]))
 
     # --- Pack local data: 6 floats per point = (ixz_float, y, u, v, w, θ) ---
     n_local   = sum(length(cs.xz_groups[ixz]) for ixz in 1:nxz)
@@ -804,8 +809,8 @@ function build_les_cross_section(mesh, nprofiles::Int, nstress::Int, T)
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
-    x         = Array(mesh.x)
-    z         = Array(mesh.z)
+    x         = Array(@view(mesh.coords[1,:]))
+    z         = Array(@view(mesh.coords[3,:]))
     gip2owner = Array(mesh.gip2owner)
     npoin_local = length(x)
 
@@ -868,8 +873,8 @@ function build_les_cross_section(mesh, nprofiles::Int, nstress::Int, T)
 
     connijk_arr = Array(mesh.connijk)  # (nelem, ngl, ngl, ngl)
     ngl_c       = mesh.ngl
-    x_arr       = Array(mesh.x)
-    z_arr       = Array(mesh.z)
+    x_arr       = Array(@view(mesh.coords[1,:]))
+    z_arr       = Array(@view(mesh.coords[3,:]))
 
     seen_quads = Set{NTuple{4,Int64}}()
     xz_cells   = NTuple{4,Int64}[]

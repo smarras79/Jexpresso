@@ -33,6 +33,6 @@ function user_uout!(ip, ET, uout, u, qe; kwargs...)
     uout[3] = u[3]/u[1]
     uout[4] = u[4]/u[1]
     uout[5] = u[5]
-    uout[end] = u[end]
+    uout[6] = u[6]   # u has neqs+1 entries (the last is the pressure slot): u[end] wrote 0 as qtr2
     
 end

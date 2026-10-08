@@ -280,8 +280,13 @@ function _cache_fingerprint(inputs, nparts::Int)
             v = inputs[k]
             # Stringify non-trivial values so JLD2 round-trips cleanly and
             # equality stays meaningful across Julia / package versions.
+            # Printed as seen from inside this module: plain `string(v)`
+            # qualifies a Jexpresso type by where the module was loaded —
+            # `Main.Jexpresso.ContGal()` from the script src/Jexpresso.jl,
+            # `Jexpresso.ContGal()` after `using Jexpresso` — so switching
+            # between the two ways of launching threw every cache away.
             fp[string(k)] = (v isa Number || v isa AbstractString || v isa Bool) ?
-                            v : string(v)
+                            v : sprint(print, v; context = :module => @__MODULE__)
         end
     end
     if haskey(inputs, :gmsh_filename)
@@ -427,6 +432,22 @@ const JEXPRESSO_EARLY_SYNC_DONE      = Ref{Bool}(false)
 const JEXPRESSO_EARLY_NPOIN_SEND     = Ref{Union{Nothing, Vector{Int32}}}(nothing)
 const JEXPRESSO_EARLY_SEND_TO_RANKS  = Ref{Union{Nothing, Vector{Int32}}}(nothing)
 
+# Put every coupling Ref back to its state at load time. The coupled precompile
+# workload calls this after each dry run: whatever these hold when the package
+# image is written is what every later session starts with — an MPI
+# communicator from the precompile process, or an early sync marked done that
+# a real run then skips, leaving Alya waiting for it.
+function je_reset_coupling_state!()
+    JEXPRESSO_MPI_COMM[]            = nothing
+    JEXPRESSO_MPI_COMM_WORLD[]      = nothing
+    JEXPRESSO_COUPLING_DATA[]       = nothing
+    je_clear_prefetched_caches!()
+    JEXPRESSO_EARLY_SYNC_DONE[]     = false
+    JEXPRESSO_EARLY_NPOIN_SEND[]    = nothing
+    JEXPRESSO_EARLY_SEND_TO_RANKS[] = nothing
+    return nothing
+end
+
 function set_mpi_comm(comm::MPI.Comm)
     JEXPRESSO_MPI_COMM[] = comm
 end
@@ -439,6 +460,59 @@ function set_mpi_comm_world(comm::MPI.Comm)
 end
 function get_mpi_comm_world()
     return JEXPRESSO_MPI_COMM_WORLD[] === nothing ? MPI.COMM_WORLD : JEXPRESSO_MPI_COMM_WORLD[]
+end
+
+# ===========================================================================
+# DRY COUPLING — the coupled precompile workload (src/Jexpresso.jl)
+# ===========================================================================
+#
+# Precompilation runs in a single process, with no Alya to couple to. To bake
+# a coupled case into the package image anyway, the workload runs it "dry":
+# every coupling function below runs exactly as in a real coupled run — the
+# same code on the same types, which is what the image has to hold — while
+# Alya's side is simulated in this process:
+#
+#   * the world is virtual: Alya's master and one worker at world ranks 0 and
+#     1, the Jexpresso ranks after them (_je_world_size/_je_world_rank);
+#   * Alya's grid, which a real Alya broadcasts, is a few points per direction
+#     inside Jexpresso's own mesh (_je_dry_alya_grid!);
+#   * nothing is sent to Alya, and nothing is waited for.
+#
+# Only the workload sets this, and it resets it before the image is written.
+const JEXPRESSO_DRY_COUPLING = Ref{Bool}(false)
+const _DRY_NALYA = 2   # a master, which owns no points, and one worker
+
+_je_dry() = JEXPRESSO_DRY_COUPLING[]
+
+_je_world_size(world) = _je_dry() ? _DRY_NALYA + MPI.Comm_size(get_mpi_comm()) :
+                                    MPI.Comm_size(world)
+_je_world_rank(world) = _je_dry() ? _DRY_NALYA + MPI.Comm_rank(get_mpi_comm()) :
+                                    MPI.Comm_rank(world)
+
+# Alya's grid for a dry run: 4 points per direction, inset by a tenth of the
+# domain on each side of its global bounding box so that every point lies
+# inside an element. Filled in on first use, when a mesh exists; a no-op in a
+# real run, where Alya's broadcast has already filled these entries.
+function _je_dry_alya_grid!(coupling_data, mesh, local_comm)
+    get(coupling_data, :dry, false) === true || return
+    haskey(coupling_data, :ndime) && return
+    ndime   = Int(mesh.nsd)
+    rem_min = zeros(Float64, 3)
+    rem_max = zeros(Float64, 3)
+    rem_nx  = ones(Int32, 3)
+    for d in 1:ndime
+        lo    = MPI.Allreduce(minimum(@view(mesh.coords[d, :])), MPI.MIN, local_comm)
+        hi    = MPI.Allreduce(maximum(@view(mesh.coords[d, :])), MPI.MAX, local_comm)
+        inset = 0.1 * (hi - lo)
+        rem_min[d] = lo + inset
+        rem_max[d] = hi - inset
+        rem_nx[d]  = 4
+    end
+    coupling_data[:ndime]   = ndime
+    coupling_data[:rem_min] = rem_min
+    coupling_data[:rem_max] = rem_max
+    coupling_data[:rem_nx]  = rem_nx
+    return
 end
 
 """
@@ -476,9 +550,12 @@ function je_init_mpi_and_split_comm()
     set_mpi_comm(local_comm)
     set_mpi_comm_world(world)
 
-    is_coupled = (lsize < wsize)
+    is_coupled = (lsize < wsize) || _je_dry()
 
-    if lrank == 0 && is_coupled
+    if lrank == 0 && _je_dry()
+        println("[Jexpresso] Dry coupling (precompile workload): Alya is simulated in this process.")
+        flush(stdout)
+    elseif lrank == 0 && is_coupled
         println("[Jexpresso] Coupled mode detected:")
         println("            World size = $wsize, Local size = $lsize, APPID = $appid")
         println("            Handshake deferred to driver.")
@@ -553,6 +630,18 @@ mutable struct CouplingData
     # --------------------------------------------------------------------------
     send_coords::Bool
 
+    # --------------------------------------------------------------------------
+    # exchange_enabled: false suspends the per-step exchange. time_loop! turns
+    # it off around its throw-away warm-up step: Alya posts exactly one receive
+    # per step of ITS time loop, so a warm-up exchange is a message it never
+    # receives (see the warm-up in TimeIntegrators.jl).
+    #
+    # nexchange: exchanges sent so far. Reported at the end of the run so it can
+    # be checked against Alya's step count — the two must be equal.
+    # --------------------------------------------------------------------------
+    exchange_enabled::Bool
+    nexchange::Int
+
     send_bufs::Union{Nothing, Vector{Vector{Float64}}}
 
     alya_local_coords::Union{Nothing, Matrix{Float64}}
@@ -619,6 +708,7 @@ mutable struct CouplingData
                           comm_world, lrank, neqs, ndime, send_coords=false)
         new(npoin_recv, npoin_send, recv_from_ranks, send_to_ranks,
             comm_world, lrank, neqs, ndime, send_coords,
+            true, 0,
             nothing,
             nothing, nothing, nothing,
             nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing,
@@ -680,8 +770,8 @@ function je_prefetch_caches!(inputs, nparts::Int,
         # shape changes that would otherwise crash JLD2.load() before
         # the fingerprint mismatch could even be checked.  Auto-deletes
         # the stale / mismatched / unopenable file inside the helper.
-        valid_mesh, _ = _check_cache_validity(mesh_path, inputs, nparts;
-                                              gmsh_path=gmsh_path)
+        valid_mesh, why_mesh = _check_cache_validity(mesh_path, inputs, nparts;
+                                                     gmsh_path=gmsh_path)
         if valid_mesh
             rank == 0 && (print("[prefetch] mesh cache … "); flush(stdout))
             t0 = time_ns()
@@ -701,8 +791,9 @@ function je_prefetch_caches!(inputs, nparts::Int,
                 try; isfile(mesh_path) && rm(mesh_path; force=true); catch _; end
             end
             flush(stdout)
-        elseif isfile(mesh_path) || isfile(_mesh_cache_path(inputs, nparts))
-            # _check_cache_validity already deleted the bad file.
+        elseif why_mesh === :mismatch
+            # _check_cache_validity has already deleted the file, so ask it
+            # what it found rather than looking for the file.
             rank == 0 && println("[prefetch] mesh cache … incompatible / stale (will rebuild)")
         end
     end
@@ -715,8 +806,8 @@ function je_prefetch_caches!(inputs, nparts::Int,
         # Same fingerprint-only pre-check as the mesh path. Avoids the
         # AssemblerCache/St_metrics reconstruct failure that previously
         # forced a manual clean_cache.sh.
-        valid_sem, _ = _check_cache_validity(sem_path, inputs, nparts;
-                                             gmsh_path=gmsh_path)
+        valid_sem, why_sem = _check_cache_validity(sem_path, inputs, nparts;
+                                                   gmsh_path=gmsh_path)
         if valid_sem
             rank == 0 && (print("[prefetch] SEM cache  … "); flush(stdout))
             t0 = time_ns()
@@ -743,7 +834,7 @@ function je_prefetch_caches!(inputs, nparts::Int,
                 try; isfile(sem_path) && rm(sem_path; force=true); catch _; end
             end
             flush(stdout)
-        elseif isfile(sem_path) || isfile(_preprocess_cache_path(inputs, Nξ, Qξ, nparts))
+        elseif why_sem === :mismatch
             rank == 0 && println("[prefetch] SEM cache  … incompatible / stale (will rebuild)")
         end
     end
@@ -785,7 +876,13 @@ function _je_prefetch_geometry!(inputs, local_comm::MPI.Comm,
     # or none.
     _je_all_ranks(already, local_comm) && return
 
-    have_inputs = (flds !== nothing) && (JEXPRESSO_COUPLING_DATA[] !== nothing)
+    # The cache holds the grid as mod_mesh_read_gmsh! built it, BEFORE sem_setup
+    # applies :xscale/:xdisp/:yscale/:ydisp. Locating Alya's points on it would
+    # then use the wrong geometry, so a deck that rescales does not prefetch.
+    rescaled = get(inputs, :xscale, 1.0) != 1.0 || get(inputs, :xdisp, 0.0) != 0.0 ||
+               get(inputs, :yscale, 1.0) != 1.0 || get(inputs, :ydisp, 0.0) != 0.0
+
+    have_inputs = (flds !== nothing) && (JEXPRESSO_COUPLING_DATA[] !== nothing) && !rescaled
     if !_je_all_ranks(!already && have_inputs, local_comm)
         JEXPRESSO_PREFETCHED_ALYA_COORDS[] = nothing
         if rank == 0
@@ -803,13 +900,24 @@ function _je_prefetch_geometry!(inputs, local_comm::MPI.Comm,
         nsd_val = haskey(flds, "__SD_nsd__") ? Int(flds["__SD_nsd__"]) :
                                                Int(get(inputs, :nsd, 2))
 
+        # extract_local_alya_coordinates reads the nodes from `coords` (3 × npoin),
+        # as on the live mesh. The CACHED `coords` cannot be used: the cache is
+        # written by mod_mesh_read_gmsh! before mod_mesh_mesh_driver fills
+        # `coords` from x/y/z, so it holds zeros. Rebuild it from the cached
+        # x/y/z the same way mod_mesh_mesh_driver does.
+        npoin_c  = haskey(flds, "npoin") ? Int(flds["npoin"]) :
+                                           length(get(flds, "x", Float64[]))
+        coords_c = zeros(Float64, 3, npoin_c)
+        for (d, key) in enumerate(("x", "y", "z"))
+            v = get(flds, key, Float64[])
+            length(v) >= npoin_c && (coords_c[d, :] .= @view(v[1:npoin_c]))
+        end
+
         # Use a NamedTuple instead of St_mesh{...} — extract_local_alya_coordinates
-        # only accesses x/y/z/nelem/ngl/connijk/nsd via duck typing.  A NamedTuple
+        # only accesses coords/nelem/ngl/connijk/nsd via duck typing.  A NamedTuple
         # avoids the expensive @kwdef constructor JIT of a 150+-field struct.
         mesh_tmp = (
-            x       = Vector{Float64}(haskey(flds,"x")       ? flds["x"]       : Float64[]),
-            y       = Vector{Float64}(haskey(flds,"y")       ? flds["y"]       : Float64[]),
-            z       = Vector{Float64}(haskey(flds,"z")       ? flds["z"]       : Float64[]),
+            coords  = coords_c,
             nelem   = haskey(flds,"nelem")   ? Int(flds["nelem"])   : 0,
             ngl     = haskey(flds,"ngl")     ? Int(flds["ngl"])     : 0,
             connijk = haskey(flds,"connijk") ? flds["connijk"]      : Array{Int64}(undef,0,0,0,0),
@@ -864,7 +972,7 @@ function je_early_coupling_sync!(local_comm::MPI.Comm, world::MPI.Comm)
     JEXPRESSO_EARLY_SYNC_DONE[] && return
 
     rank  = MPI.Comm_rank(local_comm)
-    wsize = MPI.Comm_size(world)
+    wsize = _je_world_size(world)
 
     # MPI.Barrier(world) / MPI.Alltoall!(world) below are collectives over the
     # FULL MPMD world — Alya is already blocked in the matching pair. Every
@@ -894,8 +1002,10 @@ function je_early_coupling_sync!(local_comm::MPI.Comm, world::MPI.Comm)
     t0 = time_ns()
 
     recv_counts_dummy = zeros(Int32, wsize)
-    MPI.Barrier(world)
-    MPI.Alltoall!(Vector{Int32}(npoin_send), recv_counts_dummy, 1, world)
+    if !_je_dry()
+        MPI.Barrier(world)
+        MPI.Alltoall!(Vector{Int32}(npoin_send), recv_counts_dummy, 1, world)
+    end
     je_send_node_list(Int32.(alya_local_ids), alya_owner_ranks, send_to_ranks, world)
 
     JEXPRESSO_EARLY_NPOIN_SEND[]    = npoin_send
@@ -910,11 +1020,11 @@ end
 # ===========================================================================
 
 function je_perform_coupling_handshake(world, nparts)
-    wsize = MPI.Comm_size(world)
-    wrank = MPI.Comm_rank(world)
+    wsize = _je_world_size(world)
+    wrank = _je_world_rank(world)
     wsize <= nparts && return false
     local_chars = Vector{UInt8}(rpad("JEXPRESSO", 128, ' '))
-    MPI.Gather!(local_chars, nothing, 0, world)
+    _je_dry() || MPI.Gather!(local_chars, nothing, 0, world)
     if wrank == nparts
         println("[Driver] Handshake complete - Jexpresso ready.")
         flush(stdout)
@@ -923,12 +1033,23 @@ function je_perform_coupling_handshake(world, nparts)
 end
 
 function je_receive_alya_data(world, nparts)
-    wsize = MPI.Comm_size(world)
+    wsize = _je_world_size(world)
     wsize <= nparts && (@warn "je_receive_alya_data called but not in coupled mode"; return)
 
     # Idempotency guard: if coupling data was already received (e.g. from run.jl
     # before driver() was called), skip the MPI operations entirely.
     JEXPRESSO_COUPLING_DATA[] !== nothing && return
+
+    # Dry run: nothing to receive. The virtual Alya sits at world ranks
+    # 0 (master) and 1 (worker); its grid is filled in from the mesh once one
+    # exists (_je_dry_alya_grid!).
+    if _je_dry()
+        set_coupling_data(Dict{Symbol,Any}(
+            :dry        => true,
+            :alya2world => Int32.(0:_DRY_NALYA-1),
+        ))
+        return
+    end
 
     ndime_buf = Vector{Int32}(undef, 1)
     MPI.Bcast!(ndime_buf, 0, world)
@@ -969,12 +1090,12 @@ function je_send_node_list(alya_local_ids::Vector{Int32},
                            send_to_ranks::Vector{Int32},
                            world::MPI.Comm)
     lrank = MPI.Comm_rank(get_mpi_comm())
-    wrank = MPI.Comm_rank(world)
+    wrank = _je_world_rank(world)
     send_requests = MPI.Request[]
     for dest_rank in send_to_ranks
         mask    = alya_owner_ranks .== dest_rank
         gid_buf = Int32.(alya_local_ids[mask])
-        push!(send_requests, MPI.Isend(gid_buf, dest_rank, 0, world))
+        _je_dry() || push!(send_requests, MPI.Isend(gid_buf, dest_rank, 0, world))
         println("[je_send_node_list] lrank=$lrank (wrank=$wrank) → Alya world rank $dest_rank: ",
                 "$(length(gid_buf)) node IDs")
     end
@@ -1138,6 +1259,11 @@ end
                                         ψξ::Vector{Float64}, ψη::Vector{Float64},
                                         dψξ::Vector{Float64}, dψη::Vector{Float64},
                                         α::Vector{Float64})
+    # Converged once the residual is down to round-off. x_c sums ngl² terms of
+    # size up to S = max |node coordinate|, so its error is ~eps·S; an absolute
+    # 1e-12 is below that for a domain in metres (S ~ 10³–10⁴), Newton then never
+    # "converges", and the point silently falls back to its nearest node.
+    tol = 1e-12 * max(1.0, maximum(abs, x_elem), maximum(abs, y_elem))
     ξ, η = 0.0, 0.0
     for _ in 1:20
         evaluate_lagrange_1d!(ψξ, ξ, ξ_nodes, ω)
@@ -1154,7 +1280,7 @@ end
             idx += 1
         end
         rx = px - x_c; ry = py - y_c
-        sqrt(rx*rx + ry*ry) < 1e-12 && return ξ, η, true
+        sqrt(rx*rx + ry*ry) < tol && return ξ, η, true
         det_J = dxdξ*dydη - dxdη*dydξ
         abs(det_J) < 1e-15 && return ξ, η, false
         inv_d = 1.0 / det_J
@@ -1174,6 +1300,8 @@ end
                                            ψξ::Vector{Float64}, ψη::Vector{Float64}, ψζ::Vector{Float64},
                                            dψξ::Vector{Float64}, dψη::Vector{Float64}, dψζ::Vector{Float64},
                                            α::Vector{Float64})
+    # Round-off-relative convergence test, as in physical_to_reference.
+    tol = 1e-12 * max(1.0, maximum(abs, x_elem), maximum(abs, y_elem), maximum(abs, z_elem))
     ξ, η, ζ = 0.0, 0.0, 0.0
     for _ in 1:20
         evaluate_lagrange_1d!(ψξ, ξ, ξ_nodes, ω)
@@ -1199,7 +1327,7 @@ end
             idx += 1
         end
         rx = px - x_c; ry = py - y_c; rz = pz - z_c
-        sqrt(rx*rx + ry*ry + rz*rz) < 1e-12 && return ξ, η, ζ, true
+        sqrt(rx*rx + ry*ry + rz*rz) < tol && return ξ, η, ζ, true
         # 3×3 Jacobian determinant (rule of Sarrus).
         det_J = dxdξ*(dydη*dzdζ - dydζ*dzdη) -
                 dxdη*(dydξ*dzdζ - dydζ*dzdξ) +
@@ -1552,6 +1680,20 @@ function interpolate_cached!(u_interp::Matrix{Float64},
     end
 end
 
+# Report the cache totals over ALL Jexpresso ranks: a point that no rank locates
+# takes its nearest node's value instead of the interpolant, so the two numbers
+# should be equal. Collective on the Jexpresso communicator; every rank builds
+# its cache at the same exchange.
+function _report_interp_cache(cpg::CouplingData, nloc::Int, n_points::Int)
+    tot = MPI.Allreduce(Int[nloc, n_points], MPI.SUM, get_mpi_comm())
+    if cpg.lrank == 0
+        println("[coupling] interpolation cache built: $(tot[1])/$(tot[2]) ",
+                "points located in elements (rest use nearest-node). ",
+                "Per-step point search now skipped.")
+        flush(stdout)
+    end
+end
+
 # ===========================================================================
 # ALYA COORDINATE EXTRACTION
 # ===========================================================================
@@ -1560,6 +1702,7 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
                                         block_size::NTuple{3,Int}=(64,64,64),
                                         use_cropping::Bool=true,
                                         ξ_nodes::Union{Nothing,Vector{Float64}}=nothing)
+    _je_dry_alya_grid!(coupling_data, mesh, local_comm)
     ndime      = coupling_data[:ndime]
     alya2world = coupling_data[:alya2world]
     @assert ndime == 2 || ndime == 3 "Only ndime==2 or ndime==3 supported"
@@ -1609,14 +1752,14 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
     r_w  = mod(nmax, nworkers_alya)
     np_w = div(nmax, nworkers_alya)
 
-    xmin_local = minimum(mesh.x); xmax_local = maximum(mesh.x)
-    ymin_local = minimum(mesh.y); ymax_local = maximum(mesh.y)
-    zmin_local = ndime == 3 ? minimum(mesh.z) : 0.0
-    zmax_local = ndime == 3 ? maximum(mesh.z) : 0.0
+    xmin_local = minimum(@view(mesh.coords[1,:])); xmax_local = maximum(@view(mesh.coords[1,:]))
+    ymin_local = minimum(@view(mesh.coords[2,:])); ymax_local = maximum(@view(mesh.coords[2,:]))
+    zmin_local = ndime == 3 ? minimum(@view(mesh.coords[3,:])) : 0.0
+    zmax_local = ndime == 3 ? maximum(@view(mesh.coords[3,:])) : 0.0
     tol = 1e-10
 
     lrank = MPI.Comm_rank(local_comm)
-    wrank = MPI.Comm_rank(world_comm)
+    wrank = _je_world_rank(world_comm)
 
     use_elem_containment = (ξ_nodes !== nothing && ndime == 2)
     if use_elem_containment
@@ -1629,8 +1772,8 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
         local_elem_bboxes = Vector{NTuple{4,Float64}}(undef, nelem_loc)
         @inbounds for e in 1:nelem_loc
             ns = gc_loc(e)
-            local_elem_bboxes[e] = (minimum(mesh.x[ns]), maximum(mesh.x[ns]),
-                                    minimum(mesh.y[ns]), maximum(mesh.y[ns]))
+            local_elem_bboxes[e] = (minimum(mesh.coords[1,ns]), maximum(mesh.coords[1,ns]),
+                                    minimum(mesh.coords[2,ns]), maximum(mesh.coords[2,ns]))
         end
         local_elem_bins = _build_elem_bins(local_elem_bboxes; bins_per_dim=64)
 
@@ -1639,8 +1782,8 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
         @inbounds for e in 1:nelem_loc
             ns = gc_loc(e)
             for k in 1:ngl2_loc
-                local_ex[e, k] = mesh.x[ns[k]]
-                local_ey[e, k] = mesh.y[ns[k]]
+                local_ex[e, k] = mesh.coords[1,ns[k]]
+                local_ey[e, k] = mesh.coords[2,ns[k]]
             end
         end
 
@@ -1839,12 +1982,13 @@ end
 # ===========================================================================
 
 function build_alya_point_ownership_map(mesh, coupling_data, local_comm, world_comm)
+    _je_dry_alya_grid!(coupling_data, mesh, local_comm)
     ndime      = coupling_data[:ndime]
     rem_min    = coupling_data[:rem_min]
     rem_max    = coupling_data[:rem_max]
     rem_nx     = coupling_data[:rem_nx]
     alya2world = coupling_data[:alya2world]
-    wrank = MPI.Comm_rank(world_comm)
+    wrank = _je_world_rank(world_comm)
     lrank = MPI.Comm_rank(local_comm)
     rem_dx = zeros(Float64, 3)
     for idim in 1:ndime
@@ -1852,10 +1996,10 @@ function build_alya_point_ownership_map(mesh, coupling_data, local_comm, world_c
             (rem_max[idim]-rem_min[idim])/(rem_nx[idim]-1) : 0.0
     end
     nmax   = rem_nx[1]*rem_nx[2]*rem_nx[3]
-    xmin_l = minimum(mesh.x); xmax_l = maximum(mesh.x)
-    ymin_l = minimum(mesh.y); ymax_l = maximum(mesh.y)
-    zmin_l = ndime==3 ? minimum(mesh.z) : 0.0
-    zmax_l = ndime==3 ? maximum(mesh.z) : 0.0
+    xmin_l = minimum(@view(mesh.coords[1,:])); xmax_l = maximum(@view(mesh.coords[1,:]))
+    ymin_l = minimum(@view(mesh.coords[2,:])); ymax_l = maximum(@view(mesh.coords[2,:]))
+    zmin_l = ndime==3 ? minimum(@view(mesh.coords[3,:])) : 0.0
+    zmax_l = ndime==3 ? maximum(@view(mesh.coords[3,:])) : 0.0
     tol    = 1e-10
     local_coords      = zeros(Float64, nmax, ndime)
     local_owner_jrank = fill(Int32(-1), nmax)
@@ -1963,7 +2107,7 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
     coupling_data = get_coupling_data()
     local_comm    = get_mpi_comm()
     lrank         = MPI.Comm_rank(local_comm)
-    wsize         = MPI.Comm_size(world)
+    wsize         = _je_world_size(world)
 
     # Sign-of-life print: appears as soon as setup_coupling_and_mesh has been
     # JIT-compiled.  This breaks up the otherwise-silent period between
@@ -2008,8 +2152,10 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
         lrank == 0 && (println("[setup_coupling] Alltoall to exchange point counts…"); flush(stdout))
 
         recv_counts_from_alya = zeros(Int32, wsize)
-        MPI.Barrier(world)
-        MPI.Alltoall!(Vector{Int32}(npoin_send), recv_counts_from_alya, 1, world)
+        if !_je_dry()
+            MPI.Barrier(world)
+            MPI.Alltoall!(Vector{Int32}(npoin_send), recv_counts_from_alya, 1, world)
+        end
 
         je_send_node_list(Int32.(alya_local_ids), alya_owner_ranks, send_to_ranks, world)
     end
@@ -2070,9 +2216,9 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
             bb3     = Vector{NTuple{6,Float64}}(undef, nelem)
             @inbounds for e in 1:nelem
                 ns = gc(e)
-                bb3[e] = (minimum(mesh.x[ns]), maximum(mesh.x[ns]),
-                          minimum(mesh.y[ns]), maximum(mesh.y[ns]),
-                          minimum(mesh.z[ns]), maximum(mesh.z[ns]))
+                bb3[e] = (minimum(mesh.coords[1,ns]), maximum(mesh.coords[1,ns]),
+                          minimum(mesh.coords[2,ns]), maximum(mesh.coords[2,ns]),
+                          minimum(mesh.coords[3,ns]), maximum(mesh.coords[3,ns]))
             end
             coupling.elem_bboxes = bb3
             coupling.interp_bins = _build_elem_bins(bb3; bins_per_dim=64)
@@ -2085,9 +2231,9 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
                 ns = gc(e)
                 for k in 1:ngln
                     conn_mat[e,k] = ns[k]
-                    ex_mat[e,k]   = mesh.x[ns[k]]
-                    ey_mat[e,k]   = mesh.y[ns[k]]
-                    ez_mat[e,k]   = mesh.z[ns[k]]
+                    ex_mat[e,k]   = mesh.coords[1,ns[k]]
+                    ey_mat[e,k]   = mesh.coords[2,ns[k]]
+                    ez_mat[e,k]   = mesh.coords[3,ns[k]]
                 end
             end
             coupling.elem_conn = conn_mat
@@ -2099,8 +2245,8 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
             bb = Vector{NTuple{4,Float64}}(undef, nelem)
             @inbounds for e in 1:nelem
                 ns = gc(e)
-                bb[e] = (minimum(mesh.x[ns]), maximum(mesh.x[ns]),
-                         minimum(mesh.y[ns]), maximum(mesh.y[ns]))
+                bb[e] = (minimum(mesh.coords[1,ns]), maximum(mesh.coords[1,ns]),
+                         minimum(mesh.coords[2,ns]), maximum(mesh.coords[2,ns]))
             end
             coupling.elem_bboxes = bb
             coupling.interp_bins = _build_elem_bins(bb; bins_per_dim=64)
@@ -2112,8 +2258,8 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
                 ns = gc(e)
                 for k in 1:ngl2
                     conn_mat[e,k] = ns[k]
-                    ex_mat[e,k]   = mesh.x[ns[k]]
-                    ey_mat[e,k]   = mesh.y[ns[k]]
+                    ex_mat[e,k]   = mesh.coords[1,ns[k]]
+                    ey_mat[e,k]   = mesh.coords[2,ns[k]]
                 end
             end
             coupling.elem_conn = conn_mat
@@ -2195,9 +2341,11 @@ function coupling_exchange_data!(cpg::CouplingData)
     send_requests = MPI.Request[]
     for dest_rank in cpg.send_to_ranks
         cpg.npoin_send[dest_rank+1] > 0 || continue
+        _je_dry() && continue
         push!(send_requests, MPI.Isend(cpg.send_bufs[dest_rank+1], dest_rank, 0, cpg.comm_world))
     end
     isempty(send_requests) || MPI.Waitall(send_requests)
+    cpg.nexchange += 1
 end
 
 # Full per-step exchange.  Branches on cpg.send_coords (set once at startup):
@@ -2232,12 +2380,7 @@ function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
                                       elem_bboxes, bins, e_conn, elem_x, elem_y,
                                       ψξ, ψη, dψξ, dψη, α, x_e, y_e,
                                       mesh_x, mesh_y)
-        if cpg.lrank == 0
-            println("[coupling] interpolation cache built: $nloc/$(size(alya_coords,1)) ",
-                    "points located in elements (rest use nearest-node). ",
-                    "Per-step point search now skipped.")
-            flush(stdout)
-        end
+        _report_interp_cache(cpg, nloc, size(alya_coords, 1))
     end
 
     if cpg.send_coords
@@ -2321,12 +2464,7 @@ function je_perform_coupling_exchange_3d(u, u_mat, t, cpg::CouplingData,
                                       elem_bboxes, bins, e_conn, elem_x, elem_y, elem_z,
                                       ψξ, ψη, ψζ, dψξ, dψη, dψζ, α,
                                       x_e, y_e, z_e, mesh_x, mesh_y, mesh_z)
-        if cpg.lrank == 0
-            println("[coupling] interpolation cache built: $nloc/$(size(alya_coords,1)) ",
-                    "points located in elements (rest use nearest-node). ",
-                    "Per-step point search now skipped.")
-            flush(stdout)
-        end
+        _report_interp_cache(cpg, nloc, size(alya_coords, 1))
     end
 
     if cpg.send_coords
@@ -2383,8 +2521,8 @@ end
 function verify_coupling_communication_pattern(npoin_send, alya_owner_ranks, alya_local_ids,
                                                coupling_data, local_comm, world_comm)
     lrank       = MPI.Comm_rank(local_comm)
-    wrank       = MPI.Comm_rank(world_comm)
-    wsize       = MPI.Comm_size(world_comm)
+    wrank       = _je_world_rank(world_comm)
+    wsize       = _je_world_size(world_comm)
     nranks_alya = length(coupling_data[:alya2world])
     total_local = length(alya_owner_ranks)
 
@@ -2457,7 +2595,16 @@ function setup_coupling_callback(is_coupled, params, inputs)
     t0   = params.tspan[1]
     tol0 = get(inputs, :couple_time_tol, 1e-12)
 
-    @inline coupling_condition(u_state, t, integrator) = t > t0 + tol0
+    # The exchange fires on EVERY step and only reads the state, so the callback
+    # must leave the integrator alone:
+    #   save_positions = (false, false) — the default (true, true) copies the
+    #     whole state into the returned solution before and after each firing:
+    #     2 copies per step (4000 for 3dAlya) held until solve returns, and never
+    #     read. Memory grows with the length of the run.
+    #   u_modified!(integrator, false) — otherwise the integrator assumes u was
+    #     changed, and an FSAL method (Tsit5, BS3, …) pays one extra RHS
+    #     evaluation per step to refresh its first stage.
+    @inline coupling_condition(u_state, t, integrator) = cpg.exchange_enabled && t > t0 + tol0
 
     neqs = params.neqs
     mesh = params.mesh
@@ -2478,15 +2625,18 @@ function setup_coupling_callback(is_coupled, params, inputs)
     _y_e         = cpg.y_e_scratch::Vector{Float64}
     _alya_coords = cpg.alya_local_coords::Matrix{Float64}
     _owner_ranks = cpg.alya_owner_ranks::Vector{Int32}
-    _mesh_x      = mesh.x::Vector{Float64}
-    _mesh_y      = mesh.y::Vector{Float64}
+    # Plain Vector{Float64} copies, taken once like the element geometry in
+    # cpg: the exchange kernels are typed on Vector{Float64}, and a row of the
+    # (3, npoin) coords matrix is a SubArray.
+    _mesh_x      = Vector{Float64}(mesh.coords[1,:])
+    _mesh_y      = Vector{Float64}(mesh.coords[2,:])
 
     if cpg.ndime == 3
         _elem_z      = cpg.elem_z::Matrix{Float64}
         _ψζ          = cpg.ψζ_scratch::Vector{Float64}
         _dψζ         = cpg.dψζ_scratch::Vector{Float64}
         _z_e         = cpg.z_e_scratch::Vector{Float64}
-        _mesh_z      = mesh.z::Vector{Float64}
+        _mesh_z      = Vector{Float64}(mesh.coords[3,:])
         _elem_bboxes3 = cpg.elem_bboxes::Vector{NTuple{6,Float64}}
         _bins3        = cpg.interp_bins::ElemBins3D
 
@@ -2500,9 +2650,11 @@ function setup_coupling_callback(is_coupled, params, inputs)
                 _alya_coords, _owner_ranks,
                 _mesh_x, _mesh_y, _mesh_z,
                 inputs, neqs, _elem_bboxes3, _bins3)
+            u_modified!(integrator, false)
         end
 
-        return DiscreteCallback(coupling_condition, do_coupling_exchange_3d!)
+        return DiscreteCallback(coupling_condition, do_coupling_exchange_3d!;
+                                save_positions = (false, false))
     else
         _elem_bboxes = cpg.elem_bboxes::Vector{NTuple{4,Float64}}
         _bins        = cpg.interp_bins::ElemBins
@@ -2514,8 +2666,10 @@ function setup_coupling_callback(is_coupled, params, inputs)
                 _ψξ, _ψη, _dψξ, _dψη, _α, _x_e, _y_e,
                 _alya_coords, _owner_ranks, _mesh_x, _mesh_y,
                 inputs, neqs, _elem_bboxes, _bins)
+            u_modified!(integrator, false)
         end
 
-        return DiscreteCallback(coupling_condition, do_coupling_exchange!)
+        return DiscreteCallback(coupling_condition, do_coupling_exchange!;
+                                save_positions = (false, false))
     end
 end

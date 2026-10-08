@@ -162,7 +162,69 @@ end
 # of the momentum field, and never the maxima of ρ and of ρu taken over
 # different nodes and divided.
 # -----------------------------------------------------------------------------
-function local_wave_speeds(npoin, neqs, mp, p_m, integrator, SD)
+# -----------------------------------------------------------------------------
+# PER-NODE LGL SPACING.
+#
+# The CFL numbers used to be built from two GLOBAL extrema: the largest wave
+# speed ANYWHERE in the mesh over the smallest node spacing ANYWHERE in the
+# mesh. On a uniform grid those live at the same place and the number is
+# right. On a graded one they do not, and the print pairs a speed from the
+# coarse far field with a length from the wall — on the 34x-graded
+# shock_circle_M7 cylinder that turned a true parabolic number of 0.008 into a
+# printed 0.312, a factor of 38, and the run was then "fixed" against a number
+# that was never real.
+#
+# So each node gets the LGL spacing of the smallest element touching it, and
+# the CFL maxima are taken over speed_i/Δ_i rather than max(speed)/min(Δ).
+# The ratio Δnode_s/Δelem_s is the LGL fraction of the element side (0.17267 at
+# nop = 4) and is the same for every element of a given order, so scaling each
+# element's own size by it is exact on affine elements.
+#
+# Both global extrema are still PRINTED, because "max|u| = ..." and
+# "max ν = ..." are useful on their own — they are simply no longer divided by
+# a length from somewhere else.
+# -----------------------------------------------------------------------------
+function nodal_length_scale(mesh, SD)
+
+    npoin = mesh.npoin
+    Δ     = fill(Inf, npoin)
+
+    Δe_s  = Float64(mesh.Δelem_s)
+    Δn_s  = Float64(mesh.Δnode_s)
+    ratio = (Δe_s > 0.0 && isfinite(Δn_s) && Δn_s > 0.0) ? Δn_s/Δe_s :
+                                                           1.0/max(Float64(mesh.nop), 1.0)
+    ngl = mesh.ngl
+    @inbounds if SD == NSD_3D()
+        for ie = 1:mesh.nelem
+            Δe = Float64(mesh.Δelem[ie])*ratio
+            (isfinite(Δe) && Δe > 0.0) || continue
+            for k = 1:ngl, j = 1:ngl, i = 1:ngl
+                ip = mesh.connijk[ie,i,j,k]
+                (ip >= 1 && ip <= npoin) && (Δ[ip] = min(Δ[ip], Δe))
+            end
+        end
+    else
+        for ie = 1:mesh.nelem
+            Δe = Float64(mesh.Δelem[ie])*ratio
+            (isfinite(Δe) && Δe > 0.0) || continue
+            for j = 1:ngl, i = 1:ngl
+                ip = mesh.connijk[ie,i,j]
+                (ip >= 1 && ip <= npoin) && (Δ[ip] = min(Δ[ip], Δe))
+            end
+        end
+    end
+
+    # Any node no element claimed (should not happen) falls back to the global
+    # minimum, which is the old, conservative behaviour.
+    fallback = (isfinite(Δn_s) && Δn_s > 0.0) ? Δn_s : 1.0
+    @inbounds for ip = 1:npoin
+        isfinite(Δ[ip]) || (Δ[ip] = fallback)
+    end
+
+    return Δ
+end
+
+function local_wave_speeds(npoin, neqs, mp, p_m, integrator, SD, Δnode)
 
     PhysConst = PhysicalConst{Float64}()
 
@@ -192,6 +254,9 @@ function local_wave_speeds(npoin, neqs, mp, p_m, integrator, SD)
     velomax = 0.0
     cmax    = 0.0
     wavemax = 0.0
+    # CFL per unit Δt, taken node by node against that node's OWN spacing.
+    cflu_dt = 0.0
+    cflc_dt = 0.0
 
     @inbounds for ip = 1:npoin
 
@@ -240,9 +305,13 @@ function local_wave_speeds(npoin, neqs, mp, p_m, integrator, SD)
         velomax = max(velomax, vel)
         cmax    = max(cmax, c)
         wavemax = max(wavemax, vel + c)
+
+        Δi      = Δnode[ip]
+        cflu_dt = max(cflu_dt, vel/Δi)
+        cflc_dt = max(cflc_dt, (vel + c)/Δi)
     end
 
-    return velomax, cmax, wavemax
+    return velomax, cmax, wavemax, cflu_dt, cflc_dt
 end
 
 # -----------------------------------------------------------------------------
@@ -257,7 +326,7 @@ end
 # gradient in a conserved-variable equation, so μ/ρ is the diffusivity that
 # sets the parabolic limit.
 # -----------------------------------------------------------------------------
-function local_max_diffusivity(npoin, params, visc)
+function local_max_diffusivity(npoin, params, visc, Δnode)
 
     ldsgs = (params.VT == DSGS() || params.VT == DSGS_MHD() || params.VT == DSGS_SW()) &&
             size(params.μ_dsgs_pnode, 1) == npoin
@@ -265,7 +334,10 @@ function local_max_diffusivity(npoin, params, visc)
     if !ldsgs
         # Constant-coefficient models (AV, Smagorinsky-with-fixed-μ, …): here
         # inputs[:μ] IS the coefficient, so the old behaviour is the right one.
-        return maximum(visc)
+        # ν is uniform, so the tightest node is simply the smallest one.
+        νc = maximum(visc)
+        Δm = minimum(Δnode)
+        return νc, νc/(Δm*Δm)
     end
 
     q     = params.uaux
@@ -282,22 +354,65 @@ function local_max_diffusivity(npoin, params, visc)
     # Dividing those by the 7e-9 of a solar corona printed a "max ν" of 1e7
     # for a run whose real parabolic number was 0.04.
     mhd    = (params.VT == DSGS_MHD())
+    # Euler kernels: the passive-tracer slots carry the KINEMATIC ν. They
+    # start after the energy slot, which is 4 in 2D (ρ, ρu, ρv, ρθ) and 5 in
+    # 3D (ρ, ρu, ρv, ρw, ρθ).
+    euler   = (params.VT == DSGS())
+    tracer0 = (params.SD == NSD_3D()) ? 6 : 5
     allkin = (mhd && (get(params.inputs, :dsgs_nodal_rho, false) || get(params.inputs, :dsgs_conserved, false))) ||
              params.VT == DSGS_SW()      # shallow water: one kinematic ν on (H, Hu, Hv)
 
-    ν = 0.0
+    ν       = 0.0
+    parab   = 0.0        # max over nodes of ν_i/Δ_i², i.e. the parabolic
+                         # number per unit Δt
     @inbounds for ip = 1:npoin
         ρ = lpert ? q[ip,1] + qe[ip,1] : q[ip,1]
         ρ = max(ρ, tiny)
-        ν = max(ν, params.μ_dsgs_pnode[ip,1])           # β / mass diffusion, kinematic
+        νi = params.μ_dsgs_pnode[ip,1]                  # β / mass diffusion, kinematic
         for ieq = 2:neqsν
-            kin = allkin || (mhd && ieq >= 6)
-            ν = max(ν, kin ? params.μ_dsgs_pnode[ip,ieq] : params.μ_dsgs_pnode[ip,ieq]/ρ)
+            kin = allkin || (mhd && ieq >= 6) || (euler && ieq >= tracer0)
+            νi = max(νi, kin ? params.μ_dsgs_pnode[ip,ieq] : params.μ_dsgs_pnode[ip,ieq]/ρ)
         end
+        ν     = max(ν, νi)
+        Δi    = Δnode[ip]
+        parab = max(parab, νi/(Δi*Δi))
     end
 
-    return ν
+    return ν, parab
 end
+
+# -----------------------------------------------------------------------------
+# One-time parabolic-number check for the DynSGS models, called after the
+# warm-up step (TimeIntegrators.jl) once μ_dsgs_pnode holds the coefficient
+# of the first step. A residual viscosity sits at its first-order cap
+# C_max·Δ·(|u|+c) wherever the initial condition has a kink (the cone edge of
+# a θ bubble, a tracer top-hat, a diaphragm), and an explicit RK step can only
+# carry ν·Δt/Δx_min² up to O(1): CompEuler/thetaTracers with DSGS() blew up
+# at the first step at 1.6 while its deck's SMAG run reads 2e-4 for the same
+# Δt. The diagnostics callback prints the same number, but only at the first
+# output time, which the run never reached. Nothing is changed here; the
+# warning names the number and the two knobs (Δt, the :μ multipliers).
+# -----------------------------------------------------------------------------
+function dsgs_first_step_check(params, inputs, SD::Union{NSD_2D, NSD_3D})
+    ldsgs = (params.VT == DSGS() || params.VT == DSGS_MHD() || params.VT == DSGS_SW()) &&
+            size(params.μ_dsgs_pnode, 1) == params.mesh.npoin
+    ldsgs || return nothing
+    comm    = get_mpi_comm()
+    # Per-node, like computeCFL: max_i(ν_i/Δ_i²), not max(ν)/min(Δ)². On a
+    # graded mesh the old pairing took ν from the coarse far field and Δ from
+    # the wall and overstated the number by the square of the grading.
+    Δnode_v = nodal_length_scale(params.mesh, SD)
+    νmax_l, parab_dt_l = local_max_diffusivity(params.mesh.npoin, params, inputs[:μ], Δnode_v)
+    buf     = MPI.Allreduce([νmax_l, parab_dt_l], MPI.MAX, comm)
+    νmax, parab_dt = buf[1], buf[2]
+    pnum    = parab_dt*Float64(inputs[:Δt])
+    if pnum > 0.5 && MPI.Comm_rank(comm) == 0
+        @warn @sprintf("DynSGS after the first step: max ν = %.3e m²/s, max(ν·Δt/Δx²) over the nodes = %.2f (Δt = %g s). Above ~0.5 the explicit step cannot carry the diffusion and the run blows up: reduce :Δt (or the :μ multipliers of the slots that carry the largest coefficient).",
+                       νmax, pnum, Float64(inputs[:Δt]))
+    end
+    return nothing
+end
+dsgs_first_step_check(params, inputs, SD) = nothing
 
 function computeCFL(npoin, neqs, mp, p, dt, Δs, integrator, SD::NSD_1D; visc=[0.0])
     nothing
@@ -313,17 +428,23 @@ function computeCFL(npoin, neqs, mp, p, dt, Δs, integrator, SD::Union{NSD_2D, N
         return nothing
     end
 
-    velomax_l, cmax_l, wavemax_l = local_wave_speeds(npoin, neqs, mp, p, integrator, SD)
-    νmax_l                       = local_max_diffusivity(npoin, integrator.p, visc)
+    Δnode_v = nodal_length_scale(integrator.p.mesh, SD)
+
+    velomax_l, cmax_l, wavemax_l, cflu_dt_l, cflc_dt_l =
+        local_wave_speeds(npoin, neqs, mp, p, integrator, SD, Δnode_v)
+    νmax_l, parab_dt_l = local_max_diffusivity(npoin, integrator.p, visc, Δnode_v)
 
     # One packed Allreduce instead of four latency-bound round trips.  Doing
     # the reduction here rather than inside soundSpeed() is also what makes
     # the printed numbers partition-independent: a rank-local maximum would
     # make the diagnostic depend on how the mesh happens to be split.
-    local_buf  = [velomax_l, cmax_l, wavemax_l, νmax_l]
+    local_buf  = [velomax_l, cmax_l, wavemax_l, νmax_l,
+                  cflu_dt_l, cflc_dt_l, parab_dt_l]
     global_buf = MPI.Allreduce(local_buf, MPI.MAX, comm)
     velomax, cmax, wavemax, νmax =
         global_buf[1], global_buf[2], global_buf[3], global_buf[4]
+    cflu_dt, cflc_dt, parab_dt =
+        global_buf[5], global_buf[6], global_buf[7]
 
     # Smallest gap between two adjacent LGL nodes anywhere in the mesh; it
     # already reflects AMR, because it is measured on the refined grid.
@@ -333,9 +454,12 @@ function computeCFL(npoin, neqs, mp, p, dt, Δs, integrator, SD::Union{NSD_2D, N
     Δ     = (isfinite(Δnode) && Δnode > 0.0) ? Δnode : Float64(Δs)
     dtf   = Float64(dt)
 
-    cfl_u    = velomax*dtf/Δ           # advective
-    cfl_c    = wavemax*dtf/Δ           # acoustic: the |u| + c characteristic
-    cfl_visc = νmax*dtf/(Δ*Δ)          # parabolic
+    # Each of these is now max_i(speed_i/Δ_i)·Δt, NOT max(speed)·Δt/min(Δ):
+    # the speed and the length come from the same node. See the comment on
+    # nodal_length_scale above for what the old pairing cost.
+    cfl_u    = cflu_dt*dtf             # advective
+    cfl_c    = cflc_dt*dtf             # acoustic: the |u| + c characteristic
+    cfl_visc = parab_dt*dtf            # parabolic
 
     println_rank(@sprintf(" #  Δx_min (LGL) : %.4e m   (Δelem/nop = %.4e m)",
                           Δ, Float64(Δs)); msg_rank = rank)

@@ -31,7 +31,7 @@ function user_inputs()
         :visc_model           => SMAG(),
         #:visc_model           => AV(),
         #:μ                    => [0.0, 0.53, 0.53, 0.53, 1.6], #horizontal viscosity constant for momentum
-        :μ                    => [0.0, 5, 5, 5, 5], #horizontal viscosity constant for momentum
+        :μ                    => [0.0, 10, 10, 10, 10], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
@@ -69,7 +69,7 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        :output_dir          => "/scratch/smarras/smarras/output/LESICP2_scaling-8nodes-128x128x72_10kmX10kmX3dot5km/",
+        :output_dir          => "/scratch/smarras/smarras/output/LESICP2-jan2026-newmaster",
         #:output_dir          => "./output",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,

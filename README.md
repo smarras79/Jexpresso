@@ -373,6 +373,10 @@ Top row: density at t = 0.5 s (left) and t = 1.0 s (right).
 Bottom row: residual viscosity. Simulation using 120 × 120 4th-order spectral elements in
 a unit square.
 
+The solver writes VTK, not PNG. These three figures are rendered from a
+finished run by `julia --project=. tools/plot_orszag_tang.jl`; see the
+[case README](problems/MHD/orszagTangBormanis2024/README.md#figures).
+
 ## Magneto-Hydrodynamics (MHD), flux emergence in the solar atmosphere:
 
 The two-dimensional emergence of a horizontal magnetic flux sheet through a
@@ -440,6 +444,18 @@ Jexpresso.run_case("ShallowWater", "SWsphere")
 <img src="assets/SWsphere-Galewki-visc1e5-36x36.jpg"
      alt="Markdown icon"
      style="float: left; margin-right: 3.5px;" />
+
+
+This case also ships with **Proper Orthogonal Decomposition** switched on: at
+the end of the run the code extracts the energy-ranked modes of the flow, draws
+them on an equirectangular map together with the energy spectrum and the
+temporal coefficients, and writes the basis out for a reduced-order model.
+
+POD is a property of the framework rather than of this case: **any** problem
+turns it on with `:lpod => true` in its deck and supplies nothing else, in 1D,
+2D, 3D or on a manifold. `problems/AdvDiff/PODbenchmark` is the reference
+benchmark, a problem whose POD is known in closed form. See
+[`docs/POD.md`](docs/POD.md).
 
 
 

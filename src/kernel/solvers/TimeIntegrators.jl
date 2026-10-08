@@ -87,6 +87,35 @@ function precompile_warmup_enabled(inputs)
     return get(inputs, :lprecompile_warmup, true) == true
 end
 
+# A warm-up `solve` that threw (err = (exception, backtrace), or nothing).
+# It is reported OUTSIDE the NullLogger the warm-up runs under (inside it the
+# warning was swallowed, so a failure left no trace at all), by every rank it
+# happened on.
+#
+# With more than one rank it must not be stepped over: the solve exchanges
+# halos and Allreduces in every RHS call, so a rank that throws leaves the
+# others waiting in a collective it never joins, and the MPI.Barrier after
+# the warm-up never completes: a hang with an empty error log (seen: a
+# 256-rank MHD run sat at "# Precompile warm-up" for an hour). The run is
+# aborted instead, with the error. A single rank continues uncompiled.
+function _warmup_failure!(err, label, rank, comm)
+    err === nothing && return nothing
+    e, bt = err
+    println(stderr, "\n # rank ", rank, ": ", label, " failed:\n",
+            sprint(showerror, e, bt; context = :limit => true))
+    flush(stderr)
+    if MPI.Comm_size(comm) > 1
+        println(stderr, " # rank ", rank, ": aborting all ranks (the others would wait forever in ",
+                "a collective of the solve). The same error would stop the run itself; to ",
+                "see it there, disable the warm-up: JEXPRESSO_PRECOMPILE_WARMUP=0 or ",
+                ":lprecompile_warmup => false.")
+        flush(stderr)
+        MPI.Abort(comm, 1)
+    end
+    rank == 0 && @warn string(label, " failed; continuing without it") exception = e
+    return nothing
+end
+
 """
     precompile_warmup_run!(inputs, params, u, partitioned_model, is_coupled, coupling)
 
@@ -120,7 +149,7 @@ function precompile_warmup_run!(inputs, params, u,
 
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
-    rank == 0 && (print(" # Precompile warm-up (1 step solve) ......... "); flush(stdout))
+    rank == 0 && (print(" # Precompile warm-up ......... "); flush(stdout))
     t0 = time_ns()
 
     # Snapshot mutable state that the warm-up step would advance.
@@ -133,17 +162,38 @@ function precompile_warmup_run!(inputs, params, u,
     dsgs_qnm1_snapshot = copy(params.dsgs_qnm1)
     dsgs_qnm2_snapshot = copy(params.dsgs_qnm2)
     dsgs_thist_snapshot = params.dsgs_thist[]
+    # nhist counts the step-cadenced rotations and gates the startup hold
+    # (rhs.jl, _dsgs_hold_steps). It was NOT restored, so the warm-up silently
+    # spent part of the real run's hold.
+    dsgs_nhist_snapshot = params.dsgs_nhist[]
 
-    # 1-step problem; same params and same FullSpecialize as the real
-    # solve, so the compiled code is reused.
+    # HOW MANY STEPS, AND WHY IT IS NOT ONE UNDER DynSGS.
+    #
+    # dsgs_first_step_check below reads the coefficient this warm-up leaves in
+    # μ_dsgs_pnode and warns when ν·Δt/Δx_min² is past what an explicit step
+    # can carry. But DynSGS holds ν at exactly zero for the first
+    # :dsgs_hold_steps steps (rhs.jl, _dsgs_hold_steps, default 2 → the
+    # coefficient is live from the third rotation), so a ONE-step warm-up
+    # always sampled ν = 0 and the check could not fire on any case. It was
+    # added in September 2026 and the startup hold landed three days later:
+    # from then until here it warned about nothing. CompEuler/thetaTracers ran
+    # into a DomainError on (ρθ)^γ with no diagnostic in front of it, which is
+    # the failure this check exists to name.
+    #
+    # Warming up past the hold costs a few steps of one extra solve and makes
+    # the number the check reads the one the run will actually carry.
     Δt_warmup    = Float32(inputs[:Δt])
     t0_warmup    = params.tspan[1]
-    warmup_tspan = (t0_warmup, t0_warmup + Δt_warmup)
+    ldsgs_warmup = (params.VT == DSGS() || params.VT == DSGS_MHD() || params.VT == DSGS_SW()) &&
+                   get(inputs, :lvisc, false) == true
+    nstep_warmup = ldsgs_warmup ? max(1, _dsgs_hold_steps(params) + 1) : 1
+    warmup_tspan = (t0_warmup, t0_warmup + nstep_warmup*Δt_warmup)
     warmup_prob  = ODEProblem{true, FullSpecialize}(rhs!, u, warmup_tspan, params)
 
     # Silence all log output during the warm-up step. Also silences the
     # SciMLBase "Using arrays or dicts..." warning so it doesn't appear
     # twice (warm-up + real solve).
+    warmup_err = Ref{Any}(nothing)
     with_logger(NullLogger()) do
         try
             solve(warmup_prob,
@@ -154,12 +204,10 @@ function precompile_warmup_run!(inputs, params, u,
                   save_end = false,
                   adaptive = false)
         catch e
-            # Warm-up failure must not prevent the real run. Surface a
-            # one-line warning on rank 0 and continue uncompiled - the
-            # real solve will JIT on its first step as before.
-            rank == 0 && @warn "precompile warm-up failed; continuing without it" exception=e
+            warmup_err[] = (e, catch_backtrace())
         end
     end
+    _warmup_failure!(warmup_err[], "precompile warm-up", rank, comm)
 
     # Restore u and the qnm1/qnm2 history slots so the real solve sees
     # the same initial condition the caller passed in.
@@ -179,6 +227,15 @@ function precompile_warmup_run!(inputs, params, u,
 
     MPI.Barrier(comm)
     rank == 0 && @printf("%.2f s\n", (time_ns() - t0) / 1e9)
+
+    # DynSGS: the warm-up step filled μ_dsgs_pnode with the coefficient of
+    # the first step; warn now if the explicit step cannot carry it
+    # (soundSpeed.jl), before the real solve dies on it.
+    dsgs_first_step_check(params, inputs, params.SD)
+
+    # restored only now: the check above has to read the coefficient the
+    # warm-up produced, and that is only live once nhist is past the hold.
+    params.dsgs_nhist[] = dsgs_nhist_snapshot
 
     # Reset JEXPRESSO_TIMER so the alloc summary table only reflects
     # steady-state allocations from the real solve. The
@@ -268,14 +325,13 @@ function time_loop!(inputs, params, u, args...)
     # IC write must never interact with that. It also doubles as the JIT
     # warm-up of the write_output/write_vtk path.
     #
-    # File number: the slot of tinit in dosetimes (1 for a t=0 start). The
-    # diagnostic callback never fires at the initial time, so this slot is
-    # otherwise unused and the sequence is contiguous: iter_1 (IC), iter_2
-    # (first diagnostic hit), ...
+    # File number: the slot of tinit in dosetimes (iter_k is always dosetimes[k],
+    # which VTK restart relies on). When tinit is not in dosetimes the IC is
+    # iter_0; it used to be iter_1, overwritten by the first diagnostic.
     #
     # When skipped, say so and why — never silently.
     #------------------------------------------------------------------------
-    idx = something(findfirst(x -> x == inputs[:tinit], dosetimes), 1)
+    idx = something(findfirst(x -> x == inputs[:tinit], dosetimes), 0)
     if !lwrite_init
         println_rank(" # Skipping initial-condition write (restart run)"; msg_rank = rank)
     elseif get(inputs, :lwrite_initial, true) != true
@@ -291,8 +347,15 @@ function time_loop!(inputs, params, u, args...)
                      params.qp.qvars, params.qp.qoutvars,
                      inputs[:outformat];
                      nvar=params.qp.neqs, qexact=params.qp.qe,
-                     μ_dsgs_pnode = (params.VT == DSGS() || params.VT == DSGS_MHD() || params.VT == DSGS_SW()) ? params.μ_dsgs_pnode : nothing,
-                     schlieren = maybe_compute_schlieren(inputs, params, u))
+                     # :lvisc is part of the test because params_setup only allocates
+                     # the real npoin x neqs buffer when it is on; with a DSGS model and
+                     # :lvisc => false (the natural way to run an unstabilized comparison)
+                     # it is a 1x1 dummy, which the 2D PNG writer then sliced to npoin.
+                     μ_dsgs_pnode = (inputs[:lvisc] == true &&
+                                     (params.VT == DSGS() || params.VT == DSGS_MHD() || params.VT == DSGS_SW())) ?
+                                    params.μ_dsgs_pnode : nothing,
+                     schlieren = maybe_compute_schlieren(inputs, params, u),
+                     Minv = params.Minv)
         if (lwrite_time == true)
             append_pvd_entry(pvd_path, inputs[:tinit], "iter_$(idx).pvtu")
         end
@@ -429,8 +492,11 @@ function time_loop!(inputs, params, u, args...)
                          integrator.p.qp.qoutvars,
                          inputs[:outformat];
                          nvar=integrator.p.qp.neqs, qexact=integrator.p.qp.qe,
-                         μ_dsgs_pnode = (integrator.p.VT == DSGS() || integrator.p.VT == DSGS_MHD() || integrator.p.VT == DSGS_SW()) ? integrator.p.μ_dsgs_pnode : nothing,
-                         schlieren = maybe_compute_schlieren(inputs, integrator.p, integrator.u))
+                         μ_dsgs_pnode = (inputs[:lvisc] == true &&
+                                         (integrator.p.VT == DSGS() || integrator.p.VT == DSGS_MHD() || integrator.p.VT == DSGS_SW())) ?
+                                        integrator.p.μ_dsgs_pnode : nothing,
+                         schlieren = maybe_compute_schlieren(inputs, integrator.p, integrator.u),
+                         Minv = integrator.p.Minv)
             # The DSGS viscosity panel is rendered by the 1D PNG writer
             # itself (write_output -> plot_results, fed by μ_dsgs_pnode
             # above) so that the whole output time is a single GR render:
@@ -452,6 +518,47 @@ function time_loop!(inputs, params, u, args...)
             end
         end
     end
+    #------------------------------------------------------------------------
+    # POD.
+    #
+    # `nothing` unless the deck says :lpod => true, in which case this allocates
+    # the snapshot buffers and prints what it will sample. The recorder is built
+    # from what the CASE already declares — its variable names, its number of
+    # space dimensions, whether it lives on a manifold — so that a problem opts
+    # in with one line and supplies nothing else (src/kernel/rom/pod.jl).
+    #
+    # It carries its OWN sampling clock: the output cadence is chosen to keep a
+    # movie small, a decomposition wants dense uniform sampling, and the two have
+    # no reason to agree.
+    #------------------------------------------------------------------------
+    pod_rec = pod_recorder(inputs, params.mesh, inputs[:tinit], inputs[:tend];
+                           verbose  = (rank == 0),
+                           dt_step  = Float64(inputs[:Δt]),
+                           qvars    = params.qp.qvars,
+                           qoutvars = params.qp.qoutvars,
+                           neqs     = params.qp.neqs,
+                           nsd      = params.SD isa NSD_1D ? 1 :
+                                      params.SD isa NSD_2D ? 2 : 3,
+                           lshell   = get(inputs, :lspherical_shell, false) == true)
+    #
+    # The sampling times are added to `tstops` so that the integrator LANDS on
+    # them. Without that a snapshot is taken at the first step at or after the
+    # time asked for, which spreads the sample times by up to one Δt — harmless
+    # for a picture, but it is exactly what splits the degenerate pairs of a
+    # travelling structure, and those pairs are how such a structure is
+    # recognised (problems/AdvDiff/PODbenchmark makes the point quantitatively).
+    #
+    if pod_rec !== nothing
+        tstops_all = sort(unique(vcat(tstops_all,
+                                      [pod_rec.set.tstart + k*pod_rec.dt
+                                       for k = 0:pod_rec.nsnapmax-1])))
+    end
+
+    pod_condition(u, t, integrator) = pod_due(pod_rec, t, integrator.dt)
+    do_pod!(integrator)             = pod_record_flat!(pod_rec, integrator.u, integrator.t, integrator.p)
+    cb_pod = pod_rec === nothing ? nothing : DiscreteCallback(pod_condition, do_pod!;
+                                                              save_positions = (false, false))
+
     cb_les_stat    = DiscreteCallback(les_stat_condition, do_les_statistics!)
     cb_les_online  = DiscreteCallback(les_online_condition, do_les_online!)
 
@@ -504,19 +611,8 @@ function time_loop!(inputs, params, u, args...)
         # Include cb_coupling in coupled mode so Julia's per-timestep
         # send to Alya actually fires; without it Alya's MPI.Waitall
         # blocks and its VTS output never gets written.
-        # DEBUG: per-step heartbeat so the user can tell whether solve()
-        # is making progress between diagnostic writes. Diagnostic
-        # writes only fire at dosetimes (e.g. every 10 time units for
-        # city2d), so for Δt=0.004 the integrator can be silently doing
-        # 2500 steps between two user-visible prints — looks identical
-        # to a hang.
-        #
-        # Throttled: every step for the first 5, then every 100. With
-        # 150 000-step runs that's ~1 500 lines of output instead of
-        # 150 000. DEFAULT IS OFF (debugging-only); opt in with
-        # `:lstep_heartbeat => true` in user_inputs.jl or via env
-        # `JEXPRESSO_STEP_HEARTBEAT=1`. The env var, if set, takes
-        # precedence over the user_inputs.jl flag.
+        # :lstep_heartbeat => true prints steps 1-5, then every 100th (rank 0).
+        # save_positions = (false, false): a firing must not store copies of u in sol.u.
         _step_count = Ref{Int}(0)
         function step_heartbeat_condition(u, t, integrator)
             _step_count[] += 1
@@ -526,17 +622,8 @@ function time_loop!(inputs, params, u, args...)
         function step_heartbeat_affect!(integrator)
             rank == 0 && (@printf(" #   step %d   t = %.6f\n", _step_count[], integrator.t); flush(stdout))
         end
-        # Default OFF. Env var, if set, wins over user_inputs.jl.
-        _env_hb = lowercase(strip(get(ENV, "JEXPRESSO_STEP_HEARTBEAT", "")))
-        _heartbeat_on = if _env_hb in ("1", "true", "yes", "on")
-            true
-        elseif _env_hb in ("0", "false", "no", "off")
-            false
-        else
-            get(inputs, :lstep_heartbeat, false) == true
-        end
-        cb_heartbeat = _heartbeat_on ?
-            DiscreteCallback(step_heartbeat_condition, step_heartbeat_affect!) :
+        cb_heartbeat = get(inputs, :lstep_heartbeat, false) == true ?
+            DiscreteCallback(step_heartbeat_condition, step_heartbeat_affect!; save_positions = (false, false)) :
             nothing
 
         # DEBUG: report the MPI-global minimum of the first prognostic
@@ -577,6 +664,7 @@ function time_loop!(inputs, params, u, args...)
         cb_swe_limiter_diagnostic !== nothing &&
             push!(_cbs, cb_swe_limiter_diagnostic)
         append!(_cbs, (cb, cb_restart, cb_les_stat, cb_les_online))
+        cb_pod !== nothing                     && push!(_cbs, cb_pod)
         lrad                                  && push!(_cbs, cb_rad)
         is_coupled && cb_coupling !== nothing  && push!(_cbs, cb_coupling)
         cb_heartbeat !== nothing               && push!(_cbs, cb_heartbeat)
@@ -599,6 +687,66 @@ function time_loop!(inputs, params, u, args...)
         # production run sees the original IC. The throw-away step's
         # diagnostic-VTK output, if any, goes to a per-rank mktempdir that's
         # removed right after.
+        # First scheduled output after t0, for the "next output at" line
+        # printed when the warm-up below finishes.
+        _t0_all     = params.tspan[1]
+        _next_out_t = try
+            _c = [t for t in tstops_all if t > _t0_all]
+            isempty(_c) ? Float64(inputs[:tend]) : Float64(minimum(_c))
+        catch
+            Float64(inputs[:tend])
+        end
+
+        # Instability check that is COLLECTIVE. OrdinaryDiffEq's default
+        # unstable_check is rank-local: a rank whose state goes non-finite
+        # aborts its own solve (its warning silenced by the NullLogger below)
+        # and proceeds to the barrier below, while every other rank keeps
+        # integrating and blocks forever in the next halo exchange — the run
+        # looks hung right after its last output. Every rank now reports its
+        # own verdict, the failing rank says where (rank, time, node, field,
+        # coordinates), and all ranks abort together.
+        function mpi_unstable_check(dt_, u_, p_, t_)
+            bad = !all(isfinite, u_)
+            if bad
+                #
+                # HOW MANY, not just where. "first at node 1" on every rank
+                # was read twice on the Mach-7.7 ramp as if it located the
+                # failure; it does not. Local node 1 comes out of findfirst
+                # whenever the whole local field is already non-finite, and
+                # the low global indices in a gmsh mesh are the geometry
+                # points and boundary curves, so the coordinate looks
+                # meaningful — an inflow plane, an outflow plane, a block
+                # junction — while carrying no information at all.
+                #
+                # nbad against the local total is what distinguishes the two
+                # cases, so it is printed first and the coordinate is only
+                # offered when it can still mean something.
+                #
+                nbad = count(x -> !isfinite(x), u_)
+                k    = findfirst(x -> !isfinite(x), u_)
+                np   = p_.mesh.npoin
+                ip   = (k - 1) % np + 1
+                ieq  = (k - 1) ÷ np + 1
+                xs   = p_.mesh.coords[1, ip]
+                ys   = p_.mesh.coords[2, ip]
+                frac = 100.0*nbad/length(u_)
+                print(" # rank ", rank, ": non-finite solution at t = ", t_,
+                      " — ", nbad, " of ", length(u_), " local entries (",
+                      round(frac, digits=1), "%)")
+                if frac > 50.0
+                    println("; the local field is GONE, so no node locates the"
+                            * " cause — read the positivity report's GLOBAL"
+                            * " first repair instead. Aborting on all ranks")
+                else
+                    println("; earliest local entry is field ", ieq,
+                            " node ", ip, " at (x, y) = (", xs, ", ", ys,
+                            "). Aborting on all ranks")
+                end
+                flush(stdout)
+            end
+            return MPI.Allreduce(bad, MPI.LOR, comm)
+        end
+
         if precompile_warmup_enabled(inputs)
             rank == 0 && (print(YELLOW_FG(" # Integrator warm-up with real callbacks (PATIENCE: ONLY DONE ON 1st RUN!) ......... ")); flush(stdout))
             _t_wm = time_ns()
@@ -609,6 +757,7 @@ function time_loop!(inputs, params, u, args...)
             dsgs_qnm1_snap = copy(params.dsgs_qnm1)
             dsgs_qnm2_snap = copy(params.dsgs_qnm2)
             dsgs_thist_snap = params.dsgs_thist[]
+            dsgs_nhist_snap = params.dsgs_nhist[]
             # If a callback ends up actually writing during the warmup
             # (only possible for cases whose first dosetime falls inside
             # [t0, t0+Δt]), redirect that output to a per-rank tempdir.
@@ -634,6 +783,16 @@ function time_loop!(inputs, params, u, args...)
             # to keep the warmup cheap.
             warm_saveat = range(t0_w, t0_w + Δt_w, length = inputs[:ndiagnostics_outputs])
             _min_h_diagnostic_active[] = false
+            # COUPLED RUNS: the warm-up step must not talk to Alya. Alya posts
+            # exactly one receive per step of its own time loop, so an exchange
+            # fired here is one message more than it will ever receive: every
+            # later step then reaches Alya one step late, and the run's last
+            # send has no receive at all — dropped while it is small enough to
+            # go eagerly, a hang in Waitall (Alya already in its final barrier)
+            # once it is not. The callback stays in the set, so the integrator
+            # is still specialised on the real CallbackSet type.
+            is_coupled && coupling !== nothing && (coupling.exchange_enabled = false)
+            warm_err = Ref{Any}(nothing)
             with_logger(NullLogger()) do
                 try
                     solve(warmup_prob,
@@ -642,12 +801,15 @@ function time_loop!(inputs, params, u, args...)
                           tstops = [t0_w + Δt_w],
                           save_everystep = false,
                           adaptive = inputs[:ode_adaptive_solver],
+                          unstable_check = mpi_unstable_check,   # same type as the real solve: no recompile
                           saveat = warm_saveat)
                 catch e
-                    rank == 0 && @warn "integrator warm-up failed; continuing without it" exception=e
+                    warm_err[] = (e, catch_backtrace())
                 end
             end
             _min_h_diagnostic_active[] = true
+            _warmup_failure!(warm_err[], "integrator warm-up", rank, comm)
+            is_coupled && coupling !== nothing && (coupling.exchange_enabled = true)
             u .= u_snap
             params.qp.qnm1 .= qnm1_snap
             params.qp.qnm2 .= qnm2_snap
@@ -655,6 +817,7 @@ function time_loop!(inputs, params, u, args...)
             params.dsgs_qnm1 .= dsgs_qnm1_snap
             params.dsgs_qnm2 .= dsgs_qnm2_snap
             params.dsgs_thist[] = dsgs_thist_snap
+            params.dsgs_nhist[] = dsgs_nhist_snap
             inputs isa Dict && saved_outdir !== nothing && (inputs[:output_dir] = saved_outdir)
             try; rm(warm_outdir; recursive = true, force = true); catch; end
             # Reset the heartbeat counter so the real solve gets its
@@ -664,7 +827,35 @@ function time_loop!(inputs, params, u, args...)
             reset_shallow_water_limiter_diagnostics!(params.swe_limiter_diag;
                                                       reset_step_counter=true)
             MPI.Barrier(comm)
-            #rank == 0 && (print(YELLOW_FG(@sprintf("DONE (%.2f s)\n", (time_ns() - _t_wm) / 1e9))); flush(stdout))
+            # Say when the warm-up is over. Without this the run prints
+            # nothing between the "PATIENCE" line above and the first
+            # diagnostic output — the step heartbeat is off by default — so
+            # a long first step, a many-rank JIT or simply a small Δt makes a
+            # perfectly healthy solve look hung.
+            if rank == 0
+                print(YELLOW_FG(@sprintf("DONE (%.2f s)\n", (time_ns() - _t_wm) / 1e9)))
+                @printf(" # Time loop running: next output at t = %.6g (%d steps of Δt = %g). Per-step progress: :lstep_heartbeat => true\n",
+                        _next_out_t, max(1, ceil(Int, (_next_out_t - params.tspan[1])/Float64(inputs[:Δt]))), Float64(inputs[:Δt]))
+                flush(stdout)
+            end
+        end
+
+        #
+        # POD: the first snapshot, taken HERE rather than in the callback,
+        # because a callback only runs after a step and the initial condition is
+        # part of the sample. After the warm-up, and after a reset, because the
+        # warm-up above runs a throw-away step with the REAL callback set — so
+        # without the reset the first snapshot would be the warm-up's and the
+        # sampling clock would already have advanced an interval.
+        #
+        # `pod_due` is what decides whether the initial time is sampled at all:
+        # a deck whose POD window starts later than :tinit — to leave a transient
+        # out of the decomposition — is not due yet and records nothing.
+        #
+        if pod_rec !== nothing
+            pod_reset!(pod_rec)
+            pod_due(pod_rec, inputs[:tinit], inputs[:Δt]) &&
+                pod_record_flat!(pod_rec, u, inputs[:tinit], params)
         end
 
         if alloc_summary_enabled(inputs)
@@ -678,29 +869,6 @@ function time_loop!(inputs, params, u, args...)
         # the warning once, which is the right amount.
         solve_logger = rank == 0 ? current_logger() : NullLogger()
 
-        # Instability check that is COLLECTIVE. OrdinaryDiffEq's default
-        # unstable_check is rank-local: a rank whose state goes non-finite
-        # aborts its own solve (its warning silenced by the NullLogger above)
-        # and proceeds to the barrier below, while every other rank keeps
-        # integrating and blocks forever in the next halo exchange — the run
-        # looks hung right after its last output. Every rank now reports its
-        # own verdict, the failing rank says where (rank, time, node, field,
-        # coordinates), and all ranks abort together.
-        function mpi_unstable_check(dt_, u_, p_, t_)
-            bad = !all(isfinite, u_)
-            if bad
-                k    = findfirst(x -> !isfinite(x), u_)
-                np   = p_.mesh.npoin
-                ip   = (k - 1) % np + 1
-                ieq  = (k - 1) ÷ np + 1
-                xs   = p_.mesh.x[ip]
-                ys   = p_.mesh.y[ip]
-                println(" # rank ", rank, ": non-finite solution at t = ", t_,
-                        " (first in field ", ieq, " at node ", ip, ", x = ", xs, ", y = ", ys, "); aborting on all ranks")
-                flush(stdout)
-            end
-            return MPI.Allreduce(bad, MPI.LOR, comm)
-        end
 
         solution = with_logger(solve_logger) do
             solve(prob,
@@ -715,6 +883,14 @@ function time_loop!(inputs, params, u, args...)
                                  length=inputs[:ndiagnostics_outputs]))
         end
 
+        # One exchange per step is the whole contract with Alya, which receives
+        # exactly its own step count ("Steps:" in its startup output). A
+        # different number here means the two time loops disagree.
+        if is_coupled && coupling !== nothing && rank == 0
+            println(" # Coupling: ", coupling.nexchange, " exchanges sent to Alya")
+            flush(stdout)
+        end
+
         # End-of-simulation per-function timing & allocation summary.
         # Set ENV["JEXPRESSO_ALLOC_SUMMARY"]="1" or :lalloc_summary => true
         # to enable; see alloc_summary_enabled above for precedence.
@@ -725,6 +901,13 @@ function time_loop!(inputs, params, u, args...)
         end
     end
     
+    #
+    # THE DECOMPOSITION, once the run is over and the snapshots are all in.
+    # Collective (the correlation matrix is reduced across ranks), so outside
+    # any rank gate.
+    #
+    pod_finalize!(pod_rec, params.mesh, params.M, inputs[:output_dir]; verbose = (rank == 0))
+
     MPI.Barrier(comm)
     report_all_timers(params.timers)
     MPI.Barrier(comm)

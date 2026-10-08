@@ -70,7 +70,7 @@ function fe_positivity_limiter!(u, integrator, p, t)
             end
         end
         println(" # positivity floors, rank ", MPI.Comm_rank(MPI.COMM_WORLD), ": ", fe_floor_hits[], " stage-node hits so far (", nhit,
-                " this stage) at t = ", round(t, digits=3), ", e.g. (x, z) = (", round(p.mesh.x[ip], digits=2), ", ", round(p.mesh.y[ip], digits=2), ")")
+                " this stage) at t = ", round(t, digits=3), ", e.g. (x, z) = (", round(p.mesh.coords[1,ip], digits=2), ", ", round(p.mesh.coords[2,ip], digits=2), ")")
         fe_floor_next[] = 10*fe_floor_next[]
     end
     return nothing

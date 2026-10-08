@@ -707,6 +707,51 @@ operator on it must converge to zero — and it does, spectrally. That single te
 covers the flux, the pressure term, the Coriolis sign, the multiplier *and* the
 metrics at once.
 
+## POD — extracting the modes of the run
+
+This deck ships with **Proper Orthogonal Decomposition** switched on
+(`:lpod => true`). At the end of the run the code decomposes the snapshots it
+collected into the orthonormal basis that captures the most of the flow per
+mode, writes the modes on the sphere and on an equirectangular map, and leaves
+the basis on disk in a form a reduced-order model can read back.
+
+Full documentation — the formulation, every `:pod_*` key, the file list, how to
+read each figure, and the ROM hand-off — is in [`docs/POD.md`](../../../docs/POD.md).
+The short version:
+
+```
+output/pod_vorticity_modes.png          the leading modes, as maps
+output/pod_vorticity_spectrum.png       energy per mode, and cumulative
+output/pod_vorticity_coefficients.png   a_i(t), and the (a₁,a₂) phase portrait
+output/pod_vorticity.vtu                mean + modes as point data on the sphere
+output/pod_vorticity.jld2               the basis, for a ROM
+```
+
+**Why this case is the right one to decompose.** The Galewsky jet starts from a
+balanced zonal jet that is *barotropically unstable*, so the flow is a small
+perturbation growing on a steady background and then rolling up into a train of
+vortices. That gives the decomposition something definite to find:
+
+* the **mean** carries the jet, which is why `:pod_subtract_mean => true` —
+  otherwise the first mode is essentially the mean and the dynamics hide behind
+  it;
+* the leading **pair** of modes is the unstable wave. A travelling structure
+  cannot be written with one standing pattern, so POD splits it into two of
+  nearly equal energy a quarter wavelength apart: look for `λ₁ ≈ λ₂` in the
+  spectrum, and for a circle in the `(a₁,a₂)` phase portrait. The *radius* of
+  that circle is the amplitude of the instability, and it grows exponentially
+  before saturating — the growth rate of the barotropic instability, read off
+  two numbers per snapshot instead of off a sequence of vorticity maps;
+* the **spectrum** says how many degrees of freedom the flow actually has, and
+  therefore how large a reduced-order model would have to be.
+
+The decomposition is done inside the run, not afterwards from the `.vtu` files,
+because POD is only optimal under the `L²` inner product — which needs the SEM
+mass matrix of the run that produced the data, and that is in no output file.
+The snapshots are held in memory (24 MB here) and never written.
+
+Set `:lpod => false` to turn all of it off; the run is otherwise unchanged.
+
 ## What comes next
 
 1. Fold the shell into `sem_setup`, so it uses `params_setup` and Jexpresso's

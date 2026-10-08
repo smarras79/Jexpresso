@@ -15,10 +15,15 @@
 # So by default this script does not guess. It asks Julia what MPI.jl is bound
 # to and builds against that same implementation.
 #
+# When MPI.jl is on its default binding — the MPICH that ships with Julia,
+# MPICH_jll — Alya.x is built against that very MPICH: no system MPI is
+# needed, only a Fortran compiler. run_coupled.sh then launches with the
+# mpiexec that ships with it.
+#
 # USAGE
 # -----
 #   bash compilef90.sh                # match whatever MPI.jl is bound to
-#   bash compilef90.sh mpich          # force MPICH
+#   bash compilef90.sh mpich          # force MPICH (MPI.jl's own, if it uses MPICH_jll)
 #   bash compilef90.sh openmpi        # force OpenMPI
 #   bash compilef90.sh --help
 #
@@ -36,6 +41,8 @@
 #                              1 -> `use mpi_f08`      (typed handles)
 #                              0 -> `include 'mpif.h'` (integer handles)
 #   FFLAGS_EXTRA="..."       Extra flags appended to the compile line.
+#   FC=/path/to/gfortran     Fortran compiler for the MPICH_jll build
+#                            (default: gfortran on PATH).
 #
 # WHAT IT HANDLES FOR YOU
 # -----------------------
@@ -43,6 +50,10 @@
 #     by PATH — Homebrew can only link one MPI at a time, so `which mpif90`
 #     may well be the other one's.
 #   * Verifies the wrapper really is the implementation you asked for.
+#   * Builds against MPICH_jll when MPI.jl uses it. Its own bin/mpifort cannot
+#     do that — it still points at the prefix the JLL was built in,
+#     /workspace/destdir — so gfortran is given the JLL's include and lib
+#     directories directly, with rpaths so Alya.x runs without any setup.
 #   * Probes for the mpi_f08 module and falls back to mpif.h when a build does
 #     not ship one (common with MPICH).
 #   * On the mpif.h path, adds -fallow-argument-mismatch, without which
@@ -132,31 +143,118 @@ find_wrapper() {
     return 1
 }
 
+# MPI.jl on MPICH_jll: write a compiler wrapper that gives gfortran that
+# MPICH's own headers and libraries, and print its path.
+make_jll_wrapper() {
+    local fc="${FC:-gfortran}" w="$BUILD_DIR/mpif90-jll" d hw=""
+    local -a dirs=() link=()
+    if ! command -v "$fc" >/dev/null 2>&1; then
+        echo "ERROR: no Fortran compiler '$fc' on PATH. Install gfortran" >&2
+        echo "  (macOS: brew install gcc), or pass FC=/path/to/gfortran." >&2
+        return 1
+    fi
+    if [ ! -f "$JLL_ARTIFACT/include/mpif.h" ]; then
+        echo "ERROR: $JLL_ARTIFACT has no Fortran MPI headers (include/mpif.h)." >&2
+        return 1
+    fi
+    IFS=: read -r -a dirs <<< "$JLL_LIBDIRS"
+    link=(-L"$JLL_ARTIFACT/lib" -lmpifort -lmpi)
+    # rpaths, so that Alya.x finds these libraries with no environment set.
+    for d in "${dirs[@]}"; do
+        [ -n "$d" ] && link+=("-Wl,-rpath,$d")
+    done
+    if [ "$(uname -s)" = Darwin ]; then
+        # libmpifort loads @rpath/libgfortran.5.dylib: resolve it to the
+        # runtime of THIS compiler, the one Alya.x itself links, so that a
+        # single copy is loaded.
+        d="$(dirname "$("$fc" -print-file-name=libgfortran.dylib)")"
+        [ -d "$d" ] && [ "$d" != . ] && link+=("-Wl,-rpath,$d")
+    else
+        # libmpi carries a RUNPATH, and then the loader ignores the
+        # executable's rpaths for libmpi's own dependencies — hwloc among
+        # them, which lives in another artifact. Link it directly, so it is
+        # already loaded, from the JLL, when libmpi asks for it.
+        for d in "${dirs[@]}"; do
+            for hw in "$d"/libhwloc.so.[0-9]*; do
+                [ -f "$hw" ] && break 2
+            done
+            hw=""
+        done
+        [ -n "$hw" ] && link+=(-Wl,--no-as-needed "$hw" -Wl,--as-needed)
+    fi
+    {
+        echo '#!/bin/bash'
+        echo "# $fc with the headers and libraries of MPICH_jll ($JLL_ARTIFACT)."
+        printf 'if [ "${1:-}" = -show ]; then echo %q; exit 0; fi\n' \
+            "$fc -I$JLL_ARTIFACT/include ${link[*]}   (MPICH_jll)"
+        printf 'exec %q "$@" %q' "$fc" "-I$JLL_ARTIFACT/include"
+        printf ' %q' "${link[@]}"
+        echo
+    } > "$w"
+    chmod +x "$w"
+    echo "$w"
+}
+
+# Scratch build directory. Why the build does not happen in AlyaProxy/ itself
+# is explained at Step 2; it is created here because the MPICH_jll route
+# writes its compiler wrapper into it.
+BUILD_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t alyaproxy)"
+trap 'rm -rf "$BUILD_DIR"' EXIT
+
 #------------------------------------------------------------------------------
 # Step 1 — decide which MPI to build against.
 #------------------------------------------------------------------------------
 JL_FAMILY=unknown
 JL_LIBMPI=""
+JL_BINARY=""
+JLL_ARTIFACT=""
+JLL_LIBDIRS=""
+USING_JLL=0
 if [ "${SKIP_JULIA_CHECK:-0}" != "1" ] && command -v "$JULIA" >/dev/null 2>&1; then
     printf '==> Asking MPI.jl what Jexpresso is bound to ... '
-    JL_OUT="$("$JULIA" --project="$PROJECT_DIR" -e '
-        using MPI
+    # The answers are tagged lines, so nothing else Julia prints can be taken
+    # for one. For MPICH_jll it also reports where that MPICH lives and every
+    # directory its libraries load from, minus Julia's own lib/julia: the
+    # compiler runtime in there must not replace the one of the gfortran that
+    # builds Alya.x.
+    JL_ERR="$BUILD_DIR/julia-query.err"
+    JL_OUT="$("$JULIA" --project="$PROJECT_DIR" --startup-file=no -e '
+        using MPIPreferences, MPI
         impl, _ = MPI.identify_implementation()
-        println(impl); println(MPI.API.libmpi)' 2>/dev/null || true)"
-    if [ -n "$JL_OUT" ]; then
-        JL_IMPL="$(printf '%s\n' "$JL_OUT" | sed -n 1p)"
-        JL_LIBMPI="$(printf '%s\n' "$JL_OUT" | sed -n 2p)"
+        println("impl=", impl)
+        println("libmpi=", MPI.API.libmpi)
+        println("binary=", MPIPreferences.binary)
+        if MPIPreferences.binary == "MPICH_jll"
+            jll = MPI.API.MPICH_jll
+            own = normpath(joinpath(Sys.BINDIR, Base.LIBDIR, "julia"))
+            println("artifact=", jll.artifact_dir)
+            println("libdirs=", join(filter(d -> normpath(d) != own, jll.LIBPATH_list), ":"))
+        end' 2>"$JL_ERR" || true)"
+    jl_tag() { printf '%s\n' "$JL_OUT" | sed -n "/^$1=/{s/^$1=//p;q;}"; }
+    JL_IMPL="$(jl_tag impl)"
+    if [ -n "$JL_IMPL" ]; then
+        JL_LIBMPI="$(jl_tag libmpi)"
+        JL_BINARY="$(jl_tag binary)"
+        JLL_ARTIFACT="$(jl_tag artifact)"
+        JLL_LIBDIRS="$(jl_tag libdirs)"
         JL_FAMILY="$(mpi_family "$JL_IMPL $JL_LIBMPI")"
-        echo "$JL_IMPL  ($JL_LIBMPI)"
+        echo "$JL_IMPL via $JL_BINARY  ($JL_LIBMPI)"
     else
-        echo "could not ask"
-        echo "    (Julia present but MPI.jl would not load. Continuing without"
-        echo "     the cross-check — pass 'openmpi' or 'mpich' to be explicit.)"
+        echo "could not ask. Julia said:"
+        tail -n 15 "$JL_ERR" | sed 's/^/    | /'
+        echo "    Continuing without the cross-check. Fix the error above, or pass"
+        echo "    'mpich' or 'openmpi' to say which MPI to build against."
     fi
 fi
 
 if [ -n "${MPIF90:-}" ]; then
     echo "==> Using MPIF90 from the environment: $MPIF90"
+elif [ "$JL_BINARY" = MPICH_jll ] && [ "$MPI_WANT" != openmpi ]; then
+    # The MPICH that MPI.jl uses is the one Alya.x must link: the same
+    # installation, not merely the same family.
+    echo "==> Target: MPICH_jll, the MPICH bundled with Julia that MPI.jl uses"
+    MPIF90="$(make_jll_wrapper)"
+    USING_JLL=1
 elif [ "$MPI_WANT" = auto ]; then
     if [ "$JL_FAMILY" = unknown ]; then
         echo "ERROR: cannot determine which MPI to build against." >&2
@@ -212,9 +310,8 @@ WRAPPER_FAMILY="$(mpi_family "$("$MPIF90" -show 2>/dev/null || true) $MPIF90")"
 # (MPI_COMM_WORLD=0) into a binary linked against a different MPI (MPICH uses
 # 1140850688). That builds cleanly and then hands garbage handles to every MPI
 # call. Compiling in a clean directory lets the wrapper's own -I win.
+# (BUILD_DIR itself is created before Step 1.)
 #------------------------------------------------------------------------------
-BUILD_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t alyaproxy)"
-trap 'rm -rf "$BUILD_DIR"' EXIT
 
 # macOS: gfortran hands the linker `-syslibroot $SDKROOT`. When SDKROOT is
 # unset and the compiler's baked-in SDK path is stale — which any Xcode or
@@ -389,7 +486,26 @@ else
 fi
 
 echo
-if [ "$JL_FAMILY" != unknown ] && [ "$BIN_FAMILY" != unknown ]; then
+if [ "$USING_JLL" = 1 ]; then
+    # Same installation, not merely the same family: Alya.x must load its
+    # libmpi from the JLL's own lib directory. (macOS records the library as
+    # @rpath/..., so look for that directory among the binary's rpaths.)
+    JLL_LIB="$JLL_ARTIFACT/lib"
+    if command -v otool >/dev/null 2>&1; then
+        SEEN="$(otool -l "$OUT" 2>/dev/null | grep -F "$JLL_LIB" || true)"
+    else
+        SEEN="$(ldd "$OUT" 2>/dev/null | grep -i 'libmpi' | grep -F "$JLL_LIB" || true)"
+    fi
+    if [ -n "$SEEN" ]; then
+        echo "==> OK: Alya.x uses MPICH_jll's own libmpi — the MPICH MPI.jl uses:"
+        echo "    $JLL_LIB"
+    else
+        echo "==> MISMATCH: Alya.x does not load its libmpi from"
+        echo "    $JLL_LIB,"
+        echo "    the MPICH that MPI.jl uses. Check the libraries listed above."
+        exit 1
+    fi
+elif [ "$JL_FAMILY" != unknown ] && [ "$BIN_FAMILY" != unknown ]; then
     if [ "$BIN_FAMILY" = "$JL_FAMILY" ]; then
         echo "==> OK: Alya.x and MPI.jl are both $BIN_FAMILY."
         echo "    MPI.jl libmpi: $JL_LIBMPI"
@@ -410,6 +526,17 @@ fi
 echo
 echo "==> Next steps. Run these from the project root:"
 echo "      cd $PROJECT_DIR"
+if [ "$USING_JLL" = 1 ]; then
+    echo
+    echo "    Launch with the mpiexec that ships with the same MPICH_jll — not an"
+    echo "    mpirun from PATH. run_coupled.sh picks it by itself:"
+    echo "      ./run_coupled.sh 2 2"
+    echo
+    echo "    Smoke-test Alya on its own — with no Jexpresso ranks in the world it"
+    echo "    exchanges nothing, runs its whole time loop and exits:"
+    echo "      julia --project=. -e 'using MPI; run(\`\$(mpiexec()) -n 2 ./AlyaProxy/Alya.x\`)'"
+    exit 0
+fi
 echo
 echo "    Smoke-test Alya on its own — with no Jexpresso ranks in the world it"
 echo "    exchanges nothing, runs its whole time loop and exits:"

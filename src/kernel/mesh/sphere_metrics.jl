@@ -245,7 +245,7 @@ function build_sphere_metrics(mesh::St_mesh,
                               verbose = true,
                               TF      = TFloat)
 
-    crd = mesh.coords          # (x,y,z); mesh.x/y/z are deprecated
+    crd = mesh.coords          # (x,y,z); @view(mesh.coords[1,:])/y/z are deprecated
     ngl   = Int(mesh.ngl)
     nelem = Int(mesh.nelem)
     npoin = Int(mesh.npoin)
@@ -552,7 +552,7 @@ function check_sphere_metrics(mesh::St_mesh, metrics::St_sphere_metrics;
                               verbose = true, atol_area = 1.0e-6, atol_normal = 1.0e-6,
                               atol_curvature = nothing, atol_geometry = 5.0e-2)
 
-    crd = mesh.coords          # (x,y,z); mesh.x/y/z are deprecated
+    crd = mesh.coords          # (x,y,z); @view(mesh.coords[1,:])/y/z are deprecated
     allok = true
 
     # Every residual below is a MAX over the grid and the area is a SUM over it,

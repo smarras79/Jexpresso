@@ -112,27 +112,6 @@ benefit by re-running inside the same session and don't need this.
   the post-JIT measurement window to be meaningful, so the warm-up
   must run.
 
-### `JEXPRESSO_STEP_HEARTBEAT`
-
-Enables the per-step heartbeat callback that prints
-`#   step N   t = X.X` lines at intervals during `solve(...)`.
-Useful when diagnostics are sparse (e.g. city2d's
-`:diagnostics_at_times => 0:10:600` with `Δt = 0.004` means 2500
-silent steps between user-visible writes — hard to tell from a hang).
-Throttled: prints every step for the first 5, then every 100.
-
-- **Type:** boolean
-- **Default:** `false` (off)
-- **Read in:** `src/kernel/solvers/TimeIntegrators.jl`
-- **Precedence (highest first):**
-  1. `JEXPRESSO_STEP_HEARTBEAT` env var
-  2. `:lstep_heartbeat => true/false` in `user_inputs.jl`
-  3. Default (`false`)
-- **Example — enable the heartbeat for a debugging run:**
-  ```bash
-  JEXPRESSO_STEP_HEARTBEAT=1 mpirun -np 4 julia --project=. src/Jexpresso.jl CompEuler theta
-  ```
-
 ### `JEXPRESSO_PRECOMPILE_WORKLOAD`
 
 Opts the `@compile_workload` block at the bottom of
@@ -323,7 +302,7 @@ they change is a run's parallel cost rather than its physics.
 ### `:dsgs_norms`
 
 Scope of the two normalising scales the DynSGS (`:visc_model =>
-DSGS()` / `DSGS_MHD()`) residual indicator divides by: the mean
+DSGS()` / `DSGS_MHD()` / `DSGS_SW()`) residual indicator divides by: the mean
 `⟨q_i⟩` and the L∞ spread `‖q_i − ⟨q_i⟩‖`.
 
 Marras eq. (9) and Nazarov & Hoffman eq. (3.5) write both over the
@@ -332,33 +311,40 @@ every rank on **every RHS call** — five times per step under
 `CarpenterKennedy2N54`, two or three reductions each, so 10–15
 `Allreduce` per time step.
 
-The default is rank-local and communicates nothing. These two
+The default, `"rank"`, is rank-local and communicates nothing. These two
 quantities only set the *scale* the element residual is measured
 against; what the model needs from them is the order of magnitude of
 the solution's variation, and a partition of a connected domain
 resolves that as well as the whole domain does. μ is bounded by
 `min(μ_res, μ_max)` either way, so the flow solution differs only at
-the level of the usual round-off divergence.
+the level of the usual round-off divergence. On one rank `"rank"` and
+`"domain"` are the same numbers.
 
-- **Type:** boolean
-- **Default:** `false` (rank-local, no communication)
-- **Read in:** `src/io/mod_inputs.jl` (default),
-  `src/kernel/operators/rhs.jl` (threaded to all three call sites),
+- **Type:** string, `"rank"` | `"domain"` | `"element"`
+- **Default:** `"rank"` (rank-local, no communication)
+- **Read in:** `src/io/mod_inputs.jl` (default and validation; this is
+  the only key — `params_setup.jl` turns it into the two typed Bools
+  `params.dsgs_global_norms` / `params.dsgs_local_norms` the call sites
+  hand the kernels),
+  `src/kernel/operators/rhs.jl` (threaded to every `compute_dsgs_viscosity!`
+  / `compute_dsgs_viscosity_nodal!` call: 1D Euler, 1D/2D MHD, 2D
+  shallow water, 2D Euler, element and nodal forms),
   `src/kernel/physics/SGS.jl` (`_dsgs_norm_scope` block)
-- **Applies to:** all four DynSGS implementations — 1D, 2D Euler-θ,
-  2D total-energy, 2D GLM-MHD
 - **No effect on:** serial runs, and any run whose `:visc_model` is
   not a DynSGS variant
-- **Set it `true` when:**
+- **Set it `"domain"` when:**
   - μ has to be reproducible across rank counts — e.g. a regression
     test comparing a 1-rank and an N-rank run field-by-field;
   - a rank's subdomain genuinely cannot see the solution's scale (a
     partition lying entirely inside a uniform region while the
     interesting structure lives on another rank).
+- **`"element"`** (DSGS_MHD only): the spread of the element itself,
+  floored with `:dsgs_local_rel` — the strongly stratified atmospheres
+  (DSGS.md §4.5).
 - **Example:**
   ```julia
   :visc_model => DSGS(),
-  :dsgs_norms => "domain",   # the papers' domain norms (default); "rank" skips the 2-3 Allreduce/RHS; "element" (DSGS_MHD) per element
+  :dsgs_norms => "domain",   # default: the papers' norms over the whole domain; "rank": this rank's elements only (no Allreduce, but the answer then depends on the partition); "element" (DSGS_MHD) per element
   ```
 - **History:** the 2D total-energy and MHD implementations used to do
   these reductions unconditionally, and the 1D and Euler-θ ones never
@@ -382,7 +368,6 @@ the level of the usual round-off divergence.
 | `JEXPRESSO_ALLOC_SUMMARY`         | bool   | `false`     | End-of-run timing/allocation table               |
 | `JEXPRESSO_PRECOMPILE_WARMUP`     | bool   | `true`      | One-step JIT warm-up before real solve           |
 | `JEXPRESSO_PRECOMPILE_WORKLOAD`   | bool   | `false`     | Run a 3-step solve during package precompilation |
-| `JEXPRESSO_STEP_HEARTBEAT`        | bool   | `false`     | Per-step progress prints during solve            |
 | `JEXPRESSO_CI_OUTPUT`             | bool   | `1`         | CI mode forces hdf5/none/overwrite output        |
 | `JEXPRESSO_CI_OUTFORMAT`          | string | `hdf5`      | Which format CI mode forces (`hdf5` \| `vtk`)    |
 | `FI_PROVIDER`                     | string | (unset)     | libfabric provider; set only for the precompile workload |
@@ -395,11 +380,12 @@ the level of the usual round-off divergence.
 
 | Key                    | Type | Default | Purpose                                   |
 |------------------------|------|---------|-------------------------------------------|
-| `:dsgs_norms`          | str  | `"domain"` | DynSGS normalization scope: `"domain"` (MPI-global), `"rank"` (rank-local, no reductions), `"element"` |
+| `:dsgs_norms`          | str  | `"rank"` | DynSGS normalization scope: `"rank"` (rank-local, no reductions), `"domain"` (MPI-global, the papers'), `"element"` (DSGS_MHD, per element) |
 | `:dsgs_CR`             | real | `1.0`   | Dao & Nazarov's $C_R$: residual viscosity $C_R h^2 R$ (their eq. 4.10; was `:dsgs_C1`) |
 | `:dsgs_Cmax`           | real | `0.5`   | Dao & Nazarov's $C_{max}$: first-order viscosity $C_{max} h \lambda_{max}$ (their §4.2; was `:dsgs_C2`) |
 | `:dsgs_Cmin`           | real | `0.0`   | Background floor $C_{min} h \lambda_{max}$ on the coefficient; not in the paper (was `:dsgs_C0`) |
 | `:dsgs_Cl`             | real | `0.0`   | Dao & Nazarov's $C_l$ in the local-jump normalization (their eq. 4.7); paper 0.4, nodal form |
+| `:Pr`                  | real | `0.1`   | Artificial Prandtl number of the DynSGS Euler kernels (`DSGS()`, 2D): $\kappa = \tfrac{Pr}{\gamma-1}\mu$ on the θ/energy slot (Nazarov & Hoffman's $P \approx 0.1$). Not the Smagorinsky $Pr_t$ (`PhysConst.Pr_t`). Was 0.7 before September 2026 |
 | `:dsgs_swe_g`          | real | `9.81`  | `DSGS_SW` (shallow water): $g$ of the wave speed $\lvert\mathbf v\rvert + \sqrt{gH}$ |
 | `:dsgs_swe_hmin`       | real | `1e-3`  | `DSGS_SW`: depth below which $Hu/H$ is desingularized (the case's wet/dry threshold) |
 | `:dsgs_reference`      | bool | `false` | `"residual"` sensor, TOTAL variables: subtract the element RHS of the reference state $q_e$ (a hydrostatic atmosphere); off for shock tubes, whose $q_e$ is the initial jump |

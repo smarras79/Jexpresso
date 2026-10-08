@@ -1,4 +1,7 @@
-Base.@kwdef mutable struct St_LargeScaleTendencies{T <: AbstractFloat, dims1, backend, VT}
+Base.@kwdef mutable struct St_LargeScaleTendencies{T <: AbstractFloat, backend, VT}
+
+    # array shapes (fields, not type parameters: see the top of src/kernel/globalStructs.jl)
+    dims1
 
     # WIP
 
@@ -17,7 +20,7 @@ function allocate_LargeScaleTendencies(npoin, mesh, inputs, T, backend; lLST=fal
     end
 
     VT  = typeof(KernelAbstractions.zeros(backend, T, dims1))
-    LST = St_LargeScaleTendencies{T, dims1, backend, VT}()
+    LST = St_LargeScaleTendencies{T, backend, VT}(; dims1)
     if (lLST)
         read_large_scale!(backend, inputs[:LST_files], LST, mesh)
     end

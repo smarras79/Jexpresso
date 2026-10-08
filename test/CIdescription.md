@@ -127,7 +127,7 @@ That script does every step of the old checklist for you:
 | commit | **you** — the diff is the new definition of "correct", so look at it |
 
 Nothing is printed during the solve (one write, at the end). To watch
-progress or measure the step rate, run with `JEXPRESSO_STEP_HEARTBEAT=1`,
+progress or measure the step rate, set `:lstep_heartbeat => true` in the deck,
 which prints the first 5 steps and then every 100th.
 
 The one judgement call left to you is **how long the case should run**. The

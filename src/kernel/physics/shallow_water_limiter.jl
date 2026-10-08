@@ -135,7 +135,7 @@ function apply_shallow_water_limiter!(u, params, time)
             if params.backend isa CPU
                 _record_shallow_water_limiter_event!(
                     params.swe_limiter_diag, H, Hu, Hv, params.M,
-                    params.mesh.x, params.mesh.y,
+                    view(params.mesh.coords, 1, :), view(params.mesh.coords, 2, :),
                     params.mesh.gip2owner, rank, hmin, time)
             elseif minimum(H) < hmin
                 # Diagnostics are intentionally opt-in.  Copy only when a
@@ -143,7 +143,7 @@ function apply_shallow_water_limiter!(u, params, time)
                 # needed; the normal GPU limiter path below stays on-device.
                 _record_shallow_water_limiter_event!(
                     params.swe_limiter_diag, Array(H), Array(Hu), Array(Hv),
-                    Array(params.M), Array(params.mesh.x), Array(params.mesh.y),
+                    Array(params.M), Array(view(params.mesh.coords, 1, :)), Array(view(params.mesh.coords, 2, :)),
                     Array(params.mesh.gip2owner), rank, hmin, time)
             end
         end
