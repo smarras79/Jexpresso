@@ -213,12 +213,12 @@ def plot_one(path, a, out):
     vmax = vmax if vmax > vmin else vmin + 1.0
     Lx, Ly = np.ptp(g["x"]), np.ptp(g["y"])
     fig, ax = plt.subplots(figsize=(a.width, a.width * Ly / Lx + 1.2))
-    fc = np.clip(field, vmin, vmax)
     if a.shading == "gouraud":
-        ax.tripcolor(T, fc, shading="gouraud", cmap=a.cmap, vmin=vmin, vmax=vmax, rasterized=True)
-    else:  # linear in the scalar on each triangle, 256 bands like ParaView's lookup table
-        pc = ax.tricontourf(T, fc, levels=np.linspace(vmin, vmax, 257), cmap=a.cmap, vmin=vmin, vmax=vmax,
-                            antialiased=False)
+        ax.tripcolor(T, np.clip(field, vmin, vmax), shading="gouraud", cmap=a.cmap, vmin=vmin, vmax=vmax,
+                     rasterized=True)
+    else:  # linear in the scalar per triangle, 256 bands like ParaView; out-of-range values take the end colors
+        pc = ax.tricontourf(T, field, levels=np.linspace(vmin, vmax, 257), cmap=a.cmap, vmin=vmin, vmax=vmax,
+                            extend="both", antialiased=False)
         pc.set_rasterized(True)
     if np.ptp(A) > 0:
         ax.tricontour(T, An, levels=np.arange(1, a.nlevels + 1) / (a.nlevels + 1),
