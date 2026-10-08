@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 """log10(rho/rho0) and magnetic field lines from Jexpresso MPI output (iter_N.pvtu -> iter_N/iter_N_*.vtu), on the native grid.
 Field lines: isolines A_n = k/(N+1), k = 1..N, of the flux function A (Bx = dA/dz, Bz = -dA/dx), A_n = (A - Amin)/(Amax - Amin).
-  python3 tools/plot_fluxemergence_vtu.py output/MHD/<case>/output-<date> [--steps 5 10] [--vectors] [--outdir figs] [--format pdf]
+  python3 tools/plot_fluxemergence_vtu.py output/MHD/<case>/output-<date> [--steps 5,10,20-40] [--vectors] [--outdir figs] [--format pdf]
 Needs numpy and matplotlib; scipy only for --a-method lsq."""
-import argparse, base64, glob, os, re, sys
+import argparse, base64, gc, os, re, sys
 import xml.etree.ElementTree as ET
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.colors import LinearSegmentedColormap, Normalize
 from matplotlib.tri import Triangulation
 
 # ParaView "Rainbow Desaturated" preset, RGB interpolation
 _RD = [(0.000, (0.278431372549, 0.278431372549, 0.858823529412)),
        (0.143, (0.000000000000, 0.000000000000, 0.360784313725)),
-       (0.286, (0.000000000000, 1.000000000000, 1.000000000000)),
+       (0.285, (0.000000000000, 1.000000000000, 1.000000000000)),
        (0.429, (0.000000000000, 0.501960784314, 0.000000000000)),
        (0.571, (1.000000000000, 1.000000000000, 0.000000000000)),
        (0.714, (1.000000000000, 0.380392156863, 0.000000000000)),
@@ -23,8 +23,18 @@ _RD = [(0.000, (0.278431372549, 0.278431372549, 0.858823529412)),
        (1.000, (0.878431372549, 0.301960784314, 0.301960784314))]
 RAINBOW_DESATURATED = LinearSegmentedColormap.from_list("rainbow_desaturated", _RD, N=1024)
 
-_NP = {"Float64": "f8", "Float32": "f4", "Int64": "i8", "Int32": "i4", "Int8": "i1",
-       "UInt64": "u8", "UInt32": "u4", "UInt8": "u1"}
+_NP = {"Float64": "f8", "Float32": "f4", "Int64": "i8", "Int32": "i4", "Int16": "i2", "Int8": "i1",
+       "UInt64": "u8", "UInt32": "u4", "UInt16": "u2", "UInt8": "u1"}
+_GREEK = {"rho": "ρ", "beta": "β", "psi": "ψ"}
+
+
+def greek(name):
+    """ASCII aliases for the Greek field names: rho, log10_rho, beta, psi."""
+    return re.sub(r"(?<![A-Za-z])(rho|beta|psi)(?![A-Za-z])", lambda m: _GREEK[m.group(1)], name)
+
+
+def ascii_name(name):
+    return name.translate(str.maketrans({v: k for k, v in _GREEK.items()}))
 
 
 def read_vtu(path):
@@ -32,17 +42,30 @@ def read_vtu(path):
     raw = open(path, "rb").read()
     k = raw.find(b"<AppendedData")
     xml = (raw if k < 0 else raw[:k]).decode("utf-8", errors="replace")
-    blob = None if k < 0 else raw.index(b"_", raw.index(b">", k)) + 1
-    vf = re.search(r"<VTKFile\b[^>]*>", xml).group(0)
+    blob = None if k < 0 else raw.find(b"_", raw.find(b">", k)) + 1
+    vf = re.search(r"<VTKFile\b[^>]*>", xml)
+    if vf is None or (k >= 0 and blob <= 0):
+        raise ValueError(f"{path}: not a complete VTU file")
+    vf = vf.group(0)
     if "compressor=" in vf:
-        sys.exit(f"{path}: compressed VTU is not supported (Jexpresso writes compress=false)")
+        raise ValueError(f"{path}: compressed VTU is not supported (Jexpresso writes compress=false)")
     bo = ">" if 'byte_order="BigEndian"' in vf else "<"
     m = re.search(r'header_type="(\w+)"', vf)
     htype = np.dtype(bo + _NP[m.group(1) if m else "UInt32"])
 
     def block(buf, start, dt):
+        if start + htype.itemsize > len(buf):
+            raise ValueError(f"{path}: truncated data (piece still being written?)")
         n = int(np.frombuffer(buf, htype, 1, start)[0])
+        if start + htype.itemsize + n > len(buf):
+            raise ValueError(f"{path}: truncated data (piece still being written?)")
         return np.frombuffer(buf, dt, n // dt.itemsize, start + htype.itemsize)
+
+    def b64block(text, dt):
+        s, hc = "".join(text.split()), 4 * -(-htype.itemsize // 3)
+        if s[hc - 1] == "=":  # WriteVTK encodes header and data as two base64 streams
+            return block(base64.b64decode(s[:hc]) + base64.b64decode(s[hc:]), 0, dt)
+        return block(base64.b64decode(s), 0, dt)
 
     out = {}
     for sec in ("Points", "Cells", "PointData", "FieldData"):
@@ -51,12 +74,16 @@ def read_vtu(path):
             continue
         for a in re.finditer(r"<DataArray\b([^>]*?)(?:/>|>(.*?)</DataArray>)", s.group(1), re.S):
             at = dict(re.findall(r'([\w:.-]+)="([^"]*)"', a.group(1)))
+            if at.get("type") not in _NP:
+                continue
             dt = np.dtype(bo + _NP[at["type"]])
             fmt = at.get("format", "appended")
             if fmt == "appended":
+                if blob is None:
+                    raise ValueError(f"{path}: truncated data (piece still being written?)")
                 v = block(raw, blob + int(at["offset"]), dt)
             elif fmt == "binary":
-                v = block(base64.b64decode(a.group(2).strip()), 0, dt)
+                v = b64block(a.group(2), dt)
             else:
                 v = np.array(a.group(2).split(), dtype=dt)
             nc = int(at.get("NumberOfComponents", "1"))
@@ -80,7 +107,7 @@ def read_pvtu(path):
         d = read_vtu(f)
         P = next(v for (s, _), v in d.items() if s == "Points").reshape(-1, 3)
         if not np.all(d[("Cells", "types")] == 9):
-            sys.exit(f"{f}: only VTK_QUAD cells are supported")
+            raise ValueError(f"{f}: only VTK_QUAD cells are supported")
         quads.append(d[("Cells", "connectivity")].reshape(-1, 4).astype(np.int64) + n0)
         xs.append(P[:, 0]); ys.append(P[:, 1])
         for (sec, nm), v in d.items():
@@ -103,7 +130,7 @@ def read_pvtu(path):
 
 def _field(g, name, path):
     if name not in g["fields"]:
-        sys.exit(f"{path}: no point field '{name}'. Available: " + ", ".join(sorted(g["fields"])))
+        raise KeyError(f"no point field '{name}'. Available: " + ", ".join(sorted(g["fields"])))
     return g["fields"][name]
 
 
@@ -170,7 +197,7 @@ def flux_function_lsq(g, tri, Bx, Bz):
     return A
 
 
-def plot_one(path, a):
+def plot_one(path, a, out):
     g = read_pvtu(path)
     field, Bx, Bz = _field(g, a.var, path), _field(g, a.bx, path), _field(g, a.bz, path)
     tri = triangles(g)
@@ -178,15 +205,21 @@ def plot_one(path, a):
     A = flux_function_integrate(g, Bx, Bz) if a.a_method in ("auto", "integrate") else None
     if A is None:
         if a.a_method == "integrate":
-            sys.exit(f"{path}: the nodes are not a tensor-product grid; use --a-method lsq")
+            raise ValueError("the nodes are not a tensor-product grid; use --a-method lsq")
         A = flux_function_lsq(g, tri, Bx, Bz)
     An = (A - A.min()) / max(np.ptp(A), 1e-300)
 
     vmin, vmax = a.clim if a.clim else (np.nanmin(field), np.nanmax(field))
+    vmax = vmax if vmax > vmin else vmin + 1.0
     Lx, Ly = np.ptp(g["x"]), np.ptp(g["y"])
     fig, ax = plt.subplots(figsize=(a.width, a.width * Ly / Lx + 1.2))
-    pc = ax.tripcolor(T, np.clip(field, vmin, vmax), shading="gouraud", cmap=a.cmap,
-                      vmin=vmin, vmax=vmax, rasterized=True)
+    fc = np.clip(field, vmin, vmax)
+    if a.shading == "gouraud":
+        ax.tripcolor(T, fc, shading="gouraud", cmap=a.cmap, vmin=vmin, vmax=vmax, rasterized=True)
+    else:  # linear in the scalar on each triangle, 256 bands like ParaView's lookup table
+        pc = ax.tricontourf(T, fc, levels=np.linspace(vmin, vmax, 257), cmap=a.cmap, vmin=vmin, vmax=vmax,
+                            antialiased=False)
+        pc.set_rasterized(True)
     if np.ptp(A) > 0:
         ax.tricontour(T, An, levels=np.arange(1, a.nlevels + 1) / (a.nlevels + 1),
                       colors="k", linewidths=a.linewidth)
@@ -197,28 +230,42 @@ def plot_one(path, a):
     ax.set_xlabel(a.xlabel); ax.set_ylabel(a.ylabel)
     label = r"$\log_{10}(\rho/\rho_0)$" if a.var == "log10_ρ" else a.var
     ax.set_title(label + (f"   t = {g['t']:g}{a.time_unit}" if g["t"] is not None else ""))
-    fig.colorbar(pc, ax=ax, shrink=0.8, pad=0.02)
-    stem = re.sub(r"\.pvtu$", "", os.path.basename(path))
-    out = os.path.join(a.outdir or os.path.dirname(path),
-                       f"{a.var.replace('ρ', 'rho')}-fieldlines-{stem}.{a.format}")
+    fig.colorbar(plt.cm.ScalarMappable(Normalize(vmin, vmax), a.cmap), ax=ax, shrink=0.8, pad=0.02)
     fig.savefig(out, dpi=a.dpi, bbox_inches="tight")
     plt.close(fig)
     print(f" {path} -> {out}")
 
 
+def parse_steps(text):
+    """'5,10,20-40' -> {5, 10, 20, ..., 40}"""
+    out = set()
+    for tok in text.replace(" ", ",").split(","):
+        if tok:
+            lo, _, hi = tok.partition("-")
+            out.update(range(int(lo), int(hi or lo) + 1))
+    return out
+
+
+def step_of(f):
+    m = re.search(r"iter_(\d+)\.pvtu$", os.path.basename(f))
+    return int(m.group(1)) if m else -1
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("paths", nargs="+", help="output directories (all iter_*.pvtu) and/or iter_N.pvtu files")
-    p.add_argument("--steps", type=int, nargs="*", help="only these N of iter_N.pvtu")
-    p.add_argument("--var", default="log10_ρ", help="colored point field (default log10_ρ)")
+    p.add_argument("paths", nargs="+", help="output directories (all iter_N.pvtu) and/or .pvtu files")
+    p.add_argument("--steps", type=parse_steps, help="only these N of iter_N.pvtu, e.g. 5,10,20-40")
+    p.add_argument("--var", default="log10_ρ", help="colored point field (default log10_ρ; rho/beta/psi accepted)")
     p.add_argument("--clim", type=float, nargs=2, default=None, help="color range (default -8.1 0 for log10_ρ)")
-    p.add_argument("--cmap", default="rainbow_desaturated", help="matplotlib colormap name or rainbow_desaturated")
+    p.add_argument("--cmap", default="RainbowDesaturated", help="RainbowDesaturated (default) or a matplotlib name; _r reverses")
+    p.add_argument("--shading", choices=("contourf", "gouraud"), default="contourf",
+                   help="contourf: 256 bands, scalar-linear per triangle (default); gouraud: faster, blends colors")
     p.add_argument("--bx", default="Bx", help="horizontal field component (default Bx)")
     p.add_argument("--bz", default="By", help="vertical field component (Jexpresso's By, default)")
     p.add_argument("--nlevels", type=int, default=29, help="number of field lines N (default 29)")
     p.add_argument("--linewidth", type=float, default=0.8)
     p.add_argument("--a-method", choices=("auto", "integrate", "lsq"), default="auto",
-                   help="integrate: trapezoids on the tensor LGL nodes; lsq: P1 least squares (any mesh)")
+                   help="integrate: trapezoids on the tensor LGL nodes; lsq: P1 least squares (any mesh, needs scipy)")
     p.add_argument("--vectors", action="store_true", help="draw velocity vectors (white, as the PNG writer)")
     p.add_argument("--vec-fields", nargs=2, default=("u", "v"), help="velocity components (default u v)")
     p.add_argument("--vec-n", type=int, nargs=2, default=(30, 13), help="arrows in x and z (default 30 13)")
@@ -233,25 +280,54 @@ def main():
     p.add_argument("--ylabel", default=r"$Z/H_0$")
     p.add_argument("--time-unit", default=r" $\tau_0$")
     a = p.parse_args()
-    if a.var == "log10_rho":
-        a.var = "log10_ρ"
+    a.var, a.bx, a.bz = greek(a.var), greek(a.bx), greek(a.bz)
+    a.vec_fields = [greek(v) for v in a.vec_fields]
     if a.clim is None and a.var == "log10_ρ":
         a.clim = (-8.1, 0.0)
-    a.cmap = RAINBOW_DESATURATED if a.cmap == "rainbow_desaturated" else plt.get_cmap(a.cmap)
+    key = a.cmap.lower().replace(" ", "").replace("_", "").replace("-", "")
+    if key in ("rainbowdesaturated", "rainbowdesaturatedr"):
+        a.cmap = RAINBOW_DESATURATED.reversed() if key == "rainbowdesaturatedr" else RAINBOW_DESATURATED
+    else:
+        try:
+            a.cmap = plt.get_cmap(a.cmap)
+        except ValueError as e:
+            p.error(str(e))
     if a.outdir:
         os.makedirs(a.outdir, exist_ok=True)
 
-    step = lambda f: int(re.search(r"iter_(\d+)\.pvtu$", f).group(1))
     files = []
     for pth in a.paths:
-        files += glob.glob(os.path.join(pth, "iter_*.pvtu")) if os.path.isdir(pth) else [pth]
-    files = sorted(set(files), key=step)
+        if os.path.isdir(pth):
+            files += [os.path.join(pth, n) for n in os.listdir(pth) if re.fullmatch(r"iter_\d+\.pvtu", n)]
+        elif os.path.isfile(pth):
+            files.append(pth)
+        else:
+            p.error(f"{pth}: no such file or directory")
+    rundir = lambda f: os.path.dirname(os.path.abspath(f))
+    files = sorted(set(map(os.path.normpath, files)), key=lambda f: (rundir(f), step_of(f), f))
     if a.steps:
-        files = [f for f in files if step(f) in a.steps]
+        missing = sorted(a.steps - {step_of(f) for f in files})
+        if missing:
+            print(f"warning: no iter_N.pvtu for steps {missing}", file=sys.stderr)
+        files = [f for f in files if step_of(f) in a.steps]
     if not files:
         sys.exit("no iter_N.pvtu files found")
+    multi = a.outdir and len({rundir(f) for f in files}) > 1
+
+    failed = []
     for f in files:
-        plot_one(f, a)
+        stem = re.sub(r"\.pvtu$", "", os.path.basename(f))
+        prefix = os.path.basename(rundir(f)) + "-" if multi else ""
+        out = os.path.join(a.outdir or rundir(f), f"{prefix}{ascii_name(a.var)}-fieldlines-{stem}.{a.format}")
+        try:
+            plot_one(f, a, out)
+        except Exception as e:
+            plt.close("all")
+            print(f" {f}: skipped ({type(e).__name__}: {e})", file=sys.stderr)
+            failed.append(f)
+        gc.collect()
+    if failed:
+        sys.exit(f"{len(failed)} of {len(files)} snapshots failed")
 
 
 if __name__ == "__main__":
