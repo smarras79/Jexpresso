@@ -1,11 +1,11 @@
 #!/bin/bash -l
-#SBATCH --job-name=orszag256
+#SBATCH --job-name=flux
 #SBATCH --output=%x.%j.out
 #SBATCH --error=%x.%j.err
 #SBATCH --partition=general
 #SBATCH --qos=standard
 #SBATCH --account=smarras
-#SBATCH --nodes=2
+#SBATCH --nodes=1
 #SBATCH --ntasks-per-node=128
 #SBATCH --time=71:59:00
 #SBATCH --mem-per-cpu=4000M
@@ -32,5 +32,5 @@ echo "--- Setup complete, launching 64 ranks ---"
 export JULIA_PKG_PRECOMPILE_AUTO=0  # ranks must never attempt to precompile
 
 #mpirun -np 64 julia --project=. src/Jexpresso.jl CompEuler ffs_step
-mpirun -np 128 julia --project=. src/Jexpresso.jl MHD orszagTangBormanis2024
-#mpirun -np 64 julia --project=. src/Jexpresso.jl MHD fluxEmergenceSon2025DSGS
+#mpirun -np 512 julia --project=. src/Jexpresso.jl MHD orszagTangBormanis2024
+mpirun -np 64 julia --project=. src/Jexpresso.jl MHD fluxEmergenceSon2025DSGS

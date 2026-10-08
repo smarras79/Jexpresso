@@ -30,8 +30,10 @@ function user_inputs()
         # is deliberate — the vortex steepens into shocks by t ≈ 0.5 and the
         # local wave speeds grow. The reference simulation of the paper used
         # Δt = 8e-4 on its 128² finite-volume grid
-        :Δt                   => 0.1625,  #256 nop4
-        #:Δt                   => 0.3250,  #128 nop4
+        :Δt                   =>  2.5e-5,  #256 nop4
+        #:Δt                   =>  5.0e-5,  #256 nop4
+        #:Δt                   => 0.16254-4,  #256 nop4
+        #:Δt                   => 0.3250e-4,  #128 nop4
         #:Δt                   => 0.75e-4, # 64 nop4
         #:Δt                   => 1.5e-4,  # 32 nop4
         :tinit                => 0.0,
@@ -165,7 +167,7 @@ function user_inputs()
         # AMR (off)
         #---------------------------------------------------------------------------
         :linitial_refine     => true,
-        :init_refine_lvl     => 3,
+        :init_refine_lvl     => 4,
         :ladapt              => false,
         #---------------------------------------------------------------------------
     ) #Dict
