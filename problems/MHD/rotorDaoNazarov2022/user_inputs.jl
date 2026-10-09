@@ -19,8 +19,9 @@ function user_inputs()
         :interpolation_nodes  => "lgl",
         :nop                  => 3,
         #---------------------------------------------------------------------------
-        # DynSGS in its conserved form: one ν, a Laplacian on (ρ, ρv, E, B, ψ), which keeps p > 0 in the
-        # spinning ring where ½ρ|v|² ≫ p/(γ−1). The physical form (u, v, T) went to p = −10 by t = 0.05.
+        # DynSGS in its conserved form (one ν, a Laplacian on ρ, ρv, E, B, ψ) with the residual normalized per
+        # element: the low-pressure interior (p ≪ ½ρ|v|²) is judged on its own scales, not the domain's.
+        # Domain norms left grid-scale p noise there and Mach spikes; the physical form reached p = −10.
         # :dsgs_gamma must equal γ_mhd = 1.4 (user_flux.jl).
         #---------------------------------------------------------------------------
         :lvisc                => true,
@@ -29,8 +30,8 @@ function user_inputs()
         :dsgs_sensor          => "legacy",
         :dsgs_rel             => 1.0,
         :dsgs_hold_steps      => 2,
-        :dsgs_norms           => "domain",
-        :dsgs_CR              => 2.0,   # C_R = 1 left p < 0 in the wake at r ≈ 0.1 (min −0.1 at t = 0.15)
+        :dsgs_norms           => "element",
+        :dsgs_CR              => 1.0,
         :dsgs_Cmax            => 0.5,
         :dsgs_gamma           => 1.4,
         :dsgs_Prt             => 1.0,

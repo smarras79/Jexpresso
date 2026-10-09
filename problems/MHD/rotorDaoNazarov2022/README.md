@@ -20,7 +20,10 @@ The equations are the 9-field GLM-MHD system of `problems/MHD/orszagTangBormanis
 
 ## Stabilization
 
-DynSGS in its **conserved form** (`:dsgs_conserved => true`): one residual-based ν and a Laplacian on (ρ, ρ**v**, E, **B**, ψ), with the residual coefficient `:dsgs_CR => 2`. In the spinning ring ½ρ|**v**|² ≈ 20 against p/(γ−1) = 2.5, and the physical form (diffusion of u, v and T with mass diffusion) drove p to −10 by t = 0.05; the conserved form keeps p positive. With `:dsgs_nazarov_energy => true` (κ = ρν/Pr on the thermal energy) p dipped to −0.02 on 64² elements.
+DynSGS alone (no background floor, no positivity repair), with the default residual coefficient `:dsgs_CR => 1`:
+
+- **conserved form** (`:dsgs_conserved => true`): one residual-based ν and a Laplacian on (ρ, ρ**v**, E, **B**, ψ). In the spinning ring ½ρ|**v**|² ≈ 20 against p/(γ−1) = 2.5; the physical form (diffusion of u, v and T with mass diffusion) drove p to −10 by t = 0.05.
+- **element norms** (`:dsgs_norms => "element"`): the residual is normalized by each element's own spread and scales (floored at ρc, ρc², … with `:dsgs_local_rel = 1`). Inside the disc p ≪ ½ρ|**v**|², so against the domain-wide scale of E the residual of its grid-scale pressure noise is invisible; with domain norms that noise grew to 4% of p (median node-to-node second difference) and Mach spiked to 7 (15 on a 2× finer grid) where p → 0.
 
 ## Run
 
@@ -38,27 +41,33 @@ python3 tools/plot_fluxemergence_vtu.py output/MHD/rotorDaoNazarov2022/output-<d
 
 ## Results at t = 0.15
 
-Extrema at t = 0.15 (128×128 elements, :nop => 3, 385×385 nodes, Δt = 2e-4, 4 MPI ranks):
+128×128 elements, `:nop => 3`, 385×385 nodes, Δt = 2e-4, 4 MPI ranks:
 
-| | ρ | p | ½\|**B**\|² | Mach |
+| | ρ | p | ½\|**B**\|² | max Mach |
 |---|---|---|---|---|
-| this case | 0.539 – 10.4 | 0.0058 – 1.965 | 0.066 – 2.561 | 7.31 |
-| Tóth (2000) Fig. 18, flux-CT, 400² | 0.483 – 12.95 | 0.0202 – 2.008 | 0.0177 – 2.642 | 8.18 |
+| this case | 0.567 – 10.38 | 0.0347 – 1.971 | 0.074 – 2.541 | 3.52 |
+| Tóth (2000) Fig. 18, flux-CT, 400² | 0.483 – 12.95 | 0.0202 – 2.008 | 0.0177 – 2.642 | 8.18 (spurious, at p undershoots) |
 | Dao & Nazarov (2022) Fig. 7, P3, 300² nodes | 0.727 – 8.42 | 0.0386 – 1.93 | 0.0551 – 2.30 | 4.82 |
 
-p stays positive at every output (min 0.338, 0.030, 0.0058 at t = 0.05, 0.10, 0.15); the solution is invariant under the
-180° rotation about (0.5, 0.5) to 1e-10 (ρ, p, **B** even, **v** odd); total mass and energy change by less than 1e-4.
-The Mach maximum sits where p is smallest, at the inner edge of the ring, like Tóth's.
+min p = 0.059 at t = 0.10 and 0.035 at t = 0.15; the grid-scale pressure noise inside the ring is 0.03% (median) / 0.2% (95th percentile) of p;
+the solution is invariant under the 180° rotation about (0.5, 0.5) to 2e-10 (ρ, p, **B** even, **v** odd); mass and energy change by less than 1e-4.
 
-What it took, measured at this resolution with DSGS alone (no floor, no positivity repair):
+What each DSGS option did at this resolution (t = 0.15 unless noted):
 
-| DynSGS setting | min p at t = 0.1 / 0.15 |
-|---|---|
-| physical form (u, v, T), C_R = 1 | −9.9 at t = 0.05, blow-up at t = 0.084 |
-| conserved form, C_R = 1 | −0.06 / −0.105 |
-| conserved form, C_R = 1, residual sensor | −0.013 / −0.036 |
-| conserved form, C_R = 1, nodal ν | −0.36 / blow-up at t = 0.124 |
-| **conserved form, C_R = 2** (this deck) | **0.030 / 0.0058** |
+| DynSGS setting | min p | max Mach | p noise (median) |
+|---|---|---|---|
+| physical form (u, v, T), domain norms | −9.9 at t = 0.05, blow-up at t = 0.084 | | |
+| conserved, domain norms, C_R = 1 | −0.105 | ∞ (p < 0) | |
+| conserved, domain norms, C_R = 1, residual sensor | −0.036 | ∞ | |
+| conserved, domain norms, C_R = 1, nodal ν | blow-up at t = 0.124 | | |
+| conserved, domain norms, C_R = 2 | 0.0058 | 7.3 | 3.8% |
+| conserved, domain norms, C_R = 4 | 0.029 | 3.8 | 0.46% |
+| conserved, element norms, C_R = 2 | 0.045 | 3.0 | 0.04% (symmetry error 2e-3) |
+| **conserved, element norms, C_R = 1** (this deck) | **0.035** | **3.5** | **0.03%** |
+
+## Finer grids
+
+Scale Δt with the smallest LGL spacing, Δx_min ≈ (1 − ξ₁)/2 · 1/(32·2^lvl) with ξ₁ the first interior LGL node, to keep the acoustic CFL ≈ 0.25 (max wave speed ≈ 2.9): `:nop => 3`, level 3: Δt = 1e-4; `:nop => 4`, level 3: Δt = 6e-5.
 
 ## References
 
