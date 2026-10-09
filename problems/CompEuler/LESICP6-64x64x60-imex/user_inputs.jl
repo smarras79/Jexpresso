@@ -493,9 +493,13 @@ function user_inputs()
         # perturbation. With dt 0.2, Schur and the zero-mean perturbation the
         # 16x16x60 probe runs 1800 s at 0.05 with mu_theta = 1 (peak 14.9 m/s)
         # and with 2.1 (peak 13.1 m/s), jobs 1324891/1324892. DBG_MU overrides.
-        :mu_x                => parse(Float64, get(ENV, "DBG_MU", "0.05")),
-        :mu_y                => parse(Float64, get(ENV, "DBG_MU", "0.05")),
-	:mu_z                => 0.1,
+        # LESICP6: STRONGER than the flat decks (0.05 / 0.1). Job 1394191 at
+        # 0.05 / 0.1 grew |w| 0.6 -> 2.3 m/s and nu_sgs 5 -> 33 m^2/s between
+        # t = 200 and 400 s over the 1000 m ridge (slope 0.31) and died with
+        # rho*theta < 0. DBG_MU / DBG_MUZ override.
+        :mu_x                => parse(Float64, get(ENV, "DBG_MU", "0.15")),
+        :mu_y                => parse(Float64, get(ENV, "DBG_MU", "0.15")),
+	:mu_z                => parse(Float64, get(ENV, "DBG_MUZ", "0.15")),
         :filter_type         => "erf",
         #---------------------------------------------------------------------------
         # Plotting parameters
