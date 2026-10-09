@@ -6,6 +6,7 @@
 \usepackage{xcolor}
 \usepackage[hyphens]{url}
 \usepackage{hyperref}
+\usepackage{graphicx}
 \sloppy
 \emergencystretch=3em
 
@@ -501,6 +502,8 @@ $\eps$ & $10^{-16}$ & \dsgs{} division guard \\
 \code{:positivity\_p\_min} ($\eps_p$) & $10^{-6}$ & pressure bound \\
 $s$ & 64 & round-off margin (ulps) of the limiter \\
 \code{:positivity\_report\_every} & 1000 & limiter calls between reports \\
+\code{:conservation\_every} & 1 & steps between samples of the totals (\code{conservation.dat}) \\
+\code{:conservation\_slots} & [1, 4] & the totals sampled: mass and total energy \\
 \code{:energy\_equation} & "energy" & slot 4 is total energy \\
 \code{:lkep}, \code{:entropy\_variables} & false & pointwise (non-split) fluxes \\
 \code{:linitial\_refine}, \code{:ladapt}, \code{:lfilter} & true, false, false & uniform refinement only; no adaptivity, no filter \\
@@ -526,13 +529,44 @@ grid, $\Delta t$ & $t$ & $\rho$ & $p$ & $\tfrac12|\bB|^2$ & max Mach & limiter \
 $128^2$, $2\times10^{-4}$ & 0.05 & 0.848 -- 14.11 & 0.384 -- 2.505 & 0.123 -- 4.161 & 4.28 & idle \\
                           & 0.10 & 0.730 -- 12.62 & 0.076 -- 2.110 & 0.081 -- 3.402 & 4.39 & idle \\
                           & 0.15 & 0.565 -- 10.65 & 0.0295 -- 1.969 & 0.0746 -- 2.543 & 3.55 & idle \\
+\midrule
+$256^2$, $10^{-4}$        & 0.05 & 0.833 -- 15.89 & 0.336 -- 2.564 & 0.075 -- 4.360 & 4.60 & idle \\
+                          & 0.10 & 0.662 -- 13.54 & 0.0144 -- 2.105 & 0.052 -- 3.507 & 9.93 & idle \\
+                          & 0.15 & 0.502 -- 12.25 & 0.0281 -- 2.041 & 0.0505 -- 2.601 & 3.90 & 1126 el. \\
 \bottomrule
 \end{tabular}
 \end{center}
 
 At $128^2$ the limiter never acts (no node falls below $10^{-6}$); the noise is
-0.05\% (0.19\%) at $t = 0.15$, the symmetry error $2\times10^{-10}$, and the
-discrete mass and energy change by less than $5\times10^{-14}$ (relative).
+0.05\% (0.19\%) at $t = 0.15$ and the symmetry error $2\times10^{-10}$.
+At $256^2$ the minimum pressure at $t = 0.1$ is $0.0144$, at four interior nodes of
+four elements on the edge of the disc ($r \approx 0.108$, where $\rho$ falls from
+10 to 1 inside one element); there the Mach number is 9.9. Between $t \approx 0.11$
+and $0.13$ the pressure at such nodes reached $\eps_p$ and the limiter made 1126
+element limitings, all mild ($\theta_p \ge 0.993$, $\theta_\rho = 1$), with no element
+whose mean was inadmissible and no use of the floor. At $t = 0.15$ the noise is
+0.008\% (0.04\%) and the symmetry error $2\times10^{-9}$.
+
+\paragraph{Conservation in time.} With \code{:conservation\_every => 1} the totals
+$\mathcal M(t) = \sum_K\sum_{ij} m^K_{ij}\rho_{ij}$ and $\mathcal E(t) = \sum_K\sum_{ij} m^K_{ij}E_{ij}$
+($=\sum_I M_I q_I$) are summed on every rank with compensated (Neumaier) summation,
+reduced over the ranks, and written at every step to \code{conservation.dat}
+(\code{tools/plot\_conservation.py}). Figure~\ref{fig:cons}: over the whole run
+$|\Delta\mathcal M|/\mathcal M \le 6.7\times10^{-16}$ ($128^2$) and $1.7\times10^{-15}$
+($256^2$), and $|\Delta\mathcal E|/\mathcal E \le 1.2\times10^{-16}$ and $2.3\times10^{-16}$:
+both totals move by a few units in the last place, through the \dsgs{} operator,
+the GLM source and every limiter step alike.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=\textwidth]{conservation.pdf}
+\caption{Relative change of the discrete mass and total energy at every time step,
+$128^2$ (filled) and $256^2$ (open) elements, $N = 3$. Samples with no change at all
+(exact zeros) cannot be drawn on the logarithmic axis and are omitted; the totals
+move by single units in the last place, hence the discrete levels. Dotted:
+$\varepsilon_{\mathrm{mach}}$.}
+\label{fig:cons}
+\end{figure}
 
 \paragraph{Previous operator.} With the deviatoric stress on $\rho\bv$, the
 rank-local legacy sensor and no limiter (commit \code{a3baa37}) the same deck

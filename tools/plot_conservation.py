@@ -100,8 +100,10 @@ def main():
                 if r.max() == 0 and a.floor is None:
                     exact.append(lab)
                 y = np.maximum(r, a.floor) if a.floor is not None else np.where(r > 0, r, np.nan)
+            hollow = a.markers and k > 0
             ax.semilogy(t, y, color=SERIES[k], ls="none" if a.markers else DASHES[k], marker=MARKS[k] if a.markers else "o",
-                        ms=2.4 if a.markers else 1.6, mew=0, label=lab, zorder=2)
+                        ms=(3.2 if hollow else 2.4) if a.markers else 1.6, mew=0.6 if hollow else 0,
+                        mfc="none" if hollow else SERIES[k], label=lab, zorder=2 + len(runs) - k)
         if exact:
             ax.text(0.03, 0.92, "exactly conserved" + ("" if len(runs) == 1 else ": " + ", ".join(exact)),
                     transform=ax.transAxes, ha="left", va="top", fontsize=8, color=INK2)
@@ -127,7 +129,8 @@ def main():
     fig.tight_layout(w_pad=1.5, h_pad=0.6)
     if len(runs) >= 2:
         hs, ls = axes[0].get_legend_handles_labels()
-        fig.legend(hs, ls, loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=min(len(runs), 4), handlelength=2.6)
+        fig.legend(hs, ls, loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=min(len(runs), 4), handlelength=2.6,
+                   markerscale=2.0 if a.markers else 1.0)
     out = a.out or os.path.join(os.path.dirname(os.path.abspath(runs[0][0])), "conservation." + a.format)
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     fig.savefig(out, dpi=a.dpi)

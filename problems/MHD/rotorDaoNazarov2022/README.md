@@ -54,11 +54,14 @@ python3 tools/plot_conservation.py output/MHD/rotorDaoNazarov2022/output-<date12
 | | ρ | p | ½\|**B**\|² | max Mach |
 |---|---|---|---|---|
 | this case, 128×128 elements (385² nodes), Δt = 2e-4 | 0.565 – 10.65 | 0.0295 – 1.969 | 0.0746 – 2.543 | 3.55 |
+| this case, 256×256 elements (769² nodes), Δt = 1e-4 | 0.502 – 12.25 | 0.0281 – 2.041 | 0.0505 – 2.601 | 3.90 |
 | Tóth (2000) Fig. 18, flux-CT, 400² | 0.483 – 12.95 | 0.0202 – 2.008 | 0.0177 – 2.642 | 8.18 (spurious, at p undershoots) |
 | Dao & Nazarov (2022) Fig. 7, P3, 300² nodes | 0.727 – 8.42 | 0.0386 – 1.93 | 0.0551 – 2.30 | 4.82 |
 
 128²: min p = 0.076 at t = 0.10 and 0.030 at t = 0.15, and the limiter never acts (no node falls below 10⁻⁶); the grid-scale pressure noise inside the ring is 0.05% (median) / 0.2% (95th percentile) of p;
-the solution is invariant under the 180° rotation about (0.5, 0.5) to 2e-10 (ρ, p, **B** even, **v** odd); the discrete mass and energy (Σ M q) change by less than 5e-14.
+the solution is invariant under the 180° rotation about (0.5, 0.5) to 2e-10 (ρ, p, **B** even, **v** odd).
+256²: min p = 0.0144 at t = 0.10, at four interior nodes on the edge of the disc (r ≈ 0.108; Mach 9.9 there, the old operator had p = −0.0026 at the same nodes); between t ≈ 0.11 and 0.13 the limiter made 1,126 element limitings (θ_p ≥ 0.993, no element with an inadmissible mean, no node floor); the pressure noise is 0.008% / 0.04%, the symmetry error 2e-9.
+Mass and energy (`conservation.dat`, every step): |ΔM|/M ≤ 6.7e-16 (128²) and 1.7e-15 (256²), |ΔE|/E ≤ 1.2e-16 and 2.3e-16, i.e. a few ulps; see [conservation.pdf](conservation.pdf).
 
 What each DSGS option did at 128² with the earlier operator (deviatoric stress on ρ**v**, rank-local legacy sensor, no limiter; t = 0.15 unless noted):
 
