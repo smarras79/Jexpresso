@@ -294,7 +294,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             #Interpolate
             data_interpolate = interpolate_sounding(inputs[:backend], mesh.npoin, mesh.z, data_with_p)
 
-            amp = 0.25
+            amp = parse(Float64, get(ENV, "DBG_PERT_AMP", "0.25"))   # DBG_PERT_AMP=0: resting-atmosphere test
             # Perturb the lowest 800 m ABOVE THE GROUND. With a 1000 m ridge an
             # absolute z < 800 m would leave the whole upper slope and the crest
             # without a single perturbed node. z_s is the protocol 1.8 ridge.

@@ -272,7 +272,7 @@ function user_inputs()
 	:diagnostics_at_times => (0.0:1000.0:9000.0...,
 	                          9000.0:parse(Float64, get(ENV, "DBG_DIAG_TAIL", "60")):tend...),
 	:lsource              => true,
-        :sounding_file        =>"./data_files/input_sounding_teamx_u10_ridge1000_noheader.dat",
+        :sounding_file        => get(ENV, "DBG_SOUNDING", "./data_files/input_sounding_teamx_u10_ridge1000_noheader.dat"),
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -281,7 +281,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :user_heatflux        => 0.12,
+        :user_heatflux        => parse(Float64, get(ENV, "DBG_HEATFLUX", "0.12")),   # DBG_HEATFLUX=0: resting-atmosphere test
 	:lxy_partition          => true,
         :lwall_model          => true,
         :ifirst_wall_node_index=> 2, # This must be between 2 <= :first_wall_node_index <= nop+1

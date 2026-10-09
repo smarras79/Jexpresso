@@ -82,7 +82,7 @@ function user_source!(S,
             # Protocol section 1.7: u_geo, v_geo are the FREE-ATMOSPHERE wind of
             # this case (u10_ridge1000), a constant -- not the local sounding
             # wind, which is 0 below 1000 m in u10_ridge1000.
-            U_geo = 10.0
+            U_geo = parse(Float64, get(ENV, "DBG_UGEO", "10.0"))   # DBG_UGEO=0: resting-atmosphere test
             V_geo = 0.0
             S[2] -= q[1] * f * V_geo
             S[3] += q[1] * f * U_geo
