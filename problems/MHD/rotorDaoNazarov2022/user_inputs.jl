@@ -19,9 +19,9 @@ function user_inputs()
         :interpolation_nodes  => "lgl",
         :nop                  => 3,
         #---------------------------------------------------------------------------
-        # DynSGS in its conserved form (one ν, a Laplacian on ρ, ρv, E, B, ψ) with the residual normalized per
-        # element: the low-pressure interior (p ≪ ½ρ|v|²) is judged on its own scales, not the domain's.
-        # Domain norms left grid-scale p noise there and Mach spikes; the physical form reached p = −10.
+        # DynSGS in its conserved form: one ν per element and ∇·(ν∇q) on every conserved variable, with the
+        # legacy residual normalized per element (the low-pressure interior is judged on its own scales).
+        # ρ or p that still undershoot are fixed by the conservative element limiter (:positivity_method).
         # :dsgs_gamma must equal γ_mhd = 1.4 (user_flux.jl).
         #---------------------------------------------------------------------------
         :lvisc                => true,
@@ -37,6 +37,10 @@ function user_inputs()
         :dsgs_Prt             => 1.0,
         :dsgs_conserved       => true,
         :dsgs_nazarov_energy  => false,   # true: κ = ρν/Pr on the thermal part of E (p dipped to −0.02 at 64² elements)
+        :lpositivity          => true,
+        :positivity_method    => "conservative",   # elements scaled toward their mean: ρ, ρv, E conserved
+        :positivity_rho_min   => 1.0e-6,
+        :positivity_p_min     => 1.0e-6,
         :lrichardson          => false,
         :energy_equation      => "energy",
         :lkep                 => false,

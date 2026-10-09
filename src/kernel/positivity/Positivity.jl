@@ -430,4 +430,132 @@ function positivity_summary(s::PositivityStats)
                   s.first_y, ", ", s.first_t, ")")
 end
 
+# Conservative limiter for the nine-field GLM-MHD state, u flat field-major (u[(q-1)np+ip]).
+# Elements holding a node with ρ < ερ or p < εp are scaled toward their lumped-mass mean in
+# (ρ, m, Ẽ = E - ½|B|² - ½ψ²): θρ for ρ, then θp from the root of p = εp. B and ψ are not touched;
+# the element increments m_i δu_i go to A[:, 1:5] (slots ρ, ρu, ρv, E, ρw) for the caller to assemble.
+@inline function _cpos_node(u::AbstractVector{T}, np::Int, ip::Int) where {T<:AbstractFloat}
+    @inbounds begin
+        ρ  = u[ip];      m1 = u[np+ip];   m2 = u[2np+ip]; E = u[3np+ip]; m3 = u[4np+ip]
+        b1 = u[5np+ip];  b2 = u[6np+ip];  b3 = u[7np+ip]; ψ = u[8np+ip]
+    end
+    me = T(0.5)*(b1*b1 + b2*b2 + b3*b3 + ψ*ψ)
+    return ρ, m1, m2, m3, E - me, abs(E) + me
+end
+
+@inline _cpos_p(γm1::T, ρ::T, m1::T, m2::T, m3::T, Et::T) where {T<:AbstractFloat} =
+    γm1*(Et - (m1*m1 + m2*m2 + m3*m3)/(2ρ))
+
+function cpos_mark_bad!(bad::AbstractVector{Bool}, u::AbstractVector{T}, np::Int,
+                        γm1::T, ερ::T, εp::T) where {T<:AbstractFloat}
+    n = 0
+    @inbounds for ip = 1:np
+        ρ, m1, m2, m3, Et, _ = _cpos_node(u, np, ip)
+        b = !(ρ >= ερ && _cpos_p(γm1, ρ, m1, m2, m3, Et) >= εp)
+        bad[ip] = b
+        n += b
+    end
+    return n
+end
+
+function cpos_element_pass!(A::AbstractMatrix{T}, u::AbstractVector{T}, bad::AbstractVector{Bool},
+                            connijk::AbstractArray{<:Integer,4}, ω::AbstractVector{T}, Je::AbstractArray{T},
+                            np::Int, nelem::Int, ngl::Int, γm1::T, ερ::T, εp::T) where {T<:AbstractFloat}
+    s  = T(64)
+    nlim = 0; nfail = 0; θρmin = one(T); θpmin = one(T)
+    @inbounds for ie = 1:nelem
+        flag = false
+        for j = 1:ngl, i = 1:ngl
+            flag |= bad[connijk[ie,i,j,1]]
+        end
+        flag || continue
+        W = zero(T); Sρ = zero(T); S1 = zero(T); S2 = zero(T); S3 = zero(T); SE = zero(T)
+        ρmin = T(Inf); R = zero(T); Ê = zero(T)
+        for j = 1:ngl, i = 1:ngl
+            w = ω[i]*ω[j]*Je[ie,i,j]
+            ρ, m1, m2, m3, Et, Ea = _cpos_node(u, np, Int(connijk[ie,i,j,1]))
+            W += w; Sρ += w*ρ; S1 += w*m1; S2 += w*m2; S3 += w*m3; SE += w*Et
+            ρmin = min(ρmin, ρ); R = max(R, abs(ρ)); Ê = max(Ê, Ea)
+        end
+        ρ̄ = Sρ/W; m̄1 = S1/W; m̄2 = S2/W; m̄3 = S3/W; Ē = SE/W
+        δρ  = s*eps(max(R, abs(ρ̄)))
+        ρ̄g  = ρ̄ - δρ
+        ερ⁺ = ερ + δρ
+        εp⁺ = εp + s*γm1*eps(Ê)
+        p̄   = _cpos_p(γm1, ρ̄g, m̄1, m̄2, m̄3, Ē)
+        if !(isfinite(ρ̄) && isfinite(p̄) && ρ̄g > ερ⁺ && p̄ > εp⁺)
+            nfail += 1
+            continue
+        end
+        θρ = ρmin < ερ⁺ ? clamp((ρ̄ - ερ⁺)/(ρ̄ - ρmin), zero(T), one(T)) : one(T)
+        e⁺ = εp⁺/γm1
+        c  = ρ̄g*(Ē - e⁺) - (m̄1*m̄1 + m̄2*m̄2 + m̄3*m̄3)/2
+        θp = one(T)
+        for j = 1:ngl, i = 1:ngl
+            ρ, m1, m2, m3, Et, _ = _cpos_node(u, np, Int(connijk[ie,i,j,1]))
+            ρt  = θρ < one(T) ? ρ̄ + θρ*(ρ - ρ̄) : ρ
+            ρtg = ρt - s*eps(max(abs(ρ), ρ̄))
+            if ρtg <= zero(T)
+                θp = zero(T)
+                continue
+            end
+            _cpos_p(γm1, ρtg, m1, m2, m3, Et) < εp⁺ || continue
+            dρ = ρtg - ρ̄g; d1 = m1 - m̄1; d2 = m2 - m̄2; d3 = m3 - m̄3; dE = Et - Ē
+            a  = dρ*dE - (d1*d1 + d2*d2 + d3*d3)/2
+            b  = ρ̄g*dE + dρ*(Ē - e⁺) - (m̄1*d1 + m̄2*d2 + m̄3*d3)
+            D  = sqrt(max(b*b - 4*a*c, zero(T)))
+            t  = b <= zero(T) ? 2c/(D - b) : (a < zero(T) ? (-b - D)/(2a) : one(T))
+            θp = min(θp, t >= zero(T) ? min(t, one(T)) : zero(T))
+        end
+        nlim += 1
+        θρmin = min(θρmin, θρ); θpmin = min(θpmin, θp)
+        fρ = θp*θρ - one(T); fq = θp - one(T)
+        for j = 1:ngl, i = 1:ngl
+            ip = Int(connijk[ie,i,j,1])
+            w  = ω[i]*ω[j]*Je[ie,i,j]
+            ρ, m1, m2, m3, Et, _ = _cpos_node(u, np, ip)
+            A[ip,1] += w*fρ*(ρ - ρ̄)
+            A[ip,2] += w*fq*(m1 - m̄1)
+            A[ip,3] += w*fq*(m2 - m̄2)
+            A[ip,4] += w*fq*(Et - Ē)
+            A[ip,5] += w*fq*(m3 - m̄3)
+        end
+    end
+    return nlim, nfail, θρmin, θpmin
+end
+
+function cpos_add!(u::AbstractVector{T}, A::AbstractMatrix{T}, Minv::AbstractVector{T}, np::Int) where {T<:AbstractFloat}
+    @inbounds for q = 1:5, ip = 1:np
+        a = A[ip,q]
+        a == zero(T) || (u[(q-1)*np+ip] += Minv[ip]*a)
+    end
+    return nothing
+end
+
+# Node floor for what the element pass could not fix (inadmissible element mean): NOT conservative.
+function cpos_floor!(u::AbstractVector{T}, np::Int, γm1::T, ερ::T, εp::T) where {T<:AbstractFloat}
+    s = T(64); n = 0
+    @inbounds for ip = 1:np
+        ρ, m1, m2, m3, Et, Ea = _cpos_node(u, np, ip)
+        (isfinite(ρ) && isfinite(m1) && isfinite(m2) && isfinite(m3) && isfinite(Et)) || continue
+        (ρ >= ερ && _cpos_p(γm1, ρ, m1, m2, m3, Et) >= εp) && continue
+        n += 1
+        if !(ρ >= ερ)
+            ρ = ερ + s*eps(ερ)
+            u[ip] = ρ
+        end
+        e⁺ = εp/γm1 + s*eps(Ea)
+        ke = (m1*m1 + m2*m2 + m3*m3)/(2ρ)
+        Et - ke >= e⁺ && continue
+        if Et > e⁺ && ke > zero(T)
+            θ = sqrt((Et - e⁺)/ke)
+            u[np+ip] = θ*m1; u[2np+ip] = θ*m2; u[4np+ip] = θ*m3
+        else
+            u[np+ip] = zero(T); u[2np+ip] = zero(T); u[4np+ip] = zero(T)
+            u[3np+ip] += e⁺ - Et
+        end
+    end
+    return n
+end
+
 end # module Positivity

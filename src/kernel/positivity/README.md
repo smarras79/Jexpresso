@@ -154,6 +154,7 @@ recovers `p` from it.
 | `:positivity_rho_min` | 0.0 | absolute; **must** be set > 0 when enabled |
 | `:positivity_p_min` | 0.0 | absolute; **must** be set > 0 when enabled |
 | `:positivity_report` | `true` | first engagement, then once per decade |
+| `:positivity_method` | `"repair"` | `"conservative"`: element limiter (`Positivity.cpos_*`) run as the stage limiter of `CarpenterKennedy2N54`, 2D GLM-MHD only; conserves ρ, ρ**v**, E and leaves **B**, ψ untouched (see `problems/MHD/rotorDaoNazarov2022/algorithm.pdf`) |
 
 The floors are absolute and have **no safe default** — a deck must state them
 from its own scales (e.g. 1e-6 of the free-stream ρ and p), so the repair

@@ -212,8 +212,14 @@ function _dsgs_residual_rhs!(u, params, SD)
     # handed to a typed kernel below, never indexed inline — an inline loop
     # here boxed each access and allocated 6 MB per RHS call, measured)
     if params.dsgs_legacy[]
-        _dsgs_legacy_fill!(params.dsgs_rhs_res, params.RHS, params.Minv, params.ω, params.metrics.Je,
+        # params.RHS is still rank-local here: assemble a copy (other ranks, periodic copies) in
+        # RHS_visc, which stays zero until the viscous DSS that follows, and zero it again after.
+        G = params.RHS_visc
+        copyto!(G, params.RHS)
+        DSS_global_RHS!(G, params.g_dss_cache, params.neqs)
+        _dsgs_legacy_fill!(params.dsgs_rhs_res, G, params.Minv, params.ω, params.metrics.Je,
                            params.mesh.connijk, Int(params.mesh.nelem), Int(params.mesh.ngl), Int(params.neqs), SD)
+        fill!(G, zero(params.T))
         return params.dsgs_rhs_res
     end
     if !params.dsgs_ref_done[]
@@ -2956,13 +2962,14 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
     Δ2    = Δ^2
     micro = size(Tabs, 1)
 
-    # Determine if this is a momentum equation
-    is_u_momentum  = (ieq == 2)
-    is_v_momentum  = (ieq == 3)
+    # Conserved-form DynSGS: momentum takes the same ν∇q flux as every other slot.
+    lcons = get(inputs, :dsgs_conserved, false)::Bool
+    is_u_momentum  = (ieq == 2) && !lcons
+    is_v_momentum  = (ieq == 3) && !lcons
     is_temperature = (ieq == 4)
     # hoisted out of the point loop: a Dict lookup per quadrature point
     # boxes its result and allocates
-    add_tau_u = is_temperature && (inputs[:energy_equation] != "theta") && !get(inputs, :dsgs_conserved, false)
+    add_tau_u = is_temperature && (inputs[:energy_equation] != "theta") && !lcons
     
     for l = 1:ngl
         ωl = ω[l]

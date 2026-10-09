@@ -125,6 +125,7 @@ function apply_positivity!(u, params, SD)
 
     inputs = params.inputs
     get(inputs, :lpositivity, false) || return nothing
+    get(inputs, :positivity_method, "repair") == "conservative" && return nothing   # RK stage limiter instead
 
     npoin = Int(params.mesh.npoin)
     neqs  = Int(params.neqs)
@@ -238,5 +239,99 @@ function apply_positivity!(u, params, SD)
         end
     end
 
+    return nothing
+end
+
+# :positivity_method => "conservative": Positivity.cpos_* as the stage limiter of CarpenterKennedy2N54
+# (williamson_condition = false, or stages 2-5 skip it). One Allreduce per call; when a node is out of
+# bounds anywhere, one assemble_mpi! of the element increments and the node floor on every rank.
+mutable struct CposStats
+    run::Any
+    ncalls::Int
+    nopen::Int
+    nlim::Int
+    nfail::Int
+    nfloor::Int
+    θρmin::Float64
+    θpmin::Float64
+    nprinted::Int
+end
+const CPOS_STATS = CposStats(nothing, 0, 0, 0, 0, 0, 1.0, 1.0, 0)
+const CPOS_BAD   = Ref(Vector{Bool}())
+const CPOS_GATE  = zeros(Int, 1)
+
+function positivity_conservative_alg(alg)
+    (alg isa CarpenterKennedy2N54 && alg.stage_limiter! === CarpenterKennedy2N54().stage_limiter!) ||
+        error(" # ERROR positivity_driver.jl: :positivity_method => \"conservative\" needs :ode_solver => CarpenterKennedy2N54() with no stage limiter of its own (got $(nameof(typeof(alg)))).")
+    return CarpenterKennedy2N54(; stage_limiter! = positivity_conservative_limiter!,
+                                step_limiter! = alg.step_limiter!, thread = alg.thread,
+                                williamson_condition = false)
+end
+
+function _cpos_validate(params)
+    inputs = params.inputs
+    why = String[]
+    positivity_is_mhd(params, Int(params.neqs)) ||
+        push!(why, "  the nine-field GLM-MHD state (ρ, ρu, ρv, ρE, ρw, Bx, By, Bz, ψ) only")
+    params.SD == NSD_2D()                 || push!(why, "  2D only")
+    params.AD == ContGal()                || push!(why, "  continuous Galerkin only")
+    params.Minv isa AbstractVector        || push!(why, "  a lumped (diagonal) mass matrix only")
+    params.SOL_VARS_TYPE == TOTAL()       || push!(why, "  :SOL_VARS_TYPE => TOTAL() only")
+    get(inputs, :backend, CPU()) == CPU() || push!(why, "  CPU backend only")
+    inputs[:ladapt] == true               && push!(why, "  not with :ladapt (params.utmp is its scratch)")
+    haskey(inputs, :dsgs_gamma)           || push!(why, "  :dsgs_gamma (the γ of the MHD equation of state) must be set")
+    (inputs[:positivity_rho_min] > 0 && inputs[:positivity_p_min] > 0) ||
+        push!(why, "  :positivity_rho_min and :positivity_p_min must be > 0")
+    isempty(why) || error(" # ERROR positivity_driver.jl: :positivity_method => \"conservative\" is not valid for this case:\n" * join(why, "\n"))
+    println_rank(@sprintf(" # POSITIVITY LIMITER ON (conservative element scaling): ρ_min = %.3e, p_min = %.3e, γ = %.6g",
+                          Float64(inputs[:positivity_rho_min]), Float64(inputs[:positivity_p_min]), Float64(inputs[:dsgs_gamma]));
+                 msg_rank = MPI.Comm_rank(get_mpi_comm()))
+    return nothing
+end
+
+function positivity_conservative_limiter!(u, integrator, params, t)
+    s = CPOS_STATS
+    if s.run !== params.utmp
+        _cpos_validate(params)
+        s.run = params.utmp; s.ncalls = 0; s.nopen = 0; s.nlim = 0; s.nfail = 0; s.nfloor = 0
+        s.θρmin = 1.0; s.θpmin = 1.0; s.nprinted = 0
+    end
+    s.ncalls += 1
+    inputs = params.inputs
+    np  = Int(params.mesh.npoin)
+    γm1 = Float64(inputs[:dsgs_gamma])::Float64 - 1.0
+    ερ  = Float64(inputs[:positivity_rho_min])::Float64
+    εp  = Float64(inputs[:positivity_p_min])::Float64
+    bad = CPOS_BAD[]
+    length(bad) == np || resize!(bad, np)
+    CPOS_GATE[1] = Positivity.cpos_mark_bad!(bad, u, np, γm1, ερ, εp)
+    MPI.Allreduce!(CPOS_GATE, MPI.SUM, get_mpi_comm())
+    if CPOS_GATE[1] > 0
+        A = @view params.utmp[:, 1:5]
+        fill!(A, 0.0)
+        nlim, nfail, θρ, θp = Positivity.cpos_element_pass!(A, u, bad, params.mesh.connijk, params.ω, params.metrics.Je,
+                                                            np, Int(params.mesh.nelem), Int(params.mesh.ngl), γm1, ερ, εp)
+        DSS_global_RHS!(A, params.g_dss_cache, 5)
+        Positivity.cpos_add!(u, A, params.Minv, np)
+        s.nfloor += Positivity.cpos_floor!(u, np, γm1, ερ, εp)
+        s.nopen += 1; s.nlim += nlim; s.nfail += nfail
+        s.θρmin = min(s.θρmin, θρ); s.θpmin = min(s.θpmin, θp)
+    end
+    _cpos_report(s, inputs)
+    return nothing
+end
+
+function _cpos_report(s::CposStats, inputs)
+    every = Int(get(inputs, :positivity_report_every, 1000))
+    (get(inputs, :positivity_report, true) == true && every > 0 && s.ncalls % every == 0) || return nothing
+    comm = get_mpi_comm()
+    c = MPI.Allreduce([Float64(s.nlim), Float64(s.nfail), Float64(s.nfloor)], MPI.SUM, comm)
+    m = MPI.Allreduce([s.θρmin, s.θpmin], MPI.MIN, comm)
+    tot = round(Int, c[1] + c[2] + c[3])
+    tot > s.nprinted || return nothing
+    s.nprinted = tot
+    println_rank(@sprintf(" # POSITIVITY LIMITER: %d element limitings (min θ_ρ %.4g, min θ_p %.4g), %d elements with an inadmissible mean, %d node floors (not conservative); active in %d of %d stage calls",
+                          round(Int, c[1]), m[1], m[2], round(Int, c[2]), round(Int, c[3]), s.nopen, s.ncalls);
+                 msg_rank = MPI.Comm_rank(comm))
     return nothing
 end

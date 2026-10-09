@@ -818,6 +818,17 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :ode_adaptive_solver))
         inputs[:ode_adaptive_solver] = false
     end
+    # :lpositivity method: "repair" (node floors inside rhs!) or "conservative" (element limiter
+    # run as the RK stage limiter, src/kernel/positivity/positivity_driver.jl).
+    if(!haskey(inputs, :positivity_method))
+        inputs[:positivity_method] = "repair"
+    end
+    inputs[:positivity_method] = lowercase(string(inputs[:positivity_method]))
+    inputs[:positivity_method] in ("repair", "conservative") ||
+        error(" # ERROR mod_inputs.jl: :positivity_method must be \"repair\" or \"conservative\"")
+    if inputs[:lpositivity] == true && inputs[:positivity_method] == "conservative"
+        inputs[:ode_solver] = positivity_conservative_alg(inputs[:ode_solver])
+    end
     if(!haskey(inputs, :output_dir))
         inputs[:output_dir] = "none"
     end
