@@ -20,10 +20,11 @@ The equations are the 9-field GLM-MHD system of `problems/MHD/orszagTangBormanis
 
 ## Stabilization
 
-DynSGS alone (no background floor, no positivity repair), with the default residual coefficient `:dsgs_CR => 1`:
+DynSGS with no background viscosity (`:dsgs_Cmin = 0`) and the default residual coefficient `:dsgs_CR => 1`, plus a conservative positivity limiter. The exact algorithm, every constant and the proofs are in [algorithm.pdf](algorithm.pdf) (source `algorithm.tex`).
 
-- **conserved form** (`:dsgs_conserved => true`): one residual-based ν and a Laplacian on (ρ, ρ**v**, E, **B**, ψ). In the spinning ring ½ρ|**v**|² ≈ 20 against p/(γ−1) = 2.5; the physical form (diffusion of u, v and T with mass diffusion) drove p to −10 by t = 0.05.
-- **element norms** (`:dsgs_norms => "element"`): the residual is normalized by each element's own spread and scales (floored at ρc, ρc², … with `:dsgs_local_rel = 1`). Inside the disc p ≪ ½ρ|**v**|², so against the domain-wide scale of E the residual of its grid-scale pressure noise is invisible; with domain norms that noise grew to 4% of p (median node-to-node second difference) and Mach spiked to 7 (15 on a 2× finer grid) where p → 0.
+- **conserved form** (`:dsgs_conserved => true`): one ν per element and ∇·(ν∇q) on every conserved variable (ρ, ρ**v**, E, **B**, ψ), so ρ and the internal energy obey a minimum principle at the PDE level. In the spinning ring ½ρ|**v**|² ≈ 20 against p/(γ−1) = 2.5; the physical form (diffusion of u, v and T with mass diffusion) drove p to −10 by t = 0.05.
+- **legacy sensor, element norms** (`:dsgs_sensor => "legacy"`, `:dsgs_norms => "element"`): the residual |BDF2(q) − M⁻¹RHS| (RHS assembled over all ranks and periodic copies) is normalized by each element's own spread and scales (floored at ρc, ρc², … with `:dsgs_local_rel = 1`). It measures ≈ 0.75 |∂ₜq|, so ν does not change with Δt. With domain norms the grid-scale pressure noise inside the disc grew to 4% of p and Mach spiked to 7.
+- **conservative positivity limiter** (`:lpositivity`, `:positivity_method => "conservative"`, ε = 1e-6 for ρ and p): an element that holds a node with ρ < ε or p < ε is scaled toward its lumped-mass mean (θ_ρ for ρ, then θ_p from the exact root of p = ε) and the increments are assembled like the RHS. Mass, momentum and energy are conserved, **B** and ψ are untouched. It runs as the stage limiter of CarpenterKennedy2N54, 5 times per step.
 
 ## Run
 
@@ -41,18 +42,18 @@ python3 tools/plot_fluxemergence_vtu.py output/MHD/rotorDaoNazarov2022/output-<d
 
 ## Results at t = 0.15
 
-128×128 elements, `:nop => 3`, 385×385 nodes, Δt = 2e-4, 4 MPI ranks:
+`:nop => 3`, 4 MPI ranks:
 
 | | ρ | p | ½\|**B**\|² | max Mach |
 |---|---|---|---|---|
-| this case | 0.567 – 10.38 | 0.0347 – 1.971 | 0.074 – 2.541 | 3.52 |
+| this case, 128×128 elements (385² nodes), Δt = 2e-4 | 0.565 – 10.65 | 0.0295 – 1.969 | 0.0746 – 2.543 | 3.55 |
 | Tóth (2000) Fig. 18, flux-CT, 400² | 0.483 – 12.95 | 0.0202 – 2.008 | 0.0177 – 2.642 | 8.18 (spurious, at p undershoots) |
 | Dao & Nazarov (2022) Fig. 7, P3, 300² nodes | 0.727 – 8.42 | 0.0386 – 1.93 | 0.0551 – 2.30 | 4.82 |
 
-min p = 0.059 at t = 0.10 and 0.035 at t = 0.15; the grid-scale pressure noise inside the ring is 0.03% (median) / 0.2% (95th percentile) of p;
-the solution is invariant under the 180° rotation about (0.5, 0.5) to 2e-10 (ρ, p, **B** even, **v** odd); mass and energy change by less than 1e-4.
+128²: min p = 0.076 at t = 0.10 and 0.030 at t = 0.15, and the limiter never acts (no node falls below 10⁻⁶); the grid-scale pressure noise inside the ring is 0.05% (median) / 0.2% (95th percentile) of p;
+the solution is invariant under the 180° rotation about (0.5, 0.5) to 2e-10 (ρ, p, **B** even, **v** odd); the discrete mass and energy (Σ M q) change by less than 5e-14.
 
-What each DSGS option did at this resolution (t = 0.15 unless noted):
+What each DSGS option did at 128² with the earlier operator (deviatoric stress on ρ**v**, rank-local legacy sensor, no limiter; t = 0.15 unless noted):
 
 | DynSGS setting | min p | max Mach | p noise (median) |
 |---|---|---|---|
@@ -63,7 +64,7 @@ What each DSGS option did at this resolution (t = 0.15 unless noted):
 | conserved, domain norms, C_R = 2 | 0.0058 | 7.3 | 3.8% |
 | conserved, domain norms, C_R = 4 | 0.029 | 3.8 | 0.46% |
 | conserved, element norms, C_R = 2 | 0.045 | 3.0 | 0.04% (symmetry error 2e-3) |
-| **conserved, element norms, C_R = 1** (this deck) | **0.035** | **3.5** | **0.03%** |
+| conserved, element norms, C_R = 1 | 0.035 | 3.5 | 0.03% (at 256²: p = −0.0026 at t = 0.10) |
 
 ## Finer grids
 

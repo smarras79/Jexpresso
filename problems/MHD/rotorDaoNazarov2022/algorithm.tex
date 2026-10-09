@@ -1,0 +1,578 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{tabularx,booktabs,array,longtable}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{xcolor}
+\usepackage[hyphens]{url}
+\usepackage{hyperref}
+\sloppy
+\emergencystretch=3em
+
+\makeatletter
+\newcommand{\code}[1]{{\def\_{\char`\_\discretionary{}{}{}}\texttt{#1}}}
+\makeatother
+
+\newcommand{\bq}{\mathbf{q}}
+\newcommand{\bv}{\mathbf{v}}
+\newcommand{\bmom}{\mathbf{m}}
+\newcommand{\bB}{\mathbf{B}}
+\newcommand{\bF}{\mathbf{F}}
+\newcommand{\dsgs}{\textsc{DynSGS}}
+\newcommand{\Cmax}{C_{\max}}
+\newcommand{\CR}{C_R}
+\newcommand{\Et}{\tilde E}
+\newcommand{\eps}{\varepsilon}
+
+\title{The MHD rotor in JEXPRESSO: the exact algorithm\\
+\large \code{problems/MHD/rotorDaoNazarov2022} --- discretization, \dsgs{} setup, constants, and positivity}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent This note states, term by term, the algorithm that runs when the deck
+\code{problems/MHD/rotorDaoNazarov2022/user\_inputs.jl} is executed: the GLM-MHD
+equations and initial data, the spectral-element discretization, the
+low-storage Runge--Kutta integrator, the dynamic sub-grid-scale (\dsgs)
+artificial viscosity exactly as configured, the conservative positivity limiter
+that keeps density and pressure positive, and the meaning and value of every
+constant. File and line references are to the repository at the commit that
+adds this note. The last sections give the measured results and what the
+algorithm does not guarantee.
+\end{abstract}
+
+\tableofcontents
+
+%======================================================================
+\section{The problem}
+\label{sec:problem}
+
+\paragraph{State.} The nine conserved fields (``slots'') are
+\begin{equation}
+\bq = (\rho,\ \rho u,\ \rho v,\ E,\ \rho w,\ B_x,\ B_y,\ B_z,\ \psi),
+\qquad \bmom = (\rho u, \rho v, \rho w),\quad \bv = \bmom/\rho ,
+\label{eq:slots}
+\end{equation}
+in this order (\code{initialize.jl}, \code{qvars}). $E$ is the total energy,
+including the magnetic and GLM energies. The pressure is
+\begin{equation}
+p = (\gamma-1)\Big(E - \frac{|\bmom|^2}{2\rho} - \tfrac12|\bB|^2 - \tfrac12\psi^2\Big),\qquad \gamma = 1.4 .
+\label{eq:p}
+\end{equation}
+Magnetic pressure is $\tfrac12|\bB|^2$ (Heaviside--Lorentz units, as in T\'oth 2000).
+$\rho w$ and $B_z$ start at zero and stay zero in this 2D problem.
+
+\paragraph{Equations.} Ideal GLM-MHD with Dedner divergence cleaning, plus the
+\dsgs{} regularization of Section~\ref{sec:dsgs}:
+\begin{equation}
+\partial_t \bq + \partial_x \bF(\bq) + \partial_y \mathbf{G}(\bq) = \mathbf{S}(\bq) + \nabla\cdot\big(\nu\,\nabla\bq\big).
+\label{eq:pde}
+\end{equation}
+The fluxes are those of \code{problems/MHD/orszagTangBormanis2024/user\_flux.jl}
+(included by the rotor's \code{user\_flux.jl}, which fixes $\gamma=1.4$).
+With $p_{tot} = p + \tfrac12|\bB|^2$ and $e_f = \tfrac12\rho|\bv|^2 + \gamma p/(\gamma-1) + |\bB|^2$:
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+slot & $\bF$ ($x$-flux) & $\mathbf{G}$ ($y$-flux) \\
+\midrule
+$\rho$      & $\rho u$ & $\rho v$ \\
+$\rho u$    & $\rho u^2 + p_{tot} - B_x^2$ & $\rho u v - B_x B_y$ \\
+$\rho v$    & $\rho v u - B_x B_y$ & $\rho v^2 + p_{tot} - B_y^2$ \\
+$E$         & $u\,e_f - B_x(\bv\cdot\bB) + c_h\psi B_x$ & $v\,e_f - B_y(\bv\cdot\bB) + c_h\psi B_y$ \\
+$\rho w$    & $\rho w u - B_x B_z$ & $\rho w v - B_y B_z$ \\
+$B_x$       & $c_h\psi$ & $v B_x - u B_y$ \\
+$B_y$       & $u B_y - v B_x$ & $c_h\psi$ \\
+$B_z$       & $u B_z - w B_x$ & $v B_z - w B_y$ \\
+$\psi$      & $c_h B_x$ & $c_h B_y$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+There is no Powell source. The only source is the GLM damping
+$S_\psi = -(c_h/c_r)\,\psi$ with $c_r = 0.18$ (\code{user\_source.jl}), a damping
+rate of $c_h/c_r = 14.33$.
+
+\paragraph{Cleaning speed.} $c_h$ is computed once from the initial condition and
+held fixed (\code{initialize.jl}):
+\begin{equation}
+c_h = \max_{\text{nodes, all ranks}}\Big(|\bv| + \sqrt{(\gamma p + |\bB|^2)/\rho}\Big) = 2.5802306434 .
+\end{equation}
+
+\paragraph{Domain, time, boundaries.} $\Omega = (0,1)^2$, doubly periodic,
+$t\in[0, 0.15]$, output at $t = 0, 0.05, 0.10, 0.15$.
+
+\paragraph{Initial condition} (Balsara \& Spicer 1999; T\'oth 2000, first rotor;
+Dao \& Nazarov 2022, \S5.5). With $r = |\mathbf{x} - (0.5,0.5)|$,
+$r_0 = 0.1$, $r_1 = 0.115$, $u_0 = 2$, $f = (r_1-r)/(r_1-r_0)$:
+\begin{center}
+\begin{tabular}{llll}
+\toprule
+region & $\rho$ & angular velocity $\omega$ & \\
+\midrule
+$r < r_0$ & 10 & $u_0/r_0 = 20$ & \\
+$r_0 \le r < r_1$ & $1 + 9f$ & $f u_0/r$ & \\
+$r \ge r_1$ & 1 & 0 & \\
+\bottomrule
+\end{tabular}
+\end{center}
+$(u, v) = \omega\,(0.5 - y,\ x - 0.5)$, $p = 1$, $\bB = (5/\sqrt{4\pi}, 0, 0)$, $\psi = 0$,
+$E = p/(\gamma-1) + \tfrac12\rho|\bv|^2 + \tfrac12|\bB|^2$.
+
+%======================================================================
+\section{Spatial discretization}
+\label{sec:space}
+
+\paragraph{Mesh.} The $32\times32$ quadrilateral mesh
+\code{orszagTangBormanis2024/OT\_32x32\_periodic.msh} is refined uniformly by
+p4est \code{:init\_refine\_lvl} $=L$ times: $(32\cdot 2^L)^2$ elements,
+$128^2$ at $L=2$ (the deck) and $256^2$ at $L=3$. Periodicity is not a node
+merge: the two copies of a seam node keep their coordinates and local indices
+and share a global index (\code{ip2gip}); they are summed by the global
+assembly below.
+
+\paragraph{Basis and quadrature.} Lagrange polynomials of degree $N$ =
+\code{:nop} $=3$ on the $N+1 = 4$ Legendre--Gauss--Lobatto (LGL) nodes per
+direction, $385\times385$ nodes at $L=2$. Quadrature uses the same LGL nodes
+(inexact integration), so the mass matrix is diagonal:
+\begin{equation}
+M_I = \sum_{K\ni I} m^K_I,\qquad m^K_{ij} = \omega_i\,\omega_j\,J^K_{ij},
+\label{eq:mass}
+\end{equation}
+summed over every element on every MPI rank and over both copies of periodic
+nodes (\code{element\_matrices.jl}, \code{DSS\_global\_mass!}).
+
+\paragraph{Inviscid term} (strong form, collocated):
+\begin{equation}
+r^K_{ij} = -\,\omega_i\omega_j J^K_{ij}\,\big[\partial_x I_h\bF + \partial_y I_h\mathbf{G} - \mathbf{S}\big]_{ij},
+\end{equation}
+where $I_h$ is the degree-$N$ interpolant on the element and the derivatives
+are the LGL differentiation matrix applied to the nodal fluxes.
+
+\paragraph{Viscous term} (weak form, Section~\ref{sec:operator}):
+\begin{equation}
+d^K_{ij} = -\sum_{k,l}\omega_k\omega_l J^K_{kl}\,\nabla\phi_{ij}(\mathbf{x}_{kl})\cdot \nu_K\,\nabla\bq(\mathbf{x}_{kl}).
+\end{equation}
+There is no boundary integral (the domain is periodic).
+
+\paragraph{Assembly.} The element contributions are summed by local index
+(\code{DSS\_rhs!}), then over ranks and periodic copies by \code{assemble\_mpi!}
+(\code{DSS\_global\_RHS!}), and divided by the lumped mass:
+\begin{equation}
+\dot\bq_I = M_I^{-1}\sum_{K\ni I}\big(r^K_I + d^K_I\big).
+\label{eq:semi}
+\end{equation}
+
+%======================================================================
+\section{Time integration}
+\label{sec:time}
+
+\paragraph{Scheme.} Carpenter--Kennedy five-stage, fourth-order, 2N low-storage
+Runge--Kutta (\code{CarpenterKennedy2N54}, OrdinaryDiffEqLowStorageRK). With
+$k = \dot\bq$ and registers $(\bq, \mathbf{t})$, one step of size $h$ is
+\begin{align}
+&\mathbf{t} \leftarrow h\,k(\bq,\,t_n), \quad \bq \leftarrow \bq + B_1\mathbf{t},\\
+&\text{for } s = 2,\dots,5:\quad \mathbf{t}\leftarrow A_s\mathbf{t},\quad
+\boxed{\bq\leftarrow\mathcal{L}(\bq)},\quad
+\mathbf{t}\leftarrow\mathbf{t} + h\,k(\bq,\,t_n + c_s h),\quad \bq\leftarrow\bq + B_s\mathbf{t},\\
+&\boxed{\bq\leftarrow\mathcal{L}(\bq)}\quad\text{(end of step)},
+\end{align}
+where $\mathcal{L}$ is the positivity limiter of Section~\ref{sec:positivity}
+(the ``stage limiter''). The coefficients are
+\begin{center}\footnotesize
+\begin{tabular}{lrrr}
+\toprule
+$s$ & $A_s$ & $B_s$ & $c_s$ \\
+\midrule
+1 & $0$ & $1432997174477/9575080441755$ & $0$ \\
+2 & $-567301805773/1357537059087$ & $5161836677717/13612068292357$ & $1432997174477/9575080441755$ \\
+3 & $-2404267990393/2016746695238$ & $1720146321549/2090206949498$ & $2526269341429/6820363962896$ \\
+4 & $-3550918686646/2091501179385$ & $3134564353537/4481467310338$ & $2006345519317/3224310063776$ \\
+5 & $-1275806237668/842570457699$ & $2277821191437/14882151754819$ & $2802321613138/2924317926251$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+i.e.\ $c = (0, 0.149659, 0.370401, 0.622256, 0.958282)$, with Butcher weights
+$b = (0.005594, 0.344743, 0.028912, 0.467694, 0.153057)$,
+$\sum_s b_s c_s = \tfrac12$.
+
+\paragraph{Step.} $\Delta t$ = \code{:}$\Delta$\code{t} $= 2\times10^{-4}$ at $L=2$ (acoustic
+CFL $\approx 0.24$ against the smallest LGL spacing $2.16\times10^{-3}$).
+The integrator is handed \code{Float32(}$\Delta$\code{t)} $= 1.99999995\times10^{-4}$, and 250 such steps end
+$1.26\times10^{-9}$ short of each output time, which one extra step of that
+length then reaches; \dsgs{} uses \code{params.}$\Delta$\code{t} in double precision.
+
+\paragraph{Limiter hook.} \code{:lpositivity => true} with
+\code{:positivity\_method => "conservative"} makes \code{mod\_inputs.jl} rebuild
+the solver as \code{CarpenterKennedy2N54(stage\_limiter! = positivity\_conservative\_limiter!,
+williamson\_condition = false)}. The flag \code{williamson\_condition = false} is
+required: with the default \code{true} the package fuses stages 2--5 and never
+calls the stage limiter there. $\mathcal{L}$ therefore runs 5 times per step,
+the same number on every rank.
+
+%======================================================================
+\section{\dsgs{} as configured}
+\label{sec:dsgs}
+
+The model is \code{:visc\_model => DSGS\_MHD()} with \code{:lvisc => true},
+in its conserved form (\code{:dsgs\_conserved => true}), with the legacy sensor
+(\code{:dsgs\_sensor => "legacy"}) and element norms
+(\code{:dsgs\_norms => "element"}). The coefficient is one number $\nu_K$ per
+element, recomputed at every Runge--Kutta stage
+(\code{src/kernel/physics/SGS.jl}, \code{compute\_dsgs\_viscosity!}).
+
+\subsection{History and hold}
+\dsgs{} keeps its own three-level history $(\bq^n, \bq^{n-1}, \bq^{n-2})$. At the
+first right-hand-side call of each step ($t - t_{hist} \ge 0.999\,\Delta t$) it
+rotates: $\bq^{n-2}\leftarrow\bq^{n-1}$, $\bq^{n-1}\leftarrow\bq^n$, $\bq^n\leftarrow\bq$
+(the current, already limited, state), $t_{hist}\leftarrow t$ (\code{rhs.jl}, rotation block).
+With \code{:dsgs\_hold\_steps => 2} the coefficient is held at zero until three
+rotations have happened: $\nu = 0$ during the first two steps, when the history
+is still the initial condition.
+
+\subsection{The legacy residual}
+At every stage of every later step, for node $I$ (local index of node $(i,j)$ of
+element $K$) and slot $q = 1,\dots,8$ ($\psi$ is excluded),
+\begin{equation}
+R^q_{K,ij} = \Big|\frac{3 q_I - 4 q^n_I + q^{n-1}_I}{2\,\Delta t} - \big(M^{-1}\mathcal{R}_{inv}\big)_I^q\Big| ,
+\label{eq:legacy}
+\end{equation}
+where $q_I$ is the current stage value and $\mathcal{R}_{inv} = \sum_K r^K$ is the
+inviscid right-hand side, \emph{assembled over all ranks and periodic copies}:
+a copy of the rank-local sum is passed through \code{assemble\_mpi!} before it
+is used (\code{rhs.jl}, \code{\_dsgs\_residual\_rhs!}). Without that step the
+spatial term at rank-interface and periodic-seam nodes would be only the
+fraction ($\tfrac12$, $\tfrac14$) of the rate that the rank's own elements
+contribute, and $\nu$ would depend on the MPI partition.
+
+\paragraph{What the legacy residual measures.} With
+$\bq_{stage} - \bq^n = c_s\Delta t\,\dot\bq + O(\Delta t^2)$ and
+$\bq^n - \bq^{n-1} = \Delta t\,\dot\bq + O(\Delta t^2)$,
+\begin{equation}
+R_s = \big|(1.5c_s - 1.5)\,F + (1.5c_s - 0.5)\,V\big| + O(\Delta t),
+\end{equation}
+with $F$ the inviscid and $V$ the viscous rate. Where $V\ll F$ this is
+$1.5(1-c_s)|\dot\bq|$; weighted with the Butcher weights,
+$\sum_s b_s\,1.5(1-c_s) = 0.75$. The legacy residual is therefore a
+flux-divergence (gradient) sensor, not a truncation-error residual, and it does
+not depend on $\Delta t$: a smaller step converges to the same dissipated
+solution.
+
+\subsection{Element normalization}
+Over the $16$ nodes of element $K$ (plain node averages $\langle\cdot\rangle_K$):
+\begin{gather}
+S^q_K = \max_{I\in K}|q_I - \langle q\rangle_K|,\qquad
+\bar\rho_K = \max(|\langle\rho\rangle_K|, \eps),\\
+\bar p_K = (\gamma-1)\max\Big(\langle E\rangle_K - \frac{|\langle\bmom\rangle_K|^2}{2\bar\rho_K} - \tfrac12|\langle\bB\rangle_K|^2,\ 0\Big),\qquad
+\bar c_K = \sqrt{\max(\gamma\bar p_K/\bar\rho_K, \eps)},
+\end{gather}
+and the normalizer of slot $q$ is
+\begin{equation}
+n^q_K = \max\big(S^q_K,\ r_{loc}\,s^q_K\big) + \eps,\qquad
+s^\rho = \bar\rho,\quad s^{\rho u,\rho v,\rho w} = \bar\rho\bar c,\quad s^E = \bar\rho\bar c^2,\quad s^{B} = \sqrt{\bar\rho}\,\bar c,
+\end{equation}
+with $r_{loc}$ = \code{:dsgs\_local\_rel} $=1$ and $\eps = 10^{-16}$. Each element
+is thus judged against its own spread and its own physical scales, not the
+domain's: in the low-pressure interior of the rotor ($p \ll \tfrac12\rho|\bv|^2$)
+domain-wide norms made the residual of grid-scale pressure noise invisible.
+
+\subsection{Coefficient}
+\begin{gather}
+\mathcal{R}_K = \max_{I\in K}\ \max_{q\le 8}\ \frac{R^q_{K,I}}{n^q_K},\qquad
+w_K = \max_{I\in K}\Big(|\bv_I| + \sqrt{\max\big(\gamma p_I/\rho_I + |\bB_I|^2/\rho_I,\ 0\big)}\Big),\\
+\Delta_K = \frac{\Delta^{elem}_K}{N+1},\qquad
+\nu_K = \max\Big(0,\ \min\big(\Cmax\,\Delta_K\,w_K,\ \ \CR\,\Delta_K^2\,\mathcal{R}_K\big)\Big),
+\label{eq:nu}
+\end{gather}
+with $\Delta^{elem}_K$ the shortest edge of $K$ ($1/128$, so $\Delta_K = 1/512$),
+$\CR$ = \code{:dsgs\_CR} $=1$, $\Cmax$ = \code{:dsgs\_Cmax} $=0.5$, no lower floor
+(\code{:dsgs\_Cmin} $=0$) and no cutoff. In $w_K$, $\rho_I$ is floored at $\eps$
+and $p_I$ is the full nodal pressure~\eqref{eq:p}. The cap $\Cmax\Delta w$ is the
+first-order (Lax--Friedrichs-like) viscosity; the residual term is $O(\Delta^2)$
+in smooth flow. With \code{:}$\mu$ $= (1,\dots,1)$ every slot gets $\nu_K$.
+
+\subsection{Viscous operator}
+\label{sec:operator}
+In the conserved form the diffused variables are the conserved variables
+themselves (\code{user\_primitives.jl} copies $\bq$), and every slot, momentum
+included, gets the same flux
+\begin{equation}
+\bF_V(q) = \nu_K\,\nabla q,\qquad q \in \{\rho,\ \rho u,\ \rho v,\ E,\ \rho w,\ B_x,\ B_y,\ B_z,\ \psi\},
+\label{eq:FV}
+\end{equation}
+assembled in the weak form of Section~\ref{sec:space}
+(\code{rhs.jl}, \code{\_expansion\_visc!}, flag \code{lcons}). There is no
+$\boldsymbol\tau\!\cdot\!\bv$ work term and no separate heat flux: the
+regularization is the monolithic parabolic one, $\partial_t\bq + \dots = \nabla\cdot(\nu\nabla\bq)$.
+
+\paragraph{Why momentum must get a Laplacian.} For any $\nu\ge0$, the chain
+rule and the convexity of $|\bmom|^2/(2\rho)$ and $\tfrac12|\bB|^2$ give, for the
+regularization~\eqref{eq:FV} alone,
+\begin{equation}
+\partial_t(\rho e) = \nabla\cdot\big(\nu\nabla(\rho e)\big) + \nu\big(\rho|\nabla\bv|^2 + |\nabla\bB|^2 + |\nabla\psi|^2\big),
+\qquad \rho e = E - \frac{|\bmom|^2}{2\rho} - \tfrac12|\bB|^2 - \tfrac12\psi^2 ,
+\end{equation}
+and $\partial_t\rho = \nabla\cdot(\nu\nabla\rho)$: density and internal energy obey
+a minimum principle. Before this version the momentum slots received the
+deviatoric stress $\nu(\nabla\bmom + \nabla\bmom^T - \tfrac23(\nabla\cdot\bmom)I)$, which
+for constant $\nu$ equals $\nu[\Delta\bmom + \tfrac13\nabla(\nabla\cdot\bmom)]$ and adds
+the sign-indefinite term $-\tfrac{\nu}{3}\,\bv\cdot\nabla(\nabla\cdot\bmom)$ to the
+equation above. In the rotor, $\tfrac12\rho|\bv|^2$ reaches 20 where $\rho e\approx 0.1$.
+The minimum principle is a property of the PDE; the high-order discrete operator
+does not inherit it, which is why the limiter of Section~\ref{sec:positivity} exists.
+
+%======================================================================
+\section{How positivity is enforced}
+\label{sec:positivity}
+
+Positivity of $\rho$ and $p$ is enforced by the conservative element limiter
+$\mathcal{L}$ (\code{src/kernel/positivity/Positivity.jl}, functions
+\code{cpos\_*}; driver \code{positivity\_conservative\_limiter!} in
+\code{positivity\_driver.jl}), applied to the Runge--Kutta state before stages
+2--5 and at the end of every step (Section~\ref{sec:time}). It acts on the
+hydrodynamic part $(\rho, \bmom, \Et)$ with
+\begin{equation}
+\Et = E - \tfrac12|\bB|^2 - \tfrac12\psi^2,\qquad P(\rho,\bmom,\Et) = (\gamma-1)\Big(\Et - \frac{|\bmom|^2}{2\rho}\Big) = p ,
+\end{equation}
+and never changes $\bB$ or $\psi$. $P$ is concave in $(\rho,\bmom,\Et)$ for $\rho>0$
+($|\bmom|^2/(2\rho)$ is the perspective of a convex function). The admissible set is
+$G = \{\rho\ge\eps_\rho,\ P\ge\eps_p\}$, which is convex.
+
+\paragraph{Constants.} $\eps_\rho$ = \code{:positivity\_rho\_min} $=10^{-6}$,
+$\eps_p$ = \code{:positivity\_p\_min} $=10^{-6}$ (absolute; $10^{-6}$ of the
+ambient $\rho = p = 1$), $\gamma$ = \code{:dsgs\_gamma} $=1.4$, and a
+round-off margin factor $s = 64$ (ulps).
+
+\paragraph{Step 0: gate.} Every rank counts its nodes outside $G$ (NaN counts as
+outside) and the counts are summed with one \code{MPI\_Allreduce}. If the sum is
+zero, $\mathcal{L}$ returns and the state is bitwise unchanged.
+
+\paragraph{Step 1: element means and admissibility.} For every element $K$
+holding a node outside $G$, with the lumped weights $m_i = \omega_a\omega_b J^K_{ab}$
+of~\eqref{eq:mass} and $W = \sum_i m_i$,
+\begin{equation}
+\bar\rho = \frac{1}{W}\sum_i m_i\rho_i,\quad \bar\bmom = \frac{1}{W}\sum_i m_i\bmom_i,\quad \bar E = \frac{1}{W}\sum_i m_i\Et_i .
+\end{equation}
+With $R = \max(\max_i|\rho_i|, |\bar\rho|)$, $\hat E = \max_i(|E_i| + \tfrac12|\bB_i|^2 + \tfrac12\psi_i^2)$,
+\begin{equation}
+\delta = s\,\mathrm{ulp}(R),\quad \bar\rho_g = \bar\rho - \delta,\quad
+\eps_\rho^+ = \eps_\rho + \delta,\quad \eps_p^+ = \eps_p + s(\gamma-1)\,\mathrm{ulp}(\hat E),\quad
+\bar p = P(\bar\rho_g, \bar\bmom, \bar E).
+\end{equation}
+The element is limited only if $\bar\rho_g > \eps_\rho^+$ and $\bar p > \eps_p^+$
+(both finite); otherwise it is counted as failed and left to step~5.
+
+\paragraph{Step 2: density.} If $\rho_{\min} = \min_i\rho_i < \eps_\rho^+$,
+\begin{equation}
+\theta_\rho = \frac{\bar\rho - \eps_\rho^+}{\bar\rho - \rho_{\min}},\qquad
+\tilde\rho_i = \bar\rho + \theta_\rho(\rho_i - \bar\rho);
+\end{equation}
+otherwise $\theta_\rho = 1$, $\tilde\rho_i = \rho_i$. Then $\min_i\tilde\rho_i \ge \eps_\rho^+$.
+
+\paragraph{Step 3: pressure (root rule).} For each node with
+$P(\tilde\rho^g_i, \bmom_i, \Et_i) < \eps_p^+$, where
+$\tilde\rho^g_i = \tilde\rho_i - s\,\mathrm{ulp}(\max(|\rho_i|, \bar\rho))$, let
+$t_i$ be the first $t\in(0,1]$ at which the segment from
+$(\bar\rho_g, \bar\bmom, \bar E)$ to $(\tilde\rho^g_i, \bmom_i, \Et_i)$ reaches
+$P = \eps_p^+$. Writing $e^+ = \eps_p^+/(\gamma-1)$, $\Delta\rho = \tilde\rho^g_i - \bar\rho_g$,
+$\Delta\bmom = \bmom_i - \bar\bmom$, $\Delta E = \Et_i - \bar E$, $t_i$ is the root in $(0,1)$ of
+$a t^2 + b t + c = 0$ with
+\begin{equation}
+a = \Delta\rho\,\Delta E - \tfrac12|\Delta\bmom|^2,\quad
+b = \bar\rho_g\Delta E + \Delta\rho(\bar E - e^+) - \bar\bmom\cdot\Delta\bmom,\quad
+c = \bar\rho_g(\bar E - e^+) - \tfrac12|\bar\bmom|^2 > 0,
+\end{equation}
+\begin{equation}
+t_i = \begin{cases} 2c/\big(\sqrt{b^2-4ac} - b\big), & b \le 0,\\
+\big(-b - \sqrt{b^2-4ac}\big)/(2a), & b > 0,\ a < 0,\\
+1, & b > 0,\ a \ge 0, \end{cases}
+\end{equation}
+clipped to $[0,1]$ (a negative or NaN value gives 0; $\tilde\rho^g_i \le 0$ gives 0). All other nodes have
+$t_i = 1$, and $\theta_p = \min_i t_i$. (Concavity guarantees that the chord value
+$(\bar p - \eps_p^+)/(\bar p - P_i)$ is a lower bound of $t_i$; the root is used
+because the chord flattens whole elements where density limiting binds.)
+
+\paragraph{Step 4: conservative update.} The limited element copy is
+$\bq^K_i = \bar\bq + \theta_p(\tilde\bq_i - \bar\bq)$ in $(\rho,\bmom,\Et)$; its increments
+\begin{equation}
+\delta\rho_i = (\theta_p\theta_\rho - 1)(\rho_i - \bar\rho),\quad
+\delta\bmom_i = (\theta_p - 1)(\bmom_i - \bar\bmom),\quad
+\delta E_i = (\theta_p - 1)(\Et_i - \bar E),\quad \delta\bB_i = \delta\psi_i = 0
+\end{equation}
+are weighted, $A_I \mathrel{+}= m_i\,\delta_i$, assembled over ranks and periodic copies
+with \code{assemble\_mpi!} (slots $\rho,\rho u,\rho v,E,\rho w$), and applied as
+$\bq_I \leftarrow \bq_I + M_I^{-1}A_I$. Equivalently,
+$\bq_I = \sum_{K\ni I}(m^K_I/M_I)\,\bq^K_I$ with $\bq^K_I = \bq_I$ for elements that
+were not limited.
+
+\paragraph{Step 5: fallback.} Nodes still outside $G$ can only come from failed
+elements (inadmissible mean). On every rank such a node gets the floor: $\rho\leftarrow
+\eps_\rho + s\,\mathrm{ulp}(\eps_\rho)$ if $\rho < \eps_\rho$; then, if $\Et - k < e_{\min}$, the momentum is scaled by
+$\theta = \sqrt{(\Et - e_{\min})/k}$, $k = |\bmom|^2/(2\rho)$, $e_{\min} = \eps_p/(\gamma-1) + s\,\mathrm{ulp}(|E| + \tfrac12|\bB|^2 + \tfrac12\psi^2)$
+(total energy unchanged), or, if $\Et \le e_{\min}$, set to zero with $E$ raised so that
+$\Et = e_{\min}$. This step does \emph{not} conserve mass, momentum or energy;
+every use is counted and reported.
+
+\paragraph{What it guarantees.}
+\begin{itemize}
+\item Conservation: $\sum_I M_I q_I$ over unique nodes is unchanged by steps 1--4
+for all nine slots, because $\sum_i m_i(x_i - \bar x) = 0$ in every element.
+\item Bounds: if every flagged element passes step~1, every node ends in $G$
+(each copy is in $G$, $G$ is convex, the reassembly is a convex combination).
+\item $\bB$, $\psi$ and the discrete $\nabla\cdot\bB$ are untouched; $E$ changes only
+by exchanging kinetic and internal energy inside the element.
+\item Locality: only nodes of limited elements (and floored nodes) change;
+the result is the same on any number of ranks (checked bitwise on 1 and 3 ranks).
+\end{itemize}
+
+\paragraph{What it does not guarantee.} Continuous Galerkin with a lumped mass
+has no theorem that keeps element means admissible, with any Runge--Kutta
+method; step~5 exists for that case. The limiter enforces $p\ge\eps_p$, not a
+physical pressure: a node pulled up to $p = 10^{-6}$ still shows a large Mach
+number. It is not invariant-domain preserving and not entropy-consistent.
+
+\paragraph{Reporting.} Every \code{:positivity\_report\_every} limiter calls (default
+1000) the ranks reduce the counters and print the number of limited elements,
+the smallest $\theta_\rho$ and $\theta_p$, the failed elements and the floored
+nodes, if any of them grew.
+
+\paragraph{Verification.}
+\begin{itemize}
+\item The Julia kernel reproduces an independent Python implementation of steps
+0--4 to $\le 7\times10^{-14}$ on nine states: a $128^2$ rotor state at $t=0.15$
+from an earlier run, with $\eps_p = 0.03$ (94 elements limited), synthetic negative-density and
+negative-pressure states, a periodic-seam state, a near-vacuum element mean (sent
+to step~5), round-off stress states, and the $256^2$ state at $t = 0.1$ where the
+unlimited scheme had $p = -0.0026$ at four nodes (4 elements limited,
+$\theta_p \ge 0.9958$). In every case: $\min\rho \ge \eps_\rho$,
+$\min p \ge \eps_p$, $|\Delta\sum_I M_I q_I| \le 2\times10^{-16}\sum_I M_I|q_I|$ over steps 1--4,
+$\bB$ and $\psi$ unchanged, periodic copies identical, and a second call
+changes nothing.
+\item On 3 MPI ranks, with rank boundaries and the periodic seam running through
+limited elements, the result is bitwise equal to the serial one.
+\item In a full run ($128^2$, with $\eps_p$ raised to $0.1$ to force activity) the
+limiter made more than 150 element limitings between $t = 0.05$ and $0.1$
+($\theta_p \ge 0.9978$, no failed element, no floor), the minimum pressure at $t = 0.1$ was $0.1$, and the
+discrete mass and energy changed by $3\times10^{-16}$ and $1\times10^{-16}$
+(relative).
+\end{itemize}
+
+%======================================================================
+\section{Constants and deck keys}
+\label{sec:constants}
+
+\begin{longtable}{p{0.27\textwidth}p{0.16\textwidth}p{0.49\textwidth}}
+\toprule
+key / symbol & value & meaning \\
+\midrule
+\endhead
+\code{:ode\_solver} & CK(5,4) 2N & low-storage RK, Section~\ref{sec:time}; rebuilt with the limiter \\
+\code{:}$\Delta$\code{t} & $2\times10^{-4}$ & time step ($10^{-4}$ at $L=3$, $N=3$) \\
+\code{:tinit}, \code{:tend} & 0, 0.15 & time interval \\
+\code{:diagnostics\_at\_times} & 0, .05, .1, .15 & output times (also integrator stops) \\
+\code{:lsource} & true & GLM damping $S_\psi = -(c_h/c_r)\psi$ \\
+$c_r$ & 0.18 & Dedner damping ratio (\code{glm\_cr\_mhd}) \\
+$c_h$ & 2.5802306434 & cleaning speed, from the initial data, constant \\
+$\gamma$ ($\gamma$\code{\_mhd}, \code{:dsgs\_gamma}) & 1.4 & ratio of specific heats; the two must agree \\
+\code{:SOL\_VARS\_TYPE} & \code{TOTAL()} & the state is $\bq$ itself, not a perturbation \\
+\code{:nop} & 3 & polynomial degree $N$; $N+1=4$ LGL nodes per direction \\
+\code{:init\_refine\_lvl} & 2 & p4est refinements of the $32^2$ mesh: $128^2$ elements \\
+\code{:lvisc} & true & \dsgs{} viscous term on \\
+\code{:visc\_model} & \code{DSGS\_MHD()} & \dsgs{} for the 9-slot MHD state \\
+\code{:}$\mu$ & $(1,\dots,1)$ & per-slot multiplier of $\nu_K$ \\
+\code{:dsgs\_sensor} & "legacy" & residual~\eqref{eq:legacy}, BDF2 on $(\bq, \bq^n, \bq^{n-1})$ \\
+\code{:dsgs\_hold\_steps} & 2 & $\nu = 0$ in the first 2 steps \\
+\code{:dsgs\_norms} & "element" & per-element normalization \\
+\code{:dsgs\_local\_rel} ($r_{loc}$) & 1 (default) & weight of the physical floors $s^q_K$ \\
+\code{:dsgs\_CR} ($\CR$) & 1 & residual coefficient in~\eqref{eq:nu} \\
+\code{:dsgs\_Cmax} ($\Cmax$) & 0.5 & first-order cap in~\eqref{eq:nu} \\
+\code{:dsgs\_Cmin} & 0 (default) & no background viscosity \\
+\code{:dsgs\_conserved} & true & diffuse the conserved variables, $\bF_V = \nu\nabla\bq$ \\
+\code{:dsgs\_rel}, \code{:dsgs\_Prt} & 1, 1 & inert in this configuration \\
+\code{:dsgs\_nazarov\_energy} & false & no split energy flux \\
+$\Delta_K$ & $1/512$ & \dsgs{} length, shortest edge$/(N+1)$ \\
+$\eps$ & $10^{-16}$ & \dsgs{} division guard \\
+\code{:lpositivity} & true & positivity enforcement on \\
+\code{:positivity\_method} & "conservative" & the element limiter of Section~\ref{sec:positivity} \\
+\code{:positivity\_rho\_min} ($\eps_\rho$) & $10^{-6}$ & density bound \\
+\code{:positivity\_p\_min} ($\eps_p$) & $10^{-6}$ & pressure bound \\
+$s$ & 64 & round-off margin (ulps) of the limiter \\
+\code{:positivity\_report\_every} & 1000 & limiter calls between reports \\
+\code{:energy\_equation} & "energy" & slot 4 is total energy \\
+\code{:lkep}, \code{:entropy\_variables} & false & pointwise (non-split) fluxes \\
+\code{:linitial\_refine}, \code{:ladapt}, \code{:lfilter} & true, false, false & uniform refinement only; no adaptivity, no filter \\
+\bottomrule
+\end{longtable}
+
+%======================================================================
+\section{Results}
+\label{sec:results}
+
+All runs: $N = 3$, 4 MPI ranks, the deck of this note (Laplacian on $\rho\bv$,
+assembled legacy sensor, element norms, $\CR = 1$, $\Cmax = 0.5$, limiter with
+$\eps_\rho = \eps_p = 10^{-6}$). ``Noise'' is the median (95th percentile) of the
+node-to-node second difference of $p$ relative to $p$ for $r < 0.08$; ``symmetry''
+is the largest relative deviation from the $180^\circ$ point symmetry of the
+problem; conservation is the change of the discrete totals $\sum_I M_I q_I$.
+
+\begin{center}\small
+\begin{tabular}{lllllll}
+\toprule
+grid, $\Delta t$ & $t$ & $\rho$ & $p$ & $\tfrac12|\bB|^2$ & max Mach & limiter \\
+\midrule
+$128^2$, $2\times10^{-4}$ & 0.05 & 0.848 -- 14.11 & 0.384 -- 2.505 & 0.123 -- 4.161 & 4.28 & idle \\
+                          & 0.10 & 0.730 -- 12.62 & 0.076 -- 2.110 & 0.081 -- 3.402 & 4.39 & idle \\
+                          & 0.15 & 0.565 -- 10.65 & 0.0295 -- 1.969 & 0.0746 -- 2.543 & 3.55 & idle \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+At $128^2$ the limiter never acts (no node falls below $10^{-6}$); the noise is
+0.05\% (0.19\%) at $t = 0.15$, the symmetry error $2\times10^{-10}$, and the
+discrete mass and energy change by less than $5\times10^{-14}$ (relative).
+
+\paragraph{Previous operator.} With the deviatoric stress on $\rho\bv$, the
+rank-local legacy sensor and no limiter (commit \code{a3baa37}) the same deck
+gave, at $128^2$, $\min p = 0.059$ at $t = 0.1$ and $0.035$ at $t = 0.15$
+(max Mach 3.52), and at $256^2$, $p = -0.0026$ at four interior nodes at the
+edge of the disc at $t = 0.1$ (Mach $=\infty$ there), recovering to
+$\min p = 0.032$ at $t = 0.15$.
+
+\paragraph{References at $t = 0.15$.}
+T\'oth (2000, Fig.~18, flux-CT, $400^2$): $\rho\in[0.483, 12.95]$,
+$p\in[0.0202, 2.008]$, $\tfrac12|\bB|^2\in[0.0177, 2.642]$, max Mach 8.18 (at
+pressure undershoots). Dao \& Nazarov (2022, Fig.~7, P3, $300^2$ nodes):
+$\rho\in[0.727, 8.42]$, $p\in[0.0386, 1.93]$, $\tfrac12|\bB|^2\in[0.0551, 2.30]$,
+max Mach 4.82.
+
+
+%======================================================================
+\section{Differences from Dao \& Nazarov (2022)}
+\begin{itemize}
+\item Regularization: DN22 use $\nu\nabla\rho$ for mass and a Navier--Stokes/resistive
+flux for momentum, energy and $\bB$ (their eq.~4.4); here every conserved
+variable gets $\nu\nabla q$.
+\item Residual: DN22 evaluate $|\mathrm{BDF2}(\bq^n,\bq^{n-1},\bq^{n-2}) + \nabla\cdot\bF(\bq^n)|$
+once per step, nodally, normalized by domain-wide variances; here the legacy
+sensor~\eqref{eq:legacy} is evaluated at every stage with element norms, and
+$\nu$ is one value per element.
+\item Positivity: DN22 leave it outside the scope of their paper; here it is
+enforced by the conservative limiter of Section~\ref{sec:positivity}.
+\item Divergence: both use GLM cleaning.
+\end{itemize}
+
+\section*{References}
+\begin{itemize}
+\item D.\,S. Balsara, D.\,S. Spicer, J.\ Comput.\ Phys.\ 149 (1999) 270--292.
+\item G. T\'oth, J.\ Comput.\ Phys.\ 161 (2000) 605--652, \S6.6.
+\item T.\,A. Dao, M. Nazarov, J.\ Sci.\ Comput.\ 92 (2022) 77, \S5.5.
+\item A. Dedner et al., J.\ Comput.\ Phys.\ 175 (2002) 645--673.
+\item X. Zhang, C.-W. Shu, J.\ Comput.\ Phys.\ 229 (2010) 8918--8934.
+\item J.-L. Guermond, B. Popov, SIAM J.\ Appl.\ Math.\ 74 (2014) 284--305.
+\item S. Marras, M. Nazarov, F.\,X. Giraldo, J.\ Comput.\ Phys.\ 301 (2015) 77--101.
+\end{itemize}
+
+\end{document}
