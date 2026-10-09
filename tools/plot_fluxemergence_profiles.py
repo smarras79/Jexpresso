@@ -126,7 +126,7 @@ def main():
     ax.set_ylim(*(a.ylim if a.ylim else (0.0 if ymin >= 0 else ax.get_ylim()[0], ytop)))
     ax.set_xlabel(r"$z/H_0$")
     ax.set_ylabel(label)
-    ax.legend(loc="upper left" if a.var in VARS else "best", handlelength=1.8,
+    ax.legend(loc="best", handlelength=1.8,
               title=rf"$x = {x0:g}\,H_0$", title_fontsize=7.5)
     out = a.out or os.path.join(a.outdir, f"profile_{re.sub(r'[^A-Za-z0-9]+', '', a.var) or 'var'}.{a.format}")
     fig.savefig(out, dpi=a.dpi)
