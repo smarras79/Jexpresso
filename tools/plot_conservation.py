@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 
 SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"]  # fixed order
 DASHES = ["-", "--", "-.", (0, (1, 1.2)), (0, (5, 1.5)), (0, (3, 1, 1, 1, 1, 1)), (0, (8, 2)), (0, (2, 2))]
+MARKS = ["o", "s", "^", "D", "v", "P", "X", "*"]
 INK, INK2, GRID = "#0b0b0b", "#52514e", "#e2e1dd"
 NAMES = {"ρ": ("mass", "M"), "rho": ("mass", "M"), "ρE": ("total energy", "E"), "rhoE": ("total energy", "E"),
          "E": ("total energy", "E"), "ρθ": (r"$\rho\theta$", r"\Theta"), "ρu": ("x-momentum", "P_x"),
@@ -51,6 +52,7 @@ def main():
     ap.add_argument("--vars", nargs="+", help="tracked columns to plot, by name (default: all, e.g. ρ ρE)")
     ap.add_argument("--absolute", action="store_true", help="plot the totals Q(t) instead of |Q(t)-Q(0)|/|Q(0)|")
     ap.add_argument("--no-eps", action="store_true", help="omit the machine-epsilon reference line")
+    ap.add_argument("--markers", action="store_true", help="points only (clearer when the totals move by single ulps)")
     ap.add_argument("--floor", type=float, help="draw values below this (exact zeros included) at it, instead of omitting them")
     ap.add_argument("--layout", choices=["row", "column"], default="row", help="panels side by side or stacked")
     ap.add_argument("--width", type=float, help="figure width in inches (default 6.5 row, 3.4 column)")
@@ -98,7 +100,8 @@ def main():
                 if r.max() == 0 and a.floor is None:
                     exact.append(lab)
                 y = np.maximum(r, a.floor) if a.floor is not None else np.where(r > 0, r, np.nan)
-            ax.semilogy(t, y, color=SERIES[k], ls=DASHES[k], marker="o", ms=1.6, mew=0, label=lab, zorder=2)
+            ax.semilogy(t, y, color=SERIES[k], ls="none" if a.markers else DASHES[k], marker=MARKS[k] if a.markers else "o",
+                        ms=2.4 if a.markers else 1.6, mew=0, label=lab, zorder=2)
         if exact:
             ax.text(0.03, 0.92, "exactly conserved" + ("" if len(runs) == 1 else ": " + ", ".join(exact)),
                     transform=ax.transAxes, ha="left", va="top", fontsize=8, color=INK2)
