@@ -440,6 +440,32 @@ function _dump_mu_nodes(OUTPUT_DIR, mesh, μ_nodes, iout)
     return nothing
 end
 
+# DynSGS output fields: slots share one field only if their coefficients are equal on every rank and at every
+# output so far, so all pieces of a frame and all frames of a run carry the same names. Deciding per rank and
+# per frame wrote mu_dsgs on ranks where ν was still zero and mu_dsgs_<slots> elsewhere (and at later frames).
+const _MU_SPLIT = Ref{Tuple{String,BitMatrix}}(("", falses(0, 0)))
+function _dsgs_mu_groups(μ::AbstractMatrix, npoin::Integer, run_id::AbstractString)
+    nμ = size(μ, 2)
+    d  = zeros(Int, nμ*nμ)
+    @inbounds for j = 1:nμ, i = 1:j-1
+        if view(μ, 1:npoin, i) != view(μ, 1:npoin, j)
+            d[i + (j-1)*nμ] = 1
+            d[j + (i-1)*nμ] = 1
+        end
+    end
+    MPI.Allreduce!(d, MPI.MAX, get_mpi_comm())
+    split = reshape(d .> 0, nμ, nμ)
+    rid, prev = _MU_SPLIT[]
+    (rid == run_id && size(prev) == size(split)) && (split .|= prev)
+    _MU_SPLIT[] = (String(run_id), split)
+    groups = Vector{Int}[]
+    for i = 1:nμ
+        any(g -> !split[g[1], i], groups) && continue
+        push!(groups, [j for j = i:nμ if !split[i, j]])
+    end
+    return groups
+end
+
 function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                    connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                    t, title::String, OUTPUT_DIR::String, inputs, varnames, outvarnames;
@@ -562,18 +588,11 @@ cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, Int64[ip1, ip2, ip3, ip4])
         _dump_mu_nodes(OUTPUT_DIR, mesh, μ_dsgs_pnode, iout)
         _dump_rsplit(OUTPUT_DIR, mesh, iout)
         if μ_dsgs_pnode !== nothing && size(μ_dsgs_pnode, 1) == npoin
-            nμ = size(μ_dsgs_pnode, 2)
-            # one field per DISTINCT coefficient: a slot identical to an
-            # earlier one is not written again (its name lists the slots)
-            written = Int[]
-            for ieq = 1:nμ
-                dup = any(j -> view(μ_dsgs_pnode, 1:npoin, ieq) == view(μ_dsgs_pnode, 1:npoin, j), written)
-                dup && continue
-                push!(written, ieq)
-            end
-            for ieq in written
-                slots = [j for j = ieq:nμ if view(μ_dsgs_pnode, 1:npoin, j) == view(μ_dsgs_pnode, 1:npoin, ieq)]
-                mu_name = (length(written) == 1) ? "mu_dsgs" :
+            # one field per DISTINCT coefficient (its name lists the slots), decided on all ranks and kept for the run
+            groups = _dsgs_mu_groups(μ_dsgs_pnode, npoin, OUTPUT_DIR)
+            for slots in groups
+                ieq = slots[1]
+                mu_name = (length(groups) == 1) ? "mu_dsgs" :
                     string("mu_dsgs_", join([(j <= length(varnames)) ? string(varnames[j]) : string(j) for j in slots], "_"))
                 vtkf[mu_name, VTKPointData()] = @view(μ_dsgs_pnode[1:npoin, ieq])
                 # log₁₀ of the coefficient floored at :plot_dsgs_floor, the
@@ -723,18 +742,11 @@ cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, Int64[ip1, ip2, ip3, ip4, ip
         _dump_mu_nodes(OUTPUT_DIR, mesh, μ_dsgs_pnode, iout)
         _dump_rsplit(OUTPUT_DIR, mesh, iout)
         if μ_dsgs_pnode !== nothing && size(μ_dsgs_pnode, 1) == npoin
-            nμ = size(μ_dsgs_pnode, 2)
-            # one field per DISTINCT coefficient: a slot identical to an
-            # earlier one is not written again (its name lists the slots)
-            written = Int[]
-            for ieq = 1:nμ
-                dup = any(j -> view(μ_dsgs_pnode, 1:npoin, ieq) == view(μ_dsgs_pnode, 1:npoin, j), written)
-                dup && continue
-                push!(written, ieq)
-            end
-            for ieq in written
-                slots = [j for j = ieq:nμ if view(μ_dsgs_pnode, 1:npoin, j) == view(μ_dsgs_pnode, 1:npoin, ieq)]
-                mu_name = (length(written) == 1) ? "mu_dsgs" :
+            # one field per DISTINCT coefficient (its name lists the slots), decided on all ranks and kept for the run
+            groups = _dsgs_mu_groups(μ_dsgs_pnode, npoin, OUTPUT_DIR)
+            for slots in groups
+                ieq = slots[1]
+                mu_name = (length(groups) == 1) ? "mu_dsgs" :
                     string("mu_dsgs_", join([(j <= length(varnames)) ? string(varnames[j]) : string(j) for j in slots], "_"))
                 vtkf[mu_name, VTKPointData()] = @view(μ_dsgs_pnode[1:npoin, ieq])
                 # log₁₀ of the coefficient floored at :plot_dsgs_floor, the
