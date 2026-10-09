@@ -30,6 +30,21 @@ $\nu\gamma(\gamma-1)/\mathrm{Pr}$, see "Coefficients by equation"). This is
 the only dissipation in the run, so those panels are the whole story of
 where and how much the scheme regularizes.
 
+With `:outformat => "vtk"` the Alfvén speed of the paper's Fig. 5 (second row)
+and Fig. 6(b) is plotted from the VTU files:
+
+```bash
+python3 tools/plot_fluxemergence_profiles.py output/MHD/fluxEmergenceSon2025DSGS/<run> --times 33 40 47 51 54
+```
+
+$V_A/C_s = |\mathbf{B}|/\sqrt{\rho}$ along $x = X_{max}/2 = 40H_0$ at the outputs
+nearest to those times, with Shibata's law $V_A/C_s = a_2(z - z_0)/H_0$
+($a_2 = 0.3$, $z_0 = 4H_0$) and $z_{cor} = 18H_0$ marked; it also prints the
+peak $V_A$ and its height at each time against the law. `--var vz` draws
+$V_z/C_s$ with $a_1 = 0.062$ instead, and
+`python3 tools/plot_fluxemergence_vtu.py <run> --var vA` maps $V_A$. The paper's
+times need outputs there: `:diagnostics_at_times => (0.0:1.0:54.0)`.
+
 ## What changes, and why it is enough
 
 The sibling's DynSGS operator is a Laplacian on the departure of the

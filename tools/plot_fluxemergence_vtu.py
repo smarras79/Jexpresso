@@ -127,6 +127,10 @@ def read_pvtu(path, keep=None):
     if "log10_ρ" not in fields and "ρ" in fields:
         fields["log10_ρ"] = np.log10(np.maximum(fields["ρ"], 1e-300))
         seen.add("log10_ρ")
+    if "vA" not in fields and {"ρ", "Bx", "By"} <= fields.keys():   # Alfvén speed |B|/sqrt(ρ), i.e. V_A/C_s
+        B2 = fields["Bx"]**2 + fields["By"]**2 + (fields["Bz"]**2 if "Bz" in fields else 0.0)
+        fields["vA"] = np.sqrt(B2 / np.maximum(fields["ρ"], 1e-300))
+        seen.add("vA")
     return dict(x=x[first], y=y[first], quads=inv.ravel()[q], ix=ix[first], iy=iy[first], xc=xc, yc=yc,
                 t=t, fields=fields, names=sorted(seen))
 
@@ -230,7 +234,8 @@ def fill(ax, g, tri, v, cmap, vmin, vmax, shading):
 
 
 def plot_one(path, a, out):
-    g = read_pvtu(path, {a.var, a.bx, a.bz, "ρ", *(a.vec_fields if a.vectors else ())})
+    g = read_pvtu(path, {a.var, a.bx, a.bz, "ρ", *(("Bx", "By", "Bz") if a.var == "vA" else ()),
+                         *(a.vec_fields if a.vectors else ())})
     field, Bx, Bz = _field(g, a.var, path), _field(g, a.bx, path), _field(g, a.bz, path)
     cache = {}
     tri = lambda: cache.setdefault("tri", triangles(g))
@@ -259,7 +264,7 @@ def plot_one(path, a, out):
     ax.set_aspect("equal")
     ax.set_xlim(g["x"].min(), g["x"].max()); ax.set_ylim(g["y"].min(), g["y"].max())
     ax.set_xlabel(a.xlabel); ax.set_ylabel(a.ylabel)
-    label = r"$\log_{10}(\rho/\rho_0)$" if a.var == "log10_ρ" else a.var
+    label = {"log10_ρ": r"$\log_{10}(\rho/\rho_0)$", "vA": r"$V_A/C_s$"}.get(a.var, a.var)
     ax.set_title(label + (f"   t = {g['t']:g}{a.time_unit}" if g["t"] is not None else ""))
     if a.colorbar:
         fig.colorbar(plt.cm.ScalarMappable(Normalize(vmin, vmax), a.cmap), ax=ax, shrink=0.8, pad=0.02)
