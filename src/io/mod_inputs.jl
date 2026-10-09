@@ -635,6 +635,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:ndiagnostics_outputs] = 0
     end
     inputs[:lstep_heartbeat] = get(inputs, :lstep_heartbeat, false) == true   # per-step progress line
+    # Discrete totals of the :conservation_slots every :conservation_every steps (0: off) to
+    # <output_dir>/conservation.dat; plot with tools/plot_conservation.py.
+    inputs[:conservation_every] = Int(get(inputs, :conservation_every, 0))
+    inputs[:conservation_slots] = Int.(collect(get(inputs, :conservation_slots, [1])))
     if(!haskey(inputs, :Δt))
         inputs[:Δt] = 0.1  #Initial time is 0.0 by default
     end

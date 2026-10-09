@@ -11,6 +11,8 @@ function user_inputs()
         :tinit                => 0.0,
         :tend                 => 0.15,
         :diagnostics_at_times => (0.0, 0.05, 0.1, 0.15),
+        :conservation_every   => 1,        # mass and energy totals every step: conservation.dat
+        :conservation_slots   => [1, 4],
         :restart_time         => 0.0,
         :lrestart             => false,
         :lsource              => true,     # GLM ψ damping (user_source.jl)

@@ -40,6 +40,13 @@ python3 tools/plot_fluxemergence_vtu.py output/MHD/rotorDaoNazarov2022/output-<d
         --xlabel '$x$' --ylabel '$y$' --time-unit ''      # also --var p, pmag, Mach; black lines = field lines
 ```
 
+Mass and energy are tracked at every step (`:conservation_every => 1`, `:conservation_slots => [1, 4]`): `conservation.dat` in the output directory holds t, the step and the discrete totals Σ_K Σ_ij ω_iω_j J ρ and Σ_K Σ_ij ω_iω_j J E over all elements and ranks. For the figure (|Q(t) − Q(0)|/Q(0) on log axes, one curve per run):
+
+```bash
+python3 tools/plot_conservation.py output/MHD/rotorDaoNazarov2022/output-<date128> output/MHD/<run256>/output-<date> \
+        --labels '$128^2$' '$256^2$' --out rotor_conservation.pdf     # --layout column for one journal column
+```
+
 ## Results at t = 0.15
 
 `:nop => 3`, 4 MPI ranks:

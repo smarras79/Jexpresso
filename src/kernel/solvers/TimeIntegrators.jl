@@ -247,6 +247,41 @@ function precompile_warmup_run!(inputs, params, u,
     return nothing
 end
 
+# Discrete totals Σ_K Σ_ijk ω_i ω_j ω_k J q of the :conservation_slots over all elements and ranks.
+function conservation_totals!(tot::Vector{Float64}, u, params)
+    _conservation_sum!(tot, u, params.inputs[:conservation_slots], params.mesh.connijk, params.ω, params.metrics.Je,
+                       Int(params.mesh.npoin), Int(params.mesh.nelem), Int(params.mesh.ngl))
+    MPI.Allreduce!(tot, MPI.SUM, get_mpi_comm())
+    return tot
+end
+
+function _conservation_sum!(tot::Vector{Float64}, u::AbstractVector{T}, slots::Vector{Int},
+                            connijk::AbstractArray{<:Integer,4}, ω::AbstractVector{T}, Je::AbstractArray{T},
+                            np::Int, nelem::Int, ngl::Int) where {T<:AbstractFloat}
+    nj = min(size(connijk, 3), ngl); nk = min(size(connijk, 4), ngl)
+    @inbounds for n in eachindex(slots)
+        off = (slots[n] - 1)*np
+        s = 0.0; c = 0.0                     # Neumaier-compensated sum: round-off of the sum stays O(eps)
+        for ie = 1:nelem, k = 1:nk, j = 1:nj, i = 1:ngl
+            x = Float64(ω[i]*(nj > 1 ? ω[j] : one(T))*(nk > 1 ? ω[k] : one(T))*Je[ie,i,j,k]*u[off + connijk[ie,i,j,k]])
+            t = s + x
+            c += abs(s) >= abs(x) ? (s - t) + x : (x - t) + s
+            s = t
+        end
+        tot[n] = s + c
+    end
+    return tot
+end
+
+function _conservation_write(io::IOStream, t::Real, n::Integer, tot::Vector{Float64})
+    @printf(io, "%.17e %d", t, n)
+    for x in tot
+        @printf(io, " %.17e", x)
+    end
+    println(io)
+    flush(io)
+end
+
 function time_loop!(inputs, params, u, args...)
 
     comm = get_mpi_comm()
@@ -591,12 +626,25 @@ function time_loop!(inputs, params, u, args...)
         cb_heartbeat = get(inputs, :lstep_heartbeat, false) == true ?
             DiscreteCallback(step_heartbeat_condition, step_heartbeat_affect!; save_positions = (false, false)) :
             nothing
+        # :conservation_every => n > 0: totals every n steps to <output_dir>/conservation.dat (rank 0).
+        # The file is opened only after the warm-up step below, which calls this callback too.
+        ncons    = Int(inputs[:conservation_every])
+        cons_tot = zeros(Float64, length(inputs[:conservation_slots]))
+        cons_io  = Ref{Union{IOStream,Nothing}}(nothing)
+        function cons_affect!(integrator)
+            conservation_totals!(cons_tot, integrator.u, params)
+            (rank == 0 && cons_io[] !== nothing) && _conservation_write(cons_io[], integrator.t, integrator.iter, cons_tot)
+        end
+        cb_cons = ncons > 0 ?
+            DiscreteCallback((u, t, integrator) -> integrator.iter % ncons == 0, cons_affect!; save_positions = (false, false)) :
+            nothing
 
         _cbs = Any[cb, cb_restart, cb_les_stat, cb_les_online]
         cb_pod !== nothing                     && push!(_cbs, cb_pod)
         lrad                                  && push!(_cbs, cb_rad)
         is_coupled && cb_coupling !== nothing  && push!(_cbs, cb_coupling)
         cb_heartbeat !== nothing               && push!(_cbs, cb_heartbeat)
+        cb_cons !== nothing                    && push!(_cbs, cb_cons)
         callbacks_main = CallbackSet(_cbs...)
 
         # PERF: SciML integrator warmup with the REAL callback set.
@@ -781,6 +829,16 @@ function time_loop!(inputs, params, u, args...)
                 pod_record_flat!(pod_rec, u, inputs[:tinit], params)
         end
 
+        if ncons > 0
+            conservation_totals!(cons_tot, u, params)
+            if rank == 0
+                cons_io[] = open(joinpath(inputs[:output_dir], "conservation.dat"), "w")
+                println(cons_io[], "# t step ", join(string.(params.qp.qvars[inputs[:conservation_slots]]), " "))
+                println(cons_io[], "# totals sum_K sum_ij w_i w_j J_ij q_ij over all elements and ranks (= sum_I M_I q_I)")
+                _conservation_write(cons_io[], params.tspan[1], 0, cons_tot)
+            end
+        end
+
         if alloc_summary_enabled(inputs)
             rank == 0 && println(" # Simulation timing and allocations (steady state; compile warm-up excluded):")
         end
@@ -805,6 +863,7 @@ function time_loop!(inputs, params, u, args...)
                                  inputs[:tend],
                                  length=inputs[:ndiagnostics_outputs]))
         end
+        cons_io[] === nothing || close(cons_io[])
 
         # One exchange per step is the whole contract with Alya, which receives
         # exactly its own step count ("Steps:" in its startup output). A
