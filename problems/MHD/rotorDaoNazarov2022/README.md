@@ -38,6 +38,8 @@ Outputs at t = 0, 0.05, 0.10, 0.15 (VTK): ρ, u, v, p, **B**, ψ, T = p/ρ, `pma
 ```bash
 python3 tools/plot_fluxemergence_vtu.py output/MHD/rotorDaoNazarov2022/output-<date> --steps 4 --var rho \
         --xlabel '$x$' --ylabel '$y$' --time-unit ''      # also --var p, pmag, Mach; black lines = field lines
+python3 tools/plot_mhd_matrix.py output/MHD/rotorDaoNazarov2022/output-<date> --times 0.05 0.1 0.15 \
+        --vars rho p pmag Mach mu_dsgs                    # rows = times, columns = variables incl. the DynSGS ν
 ```
 
 Mass and energy are tracked at every step (`:conservation_every => 1`, `:conservation_slots => [1, 4]`): `conservation.dat` in the output directory holds t, the step and the discrete totals Σ_K Σ_ij ω_iω_j J ρ and Σ_K Σ_ij ω_iω_j J E over all elements and ranks. For the figure (|Q(t) − Q(0)|/Q(0) on log axes, one curve per run):
