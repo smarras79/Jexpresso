@@ -239,12 +239,14 @@ def plot_one(path, a, out):
     field, Bx, Bz = _field(g, a.var, path), _field(g, a.bx, path), _field(g, a.bz, path)
     cache = {}
     tri = lambda: cache.setdefault("tri", triangles(g))
-    A = flux_function_integrate(g, Bx, Bz) if a.a_method in ("auto", "integrate") else None
-    if A is None:
-        if a.a_method == "integrate":
-            raise ValueError("the nodes are not a tensor-product grid; use --a-method lsq")
-        A = flux_function_lsq(g, tri(), Bx, Bz)
-    An = (A - A.min()) / max(np.ptp(A), 1e-300)
+    A = None
+    if a.fieldlines:
+        A = flux_function_integrate(g, Bx, Bz) if a.a_method in ("auto", "integrate") else None
+        if A is None:
+            if a.a_method == "integrate":
+                raise ValueError("the nodes are not a tensor-product grid; use --a-method lsq")
+            A = flux_function_lsq(g, tri(), Bx, Bz)
+        An = (A - A.min()) / max(np.ptp(A), 1e-300)
 
     vmin, vmax = a.clim if a.clim else (np.nanmin(field), np.nanmax(field))
     if a.symmetric:
@@ -253,7 +255,7 @@ def plot_one(path, a, out):
     Lx, Ly = np.ptp(g["x"]), np.ptp(g["y"])
     fig, ax = plt.subplots(figsize=(a.width, a.width * Ly / Lx + 1.2))
     fill(ax, g, tri, field, a.cmap, vmin, vmax, a.shading)
-    if np.ptp(A) > 0:
+    if A is not None and np.ptp(A) > 0:
         lev, An2 = np.arange(1, a.nlevels + 1) / (a.nlevels + 1), grid2d(g, An)
         if An2 is not None:
             ax.contour(g["xc"], g["yc"], An2, levels=lev, colors="k", linewidths=a.linewidth)
@@ -326,6 +328,8 @@ def main():
                    help="contourf: 256 bands, scalar-linear per triangle (default); gouraud: faster, blends colors")
     p.add_argument("--bx", default="Bx", help="horizontal field component (default Bx)")
     p.add_argument("--bz", default="By", help="vertical field component (Jexpresso's By, default)")
+    p.add_argument("--fieldlines", action=argparse.BooleanOptionalAction, default=True,
+                   help="draw the magnetic field lines (default on; --no-fieldlines for the colored field alone)")
     p.add_argument("--nlevels", type=int, default=29, help="number of field lines N (default 29)")
     p.add_argument("--linewidth", type=float, default=0.8)
     p.add_argument("--a-method", choices=("auto", "integrate", "lsq"), default="auto",
@@ -378,7 +382,7 @@ def main():
     for f in files:
         stem = re.sub(r"\.pvtu$", "", os.path.basename(f))
         prefix = os.path.basename(rundir(f)) + "-" if multi else ""
-        out = os.path.join(a.outdir or rundir(f), f"{prefix}{ascii_name(a.var)}-fieldlines-{stem}.{a.format}")
+        out = os.path.join(a.outdir or rundir(f), f"{prefix}{ascii_name(a.var)}{'-fieldlines' if a.fieldlines else ''}-{stem}.{a.format}")
         try:
             plot_one(f, a, out)
         except Exception as e:

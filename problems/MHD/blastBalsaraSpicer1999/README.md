@@ -37,8 +37,10 @@ Outputs every 0.001 (VTK): ρ, u, v, p, **B**, ψ, T = p/ρ, `pmag` = ½|**B**|�
 ```bash
 D=output/MHD/blastBalsaraSpicer1999/output-<date>
 python3 tools/plot_mhd_matrix.py $D --times 0.003 0.007 0.01 --vars rho p pmag Mach mu_dsgs \
-        --log p mu_dsgs --fieldlines                      # rows = times, columns = variables, one colorbar each
+        --log p mu_dsgs                                   # rows = times, columns = variables; --fieldlines adds B lines
 python3 tools/plot_mhd_matrix.py $D --times 0.01 --vars rho p speed Bmag --log rho p   # Balsara (2004) Fig. 6
+python3 tools/plot_fluxemergence_vtu.py $D --steps 11 --var rho --no-fieldlines \
+        --xlabel '$x$' --ylabel '$y$' --time-unit ''      # one field per figure; drop --no-fieldlines for B lines
 python3 tools/plot_conservation.py $D --out blast_conservation.pdf
 ```
 
