@@ -15,7 +15,7 @@ Wu & Shu (SISC 40 (2018) B1302, Example 5.6), after Balsara's (2012) gas-dynamic
 | γ, t_end | 1.4, 0.002 |
 | B_a | √200 (β_a = 10⁻²), the paper's case (i). `aj_Ba` in `user_flux.jl`: √2000 and √20000 are cases (ii) and (iii) |
 
-The beam sound speed is exactly 1, so u_jet = 800 is exactly Mach 800. The GLM cleaning speed is c_h = 812, the largest of the ambient and beam wave speeds.
+β_a is the ambient plasma beta, gas over magnetic pressure: β = 2p/|**B**|², since the magnetic pressure is ½|**B**|² in the Heaviside–Lorentz units of the code. With p = 1, β_a = 2/B_a². The beam sound speed is exactly 1, so u_jet = 800 is exactly Mach 800. The GLM cleaning speed is c_h = 812, the largest of the ambient and beam wave speeds.
 
 **Two departures at the inlet datum**, both in `user_flux.jl` and `user_bc.jl`:
 

@@ -14,7 +14,9 @@ The non-relativistic problem of Balsara & Spicer (1999b), used in Balsara (2004)
 | r ≥ 0.1 | p = 0.1 |
 | γ, t_end | 1.4, 0.01 |
 
-**B** is in Heaviside–Lorentz units (magnetic pressure ½|**B**|²), so |**B**| = 100/√(4π) is Balsara & Spicer's B = 100 in Gaussian units. The ambient β = 2p/|**B**|² = 2.51·10⁻⁴, as stated by Balsara (2004). Other papers use [-0.5, 0.5]² with the same data, which is the same problem shifted.
+**β** is the plasma beta, the ratio of gas pressure to magnetic pressure: β = p/p_B. **B** is in Heaviside–Lorentz units, where the magnetic pressure is p_B = ½|**B**|², so β = 2p/|**B**|². (In Gaussian units p_B = |**B**|²/(8π), and in SI p_B = |**B**|²/(2μ₀).) Equivalently, β = (2/γ) c_s²/v_A², with sound speed c_s = √(γp/ρ) and Alfvén speed v_A = |**B**|/√ρ. β ≪ 1 means the field dominates the pressure.
+
+|**B**| = 100/√(4π) here is Balsara & Spicer's B = 100 in Gaussian units. The ambient β = 2·0.1/(100²/4π) = 2.51·10⁻⁴, as stated by Balsara (2004); inside the initial circle, β = 2.51. Other papers use [-0.5, 0.5]² with the same data, which is the same problem shifted.
 
 The equations are the 9-field GLM-MHD system of `problems/MHD/orszagTangBormanis2024`. This case includes its `user_flux.jl`, `user_source.jl` and `user_bc.jl`, with γ = 1.4. The mesh is the same 32×32 periodic mesh, refined once by p4est: 64×64 elements at `:nop => 3`, i.e. 193×193 nodes, close to the paper's 200² zones. The pressure jump is sampled at the nodes as given, with no taper.
 
@@ -114,6 +116,20 @@ python3 tools/plot_mhd_matrix.py <run k=4> <run k=3> <run k=2> <run k=1> <run k=
 ```
 
 For each run, the log's `POSITIVITY LIMITER` lines give the limiter activity, and `conservation.dat` gives the energy that the startup node floors add.
+
+**Results at t = 0.01, 64², with fast and with sound floors.** The disturbed region is the set of nodes the blast has reached (|ρ − 1| > 0.01 or |**v**| > 0.1). Each cell gives fast / sound:
+
+| ambient β | mean ν, disturbed | mean ν, ambient | disturbed nodes at the cap | nodes with p < 0.5 p_amb |
+|---|---|---|---|---|
+| 2.5 | 0.0205 / 0.0206 | 5.0·10⁻⁴ / 5.3·10⁻⁴ | 29% / 29% | 0.25% / 0.25% |
+| 0.25 | 0.0204 / 0.0205 | 5.9·10⁻⁴ / 1.1·10⁻³ | 28% / 29% | 0.27% / 0.27% |
+| 0.025 | 0.0194 / 0.0204 | 6.7·10⁻⁴ / 2.6·10⁻³ | 25% / 26% | 0.16% / 0.16% |
+| 2.5·10⁻³ | 0.0151 / 0.0228 | 7.6·10⁻⁴ / 7.0·10⁻³ | 16% / 32% | 0.19% / 0.22% |
+| 2.5·10⁻⁴ | 0.0069 / 0.0504 | 5.2·10⁻⁴ / 3.0·10⁻² | 0.9% / 71% | 0.59% / 0 |
+
+- **High β:** the two floors coincide. At β = 2.5 ν is at the cap on the shell (63% of its nodes, a Mach ≈ 40 shock), about 17% of the cap in the interior, and ~4·10⁻⁴ in the ambient.
+- **Falling β:** fast floors keep the ambient ν flat, while sound floors raise it up to 58×.
+- **Pressure undershoot:** for β ≥ 2.5·10⁻³ it is the same with either floor (18 – 48 nodes at ε, at the foot of the outgoing shock). Only the saturated sound-floor run at β = 2.5·10⁻⁴ has none.
 
 ## References
 

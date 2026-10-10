@@ -77,6 +77,8 @@ Mass and energy (`conservation.dat`, every step): |ΔM|/M ≤ 6.7e-16 (128²) an
 - **Limiter:** it acts slightly (440 limitings, θ_p ≥ 0.993, no node floors).
 - **Unchanged:** conservation and symmetry (10⁻¹⁰).
 
+Fast floors with `:dsgs_CR => 4.0` match the sound-floor ν in the disc. They remove the ripple (0.05% / 0.22%), but the result moves away from Tóth's: ρ 0.606 – 9.30, p 0.041 – 1.908, max Mach 2.96, mean ν 2.4·10⁻⁴. The 180° symmetry error also grows to 1.4·10⁻³ (the earlier operator showed the same at C_R = 2).
+
 What each DSGS option did at 128² with the earlier operator (deviatoric stress on ρ**v**, rank-local legacy sensor, no limiter; t = 0.15 unless noted):
 
 | DynSGS setting | min p | max Mach | p noise (median) |
