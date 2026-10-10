@@ -32,15 +32,6 @@
 #     analogue, which is why rhs.jl drops the separate τ·u viscous-work term in
 #     this mode (add_tau_u is false under :dsgs_conserved).
 #
-# ONE CAVEAT on the 2D kernel, for the record. _expansion_visc! always treats
-# slots 2 and 3 as momentum and builds a deviatoric stress from their
-# gradients, so those two slots get ∇·τ(ρv) rather than ν∇²(ρu), ν∇²(ρv) — for
-# a normal shock that is (4/3)ν instead of ν on the normal momentum component.
-# It is still a divergence-form, dissipative operator and it is the established
-# behaviour of the conserved-form MHD path here
-# (problems/MHD/fluxEmergenceSon2025DSGS); the 4/3 could be taken out of :μ[2],
-# :μ[3] if an exact Lax-Friedrichs form were ever wanted.
-#
 # :dsgs_nazarov_energy is deliberately left OFF. It would split the energy
 # primitive into a non-thermal part at ν and a thermal part at κ = ρν/Pr, which
 # is the right thing for a stratified atmosphere that has to conduct heat but
