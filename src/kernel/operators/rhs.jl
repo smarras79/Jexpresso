@@ -1454,7 +1454,8 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                     lconserved    = get(params.inputs, :dsgs_conserved, false),
                                     Cmin            = TT(get(params.inputs, :dsgs_Cmin, 0.0)),
                                     cutoff          = TT(get(params.inputs, :dsgs_cutoff, 0.0)),
-                                    lnazarov_energy = get(params.inputs, :dsgs_nazarov_energy, false))
+                                    lnazarov_energy = get(params.inputs, :dsgs_nazarov_energy, false),
+                                    lfast_floors    = get(params.inputs, :dsgs_fast_floors, false)::Bool)
             broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
                                      params.mesh.connijk,
                                      Int(nelem), Int(ngl), SD)
@@ -1591,7 +1592,8 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                     Cmin            = TT(get(params.inputs, :dsgs_Cmin, 0.0)),
                                     cutoff          = TT(get(params.inputs, :dsgs_cutoff, 0.0)),
                                     lnazarov_energy = get(params.inputs, :dsgs_nazarov_energy, false) ||
-                                                      get(params.inputs, :dsgs_conserved_prandtl, false))
+                                                      get(params.inputs, :dsgs_conserved_prandtl, false),
+                                    lfast_floors    = get(params.inputs, :dsgs_fast_floors, false)::Bool)
             broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
                                      params.mesh.connijk,
                                      Int(params.mesh.nelem),

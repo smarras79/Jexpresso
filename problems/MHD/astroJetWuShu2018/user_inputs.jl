@@ -34,6 +34,7 @@ function user_inputs()
         :dsgs_hold_steps      => 0,
         :dsgs_norms           => "domain",
         :dsgs_rel             => 1.0,
+        :dsgs_fast_floors     => true,     # floors on c_f = √((γp + |B|²)/ρ): β_a = 1e-2, c_f/c = 12
         :dsgs_gamma           => 1.4,
         :dsgs_Prt             => 1.0,
         :dsgs_conserved       => true,

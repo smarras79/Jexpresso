@@ -541,6 +541,14 @@ density spans eight decades between the photosphere and the corona:
   $\mu = 10^{-11}$ there. The element spread of a smooth stratified field is
   $O(q_i)$ ($\rho$ changes by $e^{-1}$ across a $1H_0$ element), so the ratio
   keeps the meaning of a relative under-resolution rate.
+- **`:dsgs_fast_floors => true`** (MHD, 1D and 2D, both norm scopes) builds those
+  floors with the fast-speed bound $\bar c_f = \sqrt{(\gamma\bar p + |\bar{\mathbf B}|^2)/\bar\rho}$
+  of the mean state instead of the sound speed: $\bar\rho\bar c_f$,
+  $\gamma\bar p + |\bar{\mathbf B}|^2$, $\sqrt{\gamma\bar p + |\bar{\mathbf B}|^2}$.
+  With $c_f/c = \sqrt{1 + 2/(\gamma\beta)}$, sound-speed floors read a resolved fast
+  wave $c_f/c$ ($\rho\mathbf v$, $\mathbf B$) to $(c_f/c)^2$ ($E$) times too strong
+  at low $\beta$: 12 and 144 in the ambient of `astroJetWuShu2018` ($\beta = 10^{-2}$),
+  which uses it.
 - **`:dsgs_conserved => true`** hands every slot the same kinematic $\mu$ and
   drops the $\tau\cdot u$ term; with a `user_primitives!` that returns the
   conserved variables the operator becomes a Laplacian on

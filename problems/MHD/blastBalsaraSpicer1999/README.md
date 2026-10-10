@@ -68,6 +68,12 @@ Ahead of the fast front ν is small but nonzero, ≲ 1.5·10⁻³ at r = 0.4 –
 
 The likely cause is the floors of the element normalization: ρ_e, ρ_e c_e, ρ_e c_e² and √ρ_e c_e use the sound speed c_e = √(γp_e/ρ_e). That is the right rate at β ≈ 1, as in the rotor, but in this ambient c_e = 0.37 while the fast speed is 28.2. So a magnetosonic disturbance is measured against a scale 75× (momentum, **B**) to 5,700× (E) too small, and reads as unresolved.
 
+`:dsgs_fast_floors => true` builds the floors on c̄_f = √((γp̄ + |**B̄**|²)/ρ̄) instead (DSGS.md §4.5). It is not on in this deck. In a test run to t = 0.01 it changed:
+- **ν:** at t = 0.01, ν > 0.9 cap at 0.5% of the nodes instead of 59%, and the mean ν is 10× smaller;
+- **ρ_max:** 3.67 instead of 3.42;
+- **positivity:** p now reaches ε at about 50 nodes at every output time. They lie on the fast front, at ambient density, where the compressed field leaves 0.06% of E as thermal energy. The limiter therefore acts in every stage call.
+- **conservation:** still exact after step 7, with ΔE/E = 1.8·10⁻⁵ from the startup node floors.
+
 ## References
 
 - D. S. Balsara, D. S. Spicer, J. Comput. Phys. 148 (1999) 133–148 (1999b).

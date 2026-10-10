@@ -1594,6 +1594,9 @@ end
 #     O(q_i) (ρ changes by e⁻¹ across a 1 H₀ element), so the ratio stays
 #     the relative under-resolution rate the model intends.
 #
+#  *  lfast_floors (:dsgs_fast_floors). c in the floors (domain and element) is the fast-speed
+#     bound √((γp + |B|²)/ρ) of the mean state, so the floors stay O(1) for a fast wave at any β.
+#
 #  *  Cmin (:dsgs_Cmin). Background floor Cmin·Δ·(‖v‖+c_f) on μ, a fraction of the
 #     Cmax cap, for the node-to-node modes the residual cannot sense (see the
 #     kernel). 0 by default.
@@ -1663,7 +1666,8 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  lconserved::Bool=false,
                                  Cmin::TT=zero(TT),
                                  cutoff::TT=zero(TT),
-                                 lnazarov_energy::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
+                                 lnazarov_energy::Bool=false,
+                                 lfast_floors::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
     _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
     neqs = size(μ_dsgs, 2)
@@ -1726,7 +1730,10 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     ρ_avg = max(abs(avg[1]), eps)
     p_avg = γm1*max(avg[4] - TT(0.5)*(avg[2]*avg[2] + avg[3]*avg[3] + avg[5]*avg[5])/ρ_avg
                     - TT(0.5)*(avg[6]*avg[6] + avg[7]*avg[7] + avg[8]*avg[8]), zero(TT))
-    c_avg = sqrt(max(γ*p_avg/ρ_avg, eps))
+    # :dsgs_fast_floors: the fast-speed bound √((γp + |B|²)/ρ) in place of c, so a resolved
+    # magnetosonic wave is not read as under-resolved at low β (ρc, ρc², √ρ c → ρc_f, γp+|B|², √(γp+|B|²)).
+    B2_avg = avg[6]*avg[6] + avg[7]*avg[7] + avg[8]*avg[8]
+    c_avg  = sqrt(max(lfast_floors ? (γ*p_avg + B2_avg)/ρ_avg : γ*p_avg/ρ_avg, eps))
     @inbounds begin
         denom[1] = _dsgs_denom(denom[1], rel*ρ_avg)                 # ρ
         mom_fl   = rel*ρ_avg*c_avg
@@ -1791,7 +1798,8 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
             ρ_e = max(abs(avg_e[1]), eps)
             p_e = γm1*max(avg_e[4] - TT(0.5)*(avg_e[2]*avg_e[2] + avg_e[3]*avg_e[3] + avg_e[5]*avg_e[5])/ρ_e
                           - TT(0.5)*(avg_e[6]*avg_e[6] + avg_e[7]*avg_e[7] + avg_e[8]*avg_e[8]), zero(TT))
-            c_e = sqrt(max(γ*p_e/ρ_e, eps))
+            B2_e = avg_e[6]*avg_e[6] + avg_e[7]*avg_e[7] + avg_e[8]*avg_e[8]
+            c_e  = sqrt(max(lfast_floors ? (γ*p_e + B2_e)/ρ_e : γ*p_e/ρ_e, eps))
             den_e[1] = max(den_e[1], local_rel*ρ_e)
             mom_e    = local_rel*ρ_e*c_e
             den_e[2] = max(den_e[2], mom_e)
@@ -1985,7 +1993,8 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  lconserved::Bool=false,
                                  Cmin::TT=zero(TT),
                                  cutoff::TT=zero(TT),
-                                 lnazarov_energy::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
+                                 lnazarov_energy::Bool=false,
+                                 lfast_floors::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
     _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
     neqs = size(μ_dsgs, 2)
@@ -2030,7 +2039,8 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     ρ_avg = max(abs(avg[1]), eps)
     p_avg = pres(avg[1], avg[2], avg[3], avg[4], (neqs >= 5 ? avg[5] : zero(TT)),
                  (neqs >= 6 ? avg[6] : zero(TT)), (neqs >= 7 ? avg[7] : zero(TT)), (neqs >= 8 ? avg[8] : zero(TT)))
-    c_avg = sqrt(max(γ*p_avg/ρ_avg, eps))
+    B2_avg = neqs >= 8 ? avg[6]*avg[6] + avg[7]*avg[7] + avg[8]*avg[8] : zero(TT)
+    c_avg  = sqrt(max(lfast_floors ? (γ*p_avg + B2_avg)/ρ_avg : γ*p_avg/ρ_avg, eps))   # :dsgs_fast_floors
     @inbounds begin
         denom[1] = _dsgs_denom(denom[1], rel*ρ_avg)
         mom_fl   = rel*ρ_avg*c_avg
@@ -2076,7 +2086,8 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
             ρ_e = max(abs(avg_e[1]), eps)
             p_e = pres(avg_e[1], avg_e[2], avg_e[3], avg_e[4], (neqs >= 5 ? avg_e[5] : zero(TT)),
                        (neqs >= 6 ? avg_e[6] : zero(TT)), (neqs >= 7 ? avg_e[7] : zero(TT)), (neqs >= 8 ? avg_e[8] : zero(TT)))
-            c_e = sqrt(max(γ*p_e/ρ_e, eps))
+            B2_e = neqs >= 8 ? avg_e[6]*avg_e[6] + avg_e[7]*avg_e[7] + avg_e[8]*avg_e[8] : zero(TT)
+            c_e  = sqrt(max(lfast_floors ? (γ*p_e + B2_e)/ρ_e : γ*p_e/ρ_e, eps))
             den_e[1] = max(den_e[1], local_rel*ρ_e)
             mom_e    = local_rel*ρ_e*c_e
             den_e[2] = max(den_e[2], mom_e)

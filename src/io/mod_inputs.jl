@@ -1182,6 +1182,12 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :dsgs_local_rel))
         inputs[:dsgs_local_rel] = 1.0
     end
+    #   :dsgs_fast_floors  DSGS_MHD (1D, 2D): the floors ρc, ρc², √ρ c of the normalization (domain and
+    #                      element) use the fast-speed bound √((γp + |B|²)/ρ) in place of the sound
+    #                      speed c; for low-β plasma, where c ≪ c_f
+    if(!haskey(inputs, :dsgs_fast_floors))
+        inputs[:dsgs_fast_floors] = false
+    end
     if(!haskey(inputs, :dsgs_nodal_rho))
         inputs[:dsgs_nodal_rho] = false
     end
