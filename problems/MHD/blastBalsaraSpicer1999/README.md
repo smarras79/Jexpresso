@@ -88,6 +88,33 @@ The deep undershoot is a grid-scale band that halves with h. The shallow one, le
 | blast, fast floors, t = 0.01 | 0.5% | 1.8% | 17.8% |
 | rotor 128² (sound floors, β ≈ 1), t = 0.15 | 1.6% | 9.5% | 18.3% |
 
+## β sweep
+
+Only the ambient field changes: `:blast_B0` in `user_inputs.jl`, with ambient β = 2p/B0² = 0.2/B0². Steps of √10 in B0 give one decade in β per run:
+
+| k | `:blast_B0` | β |
+|---|---|---|
+| 0 | `100.0/sqrt(4.0*π)` = 28.21 (the paper) | 2.5·10⁻⁴ |
+| 1 | `100.0/sqrt(4.0*π)/sqrt(10.0)` = 8.921 | 2.5·10⁻³ |
+| 2 | `100.0/sqrt(4.0*π)/10.0` = 2.821 | 2.5·10⁻² |
+| 3 | `100.0/sqrt(4.0*π)/sqrt(1000.0)` = 0.8921 | 0.25 (≈ the moderate blast of Gardiner & Stone) |
+| 4 | `100.0/sqrt(4.0*π)/100.0` = 0.2821 | 2.5 |
+
+- **Everything else stays fixed:** Δt, ε, the floors and the mesh. Each run writes its own output directory.
+- **Δt:** wave speeds only fall as B0 drops, so Δt = 10⁻⁵ holds for the whole table. For B0 > 28.2, scale Δt by 28.2/B0; the acoustic CFL in the log should stay ≲ 0.15.
+- **Floors:** with `:dsgs_fast_floors` they reduce to the sound-speed floors at high β, so the sweep varies the physics, not the normalization.
+- **Initial log:** each run prints its ambient |B| and β.
+
+One row per β at t = 0.01:
+
+```bash
+python3 tools/plot_mhd_matrix.py <run k=4> <run k=3> <run k=2> <run k=1> <run k=0> --times 0.01 \
+        --labels '$\beta = 2.5$' '$\beta = 0.25$' '$\beta = 2.5\times10^{-2}$' '$\beta = 2.5\times10^{-3}$' '$\beta = 2.5\times10^{-4}$' \
+        --vars rho p pmag mu_dsgs --log p mu_dsgs
+```
+
+For each run, the log's `POSITIVITY LIMITER` lines give the limiter activity, and `conservation.dat` gives the energy that the startup node floors add.
+
 ## References
 
 - D. S. Balsara, D. S. Spicer, J. Comput. Phys. 148 (1999) 133–148 (1999b).

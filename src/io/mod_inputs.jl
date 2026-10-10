@@ -639,6 +639,9 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     # <output_dir>/conservation.dat; plot with tools/plot_conservation.py.
     inputs[:conservation_every] = Int(get(inputs, :conservation_every, 0))
     inputs[:conservation_slots] = Int.(collect(get(inputs, :conservation_slots, [1])))
+    # problems/MHD/blastBalsaraSpicer1999: ambient |B| along x (Heaviside-Lorentz); ambient β = 0.2/B0².
+    # 100/√(4π) is Balsara & Spicer's B = 100 (β = 2.51e-4). Change only this for a β sweep.
+    inputs[:blast_B0] = Float64(get(inputs, :blast_B0, 100.0/sqrt(4.0*π)))
     if(!haskey(inputs, :Δt))
         inputs[:Δt] = 0.1  #Initial time is 0.0 by default
     end

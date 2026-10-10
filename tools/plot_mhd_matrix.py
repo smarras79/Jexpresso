@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""Matrix of 2D MHD solution fields: rows = output times, columns = variables (DynSGS coefficient included),
-one color range and colorbar per variable at the bottom. Reads iter_N.pvtu -> iter_N/iter_N_*.vtu on the native grid.
+"""Matrix of 2D MHD solution fields: rows = output times (one run) or runs at one time (several runs, e.g. a
+parameter sweep), columns = variables (DynSGS coefficient included), one color range and colorbar per variable.
+Reads iter_N.pvtu -> iter_N/iter_N_*.vtu on the native grid.
   python3 tools/plot_mhd_matrix.py output/MHD/blastBalsaraSpicer1999/output-<date> --times 0.002 0.006 0.01 \
           --vars rho p pmag Mach mu_dsgs --log p mu_dsgs --fieldlines
   python3 tools/plot_mhd_matrix.py output/MHD/blastBalsaraSpicer1999/output-<date> --times 0.01 \
           --vars rho p speed Bmag --log rho p                    # Balsara (2004) Fig. 6
   python3 tools/plot_mhd_matrix.py output/MHD/rotorDaoNazarov2022/output-<date> --times 0.05 0.1 0.15 --vars rho p pmag Mach mu_dsgs
+  python3 tools/plot_mhd_matrix.py <run1> <run2> <run3> --labels '$\beta = 2.5$' '$\beta = 0.25$' '$\beta = 0.025$' \
+          --times 0.01 --vars rho p mu_dsgs --log p mu_dsgs  # several runs: one row each, at one time
 Default times: the outputs nearest tend/3, 2 tend/3, tend. Needs numpy and matplotlib.
 """
 import argparse, os, sys
@@ -61,8 +64,10 @@ def flux_lines(ax, g, n, lw):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("outdir", help="run directory with iter_N.pvtu")
-    p.add_argument("--times", type=float, nargs="+", help="rows, top to bottom (default: nearest tend/3, 2 tend/3, tend)")
+    p.add_argument("outdirs", nargs="+", help="run directory with iter_N.pvtu; several = one row per run at one time")
+    p.add_argument("--labels", nargs="+", help="row labels of several runs (default: the directory names)")
+    p.add_argument("--times", type=float, nargs="+", help="rows, top to bottom (default: nearest tend/3, 2 tend/3, tend); "
+                   "with several runs the first value only (default: the latest time all runs have)")
     p.add_argument("--vars", nargs="+", default=["rho", "p", "pmag", "Mach", "mu_dsgs"],
                    help="columns: any point field (rho, psi, beta accepted), vA = |B|/sqrt(rho), speed = |v|, Bmag = |B|")
     p.add_argument("--log", nargs="*", default=[], help="variables drawn as log10 (values below max·1e-6 clipped)")
@@ -84,10 +89,18 @@ def main():
     p.add_argument("--dpi", type=int, default=200)
     a = p.parse_args()
 
-    snaps = snapshots(a.outdir)
-    ts = sorted(snaps)
-    times = a.times or sorted({min(ts, key=lambda s: abs(s - f * ts[-1])) for f in (1 / 3, 2 / 3, 1)})
-    tol = 1e-6 * max(1.0, ts[-1])
+    runs = [(d, snapshots(d)) for d in a.outdirs]
+    if len(runs) == 1:
+        d, snaps = runs[0]
+        ts = sorted(snaps)
+        times = a.times or sorted({min(ts, key=lambda s: abs(s - f * ts[-1])) for f in (1 / 3, 2 / 3, 1)})
+        items = [(d, snaps, t, f"$t = {t:g}$") for t in times]
+    else:
+        t = a.times[0] if a.times else min(max(s) for _, s in runs)
+        labs = a.labels or [os.path.basename(os.path.normpath(d)) for d, _ in runs]
+        if len(labs) != len(runs):
+            sys.exit("--labels needs one label per run directory")
+        items = [(d, s, t, lab) for (d, s), lab in zip(runs, labs)]
     logs = {greek(v) for v in a.log}
     clims = {greek(v): (float(lo), float(hi)) for v, lo, hi in a.clim}
     want = {greek(v) for v in a.vars} | {f for v in a.vars for f in DERIVED.get(v, ())}
@@ -95,10 +108,10 @@ def main():
         want |= {"Bx", "By"}
 
     rows = []
-    for t in times:
-        f = pick(snaps, t, tol)
+    for d, snaps, t, rlab in items:
+        f = pick(snaps, t, 1e-6 * max(1.0, max(snaps)))
         if f is None:
-            sys.exit(f"{a.outdir}: no snapshot at t = {t:g} (has t = {', '.join(f'{s:g}' for s in ts)})")
+            sys.exit(f"{d}: no snapshot at t = {t:g} (has t = {', '.join(f'{s:g}' for s in sorted(snaps))})")
         g = read_pvtu(f, want)
         print(f" t = {t:g}: {f} ({len(g['x'])} nodes)")
         cols = []
@@ -107,7 +120,7 @@ def main():
             if greek(v) in logs:
                 q = np.log10(np.maximum(q, max(np.nanmax(q), 1e-300) * 1e-6))
             cols.append(q)
-        rows.append((t, g, cols))
+        rows.append((rlab, g, cols))
 
     nv, nt = len(a.vars), len(rows)
     norms, cmaps = [], []
@@ -123,7 +136,7 @@ def main():
     W = a.width or 2.2 * nv
     fig, axs = plt.subplots(nt, nv, figsize=(W, W / nv * nt * (y1 - y0) / (x1 - x0) + 1.2),
                             sharex=True, sharey=True, squeeze=False, layout="constrained")
-    for i, (t, g, cols) in enumerate(rows):
+    for i, (rlab, g, cols) in enumerate(rows):
         cache = {}
         for j, q in enumerate(cols):
             ax = axs[i, j]
@@ -137,16 +150,17 @@ def main():
             if i == nt - 1:
                 ax.set_xlabel(a.xlabel)
             if j == 0:
-                ax.set_ylabel(f"$t = {t:g}$\n" + a.ylabel)
-    if a.title:
-        fig.suptitle(a.title)
+                ax.set_ylabel(rlab + "\n" + a.ylabel)
+    if a.title or len(runs) > 1:
+        fig.suptitle(a.title or f"$t = {items[0][2]:g}$")
     for j in range(nv):
         cb = fig.colorbar(plt.cm.ScalarMappable(norms[j], cmaps[j]), ax=axs[:, j], orientation="horizontal",
                           location="bottom", fraction=0.04, pad=0.0, aspect=12)
         cb.ax.tick_params(labelsize=7)
         cb.ax.xaxis.get_major_locator().set_params(nbins=4)
     tighten(fig, axs, a.hpad)
-    out = a.out or os.path.join(a.outdir, "matrix_" + "_".join(greek(v) for v in a.vars).replace("ρ", "rho") + "." + a.format)
+    base = a.outdirs[0] if len(runs) == 1 else os.path.dirname(os.path.normpath(a.outdirs[0]))
+    out = a.out or os.path.join(base, "matrix_" + "_".join(greek(v) for v in a.vars).replace("ρ", "rho") + "." + a.format)
     save(fig, out, a.dpi)
     print(f" -> {out}")
 

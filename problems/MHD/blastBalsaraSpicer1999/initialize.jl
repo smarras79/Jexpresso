@@ -1,7 +1,7 @@
 #---------------------------------------------------------------------------------
 # MHD blast wave (Balsara & Spicer 1999b; Balsara 2004 §7.3), centered in the unit square (0, 1)²:
-# ρ = 1, v = 0, p = 1000 for r < 0.1 and 0.1 outside, B = (100/√(4π), 0, 0), ψ = 0, γ = 1.4.
-# Heaviside-Lorentz B (magnetic pressure ½|B|²): ambient β = 2p/|B|² = 2.51e-4.
+# ρ = 1, v = 0, p = 1000 for r < 0.1 and 0.1 outside, B = (B0, 0, 0), ψ = 0, γ = 1.4, B0 = :blast_B0.
+# Heaviside-Lorentz B (magnetic pressure ½|B|²): B0 = 100/√(4π) gives the paper's ambient β = 2.51e-4.
 #---------------------------------------------------------------------------------
 function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
 
@@ -21,7 +21,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     r0       = 0.1
     ρ0       = 1.0
     pin, pout = 1000.0, 0.1
-    Bx, By   = 100.0/sqrt(4.0*π), 0.0
+    Bx, By   = inputs[:blast_B0]::Float64, 0.0
     ch_local = 0.0
     for ip = 1:mesh.npoin
         r = sqrt((mesh.coords[1,ip] - xc)^2 + (mesh.coords[2,ip] - yc)^2)
@@ -49,6 +49,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     if rank == 0
         (abs(mesh.xmin) > 1e-8 || abs(mesh.xmax - 1.0) > 1e-8 || abs(mesh.ymin) > 1e-8 || abs(mesh.ymax - 1.0) > 1e-8) &&
             @warn " problems/MHD/blastBalsaraSpicer1999: the blast is centered at (0.5, 0.5) of (0, 1)², but this mesh spans [$(mesh.xmin), $(mesh.xmax)] × [$(mesh.ymin), $(mesh.ymax)]."
+        @info " ambient |B| = $(Bx), β = 2p/|B|² = $(2.0*pout/(Bx*Bx))"
         @info " GLM divergence-cleaning speed c_h = $(c_h_mhd[])"
         @info " Initialize fields for 2D ideal GLM-MHD (Balsara-Spicer blast) ........... DONE"
     end

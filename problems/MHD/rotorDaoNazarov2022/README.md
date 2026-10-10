@@ -65,6 +65,18 @@ the solution is invariant under the 180° rotation about (0.5, 0.5) to 2e-10 (ρ
 256²: min p = 0.0144 at t = 0.10, at four interior nodes on the edge of the disc (r ≈ 0.108; Mach 9.9 there, the old operator had p = −0.0026 at the same nodes); between t ≈ 0.11 and 0.13 the limiter made 1,126 element limitings (θ_p ≥ 0.993, no element with an inadmissible mean, no node floor); the pressure noise is 0.008% / 0.04%, the symmetry error 2e-9.
 Mass and energy (`conservation.dat`, every step): |ΔM|/M ≤ 6.7e-16 (128²) and 1.7e-15 (256²), |ΔE|/E ≤ 1.2e-16 and 2.3e-16, i.e. a few ulps; see [conservation.pdf](conservation.pdf).
 
+**Fast-speed floors (tested, not on).** `:dsgs_fast_floors => true` builds the normalization floors on c_f = √((γp + |**B**|²)/ρ) instead of the sound speed (DSGS.md §4.5). The blast and the jet use it. Here, at 128² and t = 0.15, it gives:
+
+| | ρ | p | ½\|**B**\|² | max Mach | mean ν | p noise in r < 0.08 (median / 95th pct. / max) |
+|---|---|---|---|---|---|---|
+| sound floors (this deck) | 0.565 – 10.65 | 0.0295 – 1.969 | 0.0746 – 2.543 | 3.55 | 1.8·10⁻⁴ | 0.05% / 0.19% / 1.3% |
+| fast floors | 0.533 – 10.93 | 0.022 – 2.007 | 0.0684 – 2.569 | 4.11 | 0.9·10⁻⁴ | 0.13% / 2.9% / 5.8% |
+
+- **Extrema:** they move toward Tóth's 400² values.
+- **The disc:** inside it (p ≈ 0.04, β ≈ 0.4) the floors rise 2 – 5×, the median ν falls 4.4×, and a node-to-node pressure ripple grows: its 95th percentile is 0.41% at t = 0.10 and 2.9% at t = 0.15. That mode is invisible to the residual, and the sound-speed floors damped it only through their higher sensitivity.
+- **Limiter:** it acts slightly (440 limitings, θ_p ≥ 0.993, no node floors).
+- **Unchanged:** conservation and symmetry (10⁻¹⁰).
+
 What each DSGS option did at 128² with the earlier operator (deviatoric stress on ρ**v**, rank-local legacy sensor, no limiter; t = 0.15 unless noted):
 
 | DynSGS setting | min p | max Mach | p noise (median) |

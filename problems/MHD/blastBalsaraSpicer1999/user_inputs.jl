@@ -13,6 +13,7 @@ function user_inputs()
         :diagnostics_at_times => (0.0:0.001:0.01),
         :conservation_every   => 1,        # mass and energy totals every step: conservation.dat
         :conservation_slots   => [1, 4],
+        :blast_B0             => 100.0/sqrt(4.0*π),   # ambient |B|: β = 0.2/B0² = 2.51e-4 (README: β sweep)
         :restart_time         => 0.0,
         :lrestart             => false,
         :lsource              => true,     # GLM ψ damping (user_source.jl)
