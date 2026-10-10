@@ -548,7 +548,8 @@ density spans eight decades between the photosphere and the corona:
   With $c_f/c = \sqrt{1 + 2/(\gamma\beta)}$, sound-speed floors read a resolved fast
   wave $c_f/c$ ($\rho\mathbf v$, $\mathbf B$) to $(c_f/c)^2$ ($E$) times too strong
   at low $\beta$: 12 and 144 in the ambient of `astroJetWuShu2018` ($\beta = 10^{-2}$),
-  which uses it.
+  75 and 5,700 in that of `blastBalsaraSpicer1999` ($\beta = 2.5\times10^{-4}$). Both use it;
+  the blast README records the trade-off (unsaturated $\mu$, a pressure undershoot at the fast front).
 - **`:dsgs_conserved => true`** hands every slot the same kinematic $\mu$ and
   drops the $\tau\cdot u$ term; with a `user_primitives!` that returns the
   conserved variables the operator becomes a Laplacian on

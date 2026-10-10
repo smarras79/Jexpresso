@@ -23,13 +23,14 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # DynSGS in its conserved form: one ν per element and ∇·(ν∇q) on every conserved variable, with the
         # legacy residual normalized per element; ρ or p that still undershoot are fixed by the conservative
-        # element limiter. Same settings as problems/MHD/rotorDaoNazarov2022; :dsgs_gamma = γ_mhd.
+        # element limiter. As problems/MHD/rotorDaoNazarov2022, plus fast-speed floors and no startup hold.
         #---------------------------------------------------------------------------
         :lvisc                => true,
         :μ                    => [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         :visc_model           => DSGS_MHD(),
         :dsgs_sensor          => "legacy",
         :dsgs_rel             => 1.0,
+        :dsgs_fast_floors     => true,     # floors on c_f = √((γp + |B|²)/ρ): ambient β = 2.5e-4, c_f/c = 75
         :dsgs_hold_steps      => 0,        # ν from the first step: the initial jump is the most violent instant
         :dsgs_norms           => "element",
         :dsgs_CR              => 1.0,

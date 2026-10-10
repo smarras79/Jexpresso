@@ -20,9 +20,11 @@ The equations are the 9-field GLM-MHD system of `problems/MHD/orszagTangBormanis
 
 ## Stabilization
 
-Same as `problems/MHD/rotorDaoNazarov2022` (see its [algorithm.pdf](../rotorDaoNazarov2022/algorithm.pdf)):
+As `problems/MHD/rotorDaoNazarov2022` (see its [algorithm.pdf](../rotorDaoNazarov2022/algorithm.pdf)), with two differences:
 
-- conserved-form DynSGS: one ν per element, ∇·(ν∇q) on every conserved variable, the legacy sensor with element norms, `C_R = 1`, `C_max = 0.5`, and no background viscosity. One difference from the rotor: there is no startup hold (`:dsgs_hold_steps => 0`). The pressure jump at t = 0 is the most violent moment of the run, and outside it the initial data are uniform, so the first residual is nonzero only at the jump;
+- conserved-form DynSGS: one ν per element, ∇·(ν∇q) on every conserved variable, the legacy sensor with element norms, `C_R = 1`, `C_max = 0.5`, and no background viscosity.
+  - **Fast-speed floors** (`:dsgs_fast_floors => true`, DSGS.md §4.5). Each residual R_i is divided by D_i = max(spread_i, S_i). The floors S_i use the fast-speed bound c̄_f = √((γp̄ + |**B̄**|²)/ρ̄) of the element-mean state instead of the sound speed c̄ = √(γp̄/ρ̄): S_ρ = ρ̄, S_ρv = ρ̄ c̄_f, S_E = γp̄ + |**B̄**|², S_B = √(γp̄ + |**B̄**|²). In this ambient c_f/c = 75. With sound-speed floors, a resolved fast wave read 75× (ρv, **B**) to 5,700× (E) too strong, and ν sat at its cap over most of the disturbed region (see the comparison below).
+  - **No startup hold** (`:dsgs_hold_steps => 0`). The pressure jump at t = 0 is the most violent moment of the run, and outside it the initial data are uniform, so the first residual is nonzero only at the jump.
 - the conservative positivity limiter (`:positivity_method => "conservative"`), with ε_ρ = 10⁻⁶ (10⁻⁶ of the ambient ρ) and ε_p = 10⁻⁷ (10⁻⁶ of the ambient p). Elements with a node below ε are scaled toward their mean. Mass, momentum and energy are conserved, and **B** and ψ are untouched.
 
 ## Run
@@ -46,33 +48,36 @@ python3 tools/plot_conservation.py $D --out blast_conservation.pdf
 
 ## Results at t = 0.01
 
-193² nodes, Δt = 10⁻⁵ (acoustic CFL 0.13 at the start, 0.11 at the end), 4 MPI ranks, 220 s:
+193² nodes, Δt = 10⁻⁵ (acoustic CFL 0.13 at the start, 0.11 at the end), 4 MPI ranks. The second row is the same deck with sound-speed floors:
 
-| ρ | p | ½\|**B**\|² | \|**v**\| | Mach |
-|---|---|---|---|---|
-| 0.2253 – 3.422 | 0.09995 – 242.4 | 234.0 – 574.1 | ≤ 16.32 | ≤ 5.41 |
+| floors | ρ | p | ½\|**B**\|² | \|**v**\| | max Mach (p > 10⁻³) | ν > 0.9 cap | mean ν |
+|---|---|---|---|---|---|---|---|
+| fast (this deck) | 0.2159 – 3.669 | 10⁻⁷ – 247.7 | 223.4 – 604.7 | ≤ 16.6 | 52.8 | 0.5% | 0.0044 |
+| sound | 0.2253 – 3.422 | 0.09995 – 242.4 | 234.0 – 574.1 | ≤ 16.3 | 5.41 | 58.7% | 0.0438 |
 
-The dense shells sit along **B**, at x ≈ 0.2 and 0.8. The fast front in magnetic pressure spans y ≈ 0.12 – 0.88, and **B** is expelled from the hot interior (|**B**| = 21.6 – 33.9 against 28.2 outside). This is the structure of Balsara (2004) Fig. 6. ψ stays below 0.06 (|**B**| ≈ 28).
+The dense shells sit along **B**, at x ≈ 0.2 and 0.8. The fast front in magnetic pressure spans y ≈ 0.12 – 0.88, and **B** is expelled from the hot interior. This is the structure of Balsara (2004) Fig. 6. With fast floors, ν is concentrated on the shells and on the thin fast-front ring, and is near zero elsewhere, so the shells are sharper (ρ_max 3.67 against 3.42). ψ stays below 0.11 (|**B**| ≈ 28).
 
-**Positivity.** The limiter acts only during the first 200 steps (t < 0.002). Over that window it makes 2,488 element limitings (min θ_p = 0.0016). In steps 1–4, 152 elements also have an inadmissible mean, i.e. p̄ ≤ ε even before limiting. These are elements next to the initial jump, where the thermal energy is 0.06% of the magnetic energy (β = 2.5·10⁻⁴). There the non-conservative node floor raises p at 554 nodes in total, which adds 1.5·10⁻⁵ of the total energy. After step 4 the energy holds to 6.7·10⁻¹⁶ and the mass to 3.3·10⁻¹⁵ for the whole run. With the rotor's two-step hold (ν = 0 on steps 1–2) there were 654 floors and +1.8·10⁻⁵ of energy, and the solution at t = 0.01 is the same to 3–4 digits.
+**The cost: a pressure undershoot at the fast front.** In this ambient the thermal energy is 0.06% of E, so p is a small remainder of E and the magnetic energy. With sound floors, the saturated ν damped the dispersive ripples of the fast front, and no node at t = 0.01 was below the ambient p = 0.1. With fast floors, a thin band at the front, deepest where the shells meet it at x ≈ 0.1 and 0.9, falls below ambient:
 
-**DynSGS: saturated at low β.** With the same settings as the rotor, ν sits at its first-order cap C_max Δ (|**v**| + c_f) over most of the region the fast front has crossed, not only at the shocks. The table counts the share of nodes where ν exceeds a given fraction of the local cap:
+| p below | 0.0999 | 0.09 | 0.05 | 10⁻³ | 10⁻⁶ |
+|---|---|---|---|---|---|
+| nodes (of 37,249) | 5,852 | 786 | 220 | 50 | 30 |
+
+There, Mach exceeds 6 at 2,136 nodes. The ~50 nodes at ε are where the limiter holds p.
+
+**Positivity and conservation.**
+- **Limiter activity:** the limiter acts in every stage call, with 303,688 element limitings in total (min θ_p = 0.00088).
+- **Startup floors:** in steps 1–7, 196 elements next to the initial jump have an inadmissible mean, i.e. p̄ ≤ ε even before limiting. There the non-conservative node floor raises p at 666 nodes, which adds 1.8·10⁻⁵ of the total energy.
+- **After step 7:** energy holds to 6.7·10⁻¹⁶ and mass to 2.9·10⁻¹⁵ for the rest of the run.
+- **With sound floors:** the limiter stopped by step 200, and there were 554 startup floors (+1.5·10⁻⁵ of energy).
+
+**Why the sound floors saturate here.** The table counts the share of nodes where ν exceeds a given fraction of its local cap C_max Δ (|**v**| + c_f):
 
 | | ν > 0.9 cap | ν > 0.5 cap | ν > 0.1 cap |
 |---|---|---|---|
-| blast, t = 0.003 | 12.6% | 14.6% | 22.9% |
-| blast, t = 0.01 | 58.7% | 65.8% | 87.6% |
-| rotor 128², t = 0.15 | 1.6% | 9.5% | 18.3% |
-
-Ahead of the fast front ν is small but nonzero, ≲ 1.5·10⁻³ at r = 0.4 – 0.5 at t = 0.003. There the solution carries dispersive precursors of the central CG discretization, with |**v**| and |δ**B**| ≈ 3·10⁻⁵.
-
-The likely cause is the floors of the element normalization: ρ_e, ρ_e c_e, ρ_e c_e² and √ρ_e c_e use the sound speed c_e = √(γp_e/ρ_e). That is the right rate at β ≈ 1, as in the rotor, but in this ambient c_e = 0.37 while the fast speed is 28.2. So a magnetosonic disturbance is measured against a scale 75× (momentum, **B**) to 5,700× (E) too small, and reads as unresolved.
-
-`:dsgs_fast_floors => true` builds the floors on c̄_f = √((γp̄ + |**B̄**|²)/ρ̄) instead (DSGS.md §4.5). It is not on in this deck. In a test run to t = 0.01 it changed:
-- **ν:** at t = 0.01, ν > 0.9 cap at 0.5% of the nodes instead of 59%, and the mean ν is 10× smaller;
-- **ρ_max:** 3.67 instead of 3.42;
-- **positivity:** p now reaches ε at about 50 nodes at every output time. They lie on the fast front, at ambient density, where the compressed field leaves 0.06% of E as thermal energy. The limiter therefore acts in every stage call.
-- **conservation:** still exact after step 7, with ΔE/E = 1.8·10⁻⁵ from the startup node floors.
+| blast, sound floors, t = 0.01 | 58.7% | 65.8% | 87.6% |
+| blast, fast floors, t = 0.01 | 0.5% | 1.8% | 17.8% |
+| rotor 128² (sound floors, β ≈ 1), t = 0.15 | 1.6% | 9.5% | 18.3% |
 
 ## References
 
