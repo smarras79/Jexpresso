@@ -91,6 +91,16 @@ function wall_watch_report(params, u, t, step; io = stdout, thresh = 12.0)
 
     best   = -Inf
     rec    = zeros(Float64, 14)     # x y u v u1 v1 w1 rho th th1 mu mu1 z1 rho1
+    # Where does the wall layer go wrong? The most negative th_wall - th_node2
+    # (the cold 2-dz wall mode) and the largest LOCAL explicit vertical
+    # theta-diffusion number dt*mu[5]*mu_t/(rho*Pr_t*z1^2) at node 2, each with
+    # its position, surface height, slope and node-2 state.
+    nzf    = params.metrics.nz
+    dtw    = Float64(params.Δt)
+    c5     = Float64(params.visc_coeff[5])
+    prt    = (params.sgs !== nothing && hasproperty(params.sgs, :Pr_t)) ? Float64(params.sgs.Pr_t) : 0.7
+    cold_v = Inf;  cold = zeros(Float64, 13)   # x y zw slope z1 mu1 rho1 u1 v1 w1 th th1 cfl
+    cfl_v  = -Inf; cflr = zeros(Float64, 13)
     n_wall = 0; n_run = 0; sum_off = 0.0
     max_u1 = 0.0; max_w1 = 0.0; min_ρθ = Inf
     # theta on the wall layer and its jump to the node above. The surface flux
@@ -117,6 +127,19 @@ function wall_watch_report(params, u, t, step; io = stdout, thresh = 12.0)
             min_ρθ = min(min_ρθ, ρ*th, ρ1*th1)
             thw_max = max(thw_max, th); thw_min = min(thw_min, th)
             dth_max = max(dth_max, th - th1); dth_min = min(dth_min, th - th1)
+            z1l  = coords[3,ip1] - coords[3,ip]
+            mu1l = have_μ ? μt[ip1] : NaN
+            cflθ = (have_μ && z1l > 0) ? dtw*c5*mu1l/(ρ1*prt*z1l^2) : NaN
+            if (th - th1) < cold_v || (isfinite(cflθ) && cflθ > cfl_v)
+                slope = acosd(clamp(abs(nzf[iface,i,j]), 0.0, 1.0))
+                rowv = (coords[1,ip], coords[2,ip], coords[3,ip], slope, z1l, mu1l, ρ1, uu1, vv1, ww1, th, th1, cflθ)
+                if (th - th1) < cold_v
+                    cold_v = th - th1; cold .= rowv
+                end
+                if isfinite(cflθ) && cflθ > cfl_v
+                    cfl_v = cflθ; cflr .= rowv
+                end
+            end
             if uh > best
                 best = uh
                 rec[1]  = coords[1,ip];  rec[2]  = coords[2,ip]
@@ -171,6 +194,16 @@ function wall_watch_report(params, u, t, step; io = stdout, thresh = 12.0)
         @printf(io, " | NODE2 (z1=%.2f) u,v,w=(%.2f,%.2f,%.2f) th=%.2f mu_t=%.3g | MOST u*=%.3f tau=%.3f\n",
                 rec[13], rec[5], rec[6], rec[7], rec[10], rec[12], ustar, τ)
         flush(io)
+    end
+    for (tag, v, r, op) in (("COLD wall-node2", cold_v, cold, MPI.MIN), ("MAX theta-diff CFL", cfl_v, cflr, MPI.MAX))
+        gv = MPI.Allreduce(v, op, comm)
+        ow = MPI.Allreduce(v == gv ? rank : typemax(Int), MPI.MIN, comm)
+        if rank == ow && isfinite(gv)
+            @printf(io, " # wall-watch t=%.1f %s: dth=%.2f K cfl=%.3f at (x,y)=(%.0f,%.0f) z_wall=%.1f slope=%.1f deg | node2 z1=%.2f mu_t=%.3g rho=%.3f u,v,w=(%.2f,%.2f,%.2f) th_wall=%.2f th2=%.2f\n",
+                    Float64(t), tag, r[11] - r[12], r[13], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9], r[10], r[11], r[12])
+            flush(io)
+        end
+        MPI.Barrier(comm)
     end
     MPI.Barrier(comm)
     if rank == 0
