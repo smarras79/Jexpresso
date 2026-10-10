@@ -65,6 +65,15 @@ The dense shells sit along **B**, at x ≈ 0.2 and 0.8. The fast front in magnet
 
 There, Mach exceeds 6 at 2,136 nodes. The ~50 nodes at ε are where the limiter holds p.
 
+**Resolution.** The same deck with `:init_refine_lvl => 2` and `:Δt => 5.0e-6` gives 128×128 elements (385² nodes). It takes 15 min on 4 ranks. Shares of nodes at t = 0.01:
+
+| | p < 0.0999 | p < 0.09 | p < 0.05 | p < 10⁻³ | elements limited per stage call | startup energy from node floors | ρ_max |
+|---|---|---|---|---|---|---|---|
+| 64² | 15.7% | 2.11% | 0.59% | 0.13% | 1.5% | 1.8·10⁻⁵ (steps 1–7) | 3.67 |
+| 128² | 15.5% | 1.14% | 0.29% | 0.086% | 0.75% | 1.6·10⁻⁶ (step 1) | 4.37 |
+
+The deep undershoot is a grid-scale band that halves with h. The shallow one, less than 1% below the ambient over 15% of the domain, does not change with resolution, so it is not a grid artifact.
+
 **Positivity and conservation.**
 - **Limiter activity:** the limiter acts in every stage call, with 303,688 element limitings in total (min θ_p = 0.00088).
 - **Startup floors:** in steps 1–7, 196 elements next to the initial jump have an inadmissible mean, i.e. p̄ ≤ ε even before limiting. There the non-conservative node floor raises p at 666 nodes, which adds 1.8·10⁻⁵ of the total energy.
