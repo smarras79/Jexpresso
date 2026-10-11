@@ -90,11 +90,12 @@ julia --project=. src/Jexpresso.jl MHD astroJetWuShu2018
 mpiexec -n 4 julia --project=. src/Jexpresso.jl MHD astroJetWuShu2018
 ```
 
-Outputs every 2·10⁻⁵ to t = 10⁻⁴, then every 10⁻⁴ (VTK). The fields are ρ, u, v, w, p, **B**, ψ, T, log10rho, log10p, β, Mach, Mach_f, `mu_dsgs`, and the numerical schlieren. `--mirror` draws the half domain as the full jet (u and B_x change sign):
+Outputs every 2·10⁻⁵ to t = 10⁻⁴, then every 10⁻⁴ (VTK). The fields are ρ, u, v, w, p, **B**, ψ, T, log10rho, log10p, β, Mach, Mach_f, `mu_dsgs`, and the numerical schlieren S = exp(−20|∇ρ|/max|∇ρ|). The figure has rows t = 0.0011, 0.0016, 0.002 and columns log₁₀ρ, log₁₀p, M_f, ν and S, with the half domain mirrored about x = 0 (u and B_x change sign):
 
 ```bash
 D=output/MHD/astroJetWuShu2018/output-<date>
-python3 tools/plot_mhd_matrix.py $D --mirror --times 0.0011 0.0016 0.002 --vars rho p Mach_f mu_dsgs --log rho p
+python3 tools/plot_astrojet.py $D                              # -> $D/matrix_rho_p_Mach_f_mu_dsgs_schlieren.png
+python3 tools/plot_astrojet.py $D --format pdf --out jet.pdf   # any tools/plot_mhd_matrix.py option; --no-mirror for the full width
 ```
 
 ## Results (half domain, B_a = √200, 4 MPI ranks)

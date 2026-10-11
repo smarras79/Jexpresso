@@ -12,8 +12,9 @@ Reads iter_N.pvtu -> iter_N/iter_N_*.vtu on the native grid.
   python3 tools/plot_mhd_matrix.py output/MHD/astroJetWuShu2018/output-<date> --mirror \
           --vars rho p Mach_f mu_dsgs --log rho p           # half domain drawn as the full jet
   python3 tools/plot_mhd_matrix.py <run> --vars rho p pmag Mach mu_dsgs --cmaps pmag managua --cmaps Mach gist_ncar
-Colormaps: per-variable defaults in VAR_CMAPS (rho turbo, p inferno, pmag managua, Mach gist_ncar,
-mu_dsgs Cool to Warm Extended); --cmaps VAR NAME overrides one column; --cmap / --mu-cmap cover all other variables.
+Colormaps: per-variable defaults in VAR_CMAPS (rho turbo, p inferno, pmag managua, Mach and Mach_f gist_ncar,
+schlieren gray, mu_dsgs Cool to Warm Extended); --cmaps VAR NAME overrides one column; --cmap / --mu-cmap cover all
+other variables.
 Default times: the outputs nearest tend/3, 2 tend/3, tend. Needs numpy and matplotlib.
 """
 import argparse, os, sys
@@ -28,7 +29,7 @@ from matplotlib.tri import Triangulation
 LABELS = {"ρ": r"$\rho$", "p": r"$p$", "pmag": r"$|\mathbf{B}|^2/2$", "Mach": r"$M$", "mu_dsgs": r"$\nu_\mathrm{DSGS}$",
           "β": r"$\beta$", "ψ": r"$\psi$", "T": r"$T$", "u": r"$u$", "v": r"$v$", "w": r"$w$",
           "Bx": r"$B_x$", "By": r"$B_y$", "Bz": r"$B_z$", "vA": r"$|\mathbf{B}|/\sqrt{\rho}$", "speed": r"$|\mathbf{v}|$",
-          "Bmag": r"$|\mathbf{B}|$", "Mach_f": r"$M_f$"}
+          "Bmag": r"$|\mathbf{B}|$", "Mach_f": r"$M_f$", "schlieren": "schlieren"}
 DERIVED = {"vA": ("ρ", "Bx", "By", "Bz"), "speed": ("u", "v", "w"), "Bmag": ("Bx", "By", "Bz")}
 ODD = ("u", "Bx")   # fields that change sign under the reflection x -> -x
 
@@ -48,7 +49,7 @@ def mirror(g):
 # per-variable colormaps (rotor figure style), keyed by greek(name); --cmaps VAR NAME overrides,
 # --cmap / --mu-cmap cover variables not listed here
 VAR_CMAPS = {"ρ": "turbo", "rho": "turbo", "p": "inferno", "pmag": "managua", "Mach": "gist_ncar",
-             "Mach_f": "gist_ncar", "mu_dsgs": "CoolToWarmExtended"}
+             "Mach_f": "gist_ncar", "schlieren": "gray", "mu_dsgs": "CoolToWarmExtended"}
 
 
 def resolve_cmap(name):
