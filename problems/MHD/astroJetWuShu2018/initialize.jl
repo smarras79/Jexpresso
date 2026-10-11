@@ -56,7 +56,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     #---------------------------------------------------------------------------------
     qvars    = ["ρ", "ρu", "ρv", "ρE", "ρw", "Bx", "By", "Bz", "ψ"]
     qoutvars = ["ρ", "u", "v", "w", "p", "Bx", "By", "Bz", "ψ", "T",
-                "log10rho", "log10p", "beta", "Mach"]
+                "log10rho", "log10p", "beta", "Mach", "Mach_f"]
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
     #---------------------------------------------------------------------------------
 
@@ -181,13 +181,13 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     ymin, ymax = mesh.ymin, mesh.ymax
 
     if rank == 0
-        if (abs(xmin + 0.5) > 1.0e-8 || abs(xmax - 0.5) > 1.0e-8 ||
+        if ((abs(xmin + 0.5) > 1.0e-8 && abs(xmin) > 1.0e-8) || abs(xmax - 0.5) > 1.0e-8 ||
             abs(ymin)       > 1.0e-8 || abs(ymax - 1.5) > 1.0e-8)
             @warn string(" problems/MHD/astroJetWuShu2018: this case is defined on ",
-                         "[-0.5, 0.5] x [0, 1.5], but the mesh spans ",
+                         "[-0.5, 0.5] x [0, 1.5] or its right half [0, 0.5] x [0, 1.5], but the mesh spans ",
                          "[$(xmin), $(xmax)] x [$(ymin), $(ymax)]. ",
                          "Point :gmsh_filename at one of the meshes that ship with the case ",
-                         "(AJ_40x60.msh, AJ_100x150.msh) or regenerate one from AJ.geo.")
+                         "(AJ_half_20x60.msh, AJ_half_50x150.msh, AJ_40x60.msh, AJ_100x150.msh) or regenerate one from AJ.geo.")
         end
 
         Ba   = aj_Ba[]

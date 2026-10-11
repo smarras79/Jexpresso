@@ -540,7 +540,11 @@ density spans eight decades between the photosphere and the corona:
   run a grid-scale sawtooth grew across the chromosphere–corona transition with
   $\mu = 10^{-11}$ there. The element spread of a smooth stratified field is
   $O(q_i)$ ($\rho$ changes by $e^{-1}$ across a $1H_0$ element), so the ratio
-  keeps the meaning of a relative under-resolution rate.
+  keeps the meaning of a relative under-resolution rate. The Mach 800 beam of
+  `astroJetWuShu2018` is blind to the domain norm in the same way: its $p/(\gamma-1)$ is
+  $5.6\times10^{-6}$ of $E$, so a noise that moves $p$ from 1 to 800 reads 1% of the cap
+  against the domain spread of $E$, and from the first refinement level on, elements above
+  the nozzle reach inadmissible means. The case uses element norms.
 - **`:dsgs_fast_floors => true`** (MHD, 1D and 2D, both norm scopes) builds those
   floors with the fast-speed bound $\bar c_f = \sqrt{(\gamma\bar p + |\bar{\mathbf B}|^2)/\bar\rho}$
   of the mean state instead of the sound speed: $\bar\rho\bar c_f$,

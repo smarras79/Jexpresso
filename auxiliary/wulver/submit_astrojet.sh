@@ -11,7 +11,7 @@
 #SBATCH --mem-per-cpu=4000M
 #
 # problems/MHD/astroJetWuShu2018 as committed:  sbatch [--export=ALL,NRANKS=32] auxiliary/wulver/submit_astrojet.sh
-# Variants are edited in the case: B_a (aj_Ba) in user_flux.jl, mesh and Δt in user_inputs.jl.
+# Variants are edited in the case: B_a (aj_Ba) in user_flux.jl, mesh and lvl (Δt follows) in user_inputs.jl.
 #------------------------------------------------------------------------------
 NRANKS="${NRANKS:-64}"
 echo "--- astroJetWuShu2018 on $NRANKS ranks ---"

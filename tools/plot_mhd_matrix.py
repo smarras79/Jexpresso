@@ -9,12 +9,14 @@ Reads iter_N.pvtu -> iter_N/iter_N_*.vtu on the native grid.
   python3 tools/plot_mhd_matrix.py output/MHD/rotorDaoNazarov2022/output-<date> --times 0.05 0.1 0.15 --vars rho p pmag Mach mu_dsgs
   python3 tools/plot_mhd_matrix.py <run1> <run2> <run3> --labels '$\beta = 2.5$' '$\beta = 0.25$' '$\beta = 0.025$' \
           --times 0.01 --vars rho p mu_dsgs --log p mu_dsgs  # several runs: one row each, at one time
+  python3 tools/plot_mhd_matrix.py output/MHD/astroJetWuShu2018/output-<date> --mirror \
+          --vars rho p Mach_f mu_dsgs --log rho p           # half domain drawn as the full jet
 Default times: the outputs nearest tend/3, 2 tend/3, tend. Needs numpy and matplotlib.
 """
 import argparse, os, sys
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from plot_fluxemergence_vtu import read_pvtu, triangles, fill, greek, flux_function_integrate, flux_function_lsq, grid2d
+from plot_fluxemergence_vtu import read_pvtu, triangles, fill, greek, flux_function_integrate, flux_function_lsq, grid2d, _cluster
 from plot_orszagtang_vtu import get_cmap, snapshots, pick, tighten, save, _find
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
@@ -23,8 +25,21 @@ from matplotlib.tri import Triangulation
 LABELS = {"ρ": r"$\rho$", "p": r"$p$", "pmag": r"$|\mathbf{B}|^2/2$", "Mach": r"$M$", "mu_dsgs": r"$\nu_\mathrm{DSGS}$",
           "β": r"$\beta$", "ψ": r"$\psi$", "T": r"$T$", "u": r"$u$", "v": r"$v$", "w": r"$w$",
           "Bx": r"$B_x$", "By": r"$B_y$", "Bz": r"$B_z$", "vA": r"$|\mathbf{B}|/\sqrt{\rho}$", "speed": r"$|\mathbf{v}|$",
-          "Bmag": r"$|\mathbf{B}|$"}
+          "Bmag": r"$|\mathbf{B}|$", "Mach_f": r"$M_f$"}
 DERIVED = {"vA": ("ρ", "Bx", "By", "Bz"), "speed": ("u", "v", "w"), "Bmag": ("Bx", "By", "Bz")}
+ODD = ("u", "Bx")   # fields that change sign under the reflection x -> -x
+
+
+def mirror(g):
+    """Reflect a half-domain solution about its left edge x = x_min (u and Bx change sign); edge nodes are not duplicated."""
+    x, n = g["x"], len(g["x"])
+    tol = 1e-8 * np.ptp(x)
+    new = np.flatnonzero(x > x.min() + tol)
+    m = np.arange(n); m[new] = n + np.arange(len(new))
+    X = np.concatenate([x, 2 * x.min() - x[new]]); Y = np.concatenate([g["y"], g["y"][new]])
+    F = {k: np.concatenate([v, -v[new] if k in ODD else v[new]]) for k, v in g["fields"].items()}
+    ix, xc = _cluster(X, tol); iy, yc = _cluster(Y, tol)
+    return dict(g, x=X, y=Y, quads=np.vstack([g["quads"], m[g["quads"]][:, ::-1]]), ix=ix, iy=iy, xc=xc, yc=yc, fields=F)
 
 
 def label(v, log):
@@ -74,6 +89,7 @@ def main():
     p.add_argument("--clim", nargs=3, action="append", default=[], metavar=("VAR", "MIN", "MAX"),
                    help="color range of one variable (after log10 if --log), repeatable")
     p.add_argument("--fieldlines", action="store_true", help="magnetic field lines on every column except mu_*")
+    p.add_argument("--mirror", action="store_true", help="reflect a half-domain run about its left edge (the symmetry axis)")
     p.add_argument("--nlevels", type=int, default=25)
     p.add_argument("--linewidth", type=float, default=0.4)
     p.add_argument("--cmap", default="inferno", help="solution fields (default inferno; RainbowDesaturated, any matplotlib name)")
@@ -113,6 +129,7 @@ def main():
         if f is None:
             sys.exit(f"{d}: no snapshot at t = {t:g} (has t = {', '.join(f'{s:g}' for s in sorted(snaps))})")
         g = read_pvtu(f, want)
+        g = mirror(g) if a.mirror else g
         print(f" t = {t:g}: {f} ({len(g['x'])} nodes)")
         cols = []
         for v in a.vars:

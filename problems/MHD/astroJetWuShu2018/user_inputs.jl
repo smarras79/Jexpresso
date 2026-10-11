@@ -1,13 +1,15 @@
 #---------------------------------------------------------------------------------
-# Magnetized Mach 800 jet (Wu & Shu, SISC 40 (2018) B1302, Example 5.6): [-0.5, 0.5] × [0, 1.5], γ = 1.4,
-# B = (0, B_a, 0), B_a² = 200 (user_flux.jl). Positivity as in problems/MHD/rotorDaoNazarov2022.
+# Magnetized Mach 800 jet (Wu & Shu, SISC 40 (2018) B1302, Example 5.6) on the right half [0, 0.5] × [0, 1.5]
+# with a symmetry axis at x = 0, as in the paper; γ = 1.4, B = (0, B_a, 0), B_a² = 200 (user_flux.jl).
 #   julia --project=. src/Jexpresso.jl MHD astroJetWuShu2018
 #---------------------------------------------------------------------------------
 function user_inputs()
 
+    lvl = 0     # p4est refinement of the mesh; Δt halves with each level (CFL ≈ 0.1 at c_h ≈ 812)
+
     inputs = Dict(
         :ode_solver           => CarpenterKennedy2N54(),
-        :Δt                   => 5.0e-7,   # CFL ≈ 0.1 at c_h ≈ 812 on AJ_40x60 (2.0e-7 on AJ_100x150)
+        :Δt                   => 5.0e-7/2^lvl,   # h = 0.025 at lvl = 0 (2.0e-7 on AJ_half_50x150, h = 0.01)
         :tinit                => 0.0,
         :tend                 => 2.0e-3,
         :diagnostics_at_times => sort(unique(vcat(collect(0.0:2.0e-5:1.0e-4), collect(0.0:1.0e-4:2.0e-3)))),
@@ -32,7 +34,7 @@ function user_inputs()
         :dsgs_Cmin            => 0.0,
         :dsgs_cutoff          => 0.0,
         :dsgs_hold_steps      => 0,
-        :dsgs_norms           => "domain",
+        :dsgs_norms           => "element",   # the beam's p is 5.6e-6 of E: only an element scale sees its noise
         :dsgs_rel             => 1.0,
         :dsgs_fast_floors     => true,     # floors on c_f = √((γp + |B|²)/ρ): β_a = 1e-2, c_f/c = 12
         :dsgs_gamma           => 1.4,
@@ -52,12 +54,13 @@ function user_inputs()
         :lkep                 => false,
         :entropy_variables    => false,
         #---------------------------------------------------------------------------
-        # Mesh: AJ_40x60.msh (h = 0.025) or AJ_100x150.msh (h = 0.01, the paper's resolution at :nop => 4).
+        # Mesh: AJ_half_20x60.msh (h = 0.025) or AJ_half_50x150.msh (h = 0.01); AJ_40x60.msh and
+        # AJ_100x150.msh are the full width [-0.5, 0.5] × [0, 1.5].
         #---------------------------------------------------------------------------
         :lread_gmsh           => true,
-        :gmsh_filename        => "./problems/MHD/astroJetWuShu2018/AJ_40x60.msh",
-        :linitial_refine      => false,
-        :init_refine_lvl      => 0,
+        :gmsh_filename        => "./problems/MHD/astroJetWuShu2018/AJ_half_20x60.msh",
+        :linitial_refine      => lvl > 0,
+        :init_refine_lvl      => lvl,
         :ladapt               => false,
         :lfilter              => false,
         :outformat            => "vtk",

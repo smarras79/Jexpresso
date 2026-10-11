@@ -11,6 +11,7 @@
 #   "right"   x = +0.5   outflow
 #   "top"     y = 1.5    outflow
 #   "left"    x = -0.5   outflow
+#   "axis"    x = 0      symmetry axis of the half-domain meshes AJ_half_*.msh
 #
 # OUTFLOW. build_custom_bcs_dirichlet! (kernel/boundaryconditions/BCs.jl)
 # pre-fills qbdy with a sentinel and copies back only the slots this routine
@@ -209,6 +210,10 @@ function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String,
         for ieq = 1:9
             qbdy[ieq] = s[ieq]
         end
+    elseif tag == "axis"
+        # Mirror symmetry about x = 0: ρu and Bx are odd, so they vanish; the even fields keep a zero normal flux.
+        qbdy[2] = 0.0
+        qbdy[6] = 0.0
     else
         # Open boundaries: ψ = 0, the one incoming condition the GLM pair (Bₙ, ψ) needs; the rest is do-nothing.
         qbdy[9] = 0.0

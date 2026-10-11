@@ -5,6 +5,7 @@ gmsh installation.
 
     tools/astro_jet_mesh.py                  # 40x60 and 100x150, the two the case ships
     tools/astro_jet_mesh.py 60 90            # any nx ny, written as AJ_<nx>x<ny>.msh
+    tools/astro_jet_mesh.py --half [nx ny]   # right half [0, 0.5] x [0, 1.5]: AJ_half_20x60, AJ_half_50x150
 
 The output is a gmsh 4.1 ASCII .msh with the same entity / node-block /
 element-block layout gmsh itself produces for the transfinite, recombined
@@ -25,7 +26,8 @@ short side over its long one.
 
 Physical curves: "bottom" (y=0), "right" (x=+0.5), "top" (y=1.5), "left"
 (x=-0.5); physical surface "domain". Those four strings are the tags that reach
-user_bc_dirichlet!.
+user_bc_dirichlet!. With --half the left curve is the symmetry axis x = 0, "axis",
+and nx must make 0.05 an element boundary there too (a multiple of 10).
 """
 
 import os
@@ -37,6 +39,7 @@ YMIN, YMAX = 0.0, 1.5
 XNOZZLE = 0.05
 
 CURVE_NAMES = ("bottom", "right", "top", "left")
+CURVE_NAMES_HALF = ("bottom", "right", "top", "axis")
 
 
 def _fmt(v):
@@ -44,7 +47,7 @@ def _fmt(v):
     return str(int(v)) if v == int(v) else repr(float(v))
 
 
-def write_msh(path, nx, ny, xmin=XMIN, xmax=XMAX, ymin=YMIN, ymax=YMAX):
+def write_msh(path, nx, ny, xmin=XMIN, xmax=XMAX, ymin=YMIN, ymax=YMAX, names=CURVE_NAMES):
     dx = (xmax - xmin) / nx
     dy = (ymax - ymin) / ny
     X = [xmin + i * dx for i in range(nx + 1)]
@@ -113,8 +116,8 @@ def write_msh(path, nx, ny, xmin=XMIN, xmax=XMAX, ymin=YMIN, ymax=YMAX):
 
     # ---- write -------------------------------------------------------------
     o = ["$MeshFormat\n4.1 0 8\n$EndMeshFormat\n", "$PhysicalNames\n5\n"]
-    for d, t, nm in ((1, 2, CURVE_NAMES[0]), (1, 3, CURVE_NAMES[1]),
-                     (1, 4, CURVE_NAMES[2]), (1, 5, CURVE_NAMES[3]),
+    for d, t, nm in ((1, 2, names[0]), (1, 3, names[1]),
+                     (1, 4, names[2]), (1, 5, names[3]),
                      (2, 1, "domain")):
         o.append('%d %d "%s"\n' % (d, t, nm))
     o.append("$EndPhysicalNames\n")
@@ -165,23 +168,27 @@ def main(argv):
     here = os.path.dirname(os.path.abspath(__file__))
     outdir = os.path.join(here, os.pardir, "problems", "MHD", "astroJetWuShu2018")
 
+    half = "--half" in argv
+    argv = [a for a in argv if a != "--half"]
+    xmin, names, name = (0.0, CURVE_NAMES_HALF, "AJ_half_%dx%d.msh") if half else (XMIN, CURVE_NAMES, "AJ_%dx%d.msh")
     if len(argv) == 3:
         sizes = [(int(argv[1]), int(argv[2]))]
     elif len(argv) == 1:
-        sizes = [(40, 60), (100, 150)]
+        sizes = [(20, 60), (50, 150)] if half else [(40, 60), (100, 150)]
     else:
-        sys.exit("usage: astro_jet_mesh.py [nx ny]")
+        sys.exit("usage: astro_jet_mesh.py [--half] [nx ny]")
 
     for nx, ny in sizes:
-        if abs(XNOZZLE * nx - round(XNOZZLE * nx)) > 1e-12:
-            sys.exit("nx = %d puts the nozzle lip |x| = %g inside an element; "
-                     "nx must be a multiple of 20." % (nx, XNOZZLE))
-        path = os.path.join(outdir, "AJ_%dx%d.msh" % (nx, ny))
-        nn, ne = write_msh(path, nx, ny)
-        h = (XMAX - XMIN) / nx
-        print("%s  %d nodes  %d elements  h = %g x %g  (%d elements across the nozzle)"
+        h = (XMAX - xmin) / nx
+        k = (XNOZZLE - xmin) / h
+        if abs(k - round(k)) > 1e-9:
+            sys.exit("nx = %d puts the nozzle lip x = %g inside an element; nx must be a multiple of %d."
+                     % (nx, XNOZZLE, 10 if half else 20))
+        path = os.path.join(outdir, name % (nx, ny))
+        nn, ne = write_msh(path, nx, ny, xmin=xmin, names=names)
+        print("%s  %d nodes  %d elements  h = %g x %g  (%d elements across the nozzle half-width)"
               % (os.path.relpath(path), nn, ne, h, (YMAX - YMIN) / ny,
-                 round(2 * XNOZZLE / h)))
+                 round(XNOZZLE / h)))
 
 
 if __name__ == "__main__":
