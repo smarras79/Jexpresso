@@ -11,6 +11,9 @@ Reads iter_N.pvtu -> iter_N/iter_N_*.vtu on the native grid.
           --times 0.01 --vars rho p mu_dsgs --log p mu_dsgs  # several runs: one row each, at one time
   python3 tools/plot_mhd_matrix.py output/MHD/astroJetWuShu2018/output-<date> --mirror \
           --vars rho p Mach_f mu_dsgs --log rho p           # half domain drawn as the full jet
+  python3 tools/plot_mhd_matrix.py <run> --vars rho p pmag Mach mu_dsgs --cmaps pmag managua --cmaps Mach gist_ncar
+Colormaps: per-variable defaults in VAR_CMAPS (rho turbo, p inferno, pmag managua, Mach gist_ncar,
+mu_dsgs Cool to Warm Extended); --cmaps VAR NAME overrides one column; --cmap / --mu-cmap cover all other variables.
 Default times: the outputs nearest tend/3, 2 tend/3, tend. Needs numpy and matplotlib.
 """
 import argparse, os, sys
@@ -40,6 +43,23 @@ def mirror(g):
     F = {k: np.concatenate([v, -v[new] if k in ODD else v[new]]) for k, v in g["fields"].items()}
     ix, xc = _cluster(X, tol); iy, yc = _cluster(Y, tol)
     return dict(g, x=X, y=Y, quads=np.vstack([g["quads"], m[g["quads"]][:, ::-1]]), ix=ix, iy=iy, xc=xc, yc=yc, fields=F)
+
+
+# per-variable colormaps (rotor figure style), keyed by greek(name); --cmaps VAR NAME overrides,
+# --cmap / --mu-cmap cover variables not listed here
+VAR_CMAPS = {"ρ": "turbo", "rho": "turbo", "p": "inferno", "pmag": "managua", "Mach": "gist_ncar",
+             "Mach_f": "gist_ncar", "mu_dsgs": "CoolToWarmExtended"}
+
+
+def resolve_cmap(name):
+    """Matplotlib colormap by name if matplotlib has it, else the ParaView presets of plot_orszagtang_vtu.get_cmap."""
+    import matplotlib
+    if name in matplotlib.colormaps:
+        return matplotlib.colormaps[name]
+    if name == "managua":   # needs matplotlib >= 3.10
+        print(" warning: colormap 'managua' needs matplotlib >= 3.10; using 'RdYlBu_r' for pmag")
+        return matplotlib.colormaps["RdYlBu_r"]
+    return get_cmap(name)
 
 
 def label(v, log):
@@ -92,8 +112,12 @@ def main():
     p.add_argument("--mirror", action="store_true", help="reflect a half-domain run about its left edge (the symmetry axis)")
     p.add_argument("--nlevels", type=int, default=25)
     p.add_argument("--linewidth", type=float, default=0.4)
-    p.add_argument("--cmap", default="inferno", help="solution fields (default inferno; RainbowDesaturated, any matplotlib name)")
-    p.add_argument("--mu-cmap", default="CoolToWarmExtended", help="mu_* columns (default ParaView's Cool to Warm (Extended))")
+    p.add_argument("--cmap", default="inferno",
+                   help="solution fields not in VAR_CMAPS (default inferno; RainbowDesaturated, any matplotlib name)")
+    p.add_argument("--mu-cmap", default="CoolToWarmExtended",
+                   help="mu_* columns not in VAR_CMAPS (default ParaView's Cool to Warm (Extended))")
+    p.add_argument("--cmaps", nargs=2, action="append", default=[], metavar=("VAR", "CMAP"),
+                   help="colormap of one variable, repeatable (overrides VAR_CMAPS, --cmap and --mu-cmap)")
     p.add_argument("--shading", choices=("contourf", "gouraud"), default="contourf")
     p.add_argument("--title", default=None)
     p.add_argument("--xlabel", default=r"$x$")
@@ -119,6 +143,7 @@ def main():
         items = [(d, s, t, lab) for (d, s), lab in zip(runs, labs)]
     logs = {greek(v) for v in a.log}
     clims = {greek(v): (float(lo), float(hi)) for v, lo, hi in a.clim}
+    cmap_over = {greek(v): c for v, c in a.cmaps}
     want = {greek(v) for v in a.vars} | {f for v in a.vars for f in DERIVED.get(v, ())}
     if a.fieldlines:
         want |= {"Bx", "By"}
@@ -146,7 +171,11 @@ def main():
         hi = max(np.nanmax(r[2][j]) for r in rows)
         lo, hi = clims.get(greek(v), (lo, hi))
         norms.append(Normalize(lo, hi if hi > lo else lo + 1.0))
-        cmaps.append(get_cmap(a.mu_cmap if v.startswith("mu") else a.cmap))
+        gv = greek(v)
+        cname = (cmap_over.get(gv) or cmap_over.get(v) or VAR_CMAPS.get(gv) or VAR_CMAPS.get(v)
+                 or (a.mu_cmap if v.startswith("mu") else a.cmap))
+        print(f" colormap {v}: {cname}")
+        cmaps.append(resolve_cmap(cname))
 
     g0 = rows[0][1]
     x0, x1, y0, y1 = g0["x"].min(), g0["x"].max(), g0["y"].min(), g0["y"].max()
