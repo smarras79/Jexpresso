@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Mass and energy conservation from Jexpresso's conservation.dat (:conservation_every): |Q(t)-Q(0)|/|Q(0)| on log axes.
     python3 tools/plot_conservation.py <output dir or conservation.dat> [more runs] --labels '$128^2$' '$256^2$' --out f.pdf
+
+    python3 tools/plot_conservation.py output/MHD/blastBalsaraSpicer1999/blast-output-128x128 --labels '$128^2$' --out output/MHD/blastBalsaraSpicer1999/blast-output-128x128/blast_conservation_128x128.pdf
 """
 import argparse
 import os
