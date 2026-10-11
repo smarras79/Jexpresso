@@ -302,7 +302,11 @@ function user_inputs()
         # monotone, so that node contributes ~0 to the rate budget instead of
         # roughly 30% of it. See sgs_mixing_length2 in kernel/physics/SGS.jl and
         # test/sgs/test_wall_damping.jl.
-        :lwall_damping        => true,
+        # DBG_WALLDAMP=false: the LESICP1 (u00) setting. Below the crest this
+        # case starts at U = 0, and the valley floor ran away cold (-36 K) with
+        # damping on (job 1395544), like LESICP1 did (-30 K) before it was
+        # turned off there.
+        :lwall_damping        => parse(Bool, get(ENV, "DBG_WALLDAMP", "true")),
         # theta diffusion: kappa_t = mu[5] nu_t / Pr_t = 3 nu_t (Pr_t = 1/3, the
         # convective-BL standard). It was mu[5] = 2.1 with Pr_t = 0.7, the same
         # kappa_t but an f_Ri cutoff at Ri = 0.7; the consistent Pr_t = 1/3 lifts
