@@ -16,7 +16,8 @@ Reads iter_N.pvtu -> iter_N/iter_N_*.vtu on the native grid.
           # log10<field>: computed when the file lacks it; --log VAR instead turns that column itself to log10
 Colormaps: per-variable defaults in VAR_CMAPS (rho turbo, p inferno, pmag managua, Mach and Mach_f gist_ncar,
 schlieren gray, schlieren_grad_rho X Ray, mu_dsgs Cool to Warm Extended); --cmaps VAR NAME overrides one column (ParaView's
-XRay and CoolToWarmExtended, RainbowDesaturated, or any matplotlib name); --cmap / --mu-cmap cover all other variables.
+XRay, CoolToWarmExtended and "Yellow - Gray - Blue", RainbowDesaturated, or any matplotlib name; _r reverses);
+--cmap / --mu-cmap cover all other variables.
 Default times: the outputs nearest tend/3, 2 tend/3, tend. Needs numpy and matplotlib.
 """
 import argparse, os, re, sys
