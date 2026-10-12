@@ -12,6 +12,8 @@ Reads iter_N.pvtu -> iter_N/iter_N_*.vtu on the native grid.
   python3 tools/plot_mhd_matrix.py output/MHD/astroJetWuShu2018/output-<date> --mirror \
           --vars rho p Mach_f mu_dsgs --log rho p           # half domain drawn as the full jet
   python3 tools/plot_mhd_matrix.py <run> --vars rho p pmag Mach mu_dsgs --cmaps pmag managua --cmaps Mach gist_ncar
+  python3 tools/plot_mhd_matrix.py <run> --vars rho log10rho p log10p pmag Mach Bx By mu_dsgs --format pdf
+          # log10<field>: computed when the file lacks it; --log VAR instead turns that column itself to log10
 Colormaps: per-variable defaults in VAR_CMAPS (rho turbo, p inferno, pmag managua, Mach and Mach_f gist_ncar,
 schlieren gray, mu_dsgs Cool to Warm Extended); --cmaps VAR NAME overrides one column; --cmap / --mu-cmap cover all
 other variables.
@@ -63,7 +65,14 @@ def resolve_cmap(name):
     return get_cmap(name)
 
 
+def log_base(v):
+    """'log10p', 'log10rho', 'log10_mu_dsgs' -> the field under the log10; None for any other name."""
+    return v[5:].lstrip("_") if v.startswith("log10") and len(v) > 5 else None
+
+
 def label(v, log):
+    if log_base(v):
+        return label(log_base(v), True)
     s = LABELS.get(greek(v), LABELS.get(v, v))
     return r"$\log_{10}$ " + s if log else s
 
@@ -71,6 +80,10 @@ def label(v, log):
 def field(g, v, f):
     """Point field v of g (ASCII aliases accepted), or a derived one: vA = |B|/sqrt(rho), speed = |v|, Bmag = |B|."""
     F = g["fields"]
+    b = log_base(v)
+    if b and greek(v) not in F and v not in F:   # log10 of any field, clipped like --log
+        q = np.asarray(field(g, b, f), dtype=float)
+        return np.log10(np.maximum(q, max(np.nanmax(q), 1e-300) * 1e-6))
     if v == "Bmag":
         return np.sqrt(F["Bx"]**2 + F["By"]**2 + F.get("Bz", 0.0)**2)
     if v == "vA":
@@ -105,7 +118,8 @@ def main():
     p.add_argument("--times", type=float, nargs="+", help="rows, top to bottom (default: nearest tend/3, 2 tend/3, tend); "
                    "with several runs the first value only (default: the latest time all runs have)")
     p.add_argument("--vars", nargs="+", default=["rho", "p", "pmag", "Mach", "mu_dsgs"],
-                   help="columns: any point field (rho, psi, beta accepted), vA = |B|/sqrt(rho), speed = |v|, Bmag = |B|")
+                   help="columns: any point field (rho, psi, beta accepted), vA = |B|/sqrt(rho), speed = |v|, Bmag = |B|, "
+                        "and log10<field> (e.g. log10rho, log10p) when the file does not have it")
     p.add_argument("--log", nargs="*", default=[], help="variables drawn as log10 (values below max·1e-6 clipped)")
     p.add_argument("--clim", nargs=3, action="append", default=[], metavar=("VAR", "MIN", "MAX"),
                    help="color range of one variable (after log10 if --log), repeatable")
@@ -145,7 +159,9 @@ def main():
     logs = {greek(v) for v in a.log}
     clims = {greek(v): (float(lo), float(hi)) for v, lo, hi in a.clim}
     cmap_over = {greek(v): c for v, c in a.cmaps}
-    want = {greek(v) for v in a.vars} | {f for v in a.vars for f in DERIVED.get(v, ())}
+    base = [log_base(v) or v for v in a.vars]
+    want = ({greek(v) for v in a.vars + base} | set(a.vars) |
+            {f for v in base for f in DERIVED.get(v, ())})
     if a.fieldlines:
         want |= {"Bx", "By"}
 
@@ -172,8 +188,8 @@ def main():
         hi = max(np.nanmax(r[2][j]) for r in rows)
         lo, hi = clims.get(greek(v), (lo, hi))
         norms.append(Normalize(lo, hi if hi > lo else lo + 1.0))
-        gv = greek(v)
-        cname = (cmap_over.get(gv) or cmap_over.get(v) or VAR_CMAPS.get(gv) or VAR_CMAPS.get(v)
+        gv = greek(log_base(v) or v)
+        cname = (cmap_over.get(greek(v)) or cmap_over.get(gv) or VAR_CMAPS.get(gv) or VAR_CMAPS.get(v)
                  or (a.mu_cmap if v.startswith("mu") else a.cmap))
         print(f" colormap {v}: {cname}")
         cmaps.append(resolve_cmap(cname))
