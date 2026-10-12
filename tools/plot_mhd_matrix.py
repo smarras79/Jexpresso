@@ -9,8 +9,8 @@ Reads iter_N.pvtu -> iter_N/iter_N_*.vtu on the native grid.
   python3 tools/plot_mhd_matrix.py output/MHD/rotorDaoNazarov2022/output-<date> --times 0.05 0.1 0.15 --vars rho p pmag Mach mu_dsgs
   python3 tools/plot_mhd_matrix.py <run1> <run2> <run3> --labels '$\beta = 2.5$' '$\beta = 0.25$' '$\beta = 0.025$' \
           --times 0.01 --vars rho p mu_dsgs --log p mu_dsgs  # several runs: one row each, at one time
-  python3 tools/plot_mhd_matrix.py output/MHD/astroJetWuShu2018/output-<date> --mirror \
-          --vars rho p Mach_f mu_dsgs --log rho p           # half domain drawn as the full jet
+  python3 tools/plot_mhd_matrix.py output/MHD/astroJetWuShu2018/output-<date> \
+          --vars rho p Mach_f mu_dsgs --log rho p           # a half-domain (AJ_half_*) run is drawn mirrored; --no-mirror to keep the half
   python3 tools/plot_mhd_matrix.py <run> --vars rho p pmag Mach mu_dsgs --cmaps pmag managua --cmaps Mach gist_ncar
   python3 tools/plot_mhd_matrix.py <run> --vars rho log10rho p log10p pmag Mach Bx By mu_dsgs --format pdf
           # log10<field>: computed when the file lacks it; --log VAR instead turns that column itself to log10
@@ -19,7 +19,7 @@ schlieren gray, mu_dsgs Cool to Warm Extended); --cmaps VAR NAME overrides one c
 other variables.
 Default times: the outputs nearest tend/3, 2 tend/3, tend. Needs numpy and matplotlib.
 """
-import argparse, os, sys
+import argparse, os, re, sys
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from plot_fluxemergence_vtu import read_pvtu, triangles, fill, greek, flux_function_integrate, flux_function_lsq, grid2d, _cluster
@@ -34,6 +34,15 @@ LABELS = {"ρ": r"$\rho$", "p": r"$p$", "pmag": r"$|\mathbf{B}|^2/2$", "Mach": r
           "Bmag": r"$|\mathbf{B}|$", "Mach_f": r"$M_f$", "schlieren": "schlieren"}
 DERIVED = {"vA": ("ρ", "Bx", "By", "Bz"), "speed": ("u", "v", "w"), "Bmag": ("Bx", "By", "Bz")}
 ODD = ("u", "Bx")   # fields that change sign under the reflection x -> -x
+
+
+def half_mesh(d):
+    """True when the run's user_inputs.jl (copied into its output directory) names a half-domain mesh (AJ_half_*)."""
+    try:
+        m = re.search(r':gmsh_filename\s*=>\s*"([^"]+)"', open(os.path.join(d, "user_inputs.jl")).read())
+    except OSError:
+        return False
+    return bool(m) and "half" in os.path.basename(m.group(1))
 
 
 def mirror(g):
@@ -124,7 +133,10 @@ def main():
     p.add_argument("--clim", nargs=3, action="append", default=[], metavar=("VAR", "MIN", "MAX"),
                    help="color range of one variable (after log10 if --log), repeatable")
     p.add_argument("--fieldlines", action="store_true", help="magnetic field lines on every column except mu_*")
-    p.add_argument("--mirror", action="store_true", help="reflect a half-domain run about its left edge (the symmetry axis)")
+    p.add_argument("--mirror", action="store_true",
+                   help="reflect the run about its left edge (the symmetry axis), for the plot only; automatic when the "
+                        "run's mesh is a half-domain one (AJ_half_*)")
+    p.add_argument("--no-mirror", action="store_true", help="never mirror, even a half-domain run")
     p.add_argument("--nlevels", type=int, default=25)
     p.add_argument("--linewidth", type=float, default=0.4)
     p.add_argument("--cmap", default="inferno",
@@ -171,8 +183,10 @@ def main():
         if f is None:
             sys.exit(f"{d}: no snapshot at t = {t:g} (has t = {', '.join(f'{s:g}' for s in sorted(snaps))})")
         g = read_pvtu(f, want)
-        g = mirror(g) if a.mirror else g
-        print(f" t = {t:g}: {f} ({len(g['x'])} nodes)")
+        mir = a.mirror or (half_mesh(d) and not a.no_mirror)
+        xaxis = g["x"].min()
+        g = mirror(g) if mir else g
+        print(f" t = {t:g}: {f} ({len(g['x'])} nodes" + (f", mirrored about x = {xaxis:g} for the plot)" if mir else ")"))
         cols = []
         for v in a.vars:
             q = np.asarray(field(g, v, f), dtype=float)
