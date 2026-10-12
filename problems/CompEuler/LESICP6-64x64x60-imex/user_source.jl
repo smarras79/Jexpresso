@@ -1,3 +1,9 @@
+# Rayleigh sponge (protocol 1.3: zdamp = 3 km, alpha = 1/300 s^-1). Read once
+# when the deck is included -- user_source! runs per node per RHS call, so no
+# ENV lookups inside it. DBG_SPONGE_Z / DBG_SPONGE_ALPHA override for tests.
+const LESICP6_SPONGE_Z     = parse(Float64, get(ENV, "DBG_SPONGE_Z", "3000.0"))
+const LESICP6_SPONGE_ALPHA = parse(Float64, get(ENV, "DBG_SPONGE_ALPHA", string(1.0/300.0)))
+
 function user_source!(S,
                       q, 
                       qe,
@@ -33,10 +39,10 @@ function user_source!(S,
     #--------------
     # SPONGE
     #--------------
-        zs = 3000.0
+        zs = LESICP6_SPONGE_Z
     	xr = 0.0
     	xl = 0.0
-    	α  = 1.0/300.0
+    	α  = LESICP6_SPONGE_ALPHA
 	if (z >= zs)#nsponge_points * dsy) #&& dbl >= 0.0)
             betay_coe = 0.5*α*(1.0-cospi((z - zs)/(zmax - zs)))#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
 	else
