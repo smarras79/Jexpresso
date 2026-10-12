@@ -5,7 +5,7 @@
 #---------------------------------------------------------------------------------
 function user_inputs()
 
-    lvl = 0     # p4est refinement of the mesh; Δt halves with each level (CFL ≈ 0.1 at c_h ≈ 812)
+    lvl = 2     # p4est refinement of the mesh; Δt halves with each level (CFL ≈ 0.1 at c_h ≈ 812)
 
     inputs = Dict(
         :ode_solver           => CarpenterKennedy2N54(),
