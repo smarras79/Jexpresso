@@ -724,27 +724,6 @@ const _DSGS_RELMUL = Ref(1000.0)
 # at once and leave μ_dsgs as the step's stage-zero value.
 const _DSGS_FROZEN = Ref(false)
 
-# JEXPRESSO_DSGS_RSPLIT=1 — record, per element, HOW the residual that sets ν
-# was made: the time term ∂ₜq of the three-level stencil, the space term
-# rhs_el/m_K, and the normalized ratio itself, all at the node where the ratio
-# is largest. R = |time − space|, and the two can be large and nearly
-# cancelling, or one can be zero. A ν that is large where the solution is flat
-# says one of those two is reading something the other is not, and the split
-# is what tells them apart. Written out beside the ν dump by write_output.
-const _DSGS_RSPLIT = Ref(false)
-const _DSGS_RT     = Float64[]     # |time term|  at the element's argmax node
-const _DSGS_RS     = Float64[]     # |space term| there
-const _DSGS_RR     = Float64[]     # the normalized ratio there
-
-@inline function _dsgs_rsplit_size!(nelem::Int)
-    _DSGS_RSPLIT[] || return nothing
-    if length(_DSGS_RT) != nelem
-        resize!(_DSGS_RT, nelem); resize!(_DSGS_RS, nelem); resize!(_DSGS_RR, nelem)
-        fill!(_DSGS_RT, 0.0); fill!(_DSGS_RS, 0.0); fill!(_DSGS_RR, 0.0)
-    end
-    return nothing
-end
-
 function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  ::DSGS, ::NSD_1D,
                                  q::AbstractMatrix{TT},
@@ -1338,7 +1317,6 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
     γm1  = γ - one(TT)
     neqs = size(μ_dsgs, 2)
     eps  = TT(1.0e-16)
-    _dsgs_rsplit_size!(nelem)
 
     # --- Pass 1: rank-local means ⟨ρ⟩, ⟨ρu⟩, ⟨ρv⟩, ⟨ρE⟩ ----------------
     ρ_avg = zero(TT); ρu_avg = zero(TT)
@@ -1416,8 +1394,6 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
         wmax  = zero(TT)   # ‖ |u| + √(γT) ‖_{∞,K}
         ρmax  = zero(TT)   # ‖ρ‖_{∞,K}
 
-        rbest = zero(TT); tbest = zero(TT); sbest = zero(TT)   # the split, at the argmax
-
         for j = 1:ngl
             for i = 1:ngl
                 ip = connijk[ie,i,j,1]
@@ -1442,18 +1418,6 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
 
                 r1 = Rρ/dρ; r2 = Rm/dm; r3 = RE/dE
                 ratio = max(ratio, r1, r2, r3)
-                if _DSGS_RSPLIT[]
-                    if r1 >= rbest
-                        rbest = r1; tbest = abs(Tρ); sbest = abs(Sρ)
-                    end
-                    if r2 >= rbest
-                        rbest = r2
-                        tbest = sqrt(Tmu*Tmu + Tmv*Tmv); sbest = sqrt(Smu*Smu + Smv*Smv)
-                    end
-                    if r3 >= rbest
-                        rbest = r3; tbest = abs(TE); sbest = abs(SE)
-                    end
-                end
 
                 ρl = max(q[ip,1], eps)
                 ul = q[ip,2]/ρl
@@ -1465,10 +1429,6 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
                 wmax = max(wmax, sqrt(ul*ul + vl*vl) + sqrt(γ*Tl))
                 ρmax = max(ρmax, ρl)
             end
-        end
-
-        if _DSGS_RSPLIT[]
-            _DSGS_RT[ie] = Float64(tbest); _DSGS_RS[ie] = Float64(sbest); _DSGS_RR[ie] = Float64(rbest)
         end
 
         # eq. (3.5)-(3.7). Both branches carry a density, so μ is DYNAMIC.
@@ -1630,15 +1590,6 @@ end
 #     switches on there. The μ_dsgs output fields of slots 2-5 are then
 #     kinematic too.
 # ================================================================================
-# TEMPORARY DIAGNOSTIC (JEXPRESSO_DSGS_DEBUG=1): per-equation maximum of the
-# normalized residual, printed every 200 calls. Not for commit.
-const _DSGS_DBG   = Ref(false)
-const _DSGS_DBGN  = Ref(0)
-const _DSGS_DBGV  = zeros(Float64, 8)
-const _DSGS_DBGNU = Ref(0.0)
-const _DSGS_DBGCAP = Ref(0.0)
-const _DSGS_DBGLOC = zeros(Int, 4)     # (ie, i, j, ieq) of the largest ratio
-const _DSGS_DBGTOP = Ref(0.0)
 
 function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  ::DSGS_MHD, ::NSD_2D,
@@ -1673,12 +1624,6 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     neqs = size(μ_dsgs, 2)
     NRES = min(neqs, 8)          # residual max excludes the ψ slot
     rel  = TT(1.0e-3)            # floor fraction of the physical scales
-    ldbg = get(ENV, "JEXPRESSO_DSGS_DEBUG", "") == "1"   # hoisted: no Ref read in the loops
-    _DSGS_DBG[] = ldbg
-    if ldbg
-        fill!(_DSGS_DBGV, 0.0); _DSGS_DBGNU[] = 0.0; _DSGS_DBGCAP[] = 0.0
-        _DSGS_DBGTOP[] = 0.0; fill!(_DSGS_DBGLOC, 0)
-    end
     # avg_e / den_e: preallocated element mean / spread scratch (llocal_norms)
     γm1  = γ - one(TT)
     eps  = TT(1.0e-16)
@@ -1825,14 +1770,6 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                     R = abs((wt[1]*q[ip,ieq] + wt[2]*q1[ip,ieq] + wt[3]*q2[ip,ieq]) - imK*rhs_el[ie,i,j,ieq])
                     r = R/den[ieq]
                     ratio = max(ratio, r)
-                    if ldbg
-                        _DSGS_DBGV[ieq] = max(_DSGS_DBGV[ieq], Float64(r))
-                        if Float64(r) > _DSGS_DBGTOP[]
-                            _DSGS_DBGTOP[] = Float64(r)
-                            _DSGS_DBGLOC[1] = ie; _DSGS_DBGLOC[2] = i
-                            _DSGS_DBGLOC[3] = j;  _DSGS_DBGLOC[4] = ieq
-                        end
-                    end
                 end
 
                 ρl = max(q[ip,1], eps)
@@ -1856,10 +1793,6 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         μ_max = Cmax*Δ*wmax
         μ_c   = max(zero(TT), min(μ_max, μ_res))    # kinematic, m²/s (residual, capped)
         μ     = μ_c
-        if ldbg
-            _DSGS_DBGNU[]  = max(_DSGS_DBGNU[],  Float64(μ_c))
-            _DSGS_DBGCAP[] = max(_DSGS_DBGCAP[], Float64(μ_max))
-        end
 
         # Background floor Cmin·Δ·(‖v‖+c_f), a fraction of the wave-speed cap
         # (Cmin = 0 by default: pure Marras). The residual sensor is blind to a
@@ -1934,18 +1867,6 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         end
     end
 
-    if ldbg
-        _DSGS_DBGN[] += 1
-        if _DSGS_DBGN[] <= 12 || _DSGS_DBGN[] % 200 == 0
-            edge = (_DSGS_DBGLOC[2] == 1 || _DSGS_DBGLOC[2] == ngl ||
-                    _DSGS_DBGLOC[3] == 1 || _DSGS_DBGLOC[3] == ngl) ? "EDGE" : "int "
-            @printf(" # DSGS dbg call %6d  nu_max=%.4e cap=%.4e  argmax: eq %d node (%d,%d) of %d %s  ratio by eq: %s   denom: %s\n",
-                    _DSGS_DBGN[], _DSGS_DBGNU[], _DSGS_DBGCAP[],
-                    _DSGS_DBGLOC[4], _DSGS_DBGLOC[2], _DSGS_DBGLOC[3], ngl, edge,
-                    join((@sprintf("%.2e", _DSGS_DBGV[k]) for k = 1:NRES), " "),
-                    join((@sprintf("%.2e", Float64(denom[k])) for k = 1:NRES), " "))
-        end
-    end
     return nothing
 end
 

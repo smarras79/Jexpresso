@@ -165,16 +165,10 @@ The runs that isolated the cause are worth repeating after any change to the
 sensor:
 
 ```bash
-# the sensor with no viscosity applied: the solution is the Galerkin one and
-# the printed residual is the sensor's reading of a clean solution
-JEXPRESSO_SV_CR=0 JEXPRESSO_SV_CMAX=0 JEXPRESSO_SV_CMIN=0 \
-JEXPRESSO_DSGS_DEBUG=1 JEXPRESSO_SV_NELX=16 \
+# the sensor with no viscosity applied: the solution is the Galerkin one
+JEXPRESSO_SV_CR=0 JEXPRESSO_SV_CMAX=0 JEXPRESSO_SV_CMIN=0 JEXPRESSO_SV_NELX=16 \
     julia --project=. src/Jexpresso.jl MHD smoothVortex
 ```
-
-`JEXPRESSO_DSGS_DEBUG=1` prints, every 200 kernel calls and for the first
-twelve, $\nu_{max}$, the cap, and each equation's normalized residual and
-denominator, with the node carrying the largest one.
 
 ## The time error, and why a fourth-order integrator caps the rate at 4
 
