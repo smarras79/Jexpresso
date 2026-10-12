@@ -554,14 +554,17 @@ density spans eight decades between the photosphere and the corona:
   at low $\beta$: 12 and 144 in the ambient of `astroJetWuShu2018` ($\beta = 10^{-2}$),
   75 and 5,700 in that of `blastBalsaraSpicer1999` ($\beta = 2.5\times10^{-4}$). Both use it;
   the blast README records the trade-off (unsaturated $\mu$, a pressure undershoot at the fast front).
-- **`:dsgs_thermal_residual => true`** (MHD 2D, element norms) adds the thermal energy
+- **`:dsgs_thermal_residual => true`** (MHD 2D, either norm scope; it is always normalized per element) adds the thermal energy
   $\rho e = E - \tfrac12|\mathbf m|^2/\rho - \tfrac12|\mathbf B|^2 - \tfrac12\psi^2$ to the max, through the
   chain rule on the signed conserved residuals,
   $R_{\rho e} = R_E - \mathbf v\cdot R_{\mathbf m} + \tfrac12|\mathbf v|^2 R_\rho - \mathbf B\cdot R_{\mathbf B} - \psi R_\psi$,
   over $\max(\|\rho e - \langle\rho e\rangle_K\|_{\infty,K},\ \gamma\bar p_K)$. In a resolved fast wave $R_E$ and
   $\mathbf B\cdot R_{\mathbf B}$ cancel down to the thermal part; a ripple in $\mathbf B$ does not, and at low $\beta$
   one of relative size $\beta/(2(\gamma-1))$ costs all of $p$. On the blast at 128² it removes the fast-front
-  undershoot (blast README).
+  undershoot (blast README), and the blast deck uses it. It is not for a hypersonic beam: in the Mach-800 jet,
+  where $\frac12\rho|\mathbf v|^2$ is all of $E$, it puts $\nu$ at its cap along the beam and heats it (median $p$ 206
+  against 9 at $y$ = 0.01–0.1, lvl 0). With domain norms it does not keep the full-width jet symmetric either
+  (asymmetry $10^{-2}$ by $t = 10^{-4}$, as with element norms), so `astroJetWuShu2018` does not use it.
 - **`:dsgs_conserved => true`** hands every slot the same kinematic $\mu$ and
   drops the $\tau\cdot u$ term; with a `user_primitives!` that returns the
   conserved variables the operator becomes a Laplacian on

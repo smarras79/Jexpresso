@@ -1628,7 +1628,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
 
     neqs = size(μ_dsgs, 2)
     NRES = min(neqs, 8)          # residual max excludes the ψ slot
-    lth  = lthermal && llocal_norms && neqs >= 9
+    lth  = lthermal && neqs >= 9
     rel  = TT(1.0e-3)            # floor fraction of the physical scales
     # avg_e / den_e: preallocated element mean / spread scratch (llocal_norms)
     γm1  = γ - one(TT)
@@ -1765,19 +1765,27 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
             for ieq = 1:neqs
                 den_e[ieq] += eps
             end
-            if lth   # ρe = p/(γ−1): element spread, floored at local_rel·γp̄
-                eavg = zero(TT); emin = typemax(TT); emax = typemin(TT)
-                for j = 1:ngl, i = 1:ngl
-                    ip = connijk[ie,i,j,1]; ρn = max(q[ip,1], eps)
-                    en = q[ip,4] - TT(0.5)*(q[ip,2]*q[ip,2] + q[ip,3]*q[ip,3] + q[ip,5]*q[ip,5])/ρn -
-                         TT(0.5)*(q[ip,6]*q[ip,6] + q[ip,7]*q[ip,7] + q[ip,8]*q[ip,8] + q[ip,9]*q[ip,9])
-                    eavg += en; emin = min(emin, en); emax = max(emax, en)
-                end
-                eavg *= inv_ne
-                den_th = max(emax - eavg, eavg - emin, local_rel*γ*p_e) + eps
-            end
         end
         den = llocal_norms ? den_e : denom
+        if lth   # ρe = p/(γ−1), normalized per element for either norm scope: spread, floored at local_rel·γ p(q̄_K)
+            if !llocal_norms
+                for ieq = 1:9; avg_e[ieq] = zero(TT); end
+                for j = 1:ngl, i = 1:ngl, ieq = 1:9; avg_e[ieq] += q[connijk[ie,i,j,1],ieq]; end
+                for ieq = 1:9; avg_e[ieq] /= TT(ngl*ngl); end
+            end
+            ρm = max(abs(avg_e[1]), eps)
+            pm = γm1*max(avg_e[4] - TT(0.5)*(avg_e[2]*avg_e[2] + avg_e[3]*avg_e[3] + avg_e[5]*avg_e[5])/ρm -
+                         TT(0.5)*(avg_e[6]*avg_e[6] + avg_e[7]*avg_e[7] + avg_e[8]*avg_e[8]), zero(TT))
+            eavg = zero(TT); emin = typemax(TT); emax = typemin(TT)
+            for j = 1:ngl, i = 1:ngl
+                ip = connijk[ie,i,j,1]; ρn = max(q[ip,1], eps)
+                en = q[ip,4] - TT(0.5)*(q[ip,2]*q[ip,2] + q[ip,3]*q[ip,3] + q[ip,5]*q[ip,5])/ρn -
+                     TT(0.5)*(q[ip,6]*q[ip,6] + q[ip,7]*q[ip,7] + q[ip,8]*q[ip,8] + q[ip,9]*q[ip,9])
+                eavg += en; emin = min(emin, en); emax = max(emax, en)
+            end
+            eavg *= one(TT)/TT(ngl*ngl)
+            den_th = max(emax - eavg, eavg - emin, local_rel*γ*pm) + eps
+        end
 
         for j = 1:ngl
             for i = 1:ngl

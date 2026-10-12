@@ -67,7 +67,7 @@ The dense shells sit along **B**, at x ≈ 0.2 and 0.8. The fast front in magnet
 
 There, Mach exceeds 6 at 2,136 nodes. The ~50 nodes at ε are where the limiter holds p. There M = |**v**|√(ρ/(γε)) is 3·10³ – 1.2·10⁴ at every output. `Mach_f` = |**v**|/c_f stays below 0.9 to t = 0.002, and is 0.04 – 0.06 at those nodes, so plot it instead.
 
-**Thermal-energy residual** (`:dsgs_thermal_residual => true`, off in this deck; DSGS.md §4.5). It adds to the max the residual of ρe = E − ½|**m**|²/ρ − ½|**B**|² − ½ψ², R_ρe = R_E − **v**·R_**m** + ½|**v**|² R_ρ − **B**·R_**B** − ψR_ψ, over max(‖ρe − ⟨ρe⟩_K‖_∞,K, γp̄_K). At fixed E an error δB costs δp/p = −(γ−1)(2/β) δ|**B**|/|**B**| = −3200 δ|**B**|/|**B**| here, so a 0.03% ripple at the fast front empties p. The E residual, measured against |**B**|², does not see it; R_ρe does. 128², same Δt:
+**Thermal-energy residual** (`:dsgs_thermal_residual => true`, on in this deck; DSGS.md §4.5). The 64² results above are without it. It adds to the max the residual of ρe = E − ½|**m**|²/ρ − ½|**B**|² − ½ψ², R_ρe = R_E − **v**·R_**m** + ½|**v**|² R_ρ − **B**·R_**B** − ψR_ψ, over max(‖ρe − ⟨ρe⟩_K‖_∞,K, γp̄_K). At fixed E an error δB costs δp/p = −(γ−1)(2/β) δ|**B**|/|**B**| = −3200 δ|**B**|/|**B**| here, so a 0.03% ripple at the fast front empties p. The E residual, measured against |**B**|², does not see it; R_ρe does. 128², same Δt:
 
 | | t | nodes p < 10⁻⁶ | p < 0.0999 | max M | max M_f | ρ_max | mean ν | limiter active (stage calls) |
 |---|---|---|---|---|---|---|---|---|

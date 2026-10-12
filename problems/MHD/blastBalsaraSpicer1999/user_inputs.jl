@@ -24,7 +24,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # DynSGS in its conserved form: one ν per element and ∇·(ν∇q) on every conserved variable, with the
         # legacy residual normalized per element; ρ or p that still undershoot are fixed by the conservative
-        # element limiter. As problems/MHD/rotorDaoNazarov2022, plus fast-speed floors and no startup hold.
+        # element limiter. As problems/MHD/rotorDaoNazarov2022, plus fast-speed floors, the thermal-energy
+        # residual and no startup hold.
         #---------------------------------------------------------------------------
         :lvisc                => true,
         :μ                    => [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
@@ -32,6 +33,7 @@ function user_inputs()
         :dsgs_sensor          => "legacy",
         :dsgs_rel             => 1.0,
         :dsgs_fast_floors     => true,     # floors on c_f = √((γp + |B|²)/ρ): ambient β = 2.5e-4, c_f/c = 75
+        :dsgs_thermal_residual => true,    # R of ρe: catches the B ripple at the fast front that empties p (README)
         :dsgs_hold_steps      => 0,        # ν from the first step: the initial jump is the most violent instant
         :dsgs_norms           => "element",
         :dsgs_CR              => 1.0,
