@@ -67,11 +67,14 @@ def _lab_cmap(name, pts, n=256):
 
 
 def get_cmap(name):
-    """ParaView Lab maps defined here (e.g. CoolToWarmExtended, "Cool to Warm (Extended)"), else resolve_cmap(); _r reverses."""
+    """ParaView maps defined here (CoolToWarmExtended, "Cool to Warm (Extended)", "X Ray"), else resolve_cmap(); _r reverses."""
     rev = name.endswith("_r")
     key = re.sub(r"[^a-z]", "", (name[:-2] if rev else name).lower())
     if key in _PARAVIEW_LAB:
         cm = _lab_cmap(*_PARAVIEW_LAB[key])
+        return cm.reversed() if rev else cm
+    if key == "xray":   # ParaView's "X Ray": white at the minimum, black at the maximum
+        cm = plt.get_cmap("gray_r")
         return cm.reversed() if rev else cm
     return resolve_cmap(name)
 

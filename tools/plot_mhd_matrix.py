@@ -15,8 +15,8 @@ Reads iter_N.pvtu -> iter_N/iter_N_*.vtu on the native grid.
   python3 tools/plot_mhd_matrix.py <run> --vars rho log10rho p log10p pmag Mach Bx By mu_dsgs --format pdf
           # log10<field>: computed when the file lacks it; --log VAR instead turns that column itself to log10
 Colormaps: per-variable defaults in VAR_CMAPS (rho turbo, p inferno, pmag managua, Mach and Mach_f gist_ncar,
-schlieren gray, mu_dsgs Cool to Warm Extended); --cmaps VAR NAME overrides one column; --cmap / --mu-cmap cover all
-other variables.
+schlieren gray, schlieren_grad_rho X Ray, mu_dsgs Cool to Warm Extended); --cmaps VAR NAME overrides one column (ParaView's
+XRay and CoolToWarmExtended, RainbowDesaturated, or any matplotlib name); --cmap / --mu-cmap cover all other variables.
 Default times: the outputs nearest tend/3, 2 tend/3, tend. Needs numpy and matplotlib.
 """
 import argparse, os, re, sys
@@ -31,7 +31,7 @@ from matplotlib.tri import Triangulation
 LABELS = {"ρ": r"$\rho$", "p": r"$p$", "pmag": r"$|\mathbf{B}|^2/2$", "Mach": r"$M$", "mu_dsgs": r"$\nu_\mathrm{DSGS}$",
           "β": r"$\beta$", "ψ": r"$\psi$", "T": r"$T$", "u": r"$u$", "v": r"$v$", "w": r"$w$",
           "Bx": r"$B_x$", "By": r"$B_y$", "Bz": r"$B_z$", "vA": r"$|\mathbf{B}|/\sqrt{\rho}$", "speed": r"$|\mathbf{v}|$",
-          "Bmag": r"$|\mathbf{B}|$", "Mach_f": r"$M_f$", "schlieren": "schlieren"}
+          "Bmag": r"$|\mathbf{B}|$", "Mach_f": r"$M_f$", "schlieren": "schlieren", "schlieren_grad_rho": r"$|\nabla\rho|$"}
 DERIVED = {"vA": ("ρ", "Bx", "By", "Bz"), "speed": ("u", "v", "w"), "Bmag": ("Bx", "By", "Bz")}
 ODD = ("u", "Bx")   # fields that change sign under the reflection x -> -x
 
@@ -60,7 +60,7 @@ def mirror(g):
 # per-variable colormaps (rotor figure style), keyed by greek(name); --cmaps VAR NAME overrides,
 # --cmap / --mu-cmap cover variables not listed here
 VAR_CMAPS = {"ρ": "turbo", "rho": "turbo", "p": "inferno", "pmag": "managua", "Mach": "gist_ncar",
-             "Mach_f": "gist_ncar", "schlieren": "gray", "mu_dsgs": "CoolToWarmExtended"}
+             "Mach_f": "gist_ncar", "schlieren": "gray", "schlieren_grad_rho": "XRay", "mu_dsgs": "CoolToWarmExtended"}
 
 
 def resolve_cmap(name):
@@ -202,9 +202,10 @@ def main():
         hi = max(np.nanmax(r[2][j]) for r in rows)
         lo, hi = clims.get(greek(v), (lo, hi))
         norms.append(Normalize(lo, hi if hi > lo else lo + 1.0))
-        gv = greek(log_base(v) or v)
-        cname = (cmap_over.get(greek(v)) or cmap_over.get(gv) or VAR_CMAPS.get(gv) or VAR_CMAPS.get(v)
-                 or (a.mu_cmap if v.startswith("mu") else a.cmap))
+        b = log_base(v) or v
+        gv = greek(b)
+        cname = (cmap_over.get(greek(v)) or cmap_over.get(gv) or VAR_CMAPS.get(gv) or VAR_CMAPS.get(b)
+                 or (a.mu_cmap if b.startswith("mu") else a.cmap))
         print(f" colormap {v}: {cname}")
         cmaps.append(resolve_cmap(cname))
 
