@@ -8,10 +8,14 @@
 # the four names below are exactly the groups declared in AJ.geo:
 #
 #   "bottom"  y = 0      the nozzle for |x| <= 0.05, outflow outside it
-#   "right"   x = +0.5   outflow
-#   "top"     y = 1.5    outflow
-#   "left"    x = -0.5   outflow
+#   "right"   x = +0.5   ambient state (far field)
+#   "top"     y = 1.5    ambient state (far field)
+#   "left"    x = -0.5   ambient state (far field, full-width meshes)
 #   "axis"    x = 0      symmetry axis of the half-domain meshes AJ_half_*.msh
+#
+# FAR FIELD. Do-nothing there leaves the incoming fast, Alfvén and sound characteristics free, and the
+# corners grow a mode at ≈ 1.6 c_f/h (u, Bx, By). The bow shock stays inside the box to t = 0.002, so the
+# exact state on these sides is the ambient one, and it is imposed. Enlarge the box for longer runs.
 #
 # OUTFLOW. build_custom_bcs_dirichlet! (kernel/boundaryconditions/BCs.jl)
 # pre-fills qbdy with a sentinel and copies back only the slots this routine
@@ -214,6 +218,12 @@ function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String,
         # Mirror symmetry about x = 0: ρu and Bx are odd, so they vanish; the even fields keep a zero normal flux.
         qbdy[2] = 0.0
         qbdy[6] = 0.0
+    elseif tag == "right" || tag == "top" || tag == "left"
+        # Far field: the ambient state (see the header).
+        s = aj_ambient_state()
+        for ieq = 1:9
+            qbdy[ieq] = s[ieq]
+        end
     else
         # Open boundaries: ψ = 0, the one incoming condition the GLM pair (Bₙ, ψ) needs; the rest is do-nothing.
         qbdy[9] = 0.0

@@ -11,7 +11,8 @@ Wu & Shu (SISC 40 (2018) B1302, Example 5.6), after Balsara's (2012) gas-dynamic
 | domain | [0, 0.5] × [0, 1.5], symmetry axis x = 0 (the full width [-0.5, 0.5] × [0, 1.5] runs on `AJ_40x60.msh`, `AJ_100x150.msh`) |
 | ambient | ρ = 0.1γ = 0.14, **v** = 0, p = 1, **B** = (0, B_a, 0) |
 | nozzle {y = 0, 0 ≤ x ≤ 0.05} | ρ = γ = 1.4, **v** = (0, 800, 0), p = 1, same **B**, ψ = 0 |
-| other boundaries | outflow |
+| right, top (and left on the full width) | ambient state (far field) |
+| bottom outside the nozzle | outflow |
 | γ, t_end | 1.4, 0.002 |
 | B_a | √200 (β_a = 10⁻²), the paper's case (i). `aj_Ba` in `user_flux.jl`: √2000 and √20000 are cases (ii) and (iii) |
 
@@ -26,7 +27,20 @@ Wu & Shu (SISC 40 (2018) B1302, Example 5.6), after Balsara's (2012) gas-dynamic
 
 The blend acts on the primitives, so the injected mass and momentum flux are unchanged to five digits (∫φ dx = 0.05), and the beam is at full strength from t = τ = 3% of t_end. Its purpose is that the clamped nodes agree with their free neighbours: a top hat puts a 4400× jump in ρE between a clamped and a free node inside one element.
 
-**Open boundaries.** Nothing is imposed except ψ = 0 (`user_bc.jl`). With every variable left free, the GLM pair (Bₙ, ψ) has no incoming condition. In the first run with the conservative limiter, ψ grew about 10× every 2·10⁻⁵, starting at the first free bottom-boundary node next to the nozzle patch. It reached 458 (B_a = 14) along y = 0 and at the corners, ate the ambient pressure through ½ψ², and the run blew up at the corner (−0.5, 0) at t = 5.0·10⁻⁴.
+**Outflow** (`"bottom"` outside the nozzle). Nothing is imposed except ψ = 0 (`user_bc.jl`). With every variable left free, the GLM pair (Bₙ, ψ) has no incoming condition. In the first run with the conservative limiter, ψ grew about 10× every 2·10⁻⁵, starting at the first free bottom-boundary node next to the nozzle patch. It reached 458 (B_a = 14) along y = 0 and at the corners, ate the ambient pressure through ½ψ², and the run blew up at the corner (−0.5, 0) at t = 5.0·10⁻⁴.
+
+**Far field** (`"right"`, `"top"`, and `"left"` on the full width). The ambient state is imposed there, where the paper has outflow.
+- Do-nothing is unstable on these sides. A strong-form CG boundary node advances with the element's one-sided derivative, so the incoming characteristics are not controlled: the fast wave on x = 0.5, sound and Alfvén on y = 1.5. The linearized nop-4 operator then has a growing mode at the corners, Re λ ≈ 1.6 c_f/h, made of u, B_x and B_y. At 256² (h_x ≈ 2·10⁻³) it e-folds every 3·10⁻⁵ and shows as recirculation and field at the right corners.
+- The ambient state is exact there until t_end. The bow shock reaches at most x = 0.45 and y = 1.30 at t = 0.002, and nothing runs ahead of it: its lateral speed, ≈ 200, exceeds the ambient fast speed, 38.
+- Spurious max |**v**| at lvl 0, t = 1.9·10⁻³:
+
+  | right and top | top-right corner | x = 0.5, y ≈ 1 | bottom-right corner |
+  |---|---|---|---|
+  | do-nothing + ψ = 0 | 6.0·10⁻² | 0.29 | 1.23 |
+  | linearized characteristic condition | 1.1·10⁻² | 0.11 | 1.20 |
+  | ambient state (default) | 6.6·10⁻⁴ | 9.9·10⁻³ | 4.5·10⁻² |
+
+- For longer runs, enlarge the box so that the bow shock stays inside.
 
 **Symmetry axis** (`"axis"`, `user_bc.jl`). Under x → −x the solution keeps ρ, ρv, ρw, E, B_y, B_z, ψ even and ρu, B_x odd. The equations preserve this parity, and **B** = (0, B_a) has it at t = 0.
 - At x = 0 the odd fields are set to zero, ρu = 0 and B_x = 0; the even fields are left free.
@@ -37,6 +51,7 @@ At t = 2·10⁻⁵ the half-domain run equals the full-width run on x ≥ 0 to 2
 
 **Why the half domain.** It halves the cost, as in the paper. It also enforces a symmetry that the full-width discretization does not keep with element norms. This is a weakness of the method, not a requirement for stability.
 - In the full-width run, round-off differences between mirror elements at the nozzle lip grow about 10¹⁰-fold within 80 steps (t = 2–6·10⁻⁵), far faster than any physical instability.
+- The amplifier is the DynSGS sensor. With ν forced mirror-symmetric the full width stays symmetric to 10⁻¹³ (t = 1.2·10⁻⁴), and halving Δt speeds the growth up (×2.8 → ×5.2 per step), which a flow instability would not do.
 - By t = 0.002, ρ differs between left and right by 1.7·10⁻¹ at lvl 0 and 2.3·10⁻¹ at lvl 1.
 - The full-width runs are nevertheless stable and positive to t = 0.002: no inadmissible element mean at lvl 0 or lvl 1.
 - With domain norms the full width stays symmetric to 3.5·10⁻⁵, but fails from lvl 1 on (next section).
