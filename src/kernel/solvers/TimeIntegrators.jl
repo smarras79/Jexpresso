@@ -302,6 +302,14 @@ function time_loop!(inputs, params, u, args...)
     idx_ref      = Ref{Int}(0)
     c            = Float64(0.0)
     restart_time = inputs[:restart_time]
+    restart_active = Ref(true)
+    if restart_time > 0
+        # Land on checkpoint times even when Δt does not divide the cadence.
+        first_restart = (floor(Int, params.tspan[1] / restart_time) + 1) * restart_time
+        restart_times = first_restart:restart_time:params.tspan[end]
+        tstops_all = sort(unique(vcat(tstops_all, collect(Float64, restart_times))))
+    end
+    Base.filter!(t -> params.tspan[1] <= t <= params.tspan[end], tstops_all)
     stats_online_start = get(inputs, :statistics_online_start, Inf)
     rad_time           = inputs[:radiation_time_step]
     lnew_mesh    = true   
@@ -382,7 +390,8 @@ function time_loop!(inputs, params, u, args...)
     end
 
     function restart_condition(u, t, integrator)
-        if restart_time ≠ 0.0 && (rem(t,restart_time) < 1e-3)
+        if restart_active[] && restart_time > 0.0 &&
+           isapprox(t, round(t / restart_time) * restart_time; atol=1e-3, rtol=0)
             return true
         else
             return false
@@ -413,6 +422,7 @@ function time_loop!(inputs, params, u, args...)
             cp(tmp_restart_path, inputs[:restart_output_file_path]; force=true)
             rm(tmp_restart_path; recursive=true, force=true)
         end
+        MPI.Barrier(comm)
 
         println_rank(" #  writing restart ........................ DONE"; msg_rank = rank)
     end
@@ -783,6 +793,7 @@ function time_loop!(inputs, params, u, args...)
             # to keep the warmup cheap.
             warm_saveat = range(t0_w, t0_w + Δt_w, length = inputs[:ndiagnostics_outputs])
             _min_h_diagnostic_active[] = false
+            restart_active[] = false
             # COUPLED RUNS: the warm-up step must not talk to Alya. Alya posts
             # exactly one receive per step of its own time loop, so an exchange
             # fired here is one message more than it will ever receive: every
@@ -808,6 +819,7 @@ function time_loop!(inputs, params, u, args...)
                 end
             end
             _min_h_diagnostic_active[] = true
+            restart_active[] = true
             _warmup_failure!(warm_err[], "integrator warm-up", rank, comm)
             is_coupled && coupling !== nothing && (coupling.exchange_enabled = true)
             u .= u_snap

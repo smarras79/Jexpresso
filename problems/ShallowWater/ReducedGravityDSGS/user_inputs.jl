@@ -15,7 +15,7 @@ function user_inputs()
         # where H is the active-layer thickness.
         #---------------------------------------------------------------------------
         :ode_solver           => SSPRK54(),
-        :Δt                   => 300.0,
+        :Δt                   => 600.0,
         :tinit                => 0.0,
         :tend                 => 6.0 * year,
         :diagnostics_at_times => (0:30*day:6.0*year),
@@ -29,7 +29,7 @@ function user_inputs()
         # used if this case is changed to an algorithm without stage hooks.
         :swe_limiter          => "clip",
         :swe_limiter_schedule => "stage",
-        :swe_hmin             => 1.0e-6,
+        :swe_hmin             => 1.0e-3,
         # Accumulate every stage clipping event and print one MPI-global
         # summary after each accepted timestep that required correction.
         :swe_limiter_diagnostic => true,
@@ -51,7 +51,7 @@ function user_inputs()
         :lvisc                => true,
         :visc_model           => DSGS_SW(),
         :dsgs_sensor          => "residual",
-        :μ                    => [0.5, 1.0, 1.0],
+        :μ                    => [1.0, 1.0, 1.0],
         :dsgs_CR              => 1.0e-1,
         :dsgs_Cmax            => 0.5e-2,
         :dsgs_Cmin            => 0.05e-3,
@@ -59,7 +59,7 @@ function user_inputs()
         :ldsgs_nodal          => false,
         :dsgs_Cl              => 0.0,
         :dsgs_swe_g           => 0.015,
-        :dsgs_swe_hmin        => 1.0e-3,
+        :dsgs_swe_hmin        => 1.0e-2,
         #---------------------------------------------------------------------------
         # No additional modal filter: DynSGS supplies the stabilization.
         #---------------------------------------------------------------------------
@@ -79,6 +79,8 @@ function user_inputs()
         :lwrite_initial       => true,
         :output_dir           => "./output",
         :loutput_pert         => true,
+        :lrestart_vtk         => true,
+        :restart_vtk_input_dir => "./output/ShallowWater/ReducedGravityDSGS/output-08Oct2026-123236",
         #---------------------------------------------------------------------------
     )
 

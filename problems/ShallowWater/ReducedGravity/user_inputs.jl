@@ -32,6 +32,16 @@ function user_inputs()
         :case                 => "double_gyre_reduced_gravity",
         :lsource              => true,
         :SOL_VARS_TYPE        => TOTAL(),
+        # Enforce H >= swe_hmin after every SSPRK stage and again after each
+        # accepted step. The latter is also the integrator-independent path
+        # used if this case is changed to an algorithm without stage hooks.
+        :swe_limiter          => "clip",
+        :swe_limiter_schedule => "stage",
+        :swe_hmin             => 1.0e-3,
+        # Accumulate every stage clipping event and print one MPI-global
+        # summary after each accepted timestep that required correction.
+        :swe_limiter_diagnostic => true,
+        :swe_limiter_diagnostic_interval => 1,
         #---------------------------------------------------------------------------
         # Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -58,7 +68,10 @@ function user_inputs()
         # well-balanced flux/source split preserves. The constant
         # artificial viscosity above is enough to stabilise the fronts.
         #---------------------------------------------------------------------------
-        :lfilter              => false,
+        :lfilter     => true,
+        :filter_type => "erf",
+        :mu_x        => 0.05,
+        :mu_y        => 0.05,
         #---------------------------------------------------------------------------
         # Mesh
         # Generate with:
@@ -76,8 +89,10 @@ function user_inputs()
         # or switch back to "vtk" for ParaView output.
         #---------------------------------------------------------------------------
         :outformat            => "vtk",
-        :loverwrite_output    => true,
+        :loverwrite_output    => false,
         :lwrite_initial       => true,
+        :lrestart_vtk         => false,
+        :restart_vtk_input_dir => "./output/ShallowWater/ReducedGravity/output/",
         :output_dir           => "./output",
         :loutput_pert         => true,
         #---------------------------------------------------------------------------

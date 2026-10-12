@@ -13,10 +13,9 @@
 # Here Hb is flat, but we keep it for the future multi-layer model
 #
 
-# Dry-node momentum relaxation rate [1/s]. On layers thinner than the
-# wet/dry threshold the momentum is relaxed to zero (the paper forces the
-# velocity to zero on dry nodes); σΔt ≈ 0.25 keeps the term well inside
-# the explicit SSPRK54 stability region.
+# Dry-layer momentum relaxation rate [1/s]. Relaxation is strongest at
+# the artificial depth floor and fades out over the wind-forcing transition.
+# At Δt = 1200 s the maximum relaxation rate gives σΔt = 0.25.
 
 const _SIGMA_DRY_SWE = 0.25 / 1200   # NOTE - need to choose it appropriately with dt
 const _F0_SWE        = 8.37e-5 # Coriolis parameter [1/s]  (Choi et al. 2004, Sec. 3.1)
@@ -24,6 +23,18 @@ const _BETA_SWE      = 1.8e-11 # Coriolis beta parameter [1/(m s)] (Choi et al. 
 const _TAU0_SWE      = 0.03    # maximum wind stress [N/m²]
 const _RHO_SWE       = 1000.0  # reference water density [kg/m³]
 const _KAPPA_SWE     = 1.0e-8  # linear bottom drag [1/s]
+
+# Full wind stress starts at this thickness. This is an experimental
+# regularization parameter in metres, distinct from the 1 mm dry-film floor.
+const _H_WIND_FULL_SWE = 0.1
+
+@inline function _swe_wind_fraction(H)
+    T = typeof(H)
+    Hdry = T(_H_WET_SWE)
+    Hfull = T(_H_WIND_FULL_SWE)
+    s = clamp((H - Hdry) / (Hfull - Hdry), zero(T), one(T))
+    return s*s*(T(3) - T(2)*s)
+end
 
 #No bathymetry gradient in the reduced gravity case, so we can just return 0.0, 0.0
 #Keeping it here for later when we have multiple layers
@@ -79,7 +90,7 @@ function user_source!(S,
     S[3] -= f * Hu
 
     #Wind shear stress term
-    wet = H >= _H_WET_SWE ? one(H) : zero(H) #apply wind stress only to wet nodes
+    wet = _swe_wind_fraction(H)
     S[2] += wet * τx / _RHO_SWE
     S[3] += wet * τy / _RHO_SWE
 
@@ -90,11 +101,11 @@ function user_source!(S,
     #S[3] -= _C_D_SWE * Hv * sqrt(Hu^2 + Hv^2) / H
 
 
-    # dry-node momentum relaxation (see _SIGMA_DRY_SWE)
-    if H < _H_WET_SWE
-        S[2] -= _SIGMA_DRY_SWE * q[2]
-        S[3] -= _SIGMA_DRY_SWE * q[3]
-    end
+    # Use the same transition for wind and dry-layer relaxation: the
+    # artificial film receives no wind and damps any incoming momentum.
+    σ = (one(wet) - wet) * _SIGMA_DRY_SWE
+    S[2] -= σ * Hu
+    S[3] -= σ * Hv
 end
 
 function user_source!(S,
@@ -120,7 +131,7 @@ function user_source_gpu(q, qe, x, y, PhysConst, xmax, xmin, ymax, ymin, lpert)
     τy = T(0.0)
 
     # Do not apply wind stress to the artificial dry film.
-    wet = ifelse(H >= T(_H_WET_SWE), one(T), zero(T))
+    wet = _swe_wind_fraction(H)
 
     #Coriolis
     yc = T(0.5) * (ymin + ymax)
@@ -130,8 +141,7 @@ function user_source_gpu(q, qe, x, y, PhysConst, xmax, xmin, ymax, ymin, lpert)
     ρ = T(_RHO_SWE)
     κ = T(_KAPPA_SWE)
 
-    g = T(_G_SWE)
-    σ = H < T(_H_WET_SWE) ? T(_SIGMA_DRY_SWE) : T(0.0)
+    σ = (one(T) - wet) * T(_SIGMA_DRY_SWE)
     #return T(0.0), T(-g * dH * dHbdx + f*q[3] + τx/ρ - κ*q[2] - σ * q[2]  ), T(-g * dH * dHbdy - f*q[2] + τy/ρ - κ*q[3] - σ * q[3])
     return T(0.0), 
            f*Hv + wet*τx/ρ - (σ + κ) * Hu , 

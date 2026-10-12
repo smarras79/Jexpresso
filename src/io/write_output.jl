@@ -527,6 +527,7 @@ cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, Int64[ip1, ip2, ip3, ip4])
         # name ParaView looks for; tools/plot_orszag_tang.jl reads it back to
         # match a snapshot to a requested time.
         vtkf["TimeValue", VTKFieldData()] = t
+        write_shallow_water_vtk_restart_data!(vtkf, q, qexact, mesh, inputs)
 
         for ivar = 1:noutvar
             idx = (ivar - 1)*npoin
@@ -1166,6 +1167,7 @@ function read_output(SD, INPUT_DIR::String, inputs, npoin, outformat::HDF5; nvar
     
     #println(string(" # Reading restart HDF5 file:", INPUT_DIR, "*.h5 ...  ") )
     q, qe = read_hdf5(SD, INPUT_DIR, inputs, npoin, nvar)
+    rank = MPI.Comm_rank(get_mpi_comm())
     println_rank(string(" # Reading restart HDF5 file:", INPUT_DIR, "*.h5 ... DONE") ; msg_rank = rank)
 
     return q, qe
@@ -1314,7 +1316,7 @@ length `npoin` for each name in `varnames` that exists in the file.
 Also searches the `<Points>` element; pass `"__coords__"` in `varnames` to get
 the interleaved (x,y,z) array of length `3*npoin`.
 """
-function read_vtu_point_data(filename::String, varnames::Vector{String})
+function read_vtu_point_data(filename::String, varnames::Vector{String}; field_data=false)
 
     # --- Read the XML header (everything before the binary AppendedData block) ---
     # WriteVTK.jl always puts the XML header in the first few KB.
@@ -1372,7 +1374,7 @@ function read_vtu_point_data(filename::String, varnames::Vector{String})
             haskey(var_offsets, vname) || continue
             off    = var_offsets[vname]
             ncomp  = var_ncomps[vname]
-            n_vals = npoin * ncomp
+            n_vals = field_data ? 1 : npoin * ncomp
             seek(f, raw_start + off)
             byte_count = read(f, HeaderT)
             byte_count == UInt64(n_vals * sizeof(Float64)) ||

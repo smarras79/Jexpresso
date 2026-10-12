@@ -306,6 +306,7 @@ include(joinpath( "io", "les_statistics.jl"))
 include(joinpath( "io", "mod_print_io.jl"))
 
 include(joinpath( "io", "write_output.jl"))
+include(joinpath( "io", "shallow_water_restart.jl"))
 
 # Nodal fields on a pixel raster (flat and spherical), and the POD figures
 # drawn on them.

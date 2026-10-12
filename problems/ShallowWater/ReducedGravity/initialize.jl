@@ -34,7 +34,16 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat,
                  inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
 
-    if (inputs[:backend] == CPU())
+    if get(inputs, :lrestart_amr, false)
+        error("ReducedGravity does not support AMR restart.")
+    end
+    inputs[:lrestart] && inputs[:lrestart_vtk] && error("Choose either :lrestart or :lrestart_vtk, not both.")
+    if inputs[:lrestart]
+        qn, qe = read_output(SD, inputs[:restart_input_file_path], inputs,
+                             mesh.npoin, HDF5(); nvar=length(qvars))
+        copyto!(q.qn, qn)
+        copyto!(q.qe, qe)
+    elseif (inputs[:backend] == CPU())
 
         for ip = 1:mesh.npoin
             #x = mesh.x[ip]
@@ -50,6 +59,10 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             q.qe[ip, 2] = 0.0
             q.qe[ip, 3] = 0.0
         end
+    end
+
+    if inputs[:lrestart_vtk]
+        read_shallow_water_vtk_restart!(q, mesh, inputs; output_dir=OUTPUT_DIR)
     end
 
     if rank == 0
