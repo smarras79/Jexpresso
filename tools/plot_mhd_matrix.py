@@ -15,7 +15,7 @@ Reads iter_N.pvtu -> iter_N/iter_N_*.vtu on the native grid.
   python3 tools/plot_mhd_matrix.py <run> --vars rho log10rho p log10p pmag Mach Bx By mu_dsgs --format pdf
           # log10<field>: computed when the file lacks it; --log VAR instead turns that column itself to log10
 Colormaps: per-variable defaults in VAR_CMAPS (rho turbo, p inferno, pmag managua, Mach and Mach_f gist_ncar,
-schlieren and schlieren_grad_rho Yellow - Gray - Blue reversed, mu_dsgs Cool to Warm Extended); --cmaps VAR NAME overrides one column (ParaView's
+schlieren Yellow - Gray - Blue, schlieren_grad_rho the same reversed (both: shocks dark red), mu_dsgs Cool to Warm Extended); --cmaps VAR NAME overrides one column (ParaView's
 XRay, CoolToWarmExtended and "Yellow - Gray - Blue", RainbowDesaturated, or any matplotlib name; _r reverses);
 --cmap / --mu-cmap cover all other variables.
 Default times: the outputs nearest tend/3, 2 tend/3, tend. Needs numpy and matplotlib.
@@ -61,7 +61,7 @@ def mirror(g):
 # per-variable colormaps (rotor figure style), keyed by greek(name); --cmaps VAR NAME overrides,
 # --cmap / --mu-cmap cover variables not listed here
 VAR_CMAPS = {"ρ": "turbo", "rho": "turbo", "p": "inferno", "pmag": "managua", "Mach": "gist_ncar",
-             "Mach_f": "gist_ncar", "schlieren": "YellowGreyBlue_r", "schlieren_grad_rho": "YellowGreyBlue_r",
+             "Mach_f": "gist_ncar", "schlieren": "YellowGreyBlue", "schlieren_grad_rho": "YellowGreyBlue_r",
              "mu_dsgs": "CoolToWarmExtended"}
 
 
