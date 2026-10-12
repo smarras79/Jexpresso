@@ -36,11 +36,11 @@ julia --project=. src/Jexpresso.jl MHD blastBalsaraSpicer1999
 mpiexec -n 4 julia --project=. src/Jexpresso.jl MHD blastBalsaraSpicer1999
 ```
 
-Outputs every 0.001 (VTK): ρ, u, v, p, **B**, ψ, T = p/ρ, `pmag` = ½|**B**|², `Mach`, `β` = 2p/|**B**|², and the DynSGS coefficient `mu_dsgs`. Mass and energy are tracked every step in `conservation.dat`. Plot commands:
+Outputs every 0.001 (VTK): ρ, u, v, p, **B**, ψ, T = p/ρ, `pmag` = ½|**B**|², `Mach`, `β` = 2p/|**B**|², `Mach_f` = |**v**|/c_f, and the DynSGS coefficient `mu_dsgs`. Mass and energy are tracked every step in `conservation.dat`. Plot commands:
 
 ```bash
 D=output/MHD/blastBalsaraSpicer1999/output-<date>
-python3 tools/plot_mhd_matrix.py $D --times 0.003 0.007 0.01 --vars rho p pmag Mach mu_dsgs \
+python3 tools/plot_mhd_matrix.py $D --times 0.003 0.007 0.01 --vars rho p pmag Mach_f mu_dsgs \
         --log p mu_dsgs                                   # rows = times, columns = variables; --fieldlines adds B lines
 python3 tools/plot_mhd_matrix.py $D --times 0.01 --vars rho p speed Bmag --log rho p   # Balsara (2004) Fig. 6
 python3 tools/plot_fluxemergence_vtu.py $D --steps 11 --var rho --no-fieldlines \
@@ -65,7 +65,7 @@ The dense shells sit along **B**, at x ≈ 0.2 and 0.8. The fast front in magnet
 |---|---|---|---|---|---|
 | nodes (of 37,249) | 5,852 | 786 | 220 | 50 | 30 |
 
-There, Mach exceeds 6 at 2,136 nodes. The ~50 nodes at ε are where the limiter holds p.
+There, Mach exceeds 6 at 2,136 nodes. The ~50 nodes at ε are where the limiter holds p. There M = |**v**|√(ρ/(γε)) is 3·10³ – 1.2·10⁴ at every output. `Mach_f` = |**v**|/c_f stays below 0.9 to t = 0.002, and is 0.04 – 0.06 at those nodes, so plot it instead.
 
 **Resolution.** The same deck with `:init_refine_lvl => 2` and `:Δt => 5.0e-6` gives 128×128 elements (385² nodes). It takes 15 min on 4 ranks. Shares of nodes at t = 0.01:
 

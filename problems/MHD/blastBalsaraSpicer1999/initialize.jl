@@ -10,7 +10,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     rank == 0 && @info " Initialize fields for 2D ideal GLM-MHD (Balsara-Spicer blast) ........... "
 
     qvars    = ["ρ", "ρu", "ρv", "ρE", "ρw", "Bx", "By", "Bz", "ψ"]
-    qoutvars = ["ρ", "u", "v", "w", "p", "Bx", "By", "Bz", "ψ", "T", "pmag", "Mach", "β"]
+    qoutvars = ["ρ", "u", "v", "w", "p", "Bx", "By", "Bz", "ψ", "T", "pmag", "Mach", "β", "Mach_f"]
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
 
     inputs[:backend] != CPU()        && error(" problems/MHD/blastBalsaraSpicer1999: only the CPU backend is supported.")

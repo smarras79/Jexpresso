@@ -22,7 +22,8 @@ function user_primitives!(u, qe, uprimitive, ::PERT)
     error(" problems/MHD/blastBalsaraSpicer1999: PERT() solution variables are not supported.")
 end
 
-# Output: ρ, u, v, w, p, Bx, By, Bz, ψ, T = p/ρ, pmag = ½|B|², Mach = |v|/√(γp/ρ), β = 2p/|B|²
+# Output: ρ, u, v, w, p, Bx, By, Bz, ψ, T = p/ρ, pmag = ½|B|², Mach = |v|/√(γp/ρ), β = 2p/|B|²,
+# Mach_f = |v|/c_f with c_f = √((γp + |B|²)/ρ) ≥ |B|/√ρ: finite where the limiter holds p at its floor
 function user_uout!(ip, ET, uout, u, qe; kwargs...)
     ρ  = u[1]
     p  = pressure_mhd(ρ, u[2], u[3], u[5], u[4], u[6], u[7], u[8], u[9])
@@ -41,4 +42,5 @@ function user_uout!(ip, ET, uout, u, qe; kwargs...)
     uout[11] = pm
     uout[12] = sqrt(vx*vx + vy*vy + vz*vz)/sqrt(max(γ_mhd*p/ρ, 1e-300))
     uout[13] = min(p/max(pm, 1e-300), 1.0e6)
+    uout[14] = sqrt(vx*vx + vy*vy + vz*vz)/sqrt(max((γ_mhd*p + 2.0*pm)/ρ, 1e-300))
 end
