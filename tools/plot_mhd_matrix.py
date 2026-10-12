@@ -15,8 +15,8 @@ Reads iter_N.pvtu -> iter_N/iter_N_*.vtu on the native grid.
   python3 tools/plot_mhd_matrix.py <run> --vars rho log10rho p log10p pmag Mach Bx By mu_dsgs --format pdf
           # log10<field>: computed when the file lacks it; --log VAR instead turns that column itself to log10
 Colormaps: per-variable defaults in VAR_CMAPS (rho turbo, p inferno, pmag managua, Mach and Mach_f gist_ncar,
-schlieren Yellow - Gray - Blue, schlieren_grad_rho the same reversed (both: shocks dark red), mu_dsgs Cool to Warm Extended); --cmaps VAR NAME overrides one column (ParaView's
-XRay, CoolToWarmExtended and "Yellow - Gray - Blue", RainbowDesaturated, or any matplotlib name; _r reverses);
+schlieren Yellow - Gray - Blue, schlieren_grad_rho the same reversed (both: shocks dark red), mu_dsgs Cool to Warm); --cmaps VAR NAME overrides one column (ParaView's
+XRay, CoolToWarm, CoolToWarmExtended and "Yellow - Gray - Blue", RainbowDesaturated, or any matplotlib name; _r reverses);
 --cmap / --mu-cmap cover all other variables.
 Default times: the outputs nearest tend/3, 2 tend/3, tend. Needs numpy and matplotlib.
 """
@@ -62,7 +62,7 @@ def mirror(g):
 # --cmap / --mu-cmap cover variables not listed here
 VAR_CMAPS = {"ρ": "turbo", "rho": "turbo", "p": "inferno", "pmag": "managua", "Mach": "gist_ncar",
              "Mach_f": "gist_ncar", "schlieren": "YellowGreyBlue", "schlieren_grad_rho": "YellowGreyBlue_r",
-             "mu_dsgs": "CoolToWarmExtended"}
+             "mu_dsgs": "CoolToWarm"}
 
 
 def resolve_cmap(name):
@@ -143,8 +143,8 @@ def main():
     p.add_argument("--linewidth", type=float, default=0.4)
     p.add_argument("--cmap", default="inferno",
                    help="solution fields not in VAR_CMAPS (default inferno; RainbowDesaturated, any matplotlib name)")
-    p.add_argument("--mu-cmap", default="CoolToWarmExtended",
-                   help="mu_* columns not in VAR_CMAPS (default ParaView's Cool to Warm (Extended))")
+    p.add_argument("--mu-cmap", default="CoolToWarm",
+                   help="mu_* columns not in VAR_CMAPS (default ParaView's Cool to Warm)")
     p.add_argument("--cmaps", nargs=2, action="append", default=[], metavar=("VAR", "CMAP"),
                    help="colormap of one variable, repeatable (overrides VAR_CMAPS, --cmap and --mu-cmap)")
     p.add_argument("--shading", choices=("contourf", "gouraud"), default="contourf")

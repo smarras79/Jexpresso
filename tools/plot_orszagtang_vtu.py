@@ -124,11 +124,15 @@ def _lab_cmap(name, pts, n=256):
 
 
 def get_cmap(name):
-    """ParaView maps defined here (CoolToWarmExtended, "Yellow - Gray - Blue", "X Ray", any spelling), else resolve_cmap(); _r reverses."""
+    """ParaView maps defined here ("Cool to Warm", CoolToWarmExtended, "Yellow - Gray - Blue", "X Ray", any spelling), else
+    resolve_cmap(); _r reverses."""
     rev = name.endswith("_r")
     key = re.sub(r"[^a-z]", "", (name[:-2] if rev else name).lower())
     if key in _PARAVIEW_LAB:
         cm = _lab_cmap(*_PARAVIEW_LAB[key])
+        return cm.reversed() if rev else cm
+    if key == "cooltowarm":   # ParaView's default "Cool to Warm" (Moreland), which is matplotlib's coolwarm
+        cm = plt.get_cmap("coolwarm")
         return cm.reversed() if rev else cm
     if key == "xray":   # ParaView's "X Ray": white at the minimum, black at the maximum
         cm = plt.get_cmap("gray_r")
@@ -288,7 +292,7 @@ def main():
     p.add_argument("--single", action="store_true", help="also write one figure per panel (same color range)")
     p.add_argument("--grid", action=argparse.BooleanOptionalAction, default=True, help="write the combined figure (default on)")
     p.add_argument("--cmap", default="inferno", help="inferno (default, ParaView's \"Inferno (matplotlib)\"), RainbowDesaturated, "
-                   "CoolToWarmExtended or any matplotlib name; _r reverses")
+                   "CoolToWarm, CoolToWarmExtended or any matplotlib name; _r reverses")
     p.add_argument("--shading", choices=("contourf", "gouraud"), default="contourf")
     p.add_argument("--out", default=None, help="output file (default <base>/OT_<vars>_t<time>.<format>)")
     p.add_argument("--format", default="png", help="png, pdf, svg, ...")
