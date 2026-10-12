@@ -111,7 +111,7 @@ Outputs every 2·10⁻⁵ to t = 10⁻⁴, then every 10⁻⁴ (VTK). The fields
 ```bash
 D=output/MHD/astroJetWuShu2018/output-<date>
 python3 tools/plot_astrojet.py $D                              # -> $D/matrix_rho_p_Mach_f_mu_dsgs_schlieren.png
-python3 tools/plot_astrojet.py $D --format pdf --out jet.pdf   # any tools/plot_mhd_matrix.py option; --no-mirror for the full width
+python3 tools/plot_astrojet.py $D --format pdf --out jet.pdf   # any tools/plot_mhd_matrix.py option; --no-mirror keeps the half
 ```
 
 ## Results (half domain, B_a = √200, 4 MPI ranks)

@@ -9,15 +9,18 @@ Reads iter_N.pvtu -> iter_N/iter_N_*.vtu on the native grid.
   python3 tools/plot_mhd_matrix.py output/MHD/rotorDaoNazarov2022/output-<date> --times 0.05 0.1 0.15 --vars rho p pmag Mach mu_dsgs
   python3 tools/plot_mhd_matrix.py <run1> <run2> <run3> --labels '$\beta = 2.5$' '$\beta = 0.25$' '$\beta = 0.025$' \
           --times 0.01 --vars rho p mu_dsgs --log p mu_dsgs  # several runs: one row each, at one time
-  python3 tools/plot_mhd_matrix.py output/MHD/astroJetWuShu2018/output-<date> --mirror \
-          --vars rho p Mach_f mu_dsgs --log rho p           # half domain drawn as the full jet
+  python3 tools/plot_mhd_matrix.py output/MHD/astroJetWuShu2018/output-<date> \
+          --vars rho p Mach_f mu_dsgs --log rho p           # a half-domain (AJ_half_*) run is drawn mirrored; --no-mirror to keep the half
   python3 tools/plot_mhd_matrix.py <run> --vars rho p pmag Mach mu_dsgs --cmaps pmag managua --cmaps Mach gist_ncar
+  python3 tools/plot_mhd_matrix.py <run> --vars rho log10rho p log10p pmag Mach Bx By mu_dsgs --format pdf
+          # log10<field>: computed when the file lacks it; --log VAR instead turns that column itself to log10
 Colormaps: per-variable defaults in VAR_CMAPS (rho turbo, p inferno, pmag managua, Mach and Mach_f gist_ncar,
-schlieren gray, mu_dsgs Cool to Warm Extended); --cmaps VAR NAME overrides one column; --cmap / --mu-cmap cover all
-other variables.
+schlieren Yellow - Gray - Blue, schlieren_grad_rho the same reversed (both: shocks dark red), mu_dsgs Cool to Warm Extended); --cmaps VAR NAME overrides one column (ParaView's
+XRay, CoolToWarmExtended and "Yellow - Gray - Blue", RainbowDesaturated, or any matplotlib name; _r reverses);
+--cmap / --mu-cmap cover all other variables.
 Default times: the outputs nearest tend/3, 2 tend/3, tend. Needs numpy and matplotlib.
 """
-import argparse, os, sys
+import argparse, os, re, sys
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from plot_fluxemergence_vtu import read_pvtu, triangles, fill, greek, flux_function_integrate, flux_function_lsq, grid2d, _cluster
@@ -29,9 +32,18 @@ from matplotlib.tri import Triangulation
 LABELS = {"ρ": r"$\rho$", "p": r"$p$", "pmag": r"$|\mathbf{B}|^2/2$", "Mach": r"$M$", "mu_dsgs": r"$\nu_\mathrm{DSGS}$",
           "β": r"$\beta$", "ψ": r"$\psi$", "T": r"$T$", "u": r"$u$", "v": r"$v$", "w": r"$w$",
           "Bx": r"$B_x$", "By": r"$B_y$", "Bz": r"$B_z$", "vA": r"$|\mathbf{B}|/\sqrt{\rho}$", "speed": r"$|\mathbf{v}|$",
-          "Bmag": r"$|\mathbf{B}|$", "Mach_f": r"$M_f$", "schlieren": "schlieren"}
+          "Bmag": r"$|\mathbf{B}|$", "Mach_f": r"$M_f$", "schlieren": "schlieren", "schlieren_grad_rho": r"$|\nabla\rho|$"}
 DERIVED = {"vA": ("ρ", "Bx", "By", "Bz"), "speed": ("u", "v", "w"), "Bmag": ("Bx", "By", "Bz")}
 ODD = ("u", "Bx")   # fields that change sign under the reflection x -> -x
+
+
+def half_mesh(d):
+    """True when the run's user_inputs.jl (copied into its output directory) names a half-domain mesh (AJ_half_*)."""
+    try:
+        m = re.search(r':gmsh_filename\s*=>\s*"([^"]+)"', open(os.path.join(d, "user_inputs.jl")).read())
+    except OSError:
+        return False
+    return bool(m) and "half" in os.path.basename(m.group(1))
 
 
 def mirror(g):
@@ -49,7 +61,8 @@ def mirror(g):
 # per-variable colormaps (rotor figure style), keyed by greek(name); --cmaps VAR NAME overrides,
 # --cmap / --mu-cmap cover variables not listed here
 VAR_CMAPS = {"ρ": "turbo", "rho": "turbo", "p": "inferno", "pmag": "managua", "Mach": "gist_ncar",
-             "Mach_f": "gist_ncar", "schlieren": "gray", "mu_dsgs": "CoolToWarmExtended"}
+             "Mach_f": "gist_ncar", "schlieren": "YellowGreyBlue", "schlieren_grad_rho": "YellowGreyBlue_r",
+             "mu_dsgs": "CoolToWarmExtended"}
 
 
 def resolve_cmap(name):
@@ -63,7 +76,14 @@ def resolve_cmap(name):
     return get_cmap(name)
 
 
+def log_base(v):
+    """'log10p', 'log10rho', 'log10_mu_dsgs' -> the field under the log10; None for any other name."""
+    return v[5:].lstrip("_") if v.startswith("log10") and len(v) > 5 else None
+
+
 def label(v, log):
+    if log_base(v):
+        return label(log_base(v), True)
     s = LABELS.get(greek(v), LABELS.get(v, v))
     return r"$\log_{10}$ " + s if log else s
 
@@ -71,6 +91,10 @@ def label(v, log):
 def field(g, v, f):
     """Point field v of g (ASCII aliases accepted), or a derived one: vA = |B|/sqrt(rho), speed = |v|, Bmag = |B|."""
     F = g["fields"]
+    b = log_base(v)
+    if b and greek(v) not in F and v not in F:   # log10 of any field, clipped like --log
+        q = np.asarray(field(g, b, f), dtype=float)
+        return np.log10(np.maximum(q, max(np.nanmax(q), 1e-300) * 1e-6))
     if v == "Bmag":
         return np.sqrt(F["Bx"]**2 + F["By"]**2 + F.get("Bz", 0.0)**2)
     if v == "vA":
@@ -105,12 +129,16 @@ def main():
     p.add_argument("--times", type=float, nargs="+", help="rows, top to bottom (default: nearest tend/3, 2 tend/3, tend); "
                    "with several runs the first value only (default: the latest time all runs have)")
     p.add_argument("--vars", nargs="+", default=["rho", "p", "pmag", "Mach", "mu_dsgs"],
-                   help="columns: any point field (rho, psi, beta accepted), vA = |B|/sqrt(rho), speed = |v|, Bmag = |B|")
+                   help="columns: any point field (rho, psi, beta accepted), vA = |B|/sqrt(rho), speed = |v|, Bmag = |B|, "
+                        "and log10<field> (e.g. log10rho, log10p) when the file does not have it")
     p.add_argument("--log", nargs="*", default=[], help="variables drawn as log10 (values below max·1e-6 clipped)")
     p.add_argument("--clim", nargs=3, action="append", default=[], metavar=("VAR", "MIN", "MAX"),
                    help="color range of one variable (after log10 if --log), repeatable")
     p.add_argument("--fieldlines", action="store_true", help="magnetic field lines on every column except mu_*")
-    p.add_argument("--mirror", action="store_true", help="reflect a half-domain run about its left edge (the symmetry axis)")
+    p.add_argument("--mirror", action="store_true",
+                   help="reflect the run about its left edge (the symmetry axis), for the plot only; automatic when the "
+                        "run's mesh is a half-domain one (AJ_half_*)")
+    p.add_argument("--no-mirror", action="store_true", help="never mirror, even a half-domain run")
     p.add_argument("--nlevels", type=int, default=25)
     p.add_argument("--linewidth", type=float, default=0.4)
     p.add_argument("--cmap", default="inferno",
@@ -145,7 +173,14 @@ def main():
     logs = {greek(v) for v in a.log}
     clims = {greek(v): (float(lo), float(hi)) for v, lo, hi in a.clim}
     cmap_over = {greek(v): c for v, c in a.cmaps}
-    want = {greek(v) for v in a.vars} | {f for v in a.vars for f in DERIVED.get(v, ())}
+    cols = {greek(v) for v in a.vars} | {greek(log_base(v)) for v in a.vars if log_base(v)}
+    for opt, names in (("--log", a.log), ("--clim", [c[0] for c in a.clim]), ("--cmaps", [c[0] for c in a.cmaps])):
+        stray = [v for v in names if greek(v) not in cols]
+        if stray:   # e.g. "--log rho p u v": u, v were meant as columns
+            print(f" warning: {opt} {' '.join(stray)}: not a column (--vars {' '.join(a.vars)}); put columns after --vars")
+    base = [log_base(v) or v for v in a.vars]
+    want = ({greek(v) for v in a.vars + base} | set(a.vars) |
+            {f for v in base for f in DERIVED.get(v, ())})
     if a.fieldlines:
         want |= {"Bx", "By"}
 
@@ -155,8 +190,10 @@ def main():
         if f is None:
             sys.exit(f"{d}: no snapshot at t = {t:g} (has t = {', '.join(f'{s:g}' for s in sorted(snaps))})")
         g = read_pvtu(f, want)
-        g = mirror(g) if a.mirror else g
-        print(f" t = {t:g}: {f} ({len(g['x'])} nodes)")
+        mir = a.mirror or (half_mesh(d) and not a.no_mirror)
+        xaxis = g["x"].min()
+        g = mirror(g) if mir else g
+        print(f" t = {t:g}: {f} ({len(g['x'])} nodes" + (f", mirrored about x = {xaxis:g} for the plot)" if mir else ")"))
         cols = []
         for v in a.vars:
             q = np.asarray(field(g, v, f), dtype=float)
@@ -172,9 +209,10 @@ def main():
         hi = max(np.nanmax(r[2][j]) for r in rows)
         lo, hi = clims.get(greek(v), (lo, hi))
         norms.append(Normalize(lo, hi if hi > lo else lo + 1.0))
-        gv = greek(v)
-        cname = (cmap_over.get(gv) or cmap_over.get(v) or VAR_CMAPS.get(gv) or VAR_CMAPS.get(v)
-                 or (a.mu_cmap if v.startswith("mu") else a.cmap))
+        b = log_base(v) or v
+        gv = greek(b)
+        cname = (cmap_over.get(greek(v)) or cmap_over.get(gv) or VAR_CMAPS.get(gv) or VAR_CMAPS.get(b)
+                 or (a.mu_cmap if b.startswith("mu") else a.cmap))
         print(f" colormap {v}: {cname}")
         cmaps.append(resolve_cmap(cname))
 
