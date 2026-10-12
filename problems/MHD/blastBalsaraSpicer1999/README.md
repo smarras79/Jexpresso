@@ -26,6 +26,7 @@ As `problems/MHD/rotorDaoNazarov2022` (see its [algorithm.pdf](../rotorDaoNazaro
 
 - conserved-form DynSGS: one ν per element, ∇·(ν∇q) on every conserved variable, the legacy sensor with element norms, `C_R = 1`, `C_max = 0.5`, and no background viscosity.
   - **Fast-speed floors** (`:dsgs_fast_floors => true`, DSGS.md §4.5). Each residual R_i is divided by D_i = max(spread_i, S_i). The floors S_i use the fast-speed bound c̄_f = √((γp̄ + |**B̄**|²)/ρ̄) of the element-mean state instead of the sound speed c̄ = √(γp̄/ρ̄): S_ρ = ρ̄, S_ρv = ρ̄ c̄_f, S_E = γp̄ + |**B̄**|², S_B = √(γp̄ + |**B̄**|²). In this ambient c_f/c = 75. With sound-speed floors, a resolved fast wave read 75× (ρv, **B**) to 5,700× (E) too strong, and ν sat at its cap over most of the disturbed region (see the comparison below).
+  - **Thermal-energy residual** (`:dsgs_thermal_residual => true`, DSGS.md §4.5). The residual of ρe = E − ½|**m**|²/ρ − ½|**B**|² − ½ψ² joins the max (below).
   - **No startup hold** (`:dsgs_hold_steps => 0`). The pressure jump at t = 0 is the most violent moment of the run, and outside it the initial data are uniform, so the first residual is nonzero only at the jump.
 - the conservative positivity limiter (`:positivity_method => "conservative"`), with ε_ρ = 10⁻⁶ (10⁻⁶ of the ambient ρ) and ε_p = 10⁻⁷ (10⁻⁶ of the ambient p). Elements with a node below ε are scaled toward their mean. Mass, momentum and energy are conserved, and **B** and ψ are untouched.
 
@@ -50,16 +51,17 @@ python3 tools/plot_conservation.py $D --out blast_conservation.pdf
 
 ## Results at t = 0.01
 
-193² nodes, Δt = 10⁻⁵ (acoustic CFL 0.13 at the start, 0.11 at the end), 4 MPI ranks. The second row is the same deck with sound-speed floors:
+193² nodes, Δt = 10⁻⁵ (acoustic CFL 0.13 at the start, 0.11 at the end). The other rows are the same deck without the thermal residual, and with sound-speed floors instead of both:
 
-| floors | ρ | p | ½\|**B**\|² | \|**v**\| | max Mach (p > 10⁻³) | ν > 0.9 cap | mean ν |
+| sensor | ρ | p | ½\|**B**\|² | \|**v**\| | max Mach (p > 10⁻³) | ν > 0.9 cap | mean ν |
 |---|---|---|---|---|---|---|---|
-| fast (this deck) | 0.2159 – 3.669 | 10⁻⁷ – 247.7 | 223.4 – 604.7 | ≤ 16.6 | 52.8 | 0.5% | 0.0044 |
-| sound | 0.2253 – 3.422 | 0.09995 – 242.4 | 234.0 – 574.1 | ≤ 16.3 | 5.41 | 58.7% | 0.0438 |
+| fast floors + thermal (this deck) | 0.2229 – 3.582 | 0.0959 – 246.1 | 230.6 – 589.8 | ≤ 16.5 | 9.13 (all nodes) | 8.2% | 0.0116 |
+| fast floors | 0.2159 – 3.669 | 10⁻⁷ – 247.7 | 223.4 – 604.7 | ≤ 16.6 | 52.8 | 0.5% | 0.0044 |
+| sound floors | 0.2253 – 3.422 | 0.09995 – 242.4 | 234.0 – 574.1 | ≤ 16.3 | 5.41 | 58.7% | 0.0438 |
 
 The dense shells sit along **B**, at x ≈ 0.2 and 0.8. The fast front in magnetic pressure spans y ≈ 0.12 – 0.88, and **B** is expelled from the hot interior. This is the structure of Balsara (2004) Fig. 6. With fast floors, ν is concentrated on the shells and on the thin fast-front ring, and is near zero elsewhere, so the shells are sharper (ρ_max 3.67 against 3.42). ψ stays below 0.11 (|**B**| ≈ 28).
 
-**The cost: a pressure undershoot at the fast front.** In this ambient the thermal energy is 0.06% of E, so p is a small remainder of E and the magnetic energy. With sound floors, the saturated ν damped the dispersive ripples of the fast front, and no node at t = 0.01 was below the ambient p = 0.1. With fast floors, a thin band at the front, deepest where the shells meet it at x ≈ 0.1 and 0.9, falls below ambient:
+**Without the thermal residual: a pressure undershoot at the fast front.** In this ambient the thermal energy is 0.06% of E, so p is a small remainder of E and the magnetic energy. With sound floors, the saturated ν damped the dispersive ripples of the fast front, and no node at t = 0.01 was below the ambient p = 0.1. With fast floors, a thin band at the front, deepest where the shells meet it at x ≈ 0.1 and 0.9, falls below ambient:
 
 | p below | 0.0999 | 0.09 | 0.05 | 10⁻³ | 10⁻⁶ |
 |---|---|---|---|---|---|
@@ -67,10 +69,12 @@ The dense shells sit along **B**, at x ≈ 0.2 and 0.8. The fast front in magnet
 
 There, Mach exceeds 6 at 2,136 nodes. The ~50 nodes at ε are where the limiter holds p. There M = |**v**|√(ρ/(γε)) is 3·10³ – 1.2·10⁴ at every output. `Mach_f` = |**v**|/c_f stays below 0.9 to t = 0.002, and is 0.04 – 0.06 at those nodes, so plot it instead.
 
-**Thermal-energy residual** (`:dsgs_thermal_residual => true`, on in this deck; DSGS.md §4.5). The 64² results above are without it. It adds to the max the residual of ρe = E − ½|**m**|²/ρ − ½|**B**|² − ½ψ², R_ρe = R_E − **v**·R_**m** + ½|**v**|² R_ρ − **B**·R_**B** − ψR_ψ, over max(‖ρe − ⟨ρe⟩_K‖_∞,K, γp̄_K). At fixed E an error δB costs δp/p = −(γ−1)(2/β) δ|**B**|/|**B**| = −3200 δ|**B**|/|**B**| here, so a 0.03% ripple at the fast front empties p. The E residual, measured against |**B**|², does not see it; R_ρe does. 128², same Δt:
+**Thermal-energy residual** (`:dsgs_thermal_residual => true`, on in this deck; DSGS.md §4.5). It adds to the max the residual of ρe = E − ½|**m**|²/ρ − ½|**B**|² − ½ψ², R_ρe = R_E − **v**·R_**m** + ½|**v**|² R_ρ − **B**·R_**B** − ψR_ψ, over max(‖ρe − ⟨ρe⟩_K‖_∞,K, γp̄_K). At fixed E an error δB costs δp/p = −(γ−1)(2/β) δ|**B**|/|**B**| = −3200 δ|**B**|/|**B**| here, so a 0.03% ripple at the fast front empties p. The E residual, measured against |**B**|², does not see it; R_ρe does. 128², same Δt:
 
 | | t | nodes p < 10⁻⁶ | p < 0.0999 | max M | max M_f | ρ_max | mean ν | limiter active (stage calls) |
 |---|---|---|---|---|---|---|---|---|
+| 64², nop 3, fast floors | 0.01 | 30 | 15.7% | 4,123 | 1.11 | 3.67 | 4.4·10⁻³ | every stage call |
+| 64², nop 3, + thermal | 0.01 | 0 | 1.9% | 9.1 | 1.09 | 3.58 | 1.2·10⁻² | 184 (startup) |
 | nop 3, fast floors | 0.01 | 88 | 15.5% | 12,830 | 1.23 | 4.37 | 1.3·10⁻³ | 9,982 of 10,000 |
 | nop 3, + thermal | 0.01 | 0 | 1.2% | 11.3 | 1.22 | 4.29 | 3.0·10⁻³ | 217 (all before t = 0.003) |
 | nop 4, fast floors | 0.001 | 48 | 2.8% | 6,257 | — | 2.90 | 4.9·10⁻⁴ | 2,000 of 2,000 |
@@ -84,13 +88,15 @@ No node goes below 10⁻³ at any output, and after the startup the limiter no l
 |---|---|---|---|---|---|---|---|
 | 64² | 15.7% | 2.11% | 0.59% | 0.13% | 1.5% | 1.8·10⁻⁵ (steps 1–7) | 3.67 |
 | 128² | 15.5% | 1.14% | 0.29% | 0.086% | 0.75% | 1.6·10⁻⁶ (step 1) | 4.37 |
+| 64², + thermal | 1.9% | 0 | 0 | 0 | 0 after startup | 1.75·10⁻⁵ | 3.58 |
+| 128², + thermal | 1.25% | 0 | 0 | 0 | 0 after startup | 1.7·10⁻⁶ | 4.29 |
 
-The deep undershoot is a grid-scale band that halves with h. The shallow one, less than 1% below the ambient over 15% of the domain, does not change with resolution, so it is not a grid artifact.
+Without the thermal residual, the deep undershoot is a grid-scale band that halves with h, and the shallow one, less than 1% below the ambient over 15% of the domain, does not change with resolution. With it, no node is 10% below the ambient at either resolution, and the shallow band shrinks to 1–2% of the nodes.
 
-**Positivity and conservation.**
-- **Limiter activity:** the limiter acts in every stage call, with 303,688 element limitings in total (min θ_p = 0.00088).
-- **Startup floors:** in steps 1–7, 196 elements next to the initial jump have an inadmissible mean, i.e. p̄ ≤ ε even before limiting. There the non-conservative node floor raises p at 666 nodes, which adds 1.8·10⁻⁵ of the total energy.
-- **After step 7:** energy holds to 6.7·10⁻¹⁶ and mass to 2.9·10⁻¹⁵ for the rest of the run.
+**Positivity and conservation** (64², this deck).
+- **Limiter activity:** the limiter acts only during the startup, in 184 of the first 2,000 stage calls (3,000 element limitings). Without the thermal residual it acts in every stage call.
+- **Startup floors:** in steps 1–7, 180 elements next to the initial jump have an inadmissible mean, i.e. p̄ ≤ ε even before limiting. There the non-conservative node floor raises p at 574 nodes, which adds 1.75·10⁻⁵ of the total energy.
+- **After step 7:** energy holds to 4.8·10⁻¹⁶ and mass to 3·10⁻¹⁵ for the rest of the run.
 - **With sound floors:** the limiter stopped by step 200, and there were 554 startup floors (+1.5·10⁻⁵ of energy).
 
 **Why the sound floors saturate here.** The table counts the share of nodes where ν exceeds a given fraction of its local cap C_max Δ (|**v**| + c_f):

@@ -55,6 +55,7 @@ At t = 2·10⁻⁵ the half-domain run equals the full-width run on x ≥ 0 to 2
 - By t = 0.002, ρ differs between left and right by 1.7·10⁻¹ at lvl 0 and 2.3·10⁻¹ at lvl 1.
 - The full-width runs are nevertheless stable and positive to t = 0.002: no inadmissible element mean at lvl 0 or lvl 1.
 - With domain norms the full width stays symmetric to 3.5·10⁻⁵, but fails from lvl 1 on (next section).
+- The thermal-energy residual (`:dsgs_thermal_residual`, DSGS.md §4.5) fixes neither. With domain norms it keeps lvl 1 positive (3 elements with an inadmissible mean by t = 3·10⁻⁴, against 635 by 1.5·10⁻⁴ without it), but the full width loses its symmetry as with element norms (10⁻² by t = 10⁻⁴). With element norms it puts ν at its cap along the beam and heats it: median p 206 against 9 at y = 0.01–0.1 (half domain, lvl 0, t = 0.002). This deck does not use it.
 
 ## Discretization and stabilization
 
