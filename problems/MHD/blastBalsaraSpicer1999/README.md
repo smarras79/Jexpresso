@@ -79,8 +79,9 @@ There, Mach exceeds 6 at 2,136 nodes. The ~50 nodes at ε are where the limiter 
 | nop 3, + thermal | 0.01 | 0 | 1.2% | 11.3 | 1.22 | 4.29 | 3.0·10⁻³ | 217 (all before t = 0.003) |
 | nop 4, fast floors | 0.001 | 48 | 2.8% | 6,257 | — | 2.90 | 4.9·10⁻⁴ | 2,000 of 2,000 |
 | nop 4, + thermal | 0.001 | 0 | 0.2% | 4.3 | — | 2.77 | 9.6·10⁻⁴ | 385 (startup) |
+| 256², nop 4, + thermal | 0.002 | 0 | 0.12% | 8.8 (11.6 at 0.0015) | 1.21 | 4.57 | 3.2·10⁻⁴ | 1,025 of 8,000 (mostly startup) |
 
-No node goes below 10⁻³ at any output, and after the startup the limiter no longer acts. The cost is about twice the mean ν and 2–5% off ρ_max. The startup is unchanged: the initial jump still gives 96 (nop 3) and 628 (nop 4) inadmissible element means.
+No node goes below 10⁻³ at any output. At 128² the limiter no longer acts after the startup; at 256², nop 4 (`:init_refine_lvl => 3`, `:nop => 4`, `:Δt => 1.25e-6`, 2 h on 3 ranks to t = 0.002) it acts in a few stage calls later on, and without the thermal residual the same run reaches Mach ≈ 8,100 at the fast front by t = 0.001. The cost is about twice the mean ν and 2–5% off ρ_max. The startup is unchanged: the initial jump still gives 96 (nop 3) and 628 (nop 4) inadmissible element means.
 
 **Resolution.** The same deck with `:init_refine_lvl => 2` and `:Δt => 5.0e-6` gives 128×128 elements (385² nodes). It takes 15 min on 4 ranks. Shares of nodes at t = 0.01:
 
