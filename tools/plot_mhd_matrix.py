@@ -15,7 +15,7 @@ Reads iter_N.pvtu -> iter_N/iter_N_*.vtu on the native grid.
   python3 tools/plot_mhd_matrix.py <run> --vars rho log10rho p log10p pmag Mach Bx By mu_dsgs --format pdf
           # log10<field>: computed when the file lacks it; --log VAR instead turns that column itself to log10
 Colormaps: per-variable defaults in VAR_CMAPS (rho turbo, p inferno, pmag managua, Mach and Mach_f gist_ncar,
-schlieren gray, schlieren_grad_rho X Ray, mu_dsgs Cool to Warm Extended); --cmaps VAR NAME overrides one column (ParaView's
+schlieren gray, schlieren_grad_rho Yellow - Gray - Blue, mu_dsgs Cool to Warm Extended); --cmaps VAR NAME overrides one column (ParaView's
 XRay, CoolToWarmExtended and "Yellow - Gray - Blue", RainbowDesaturated, or any matplotlib name; _r reverses);
 --cmap / --mu-cmap cover all other variables.
 Default times: the outputs nearest tend/3, 2 tend/3, tend. Needs numpy and matplotlib.
@@ -61,7 +61,8 @@ def mirror(g):
 # per-variable colormaps (rotor figure style), keyed by greek(name); --cmaps VAR NAME overrides,
 # --cmap / --mu-cmap cover variables not listed here
 VAR_CMAPS = {"ρ": "turbo", "rho": "turbo", "p": "inferno", "pmag": "managua", "Mach": "gist_ncar",
-             "Mach_f": "gist_ncar", "schlieren": "gray", "schlieren_grad_rho": "XRay", "mu_dsgs": "CoolToWarmExtended"}
+             "Mach_f": "gist_ncar", "schlieren": "gray", "schlieren_grad_rho": "YellowGreyBlue",
+             "mu_dsgs": "CoolToWarmExtended"}
 
 
 def resolve_cmap(name):
@@ -172,6 +173,11 @@ def main():
     logs = {greek(v) for v in a.log}
     clims = {greek(v): (float(lo), float(hi)) for v, lo, hi in a.clim}
     cmap_over = {greek(v): c for v, c in a.cmaps}
+    cols = {greek(v) for v in a.vars} | {greek(log_base(v)) for v in a.vars if log_base(v)}
+    for opt, names in (("--log", a.log), ("--clim", [c[0] for c in a.clim]), ("--cmaps", [c[0] for c in a.cmaps])):
+        stray = [v for v in names if greek(v) not in cols]
+        if stray:   # e.g. "--log rho p u v": u, v were meant as columns
+            print(f" warning: {opt} {' '.join(stray)}: not a column (--vars {' '.join(a.vars)}); put columns after --vars")
     base = [log_base(v) or v for v in a.vars]
     want = ({greek(v) for v in a.vars + base} | set(a.vars) |
             {f for v in base for f in DERIVED.get(v, ())})
