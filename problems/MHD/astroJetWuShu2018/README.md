@@ -119,21 +119,21 @@ lvl 0 runs 4,000 steps in 3 min; lvl 1 runs 8,000 steps in 28 min.
 
 | lvl | t | ρ | max p | jet head (ρ > 0.3 on x < 0.05) | bow shock top, half-width | max \|ψ\| | max ν (= cap) | nodes at p = ε |
 |---|---|---|---|---|---|---|---|---|
-| 0 | 0.0011 | 0.087 – 5.66 | 4.36·10⁴ | y = 0.69 | 0.73, 0.30 | 0.35 | 2.04 | 13 |
-| 0 | 0.0016 | 0.077 – 6.63 | 4.38·10⁴ | y = 0.99 | 1.03, 0.40 | 0.35 | 2.04 | 17 |
-| 0 | 0.0020 | 0.070 – 6.00 | 4.41·10⁴ | y = 1.23 | 1.27, 0.45 | 0.38 | 2.04 | 16 |
-| 1 | 0.0011 | 0.035 – 7.87 | 4.81·10⁴ | y = 0.71 | 0.73, 0.29 | 0.46 | 1.02 | 24 |
-| 1 | 0.0016 | 0.025 – 11.2 | 4.91·10⁴ | y = 1.03 | 1.04, 0.39 | 0.45 | 1.02 | 28 |
-| 1 | 0.0020 | 0.025 – 11.6 | 4.96·10⁴ | y = 1.28 | 1.30, 0.45 | 0.46 | 1.02 | 39 |
+| 0 | 0.0011 | 0.080 – 5.47 | 4.29·10⁴ | y = 0.69 | 0.73, 0.30 | 0.34 | 2.03 | 14 |
+| 0 | 0.0016 | 0.057 – 6.39 | 4.35·10⁴ | y = 0.99 | 1.03, 0.40 | 0.36 | 2.04 | 17 |
+| 0 | 0.0020 | 0.042 – 6.89 | 4.48·10⁴ | y = 1.23 | 1.27, 0.45 | 0.37 | 2.04 | 25 |
+| 1 | 0.0011 | 0.042 – 8.13 | 4.80·10⁴ | y = 0.71 | 0.73, 0.29 | 0.44 | 1.02 | 25 |
+| 1 | 0.0016 | 0.054 – 11.4 | 4.92·10⁴ | y = 1.03 | 1.04, 0.39 | 0.44 | 1.02 | 29 |
+| 1 | 0.0020 | 0.044 – 11.2 | 4.98·10⁴ | y = 1.28 | 1.30, 0.45 | 0.49 | 1.02 | 43 |
 
 - **Head speed.** Between t = 0.0011 and 0.002 it is 600 (lvl 0) and 633 (lvl 1), against the ram-pressure estimate v_h = u_jet/(1 + √(ρ_a/ρ_j)) = 608.
 - **Against the full width.** Head and bow shock match the full-width element-norm runs to 0.01.
-- **Positivity.** The limiter runs in 99% of the stage calls: 352,878 element limitings at lvl 0 (min θ_p 0.23) and 1,482,459 at lvl 1 (min θ_p 0.27). No element ever has an inadmissible mean, so the non-conservative node floor never fires, and mass, momentum and energy are conserved throughout.
-- **Nodes at the floor.** The nodes that sit at p = ε (16 and 39 at t = 0.002) are at ambient density (0.14 – 0.16) along the foot of the bow shock: the ambient thermal energy is 2.4% of E, so the pre-shock undershoot of E takes p to ε.
-- **The beam.** At t = 0.002 it keeps the injected state near the nozzle: p ≈ 1.1 and Mach ≈ 770 for y < 0.1 at lvl 1 (p ≈ 3–18 and Mach 190–430 at lvl 0). It heats further up (lvl 1: p ≈ 20 at y = 0.1–0.3).
+- **Positivity.** The limiter runs in 99% of the stage calls: 362,853 element limitings at lvl 0 (min θ_p 0.23) and 1,470,098 at lvl 1 (min θ_p 0.12). No element ever has an inadmissible mean, so the non-conservative node floor never fires, and mass, momentum and energy are conserved throughout.
+- **Nodes at the floor.** Of the nodes that sit at p = ε (25 and 43 at t = 0.002), all but one or two are at ambient density along the foot of the bow shock: the ambient thermal energy is 2.4% of E, so the pre-shock undershoot of E takes p to ε. The others are in the beam next to the nozzle (y ≤ 0.05).
+- **The beam.** At t = 0.002 it keeps the injected state near the nozzle. Median p is 1.2 and Mach 720 for y < 0.01 at lvl 1, and p 4.4, Mach 380 for y = 0.01–0.1 (lvl 0: p 0.8 and 8.9, Mach 910 and 270). It heats further up: median p ≈ 70 at y = 0.1–0.3 at lvl 1.
 - **Mach number.** The sonic Mach number M = |v|/√(γp/ρ) is meaningless at the nodes the limiter holds at p = ε_p: M = |v|√(ρ/(γε_p)), which is 8·10⁵ in the beam.
-  - `Mach_f` = |v|/c_f with c_f = √((γp + |**B**|²)/ρ) ≥ |**B**|/√ρ stays bounded: 66.7 in the beam, at most 67.0 anywhere.
-  - It is the Mach number of MHD shocks at β_a = 10⁻², so plot it instead of M. At t = 0.002 (lvl 0) the floor nodes have M_f ≤ 0.17 where M = 2.3·10³.
+  - `Mach_f` = |v|/c_f with c_f = √((γp + |**B**|²)/ρ) ≥ |**B**|/√ρ stays bounded: 66.7 in the beam, at most 67.3 anywhere.
+  - It is the Mach number of MHD shocks at β_a = 10⁻², so plot it instead of M. At t = 0.002 (lvl 0) the floor nodes at ambient density have M_f ≤ 0.17.
 
 ## References
 
