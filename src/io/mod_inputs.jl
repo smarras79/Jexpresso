@@ -1191,6 +1191,14 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :dsgs_fast_floors))
         inputs[:dsgs_fast_floors] = false
     end
+    #   :dsgs_thermal_residual  DSGS_MHD 2D, element norms: add the residual of ρe = E − ½|m|²/ρ − ½|B|² − ½ψ²
+    #                      (chain rule on the conserved residuals) over max(its element spread, local_rel·γp̄)
+    if(!haskey(inputs, :dsgs_thermal_residual))
+        inputs[:dsgs_thermal_residual] = false
+    end
+    if inputs[:dsgs_thermal_residual] == true && inputs[:dsgs_norms] != "element"
+        error(" user_inputs.jl: :dsgs_thermal_residual needs :dsgs_norms => \"element\".")
+    end
     if(!haskey(inputs, :dsgs_nodal_rho))
         inputs[:dsgs_nodal_rho] = false
     end

@@ -1591,6 +1591,10 @@ end
 #     kinematic too.
 # ================================================================================
 
+# Signed residual of slot k at node (i,j) of element ie: three-level time difference minus RHS per unit mass.
+@inline _dsgs_rsig(q, q1, q2, rhs_el, wt, imK, ip, ie, i, j, k) =
+    (wt[1]*q[ip,k] + wt[2]*q1[ip,k] + wt[3]*q2[ip,k]) - imK*rhs_el[ie,i,j,k]
+
 function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  ::DSGS_MHD, ::NSD_2D,
                                  q::AbstractMatrix{TT},
@@ -1618,11 +1622,13 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  Cmin::TT=zero(TT),
                                  cutoff::TT=zero(TT),
                                  lnazarov_energy::Bool=false,
-                                 lfast_floors::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
+                                 lfast_floors::Bool=false,
+                                 lthermal::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
     _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
     neqs = size(μ_dsgs, 2)
     NRES = min(neqs, 8)          # residual max excludes the ψ slot
+    lth  = lthermal && llocal_norms && neqs >= 9
     rel  = TT(1.0e-3)            # floor fraction of the physical scales
     # avg_e / den_e: preallocated element mean / spread scratch (llocal_norms)
     γm1  = γ - one(TT)
@@ -1704,6 +1710,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         ratio = zero(TT)      # max_i ‖R_i‖∞,e / denom_i
         wmax  = zero(TT)      # (‖v‖ + c_f)∞,e
         ρ_el  = zero(TT)      # element-mean density
+        den_th = one(TT)      # thermal-energy normalization (lth)
 
         # Element-local normalization: ⟨q_i⟩_e and ‖q_i − ⟨q_i⟩_e‖∞,e, floored
         # at `rel` of the element-mean scales exactly as the domain norms are.
@@ -1758,6 +1765,17 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
             for ieq = 1:neqs
                 den_e[ieq] += eps
             end
+            if lth   # ρe = p/(γ−1): element spread, floored at local_rel·γp̄
+                eavg = zero(TT); emin = typemax(TT); emax = typemin(TT)
+                for j = 1:ngl, i = 1:ngl
+                    ip = connijk[ie,i,j,1]; ρn = max(q[ip,1], eps)
+                    en = q[ip,4] - TT(0.5)*(q[ip,2]*q[ip,2] + q[ip,3]*q[ip,3] + q[ip,5]*q[ip,5])/ρn -
+                         TT(0.5)*(q[ip,6]*q[ip,6] + q[ip,7]*q[ip,7] + q[ip,8]*q[ip,8] + q[ip,9]*q[ip,9])
+                    eavg += en; emin = min(emin, en); emax = max(emax, en)
+                end
+                eavg *= inv_ne
+                den_th = max(emax - eavg, eavg - emin, local_rel*γ*p_e) + eps
+            end
         end
         den = llocal_norms ? den_e : denom
 
@@ -1785,6 +1803,18 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                 cf = sqrt(max(γ*pl/ρl + B2/ρl, zero(TT)))
                 wmax  = max(wmax, sqrt(ul*ul + vl*vl + wl*wl) + cf)
                 ρ_el += ρl
+                if lth   # R_ρe = R_E − v·R_m + ½|v|² R_ρ − B·R_B − ψ R_ψ
+                    Rth = _dsgs_rsig(q, q1, q2, rhs_el, wt, imK, ip, ie, i, j, 4) +
+                          TT(0.5)*(ul*ul + vl*vl + wl*wl)*_dsgs_rsig(q, q1, q2, rhs_el, wt, imK, ip, ie, i, j, 1) -
+                          ul*_dsgs_rsig(q, q1, q2, rhs_el, wt, imK, ip, ie, i, j, 2) -
+                          vl*_dsgs_rsig(q, q1, q2, rhs_el, wt, imK, ip, ie, i, j, 3) -
+                          wl*_dsgs_rsig(q, q1, q2, rhs_el, wt, imK, ip, ie, i, j, 5) -
+                          q[ip,6]*_dsgs_rsig(q, q1, q2, rhs_el, wt, imK, ip, ie, i, j, 6) -
+                          q[ip,7]*_dsgs_rsig(q, q1, q2, rhs_el, wt, imK, ip, ie, i, j, 7) -
+                          q[ip,8]*_dsgs_rsig(q, q1, q2, rhs_el, wt, imK, ip, ie, i, j, 8) -
+                          ψl*_dsgs_rsig(q, q1, q2, rhs_el, wt, imK, ip, ie, i, j, 9)
+                    ratio = max(ratio, abs(Rth)/den_th)
+                end
             end
         end
         ρ_el /= TT(ngl*ngl)

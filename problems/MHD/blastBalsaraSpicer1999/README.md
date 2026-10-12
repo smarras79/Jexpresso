@@ -67,6 +67,17 @@ The dense shells sit along **B**, at x ≈ 0.2 and 0.8. The fast front in magnet
 
 There, Mach exceeds 6 at 2,136 nodes. The ~50 nodes at ε are where the limiter holds p. There M = |**v**|√(ρ/(γε)) is 3·10³ – 1.2·10⁴ at every output. `Mach_f` = |**v**|/c_f stays below 0.9 to t = 0.002, and is 0.04 – 0.06 at those nodes, so plot it instead.
 
+**Thermal-energy residual** (`:dsgs_thermal_residual => true`, off in this deck; DSGS.md §4.5). It adds to the max the residual of ρe = E − ½|**m**|²/ρ − ½|**B**|² − ½ψ², R_ρe = R_E − **v**·R_**m** + ½|**v**|² R_ρ − **B**·R_**B** − ψR_ψ, over max(‖ρe − ⟨ρe⟩_K‖_∞,K, γp̄_K). At fixed E an error δB costs δp/p = −(γ−1)(2/β) δ|**B**|/|**B**| = −3200 δ|**B**|/|**B**| here, so a 0.03% ripple at the fast front empties p. The E residual, measured against |**B**|², does not see it; R_ρe does. 128², same Δt:
+
+| | t | nodes p < 10⁻⁶ | p < 0.0999 | max M | max M_f | ρ_max | mean ν | limiter active (stage calls) |
+|---|---|---|---|---|---|---|---|---|
+| nop 3, fast floors | 0.01 | 88 | 15.5% | 12,830 | 1.23 | 4.37 | 1.3·10⁻³ | 9,982 of 10,000 |
+| nop 3, + thermal | 0.01 | 0 | 1.2% | 11.3 | 1.22 | 4.29 | 3.0·10⁻³ | 217 (all before t = 0.003) |
+| nop 4, fast floors | 0.001 | 48 | 2.8% | 6,257 | — | 2.90 | 4.9·10⁻⁴ | 2,000 of 2,000 |
+| nop 4, + thermal | 0.001 | 0 | 0.2% | 4.3 | — | 2.77 | 9.6·10⁻⁴ | 385 (startup) |
+
+No node goes below 10⁻³ at any output, and after the startup the limiter no longer acts. The cost is about twice the mean ν and 2–5% off ρ_max. The startup is unchanged: the initial jump still gives 96 (nop 3) and 628 (nop 4) inadmissible element means.
+
 **Resolution.** The same deck with `:init_refine_lvl => 2` and `:Δt => 5.0e-6` gives 128×128 elements (385² nodes). It takes 15 min on 4 ranks. Shares of nodes at t = 0.01:
 
 | | p < 0.0999 | p < 0.09 | p < 0.05 | p < 10⁻³ | elements limited per stage call | startup energy from node floors | ρ_max |
