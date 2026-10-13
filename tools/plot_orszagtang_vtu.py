@@ -395,7 +395,9 @@ def cuts(a, dirs, tags, labels):
         print(f" the Athena cuts are at t = {ATHENA_TIME:g}: not drawn at t = {t:g}")
     for ax, y0 in zip(axs[0], a.cut_y):
         ref = athena_cut(y0) if at_ref else None
+        lo, hi = np.inf, -np.inf                             # the data range of this panel
         if ref is not None:
+            lo, hi = min(lo, ref[:, 1].min()), max(hi, ref[:, 1].max())
             ax.plot(ref[:, 0], ref[:, 1], "o", ms=3.0, mfc="none", mec=ATHENA_COLOR, mew=0.9, zorder=3,
                     label=r"Athena, $1024^2$ (Babbar & Ranocha 2026)")
         print(f" y = {y0:g}: " + (f"{len(ref)} Athena points" if ref is not None else "no Athena reference drawn"))
@@ -410,6 +412,7 @@ def cuts(a, dirs, tags, labels):
                         f"max |dp| = {abs(dv[k]):.4f} at x = {ref[k, 0]:.3f}")
             print(msg)
             ax.plot(x, v, "-", lw=1.3, color=CUT_COLORS[i % len(CUT_COLORS)], zorder=2, label=f"Jexpresso, {lab}")
+            lo, hi = min(lo, np.nanmin(v)), max(hi, np.nanmax(v))
             with open(f"{stem}_y{y0:g}_{tag}.csv", "w") as io:
                 io.write("x p\n")
                 io.writelines(f"{xi:.10g} {vi:.10g}\n" for xi, vi in zip(x, v))
@@ -419,7 +422,15 @@ def cuts(a, dirs, tags, labels):
         ax.set_xlim(min(g["xc"][0] for g in grids), max(g["xc"][-1] for g in grids))
         ax.ticklabel_format(axis="y", useOffset=False)
         ax.grid(True, ls="--", lw=0.5, alpha=0.5)
-        ax.legend(fontsize=8, frameon=False)
+        # The legend goes in the lower left, in a band kept free below the data: the
+        # y axis starts low enough that the curves sit above it. The band grows with
+        # the number of entries (one per run, plus the Athena points).
+        n = len(ax.get_legend_handles_labels()[0])
+        band = min(0.5, 0.06 + 0.06 * n)                     # fraction of the axis height under the data
+        span = (hi - lo) if hi > lo else max(abs(hi), 1.0)
+        R = span / (1.0 - band - 0.04)
+        ax.set_ylim(lo - band * R, hi + 0.04 * R)
+        ax.legend(loc="lower left", fontsize=8, frameon=False)
     out = a.out or f"{stem}.{a.format}"
     save(fig, out, a.dpi)
     plt.close(fig)
