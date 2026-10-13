@@ -82,10 +82,12 @@ the discretization's own ∇·B and ψ errors.
   - physical form (`:dsgs_conserved => false`) with the split energy flux.
 
   `JEXPRESSO_AW_VISC=none` gives the plain Galerkin run.
-- **Time.** CarpenterKennedy2N54 is fourth order, enough for N ≤ 3. Δt gives a Courant
-  number of 0.1 on the mean node spacing √2/(nelx N), against |v| + c_f = 1.185, and is
-  rounded down so that a whole number of steps reaches t = 2. On the smallest LGL spacing
-  that is a Courant number of 0.12 for N = 3 and 0.14 for N = 4.
+- **Time.** CarpenterKennedy2N54. Δt gives a Courant number of 0.1 on the mean node
+  spacing √2/(nelx N), against |v| + c_f = 1.185, and is rounded down so that a whole number
+  of steps reaches t = 2. On the smallest LGL spacing that is a Courant number of 0.12 for
+  N = 3 and 0.14 for N = 4. The integrator's own error is far below the spatial one here
+  (ωΔt ≈ 6·10⁻³ at N = 4 on 32²). The integrator matters through the DynSGS coefficient
+  instead; see the results below.
 
 | Variable | Meaning | Default |
 |---|---|---|
@@ -96,6 +98,7 @@ the discretization's own ∇·B and ψ errors.
 | `JEXPRESSO_AW_VISC` | `dsgs`, or `none` for Galerkin | `dsgs` |
 | `JEXPRESSO_AW_SENSOR` | `:dsgs_sensor`, `residual` or `legacy` | `residual` |
 | `JEXPRESSO_AW_CMIN` | `:dsgs_Cmin` | 0 |
+| `JEXPRESSO_AW_FREEZE` | `1`: `:dsgs_freeze_stage`, the coefficient once per step (see below) | 0 |
 | `JEXPRESSO_AW_SOLVER` | `ck54`, `ssprk54`, `vern9`, `dp8` | `ck54` |
 
 The paper's N = 1 and 2 are not part of the sweep, since Jexpresso is run at N ≥ 3.
@@ -120,6 +123,64 @@ discretization on the periodic box, (nelx N)². The paper's flux reconstruction 
 at equal cost, not on equal meshes.
 
 To start a fresh comparison, run `rm -r problems/MHD/alfvenWaveBabbarRanocha2026/errors`.
+
+## What this test found
+
+Measured here, t = 2, with the deck as committed (DynSGS per stage, CarpenterKennedy2N54)
+and with `JEXPRESSO_AW_VISC=none` (Galerkin):
+
+- "ρ" is the paper's measure.
+- "state" is sqrt(Σ_k e(q_k)²) over the nine conserved variables.
+- "order" is the rate between consecutive meshes.
+- The paper's values are those of its Fig. 13 for N = 3 on the same number of elements. They
+  were read from the PDF's vector paths (marker centres, calibrated on the gridlines); the
+  calibration puts the points on exactly 16, 32, 64, 128 elements.
+
+| N | elements | #DOFs | ρ, DSGS | order | ρ, Galerkin | order | state, DSGS | order | state, Galerkin | order | paper (a) GLL, g₂ | paper (b) GL, Radau |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 3 | 8² | 24² | 9.67e-04 |  | 1.22e-03 |  | 1.99e-03 |  | 1.23e-03 |  |  |  |
+| 3 | 16² | 48² | 1.17e-04 | 3.04 | 1.19e-04 | 3.36 | 1.21e-04 | 4.04 | 1.20e-04 | 3.36 | 7.60e-05 | 2.91e-07 |
+| 3 | 32² | 96² | 1.02e-05 | 3.53 | 1.02e-05 | 3.55 | 1.03e-05 | 3.55 | 1.03e-05 | 3.55 | 7.18e-06 | 1.06e-08 |
+| 3 | 64² | 192² | 3.63e-07 | 4.81 | 3.63e-07 | 4.81 | 3.82e-07 | 4.75 | 3.65e-07 | 4.81 | 2.44e-07 | 5.89e-10 |
+| 4 | 8² | 32² | 1.08e-05 |  | 6.90e-06 |  | 6.82e-05 |  | 7.98e-06 |  |  |  |
+| 4 | 16² | 64² | 4.20e-07 | 4.69 | 3.93e-07 | 4.13 | 3.89e-06 | 4.13 | 4.28e-07 | 4.22 |  |  |
+| 4 | 32² | 128² | 4.06e-08 | 3.37 | 2.33e-08 | 4.07 | 4.29e-07 | 3.18 | 2.60e-08 | 4.04 |  |  |
+| 4 | 64² | 256² | 4.12e-09 | 3.30 | 1.45e-09 | 4.01 | 5.24e-08 | 3.03 | 1.63e-09 | 4.00 |  |  |
+
+1. **At N = 3, DynSGS costs nothing in the paper's measure.**
+   - On 32² and 64², the ρ error is the same to three digits with and without DynSGS.
+   - On the finest pair it converges at order 4.8, as the paper's Fig. 13(a) does (4.9).
+   - The ρ error is the largest error. The errors of the wave variables (ρu, ρv, ρw, B) are
+     at least 6× smaller (7–8× with DynSGS on 64²), so the state error follows ρ.
+   - DynSGS raises the wave-variable errors 2.4–11.5× above Galerkin on 64², which is still
+     below the ρ error.
+2. **Against the paper**, at equal #DOFs rather than on equal meshes, N = 3 is about 2.7×
+   below the GLL/g₂ variant of Fig. 13(a) and about 190× above the GL/Radau variant of (b).
+3. **Galerkin converges at order N = 4 for N = 4** (4.0 on every pair). **For N = 3 it
+   reaches 4.8 on the finest pair**, after 3.4 and 3.6. Order N is what the standard error
+   estimate guarantees for unstabilized Galerkin on a hyperbolic problem. N = 3 does better
+   on these uniform meshes, and N = 4 does not.
+4. **At N = 4, the per-stage DynSGS coefficient caps the rate at about 3.**
+   - The wave-variable errors are 19–148× the Galerkin ones, and the gap widens with
+     refinement. The state error converges at 3.2, then 3.0.
+   - `src/io/mod_inputs.jl` (`:dsgs_freeze_stage`) explains why. At an intermediate RK stage,
+     the three-point time difference of the residual sensor uses an internal stage whose
+     error is O(Δt). So ν ~ C_R h² O(Δt) ∝ h³ when Δt ∝ h.
+   - Measured on 16² → 32², state error and order:
+
+     | N = 4, DynSGS | 16² | 32² | order |
+     |---|---|---|---|
+     | per stage, CarpenterKennedy2N54 (default) | 3.89e-06 | 4.29e-07 | 3.18 |
+     | `JEXPRESSO_AW_FREEZE=1`, CarpenterKennedy2N54 | 1.94e-06 | 6.75e-08 | 4.84 |
+     | per stage, `JEXPRESSO_AW_SOLVER=vern9` | 2.02e-06 | 6.88e-08 | 4.87 |
+     | Galerkin | 4.28e-07 | 2.60e-08 | 4.04 |
+
+   Freezing the coefficient at the tⁿ stage restores the rate, as does a higher-order
+   integrator. With the freeze, the 32² error is 6× smaller, and DynSGS's ρ error falls
+   below the Galerkin one (1.9e-8 against 2.3e-8).
+   - At N = 3 the cap shows only in the wave variables: the B error converges at 3.2 on the
+     finest pair, against 3.8 for Galerkin. ρ, which DynSGS does not change, dominates the
+     state error, so neither ρ nor the state shows the cap.
 
 ## Files
 
