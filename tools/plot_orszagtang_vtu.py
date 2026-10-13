@@ -11,11 +11,15 @@ Time grid (one 2x2 figure per resolution; columns = times, rows = variables, one
 Needs numpy and matplotlib (reuses tools/plot_fluxemergence_vtu.py).
 
    python3 tools/plot_orszagtang_vtu.py --timegrid --res 256 512 --rowvars rho mu_dsgs_rho_Bx_By_Bz_psi
+
+Pressure cuts at y = 0.3125 and y = 0.4277, t = 0.5, against Athena (Babbar & Ranocha, JCP 563 (2026) 115060, Fig. 15):
+  python3 tools/plot_orszagtang_vtu.py --cuts [--res 128 256 512 | --dirs RUN ...] [--time 0.5] [--nop 4]
 """
 import argparse, os, re, sys
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from plot_fluxemergence_vtu import (read_pvtu, triangles, resolve_cmap, pvtu_time, greek, ascii_name, step_of, fill)
+from plot_fluxemergence_vtu import (read_pvtu, triangles, resolve_cmap, pvtu_time, greek, ascii_name, step_of, fill,
+                                     grid2d)
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize, ListedColormap
 
@@ -263,6 +267,161 @@ def timegrid(a, dirs, tags, labels, cmap):
         print(f" -> {out}")
 
 
+# ---------------------------------------------------------------------------------------------------------------------
+# --cuts: pressure along y = 0.3125 and y = 0.4277 at t = 0.5 against the Athena reference of Babbar & Ranocha,
+# J. Comput. Phys. 563 (2026) 115060, Fig. 15.
+#
+# THE REFERENCE is problems/MHD/orszagTangBormanis2024/athena/orszag_tang_athena_0_{3125,4277}.csv: the red points of
+# Fig. 15, copied from the paper's reproducibility repository (see the README there). They are the Athena solution on
+# 1024^2 points of Rueda-Ramirez et al., J. Comput. Phys. 444 (2021) 110580, digitized from a plot.
+#
+# THE NORMALIZATION. Eq. 82 of the paper prints rho = 1, p = 1/gamma, B = (-sin 2 pi y, sin 4 pi x)/gamma. The run behind
+# Figs. 14-15 (run/tang/run_mhd_tang.jl) and the Athena reference, however, use rho = 25/(36 pi), p = 5/(12 pi),
+# B0 = 1/sqrt(4 pi), the normalization of orszagTangBormanis2024 (rho = gamma^2/(4 pi), p = gamma/(4 pi), B0 = 1/sqrt(4 pi)).
+# So the pressures are compared as they are. A run in the normalization of eq. 82 has a pressure 4 pi/gamma^2 ~= 4.52
+# times larger at the same time; --pscale 0.2210 (gamma^2/(4 pi)) brings it back.
+#
+# THE CUT is the numerical solution itself. The output nodes lie on a tensor-product lattice (the LGL nodes of a uniform
+# quad mesh). At every node column x_i, p(x_i, y0) is evaluated with the degree-N polynomial in y of the element row
+# that contains y0. Between node columns the curve is evaluated with the degree-N polynomial in x of each element
+# (--refine points per node interval). --nop is the polynomial order of the runs (default 4, the deck's). If the lattice
+# does not have the LGL structure of that order, the cut falls back to linear interpolation between the two bracketing
+# node rows (what ParaView's Plot Over Line does, which made the paper's curves) and says so.
+# ---------------------------------------------------------------------------------------------------------------------
+ATHENA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "problems", "MHD", "orszagTangBormanis2024",
+                          "athena")
+CUT_COLORS = ("#2a78d6", "#1baf7a", "#7a5bd1", "#c2452d")   # the runs; the Athena points are ATHENA_COLOR
+ATHENA_COLOR = "#eb6834"
+
+
+def athena_cut(y0):
+    """The Athena points of the cut at y0 as an (n, 2) array (x, p) sorted in x; None if there is no file for y0."""
+    f = os.path.join(ATHENA_DIR, "orszag_tang_athena_0_" + f"{y0:.4f}".split(".")[1] + ".csv")
+    if not os.path.isfile(f):
+        return None
+    with open(f) as io:
+        xp = np.array([ln.split() for ln in io.read().splitlines()[1:] if ln.strip()], dtype=float)
+    return xp[np.argsort(xp[:, 0])]
+
+
+def lgl_nodes(N):
+    """Legendre-Gauss-Lobatto nodes on [-1, 1]: -1, the zeros of P_N' (eigenvalues of the Jacobi matrix of P^(1,1)_(N-1)), 1."""
+    k = np.arange(1, N - 1)
+    b = np.sqrt(k * (k + 2.0) / ((2.0 * k + 1.0) * (2.0 * k + 3.0)))
+    inner = np.linalg.eigvalsh(np.diag(b, 1) + np.diag(b, -1)) if N >= 2 else np.array([])
+    return np.concatenate(([-1.0], np.sort(inner), [1.0]))
+
+
+def lagrange(nodes, s):
+    """l_k(s) for the Lagrange basis on nodes, shape (len(s), len(nodes))."""
+    s = np.atleast_1d(np.asarray(s, float))
+    L = np.ones((len(s), len(nodes)))
+    for k, xk in enumerate(nodes):
+        for m, xm in enumerate(nodes):
+            if m != k:
+                L[:, k] *= (s - xm) / (xk - xm)
+    return L
+
+
+def is_lgl_lattice(c, N, tol=1e-6):
+    """True if the sorted node coordinates c are the LGL nodes of order N on consecutive elements."""
+    n = len(c) - 1
+    if N < 1 or n < N or n % N:
+        return False
+    ref = (lgl_nodes(N) + 1.0) / 2.0
+    for e in range(n // N):
+        lo, hi = c[e * N], c[(e + 1) * N]
+        if np.max(np.abs(c[e * N:(e + 1) * N + 1] - (lo + ref * (hi - lo)))) > tol * (hi - lo):
+            return False
+    return True
+
+
+def line_cut(g, v, y0, N, refine):
+    """(x, v(x, y0), how) along the line y = y0 of the node grid g."""
+    xc, yc = g["xc"], g["yc"]
+    Z = grid2d(g, v)
+    if Z is None:                                            # not a tensor lattice: linear on the triangles
+        from matplotlib.tri import Triangulation, LinearTriInterpolator
+        xs = np.linspace(xc[0], xc[-1], 4097)
+        f = LinearTriInterpolator(Triangulation(g["x"], g["y"], triangles(g)), v)
+        return xs, np.asarray(f(xs, np.full_like(xs, y0))), "linear on the triangles (no node lattice)"
+    if not yc[0] <= y0 <= yc[-1]:
+        sys.exit(f"y = {y0} is outside the data, y in [{yc[0]}, {yc[-1]}]")
+    if is_lgl_lattice(yc, N) and is_lgl_lattice(xc, N):
+        ref = lgl_nodes(N)
+        e = min(int(np.searchsorted(yc[::N], y0, side="right")) - 1, (len(yc) - 1) // N - 1)
+        lo, hi = yc[e * N], yc[(e + 1) * N]
+        vc = lagrange(ref, 2.0 * (y0 - lo) / (hi - lo) - 1.0)[0] @ Z[e * N:(e + 1) * N + 1, :]   # at every node column
+        s = np.linspace(-1.0, 1.0, refine * N + 1)
+        Ls = lagrange(ref, s)
+        xs, vs = [], []
+        for ex in range((len(xc) - 1) // N):                 # between the columns: the element's polynomial in x
+            lo, hi = xc[ex * N], xc[(ex + 1) * N]
+            keep = slice(0 if ex == 0 else 1, None)          # the shared end point once
+            xs.append((lo + (s + 1.0) / 2.0 * (hi - lo))[keep])
+            vs.append((Ls @ vc[ex * N:(ex + 1) * N + 1])[keep])
+        return np.concatenate(xs), np.concatenate(vs), f"element polynomials of order {N}"
+    j = min(int(np.searchsorted(yc, y0, side="right")) - 1, len(yc) - 2)
+    th = (y0 - yc[j]) / (yc[j + 1] - yc[j])
+    return xc, (1.0 - th) * Z[j, :] + th * Z[j + 1, :], f"linear in y (not the LGL lattice of order {N}: check --nop)"
+
+
+def cuts(a, dirs, tags, labels):
+    """--cuts: one panel per a.cut_y, one curve per run, the Athena points where the paper has them."""
+    t = 0.5 if a.time is None else a.time
+    nops = a.nop * len(dirs) if len(a.nop) == 1 else a.nop
+    if len(nops) != len(dirs):
+        sys.exit("--nop: one value, or one per run")
+    files = []
+    for d in dirs:
+        snaps = snapshots(d)
+        f = pick(snaps, t, 1e-6 * max(1.0, t))
+        if f is None:
+            sys.exit(f"{d}: no snapshot at t = {t:g} (has t = {', '.join(f'{s:g}' for s in sorted(snaps))})")
+        files.append(f)
+    grids = []
+    for f in files:
+        g = read_pvtu(f, {a.pfield})
+        if a.pfield not in g["fields"]:
+            sys.exit(f"{f}: no point field {a.pfield!r}. Available: " + ", ".join(g["names"]))
+        grids.append(g)
+        print(f" t = {t:g}: {f} ({len(g['x'])} nodes)")
+    stem = os.path.splitext(a.out)[0] if a.out else os.path.join(a.base if not a.dirs else ".", f"OT_p_cuts_t{t:g}")
+    fig, axs = plt.subplots(1, len(a.cut_y), figsize=(a.width / 2 * len(a.cut_y), a.width * 0.42),
+                            squeeze=False, layout="constrained")
+    for ax, y0 in zip(axs[0], a.cut_y):
+        ref = athena_cut(y0)
+        if ref is not None:
+            ax.plot(ref[:, 0], ref[:, 1], "o", ms=3.0, mfc="none", mec=ATHENA_COLOR, mew=0.9, zorder=3,
+                    label=r"Athena, $1024^2$ (Babbar & Ranocha 2026)")
+        print(f" y = {y0:g}: " + (f"{len(ref)} Athena points" if ref is not None else "no Athena reference for this cut"))
+        for i, (g, tag, lab, N) in enumerate(zip(grids, tags, labels, nops)):
+            x, v, how = line_cut(g, a.pscale * g["fields"][a.pfield], y0, N, a.refine)
+            msg = f"   {tag}: {how}"
+            if ref is not None:
+                dv = np.interp(ref[:, 0], x, v) - ref[:, 1]
+                k = int(np.argmax(np.abs(dv)))
+                msg += (f"; against Athena: mean |dp| = {np.mean(np.abs(dv)):.4f} "
+                        f"({100 * np.mean(np.abs(dv)) / np.ptp(ref[:, 1]):.1f}% of its range), "
+                        f"max |dp| = {abs(dv[k]):.4f} at x = {ref[k, 0]:.3f}")
+            print(msg)
+            ax.plot(x, v, "-", lw=1.3, color=CUT_COLORS[i % len(CUT_COLORS)], zorder=2, label=f"Jexpresso, {lab}")
+            with open(f"{stem}_y{y0:g}_{tag}.csv", "w") as io:
+                io.write("x p\n")
+                io.writelines(f"{xi:.10g} {vi:.10g}\n" for xi, vi in zip(x, v))
+        ax.set_title(f"$y = {y0:g}$,  $t = {t:g}$")
+        ax.set_xlabel(a.xlabel)
+        ax.set_ylabel(r"$p$")
+        ax.set_xlim(min(g["xc"][0] for g in grids), max(g["xc"][-1] for g in grids))
+        ax.ticklabel_format(axis="y", useOffset=False)
+        ax.grid(True, ls="--", lw=0.5, alpha=0.5)
+        ax.legend(fontsize=8, frameon=False)
+    out = a.out or f"{stem}.{a.format}"
+    save(fig, out, a.dpi)
+    plt.close(fig)
+    print(f" -> {out} (the cuts: {stem}_y<y>_<run>.csv)")
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--base", default="output/MHD/orszagTangBormanis2024", help="holds output-<R>x<R>/ run directories")
@@ -278,6 +437,15 @@ def main():
                    help="--timegrid: one colormap per --gridvars entry (overrides --cmap and --mu-cmap)")
     p.add_argument("--stack-colorbars", action="store_true",
                    help="--timegrid: stack the colorbars full width instead of one under each column")
+    p.add_argument("--cuts", action="store_true",
+                   help="pressure along --cut-y at --time (default 0.5), one curve per run, against Athena (Babbar & Ranocha 2026, Fig. 15)")
+    p.add_argument("--cut-y", type=float, nargs="+", default=[0.3125, 0.4277],
+                   help="--cuts: the lines y = const (default 0.3125 0.4277, the two with Athena data)")
+    p.add_argument("--nop", type=int, nargs="+", default=[4], help="--cuts: polynomial order of the runs, one or one per run (default 4)")
+    p.add_argument("--refine", type=int, default=4, help="--cuts: evaluation points per node interval along x (default 4)")
+    p.add_argument("--pfield", default="p", help="--cuts: the pressure field (default p)")
+    p.add_argument("--pscale", type=float, default=1.0,
+                   help="--cuts: multiply the pressure by this (default 1; 0.2210 = gamma^2/(4 pi) for a run in the normalization of eq. 82)")
     p.add_argument("--dirs", nargs="+", default=None, help="run directories instead of --base/--res (rows, top to bottom)")
     p.add_argument("--labels", nargs="+", default=None, help="row labels (default R×R or the directory names)")
     p.add_argument("--time", type=float, default=None, help="time to plot (default: latest time present in every run)")
@@ -314,6 +482,9 @@ def main():
         p.error("--labels needs one label per run")
     if a.timegrid:
         timegrid(a, dirs, tags, labels, cmap)
+        return
+    if a.cuts:
+        cuts(a, dirs, tags, labels)
         return
     if not (a.grid or a.single):
         p.error("--no-grid needs --single")
