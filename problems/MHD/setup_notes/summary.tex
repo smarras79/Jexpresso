@@ -172,9 +172,10 @@ succeeds with a bit-identical coefficient for \code{lthermal} omitted, false or 
 $\nu\nabla u$, $\nu\nabla T$, \dots{} with no $\rho$ factor, no stress and no work terms --- neither documented form.
 \code{f9cdb02} sets \code{:dsgs\_conserved => false} and \code{:dsgs\_nazarov\_energy => true}: the physical form of
 Orszag--Tang that the primitives' header describes. Measured here over the 16-run grid of \code{tools/smooth\_vortex\_scan.sh} ($N=4$--7, $4^2$--$32^2$): the velocity $L^1$ error changes by $-4\%$ to $+3\%$ on the two finest meshes, with the same observed orders; 10--14\% lower on $4^2$, $1.21\times$ at $N=6$, $8^2$ (details in \code{smoothVortex.pdf}).
-\item \textbf{FE, FED:} the comments that \code{"energy"} keeps the $\tau\cdot u$ term active, and that
-$\Delta t=2.5\times10^{-3}$, are stale. FED's header claims the sibling's mesh and time step; it refines the mesh
-once and uses $\Delta t=5\times10^{-3}$ (FE: $80\times35$, $7.5\times10^{-3}$).
+\item \textbf{[Fixed in \code{f03762b}.] FE, FED:} the comments that \code{"energy"} keeps the $\tau\cdot u$ term active,
+that $\Delta t=2.5\times10^{-3}$, and that the energy slot is scaled by $\gamma(\gamma-1)/\Pr$ were stale; FED's header and
+README claimed the sibling's mesh and time step, while it refines the mesh once and uses $\Delta t=5\times10^{-3}$
+(FE: $80\times35$, $7.5\times10^{-3}$). Comments and READMEs now match the decks (comments only; no value changed).
 \item \textbf{FE:} the floor reaches stages 2--5 only through \code{calck = true}; the deck does not set
 \code{williamson\_condition = false} as the conservative limiter does.
 \item \textbf{OT:} the comment that \code{"rank"} is the code-wide norm default is stale (it is \code{"domain"}); the
