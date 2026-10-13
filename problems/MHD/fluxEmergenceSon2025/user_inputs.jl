@@ -91,7 +91,14 @@ function user_inputs()
         # Run with (10 MPI ranks):
         #   mpiexec -n 10 julia --project=. src/Jexpresso.jl MHD fluxEmergenceSon2025
         #---------------------------------------------------------------------------
-        :ode_solver           => CarpenterKennedy2N54(stage_limiter! = fe_positivity_limiter!),  # floors, see top of file
+        # Floors as the stage limiter (see top of file). williamson_condition = false
+        # is what makes the limiter run before stages 2-5 and after stage 5: with
+        # the default true, OrdinaryDiffEq fuses those stages with the RHS call and
+        # calls the stage limiter only once per step. (Jexpresso's solve passes a
+        # saveat, which forces the same thing through calck, but the deck should
+        # not depend on that; positivity_driver.jl sets it for the same reason.)
+        :ode_solver           => CarpenterKennedy2N54(stage_limiter! = fe_positivity_limiter!,
+                                                      williamson_condition = false),
         # Δt = 7.5e-3 τ₀ is CFL ≈ 0.22 against the initial maximum wave speed
         # (the coronal sound speed, = c_h = 5.0 C_s) and the smallest LGL
         # spacing (0.173 H₀ at :nop => 4 on 1 H₀ elements), and CFL ≈ 0.43 at

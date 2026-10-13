@@ -105,9 +105,10 @@ $\psi$ & $\nu\nabla\psi$ & $\psi_e=0$\\
 \subsection*{Case-local floor as the RK stage limiter (\code{fe\_positivity\_limiter!}, \code{user\_inputs.jl:29--77})}
 This is \emph{not} the \code{:lpositivity} machinery of \code{src/kernel/positivity} (\code{:lpositivity}
 stays \code{false}); it is a function of the deck handed to the solver as
-\code{CarpenterKennedy2N54(stage\_limiter! = fe\_positivity\_limiter!)}. Jexpresso's \code{solve} passes a
-non-empty \code{saveat}, so OrdinaryDiffEq sets \code{calck = true}, which forces
-\code{williamson\_condition = false}: the floor runs before the RHS of stages 2--5 and after stage 5.
+\code{CarpenterKennedy2N54(stage\_limiter! = fe\_positivity\_limiter!, williamson\_condition = false)}
+(the keyword since \code{e448f7d}): the floor runs before the RHS of stages 2--5 and after stage 5. (At \commit{} the
+keyword was not set and the same behaviour came only from \code{calck = true}, which Jexpresso's \code{solve} implies
+by passing a non-empty \code{saveat}.)
 Per node $I$, with $f=0.2$ (\code{fe\_floor\_frac}) and the reference values at that node:
 \begin{enumerate}[leftmargin=*]
 \item if $\rho_I<f\rho_{e,I}$: $\rho_I\leftarrow f\rho_{e,I}$ (momentum unchanged, i.e.\ the velocity is reduced);
@@ -132,9 +133,13 @@ keeps the kernel's $\tau\cdot u$ \dots active'' (under \code{:dsgs\_conserved =>
 CFL $\approx0.22$ initially, $\approx0.43$ late), and that the energy slot is ``scaled by $\gamma(\gamma-1)/\Pr$''
 (the first implementation; the kernel splits the energy flux). The comments and the README's sizing table now
 say what the code does.
-\item The floor reaches stages 2--5 only because \code{calck = true} in Jexpresso's \code{solve}; the
-deck does not set \code{williamson\_condition = false} as the conservative limiter does
-(\code{positivity\_driver.jl:266--268}). A run without callbacks or \code{saveat} would apply it once per step.
+\item \textbf{[Fixed in \code{e448f7d}.]} At \commit{} the floor reached stages 2--5 only because \code{calck = true} in
+Jexpresso's \code{solve}; the deck did not set \code{williamson\_condition = false} as the conservative limiter does
+(\code{positivity\_driver.jl:266--268}), and a solve without callbacks or \code{saveat} would have applied it once per
+step (measured on the installed OrdinaryDiffEqLowStorageRK 1.11.0: 1 call per step against 5). The deck now sets the
+keyword; through Jexpresso's \code{solve} (\code{calck = true}) this changes nothing: run here from the same
+initial condition, the decks of \code{c1d5b46} and \code{e448f7d} give byte-identical VTK output at $t=1$ and
+$2\,\tau_0$ ($\Delta t=7.5\times10^{-3}$). The fix only removes the dependence on \code{calck}.
 \end{enumerate}
 
 \input{codemap}

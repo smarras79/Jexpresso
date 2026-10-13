@@ -1,0 +1,338 @@
+#---------------------------------------------------------------------------------
+# Convergence history of the smooth Alfvén wave, in the layout of
+# Babbar & Ranocha (2026), Fig. 13: the L² error at the final time against the
+# number of degrees of freedom on log-log axes, one line per polynomial order N,
+# with the optimal O(h^{N+1}) slope beside each.
+#
+# THE ERROR is the one the paper's runs report: Tenkai.jl's compute_error, read
+# as "l2_error" by run/convergence_alfven_wave/convergence.jl of the
+# reproducibility repository,
+#
+#     e(q) = sqrt( (1/|Ω|) ∫_Ω (q_h − q)² dΩ ),
+#
+# integrated with N + 4 Gauss-Legendre points per direction in every element
+# (Tenkai: nd + 3 with nd = N + 1), the numerical solution interpolated there
+# from its LGL nodes. Tenkai evaluates it for the FIRST conserved variable only,
+# the density. The exact density is 1, so that number measures how far the
+# scheme moves ρ off a constant (a by-product of the nonlinear coupling), not
+# the wave itself. Every conserved variable is stored here, and the figure has
+# two panels: ρ, the paper's measure, and the full state sqrt(Σ_k e(q_k)²),
+# which does measure the wave (it lives in u, v, w, B).
+#
+# At the final time every run stores its errors in
+# `errors/nop<N>_nelx<M>_<visc>.dat` in this case directory, and the figure is
+# drawn from every error stored there for the same final time: a sweep builds
+# the whole figure and each run replaces only its own point.
+# `rm -r problems/MHD/alfvenWaveBabbarRanocha2026/errors` starts afresh.
+#
+# #DOFs is the number of distinct unknowns per variable of this continuous
+# Galerkin discretization on the doubly periodic box, (nelx N)². The paper's
+# flux reconstruction has (nx (N + 1))² on nx² elements, so at equal #DOFs the
+# curves of the two compare at equal cost, not at equal mesh.
+#
+# The hook is src/io/plotting/jeplots.jl (plot_triangulation, NSD_2D):
+#   mesh     this rank's mesh (coordinates, connectivity, global extents)
+#   q        flat npoin*nvar vector of the OUTPUT variables (`outvar`)
+#   t        simulation time
+#---------------------------------------------------------------------------------
+const AW_ERR_DIR = joinpath(@__DIR__, "errors")
+const AW_QVARS   = ("ρ", "ρu", "ρv", "ρE", "ρw", "Bx", "By", "Bz", "ψ")   # the state order of initialize.jl
+
+# ATOMIC WRITES, as in smoothVortex: the runs of a sweep may redraw the same
+# figure and read the same store at the same time. Write beside the target and
+# rename (atomic on POSIX).
+function _aw_atomic(path::AbstractString, write!::Function)
+    mkpath(dirname(path))
+    base, ext = splitext(path)          # keep the extension: Plots picks the format from it
+    tmp = string(base, ".tmp", getpid(), ext)
+    try
+        write!(tmp)
+        mv(tmp, path; force = true)
+    catch err
+        isfile(tmp) && (try; rm(tmp); catch; end)
+        rethrow(err)
+    end
+    return nothing
+end
+
+#---------------------------------------------------------------------------------
+# Quadrature. Gauss-Legendre by Golub-Welsch; the LGL nodes of the solution as
+# ±1 and the zeros of P_N', the eigenvalues of the Jacobi matrix of P^(1,1)_{N-1}.
+# Only the SET of nodes matters below, not the order Jexpresso numbers them in:
+# the coordinates are interpolated with the same basis as the solution.
+#---------------------------------------------------------------------------------
+function _aw_gauss(n::Int)
+    b = [k/sqrt(4.0*k*k - 1.0) for k = 1:n-1]
+    E = LinearAlgebra.eigen(LinearAlgebra.SymTridiagonal(zeros(n), b))
+    return E.values, 2.0 .* E.vectors[1, :].^2
+end
+
+function _aw_lgl(N::Int)
+    b = [sqrt(k*(k + 2.0)/((2.0*k + 1.0)*(2.0*k + 3.0))) for k = 1:N-2]
+    x = N >= 2 ? LinearAlgebra.eigvals(LinearAlgebra.SymTridiagonal(zeros(N - 1), b)) : Float64[]
+    return vcat(-1.0, sort(x), 1.0)
+end
+
+# L[a,i] = ℓ_i(x_a) and D[a,i] = ℓ_i'(x_a), the Lagrange basis on the nodes ξ.
+function _aw_lagrange(ξ, x)
+    n = length(ξ); m = length(x)
+    L = ones(m, n); D = zeros(m, n)
+    for a = 1:m, i = 1:n
+        for k = 1:n
+            k == i && continue
+            L[a,i] *= (x[a] - ξ[k])/(ξ[i] - ξ[k])
+            d = 1.0/(ξ[i] - ξ[k])
+            for j = 1:n
+                (j == i || j == k) && continue
+                d *= (x[a] - ξ[j])/(ξ[i] - ξ[j])
+            end
+            D[a,i] += d
+        end
+    end
+    return L, D
+end
+
+#---------------------------------------------------------------------------------
+# The error of every conserved variable at time t. Element by element, so each
+# element is integrated once whatever the periodic node duplication or the rank
+# count; the sums are reduced over the ranks. Collective: every rank must call it.
+#---------------------------------------------------------------------------------
+function _aw_errors(mesh, q, t, outvar)
+    names = string.(outvar)
+    ivn = [findfirst(==(n), names) for n in ("ρ", "u", "v", "w", "p", "Bx", "By", "Bz", "ψ")]
+    any(isnothing, ivn) && return nothing
+    iv = Int[i for i in ivn]
+    npoin = mesh.npoin
+    ngl   = mesh.ngl
+    N     = ngl - 1
+    γ     = γ_mhd
+    Lx    = mesh.xmax - mesh.xmin      # global extents (Allreduced by the mesh reader)
+    Ly    = mesh.ymax - mesh.ymin
+
+    xg, wg = _aw_gauss(N + 4)
+    L, D   = _aw_lagrange(_aw_lgl(N), xg)
+    nq     = length(xg)
+
+    nv  = length(AW_QVARS)
+    s2  = zeros(nv)
+    sm  = zeros(nv)
+    area = 0.0
+    X = zeros(ngl, ngl); Y = zeros(ngl, ngl)
+    U = zeros(ngl, ngl, nv)
+    Xq = zeros(nq, nq); Yq = zeros(nq, nq)
+    Xa = zeros(nq, nq); Xb = zeros(nq, nq); Ya = zeros(nq, nq); Yb = zeros(nq, nq)
+    Uq = zeros(nq, nq, nv)
+    out(k, ip) = q[(iv[k] - 1)*npoin + ip]
+
+    for iel = 1:mesh.nelem
+        ip1 = mesh.connijk[iel, 1, 1]
+        x1  = mesh.coords[1, ip1]; y1 = mesh.coords[2, ip1]
+        for j = 1:ngl, i = 1:ngl
+            ip = mesh.connijk[iel, i, j]
+            # unwrap across the periodic seam, in case a node of this element
+            # carries the coordinates of its periodic twin
+            dx = mesh.coords[1, ip] - x1; dy = mesh.coords[2, ip] - y1
+            X[i,j] = x1 + dx - Lx*round(dx/Lx)
+            Y[i,j] = y1 + dy - Ly*round(dy/Ly)
+            ρ  = out(1, ip); u = out(2, ip); v = out(3, ip); w = out(4, ip); p = out(5, ip)
+            Bx = out(6, ip); By = out(7, ip); Bz = out(8, ip); ψ = out(9, ip)
+            U[i,j,1] = ρ
+            U[i,j,2] = ρ*u
+            U[i,j,3] = ρ*v
+            U[i,j,4] = p/(γ - 1.0) + 0.5*ρ*(u*u + v*v + w*w) + 0.5*(Bx*Bx + By*By + Bz*Bz) + 0.5*ψ*ψ
+            U[i,j,5] = ρ*w
+            U[i,j,6] = Bx; U[i,j,7] = By; U[i,j,8] = Bz; U[i,j,9] = ψ
+        end
+        # coordinates and their derivatives at the Gauss points (isoparametric)
+        Xq .= L*X*L';  Yq .= L*Y*L'
+        Xa .= D*X*L';  Xb .= L*X*D'
+        Ya .= D*Y*L';  Yb .= L*Y*D'
+        for k = 1:nv
+            Uq[:,:,k] .= L*view(U, :, :, k)*L'
+        end
+        for b = 1:nq, a = 1:nq
+            wab = wg[a]*wg[b]*abs(Xa[a,b]*Yb[a,b] - Xb[a,b]*Ya[a,b])
+            se  = aw_state(Xq[a,b], Yq[a,b], t, γ)
+            for k = 1:nv
+                e = Uq[a,b,k] - se[k]
+                s2[k] += wab*e*e
+                sm[k]  = max(sm[k], abs(e))
+            end
+            area += wab
+        end
+    end
+
+    comm = get_mpi_comm()
+    if MPI.Comm_size(comm) > 1
+        r = MPI.Allreduce(vcat(s2, area), MPI.SUM, comm)
+        s2 .= r[1:nv]; area = r[end]
+        sm .= MPI.Allreduce(sm, MPI.MAX, comm)
+    end
+    # the quadrature must integrate the box: a cheap check that the element
+    # geometry (and the unwrapping above) is right
+    abs(area - Lx*Ly) <= 1.0e-10*Lx*Ly ||
+        @warn "alfvenWaveBabbarRanocha2026: the error quadrature integrates $(area), not the box area $(Lx*Ly)"
+    return (l2 = sqrt.(s2 ./ area), linf = sm, area = area)
+end
+
+function _aw_tag(inputs)
+    get(inputs, :lvisc, true) || return "galerkin"
+    tag = "dsgs"
+    lowercase(string(get(inputs, :dsgs_sensor, "residual"))) == "legacy" && (tag *= "_legacy")
+    Float64(get(inputs, :dsgs_Cmin, 0.0)) > 0 && (tag *= "_cmin")
+    return tag
+end
+
+_aw_nelx_of(inputs) = (m = match(r"alfven_(\d+)x", string(get(inputs, :gmsh_filename, "")));
+                       m === nothing ? Int(get(inputs, :nelx, 0)) : parse(Int, m.captures[1]))
+
+function _aw_save(e, inputs, tnom, tnum)
+    nop  = Int(get(inputs, :nop, 0))
+    nelx = _aw_nelx_of(inputs)
+    try
+        f = joinpath(AW_ERR_DIR, string("nop", nop, "_nelx", nelx, "_", _aw_tag(inputs), ".dat"))
+        _aw_atomic(f, tmp -> open(tmp, "w") do io
+            println(io, "# smooth Alfvén wave: e(q) = sqrt((1/|Ω|) ∫ (q_h − q)² dΩ) against the exact solution,",
+                        " N+4 Gauss points per direction; Linf at those points")
+            println(io, "# nop=", nop, " nelx=", nelx, " ndofs=", (nelx*nop)^2,
+                        " t=", tnom, " tnum=", tnum, " visc=", _aw_tag(inputs),
+                        " dt=", Float64(get(inputs, :Δt, 0.0)),
+                        " Cmin=", Float64(get(inputs, :dsgs_Cmin, 0.0)),
+                        " solver=", nameof(typeof(get(inputs, :ode_solver, nothing))),
+                        " area=", e.area)
+            println(io, "# var L2 Linf")
+            for (k, n) in enumerate(AW_QVARS)
+                println(io, n, " ", e.l2[k], " ", e.linf[k])
+            end
+        end)
+    catch err
+        @warn "alfvenWaveBabbarRanocha2026: could not store the error" exception=err
+    end
+    return nothing
+end
+
+function _aw_load(tnom)
+    rows = NamedTuple[]
+    isdir(AW_ERR_DIR) || return rows
+    for fname in readdir(AW_ERR_DIR)
+        (startswith(fname, "nop") && endswith(fname, ".dat")) || continue
+        meta = Dict{String,String}(); l2 = Dict{String,Float64}()
+        try
+            for line in eachline(joinpath(AW_ERR_DIR, fname))
+                tok = split(line)
+                isempty(tok) && continue
+                if tok[1] == "#"
+                    for s in tok
+                        occursin('=', s) || continue
+                        k, v = split(s, '=', limit = 2); meta[k] = v
+                    end
+                elseif length(tok) >= 3
+                    l2[tok[1]] = parse(Float64, tok[2])
+                end
+            end
+        catch err
+            @warn "alfvenWaveBabbarRanocha2026: skipping an unreadable error file" file=fname exception=err
+            continue
+        end
+        tc = tryparse(Float64, get(meta, "t", ""))
+        (tc === nothing || abs(tc - tnom) > 1.0e-8*max(1.0, abs(tnom))) && continue
+        all(haskey(l2, n) for n in AW_QVARS) || continue
+        nop  = tryparse(Int, get(meta, "nop", "")); nelx = tryparse(Int, get(meta, "nelx", ""))
+        (nop === nothing || nelx === nothing) && continue
+        push!(rows, (nop = nop, nelx = nelx, ndofs = (nelx*nop)^2, visc = get(meta, "visc", "dsgs"),
+                     t = tc, rho = l2["ρ"], state = sqrt(sum(abs2, l2[n] for n in AW_QVARS))))
+    end
+    return sort!(rows, by = r -> (r.visc, r.nop, r.ndofs))
+end
+
+# Observed order between consecutive meshes: in 2D h ∝ #DOFs^(-1/2).
+_aw_rate(d1, e1, d2, e2) = (e1 > 0 && e2 > 0) ? -2.0*log(e2/e1)/log(d2/d1) : NaN
+
+function _aw_report(rows)
+    println(" # alfvenWaveBabbarRanocha2026: L2 error at t = ", rows[1].t,
+            " (rho: the paper's Fig. 13 measure; state: all conserved variables)")
+    println(" #   visc        N  nelx    DOFs      L2(rho)  order     L2(state)  order")
+    prev = nothing
+    for r in rows
+        same = prev !== nothing && prev.visc == r.visc && prev.nop == r.nop
+        p1 = same ? _aw_rate(prev.ndofs, prev.rho,   r.ndofs, r.rho)   : NaN
+        p2 = same ? _aw_rate(prev.ndofs, prev.state, r.ndofs, r.state) : NaN
+        println(@sprintf(" #   %-10s %2d  %4d  %6d   %10.3e  %5s    %10.3e  %5s",
+                         r.visc, r.nop, r.nelx, r.ndofs, r.rho,
+                         isfinite(p1) ? @sprintf("%.2f", p1) : "", r.state,
+                         isfinite(p2) ? @sprintf("%.2f", p2) : ""))
+        prev = r
+    end
+    return nothing
+end
+
+const AW_STYLE = Dict(1 => (:darkorange, :dtriangle), 2 => (:royalblue, :circle),
+                      3 => (:seagreen, :diamond),     4 => (:crimson, :rect),
+                      5 => (:purple, :utriangle),     6 => (:goldenrod, :star5),
+                      7 => (:black, :xcross))
+_aw_style(n) = get(AW_STYLE, n, (:gray, :cross))
+_aw_line(tag) = tag == "galerkin" ? :dash : startswith(tag, "dsgs_") ? :dashdot : :solid
+_aw_label(tag) = tag == "galerkin" ? "Galerkin" : tag == "dsgs" ? "DSGS" : replace(tag, "_" => " ")
+
+function _aw_panel(rows, fld, ylab, title)
+    pl = Plots.plot(; xscale = :log10, yscale = :log10,
+                    xlabel = "#DOFs = (nelx N)²", ylabel = ylab, title = title,
+                    framestyle = :box, grid = true, gridalpha = 0.25,
+                    legend = :bottomleft, legendfontsize = 9, titlefontsize = 12,
+                    guidefontsize = 11, tickfontsize = 9, show = false)
+    # the resolutions actually run, labelled as the paper labels them (32², 64², ...)
+    dofs = sort(unique(Float64(r.ndofs) for r in rows))
+    Plots.plot!(pl; xticks = (dofs, [string(isqrt(round(Int, d)), "²") for d in dofs]))
+    for tag in sort(unique(r.visc for r in rows)), n in sort(unique(r.nop for r in rows))
+        g = filter(r -> r.visc == tag && r.nop == n, rows)
+        xs = [Float64(r.ndofs) for r in g]; ys = [getfield(r, fld) for r in g]
+        keep = isfinite.(ys) .& (ys .> 0)
+        any(keep) || continue
+        xs = xs[keep]; ys = ys[keep]
+        col, mk = _aw_style(n)
+        Plots.plot!(pl, xs, ys; line = (col, 1.6, _aw_line(tag)), marker = (mk, 6),
+                    markercolor = tag == "galerkin" ? :white : col, markerstrokecolor = col,
+                    label = string("N = ", n, ", ", _aw_label(tag)))
+        # the optimal order, O(h^(N+1)) = #DOFs^(-(N+1)/2), a factor 4 below the
+        # finest point, over the span of the curve
+        if length(xs) >= 2 && tag == first(sort(unique(r.visc for r in rows if r.nop == n)))
+            A = ys[end]/4.0*xs[end]^((n + 1)/2)
+            Plots.plot!(pl, [xs[1], xs[end]], [A*x^(-(n + 1)/2) for x in (xs[1], xs[end])];
+                        line = (col, 1.0, :dot), label = string("O(h^", n + 1, ")"))
+        end
+    end
+    return pl
+end
+
+function _aw_plot(rows, OUTPUT_DIR, iout)
+    any(count(r -> r.visc == v && r.nop == n, rows) >= 2
+        for v in unique(r.visc for r in rows), n in unique(r.nop for r in rows)) || return nothing
+    tt = rows[1].t
+    p1 = _aw_panel(rows, :rho,   "L² error of ρ",
+                   "(a) ρ, the measure of the paper's Fig. 13, t = $(tt)")
+    p2 = _aw_panel(rows, :state, "L² error of the conserved state",
+                   "(b) all conserved variables, t = $(tt)")
+    plt = Plots.plot(p1, p2; layout = (1, 2), size = (1500, 620),
+                     left_margin = 8Plots.mm, bottom_margin = 8Plots.mm, show = false)
+    _aw_atomic(string(OUTPUT_DIR, "/convergence-it", iout, ".png"), f -> _savefig_silent(plt, f))
+    return nothing
+end
+
+function user_plot_2d(mesh, q, t, outvar, inputs, OUTPUT_DIR, iout; Minv = nothing)
+    isfinite(t) && t > 0.0 || return nothing          # a final-time product
+    # The time the run was ASKED for keys the store (it is the same for every
+    # run of a sweep); the exact solution is placed at the time the numerical
+    # one is AT, in case the two differ by a fraction of a step.
+    tnom = Float64(get(inputs, :tend, t))
+    Δt   = abs(Float64(get(inputs, :Δt, 0.0)))
+    abs(t - tnom) <= max(1.0e-8*max(1.0, abs(t)), 0.51*Δt) || return nothing
+
+    e = _aw_errors(mesh, q, t, outvar)                 # collective
+    e === nothing && return nothing
+    if MPI.Comm_rank(get_mpi_comm()) == 0
+        _aw_save(e, inputs, tnom, t)
+        rows = _aw_load(tnom)
+        isempty(rows) || (_aw_report(rows); _aw_plot(rows, OUTPUT_DIR, iout))
+    end
+    return nothing
+end
