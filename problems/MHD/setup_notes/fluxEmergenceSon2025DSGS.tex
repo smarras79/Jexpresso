@@ -95,12 +95,13 @@ $-10\%$ departure of the dense side of the transition region across the $25\time
 
 \section{Observations: code versus comments}
 \begin{enumerate}[leftmargin=*]
-\item The deck header says the case has ``the SAME physics, mesh, initial and boundary conditions, time
-step and DynSGS constants'' as the sibling. Physics, initial/boundary conditions and \dsgs{} constants are
-the same; the \emph{mesh} is refined once here ($160\times70$ against $80\times35$) and $\Delta t$ is
-$5\times10^{-3}$ against $7.5\times10^{-3}$ ($t_{end}$ 50 against 54).
-\item As in the sibling, the comments about $\Delta t=2.5\times10^{-3}$ and about the $\tau\cdot u$ term being
-active are stale (no $\tau\cdot\bv$ under \code{:dsgs\_conserved}).
+\item \textbf{[Fixed in \code{f03762b}.]} At \commit{} the deck header and the README said the case has ``the
+SAME physics, mesh, initial and boundary conditions, time step and DynSGS constants'' as the sibling; the mesh is
+refined once here ($160\times70$ against $80\times35$) and $\Delta t$ is $5\times10^{-3}$ against
+$7.5\times10^{-3}$ ($t_{end}$ 50 against 54), values set in \code{7959928}. The comments on $\Delta t$ (now:
+CFL $\approx0.29$ initially, $\approx0.58$ late on the refined mesh), on the $\tau\cdot u$ term and on the energy
+slot had the sibling's staleness. Header, comments and README now match the deck; the README's measured results
+are marked as obtained with $\Delta t=7.5\times10^{-3}$ and not re-measured.
 \end{enumerate}
 
 \input{codemap}

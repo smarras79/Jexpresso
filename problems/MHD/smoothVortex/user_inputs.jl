@@ -168,7 +168,14 @@ function user_inputs()
                                            # smooth solution (see the README)
         :dsgs_gamma       => 5.0/3.0,
         :dsgs_Prt         => 1.0,
-        :dsgs_conserved   => true,
+        # PHYSICAL form, the one user_primitives.jl is written for (ρ, u, v,
+        # T = p/ρ, w, B, ψ): ν on ρ, ρ̄ν in the deviatoric stress, κ = ρ̄ν/Pr
+        # on ∇T (Dao & Nazarov 2022 §4.4, as in orszagTangBormanis2024), η = ν
+        # on B, and the τ·u and η B·∇B work terms in the energy. With
+        # :dsgs_conserved => true these primitives got one kinematic ν each
+        # (ν∇u, ν∇T, no stress, no work terms) — neither form.
+        :dsgs_conserved      => false,
+        :dsgs_nazarov_energy => true,
         # THE NORMALIZATION SCOPE CHANGES THE ANSWER, and by a lot. "rank"
         # normalizes each rank's residual by ITS OWN subdomain's spread, so ν
         # — and therefore the solution — depends on how the domain was cut.

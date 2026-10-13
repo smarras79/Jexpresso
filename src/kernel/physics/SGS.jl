@@ -1953,7 +1953,8 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  Cmin::TT=zero(TT),
                                  cutoff::TT=zero(TT),
                                  lnazarov_energy::Bool=false,
-                                 lfast_floors::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
+                                 lfast_floors::Bool=false,
+                                 lthermal::Bool=false) where {TT<:AbstractFloat, TI<:Integer}   # :dsgs_thermal_residual is 2D-only: accepted (rhs.jl passes it) and ignored
     _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
     neqs = size(μ_dsgs, 2)

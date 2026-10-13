@@ -8,9 +8,9 @@
 \commonlegend
 
 \noindent\textbf{Scope.} Read off \code{user\_inputs.jl}, the case files and the kernels they reach on
-\branch{}, with every \code{JEXPRESSO\_OT\_*} override unset. Of the eight \dsgs{} cases this is the only
-one that runs the \emph{physical} form of the operator (\code{:dsgs\_conserved} left at its default
-\code{false}).
+\branch{}, with every \code{JEXPRESSO\_OT\_*} override unset. Of the eight \dsgs{} cases this is the one that
+runs the \emph{physical} form of the operator at \commit{} (\code{:dsgs\_conserved} left at its default
+\code{false}); \code{smoothVortex} runs it too since \code{f9cdb02}.
 
 \section{The problem as set up}
 \begin{keytable}
@@ -38,7 +38,7 @@ Other switches & \cm{\code{:lfilter}, \code{:lkep}, \code{:entropy\_variables}, 
 \code{:dsgs\_Prt} & \cm{1.0} & enters the energy coefficient here\\
 \code{:dsgs\_rel} & \cm{1.0} & \code{JEXPRESSO\_OT\_REL}\\
 \code{:dsgs\_norms} & \code{"domain"} & \code{JEXPRESSO\_OT\_NORMS}\\
-\code{:dsgs\_conserved} & \textbf{false} (default) & physical form: the only such case\\
+\code{:dsgs\_conserved} & \textbf{false} (default) & physical form (with \code{smoothVortex} since \code{f9cdb02})\\
 \code{:dsgs\_nazarov\_energy} & true & $\kappa=\bar\rho\nu/\Pr$ on $\nabla T$\\
 \code{:dsgs\_nodal\_rho} & \cm{false} (default) & element-mean $\bar\rho_K$ in the dynamic coefficients\\
 \code{:dsgs\_fast\_floors}, \code{:dsgs\_thermal\_residual}, \code{:dsgs\_ref\_weight} & \mj{false} (defaults) & \\
