@@ -9,7 +9,7 @@ exact nonlinear solution of ideal MHD, so the error can be measured against it.
 > non-conservative hyperbolic equations*, J. Comput. Phys. 563 (2026) 115060.
 
 ```bash
-tools/alfven_wave_scan.sh                      # N = 2, 3 on 16² ... 128² elements, DSGS and Galerkin
+tools/alfven_wave_scan.sh                      # N = 3, 4 on 16² ... 128² elements, DSGS and Galerkin
 JEXPRESSO_AW_NOP=3 JEXPRESSO_AW_NELX=32 \
     julia --project=. src/Jexpresso.jl MHD alfvenWaveBabbarRanocha2026    # one run
 ```
@@ -48,7 +48,7 @@ against the paper's text: the reproducibility repository
 |---|---|---|
 | exact solution | Tenkai.jl `ExactSolutionAlfvenWave` → Trixi.jl `initial_condition_convergence_test(::IdealGlmMhdEquations2D)` | `initialize.jl`, the same formula |
 | γ, box, final time | 5/3, [0, √2]², 2.0 | the same |
-| orders, meshes | N = 1, 2, 3 on 16², 32², 64², 128² elements | N = 2, 3 (see below) on the same meshes, plus 8² |
+| orders, meshes | N = 1, 2, 3 on 16², 32², 64², 128² elements | N = 3 and 4 (Jexpresso is run at N ≥ 3), the same meshes plus 8² |
 | error | Tenkai `compute_error`: sqrt((1/\|Ω\|)∫(ρ_h − ρ)²dΩ), N + 4 Gauss points per direction, **density only** | the same norm, for every conserved variable |
 
 Two things are easy to misread in the paper:
@@ -85,7 +85,7 @@ the discretization's own ∇·B and ψ errors.
 - **Time.** CarpenterKennedy2N54 is fourth order, enough for N ≤ 3. Δt gives a Courant
   number of 0.1 on the mean node spacing √2/(nelx N), against |v| + c_f = 1.185, and is
   rounded down so that a whole number of steps reaches t = 2. On the smallest LGL spacing
-  that is a Courant number of 0.1 for N = 2 and 0.12 for N = 3.
+  that is a Courant number of 0.12 for N = 3 and 0.14 for N = 4.
 
 | Variable | Meaning | Default |
 |---|---|---|
@@ -98,10 +98,9 @@ the discretization's own ∇·B and ψ errors.
 | `JEXPRESSO_AW_CMIN` | `:dsgs_Cmin` | 0 |
 | `JEXPRESSO_AW_SOLVER` | `ck54`, `ssprk54`, `vern9`, `dp8` | `ck54` |
 
-**N = 1 does not run.** For nop < 2, Jexpresso's 2D gmsh reader returns from
-`add_high_order_nodes_edges!` before it fills `poin_in_edge`. The periodic setup of
-`mod_mesh_read_gmsh!` then reads node 0, which raises a BoundsError at
-`src/kernel/mesh/mesh.jl:3456`. This is a limitation of the mesh code, not of this case.
+The paper's N = 1 and 2 are not part of the sweep, since Jexpresso is run at N ≥ 3.
+(N = 1 would not build a periodic 2D mesh in any case: `add_high_order_nodes_edges!`
+returns before it fills `poin_in_edge` when nop < 2.)
 
 ## What a run produces
 

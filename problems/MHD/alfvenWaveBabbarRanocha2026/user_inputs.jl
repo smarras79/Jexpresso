@@ -8,19 +8,16 @@
 # The paper's Fig. 13 is the L² error at t = 2 against the number of degrees of
 # freedom for N = 1, 2, 3 on 16², 32², 64², 128² elements. `user_plot.jl` here
 # measures the same thing at the final time (errors/nop<N>_nelx<M>_<visc>.dat)
-# and draws every stored error as that figure.
+# and draws every stored error as that figure. Jexpresso is run at N >= 3, so
+# the sweep is N = 3 (the paper's highest order) and 4.
 #
 #     tools/alfven_wave_mesh.sh        # the meshes (4² ... 128² are in the repo)
-#     tools/alfven_wave_scan.sh        # the sweep: N = 2, 3 x 16² ... 128²
+#     tools/alfven_wave_scan.sh        # the sweep: N = 3, 4 x 16² ... 128²
 #
 # or one run by hand,
 #
 #     JEXPRESSO_AW_NOP=3 JEXPRESSO_AW_NELX=32 \
 #         julia --project=. src/Jexpresso.jl MHD alfvenWaveBabbarRanocha2026
-#
-# N = 1 does not run: Jexpresso's 2D gmsh reader does not fill the edge nodes
-# when nop < 2 (add_high_order_nodes_edges! returns first), and the periodic
-# setup then reads node 0 (BoundsError at src/kernel/mesh/mesh.jl:3456).
 #
 # Overrides, all optional:
 #   JEXPRESSO_AW_NOP    polynomial order N                      (default 3)
@@ -37,8 +34,8 @@
 # The time step follows the resolution: a Courant number of 0.1 on the mean
 # node spacing √2/(nelx N) against the fastest wave of the initial condition
 # (|v| + c_f <= 0.1 + sqrt(γp + |B|²) = 1.185), rounded down so that a whole
-# number of steps reaches t_end. On the smallest LGL spacing that is 0.1 for
-# N = 1, 2, 0.12 for N = 3 and 0.22 for N = 7.
+# number of steps reaches t_end. On the smallest LGL spacing that is 0.12 for
+# N = 3, 0.14 for N = 4 and 0.22 for N = 7.
 #---------------------------------------------------------------------------------
 const AW_NELX_DEFAULT = 16
 const AW_NOP_DEFAULT  = 3
