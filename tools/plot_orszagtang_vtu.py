@@ -292,6 +292,7 @@ ATHENA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pro
                           "athena")
 CUT_COLORS = ("#2a78d6", "#1baf7a", "#7a5bd1", "#c2452d")   # the runs; the Athena points are ATHENA_COLOR
 ATHENA_COLOR = "#eb6834"
+ATHENA_TIME = 0.5                                            # the time of the reference cuts
 
 
 def athena_cut(y0):
@@ -389,12 +390,15 @@ def cuts(a, dirs, tags, labels):
     stem = os.path.splitext(a.out)[0] if a.out else os.path.join(a.base if not a.dirs else ".", f"OT_p_cuts_t{t:g}")
     fig, axs = plt.subplots(1, len(a.cut_y), figsize=(a.width / 2 * len(a.cut_y), a.width * 0.42),
                             squeeze=False, layout="constrained")
+    at_ref = abs(t - ATHENA_TIME) <= 1e-6 * max(1.0, t)
+    if not at_ref:
+        print(f" the Athena cuts are at t = {ATHENA_TIME:g}: not drawn at t = {t:g}")
     for ax, y0 in zip(axs[0], a.cut_y):
-        ref = athena_cut(y0)
+        ref = athena_cut(y0) if at_ref else None
         if ref is not None:
             ax.plot(ref[:, 0], ref[:, 1], "o", ms=3.0, mfc="none", mec=ATHENA_COLOR, mew=0.9, zorder=3,
                     label=r"Athena, $1024^2$ (Babbar & Ranocha 2026)")
-        print(f" y = {y0:g}: " + (f"{len(ref)} Athena points" if ref is not None else "no Athena reference for this cut"))
+        print(f" y = {y0:g}: " + (f"{len(ref)} Athena points" if ref is not None else "no Athena reference drawn"))
         for i, (g, tag, lab, N) in enumerate(zip(grids, tags, labels, nops)):
             x, v, how = line_cut(g, a.pscale * g["fields"][a.pfield], y0, N, a.refine)
             msg = f"   {tag}: {how}"
