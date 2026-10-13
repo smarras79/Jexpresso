@@ -37,11 +37,11 @@ Other switches & \cm{\code{:lfilter}, \code{:lkep}, \code{:entropy\_variables}, 
 \code{:dsgs\_Cmax} & \mj{0.5} & \code{JEXPRESSO\_SV\_CMAX}\\
 \code{:dsgs\_Cmin} & \mj{0} & \code{JEXPRESSO\_SV\_CMIN}\\
 \code{:dsgs\_gamma} & \cm{$=\gamma_{mhd}$} $=5/3$ & \\
-\code{:dsgs\_Prt} & \cm{1.0} & no effect (no Prandtl factor in the conserved branch)\\
+\code{:dsgs\_Prt} & \cm{1.0} & $\kappa=\bar\rho\nu/\Pr$\\
 \code{:dsgs\_rel} & \cm{1.0} & \code{JEXPRESSO\_SV\_REL}\\
 \code{:dsgs\_norms} & \code{"domain"} & \code{JEXPRESSO\_SV\_NORMS}\\
-\code{:dsgs\_conserved} & \mj{true} & see Section~\ref{sec:op}: the primitives are \emph{not} conserved\\
-\code{:dsgs\_nazarov\_energy} & \mj{false} (default) & \\
+\code{:dsgs\_conserved} & \textbf{false} & physical form, since \code{f9cdb02} (was \code{true}: Section~\ref{sec:fix})\\
+\code{:dsgs\_nazarov\_energy} & \textbf{true} & since \code{f9cdb02}; $\kappa=\bar\rho\nu/\Pr$ on $\nabla T$\\
 \code{:dsgs\_fast\_floors}, \code{:dsgs\_thermal\_residual} & \mj{false} (defaults) & \\
 \code{:dsgs\_ref\_weight}, \code{:dsgs\_nodal\_rho}, \code{:dsgs\_reference} & \mj{false}, \cm{false}, \cm{false} & defaults\\
 \code{:dsgs\_hold\_steps} & \mj{2} & \code{JEXPRESSO\_SV\_HOLD}\\
@@ -72,35 +72,83 @@ raised from $10^{-3}$ of the scale to the scale itself, \code{:dsgs\_rel}).
 \cm{$w_K=\max_I(|\bv_I|+\sqrt{\max(\gamma p_I/\rho_I+|\bB_I|^2/\rho_I,0)})$}.
 \item \textbf{Coefficient.} $\nu_K=\max(0,\min(0.5\,\Delta_Kw_K,\ \Delta_K^2\mathcal R_K))$, no floor, no cutoff,
 \cm{one value per element}, \cm{recomputed at every stage}.
-\item \textbf{Slot coefficients.} Because \code{:dsgs\_conserved => true}, every slot gets the kinematic
-$\nu_K$ (\code{SGS.jl:1858--1888}): no element-mean $\bar\rho$, no Prandtl factor.
+\item \textbf{Slot coefficients} (physical branch, \code{SGS.jl:1889--1900}), with $\bar\rho_K$ the plain average of
+the nodal $\rho$ over the 25 nodes of $K$:
+$\mu^\rho=\nu_K$, $\mu^{\rho u}=\mu^{\rho v}=\mu^{\rho w}=\bar\rho_K\nu_K$, $\mu^E=\bar\rho_K\nu_K/\Pr=\bar\rho_K\nu_K$,
+$\mu^{\bB}=\mu^\psi=\nu_K$.
 \end{enumerate}
 
-\section{The viscous operator actually assembled}
+\section{The viscous operator}
 \label{sec:op}
-\code{user\_primitives.jl} of this case returns the \emph{physical} variables
-$(\rho,u,v,T{=}p/\rho,w,B_x,B_y,B_z,\psi)$ (it is a copy of the Orszag--Tang file), while the deck selects
-the conserved coefficients. In \code{\_expansion\_visc!} the flag \code{lcons} then turns off the
-deviatoric stress and the $\tau\cdot\bv$/resistive work (\code{rhs.jl:2959--2970}), so every slot
-receives a scalar flux $\nu_K\nabla(\text{primitive})$:
+\code{user\_primitives.jl} returns $(\rho,u,v,T{=}p/\rho,w,B_x,B_y,B_z,\psi)$ and, with \code{lcons = false},
+\code{\_expansion\_visc!} (\code{rhs.jl:2943}) assembles the same physical form as Orszag--Tang:
 \begin{center}\small
 \begin{tabular}{@{}lll@{}}
 \toprule
-Equation & Flux added & Remark\\
+Equation & Viscous flux $\bF_V$ & Coefficient\\
 \midrule
-$\rho$ & $\nu_K\nabla\rho$ & \cm{mass diffusion on}\\
-$\rho u$, $\rho v$, $\rho w$ & $\nu_K\nabla u$, $\nu_K\nabla v$, $\nu_K\nabla w$ & no $\rho$ factor, no deviatoric stress\\
-$E$ & $\nu_K\nabla T$, $T=p/\rho$ & no $\tau\cdot\bv$, no $\eta\,\bB\cdot\nabla\bB$\\
-$B_x,B_y,B_z$ & $\nu_K\nabla B_{x,y,z}$ & resistivity $\eta=\nu$\\
-$\psi$ & $\nu_K\nabla\psi$ & \\
+$\rho$ & $\nu\nabla\rho$ & \cm{mass diffusion on}\\
+$\rho u,\ \rho v$ & $\boldsymbol\tau=\bar\rho\nu\big(\nabla\bv+\nabla\bv^T-\tfrac23(\nabla\cdot\bv)I\big)$, $\bv=(u,v)$ & $\bar\rho\nu$\\
+$\rho w$ & $\bar\rho\nu\nabla w$ & $\bar\rho\nu$\\
+$E$ & $\bar\rho\nu\nabla T+\boldsymbol\tau\cdot\bv+\nu\sum_kB_k\nabla B_k$ & heat $+$ viscous work $+$ resistive work\\
+$B_k$ & $\nu\nabla B_k$ & $\eta=\nu$\\
+$\psi$ & $\nu\nabla\psi$ & \\
 \bottomrule
 \end{tabular}
 \end{center}
-This is neither the conserved form (which needs $\nabla(\rho\bv)$, $\nabla E$) nor the physical form
-(which needs $\bar\rho\nu$, the stress and the work terms). All fluxes are in divergence form, so
-mass, momentum, total energy and $\bB$ are still conserved; but the kinetic and magnetic energy
-removed by the momentum and induction terms is not returned to $E$. With $\rho\approx1$ the momentum
-terms coincide with $\nabla\cdot(\nu\nabla(\rho\bv))$ to $O(\rho-1)$.
+
+\subsection*{What it replaced (finding 2 of \code{summary.pdf}, fixed in \code{f9cdb02})}
+\label{sec:fix}
+At \commit{} the deck had \code{:dsgs\_conserved => true} with these same physical primitives. The kernel then
+gave every slot the kinematic $\nu_K$ and \code{\_expansion\_visc!} dropped the stress and the work terms
+(\code{rhs.jl:2959--2970}): $\nu\nabla u$, $\nu\nabla v$, $\nu\nabla w$ on the momenta, $\nu\nabla T$ on $E$ ---
+neither the conserved form (which needs $\nabla(\rho\bv)$, $\nabla E$) nor the physical one, and the kinetic and
+magnetic energy removed by those terms was not returned to $E$. The header of \code{user\_primitives.jl} already
+described the physical form.
+
+\subsection*{Test: before against after}
+Run here with Julia~1.11.5 on the deck as committed, with every \code{JEXPRESSO\_SV\_*} override unset
+except $N$ and the mesh: the grid of \code{tools/smooth\_vortex\_scan.sh}, $N=4,\dots,7$ on $4^2$, $8^2$, $16^2$,
+$32^2$ elements of the $L=20$ box, $\Delta t=2\times10^{-3}\cdot64/(n_{el}N)$, \code{CarpenterKennedy2N54}, $t=1$; 16 runs
+for each of three variants: \emph{before} (the deck of \commit{}), \emph{after} (\code{f9cdb02}) and the plain Galerkin
+scheme (\code{JEXPRESSO\_SV\_VISC=none}, which ignores every \dsgs{} key). All 48 runs completed. The error is the
+case's own absolute velocity error against the exact solution (\code{user\_plot.jl}); orders are against
+$h\propto\mathrm{DOFs}^{-1/2}$ between consecutive meshes.
+\begin{center}
+\includegraphics[width=\textwidth]{smoothVortex_test.png}
+\end{center}
+{\footnotesize\setlength{\tabcolsep}{3.2pt}
+\begin{longtable}{@{}rrr*{3}{r}*{3}{r}*{3}{r}@{}}
+\toprule
+$N$ & mesh & DOFs & \multicolumn{3}{c}{velocity $L^1$ error} & after & before & after & \multicolumn{3}{c}{observed order}\\
+\cmidrule(lr){4-6}\cmidrule(lr){10-12}
+ & & & before & after (a) & Galerkin & /before & /Gal. & /Gal. & before & after & Gal.\\
+\midrule\endhead
+\bottomrule\endfoot
+4 & $4^2$ & 256 & $1.09\times10^{0}$ & $9.82\times10^{-1}$ & $1.29\times10^{0}$ & 0.901 & 0.85 & 0.76 &  &  & \\
+4 & $8^2$ & 1024 & $2.65\times10^{-1}$ & $2.48\times10^{-1}$ & $2.44\times10^{-1}$ & 0.936 & 1.09 & 1.02 & 2.04 & 1.98 & 2.40\\
+4 & $16^2$ & 4096 & $7.05\times10^{-3}$ & $7.25\times10^{-3}$ & $5.24\times10^{-3}$ & 1.028 & 1.35 & 1.38 & 5.23 & 5.10 & 5.54\\
+4 & $32^2$ & 16384 & $3.33\times10^{-4}$ & $3.28\times10^{-4}$ & $3.11\times10^{-4}$ & 0.986 & 1.07 & 1.05 & 4.40 & 4.46 & 4.07\\\midrule
+5 & $4^2$ & 400 & $9.45\times10^{-1}$ & $8.20\times10^{-1}$ & $8.82\times10^{-1}$ & 0.867 & 1.07 & 0.93 &  &  & \\
+5 & $8^2$ & 1600 & $6.86\times10^{-2}$ & $6.61\times10^{-2}$ & $6.42\times10^{-2}$ & 0.964 & 1.07 & 1.03 & 3.78 & 3.63 & 3.78\\
+5 & $16^2$ & 6400 & $3.46\times10^{-3}$ & $3.51\times10^{-3}$ & $3.09\times10^{-3}$ & 1.014 & 1.12 & 1.14 & 4.31 & 4.24 & 4.38\\
+5 & $32^2$ & 25600 & $4.70\times10^{-5}$ & $4.66\times10^{-5}$ & $4.41\times10^{-5}$ & 0.992 & 1.07 & 1.06 & 6.20 & 6.23 & 6.13\\\midrule
+6 & $4^2$ & 576 & $4.55\times10^{-1}$ & $3.91\times10^{-1}$ & $4.06\times10^{-1}$ & 0.861 & 1.12 & 0.96 &  &  & \\
+6 & $8^2$ & 2304 & $2.67\times10^{-2}$ & $3.23\times10^{-2}$ & $1.89\times10^{-2}$ & 1.209 & 1.42 & 1.71 & 4.09 & 3.60 & 4.43\\
+6 & $16^2$ & 9216 & $2.34\times10^{-4}$ & $2.37\times10^{-4}$ & $1.80\times10^{-4}$ & 1.012 & 1.30 & 1.32 & 6.84 & 7.09 & 6.72\\
+6 & $32^2$ & 36864 & $1.68\times10^{-6}$ & $1.72\times10^{-6}$ & $1.41\times10^{-6}$ & 1.020 & 1.19 & 1.22 & 7.12 & 7.11 & 6.99\\\midrule
+7 & $4^2$ & 784 & $2.40\times10^{-1}$ & $2.10\times10^{-1}$ & $2.02\times10^{-1}$ & 0.872 & 1.19 & 1.04 &  &  & \\
+7 & $8^2$ & 3136 & $7.36\times10^{-3}$ & $7.37\times10^{-3}$ & $5.94\times10^{-3}$ & 1.001 & 1.24 & 1.24 & 5.03 & 4.83 & 5.09\\
+7 & $16^2$ & 12544 & $5.85\times10^{-5}$ & $5.77\times10^{-5}$ & $4.68\times10^{-5}$ & 0.986 & 1.25 & 1.23 & 6.97 & 7.00 & 6.99\\
+7 & $32^2$ & 50176 & $5.66\times10^{-7}$ & $5.43\times10^{-7}$ & $3.02\times10^{-7}$ & 0.960 & 1.87 & 1.80 & 6.69 & 6.73 & 7.28\\
+\end{longtable}}
+\noindent\textbf{Reading.} On the two finest meshes the two operators are within $-4\%$ and $+3\%$ of each other in $L^1$
+and their observed orders agree to $\pm0.25$ (finest pair: 4.40/4.46, 6.20/6.23, 7.12/7.11, 6.69/6.73 for $N=4,\dots,7$);
+on the coarsest ($4^2$) the physical form is 10--14\% lower in $L^1$ and 7--28\% lower in $L^\infty$; the one point
+where it is clearly worse is $N=6$ on $8^2$ ($1.21\times$ in $L^1$). Both stay within a factor of 1.05--1.4 of the
+plain Galerkin error at $N\le6$ on the finest meshes, and both are $\approx1.8$--$1.9\times$ Galerkin at $N=7$ on $32^2$,
+where the viscosity itself, common to both, sets the gap. The change of operator therefore does not alter the
+accuracy picture of this case; it makes the operator the one the case documents.
 
 \section{Positivity}
 \begin{itemize}[leftmargin=*]
@@ -112,10 +160,7 @@ the case measures accuracy, not robustness.
 
 \section{Observations: code versus comments}
 \begin{enumerate}[leftmargin=*]
-\item The header of \code{user\_primitives.jl} says the momentum slots get ``the full deviatoric stress
-built by the kernel, $\rho\nu$'' and the energy ``$\kappa\nabla T$ \dots{} $+\tau\cdot u$ viscous work''.
-That is what happens with \code{:dsgs\_conserved => false}; with the deck's \code{true} none of the three
-is applied (Section~\ref{sec:op}). The \code{README.md} does not mention \code{:dsgs\_conserved}.
+\item Since \code{f9cdb02} the deck, \code{user\_primitives.jl} and the kernel agree (the physical form above).
 \item Everything else in the deck matches its comments (domain norms, hold 2, no floor, no cutoff,
 the residual sensor).
 \end{enumerate}
