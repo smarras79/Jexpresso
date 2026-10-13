@@ -183,6 +183,7 @@ function _aw_tag(inputs)
     tag = "dsgs"
     lowercase(string(get(inputs, :dsgs_sensor, "residual"))) == "legacy" && (tag *= "_legacy")
     Float64(get(inputs, :dsgs_Cmin, 0.0)) > 0 && (tag *= "_cmin")
+    get(inputs, :dsgs_freeze_stage, false) == true && (tag *= "_freeze")
     return string(tag, ode)
 end
 
