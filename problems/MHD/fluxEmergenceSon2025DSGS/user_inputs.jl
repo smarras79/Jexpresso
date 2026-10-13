@@ -1,9 +1,11 @@
 #---------------------------------------------------------------------------------
 # fluxEmergenceSon2025DSGS — the flux-emergence problem of Son, Jang & Magara
-# (2025, ApJS 277:46) with the SAME physics, mesh, initial and boundary
-# conditions, time step and DynSGS constants as problems/MHD/fluxEmergenceSon2025,
-# but NO positivity limiter: the Marras-Nazarov DynSGS dissipation alone keeps
-# the solution admissible. Nothing is clipped, nothing is added; every term
+# (2025, ApJS 277:46) with the SAME physics, initial and boundary conditions
+# and DynSGS constants as problems/MHD/fluxEmergenceSon2025, on the sibling's
+# FE_80x35.msh refined once at start-up (:init_refine_lvl => 1: 160×70
+# elements of 0.5 H₀) with Δt = 5e-3 τ₀ to t = 50 τ₀ (the sibling: 80×35,
+# 7.5e-3, 54), but NO positivity limiter: the Marras-Nazarov DynSGS
+# dissipation alone keeps the solution admissible. Nothing is clipped, nothing is added; every term
 # is in divergence form, so mass, momentum and energy are conserved.
 #
 # What is different from the sibling (see README.md and user_primitives.jl):
@@ -38,12 +40,13 @@ function user_inputs()
         #   mpiexec -n 10 julia --project=. src/Jexpresso.jl MHD fluxEmergenceSon2025DSGS
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(),   # no stage limiter: DynSGS alone (see top of file)
-        # Δt = 2.5e-3 τ₀ is CFL ≈ 0.07 against the initial maximum wave speed
+        # Δt = 5e-3 τ₀ is CFL ≈ 0.29 against the initial maximum wave speed
         # (the coronal sound speed, = c_h ≈ 5.05 C_s) and the smallest LGL
-        # spacing (0.173 H₀ at :nop => 4 on 1 H₀ elements). The margin is for
-        # the late-time flows: the emerged loop reaches V_A ≈ 4-7 C_s and the
-        # lateral downflows 4-5 C_s (paper Sec. 4.1), i.e. |v| + c_f ≈ 10 C_s
-        # and CFL ≈ 0.15. The paper's own Courant number is 0.23.
+        # spacing (0.086 H₀ at :nop => 4 on the 0.5 H₀ elements of the
+        # once-refined mesh), and CFL ≈ 0.58 at the late-time flows: the
+        # emerged loop reaches V_A ≈ 4-7 C_s and the lateral downflows
+        # 4-5 C_s (paper Sec. 4.1), i.e. |v| + c_f ≈ 10 C_s. The paper's own
+        # Courant number is 0.23.
         :Δt                   => 5.0e-3, #e-04,
         :tinit                => 0.0,
         :tend                 => 50.0,  # paper Fig. 5 runs to t = 54 τ₀ (snapshots of Fig. 2 at t = 51 τ₀)
@@ -112,10 +115,14 @@ function user_inputs()
         # one kinematic ν from the residual (the max over the normalized
         # residuals of all components, their eq. 4.8), then ν on ∇ρ, ρν in
         # the momentum stress, κ = ρν/Pr on the temperature, η = ν on B. In
-        # the conserved form below the ρ, ρv and B slots are those already;
-        # the energy slot is scaled by γ(γ−1)/Pr so that the heat
-        # conduction it carries is ρν/Pr and not ρν/(γ(γ−1)), 19× larger
-        # (kernel/physics/SGS.jl). Pr = 1 as in their runs.
+        # the conserved form below the ρ, ρv and B slots are those already.
+        # The energy flux is split (dsgs_split_energy, kernel/physics/SGS.jl;
+        # user_primitives.jl): the kinetic + magnetic part of E is diffused
+        # with the ρv slot's ν, the thermal part p/(γ−1) with
+        # max(γ(γ−1)/Pr·ν_res, ν_floor), both weighted by ρ_e
+        # (:dsgs_ref_weight), so that the heat conduction is ρν/Pr and not
+        # ρν/(γ(γ−1)), 19× larger, while the C_min floor stays in full.
+        # Pr = 1 as in their runs.
         :dsgs_Prt         => 1.0,
         :dsgs_nazarov_energy => true,
         # Stratification variants of the model (kernel/physics/SGS.jl): the
@@ -132,8 +139,10 @@ function user_inputs()
         :dsgs_ref_weight  => true,  # ... of the RELATIVE departure (q − q_e)/ρ_e, coefficient μ·ρ_e (see top of file)
         :dsgs_nodal_rho   => true,  # (inactive with :dsgs_conserved; kept for the physical-form variant)
         :lrichardson      => false,      # gravity enters through user_source.jl, not the SGS closure
-        # Slot 4 carries the TOTAL ENERGY ρE: "energy" keeps the kernel's τ·u
-        # viscous-work augmentation of the energy equation active.
+        # Slot 4 carries the TOTAL ENERGY ρE. Under :dsgs_conserved there is no
+        # separate τ·u term (rhs.jl, add_tau_u): the kinetic and magnetic
+        # energy the ρv and B Laplacians remove reappears through E's own
+        # Laplacian.
         :energy_equation  => "energy",
         #---------------------------------------------------------------------------
         # No entropy-stable / kinetic-energy-preserving machinery:
@@ -198,8 +207,9 @@ function user_inputs()
         # The DynSGS coefficients actually applied, log10_μ_dsgs_<var>-it<n>.png:
         # log₁₀ of the kinematic coefficient (H₀ C_s), floored at 1e-6. The
         # ρ, ρu, ρv, ρw, Bx, By, Bz, ψ slots carry ν and ρE carries
-        # ν·γ(γ−1)/Pr (see :dsgs_nazarov_energy), so two panels say it
-        # all. (:outformat => "vtk" writes one field per distinct
+        # max(γ(γ−1)/Pr·ν_res, ν_floor), the coefficient of the thermal part
+        # of E (see :dsgs_nazarov_energy; the non-thermal part takes ν), so
+        # two panels say it all. (:outformat => "vtk" writes one field per distinct
         # coefficient, mu_dsgs_<slots...>.)
         :plot_dsgs           => true,
         :plot_dsgs_vars      => ["ρ", "B", "ρE"],  # ν (ρ, ρv, B, ψ slots) and the energy coefficient

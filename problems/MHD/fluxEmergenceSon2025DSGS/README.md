@@ -1,8 +1,11 @@
 # 2D ideal GLM-MHD: flux emergence (Son, Jang & Magara 2025) — DynSGS only, no limiter
 
 The same problem as [`fluxEmergenceSon2025`](../fluxEmergenceSon2025/README.md)
-— identical physics, mesh, initial and boundary conditions, time step, output
-and DynSGS constants — with one difference: **nothing but the Marras–Nazarov
+— identical physics, initial and boundary conditions and DynSGS constants; the
+deck runs the sibling's mesh refined once at start-up ($160\times70$ elements of
+$0.5H_0$, `:init_refine_lvl => 1`) with $\Delta t = 5\times10^{-3}\tau_0$ to
+$t = 50\tau_0$, the sibling $80\times35$, $7.5\times10^{-3}$, $54\tau_0$ — with one
+difference that matters: **nothing but the Marras–Nazarov
 DynSGS dissipation keeps the solution admissible.** The sibling case keeps
 its density and pressure positive with a nodal floor applied at every
 Runge–Kutta stage (`fe_positivity_limiter!`), which is not conservative and
@@ -25,8 +28,9 @@ set as the sibling (`ρ-it<n>.png` with field lines and vectors on the paper's
 colour scale, `profile-it<n>.png` on the axes of the paper's Fig. 5, …) plus
 `log10_μ_dsgs_ρ-it<n>.png`, the DynSGS coefficient actually applied
 ($\log_{10}$ of the kinematic $\mu$, floored at $10^{-6}$; all nine slots
-carry the same $\nu$ except the energy slot, `log10_μ_dsgs_ρE-it<n>.png`, at
-$\nu\gamma(\gamma-1)/\mathrm{Pr}$, see "Coefficients by equation"). This is
+carry the same $\nu$ except the energy slot, `log10_μ_dsgs_ρE-it<n>.png`, whose
+coefficient $\max(\gamma(\gamma-1)/\mathrm{Pr}\cdot\nu_{res}, \nu_{floor})$ acts on the
+thermal part of $E$, see "Coefficients by equation"). This is
 the only dissipation in the run, so those panels are the whole story of
 where and how much the scheme regularizes.
 
@@ -163,19 +167,22 @@ it is written on. Before this option the conserved form conducted heat
 | `user_inputs.jl` | the sibling's, minus the limiter, plus `:dsgs_ref_weight => true` |
 | `initialize.jl`, `user_flux.jl`, `user_source.jl`, `user_bc.jl` | one-line files that `include` the sibling's |
 
-The mesh is the sibling's `FE_80x35.msh` (shared, not copied).
+The mesh is the sibling's `FE_80x35.msh` (shared, not copied), refined once by p4est at start-up (`:linitial_refine => true`, `:init_refine_lvl => 1`): $160\times70$ elements.
 
 ## Results (4 ranks, run to $54\tau_0$)
 
 *Measured with a single coefficient on every slot, i.e. before
-`:dsgs_nazarov_energy` (previous section). The shipped configuration — the
+`:dsgs_nazarov_energy` (previous section). The configuration of that time — the
 split energy flux, $\Delta t = 7.5\times10^{-3}$ — was rerun on 2 ranks to
 $t = 40\tau_0$ side by side with the single-coefficient form at the same
 $\Delta t$: no transition-region sawtooth, crest at $9$, $10.5$ and
 $15.5H_0$ at $t = 20$, $30$, $40\tau_0$ in both, identical to plotting
 accuracy, i.e. the numbers below hold for it up to $t = 40$; its $t = 51$
 comparison is to be reported. (The first, whole-slot implementation of the
-option stalled the emergence, see "Coefficients by equation".)*
+option stalled the emergence, see "Coefficients by equation".) The deck now runs
+the once-refined mesh with $\Delta t = 5\times10^{-3}$ to $t = 50\tau_0$ (commit
+`7959928`); the numbers below were obtained with $\Delta t = 7.5\times10^{-3}$ and have
+not been re-measured with the current deck.*
 
 The run completed without an abort, with nothing clipped anywhere: the
 density and pressure stayed positive through the transition-region
