@@ -126,8 +126,9 @@ Flux-only floors & $p\ge10^{-9}$ & \no & \no & \no & $p\ge10^{-9}$ & $p\ge10^{-9
 \smallskip
 ``Stages 2--5 + end'': the stage limiter of \code{CarpenterKennedy2N54} is called before the right-hand side of
 stages 2--5 and once after stage 5, i.e.\ on every state the right-hand side sees except the initial condition.
-For ROT, BL, AJ this follows from the rebuilt solver's \code{williamson\_condition = false}; for FE, from
-\code{calck = true} (non-empty \code{saveat} in Jexpresso's \code{solve}), which forces the same in OrdinaryDiffEq.
+For ROT, BL, AJ this follows from the rebuilt solver's \code{williamson\_condition = false}; for FE from the same
+keyword in its deck (since \code{e448f7d}; at \commit{} only from \code{calck = true}, the non-empty \code{saveat} of
+Jexpresso's \code{solve}).
 The node-wise \emph{repair} of \code{src/kernel/positivity} (\code{:positivity\_method => "repair"}) is used by none
 of the nine cases.}
 \end{landscape}
@@ -176,8 +177,10 @@ Orszag--Tang that the primitives' header describes. Measured here over the 16-ru
 that $\Delta t=2.5\times10^{-3}$, and that the energy slot is scaled by $\gamma(\gamma-1)/\Pr$ were stale; FED's header and
 README claimed the sibling's mesh and time step, while it refines the mesh once and uses $\Delta t=5\times10^{-3}$
 (FE: $80\times35$, $7.5\times10^{-3}$). Comments and READMEs now match the decks (comments only; no value changed).
-\item \textbf{FE:} the floor reaches stages 2--5 only through \code{calck = true}; the deck does not set
-\code{williamson\_condition = false} as the conservative limiter does.
+\item \textbf{[Fixed in \code{e448f7d}.] FE:} the floor reached stages 2--5 only through \code{calck = true}; the deck did not
+set \code{williamson\_condition = false} as the conservative limiter does. Now it does (1 limiter call per step
+against 5 without \code{calck}, measured on the installed OrdinaryDiffEqLowStorageRK 1.11.0; through Jexpresso's \code{solve}, which has
+\code{calck = true}, old and new decks give byte-identical output at $t=1,2\,\tau_0$).
 \item \textbf{OT:} the comment that \code{"rank"} is the code-wide norm default is stale (it is \code{"domain"}); the
 comments on $\Delta t$ ($5\times10^{-4}$) and on $32^2$ elements giving $128^2$ points predate the current
 $\Delta t=2\times10^{-4}$ and the one-level refinement.
