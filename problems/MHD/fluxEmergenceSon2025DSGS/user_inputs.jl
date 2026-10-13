@@ -41,7 +41,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(),   # no stage limiter: DynSGS alone (see top of file)
         # Δt = 5e-3 τ₀ is CFL ≈ 0.29 against the initial maximum wave speed
-        # (the coronal sound speed, = c_h ≈ 5.05 C_s) and the smallest LGL
+        # (the coronal sound speed, = c_h = 5.0 C_s) and the smallest LGL
         # spacing (0.086 H₀ at :nop => 4 on the 0.5 H₀ elements of the
         # once-refined mesh), and CFL ≈ 0.58 at the late-time flows: the
         # emerged loop reaches V_A ≈ 4-7 C_s and the lateral downflows

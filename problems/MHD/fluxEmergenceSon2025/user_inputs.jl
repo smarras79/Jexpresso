@@ -93,7 +93,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(stage_limiter! = fe_positivity_limiter!),  # floors, see top of file
         # Δt = 7.5e-3 τ₀ is CFL ≈ 0.22 against the initial maximum wave speed
-        # (the coronal sound speed, = c_h ≈ 5.05 C_s) and the smallest LGL
+        # (the coronal sound speed, = c_h = 5.0 C_s) and the smallest LGL
         # spacing (0.173 H₀ at :nop => 4 on 1 H₀ elements), and CFL ≈ 0.43 at
         # the late-time flows: the emerged loop reaches V_A ≈ 4-7 C_s and the
         # lateral downflows 4-5 C_s (paper Sec. 4.1), i.e. |v| + c_f ≈ 10 C_s.
