@@ -176,11 +176,14 @@ function _aw_errors(mesh, q, t, outvar)
 end
 
 function _aw_tag(inputs)
-    get(inputs, :lvisc, true) || return "galerkin"
+    # a run with another time integrator is another experiment: its own record
+    s   = get(inputs, :ode_solver, nothing)
+    ode = (s === nothing || s isa CarpenterKennedy2N54) ? "" : string("_", lowercase(string(nameof(typeof(s)))))
+    get(inputs, :lvisc, true) || return string("galerkin", ode)
     tag = "dsgs"
     lowercase(string(get(inputs, :dsgs_sensor, "residual"))) == "legacy" && (tag *= "_legacy")
     Float64(get(inputs, :dsgs_Cmin, 0.0)) > 0 && (tag *= "_cmin")
-    return tag
+    return string(tag, ode)
 end
 
 _aw_nelx_of(inputs) = (m = match(r"alfven_(\d+)x", string(get(inputs, :gmsh_filename, "")));
@@ -271,7 +274,7 @@ const AW_STYLE = Dict(1 => (:darkorange, :dtriangle), 2 => (:royalblue, :circle)
                       5 => (:purple, :utriangle),     6 => (:goldenrod, :star5),
                       7 => (:black, :xcross))
 _aw_style(n) = get(AW_STYLE, n, (:gray, :cross))
-_aw_line(tag) = tag == "galerkin" ? :dash : startswith(tag, "dsgs_") ? :dashdot : :solid
+_aw_line(tag) = startswith(tag, "galerkin") ? :dash : startswith(tag, "dsgs_") ? :dashdot : :solid
 _aw_label(tag) = tag == "galerkin" ? "Galerkin" : tag == "dsgs" ? "DSGS" : replace(tag, "_" => " ")
 
 function _aw_panel(rows, fld, ylab, title)
@@ -291,7 +294,7 @@ function _aw_panel(rows, fld, ylab, title)
         xs = xs[keep]; ys = ys[keep]
         col, mk = _aw_style(n)
         Plots.plot!(pl, xs, ys; line = (col, 1.6, _aw_line(tag)), marker = (mk, 6),
-                    markercolor = tag == "galerkin" ? :white : col, markerstrokecolor = col,
+                    markercolor = startswith(tag, "galerkin") ? :white : col, markerstrokecolor = col,
                     label = string("N = ", n, ", ", _aw_label(tag)))
         # the optimal order, O(h^(N+1)) = #DOFs^(-(N+1)/2), a factor 4 below the
         # finest point, over the span of the curve
