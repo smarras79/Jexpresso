@@ -1,0 +1,138 @@
+\documentclass[10pt]{article}
+\input{preamble}
+\title{\code{problems/MHD/fluxEmergenceSon2025}\\[2pt]
+\large DynSGS and positivity setup, as coded on branch \branch{} (commit \commit)}
+\author{}\date{}
+\begin{document}
+\maketitle
+\commonlegend
+
+\noindent\textbf{Scope.} Read off \code{user\_inputs.jl}, the case files and the kernels they reach on
+\branch{}. This case pairs the conserved-form \dsgs{} on the \emph{departure from a magnetostatic
+reference state} with a \emph{case-local, non-conservative} density/pressure floor applied as the
+Runge--Kutta stage limiter. Its sibling \code{fluxEmergenceSon2025DSGS} drops the floor.
+
+\section{The problem as set up}
+\begin{keytable}
+Equations & 2D ideal \cm{GLM-MHD} with gravity $g=1/\gamma$, \cm{state $(\rho,\rho u,\rho v,E,\rho w,B_x,B_y,B_z,\psi)$} & Son, Jang \& Magara (2025)\\
+EOS & \cm{$p=(\gamma-1)(E-\tfrac12|\bmom|^2/\rho-\tfrac12|\bB|^2-\tfrac12\psi^2)$}, $\gamma=1.05$ & \code{user\_flux.jl}\\
+Domain, mesh & $[0,80]\times[0,35]\,H_0$, periodic in $x$, walls \code{bottom}/\code{top}; \code{FE\_80x35.msh}, $80\times35$ quads of $1\,H_0$ & no refinement\\
+Discretization & \cm{CG spectral elements, LGL nodes, lumped mass}; \mj{$N=4$} & \\
+Time integration & \cm{\code{CarpenterKennedy2N54}} \emph{with} \code{stage\_limiter! = fe\_positivity\_limiter!}; \cm{fixed $\Delta t$} $=7.5\times10^{-3}\tau_0$, $t_{end}=54\,\tau_0$ & \code{user\_inputs.jl:94, 101}\\
+Variables & \cm{\code{TOTAL()}, \code{"energy"}} & \\
+Reference state $q_e(z)$ & two-temperature magnetostatic atmosphere ($T_{ch}=1$, $T_{cor}=25$, $z_{cor}=18$, $w_{tr}=0.6$) with a flux sheet $B_x(z)$ on $[4,8]\,H_0$, $\beta_*=1$; $\bv_e=0$ & \code{initialize.jl}; \code{qe[:,end]} $=p_e$\\
+Initial data & $q_e$ plus $u=f(z)\,0.05\sin(2\pi(x-40)/20)$ for $|x-40|<10$ & paper eq.~5\\
+Sources & \mj{\code{:lsource => true}}: gravity ($-\rho g$, $-\rho v g$), well-balanced correction of the discrete reference balance (\code{fe\_well\_balanced = true}), $\psi$ damping, absorbing layer $z>30$: $-\sigma(z)(q-q_e)$, $\sigma=2\sin^2\!\big(\tfrac\pi2\tfrac{z-30}{z_{top}-30}\big)$ & \code{user\_source.jl}\\
+GLM cleaning & \cm{$c_h=\max(|\bv|+c_f)$ of the initial data, constant}; $S_\psi=-(\alpha_pc_h/\Delta h)\psi$, $\alpha_p=0.2$, $\Delta h$ the smallest nodal spacing & paper eq.~12\\
+Boundary conditions & walls: Dirichlet normal momentum $=0$; \code{bottom} also normal $B=0$ & \code{user\_bc.jl}\\
+Other switches & \cm{\code{:lfilter}, \code{:lkep}, \code{:entropy\_variables}, \code{:lrichardson}, \code{:ladapt} false} & \\
+\end{keytable}
+
+\section{DynSGS: deck keys and effective values}
+\begin{keytable}
+\code{:visc\_model} & \cm{\code{DSGS\_MHD()}}, \code{:lvisc => true} & \code{SGS.jl:1598}\\
+\code{:}$\mu$ & \cm{all 1} & \\
+\code{:dsgs\_sensor} & \mj{\code{"legacy"}} & \\
+\code{:dsgs\_CR}, \code{:dsgs\_Cmax} & \mj{1.0}, \mj{0.5} & \\
+\code{:dsgs\_Cmin} & 0.03 & background floor $0.03\,\Delta w$\\
+\code{:dsgs\_gamma} & \cm{$=\gamma_{mhd}$} $=1.05$ & \\
+\code{:dsgs\_Prt} & \cm{1.0} & enters $\gamma(\gamma-1)/\Pr=0.0525$\\
+\code{:dsgs\_nazarov\_energy} & true & split energy flux (below)\\
+\code{:dsgs\_norms} & \mj{\code{"element"}} & \\
+\code{:dsgs\_local\_rel} & \cm{1.0} & \\
+\code{:dsgs\_conserved} & \mj{true} & \\
+\code{:dsgs\_nodal\_rho} & true in the deck, \cm{inactive} & \code{rhs.jl:1526} forces it off under \code{:dsgs\_conserved}\\
+\code{:dsgs\_ref\_weight} & \mj{false} (default) & \\
+\code{:dsgs\_fast\_floors}, \code{:dsgs\_thermal\_residual} & \mj{false} (defaults) & \\
+\code{:dsgs\_rel} & \cm{1.0} (default) & not used by element norms\\
+\code{:dsgs\_hold\_steps} & \mj{2} (default) & \\
+\code{:dsgs\_cutoff}, \code{:dsgs\_freeze\_stage}, \code{:dsgs\_reference} & \cm{0}, \cm{false}, \cm{false} (defaults) & \\
+\code{:ldsgs\_nodal} & \cm{false} (element form) & \\
+\end{keytable}
+
+\section{DynSGS as it runs for this case}
+$\Delta^{elem}_K=1\,H_0$, \cm{$\Delta_K=\Delta^{elem}_K/(N+1)$} $=0.2\,H_0$, $h=\Delta t$.
+\begin{enumerate}[leftmargin=*]
+\item \textbf{History and hold.} \cm{Rotation once per step}; \mj{two held steps}: $R\equiv0$, so
+$\nu=\nufl=0.03\,\Delta_Kw_K$ during steps 1--2.
+\item \textbf{Legacy residual}, every stage:
+$R^s_I=\big|\tfrac{3q^s_I-4q^{n,s}_I+q^{n-1,s}_I}{2h}-(M^{-1}\mathcal R_{inv})^s_I\big|$, with the inviscid RHS
+(fluxes and \emph{all} sources: gravity, well-balanced term, $\psi$ damping, absorbing layer) assembled over
+ranks and the periodic seam. The Dirichlet-node zeroing exists only on the residual-sensor path, so the
+wall nodes are \emph{not} zeroed here.
+\item \textbf{Element normalization} (\code{SGS.jl:1716--1761}): over the $25$ nodes of $K$,
+$\langle q\rangle_K$ (plain average), $S^s_K=\max|q^s-\langle q^s\rangle_K|$,
+$\bar\rho_K$, $\bar p_K$ (without $\psi$), $\bar c_K=\sqrt{\gamma\bar p_K/\bar\rho_K}$ (sound speed),
+\[
+n^s_K=\max\big(S^s_K,\ r_{loc}\,\sigma^s_K\big)+10^{-16},\quad
+\sigma^\rho_K=\bar\rho_K,\ \sigma^{\bmom}_K=\bar\rho_K\bar c_K,\ \sigma^E_K=\bar\rho_K\bar c_K^2,\ \sigma^{\bB}_K=\sqrt{\bar\rho_K}\,\bar c_K,
+\]
+\cm{$r_{loc}=1$}. Each element is measured against its own scales, so the corona ($\rho\sim10^{-8}\rho_0$) is
+not hidden by the photosphere.
+\item \textbf{Ratio, cap, coefficient.} \cm{$\mathcal R_K=\max_{I\in K}\max_{s\le8}R^s_I/n^s_K$};
+\cm{$w_K=\max_I(|\bv_I|+\sqrt{\max(\gamma p_I/\rho_I+|\bB_I|^2/\rho_I,0)})$};
+\[
+\nuc=\max\big(0,\min(0.5\,\Delta_Kw_K,\ \Delta_K^2\mathcal R_K)\big),\qquad
+\nufl=0.03\,\Delta_Kw_K,\qquad \nu_K=\max(\nuc,\nufl),
+\]
+\cm{one value per element}, \cm{recomputed at every stage}.
+\item \textbf{Slot coefficients} (conserved branch with \code{lnazarov\_energy}, \code{SGS.jl:1881--1885}):
+$\nu_K$ on slots $1,2,3,5,\dots,9$; slot 4 gets $\kappa^E_K=\max\big(\gamma(\gamma-1)/\Pr\cdot\nuc,\ \nufl\big)=\max(0.0525\,\nuc,\nufl)$.
+\end{enumerate}
+
+\section{The viscous operator}
+\code{rhs.jl:1533} sets \code{dsgs\_split\_energy[] = true}; \code{user\_primitives.jl} then returns the
+departure from $q_e$ with the energy split into its non-thermal and thermal parts,
+$\delta q=q-q_e$, $E_{th}=p/(\gamma-1)$, $E_{nth}=E-E_{th}$, the latter in the spare slot
+$n_{eqs}+2=11$ of \code{uprimitive}. \code{\_expansion\_visc!} (\code{rhs.jl:3050--3066}) assembles
+\begin{center}\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+Equation & Viscous flux $\bF_V$ & Remark\\
+\midrule
+$\rho$ & $\nu\nabla\delta\rho$ & \cm{mass diffusion on}\\
+$\rho u,\rho v,\rho w$ & $\nu\nabla\delta(\rho u)$, \dots & scalar Laplacians, no stress\\
+$E$ & $\nu\nabla\delta E_{nth}+\kappa^E\nabla\delta E_{th}$ & $\nu$ = the $\rho u$-slot coefficient\\
+$B_k$ & $\nu\nabla\delta B_k$ & $\eta=\nu$\\
+$\psi$ & $\nu\nabla\psi$ & $\psi_e=0$\\
+\bottomrule
+\end{tabular}
+\end{center}
+\mj{A Laplacian of the conserved state (here: of its departure from $q_e$)}, in divergence form, with
+\mj{no $\tau\cdot\bv$ or resistive-work term}. At rest ($q=q_e$) the operator vanishes.
+
+\section{Positivity}
+\subsection*{Case-local floor as the RK stage limiter (\code{fe\_positivity\_limiter!}, \code{user\_inputs.jl:29--77})}
+This is \emph{not} the \code{:lpositivity} machinery of \code{src/kernel/positivity} (\code{:lpositivity}
+stays \code{false}); it is a function of the deck handed to the solver as
+\code{CarpenterKennedy2N54(stage\_limiter! = fe\_positivity\_limiter!)}. Jexpresso's \code{solve} passes a
+non-empty \code{saveat}, so OrdinaryDiffEq sets \code{calck = true}, which forces
+\code{williamson\_condition = false}: the floor runs before the RHS of stages 2--5 and after stage 5.
+Per node $I$, with $f=0.2$ (\code{fe\_floor\_frac}) and the reference values at that node:
+\begin{enumerate}[leftmargin=*]
+\item if $\rho_I<f\rho_{e,I}$: $\rho_I\leftarrow f\rho_{e,I}$ (momentum unchanged, i.e.\ the velocity is reduced);
+\item with $k=|\bmom_I|^2/(2\rho_I)$ (new $\rho$) and $m=\tfrac12|\bB_I|^2+\tfrac12\psi_I^2$: if
+$(\gamma-1)(E_I-k-m)<f\,p_{e,I}$, then $E_I\leftarrow f\,p_{e,I}/(\gamma-1)+k+m$ ($\bmom$, $\bB$, $\psi$ unchanged).
+\end{enumerate}
+It \textbf{adds mass and energy} wherever it fires (not conservative). Hits are counted per rank and
+reported at the first hit and each further decade, with a sample $(x,z)$; the count is rank-local
+(printed with the \code{MPI.COMM\_WORLD} rank).
+
+\subsection*{Other ingredients}
+\begin{itemize}[leftmargin=*]
+\item Flux-only floor: $p\leftarrow\max(p,10^{-9})$ inside \code{user\_flux!} (\code{p\_floor\_mhd}); the state is untouched.
+\item The \dsgs{} mass diffusion and the $C_{\min}$ background act in the same direction.
+\end{itemize}
+
+\section{Observations: code versus comments}
+\begin{enumerate}[leftmargin=*]
+\item ``Slot 4 carries the TOTAL ENERGY: \code{"energy"} keeps the kernel's $\tau\cdot u$ \dots active'':
+under \code{:dsgs\_conserved => true} the $\tau\cdot\bv$ term is switched off (\code{rhs.jl:2965}).
+\item ``$\Delta t=2.5\times10^{-3}\tau_0$ is CFL $\approx0.07$'': the deck sets $7.5\times10^{-3}$.
+\item The floor reaches stages 2--5 only because \code{calck = true} in Jexpresso's \code{solve}; the
+deck does not set \code{williamson\_condition = false} as the conservative limiter does
+(\code{positivity\_driver.jl:266--268}). A run without callbacks or \code{saveat} would apply it once per step.
+\end{enumerate}
+
+\input{codemap}
+\end{document}

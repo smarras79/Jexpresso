@@ -1,0 +1,69 @@
+% Shared preamble of the problems/MHD/setup_notes documents.
+% Each case document does \input{preamble} right after \documentclass.
+\usepackage[margin=0.85in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{array,booktabs,tabularx,longtable,multirow}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage[normalem]{ulem}
+\usepackage[hyphens]{url}
+\usepackage[colorlinks=true,linkcolor=blue!50!black,urlcolor=blue!50!black]{hyperref}
+\usepackage{caption}
+\setlist{itemsep=1pt,topsep=3pt}
+\sloppy
+\emergencystretch=3em
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+% \code{...}: typewriter with breakable underscores (write \_ in the argument).
+\makeatletter
+\newcommand{\code}[1]{{\def\_{\char`\_\discretionary{}{}{}}\texttt{#1}}}
+\makeatother
+
+% --- Common-item marks -------------------------------------------------------
+% \cm{x}  solid underline : identical in EVERY case to which the item applies
+% \mj{x}  dashed underline: shared by a MAJORITY of those cases, but not all
+\newcommand{\cm}[1]{\uline{#1}}
+\newcommand{\mj}[1]{\dashuline{#1}}
+
+\newcommand{\commonlegend}{%
+\begin{center}
+\fcolorbox{black!40}{black!3}{\parbox{0.92\textwidth}{\small
+\textbf{How to read the underlines.}
+\cm{Solid underline}: the setting (or the code path) is \emph{identical in every case
+of \code{problems/MHD} to which it applies} --- all nine cases for general settings, the eight
+\code{DSGS\_MHD} cases for DynSGS settings, the three \code{:positivity\_method => "conservative"}
+cases for the element limiter.
+\mj{Dashed underline}: shared by a \emph{majority} of those cases but not all of them.
+No underline: specific to this case or to a minority.
+The cross-case comparison is in \code{summary.pdf} of this directory.}}
+\end{center}}
+
+% --- Notation ----------------------------------------------------------------
+\newcommand{\bq}{\mathbf{q}}
+\newcommand{\bv}{\mathbf{v}}
+\newcommand{\bmom}{\mathbf{m}}
+\newcommand{\bB}{\mathbf{B}}
+\newcommand{\bF}{\mathbf{F}}
+\newcommand{\Et}{\tilde E}
+\newcommand{\eps}{\varepsilon}
+\newcommand{\dsgs}{DynSGS}
+\newcommand{\CR}{C_R}
+\newcommand{\Cmax}{C_{\max}}
+\newcommand{\Cmin}{C_{\min}}
+\newcommand{\nuc}{\nu_{c}}
+\newcommand{\nufl}{\nu_{\mathrm{fl}}}
+\newcommand{\commit}{\code{dcc3653}}
+\newcommand{\branch}{\code{sm/MHD}}
+
+% Two-column "setting" table: key | value as used | where / remark
+\newenvironment{keytable}{%
+\par\smallskip\noindent\small
+\begin{longtable}{@{}L{0.24\textwidth}L{0.38\textwidth}L{0.32\textwidth}@{}}
+\toprule
+\textbf{Deck key / item} & \textbf{Value as run} & \textbf{Source / remark}\\
+\midrule\endhead
+\bottomrule\endfoot}{%
+\end{longtable}\par}

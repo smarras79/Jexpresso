@@ -1,0 +1,152 @@
+\documentclass[10pt]{article}
+\input{preamble}
+\title{\code{problems/MHD/brioWu1d}\\[2pt]
+\large DynSGS and positivity setup, as coded on branch \branch{} (commit \commit)}
+\author{}\date{}
+\begin{document}
+\maketitle
+\commonlegend
+
+\noindent\textbf{Scope.} Everything below is read off the deck (\code{user\_inputs.jl}), the
+case files and the kernels they reach on \branch{}; defaults are the ones \code{mod\_inputs.jl}
+fills in when the deck is silent, and environment overrides are taken at their unset values
+(\code{JEXPRESSO\_BW\_*}). Comments in the files were not taken as evidence where the code says
+otherwise; the disagreements found are listed in Section~\ref{sec:obs}.
+
+\section{The problem as set up}
+\begin{keytable}
+Equations & 1D ideal MHD, \cm{state $(\rho,\rho u,\rho v,E,\rho w,B_x,B_y,B_z)$}, 8 slots, no GLM field & \code{initialize.jl}, \code{user\_flux.jl}\\
+EOS & \cm{$p=(\gamma-1)(E-\tfrac12|\bmom|^2/\rho-\tfrac12|\bB|^2)$}, $\gamma = 2$ & \code{user\_flux.jl} ($\gamma_{mhd}$\code{ = 2.0})\\
+Domain, mesh & $x\in(0,1)$, 150 elements (600 DOFs) & \code{:nelx} $=600/N$ (\code{JEXPRESSO\_BW\_DOFS}, \code{\_NELX})\\
+Discretization & \cm{CG spectral elements, LGL nodes, lumped (diagonal) mass} & \code{:interpolation\_nodes => "lgl"}\\
+Polynomial order & \mj{$N = 4$} & \code{:nop} (\code{JEXPRESSO\_BW\_NOP})\\
+Time integration & \cm{\code{CarpenterKennedy2N54}}, fixed \cm{$\Delta t$}, $\Delta t = 5\times10^{-5}$, $t_{end}=0.1$ & $\Delta t = 5\times10^{-5}\cdot600/(n_{el}N)$\\
+Variables & \cm{\code{TOTAL()}}, \cm{\code{:energy\_equation => "energy"}} & \\
+Initial data & left $(\rho,u,p,B_y)=(1,0,1,1)$, right $(0.125,0,0.1,-1)$, $B_x=0.75$, jump at $x=0.5$ & \code{initialize.jl}\\
+Boundary conditions & Dirichlet on all 8 slots at both ends (the left/right states) & \code{user\_bc.jl}\\
+Sources & none (\code{:lsource => false}) & \code{user\_source.jl}\\
+Other switches & \cm{\code{:lfilter}, \code{:lkep}, \code{:entropy\_variables}, \code{:lrichardson}, \code{:ladapt} all false} & deck / defaults\\
+\end{keytable}
+
+\section{DynSGS: deck keys and effective values}
+The deck selects \cm{\code{:visc\_model => DSGS\_MHD()}} with \cm{\code{:lvisc => true}}, which in 1D
+reaches \code{compute\_dsgs\_viscosity!(::DSGS\_MHD, ::NSD\_1D)} (\code{SGS.jl:1929}) through
+\code{viscous\_rhs\_el!(\dots, ::NSD\_1D)} (\code{rhs.jl:1398}).
+
+The deck rescales the three constants by $h_{fac}=(N+1)/N = 5/4$
+(\code{JEXPRESSO\_BW\_HSCALE} unset $\Rightarrow$ \code{"nop"}): the kernel uses
+$\Delta = \Delta x/(N+1)$, and the scaling turns it into Dao \& Nazarov's $\Delta x/N$.
+\begin{keytable}
+\code{:visc\_model} & \cm{\code{DSGS\_MHD()}} & \\
+\code{:}$\mu$ (slot multipliers) & \cm{all 1} (8 entries) & mass diffusion is on\\
+\code{:dsgs\_sensor} & \code{"residual"} & element residual, stage-consistent stencil\\
+\code{:dsgs\_CR} & $1.0\cdot h_{fac}^2 = 1.5625$ & $\equiv C_R=1$ with $\Delta x/N$\\
+\code{:dsgs\_Cmax} & $0.5\cdot h_{fac} = 0.625$ & $\equiv C_{\max}=0.5$ with $\Delta x/N$\\
+\code{:dsgs\_Cmin} & $0.06\cdot h_{fac} = 0.075$ & $\equiv C_{\min}=0.06$ with $\Delta x/N$ (\code{JEXPRESSO\_BW\_CMIN})\\
+\code{:dsgs\_gamma} & \cm{$=\gamma_{mhd}$} $=2$ & \\
+\code{:dsgs\_Prt} & \cm{1.0} & no effect in the conserved form\\
+\code{:dsgs\_rel} & \cm{1.0} (default) & floor = the physical scale itself\\
+\code{:dsgs\_norms} & \code{"domain"} & means/spreads over the whole tube (MPI-reduced)\\
+\code{:dsgs\_conserved} & \mj{true} & $\nu$ on every slot\\
+\code{:dsgs\_nazarov\_energy} & \mj{false} (default) & \\
+\code{:dsgs\_fast\_floors} & \mj{false} (default) & \\
+\code{:dsgs\_thermal\_residual} & \mj{false} (default) & 2D only in any case\\
+\code{:dsgs\_hold\_steps} & \mj{2} & \code{JEXPRESSO\_BW\_HOLD}\\
+\code{:dsgs\_cutoff} & \cm{0} & \code{JEXPRESSO\_BW\_CUTOFF}\\
+\code{:dsgs\_freeze\_stage} & \cm{false} (default) & recomputed at every RK stage\\
+\code{:ldsgs\_nodal} & \cm{false} (element form) & \code{JEXPRESSO\_BW\_NODAL}; \code{:dsgs\_Cl => 0.4} only acts in the nodal form\\
+\code{:dsgs\_nodal\_rho}, \code{:dsgs\_ref\_weight}, \code{:dsgs\_reference} & \cm{false} & defaults\\
+\code{:dsgs\_local\_rel} & \cm{1.0} (default) & unused (domain norms)\\
+\end{keytable}
+
+\section{DynSGS as it runs for this case}
+\label{sec:dsgs}
+Notation: element $K$, LGL node $i$, element lumped mass $m^K_i=\omega_i J_{K,i}$,
+\cm{$\Delta_K=\Delta x/(N+1)$} $=1/750$, stage time $t=t^n+\tau$, $h=\Delta t$.
+
+\begin{enumerate}[leftmargin=*]
+\item \textbf{History.} \cm{At the first RHS call of every step} ($t-t_{hist}\ge0.999\,\Delta t$) the
+\dsgs{} triple is rotated, $(\bq^{n-2},\bq^{n-1},\bq^n)\leftarrow(\bq^{n-1},\bq^n,\bq)$, and the
+rotation counter $n_{hist}$ is incremented (\code{rhs.jl:936}). The triple is seeded with the
+initial condition.
+\item \textbf{Hold.} With $H=2$ the residual right-hand side and the weights are held at zero
+while $n_{hist}<\max(2,H)+1=3$, i.e.\ \mj{during the first two steps}; $\nu$ is then the
+$C_{\min}$ floor alone (\code{rhs.jl:182, 195, 947}).
+\item \textbf{Time derivative} (residual sensor, \code{rhs.jl:964--971}):
+\[
+D_t q=\begin{cases}
+\dfrac{3q^n-4q^{n-1}+q^{n-2}}{2h}, & \tau\le10^{-8}h,\\[8pt]
+\dfrac{2\tau+h}{\tau(\tau+h)}\,q(\tau)-\dfrac{\tau+h}{\tau h}\,q^n+\dfrac{\tau}{h(\tau+h)}\,q^{n-1}, & \tau>0 .
+\end{cases}
+\]
+\item \textbf{Residual} of slot $s$ at node $i$ of $K$: $R^s_{K,i}=\big|D_tq^s_i - r^{K,s}_i/m^K_i\big|$,
+with $r^K$ the element's own weak inviscid right-hand side (\code{params.rhs\_el}, not assembled).
+\textbf{Dirichlet nodes:} the two end nodes are listed by \code{\_dsgs\_boundary\_pairs!} and their
+entries replaced by $m^K_i D_tq_i$, so $R\equiv0$ there for all 8 slots (\code{rhs.jl:313, 346}).
+\item \textbf{Normalization} (domain): $\langle q^s\rangle$ is the plain average over all element
+nodes of the tube (shared nodes counted once per element, MPI-summed), $S^s=\max|q^s-\langle q^s\rangle|$
+(MPI-max). With $\bar\rho=\max(|\langle\rho\rangle|,10^{-16})$, $\bar p=(\gamma-1)\max(\langle E\rangle-|\langle\bmom\rangle|^2/(2\bar\rho)-\tfrac12|\langle\bB\rangle|^2,0)$
+and the sound speed $\bar c=\sqrt{\gamma\bar p/\bar\rho}$ (no fast floors),
+\[
+n^s=\max\big(S^s,\ r\,\sigma^s\big)+10^{-16},\qquad
+\sigma^\rho=\bar\rho,\ \ \sigma^{\rho u,\rho v,\rho w}=\bar\rho\bar c,\ \ \sigma^E=\bar\rho\bar c^2,\ \ \sigma^{B}=\sqrt{\bar\rho}\,\bar c,
+\]
+with \cm{$r=$ \code{:dsgs\_rel} $=1$} (in the code: $10^3\cdot$\code{:dsgs\_rel} times the built-in $10^{-3}$).
+\item \textbf{Element ratio and cap speed.}
+$\mathcal R_K=\max_{i\in K}\max_{s\le 8} R^s_{K,i}/n^s$ (all 8 slots; there is no $\psi$),
+$w_K=\max_{i\in K}\big(|\bv_i|+c_{f,i}\big)$ with the \emph{exact fast speed along $x$},
+$c_f^2=\tfrac12\big(a^2+b^2+\sqrt{(a^2+b^2)^2-4a^2b_x^2}\big)$, $a^2=\gamma p/\rho$, $b^2=|\bB|^2/\rho$,
+$b_x^2=B_x^2/\rho$, $p$ clipped at 0 (\code{SGS.jl:2075--2088}).
+\item \textbf{Coefficient} (\code{SGS.jl:2092--2096}):
+\[
+\nuc=\max\big(0,\min(\Cmax\Delta_Kw_K,\ \CR\Delta_K^2\mathcal R_K)\big),\qquad
+\nufl=\Cmin\Delta_Kw_K,\qquad \nu_K=\max(\nuc,\nufl),
+\]
+\cm{one value per element}, \cm{recomputed at every Runge--Kutta stage}; $(\CR,\Cmax,\Cmin)=(1.5625,0.625,0.075)$
+with $\Delta_K=\Delta x/5$, i.e.\ $(1,\,0.5,\,0.06)$ on $\Delta x/4$.
+\item \textbf{Slot coefficients} (conserved form): $\mu^s_K=\mu[s]\,\nu_K=\nu_K$ for all 8 slots.
+\end{enumerate}
+
+\section{The viscous operator}
+\code{user\_primitives.jl} returns the conserved variables themselves, and the 1D loop applies one
+scalar flux per slot (\code{rhs.jl:2823}, \code{1349}):
+\[
+\partial_t\bq+\partial_x\bF(\bq)=\partial_x\big(\nu_K\,\partial_x\bq\big)\quad\text{on }(\rho,\rho u,\rho v,E,\rho w,B_x,B_y,B_z),
+\]
+\mj{a Laplacian of the conserved state}, in divergence form, with \mj{no separate $\tau\cdot\bv$ or
+resistive-work term} (the $E$ Laplacian carries them). $\nu$ is piecewise constant (a staircase
+with jumps at element interfaces). $B_x$ is constant in the exact solution; its residual stays in the
+max and acts as an oscillation detector.
+
+\section{Positivity}
+\begin{itemize}[leftmargin=*]
+\item \textbf{No state limiter.} \mj{\code{:lpositivity} is false} (default) and the solver carries
+no stage limiter: \mj{nothing modifies the state to enforce $\rho>0$ or $p>0$}.
+\item \textbf{Flux-only floor.} \code{pressure\_mhd1d} returns $\max\big((\gamma-1)(E-\dots),\,10^{-9}\big)$
+(\code{const p\_floor\_mhd = 1.0e-9}, \code{user\_flux.jl}). It is used by \code{user\_flux!} and by the
+output; it changes the flux of a node whose pressure has gone below $10^{-9}$, not the state.
+\item \textbf{What keeps the solution admissible} is therefore the dissipation alone: the conserved-form
+Laplacian with $\nu\ge\nufl=0.075\,\Delta_Kw_K>0$ everywhere (a background of
+$\Cmin/\Cmax=12\%$ of the cap), and the cap $\Cmax\Delta w$ at the discontinuities. Inside \dsgs{} itself the pressure
+is clipped at 0 when it builds $\bar p$ and $c_f$, so a negative nodal $p$ cannot produce a NaN coefficient.
+\end{itemize}
+
+\section{Observations: code versus comments}
+\label{sec:obs}
+\begin{enumerate}[leftmargin=*]
+\item \textbf{The default (element-form) run should fail on its first \dsgs{} call.} Commit
+\code{708bd78} added the keyword \code{lthermal = \dots} to the 1D call
+(\code{rhs.jl:1456}) but not to the signature of \code{compute\_dsgs\_viscosity!(::DSGS\_MHD,
+::NSD\_1D)} (\code{SGS.jl:1929--1956}, last keyword \code{lfast\_floors}). Julia raises a
+\code{MethodError} (``unsupported keyword argument'') for an undeclared keyword. The nodal path
+(\code{JEXPRESSO\_BW\_NODAL=1}) does not pass \code{lthermal} and is not affected. This was found by
+reading; Julia is not installed in the environment where this note was written, so it was not executed.
+The fix is one line: add \code{lthermal::Bool=false} to the 1D signature (it is ignored there).
+\item The header of \code{user\_inputs.jl} says ``integrated with SSPRK53''; the deck sets
+\code{CarpenterKennedy2N54()}.
+\item \code{DSGS.md} \S4.7 says this case needs a 3\% $C_{\min}$ floor; the deck sets
+$0.06\,h_{fac}$ (its own comment says 6\%; relative to the cap $\Cmax$ that is 12\%).
+\end{enumerate}
+
+\input{codemap}
+\end{document}
