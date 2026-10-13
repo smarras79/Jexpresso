@@ -134,14 +134,15 @@ is clipped at 0 when it builds $\bar p$ and $c_f$, so a negative nodal $p$ canno
 \section{Observations: code versus comments}
 \label{sec:obs}
 \begin{enumerate}[leftmargin=*]
-\item \textbf{The default (element-form) run should fail on its first \dsgs{} call.} Commit
-\code{708bd78} added the keyword \code{lthermal = \dots} to the 1D call
+\item \textbf{[Fixed in \code{23e4974}.] At \commit{} the default (element-form) run failed on its first
+\dsgs{} call.} Commit \code{708bd78} added the keyword \code{lthermal = \dots} to the 1D call
 (\code{rhs.jl:1456}) but not to the signature of \code{compute\_dsgs\_viscosity!(::DSGS\_MHD,
-::NSD\_1D)} (\code{SGS.jl:1929--1956}, last keyword \code{lfast\_floors}). Julia raises a
-\code{MethodError} (``unsupported keyword argument'') for an undeclared keyword. The nodal path
-(\code{JEXPRESSO\_BW\_NODAL=1}) does not pass \code{lthermal} and is not affected. This was found by
-reading; Julia is not installed in the environment where this note was written, so it was not executed.
-The fix is one line: add \code{lthermal::Bool=false} to the 1D signature (it is ignored there).
+::NSD\_1D)} (\code{SGS.jl:1929--1956}, last keyword \code{lfast\_floors}). Julia~1.11.5, calling the
+kernel's own source with the exact keyword set of \code{rhs.jl:1434--1456}, raised
+\code{MethodError: \dots{} got unsupported keyword argument "lthermal"}. The nodal path
+(\code{JEXPRESSO\_BW\_NODAL=1}) does not pass \code{lthermal} and was not affected. \code{23e4974} adds
+\code{lthermal::Bool=false} to the 1D signature; the thermal residual is 2D-only, so the keyword is ignored
+there, and the same call returns a bit-identical coefficient with \code{lthermal} omitted, false or true.
 \item The header of \code{user\_inputs.jl} says ``integrated with SSPRK53''; the deck sets
 \code{CarpenterKennedy2N54()}.
 \item \code{DSGS.md} \S4.7 says this case needs a 3\% $C_{\min}$ floor; the deck sets

@@ -156,13 +156,15 @@ among the \dsgs{} cases: legacy sensor (5/8), element norms (5/8), $\CR=1$ and $
 hold 2 (6/8), \code{:dsgs\_conserved} (7/8), no work terms in $E$ (7/8), no fast floors (6/8), no thermal residual
 (7/8), no Nazarov energy split (5/8), no reference weight (7/8); report every 1000 calls (2/3 limiter cases).
 
-\section*{Findings: code that disagrees with its comments, and one likely failure}
+\section*{Findings: code that disagrees with its comments, and one failure}
+\noindent\small Line numbers refer to \commit; fixes made since are marked with their commit.\normalsize
 \begin{enumerate}[leftmargin=*]
-\item \textbf{BW, element form (the default): \code{MethodError} expected on the first \dsgs{} call.} Commit
-\code{708bd78} added \code{lthermal = \dots} to the 1D call (\code{rhs.jl:1456}) but not to
-\code{compute\_dsgs\_viscosity!(::DSGS\_MHD, ::NSD\_1D)} (\code{SGS.jl:1929}); Julia rejects an undeclared keyword.
-Found by reading; not executed here (no Julia in this environment). One-line fix: add \code{lthermal::Bool=false}
-to the 1D signature.
+\item \textbf{[Fixed in \code{23e4974}.] BW, element form (the default): \code{MethodError} on the first \dsgs{}
+call.} Commit \code{708bd78} added \code{lthermal = \dots} to the 1D call (\code{rhs.jl:1456}) but not to
+\code{compute\_dsgs\_viscosity!(::DSGS\_MHD, ::NSD\_1D)} (\code{SGS.jl:1929}). Reproduced with Julia~1.11.5 on the
+kernel's own source (``got unsupported keyword argument \code{"lthermal"}''). \code{23e4974} adds
+\code{lthermal::Bool=false} to the 1D signature (the thermal residual is 2D-only and is ignored there); the call then
+succeeds with a bit-identical coefficient for \code{lthermal} omitted, false or true.
 \item \textbf{SV: conserved coefficients on physical primitives.} The deck sets \code{:dsgs\_conserved => true} but
 \code{user\_primitives.jl} returns $(\rho,u,v,T,w,\bB,\psi)$, so the operator is $\nu\nabla u$, $\nu\nabla T$, \dots{} with
 no $\rho$ factor, no stress and no work terms --- neither documented form. The file's header describes the physical
