@@ -1,0 +1,65 @@
+% Shared description of :positivity_method => "conservative" (Positivity.cpos_*, positivity_driver.jl).
+% The including document defines \epsrho, \epsp and \repevery before \input{cpos_algorithm}.
+\subsection*{How the limiter is hooked in}
+\begin{itemize}[leftmargin=*]
+\item \cm{\code{:lpositivity => true}} and \cm{\code{:positivity\_method => "conservative"}} make
+\code{mod\_inputs.jl:836--838} \cm{rebuild the deck's \code{CarpenterKennedy2N54} with the limiter as its stage
+limiter and \code{williamson\_condition = false}}:
+\begin{center}\small\code{CarpenterKennedy2N54(stage\_limiter! = positivity\_conservative\_limiter!, williamson\_condition = false)}\end{center}
+(\code{positivity\_driver.jl:263}); any other solver, or one that already has a stage limiter, is refused.
+\item The limiter therefore runs \cm{before the right-hand side of stages 2--5 and once after stage 5}: five
+times per step, on every rank. The state entering stage 1 is the limited end of the previous step; the initial
+condition itself is not limited.
+\item On the first call \code{\_cpos\_validate} (\code{positivity\_driver.jl:271}) requires: the nine-field
+\code{qvars} $(\rho,\rho u,\rho v,\rho E,\rho w,B_x,B_y,B_z,\psi)$, 2D, continuous Galerkin, a lumped
+(vector) mass matrix, \code{TOTAL()}, CPU, no \code{:ladapt}, \code{:dsgs\_gamma} set, both floors $>0$.
+\cm{$\gamma$ is taken from \code{:dsgs\_gamma}}, not from \code{PhysicalConst}.
+\item The node-wise \emph{repair} of \code{apply\_positivity!} (\code{rhs.jl:821}) returns at once in this
+mode: nothing is done inside \code{rhs!}.
+\end{itemize}
+
+\subsection*{What one call does}
+Let $\Et=E-\tfrac12|\bB|^2-\tfrac12\psi^2$ (the part of $E$ the limiter may touch),
+$p(\rho,\bmom,\Et)=(\gamma-1)(\Et-|\bmom|^2/(2\rho))$, $\eps_\rho=\epsrho$, $\eps_p=\epsp$, $s=64$, and
+$\mathrm{ulp}(x)$ the double-precision spacing at $x$.
+\begin{enumerate}[leftmargin=*]
+\item \textbf{Mark} (\code{cpos\_mark\_bad!}): node $I$ is bad unless $\rho_I\ge\eps_\rho$ and $p_I\ge\eps_p$
+(a NaN node is therefore bad). The number of bad nodes is \code{MPI.Allreduce}d; if it is 0 everywhere the
+call returns and the state is untouched.
+\item \textbf{Element pass} (\code{cpos\_element\_pass!}), for every element $K$ holding a bad node, with the
+element mass weights $w_I=\omega_i\omega_jJ_{K,ij}$, $W=\sum_Iw_I$:
+\begin{itemize}
+\item means $\bar\rho=\sum w_I\rho_I/W$, $\bar\bmom$, $\bar E$ (of $\Et$); round-off margins
+$\delta_\rho=s\,\mathrm{ulp}(\max(\max_I|\rho_I|,|\bar\rho|))$, $\bar\rho_g=\bar\rho-\delta_\rho$,
+$\eps_\rho^+=\eps_\rho+\delta_\rho$, $\eps_p^+=\eps_p+s(\gamma-1)\,\mathrm{ulp}(\max_I(|E_I|+\tfrac12|\bB_I|^2+\tfrac12\psi_I^2))$;
+\item if the mean is not admissible ($\bar\rho_g\le\eps_\rho^+$ or $p(\bar\rho_g,\bar\bmom,\bar E)\le\eps_p^+$, or not
+finite) the element is counted as \emph{failed} and skipped;
+\item density: if $\min_I\rho_I<\eps_\rho^+$, $\theta_\rho=\mathrm{clamp}\big((\bar\rho-\eps_\rho^+)/(\bar\rho-\min_I\rho_I),0,1\big)$,
+else $\theta_\rho=1$; $\tilde\rho_I=\bar\rho+\theta_\rho(\rho_I-\bar\rho)$;
+\item pressure: for every node with $p(\tilde\rho_I-\text{margin},\bmom_I,\Et_I)<\eps_p^+$, $t_I\in[0,1]$ is the
+smallest root of the quadratic $(\bar\rho_g+t\,d\rho)(\bar E-e^++t\,dE)-\tfrac12|\bar\bmom+t\,d\bmom|^2=0$,
+$e^+=\eps_p^+/(\gamma-1)$, $d\rho=\tilde\rho_{I,g}-\bar\rho_g$, $d\bmom=\bmom_I-\bar\bmom$, $dE=\Et_I-\bar E$
+(computed with the cancellation-free root formula); $\theta_p=\min_It_I$ ($\theta_p=0$ if some $\tilde\rho_{I,g}\le0$);
+\item increments, accumulated as $w_I\,\delta q_I$:
+\[
+\delta\rho_I=(\theta_p\theta_\rho-1)(\rho_I-\bar\rho),\quad
+\delta\bmom_I=(\theta_p-1)(\bmom_I-\bar\bmom),\quad
+\delta E_I=(\theta_p-1)(\Et_I-\bar E),\quad
+\delta\bB_I=\delta\psi_I=0 .
+\]
+\cm{Since $\bar q$ is the $w$-weighted mean, $\sum_Iw_I\delta q_I=0$ in every element: $\rho$, $\rho\bv$ and $E$
+are conserved exactly; $\bB$ and $\psi$ (hence $\nabla\cdot\bB$) are never touched.}
+\end{itemize}
+\item \textbf{Assemble and apply} (\code{DSS\_global\_RHS!}, \code{cpos\_add!}): the element increments are summed
+over elements, ranks and periodic copies and divided by the lumped global mass, $q_I\leftarrow q_I+M_I^{-1}\sum_K w^K_I\delta q^K_I$.
+At a node shared by several elements the update is the mass-weighted average of their increments, so the
+assembled node need not reproduce the element's limited value exactly.
+\item \textbf{Node floor} (\code{cpos\_floor!}, \cm{not conservative}), for the finite nodes still out of bounds
+(e.g.\ in failed elements): $\rho\leftarrow\eps_\rho+s\,\mathrm{ulp}(\eps_\rho)$ if $\rho<\eps_\rho$ (mass added);
+then with $k=|\bmom|^2/(2\rho)$ and $e^+=\eps_p/(\gamma-1)+s\,\mathrm{ulp}(|E|+\tfrac12|\bB|^2+\tfrac12\psi^2)$, if
+$\Et-k<e^+$: either scale $\bmom$ by $\sqrt{(\Et-e^+)/k}$ ($E$ unchanged) when $\Et>e^+$, or set $\bmom=0$ and
+raise $E$ by $e^+-\Et$ (energy added).
+\item \textbf{Report} (\code{\_cpos\_report}): every \repevery{} limiter calls (\code{:positivity\_report\_every}),
+when the global counts have grown: element limitings, $\min\theta_\rho$, $\min\theta_p$, failed elements, node
+floors, and in how many calls the limiter was active.
+\end{enumerate}

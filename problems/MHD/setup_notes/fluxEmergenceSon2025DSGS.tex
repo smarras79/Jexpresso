@@ -1,0 +1,107 @@
+\documentclass[10pt]{article}
+\input{preamble}
+\title{\code{problems/MHD/fluxEmergenceSon2025DSGS}\\[2pt]
+\large DynSGS and positivity setup, as coded on branch \branch{} (commit \commit)}
+\author{}\date{}
+\begin{document}
+\maketitle
+\commonlegend
+
+\noindent\textbf{Scope.} This case loads the physics of \code{fluxEmergenceSon2025} verbatim
+(\code{initialize.jl}, \code{user\_flux.jl}, \code{user\_source.jl} and \code{user\_bc.jl} are one-line
+\code{include}s of the sibling's files) and has its own \code{user\_inputs.jl} and
+\code{user\_primitives.jl}. Its purpose is to keep the solution admissible \emph{without any limiter},
+through the reference-weighted form of the conserved \dsgs{} operator.
+
+\section{The problem as set up}
+Identical to \code{fluxEmergenceSon2025} (see that note: \cm{GLM-MHD}, $\gamma=1.05$, gravity, magnetostatic
+reference $q_e(z)$, well-balanced correction, absorbing layer, $\psi$ damping $\alpha_pc_h/\Delta h$, periodic
+in $x$ with walls), except for the deck values below.
+\begin{keytable}
+Mesh & \code{FE\_80x35.msh} \mj{refined once by p4est} $\Rightarrow 160\times70$ quads of $0.5\,H_0$ & \code{:linitial\_refine => true}, \code{:init\_refine\_lvl => 1}\\
+Discretization & \cm{CG spectral elements, LGL nodes, lumped mass}; \mj{$N=4$} & \\
+Time integration & \cm{\code{CarpenterKennedy2N54}}, \textbf{no stage limiter}; \cm{fixed $\Delta t$} $=5\times10^{-3}\tau_0$, $t_{end}=50\,\tau_0$ & sibling: $7.5\times10^{-3}$, 54\\
+Variables & \cm{\code{TOTAL()}, \code{"energy"}} & \\
+Sources & \mj{\code{:lsource => true}} (as the sibling) & \\
+Other switches & \cm{\code{:lfilter}, \code{:lkep}, \code{:entropy\_variables}, \code{:lrichardson}, \code{:ladapt} false} & \\
+\end{keytable}
+
+\section{DynSGS: deck keys and effective values}
+Same constants as the sibling; the one new key is \code{:dsgs\_ref\_weight}.
+\begin{keytable}
+\code{:visc\_model} & \cm{\code{DSGS\_MHD()}}, \code{:lvisc => true} & \\
+\code{:}$\mu$ & \cm{all 1} & \\
+\code{:dsgs\_sensor} & \mj{\code{"legacy"}} & \\
+\code{:dsgs\_CR}, \code{:dsgs\_Cmax}, \code{:dsgs\_Cmin} & \mj{1.0}, \mj{0.5}, 0.03 & \\
+\code{:dsgs\_gamma}, \code{:dsgs\_Prt} & \cm{$=\gamma_{mhd}$} $=1.05$, \cm{1.0} & \\
+\code{:dsgs\_nazarov\_energy} & true & split energy flux\\
+\code{:dsgs\_norms}, \code{:dsgs\_local\_rel} & \mj{\code{"element"}}, \cm{1.0} & \\
+\code{:dsgs\_conserved} & \mj{true} & \\
+\code{:dsgs\_ref\_weight} & \textbf{true} & the only case that sets it\\
+\code{:dsgs\_nodal\_rho} & true in the deck, \cm{inactive} & forced off by \code{:dsgs\_conserved}\\
+\code{:dsgs\_fast\_floors}, \code{:dsgs\_thermal\_residual} & \mj{false} (defaults) & \\
+\code{:dsgs\_rel}, \code{:dsgs\_hold\_steps} & \cm{1.0}, \mj{2} (defaults) & \\
+\code{:dsgs\_cutoff}, \code{:dsgs\_freeze\_stage}, \code{:dsgs\_reference}, \code{:ldsgs\_nodal} & \cm{0}, \cm{false}, \cm{false}, \cm{false} & defaults\\
+\end{keytable}
+
+\section{DynSGS as it runs for this case}
+\cm{$\Delta_K=\Delta^{elem}_K/(N+1)$} $=0.1\,H_0$. Steps 1--5 are those of the sibling, unchanged:
+\cm{rotation once per step}, \mj{two held steps} ($\nu=\nufl$), the \mj{legacy} residual against the
+assembled inviscid RHS (no wall-node zeroing on that path), \mj{element normalization} with floors
+$r_{loc}(\bar\rho_K,\bar\rho_K\bar c_K,\bar\rho_K\bar c_K^2,\sqrt{\bar\rho_K}\bar c_K)$, \cm{max over the 8 non-$\psi$ slots},
+\cm{cap $\Cmax\Delta_K\max(|\bv|+c_f)$}, and
+\[
+\nuc=\max(0,\min(0.5\,\Delta_Kw_K,\ \Delta_K^2\mathcal R_K)),\quad \nufl=0.03\,\Delta_Kw_K,\quad
+\nu_K=\max(\nuc,\nufl),\quad \kappa^E_K=\max(0.0525\,\nuc,\nufl).
+\]
+The residual sensor itself does \emph{not} see the reference weighting: it acts only in the assembly.
+
+\section{The viscous operator: reference-weighted conserved form}
+\code{rhs.jl:1530} sets \code{dsgs\_ref\_weight[] = true} and \code{rhs.jl:1533} \code{dsgs\_split\_energy[] = true}.
+\code{user\_primitives.jl} returns, with $\rho_e=\rho_e(z)$ and $\delta q=q-q_e$,
+\[
+\text{slots }1\text{--}5:\ \ \frac{\delta\rho}{\rho_e},\ \frac{\delta(\rho u)}{\rho_e},\ \frac{\delta(\rho v)}{\rho_e},\
+\frac{\delta E_{nth}}{\rho_e},\ \frac{\delta(\rho w)}{\rho_e};\qquad
+\text{slots }6\text{--}9:\ \delta B_x,\delta B_y,\delta B_z,\psi;\qquad
+\text{slot }10:\ \rho_e;\quad \text{slot }11:\ \frac{\delta E_{th}}{\rho_e},
+\]
+and \code{\_expansion\_visc!} multiplies the coefficient of slots 1--5 by the weight $\rho_e$ read at the
+quadrature point (\code{rhs.jl:2978}):
+\begin{center}\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+Equation & Viscous flux $\bF_V$ & \\
+\midrule
+$\rho$ & $\nu\rho_e\nabla(\delta\rho/\rho_e)$ & \cm{mass diffusion on}\\
+$\rho u,\rho v,\rho w$ & $\nu\rho_e\nabla(\delta(\rho u)/\rho_e)$, \dots & \\
+$E$ & $\nu\rho_e\nabla(\delta E_{nth}/\rho_e)+\kappa^E\rho_e\nabla(\delta E_{th}/\rho_e)$ & weight on both parts\\
+$B_k$, $\psi$ & $\nu\nabla\delta B_k$, $\nu\nabla\psi$ & unweighted\\
+\bottomrule
+\end{tabular}
+\end{center}
+All in divergence form (conservative), zero at rest, \mj{no $\tau\cdot\bv$ or resistive-work term}.
+Where $q_e$ is negligible against $q$ it reduces to $\nu\nabla q$ on the fluid slots.
+
+\section{Positivity}
+\begin{itemize}[leftmargin=*]
+\item \mj{\code{:lpositivity} false}, \mj{no stage limiter}, \mj{no state modification}: nothing clips,
+nothing is added. This is the point of the case.
+\item What remains: the flux-only floor $p\leftarrow\max(p,10^{-9})$ in \code{user\_flux!} (shared with the
+sibling; the state is not changed), the mass diffusion, the $C_{\min}$ background and the
+reference-weighted operator, which diffuses the \emph{relative} departure $\rho/\rho_e$ and so cannot carry a
+$-10\%$ departure of the dense side of the transition region across the $25\times$ jump in absolute terms
+(the mechanism the sibling needed its floor for, according to the deck header).
+\end{itemize}
+
+\section{Observations: code versus comments}
+\begin{enumerate}[leftmargin=*]
+\item The deck header says the case has ``the SAME physics, mesh, initial and boundary conditions, time
+step and DynSGS constants'' as the sibling. Physics, initial/boundary conditions and \dsgs{} constants are
+the same; the \emph{mesh} is refined once here ($160\times70$ against $80\times35$) and $\Delta t$ is
+$5\times10^{-3}$ against $7.5\times10^{-3}$ ($t_{end}$ 50 against 54).
+\item As in the sibling, the comments about $\Delta t=2.5\times10^{-3}$ and about the $\tau\cdot u$ term being
+active are stale (no $\tau\cdot\bv$ under \code{:dsgs\_conserved}).
+\end{enumerate}
+
+\input{codemap}
+\end{document}

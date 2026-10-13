@@ -1,0 +1,185 @@
+\documentclass[10pt]{article}
+\input{preamble}
+\usepackage{pdflscape}
+\newcolumntype{C}{>{\centering\arraybackslash}p{1.80cm}}
+\newcolumntype{R}{>{\raggedright\arraybackslash}p{3.3cm}}
+\newcommand{\na}{\textcolor{black!45}{n/a}}
+\newcommand{\no}{\textcolor{black!45}{---}}
+\title{\code{problems/MHD}: DynSGS and positivity across the nine cases\\[2pt]
+\large Summary of the per-case notes, as coded on branch \branch{} (commit \commit)}
+\author{}\date{}
+\begin{document}
+\maketitle
+\commonlegend
+
+\noindent This directory holds one note per case (\code{<case>.tex}/\code{.pdf}) and this summary. Every value
+was read from the case's deck and files and from the kernels they reach on \branch{}; where the deck is silent
+the value is \code{mod\_inputs.jl}'s default, and environment overrides (\code{JEXPRESSO\_BW\_*},
+\code{\_SV\_*}, \code{\_OT\_*}) are taken unset. Column keys:
+
+\begin{center}\small
+\begin{tabular}{@{}ll@{\qquad}ll@{\qquad}ll@{}}
+BW & \code{brioWu1d} & KH & \code{kelvinHelmholtzChan2022} & ROT & \code{rotorDaoNazarov2022}\\
+SV & \code{smoothVortex} & FE & \code{fluxEmergenceSon2025} & BL & \code{blastBalsaraSpicer1999}\\
+OT & \code{orszagTangBormanis2024} & FED & \code{fluxEmergenceSon2025DSGS} & AJ & \code{astroJetWuShu2018}\\
+\end{tabular}
+\end{center}
+
+\section*{In one paragraph}
+Eight of the nine cases stabilize the collocated CG--SEM with the residual-based \code{DSGS\_MHD} viscosity;
+\textbf{KH uses Smagorinsky} and no \dsgs{} key. All eight share the element-wise coefficient
+$\nu_K=\max\!\big(\Cmin\Delta_Kw_K,\ \min(\Cmax\Delta_Kw_K,\ \CR\Delta_K^2\mathcal R_K)\big)$ with
+$\Delta_K=\Delta^{elem}_K/(N+1)$, $w_K=\max(|\bv|+c_f)$, the max of the normalized residual over the eight
+non-$\psi$ slots, mass diffusion on, $\Pr=1$, \code{:dsgs\_rel}$=1$, no cutoff, no freezing; they split on the
+sensor (\code{legacy} 5, \code{residual} 3), the normalization scope (\code{element} 5, \code{domain} 3), the
+operator (a Laplacian of the conserved state or of its departure in 6, the physical form in OT, and a hybrid
+in SV), and the hold (2 steps in 6, none in BL, AJ). Positivity is enforced by a \emph{state} modification in
+only four cases: the conservative element limiter (ROT, BL, AJ) and a non-conservative case-local floor (FE);
+BW, FE, FED and AJ additionally floor $p$ (and AJ $\rho$) inside the flux only. FED is the limiter-free twin
+of FE.
+
+\begin{landscape}
+\section*{Table 1 --- Problem, discretization, time integration}
+{\footnotesize
+\begin{tabular}{@{}R*{9}{C}@{}}
+\toprule
+& BW & SV & OT & KH & FE & FED & ROT & BL & AJ\\
+\midrule
+Dim.\ / slots & 1D / 8 & \mj{2D / 9} & \mj{2D / 9} & \mj{2D / 9} & \mj{2D / 9} & \mj{2D / 9} & \mj{2D / 9} & \mj{2D / 9} & \mj{2D / 9}\\
+$\gamma$ & 2 & 5/3 & 5/3 & 5/3 & 1.05 & 1.05 & 1.4 & 1.4 & 1.4\\
+Domain & $(0,1)$ & $[-10,10]^2$ & $[0,1]^2$ & periodic square (external mesh) & $80\times35\,H_0$ & $80\times35\,H_0$ & $[0,1]^2$ & $[0,1]^2$ & $[0,\tfrac12]\times[0,1.5]$\\
+Elements & 150 & $16^2$ & $64^2$ & $32^2$ & $80\times35$ & $160\times70$ & $128^2$ & $64^2$ & $80\times240$\\
+p4est initial refinement (levels) & \no & \no & \mj{yes} (1) & \no & \no & \mj{yes} (1) & \mj{yes} (2) & \mj{yes} (1) & \mj{yes} (2)\\
+$N$ & \mj{4} & \mj{4} & \mj{4} & 7 & \mj{4} & \mj{4} & 3 & 3 & \mj{4}\\
+$\Delta t$ & $5\times10^{-5}$ & $2\times10^{-3}$ & $2\times10^{-4}$ & $2\times10^{-3}$ & $7.5\times10^{-3}$ & $5\times10^{-3}$ & $2\times10^{-4}$ & $10^{-5}$ & $1.25\times10^{-7}$\\
+$t_{end}$ & 0.1 & 1 & 1 & 15 & 54 & 50 & 0.15 & 0.01 & $2\times10^{-3}$\\
+Integrator & \cm{CK2N54} & \cm{CK2N54} & \cm{CK2N54} & \cm{CK2N54} & \cm{CK2N54} & \cm{CK2N54} & \cm{CK2N54} & \cm{CK2N54} & \cm{CK2N54}\\
+Stage limiter & \mj{none} & \mj{none} & \mj{none} & \mj{none} & FE floor & \mj{none} & cons.\ limiter & cons.\ limiter & cons.\ limiter\\
+CG, LGL, lumped mass, \code{TOTAL}, \code{"energy"}, fixed $\Delta t$ & \cm{yes} & \cm{yes} & \cm{yes} & \cm{yes} & \cm{yes} & \cm{yes} & \cm{yes} & \cm{yes} & \cm{yes}\\
+Filter / KEP / ES / adapt & \cm{off} & \cm{off} & \cm{off} & \cm{off} & \cm{off} & \cm{off} & \cm{off} & \cm{off} & \cm{off}\\
+Boundaries & Dirichlet ends & \mj{periodic} & \mj{periodic} & \mj{periodic} & periodic $x$, walls & periodic $x$, walls & \mj{periodic} & \mj{periodic} & inflow, outflow, axis\\
+Sources & none & \mj{$\psi$ only} & \mj{$\psi$ only} & \mj{$\psi$ only} & $g$, WB, $\psi$, sponge & $g$, WB, $\psi$, sponge & \mj{$\psi$ only} & \mj{$\psi$ only} & \mj{$\psi$ only}\\
+GLM $c_h$ & \na & \cm{IC max} & \cm{IC max} & \cm{IC max} & \cm{IC max} & \cm{IC max} & \cm{IC max} & \cm{IC max} & \cm{IC+inflow max}\\
+$\psi$ damping & \na & \mj{$c_h/0.18$} & \mj{$c_h/0.18$} & \mj{$c_h/0.18$} & $0.2\,c_h/\Delta h$ & $0.2\,c_h/\Delta h$ & \mj{$c_h/0.18$} & \mj{$c_h/0.18$} & \mj{$c_h/0.18$}\\
+\bottomrule
+\end{tabular}}
+
+\section*{Table 2 --- DynSGS (effective values)}
+{\footnotesize
+\begin{tabular}{@{}R*{9}{C}@{}}
+\toprule
+& BW & SV & OT & KH & FE & FED & ROT & BL & AJ\\
+\midrule
+\code{:visc\_model} & \cm{DSGS\_MHD} & \cm{DSGS\_MHD} & \cm{DSGS\_MHD} & \textbf{SMAG} & \cm{DSGS\_MHD} & \cm{DSGS\_MHD} & \cm{DSGS\_MHD} & \cm{DSGS\_MHD} & \cm{DSGS\_MHD}\\
+\code{:}$\mu$ & \cm{all 1} & \cm{all 1} & \cm{all 1} & $(0,1,\dots)$ & \cm{all 1} & \cm{all 1} & \cm{all 1} & \cm{all 1} & \cm{all 1}\\
+Sensor & residual & residual & \mj{legacy} & \na & \mj{legacy} & \mj{legacy} & \mj{legacy} & \mj{legacy} & residual\\
+Norms & domain & domain & domain & \na & \mj{element} & \mj{element} & \mj{element} & \mj{element} & \mj{element}\\
+Fast-speed floors & \mj{no} & \mj{no} & \mj{no} & \na & \mj{no} & \mj{no} & \mj{no} & yes & yes\\
+Thermal residual & \mj{no} & \mj{no} & \mj{no} & \na & \mj{no} & \mj{no} & \mj{no} & yes & \mj{no}\\
+$\CR$ & 1.5625$^\ast$ & \mj{1} & \mj{1} & \na & \mj{1} & \mj{1} & \mj{1} & \mj{1} & \mj{1}\\
+$\Cmax$ & 0.625$^\ast$ & \mj{0.5} & \mj{0.5} & \na & \mj{0.5} & \mj{0.5} & \mj{0.5} & \mj{0.5} & \mj{0.5}\\
+$\Cmin$ & 0.075$^\ast$ & \mj{0} & \mj{0} & \na & 0.03 & 0.03 & \mj{0} & \mj{0} & \mj{0}\\
+\cm{$\Delta_K=\Delta^{elem}_K/(N+1)$} (value) & 1/750 & 0.25 & 1/320 & \na & 0.2 & 0.1 & 1/512 & 1/256 & 0.00125\\
+\code{:dsgs\_gamma}$=\gamma$, $\Pr=1$, \code{rel}$=$\code{local\_rel}$=1$ & \cm{yes} & \cm{yes} & \cm{yes} & \na & \cm{yes} & \cm{yes} & \cm{yes} & \cm{yes} & \cm{yes}\\
+Hold (steps) & \mj{2} & \mj{2} & \mj{2} & \na & \mj{2} & \mj{2} & \mj{2} & 0 & 0\\
+Cutoff, freeze, nodal $\nu$, nodal $\rho$, reference & \cm{off} & \cm{off} & \cm{off} & \na & \cm{off} & \cm{off} & \cm{off} & \cm{off} & \cm{off}\\
+\code{:dsgs\_conserved} & \mj{true} & \mj{true} & false & \na & \mj{true} & \mj{true} & \mj{true} & \mj{true} & \mj{true}\\
+Diffused variables & $\bq$ & $\rho,u,v,T,$ $w,\bB,\psi$ & $\rho,u,v,T,$ $w,\bB,\psi$ & ($u,v,T,\dots$) & $\bq-\bq_e$ & $(\bq-\bq_e)/\rho_e$ & $\bq$ & $\bq$ & $\bq$\\
+Slot coefficients & $\nu$ all & $\nu$ all & $\nu$; $\bar\rho\nu$ ($\bmom$, $E$) & $\mu_t$-based & $\nu$; $E_{th}$: $\kappa^E$ & $\nu\rho_e$; $E_{th}$: $\kappa^E\rho_e$ & $\nu$ all & $\nu$ all & $\nu$ all\\
+Work terms in $E$ & \mj{none} & \mj{none} & $\tau\cdot\bv$, $\eta\bB\cdot\nabla\bB$ & $\tau\cdot\bv$ & \mj{none} & \mj{none} & \mj{none} & \mj{none} & \mj{none}\\
+Mass diffusion $\nabla\cdot(\nu\nabla\rho)$ & \cm{on} & \cm{on} & \cm{on} & off & \cm{on} & \cm{on} & \cm{on} & \cm{on} & \cm{on}\\
+Residual max over & \cm{8 slots} & \cm{8 (no $\psi$)} & \cm{8 (no $\psi$)} & \na & \cm{8 (no $\psi$)} & \cm{8 (no $\psi$)} & \cm{8 (no $\psi$)} & \cm{8 (no $\psi$)} $+\rho e$ & \cm{8 (no $\psi$)}\\
+Dirichlet-node zeroing & yes (ends) & \no{} (periodic) & \no{} (periodic) & \na & no (legacy path) & no (legacy path) & \no{} (periodic) & \no{} (periodic) & yes\\
+\bottomrule
+\end{tabular}
+
+\smallskip
+$^\ast$ BW's deck multiplies $(\CR,\Cmax,\Cmin)$ by $((N+1)/N)^2$, $(N+1)/N$, $(N+1)/N$ with base $(1,0.5,0.06)$, i.e.\ the
+paper's $\Delta x/N$ in place of the kernels' $\Delta x/(N+1)$; on that length the constants are the majority's
+$(1,0.5)$ and a 6\% floor.
+FE/FED: $\kappa^E=\max(\gamma(\gamma-1)/\Pr\cdot\nuc,\ \nufl)=\max(0.0525\,\nuc,\nufl)$ on the thermal part
+$p/(\gamma-1)$ of $E$; the non-thermal part takes $\nu$. OT: $\bar\rho$ = element mean, $\kappa=\bar\rho\nu/\Pr$ on $\nabla T$.}
+
+\section*{Table 3 --- Positivity}
+{\footnotesize
+\begin{tabular}{@{}R*{9}{C}@{}}
+\toprule
+& BW & SV & OT & KH & FE & FED & ROT & BL & AJ\\
+\midrule
+\code{:lpositivity} & \mj{false} & \mj{false} & \mj{false} & \mj{false} & \mj{false} & \mj{false} & true & true & true\\
+State modified to enforce $\rho,p>0$ & \mj{never} & \mj{never} & \mj{never} & \mj{never} & case floor & \mj{never} & \cm{cons.\ limiter} & \cm{cons.\ limiter} & \cm{cons.\ limiter}\\
+When & \na & \na & \na & \na & stages 2--5 + end & \na & \cm{stages 2--5 + end} & \cm{stages 2--5 + end} & \cm{stages 2--5 + end}\\
+$\rho_{\min}$ & \na & \na & \na & \na & $0.2\,\rho_e(z)$ & \na & $10^{-6}$ & $10^{-6}$ & $1.4\times10^{-7}$\\
+$p_{\min}$ & \na & \na & \na & \na & $0.2\,p_e(z)$ & \na & $10^{-6}$ & $10^{-7}$ & $10^{-6}$\\
+Floors relative to & \na & \na & \na & \na & reference state & \na & \cm{$10^{-6}\times$ ambient} & \cm{$10^{-6}\times$ ambient} & \cm{$10^{-6}\times$ ambient}\\
+Conserves $\rho$, $\rho\bv$, $E$ & \na & \na & \na & \na & no (adds $\rho$, $E$) & \na & \cm{yes} (element pass) & \cm{yes} (element pass) & \cm{yes} (element pass)\\
+Fallback & \na & \na & \na & \na & \na & \na & \cm{node floor} & \cm{node floor} & \cm{node floor}\\
+Touches $\bB$, $\psi$ & \na & \na & \na & \na & no & \na & \cm{no} & \cm{no} & \cm{no}\\
+$\gamma$ from & \na & \na & \na & \na & $\gamma_{mhd}$ & \na & \cm{\code{:dsgs\_gamma}} & \cm{\code{:dsgs\_gamma}} & \cm{\code{:dsgs\_gamma}}\\
+Report & \na & \na & \na & \na & rank-local, per decade & \na & \mj{every 1000 calls} & \mj{every 1000 calls} & every 250 calls\\
+Flux-only floors & $p\ge10^{-9}$ & \no & \no & \no & $p\ge10^{-9}$ & $p\ge10^{-9}$ & \no & \no & $\rho\ge10^{-14}$, $p\ge10^{-6}$\\
+\bottomrule
+\end{tabular}
+
+\smallskip
+``Stages 2--5 + end'': the stage limiter of \code{CarpenterKennedy2N54} is called before the right-hand side of
+stages 2--5 and once after stage 5, i.e.\ on every state the right-hand side sees except the initial condition.
+For ROT, BL, AJ this follows from the rebuilt solver's \code{williamson\_condition = false}; for FE, from
+\code{calck = true} (non-empty \code{saveat} in Jexpresso's \code{solve}), which forces the same in OrdinaryDiffEq.
+The node-wise \emph{repair} of \code{src/kernel/positivity} (\code{:positivity\_method => "repair"}) is used by none
+of the nine cases.}
+\end{landscape}
+
+\section*{Common to all cases where it applies (solid underline)}
+\begin{itemize}[leftmargin=*]
+\item \textbf{General (9/9):} CG spectral elements on LGL nodes with a lumped mass matrix; \code{TOTAL()} variables
+with total energy in slot 4 and the slot order $(\rho,\rho u,\rho v,E,\rho w,B_x,B_y,B_z[,\psi])$; ideal-gas MHD
+pressure; \code{CarpenterKennedy2N54} at fixed $\Delta t$; \code{:lvisc => true}; filter, KEP, entropy variables,
+Richardson correction and AMR off; CPU only.
+\item \textbf{GLM (8/8 in 2D):} $c_h=\max(|\bv|+c_f)$ of the initial (AJ: and inflow) data, constant in time; $\psi$ is
+damped by a linear source.
+\item \textbf{DynSGS (8/8):} \code{DSGS\_MHD}, one coefficient per element recomputed at every RK stage, element
+length $\Delta^{elem}_K/(N+1)$, history rotated once per step, max over the eight non-$\psi$ normalized residuals,
+cap $\Cmax\Delta_K\max(|\bv|+c_f)$ with $c_f$ bounded by $\sqrt{(\gamma p+|\bB|^2)/\rho}$ (BW: exact $x$-fast speed),
+all multipliers $\mu=1$ (mass diffusion on), \code{:dsgs\_gamma} $=\gamma$, $\Pr=1$, \code{:dsgs\_rel} $=$
+\code{:dsgs\_local\_rel} $=1$, no cutoff, no stage freezing, no nodal coefficient, no nodal-$\rho$ scaling, no
+reference-RHS subtraction.
+\item \textbf{Conservative limiter (3/3):} hook, validation, $\gamma$ from \code{:dsgs\_gamma}, floors at $10^{-6}$ of the
+ambient $\rho$ and $p$, element pass that conserves $\rho$, $\rho\bv$, $E$ and leaves $\bB$, $\psi$ untouched, DSS of the
+increments, non-conservative node floor as fallback.
+\end{itemize}
+
+\section*{Shared by a majority (dashed underline)}
+2D with nine slots (8/9); $N=4$ (6/9); $\psi$ damping $c_h/0.18$ (6/8); \code{:lsource} on (8/9); doubly periodic (5/9);
+p4est initial refinement (5/9); no state modification for positivity (5/9) and \code{:lpositivity} false (6/9);
+among the \dsgs{} cases: legacy sensor (5/8), element norms (5/8), $\CR=1$ and $\Cmax=0.5$ (7/8), $\Cmin=0$ (5/8),
+hold 2 (6/8), \code{:dsgs\_conserved} (7/8), no work terms in $E$ (7/8), no fast floors (6/8), no thermal residual
+(7/8), no Nazarov energy split (5/8), no reference weight (7/8); report every 1000 calls (2/3 limiter cases).
+
+\section*{Findings: code that disagrees with its comments, and one likely failure}
+\begin{enumerate}[leftmargin=*]
+\item \textbf{BW, element form (the default): \code{MethodError} expected on the first \dsgs{} call.} Commit
+\code{708bd78} added \code{lthermal = \dots} to the 1D call (\code{rhs.jl:1456}) but not to
+\code{compute\_dsgs\_viscosity!(::DSGS\_MHD, ::NSD\_1D)} (\code{SGS.jl:1929}); Julia rejects an undeclared keyword.
+Found by reading; not executed here (no Julia in this environment). One-line fix: add \code{lthermal::Bool=false}
+to the 1D signature.
+\item \textbf{SV: conserved coefficients on physical primitives.} The deck sets \code{:dsgs\_conserved => true} but
+\code{user\_primitives.jl} returns $(\rho,u,v,T,w,\bB,\psi)$, so the operator is $\nu\nabla u$, $\nu\nabla T$, \dots{} with
+no $\rho$ factor, no stress and no work terms --- neither documented form. The file's header describes the physical
+form.
+\item \textbf{FE, FED:} the comments that \code{"energy"} keeps the $\tau\cdot u$ term active, and that
+$\Delta t=2.5\times10^{-3}$, are stale. FED's header claims the sibling's mesh and time step; it refines the mesh
+once and uses $\Delta t=5\times10^{-3}$ (FE: $80\times35$, $7.5\times10^{-3}$).
+\item \textbf{FE:} the floor reaches stages 2--5 only through \code{calck = true}; the deck does not set
+\code{williamson\_condition = false} as the conservative limiter does.
+\item \textbf{OT:} the comment that \code{"rank"} is the code-wide norm default is stale (it is \code{"domain"}); the
+comments on $\Delta t$ ($5\times10^{-4}$) and on $32^2$ elements giving $128^2$ points predate the current
+$\Delta t=2\times10^{-4}$ and the one-level refinement.
+\item \textbf{BW:} the header says SSPRK53, the deck uses \code{CarpenterKennedy2N54}; \code{DSGS.md} \S4.7 quotes a
+3\% floor, the deck sets $0.06\,(N+1)/N$.
+\item \textbf{KH:} the mesh named by the deck (\code{meshes/gmsh\_grids/hexa\_TFI\_32x32\_unitsquare.msh}) is not in
+this checkout.
+\end{enumerate}
+
+\input{codemap}
+\end{document}

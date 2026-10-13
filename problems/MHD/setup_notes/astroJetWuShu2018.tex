@@ -1,0 +1,103 @@
+\documentclass[10pt]{article}
+\input{preamble}
+\newcommand{\epsrho}{1.4\times10^{-7}}
+\newcommand{\epsp}{10^{-6}}
+\newcommand{\repevery}{250}
+\title{\code{problems/MHD/astroJetWuShu2018}\\[2pt]
+\large DynSGS and positivity setup, as coded on branch \branch{} (commit \commit)}
+\author{}\date{}
+\begin{document}
+\maketitle
+\commonlegend
+
+\noindent\textbf{Scope.} Read off \code{user\_inputs.jl} (with \code{lvl = 2}), the case files and the
+kernels they reach on \branch{}. The case combines the conserved-form \dsgs{} with the \emph{residual}
+sensor (for its Dirichlet-node treatment at the nozzle), element norms with fast-speed floors, no hold, the
+conservative element limiter, and flux-only guards.
+
+\section{The problem as set up}
+\begin{keytable}
+Equations & 2D ideal \cm{GLM-MHD}, \cm{state $(\rho,\rho u,\rho v,E,\rho w,B_x,B_y,B_z,\psi)$} & Wu \& Shu (2018), Ex.~5.6\\
+EOS & \cm{$p=(\gamma-1)(E-\tfrac12|\bmom|^2/\rho-\tfrac12|\bB|^2-\tfrac12\psi^2)$}, $\gamma=1.4$ & \code{pressure\_mhd} with $\max(\rho,10^{-14})$ in the kinetic term\\
+Domain, mesh & right half $[0,0.5]\times[0,1.5]$, symmetry axis at $x=0$; \code{AJ\_half\_20x60.msh} \mj{refined} twice by p4est $\Rightarrow80\times240$ quads ($\Delta^{elem}=0.00625$) & \code{lvl = 2}\\
+Discretization & \cm{CG spectral elements, LGL nodes, lumped mass}; \mj{$N=4$} & \\
+Time integration & \cm{\code{CarpenterKennedy2N54}} (rebuilt with the limiter), \cm{fixed $\Delta t$} $=5\times10^{-7}/2^{2}=1.25\times10^{-7}$, $t_{end}=2\times10^{-3}$ & \\
+Variables & \cm{\code{TOTAL()}, \code{"energy"}} & \\
+Initial data & ambient $\rho=0.14$, $p=1$, $\bv=0$, $\bB=(0,\sqrt{200},0)$ ($\beta_a=10^{-2}$) & \code{user\_flux.jl:153--165}\\
+Inflow & nozzle $|x|\le0.05$ at $y=0$: $\rho=1.4$, $v=800$ (Mach 800), $p=1$; lip smoothed over one element (\code{aj\_smooth} auto), inflow ramped on over $\tau=2\Delta^{elem}_{\min}/800$ (\code{aj\_tramp} auto) & \code{initialize.jl:144, 170}\\
+Boundary conditions & nozzle: Dirichlet on all 9 slots; axis: $\rho u=0$, $B_x=0$; right/top: ambient state on all 9 slots; bottom outside the nozzle: $\psi=0$ only & \code{user\_bc.jl}\\
+GLM cleaning & \cm{$c_h=\max(|\bv|+c_f)$} over the initial \emph{and the inflow} state, constant; \mj{$S_\psi=-(c_h/0.18)\psi$} & \\
+Sources & \mj{\code{:lsource => true}} ($\psi$ damping only) & \\
+Other switches & \cm{\code{:lfilter}, \code{:lkep}, \code{:entropy\_variables}, \code{:lrichardson}, \code{:ladapt} false}; \code{:lschlieren => true} & \\
+\end{keytable}
+
+\section{DynSGS: deck keys and effective values}
+\begin{keytable}
+\code{:visc\_model} & \cm{\code{DSGS\_MHD()}}, \code{:lvisc => true} & \code{SGS.jl:1598}\\
+\code{:}$\mu$ & \cm{all 1} & \\
+\code{:dsgs\_sensor} & \code{"residual"} & element residual; Dirichlet nodes zeroed\\
+\code{:dsgs\_CR}, \code{:dsgs\_Cmax}, \code{:dsgs\_Cmin} & \mj{1.0}, \mj{0.5}, \mj{0} & \\
+\code{:dsgs\_cutoff} & \cm{0} & \\
+\code{:dsgs\_hold\_steps} & \textbf{0} & $\nu$ from the first step\\
+\code{:dsgs\_norms}, \code{:dsgs\_local\_rel} & \mj{\code{"element"}}, \cm{1.0} (default) & \\
+\code{:dsgs\_rel} & \cm{1.0} & unused with element norms\\
+\code{:dsgs\_fast\_floors} & \textbf{true} & $c_f/c\approx12$ in the ambient\\
+\code{:dsgs\_gamma}, \code{:dsgs\_Prt} & \cm{$=\gamma_{mhd}$} $=1.4$, \cm{1.0} & \\
+\code{:dsgs\_conserved} & \mj{true} & \\
+\code{:dsgs\_ref\_weight}, \code{:dsgs\_nazarov\_energy}, \code{:dsgs\_thermal\_residual} & \mj{false} & \\
+\code{:ldsgs\_nodal}, \code{:dsgs\_freeze\_stage}, \code{:dsgs\_reference}, \code{:dsgs\_nodal\_rho} & \cm{false} & \\
+\end{keytable}
+
+\section{DynSGS as it runs for this case}
+\cm{$\Delta_K=\Delta^{elem}_K/(N+1)$} $=0.00125$, $h=\Delta t$.
+\begin{enumerate}[leftmargin=*]
+\item \textbf{History, no hold.} \cm{Rotation once per step}; with $H=0$ the residual is live from the first RHS
+call, on a history seeded with the initial condition (first stage of step~1: BDF2 of $(q^0,q^0,q^0)$, $D_tq=0$).
+\item \textbf{Element residual} (residual sensor, stage-consistent stencil):
+$R^s_{K,I}=|D_tq^s_I-r^{K,s}_I/m^K_I|$, $D_tq$ = BDF2 on $(q^n,q^{n-1},q^{n-2})$ at $\tau=0$, the three-point
+derivative through $(q(\tau),q^n,q^{n-1})$ at $\tau>0$; $r^K$ the element's own weak inviscid RHS.
+\item \textbf{Dirichlet nodes.} Every node on a non-periodic boundary edge (nozzle and the rest of the bottom,
+axis, right, top) is listed by \code{\_dsgs\_boundary\_pairs!}, once per element containing it; its entries are replaced by $m^K_ID_tq_I$, so
+$R\equiv0$ there in all nine slots. Inflow shocks are sensed by the interior nodes of the same elements.
+\item \textbf{Element normalization with fast floors} over the 25 nodes of $K$:
+$n^s_K=\max(S^s_K,\sigma^s_K)+10^{-16}$, $\sigma_K=(\bar\rho_K,\ \bar\rho_K\bar c_{f,K},\ \gamma\bar p_K+|\bar\bB_K|^2,\ \sqrt{\gamma\bar p_K+|\bar\bB_K|^2})$
+for $(\rho,\bmom,E,\bB)$, $\bar c_{f,K}=\sqrt{(\gamma\bar p_K+|\bar\bB_K|^2)/\bar\rho_K}$.
+\item \textbf{Ratio, cap, coefficient.} \cm{$\mathcal R_K=\max_{I\in K}\max_{s\le8}R^s_{K,I}/n^s_K$},
+\cm{$w_K=\max_I(|\bv_I|+\sqrt{\max(\gamma p_I/\rho_I+|\bB_I|^2/\rho_I,0)})$},
+$\nu_K=\max(0,\min(0.5\,\Delta_Kw_K,\ \Delta_K^2\mathcal R_K))$, no floor, no cutoff, \cm{one value per element},
+\cm{recomputed at every stage}; $\nu_K$ on all nine slots.
+\end{enumerate}
+
+\section{The viscous operator}
+\code{user\_primitives.jl} returns $\bq$ itself:
+$\partial_t\bq+\nabla\cdot\bF=\nabla\cdot(\nu_K\nabla\bq)$ on $(\rho,\rho u,\rho v,E,\rho w,B_x,B_y,B_z,\psi)$ ---
+\mj{a Laplacian of the conserved state}, \cm{mass diffusion on}, \mj{no $\tau\cdot\bv$ or resistive-work term}.
+
+\section{Positivity}
+\subsection*{Conservative element limiter}
+\begin{keytable}
+\code{:lpositivity} & \textbf{true} & \\
+\code{:positivity\_method} & \cm{\code{"conservative"}} & \\
+\code{:positivity\_rho\_min} & $1.4\times10^{-7}$ \cm{($=10^{-6}\times$ ambient $\rho$)} & \\
+\code{:positivity\_p\_min} & $10^{-6}$ \cm{($=10^{-6}\times$ ambient $p$)} & \\
+\code{:positivity\_report}, \code{\_every} & true, 250 & 250 limiter calls = 50 steps\\
+\end{keytable}
+\input{cpos_algorithm}
+
+\subsection*{Flux-only guards (\code{user\_flux.jl:51--58})}
+Inside \code{user\_flux!} only: $\rho_g=\max(\rho,10^{-14})$ in the velocities and in the kinetic energy of
+\code{pressure\_mhd}, and $p\leftarrow\max(p,10^{-6})$ (\code{p\_floor\_mhd}, equal to $\eps_p$). They change
+the flux of a node that is momentarily inadmissible, not the state; with the limiter active every node the flux
+sees already satisfies $\rho\ge\eps_\rho$, $p\ge\eps_p$ up to the round-off margins above.
+
+\section{Observations}
+\begin{enumerate}[leftmargin=*]
+\item Deck and comments agree with the code. The \code{"residual"} sensor is chosen explicitly for its
+boundary-node treatment, which the \code{"legacy"} path does not have.
+\item $p$ in this beam is $\approx5.6\times10^{-6}$ of $E$; the deck comment on \code{:dsgs\_norms} explains the
+element norms by that ratio, and \code{Positivity.jl:275--289} quantifies how small $p_{\min}$ may usefully be
+($(\gamma-1)\,\mathrm{ulp}(E)\approx2.3\times10^{-11}$ against $p_{\min}=10^{-6}$).
+\end{enumerate}
+
+\input{codemap}
+\end{document}

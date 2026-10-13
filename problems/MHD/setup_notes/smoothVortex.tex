@@ -1,0 +1,124 @@
+\documentclass[10pt]{article}
+\input{preamble}
+\title{\code{problems/MHD/smoothVortex}\\[2pt]
+\large DynSGS and positivity setup, as coded on branch \branch{} (commit \commit)}
+\author{}\date{}
+\begin{document}
+\maketitle
+\commonlegend
+
+\noindent\textbf{Scope.} Read off \code{user\_inputs.jl}, the case files and the kernels they reach
+on \branch{}; deck values are those obtained with every \code{JEXPRESSO\_SV\_*} override unset.
+The case is the smooth-flow accuracy test (Dao \& Nazarov 2022, \S5.1.1; Balsara 2004): its point is
+that the residual viscosity must \emph{not} degrade a smooth high-order solution, so it is run against a
+plain-Galerkin twin (\code{JEXPRESSO\_SV\_VISC=none} sets \code{:lvisc => false}).
+
+\section{The problem as set up}
+\begin{keytable}
+Equations & 2D ideal \cm{GLM-MHD}, \cm{state $(\rho,\rho u,\rho v,E,\rho w,B_x,B_y,B_z,\psi)$} & \code{initialize.jl}; flux code identical to Orszag--Tang's\\
+EOS & \cm{$p=(\gamma-1)(E-\tfrac12|\bmom|^2/\rho-\tfrac12|\bB|^2-\tfrac12\psi^2)$}, $\gamma=5/3$ & \code{user\_flux.jl}\\
+Domain, mesh & $[-10,10]^2$ ($L=20$), \mj{doubly periodic}, $16\times16$ quads & \code{vortex\_L20\_16x16.msh} (\code{JEXPRESSO\_SV\_L}, \code{\_NELX})\\
+Discretization & \cm{CG spectral elements, LGL nodes, lumped mass}; \mj{$N=4$} & \code{JEXPRESSO\_SV\_NOP}\\
+Time integration & \cm{\code{CarpenterKennedy2N54}}, \cm{fixed $\Delta t$}, $\Delta t=2\times10^{-3}$, $t_{end}=1$ & $\Delta t = 2\times10^{-3}\cdot 64/(n_{el}N)$; \code{JEXPRESSO\_SV\_SOLVER} can switch to Vern9, DP8, \dots\\
+Variables & \cm{\code{TOTAL()}, \code{"energy"}} & \\
+Initial data & $\rho=1$, $\bv=(1,1)+\kappa g\,(-y,x)$, $\bB=\mu g\,(-y,x)$, $g=e^{(1-r^2)/2}/(2\pi)$, $p=1+\frac{\mu^2(1-r^2)-\kappa^2}{8\pi^2}e^{1-r^2}$, $\kappa=\mu=1$ & \code{sv\_state}\\
+GLM cleaning & \cm{$c_h=\max(|\bv|+c_f)$ of the initial data, constant}; \mj{source $S_\psi=-(c_h/0.18)\,\psi$} & \code{initialize.jl}, \code{user\_source.jl}\\
+Sources & \mj{\code{:lsource => true}} (the $\psi$ damping only) & \\
+Boundary conditions & periodic (the free-slip fallback of \code{user\_bc.jl} never fires) & \\
+Other switches & \cm{\code{:lfilter}, \code{:lkep}, \code{:entropy\_variables}, \code{:lrichardson}, \code{:ladapt} false} & \\
+\end{keytable}
+
+\section{DynSGS: deck keys and effective values}
+\begin{keytable}
+\code{:visc\_model} & \cm{\code{DSGS\_MHD()}}, \code{:lvisc => true} & 2D element kernel \code{SGS.jl:1598}\\
+\code{:}$\mu$ & \cm{all 1} & \\
+\code{:dsgs\_sensor} & \code{"residual"} & \code{JEXPRESSO\_SV\_SENSOR}\\
+\code{:dsgs\_CR} & \mj{1.0} & \code{JEXPRESSO\_SV\_CR}\\
+\code{:dsgs\_Cmax} & \mj{0.5} & \code{JEXPRESSO\_SV\_CMAX}\\
+\code{:dsgs\_Cmin} & \mj{0} & \code{JEXPRESSO\_SV\_CMIN}\\
+\code{:dsgs\_gamma} & \cm{$=\gamma_{mhd}$} $=5/3$ & \\
+\code{:dsgs\_Prt} & \cm{1.0} & no effect (no Prandtl factor in the conserved branch)\\
+\code{:dsgs\_rel} & \cm{1.0} & \code{JEXPRESSO\_SV\_REL}\\
+\code{:dsgs\_norms} & \code{"domain"} & \code{JEXPRESSO\_SV\_NORMS}\\
+\code{:dsgs\_conserved} & \mj{true} & see Section~\ref{sec:op}: the primitives are \emph{not} conserved\\
+\code{:dsgs\_nazarov\_energy} & \mj{false} (default) & \\
+\code{:dsgs\_fast\_floors}, \code{:dsgs\_thermal\_residual} & \mj{false} (defaults) & \\
+\code{:dsgs\_ref\_weight}, \code{:dsgs\_nodal\_rho}, \code{:dsgs\_reference} & \mj{false}, \cm{false}, \cm{false} & defaults\\
+\code{:dsgs\_hold\_steps} & \mj{2} & \code{JEXPRESSO\_SV\_HOLD}\\
+\code{:dsgs\_cutoff} & \cm{0} & \code{JEXPRESSO\_SV\_CUTOFF}\\
+\code{:dsgs\_freeze\_stage} & \cm{false} & \code{JEXPRESSO\_SV\_FREEZE}\\
+\code{:ldsgs\_nodal} & \cm{false} (element form) & default\\
+\code{:dsgs\_local\_rel} & \cm{1.0} (default) & unused (domain norms)\\
+\end{keytable}
+
+\section{DynSGS as it runs for this case}
+Element $K$, node $I=(i,j)$, $m^K_I=\omega_i\omega_jJ_{K,ij}$, \cm{$\Delta_K=\Delta^{elem}_K/(N+1)$}
+with $\Delta^{elem}_K$ the smaller corner-to-corner extent of $K$: $\Delta^{elem}_K=1.25$, $\Delta_K=0.25$.
+\begin{enumerate}[leftmargin=*]
+\item \textbf{History and hold.} \cm{Rotation once per step}; \mj{two held steps} ($\nu=0$ then,
+since $\Cmin=0$).
+\item \textbf{Time derivative.} Residual sensor: BDF2 on $(\bq^n,\bq^{n-1},\bq^{n-2})$ at the stage on $t^n$,
+the three-point derivative through $(\bq(\tau),\bq^n,\bq^{n-1})$ at later stages (formulas as in
+\code{rhs.jl:964--971}).
+\item \textbf{Residual.} $R^s_{K,I}=|D_tq^s_I-r^{K,s}_I/m^K_I|$, $r^K$ the element's own weak
+inviscid RHS (flux divergence and the $\psi$ source). The mesh is periodic, so the Dirichlet-node list
+is empty and nothing is zeroed.
+\item \textbf{Normalization} (domain, MPI-reduced): $n^s=\max(S^s,\sigma^s)+10^{-16}$ with the
+mean-state floors $\sigma^\rho=\bar\rho$, $\sigma^{\bmom}=\bar\rho\bar c$, $\sigma^E=\bar\rho\bar c^2$,
+$\sigma^{\bB}=\sqrt{\bar\rho}\,\bar c$, $\bar c=\sqrt{\gamma\bar p/\bar\rho}$. Here $\rho\equiv1$, so $S^\rho=0$
+and the continuity residual is measured against $\bar\rho=1$ (this is the case for which the floor was
+raised from $10^{-3}$ of the scale to the scale itself, \code{:dsgs\_rel}).
+\item \textbf{Ratio and cap.} \cm{$\mathcal R_K=\max_{I\in K}\max_{s\le8}R^s_{K,I}/n^s$ ($\psi$ excluded)};\newline
+\cm{$w_K=\max_I(|\bv_I|+\sqrt{\max(\gamma p_I/\rho_I+|\bB_I|^2/\rho_I,0)})$}.
+\item \textbf{Coefficient.} $\nu_K=\max(0,\min(0.5\,\Delta_Kw_K,\ \Delta_K^2\mathcal R_K))$, no floor, no cutoff,
+\cm{one value per element}, \cm{recomputed at every stage}.
+\item \textbf{Slot coefficients.} Because \code{:dsgs\_conserved => true}, every slot gets the kinematic
+$\nu_K$ (\code{SGS.jl:1858--1888}): no element-mean $\bar\rho$, no Prandtl factor.
+\end{enumerate}
+
+\section{The viscous operator actually assembled}
+\label{sec:op}
+\code{user\_primitives.jl} of this case returns the \emph{physical} variables
+$(\rho,u,v,T{=}p/\rho,w,B_x,B_y,B_z,\psi)$ (it is a copy of the Orszag--Tang file), while the deck selects
+the conserved coefficients. In \code{\_expansion\_visc!} the flag \code{lcons} then turns off the
+deviatoric stress and the $\tau\cdot\bv$/resistive work (\code{rhs.jl:2959--2970}), so every slot
+receives a scalar flux $\nu_K\nabla(\text{primitive})$:
+\begin{center}\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+Equation & Flux added & Remark\\
+\midrule
+$\rho$ & $\nu_K\nabla\rho$ & \cm{mass diffusion on}\\
+$\rho u$, $\rho v$, $\rho w$ & $\nu_K\nabla u$, $\nu_K\nabla v$, $\nu_K\nabla w$ & no $\rho$ factor, no deviatoric stress\\
+$E$ & $\nu_K\nabla T$, $T=p/\rho$ & no $\tau\cdot\bv$, no $\eta\,\bB\cdot\nabla\bB$\\
+$B_x,B_y,B_z$ & $\nu_K\nabla B_{x,y,z}$ & resistivity $\eta=\nu$\\
+$\psi$ & $\nu_K\nabla\psi$ & \\
+\bottomrule
+\end{tabular}
+\end{center}
+This is neither the conserved form (which needs $\nabla(\rho\bv)$, $\nabla E$) nor the physical form
+(which needs $\bar\rho\nu$, the stress and the work terms). All fluxes are in divergence form, so
+mass, momentum, total energy and $\bB$ are still conserved; but the kinetic and magnetic energy
+removed by the momentum and induction terms is not returned to $E$. With $\rho\approx1$ the momentum
+terms coincide with $\nabla\cdot(\nu\nabla(\rho\bv))$ to $O(\rho-1)$.
+
+\section{Positivity}
+\begin{itemize}[leftmargin=*]
+\item \mj{\code{:lpositivity} false}; \mj{no stage limiter}; \mj{no state modification of any kind}.
+\item No flux-only floor either: \code{pressure\_mhd} is the unguarded Orszag--Tang one.
+\item None is needed by design: the data are smooth, $\min p = 1-1/(8\pi^2)\approx0.987$ initially (at $r=1$), and
+the case measures accuracy, not robustness.
+\end{itemize}
+
+\section{Observations: code versus comments}
+\begin{enumerate}[leftmargin=*]
+\item The header of \code{user\_primitives.jl} says the momentum slots get ``the full deviatoric stress
+built by the kernel, $\rho\nu$'' and the energy ``$\kappa\nabla T$ \dots{} $+\tau\cdot u$ viscous work''.
+That is what happens with \code{:dsgs\_conserved => false}; with the deck's \code{true} none of the three
+is applied (Section~\ref{sec:op}). The \code{README.md} does not mention \code{:dsgs\_conserved}.
+\item Everything else in the deck matches its comments (domain norms, hold 2, no floor, no cutoff,
+the residual sensor).
+\end{enumerate}
+
+\input{codemap}
+\end{document}

@@ -1,0 +1,89 @@
+\documentclass[10pt]{article}
+\input{preamble}
+\newcommand{\epsrho}{10^{-6}}
+\newcommand{\epsp}{10^{-6}}
+\newcommand{\repevery}{1000}
+\title{\code{problems/MHD/rotorDaoNazarov2022}\\[2pt]
+\large DynSGS and positivity setup, as coded on branch \branch{} (commit \commit)}
+\author{}\date{}
+\begin{document}
+\maketitle
+\commonlegend
+
+\noindent\textbf{Scope.} Read off \code{user\_inputs.jl}, the case files and the kernels they reach on
+\branch{}. The case directory already carries \code{algorithm.tex}/\code{algorithm.pdf}, a full derivation of
+this deck's algorithm (including the Runge--Kutta coefficients); this note restates the \dsgs{} and positivity
+part in the common format of \code{problems/MHD/setup\_notes} so that it can be compared with the other
+cases, and was checked against the code independently of that document (they agree).
+
+\section{The problem as set up}
+\begin{keytable}
+Equations & 2D ideal \cm{GLM-MHD}, \cm{state $(\rho,\rho u,\rho v,E,\rho w,B_x,B_y,B_z,\psi)$} & the Orszag--Tang flux with $\gamma=1.4$\\
+EOS & \cm{$p=(\gamma-1)(E-\tfrac12|\bmom|^2/\rho-\tfrac12|\bB|^2-\tfrac12\psi^2)$}, $\gamma=1.4$ & no flux floor\\
+Domain, mesh & $[0,1]^2$, \mj{doubly periodic}; \code{OT\_32x32\_periodic.msh} \mj{refined} twice by p4est $\Rightarrow128\times128$ quads & \code{:init\_refine\_lvl => 2}\\
+Discretization & \cm{CG spectral elements, LGL nodes, lumped mass}; $N=3$ ($385^2$ nodes) & \\
+Time integration & \cm{\code{CarpenterKennedy2N54}} (rebuilt with the limiter, Section~\ref{sec:pos}), \cm{fixed $\Delta t$} $=2\times10^{-4}$, $t_{end}=0.15$ & \\
+Variables & \cm{\code{TOTAL()}, \code{"energy"}} & \\
+Initial data & ambient $(\rho,\bv,p,\bB)=(1,0,1,(5/\sqrt{4\pi},0))$; disc $r<0.1$: $\rho=10$, $\bv=(u_0/r_0)(0.5-y,\,x-0.5)$; taper $0.1\le r<0.115$: $\rho=1+9f$, $\bv=(fu_0/r)(\dots)$, $f=(r_1-r)/(r_1-r_0)$, $u_0=2$ & \code{initialize.jl}\\
+GLM cleaning & \cm{$c_h=\max(|\bv|+c_f)$ of the initial data, constant}; \mj{$S_\psi=-(c_h/0.18)\psi$} & \\
+Sources & \mj{\code{:lsource => true}} ($\psi$ damping only) & \\
+Diagnostics & mass and energy totals every step (\code{:conservation\_every => 1}, slots 1 and 4) & \code{conservation.dat}\\
+Other switches & \cm{\code{:lfilter}, \code{:lkep}, \code{:entropy\_variables}, \code{:lrichardson}, \code{:ladapt} false} & \\
+\end{keytable}
+
+\section{DynSGS: deck keys and effective values}
+\begin{keytable}
+\code{:visc\_model} & \cm{\code{DSGS\_MHD()}}, \code{:lvisc => true} & \code{SGS.jl:1598}\\
+\code{:}$\mu$ & \cm{all 1} & \\
+\code{:dsgs\_sensor} & \mj{\code{"legacy"}} & \\
+\code{:dsgs\_CR}, \code{:dsgs\_Cmax}, \code{:dsgs\_Cmin} & \mj{1.0}, \mj{0.5}, \mj{0} (default) & \\
+\code{:dsgs\_gamma}, \code{:dsgs\_Prt} & \cm{$=\gamma_{mhd}$} $=1.4$, \cm{1.0} & \\
+\code{:dsgs\_norms}, \code{:dsgs\_local\_rel} & \mj{\code{"element"}}, \cm{1.0} (default) & \\
+\code{:dsgs\_rel} & \cm{1.0} & unused with element norms\\
+\code{:dsgs\_conserved} & \mj{true} & \\
+\code{:dsgs\_nazarov\_energy} & \mj{false} & deck: with \code{true}, $p$ dipped to $-0.02$ at $64^2$\\
+\code{:dsgs\_fast\_floors}, \code{:dsgs\_thermal\_residual}, \code{:dsgs\_ref\_weight} & \mj{false} (defaults) & \\
+\code{:dsgs\_hold\_steps} & \mj{2} & \\
+\code{:dsgs\_cutoff}, \code{:dsgs\_freeze\_stage}, \code{:dsgs\_reference}, \code{:dsgs\_nodal\_rho}, \code{:ldsgs\_nodal} & \cm{0}, \cm{false}, \cm{false}, \cm{false}, \cm{false} & defaults\\
+\end{keytable}
+
+\section{DynSGS as it runs for this case}
+$\Delta^{elem}_K=1/128$, \cm{$\Delta_K=\Delta^{elem}_K/(N+1)$} $=1/512$, $h=\Delta t$.
+\begin{enumerate}[leftmargin=*]
+\item \cm{Rotation once per step}; \mj{two held steps} ($\nu=0$).
+\item \textbf{Legacy residual}, every stage: $R^s_I=\big|\tfrac{3q^s_I-4q^{n,s}_I+q^{n-1,s}_I}{2h}-(M^{-1}\mathcal R_{inv})^s_I\big|$,
+$\mathcal R_{inv}$ assembled over ranks and periodic copies; the state $q$ is the already-limited stage state.
+\item \textbf{Element normalization}: $n^s_K=\max(S^s_K,\sigma^s_K)+10^{-16}$ over the 16 nodes of $K$, with
+$\sigma_K=(\bar\rho_K,\ \bar\rho_K\bar c_K,\ \bar\rho_K\bar c_K^2,\ \sqrt{\bar\rho_K}\bar c_K)$ for $(\rho,\ \bmom,\ E,\ \bB)$,
+$\bar c_K=\sqrt{\gamma\bar p_K/\bar\rho_K}$ (sound speed).
+\item \cm{$\mathcal R_K=\max_{I\in K}\max_{s\le8}R^s_I/n^s_K$}, \cm{$w_K=\max_I(|\bv_I|+\sqrt{\max(\gamma p_I/\rho_I+|\bB_I|^2/\rho_I,0)})$},
+$\nu_K=\max(0,\min(0.5\,\Delta_Kw_K,\ \Delta_K^2\mathcal R_K))$; no floor, no cutoff; \cm{one value per element},
+\cm{recomputed at every stage}; $\nu_K$ on all nine slots.
+\end{enumerate}
+
+\section{The viscous operator}
+\code{user\_primitives.jl} copies $\bq$ (the energy split is coded but inactive, \code{:dsgs\_nazarov\_energy => false}), so
+\[
+\partial_t\bq+\nabla\cdot\bF(\bq)=\nabla\cdot(\nu_K\nabla\bq)\qquad\text{on }(\rho,\rho u,\rho v,E,\rho w,B_x,B_y,B_z,\psi),
+\]
+\mj{a Laplacian of the conserved state}, \cm{mass diffusion on}, \mj{no $\tau\cdot\bv$ or resistive-work term}.
+
+\section{Positivity: conservative element limiter}
+\label{sec:pos}
+\begin{keytable}
+\code{:lpositivity} & \textbf{true} & \\
+\code{:positivity\_method} & \cm{\code{"conservative"}} & \\
+\code{:positivity\_rho\_min} & $10^{-6}$ \cm{($=10^{-6}\times$ ambient $\rho$)} & \\
+\code{:positivity\_p\_min} & $10^{-6}$ \cm{($=10^{-6}\times$ ambient $p$)} & \\
+\code{:positivity\_report}, \code{\_every} & true, \mj{1000} (defaults) & 1000 limiter calls = 200 steps\\
+\end{keytable}
+\input{cpos_algorithm}
+
+\section{Observations}
+\begin{enumerate}[leftmargin=*]
+\item Deck, comments and \code{algorithm.tex} agree with the code. The deck sets no flux-only floor; a
+non-admissible state can only reach the flux if the limiter's node floor skips it (non-finite values).
+\end{enumerate}
+
+\input{codemap}
+\end{document}
