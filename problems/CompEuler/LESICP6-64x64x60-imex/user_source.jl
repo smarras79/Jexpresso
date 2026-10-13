@@ -3,6 +3,14 @@
 # ENV lookups inside it. DBG_SPONGE_Z / DBG_SPONGE_ALPHA override for tests.
 const LESICP6_SPONGE_Z     = parse(Float64, get(ENV, "DBG_SPONGE_Z", "3000.0"))
 const LESICP6_SPONGE_ALPHA = parse(Float64, get(ENV, "DBG_SPONGE_ALPHA", string(1.0/300.0)))
+# Protocol 1.3 relaxes POTENTIAL TEMPERATURE and the three WIND COMPONENTS.
+# "primitive" does that: S = -c*rho*(u - u_e), -c*rho*(theta - theta_e).
+# "conserved" is the old form, relaxing rho*u and rho*theta while rho is free:
+# it pulls theta towards rho_e*theta_e/rho, so a compressed parcel is cooled
+# and sinks harder -- with the mountain waves of the 1000 m ridge in the
+# sponge that fed a growing disturbance at 3-4.5 km, and a 5x stronger alpha
+# made it worse (job 1402636).
+const LESICP6_SPONGE_PRIMITIVE = get(ENV, "DBG_SPONGE_FORM", "primitive") == "primitive"
 
 function user_source!(S,
                       q, 
@@ -70,10 +78,18 @@ function user_source!(S,
 
         #@info "β x: " ctop,cxr,cxl,cs, zs, y, x, ymin, ymax, dsy, dbl
         #S[1] -= (cs)*(q[1]-qe[1])
-        S[2] -= cs*(q[2]-qe[2])
-    	S[3] -= cs*(q[3]-qe[3])
-        S[4] -= cs*(q[4]-qe[4])
-        S[5] -= cs*(q[5]-qe[5])
+        if LESICP6_SPONGE_PRIMITIVE
+            ρe = qe[1]
+            S[2] -= cs*ρ*(q[2]/ρ - qe[2]/ρe)
+            S[3] -= cs*ρ*(q[3]/ρ - qe[3]/ρe)
+            S[4] -= cs*ρ*(q[4]/ρ - qe[4]/ρe)
+            S[5] -= cs*ρ*(q[5]/ρ - qe[5]/ρe)
+        else
+            S[2] -= cs*(q[2]-qe[2])
+            S[3] -= cs*(q[3]-qe[3])
+            S[4] -= cs*(q[4]-qe[4])
+            S[5] -= cs*(q[5]-qe[5])
+        end
 
     
     #Coriolis & geostrophic wind    
