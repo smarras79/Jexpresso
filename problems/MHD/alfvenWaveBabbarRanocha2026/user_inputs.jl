@@ -27,8 +27,9 @@
 #   JEXPRESSO_AW_VISC   "dsgs" (default) or "none" for the plain Galerkin run
 #   JEXPRESSO_AW_SENSOR :dsgs_sensor, "residual" (default) | "legacy"
 #   JEXPRESSO_AW_CMIN   :dsgs_Cmin, the DynSGS background floor (default 0)
-#   JEXPRESSO_AW_FREEZE 1: :dsgs_freeze_stage, the coefficient once per step
-#                       instead of once per stage (default 0)
+#   JEXPRESSO_AW_FREEZE 1 or 0 forces :dsgs_freeze_stage (the coefficient once
+#                       per step, or at every stage); unset, mod_inputs.jl's
+#                       default applies: on with the residual sensor
 #   JEXPRESSO_AW_SOLVER ck54 (default), ssprk54, vern9, dp8 — the time
 #                       integrator; CarpenterKennedy2N54 is 4th order, enough
 #                       for N <= 3 (see smoothVortex/user_inputs.jl for N > 3)
@@ -51,7 +52,8 @@ _aw_tend() = something(tryparse(Float64, get(ENV, "JEXPRESSO_AW_TEND", "")), 2.0
 _aw_cmin() = something(tryparse(Float64, get(ENV, "JEXPRESSO_AW_CMIN", "")), 0.0)
 _aw_visc() = lowercase(strip(get(ENV, "JEXPRESSO_AW_VISC", "dsgs")))
 _aw_sensor() = lowercase(strip(get(ENV, "JEXPRESSO_AW_SENSOR", "residual")))
-_aw_freeze() = get(ENV, "JEXPRESSO_AW_FREEZE", "0") in ("1", "true", "yes")
+_aw_freeze() = (v = strip(get(ENV, "JEXPRESSO_AW_FREEZE", ""));
+                isempty(v) ? nothing : v in ("1", "true", "yes"))
 
 function _aw_dt()
     d = tryparse(Float64, get(ENV, "JEXPRESSO_AW_DT", ""))
@@ -107,7 +109,6 @@ function user_inputs()
         :dsgs_conserved      => false,     # physical form, as user_primitives.jl
         :dsgs_nazarov_energy => true,
         :dsgs_norms       => "domain",     # independent of the rank count
-        :dsgs_freeze_stage => _aw_freeze(),
         :lrichardson      => false,
         :energy_equation  => "energy",
         :lkep              => false,
@@ -128,5 +129,7 @@ function user_inputs()
         :linitial_refine     => false,
         :ladapt              => false,
     ) #Dict
+    f = _aw_freeze()
+    f === nothing || (inputs[:dsgs_freeze_stage] = f)
     return inputs
 end

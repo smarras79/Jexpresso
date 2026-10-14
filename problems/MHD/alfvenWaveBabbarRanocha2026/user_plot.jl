@@ -175,15 +175,20 @@ function _aw_errors(mesh, q, t, outvar)
     return (l2 = sqrt.(s2 ./ area), linf = sm, area = area)
 end
 
+# The record's tag names what differs from the default run: "dsgs" is the
+# deck as committed (residual sensor, coefficient frozen per step, the
+# mod_inputs.jl default), "dsgs_perstage" the coefficient at every stage
+# (JEXPRESSO_AW_FREEZE=0), "dsgs_legacy" the legacy sensor (never frozen),
+# and a time integrator other than CarpenterKennedy2N54 adds its name.
 function _aw_tag(inputs)
-    # a run with another time integrator is another experiment: its own record
     s   = get(inputs, :ode_solver, nothing)
     ode = (s === nothing || s isa CarpenterKennedy2N54) ? "" : string("_", lowercase(string(nameof(typeof(s)))))
     get(inputs, :lvisc, true) || return string("galerkin", ode)
-    tag = "dsgs"
-    lowercase(string(get(inputs, :dsgs_sensor, "residual"))) == "legacy" && (tag *= "_legacy")
+    tag    = "dsgs"
+    legacy = lowercase(string(get(inputs, :dsgs_sensor, "residual"))) == "legacy"
+    legacy && (tag *= "_legacy")
     Float64(get(inputs, :dsgs_Cmin, 0.0)) > 0 && (tag *= "_cmin")
-    get(inputs, :dsgs_freeze_stage, false) == true && (tag *= "_freeze")
+    !legacy && get(inputs, :dsgs_freeze_stage, false) != true && (tag *= "_perstage")
     return string(tag, ode)
 end
 

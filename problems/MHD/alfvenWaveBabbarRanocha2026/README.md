@@ -79,7 +79,10 @@ the discretization's own ∇·B and ψ errors.
   this directory:
   - residual sensor, `:dsgs_Cmin => 0`, `:dsgs_CR => 1`, `:dsgs_Cmax => 0.5`;
   - domain-wide normalization;
-  - physical form (`:dsgs_conserved => false`) with the split energy flux.
+  - physical form (`:dsgs_conserved => false`) with the split energy flux;
+  - the coefficient computed once per step (`:dsgs_freeze_stage`, the default for
+    `DSGS_MHD` with the residual sensor; `JEXPRESSO_AW_FREEZE=0` computes it at every
+    stage).
 
   `JEXPRESSO_AW_VISC=none` gives the plain Galerkin run.
 - **Time.** CarpenterKennedy2N54. Δt gives a Courant number of 0.1 on the mean node
@@ -126,8 +129,9 @@ To start a fresh comparison, run `rm -r problems/MHD/alfvenWaveBabbarRanocha2026
 
 ## What this test found
 
-Measured here, t = 2, with the deck as committed (DynSGS per stage, CarpenterKennedy2N54)
-and with `JEXPRESSO_AW_VISC=none` (Galerkin):
+Measured here, t = 2, with CarpenterKennedy2N54: DynSGS with the coefficient computed at
+every stage (now `JEXPRESSO_AW_FREEZE=0`; the frozen coefficient became the default
+afterwards, see item 4) and with `JEXPRESSO_AW_VISC=none` (Galerkin):
 
 - "ρ" is the paper's measure.
 - "state" is sqrt(Σ_k e(q_k)²) over the nine conserved variables.
