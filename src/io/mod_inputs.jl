@@ -1238,9 +1238,11 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #   :dsgs_freeze_stage  compute the coefficient ONCE PER TIME STEP, at the
     #                      stage that sits on tⁿ, and hold it for the rest of
     #                      the step instead of computing it at every stage.
-    #                      Default: true for DSGS_MHD with the "residual"
-    #                      sensor, false otherwise; the "legacy" sensor
-    #                      ignores it (set below, after :dsgs_sensor).
+    #                      Default: true with the "residual" sensor for
+    #                      DSGS_MHD and for the CompEuler DSGS, false
+    #                      otherwise (ShallowWater DSGS, DSGS_SW); the
+    #                      "legacy" sensor ignores it (set below, after
+    #                      :dsgs_sensor).
     #
     #                      ν = C_R h² R̃, and R̃ is a three-point time
     #                      difference across the stages. At an intermediate
@@ -1382,11 +1384,15 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if !(inputs[:dsgs_sensor] in ("residual", "legacy"))
         error(" user_inputs.jl: :dsgs_sensor must be \"residual\" or \"legacy\" (got $(inputs[:dsgs_sensor])).")
     end
-    # :dsgs_freeze_stage (documented above): on by default for the MHD model
-    # with the residual sensor; never with the legacy sensor.
+    # :dsgs_freeze_stage (documented above): on by default with the residual
+    # sensor for the MHD model and the CompEuler DSGS (the equation set
+    # tells the CompEuler DSGS() from the ShallowWater one); never with the
+    # legacy sensor.
     if !haskey(inputs, :dsgs_freeze_stage)
-        inputs[:dsgs_freeze_stage] = (get(inputs, :visc_model, nothing) isa DSGS_MHD) &&
-                                     inputs[:dsgs_sensor] == "residual"
+        vm = get(inputs, :visc_model, nothing)
+        inputs[:dsgs_freeze_stage] = inputs[:dsgs_sensor] == "residual" &&
+            (vm isa DSGS_MHD ||
+             (vm isa DSGS && string(get(inputs, :_parsed_equations, "")) == "CompEuler"))
     elseif inputs[:dsgs_freeze_stage] == true && inputs[:dsgs_sensor] == "legacy"
         rank == 0 && @warn " user_inputs.jl: :dsgs_freeze_stage is ignored with :dsgs_sensor => \"legacy\" (its stencil reads -∂ₜq/2 at the stage the freeze keeps); computing the coefficient at every stage."
         inputs[:dsgs_freeze_stage] = false
