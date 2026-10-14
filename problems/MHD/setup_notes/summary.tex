@@ -82,7 +82,7 @@ $\Cmin$ & 0.075$^\ast$ & \mj{0} & \mj{0} & \na & 0.03 & 0.03 & \mj{0} & \mj{0} &
 \cm{$\Delta_K=\Delta^{elem}_K/(N+1)$} (value) & 1/750 & 0.25 & 1/320 & \na & 0.2 & 0.1 & 1/512 & 1/256 & 0.00125\\
 \code{:dsgs\_gamma}$=\gamma$, $\Pr=1$, \code{rel}$=$\code{local\_rel}$=1$ & \cm{yes} & \cm{yes} & \cm{yes} & \na & \cm{yes} & \cm{yes} & \cm{yes} & \cm{yes} & \cm{yes}\\
 Hold (steps) & \mj{2} & \mj{2} & \mj{2} & \na & \mj{2} & \mj{2} & \mj{2} & 0 & 0\\
-Cutoff, freeze, nodal $\nu$, nodal $\rho$, reference & \cm{off} & \cm{off} & \cm{off} & \na & \cm{off} & \cm{off} & \cm{off} & \cm{off} & \cm{off}\\
+Cutoff, freeze, nodal $\nu$, nodal $\rho$, reference & \cm{off}$^\S$ & \cm{off}$^\S$ & \cm{off} & \na & \cm{off} & \cm{off} & \cm{off} & \cm{off} & \cm{off}$^\S$\\
 \code{:dsgs\_conserved} & \mj{true} & false$^\dagger$ & false & \na & \mj{true} & \mj{true} & \mj{true} & \mj{true} & \mj{true}\\
 Diffused variables & $\bq$ & $\rho,u,v,T,$ $w,\bB,\psi$ & $\rho,u,v,T,$ $w,\bB,\psi$ & ($u,v,T,\dots$) & $\bq-\bq_e$ & $(\bq-\bq_e)/\rho_e$ & $\bq$ & $\bq$ & $\bq$\\
 Slot coefficients & $\nu$ all & $\nu$; $\bar\rho\nu$ ($\bmom$, $E$)$^\dagger$ & $\nu$; $\bar\rho\nu$ ($\bmom$, $E$) & $\mu_t$-based & $\nu$; $E_{th}$: $\kappa^E$ & $\nu\rho_e$; $E_{th}$: $\kappa^E\rho_e$ & $\nu$ all & $\nu$ all & $\nu$ all\\
@@ -100,7 +100,9 @@ $(1,0.5)$ and a 6\% floor.
 FE/FED: $\kappa^E=\max(\gamma(\gamma-1)/\Pr\cdot\nuc,\ \nufl)=\max(0.0525\,\nuc,\nufl)$ on the thermal part
 $p/(\gamma-1)$ of $E$; the non-thermal part takes $\nu$. OT, SV: $\bar\rho$ = element mean, $\kappa=\bar\rho\nu/\Pr$ on $\nabla T$.
 $^\dagger$ SV since \code{f9cdb02} (\code{:dsgs\_conserved => false}, \code{:dsgs\_nazarov\_energy => true}); at \commit{} it had
-\code{:dsgs\_conserved => true}: $\nu$ on every slot of $(\rho,u,v,T,w,\bB,\psi)$ and no work terms (finding 2).}
+\code{:dsgs\_conserved => true}: $\nu$ on every slot of $(\rho,u,v,T,w,\bB,\psi)$ and no work terms (finding 2).
+$^\S$ Freeze on since \code{b956ccd}: \code{:dsgs\_freeze\_stage} defaults to true for \code{DSGS\_MHD} with the residual
+sensor (BW, SV, AJ); the legacy-sensor cases are unchanged and ignore it (finding 8).}
 
 \section*{Table 3 --- Positivity}
 {\footnotesize
@@ -141,7 +143,7 @@ pressure; \code{CarpenterKennedy2N54} at fixed $\Delta t$; \code{:lvisc => true}
 Richardson correction and AMR off; CPU only.
 \item \textbf{GLM (8/8 in 2D):} $c_h=\max(|\bv|+c_f)$ of the initial (AJ: and inflow) data, constant in time; $\psi$ is
 damped by a linear source.
-\item \textbf{DynSGS (8/8):} \code{DSGS\_MHD}, one coefficient per element recomputed at every RK stage, element
+\item \textbf{DynSGS (8/8):} \code{DSGS\_MHD}, one coefficient per element recomputed at every RK stage (since \code{b956ccd} once per step for the residual-sensor cases BW, SV, AJ; finding 8), element
 length $\Delta^{elem}_K/(N+1)$, history rotated once per step, max over the eight non-$\psi$ normalized residuals,
 cap $\Cmax\Delta_K\max(|\bv|+c_f)$ with $c_f$ bounded by $\sqrt{(\gamma p+|\bB|^2)/\rho}$ (BW: exact $x$-fast speed),
 all multipliers $\mu=1$ (mass diffusion on), \code{:dsgs\_gamma} $=\gamma$, $\Pr=1$, \code{:dsgs\_rel} $=$
@@ -188,6 +190,13 @@ $\Delta t=2\times10^{-4}$ and the one-level refinement.
 3\% floor, the deck sets $0.06\,(N+1)/N$.
 \item \textbf{KH:} the mesh named by the deck (\code{meshes/gmsh\_grids/hexa\_TFI\_32x32\_unitsquare.msh}) is not in
 this checkout.
+\item \textbf{[Changed in \code{b956ccd}.] All residual-sensor cases (BW, SV, AJ): the coefficient is frozen per step.}
+\code{:dsgs\_freeze\_stage} now defaults to true for \code{DSGS\_MHD} with the residual sensor. Per stage, the residual's
+time stencil includes an RK internal stage with an $O(\Delta t)$ error, so $\nu$ never falls below $O(h^2\Delta t)$ on a
+smooth solution: on the MHD Alfv\'en wave at $N=4$ that capped the order at 3.2, against 4.8 frozen. On BW the
+frozen and per-stage density errors differ by under 5\% (under 3\% without the floor), with the same or less
+excess total variation. The legacy sensor reads $-\tfrac12\partial_t q$ at the frozen stage, so it ignores the
+option (ROT, BL, FE, FED, OT unchanged).
 \end{enumerate}
 
 \input{codemap}
