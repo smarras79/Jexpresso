@@ -5,8 +5,11 @@
 # into density-it<n>.png, convergence-it<n>.png and
 # convergence_smooth-it<n>.png (Dao & Nazarov 2022, Fig. 1 and Fig. 2).
 #
-#   tools/brio_wu_order_scan.sh                 # orders 4-7, 150-1200 DOFs
+#   tools/brio_wu_order_scan.sh                 # orders 4-7 at 600 and 1200 DOFs (Fig. 2)
+#   BW_DOFS="150 300 600 1200" tools/brio_wu_order_scan.sh   # + the convergence figure
 #   BW_DOFS="300 600" BW_NOPS="4 7" tools/brio_wu_order_scan.sh
+#   JULIA=/path/to/julia tools/brio_wu_order_scan.sh   # default: the macOS app's julia
+#   JEXPRESSO_BW_FREEZE=0 tools/brio_wu_order_scan.sh  # DynSGS per stage, as before b956ccd
 #   BW_CMIN=0.0 tools/brio_wu_order_scan.sh     # with the DynSGS floor off
 #   BW_HSCALE=ngl tools/brio_wu_order_scan.sh   # the kernels' Δ_K/(k+1) instead
 #   BW_NODAL=1 tools/brio_wu_order_scan.sh      # the nodal coefficient
@@ -23,7 +26,7 @@ NOPS=${BW_NOPS:-"4 5 6 7"}
 CMIN=${BW_CMIN:-""}
 HSCALE=${BW_HSCALE:-nop}
 NODAL=${BW_NODAL:-""}
-JULIA=/Applications/Julia-1.11.app/Contents/Resources/julia/bin/julia
+JULIA=${JULIA:-/Applications/Julia-1.11.app/Contents/Resources/julia/bin/julia}
 
 [ "${BW_KEEP:-0}" = "1" ] || rm -rf problems/MHD/brioWu1d/curves
 
