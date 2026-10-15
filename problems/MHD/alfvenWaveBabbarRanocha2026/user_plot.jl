@@ -175,13 +175,22 @@ function _aw_errors(mesh, q, t, outvar)
     return (l2 = sqrt.(s2 ./ area), linf = sm, area = area)
 end
 
-# The record's tag names what differs from the default run: "dsgs" is the
-# deck as committed (residual sensor, coefficient frozen per step, the
-# mod_inputs.jl default), "dsgs_perstage" the coefficient at every stage
-# (JEXPRESSO_AW_FREEZE=0), "dsgs_legacy" the legacy sensor (never frozen). A
-# time integrator other than the deck's for that order (_aw_default_solver in
-# user_inputs.jl) adds its name, and a time step of its own (JEXPRESSO_AW_DT)
-# adds "dt<Δt>", so that neither replaces the record of the deck's run.
+# The record's tag names what differs from the deck as committed: "dsgs" is
+# DynSGS as the deck runs it (residual sensor, coefficient frozen per step, the
+# smoothness cutoff AW_DSGS_CUTOFF), "dsgs_nocut" the same without the cutoff
+# (AW_CUTOFF = 0 in user_inputs.jl) and "dsgs_cut<x>" with another one,
+# "dsgs_perstage" the coefficient at every stage (JEXPRESSO_AW_FREEZE=0),
+# "dsgs_legacy" the legacy sensor (never frozen). A time integrator other than
+# the deck's for that order (_aw_default_solver in user_inputs.jl) adds its
+# name, and a time step of its own (JEXPRESSO_AW_DT) adds "dt<Δt>", so that no
+# variant replaces the record of another.
+#
+# AW_DSGS_CUTOFF is the cutoff of the deck as committed, AW_CUTOFF's value in
+# user_inputs.jl; keep the two equal. It is a constant of its own so that a run
+# with AW_CUTOFF edited to 0 is still stored as "dsgs_nocut", not as "dsgs".
+# (Records stored before this convention, 16 Oct 2026, called the run without
+# the cutoff "dsgs" and the one with it "dsgs_cut1e-03".)
+const AW_DSGS_CUTOFF = 1.0e-3
 function _aw_tag(inputs)
     s   = get(inputs, :ode_solver, nothing)
     nop = Int(get(inputs, :nop, 0))
@@ -194,6 +203,8 @@ function _aw_tag(inputs)
     legacy = lowercase(string(get(inputs, :dsgs_sensor, "residual"))) == "legacy"
     legacy && (tag *= "_legacy")
     Float64(get(inputs, :dsgs_Cmin, 0.0)) > 0 && (tag *= "_cmin")
+    cut = Float64(get(inputs, :dsgs_cutoff, 0.0))
+    cut == AW_DSGS_CUTOFF || (tag *= cut > 0 ? @sprintf("_cut%.0e", cut) : "_nocut")
     !legacy && get(inputs, :dsgs_freeze_stage, false) != true && (tag *= "_perstage")
     return string(tag, ode)
 end
@@ -294,17 +305,21 @@ const AW_STYLE = Dict(3 => (Plots.RGB(0x2a/255, 0x78/255, 0xd6/255), :diamond),
                       2 => (Plots.RGB(0x62/255, 0x50/255, 0xd6/255), :circle))
 _aw_style(n) = get(AW_STYLE, n, (Plots.RGB(0.5, 0.5, 0.5), :pentagon))
 const AW_INK = Plots.RGB(0x52/255, 0x51/255, 0x4e/255)   # text beside a curve
-# solid = DSGS as committed, dashed = Galerkin, and the DSGS variants (another
-# integrator, :dsgs_freeze_stage, ...) the dash patterns left, in tag order
+# solid = plain DSGS ("dsgs", or the first DSGS tag when there is none),
+# dashed = Galerkin, and the DSGS variants (the cutoff, another integrator,
+# :dsgs_freeze_stage, ...) the dash patterns left, in tag order
 const AW_VARIANT_LINES = (:dashdot, :dashdotdot, :dot)
 function _aw_line(tag, tags)
     startswith(tag, "galerkin") && return :dash
-    tag == "dsgs" && return :solid
-    variants = sort([t for t in tags if !startswith(t, "galerkin") && t != "dsgs"])
+    dsgs = sort([t for t in tags if !startswith(t, "galerkin")])
+    base = "dsgs" in dsgs ? "dsgs" : first(dsgs)
+    tag == base && return :solid
+    variants = filter(!=(base), dsgs)
     return AW_VARIANT_LINES[mod1(something(findfirst(==(tag), variants), 1), length(AW_VARIANT_LINES))]
 end
 _aw_label(tag) = startswith(tag, "galerkin") ? replace(tag, "galerkin" => "Galerkin", "_" => " ") :
-                 replace(tag, "dsgs" => "DSGS", "_" => " ")
+                 replace(tag, "dsgs" => "DSGS", "_nocut" => ", no cutoff",
+                         r"_cut([0-9.e+-]+)" => s", cutoff \1", "_" => " ")
 
 function _aw_panel(rows, fld, ylab, title; legend = true)
     pl = Plots.plot(; xscale = :log10, yscale = :log10,
@@ -316,24 +331,30 @@ function _aw_panel(rows, fld, ylab, title; legend = true)
     # With several orders on several meshes those are too many to label: nelx N
     # on the powers of two instead.
     dofs = sort(unique(Float64(r.ndofs) for r in rows))
+    xlo, xhi = dofs[1]/1.25, dofs[end]*1.6                  # room on the right for the slope labels
     side = length(dofs) <= 8 ? sqrt.(dofs) :
-           [2.0^k for k in floor(Int, log2(sqrt(dofs[1]))):ceil(Int, log2(sqrt(dofs[end])))]
+           filter(s -> xlo <= s^2 <= xhi,                    # a tick outside the axis is drawn cut
+                  [2.0^k for k in floor(Int, log2(sqrt(dofs[1]))):ceil(Int, log2(sqrt(dofs[end])))])
     Plots.plot!(pl; xticks = (side.^2, [string(round(Int, s), "²") for s in side]),
-                    xlims = (dofs[1]/1.25, dofs[end]*1.6))   # room on the right for the slope labels
+                    xlims = (xlo, xhi))
     tags = sort(unique(r.visc for r in rows))
     ally = Float64[]
     for n in sort(unique(r.nop for r in rows))
         col, mk = _aw_style(n)
         ends = Tuple{Vector{Float64},Float64}[]      # (DOFs of the curve, its finest error)
-        for tag in tags
+        # Galerkin first, as a larger hollow marker, so that a DynSGS point that
+        # coincides with it (the cutoff makes ν exactly zero) shows inside it
+        # instead of being covered by its white fill
+        for tag in sort(tags, by = t -> (!startswith(t, "galerkin"), t))
+            gal = startswith(tag, "galerkin")
             g = filter(r -> r.visc == tag && r.nop == n, rows)
             xs = [Float64(r.ndofs) for r in g]; ys = [getfield(r, fld) for r in g]
             keep = isfinite.(ys) .& (ys .> 0)
             any(keep) || continue
             xs = xs[keep]; ys = ys[keep]
             append!(ally, ys)
-            Plots.plot!(pl, xs, ys; line = (col, 2.0, _aw_line(tag, tags)), marker = (mk, 6),
-                        markercolor = startswith(tag, "galerkin") ? :white : col, markerstrokecolor = col,
+            Plots.plot!(pl, xs, ys; line = (col, 2.0, _aw_line(tag, tags)), marker = (mk, gal ? 8 : 5),
+                        markercolor = gal ? :white : col, markerstrokecolor = col,
                         label = string("N = ", n, ", ", _aw_label(tag)))
             length(xs) >= 2 && push!(ends, (xs, ys[end]))
         end
