@@ -1,6 +1,7 @@
 \documentclass[10pt]{article}
 \input{preamble}
-\newgeometry{margin=0.62in,top=0.5in,bottom=0.55in}
+\newgeometry{margin=0.58in,top=0.42in,bottom=0.45in}
+\setlist{itemsep=0pt,topsep=2pt,parsep=0pt}
 \captionsetup{font=small,labelfont=bf,skip=3pt}
 \setlength{\parskip}{3pt}
 \setlength{\parindent}{0pt}
@@ -19,8 +20,13 @@ $10^{-3}$ by default.}
 \nu_K=\min\!\big(\Cmax\,\Delta_K\,w_K,\ \ \CR\,\Delta_K^2\,\max(0,\ r_K-c)\big),\qquad
 r_K=\max_i\frac{\|R_i\|_{\infty,K}}{n_i},\qquad R=\partial_t\bq+\nabla\!\cdot\bF(\bq),
 \]
-$R$ being the element's own strong residual and $n_i$ the domain-wide scale of variable $i$ (its spread, floored at the
-physical scale; here $\bar\rho\bar c=0.42$ for the momentum and $\bB$). $\CR=1$, $\Cmax=0.5$, $\Cmin=0$.
+$R$ being the element's own strong residual and $n_i$ the domain-wide scale of variable $i$: its spread
+$\max_\Omega|q_i-\langle q_i\rangle|$, floored at a scale of the mean state, $\bar\rho$ for $\rho$, $\bar\rho\bar c$ for
+the momentum, $\bar\rho\bar c^2$ for $E$, $\sqrt{\bar\rho}\,\bar c$ for $\bB$. Here $\bar\rho=\langle\rho\rangle=1$ and
+$\bar c=\sqrt{\gamma\bar p/\bar\rho}=0.42$ is the sound speed of the mean state ($\bar p=0.107$, from $\langle\rho E\rangle$,
+$\langle\rho\bv\rangle$, $\langle\bB\rangle$). The wave's spread ($\le0.1$) is below that floor, so $n_i=0.42$ for the momentum
+and $\bB$, and $r_K$ is a rate (1/time): the residual relative to the momentum of a flow at the sound speed.
+$\CR=1$, $\Cmax=0.5$, $\Cmin=0$.
 \textbf{Without the cutoff} is $c=0$: $\nu_K=\CR\Delta_K^2 r_K$, whatever $r_K$ is. \textbf{With it}, $c=10^{-3}$ is
 subtracted from the normalized residual first, so $\nu_K=0$ wherever $r_K\le10^{-3}$, and $\nu_K$ stays continuous across
 the threshold (it is not an on/off switch).
@@ -36,8 +42,8 @@ r_{\rm floor}=\frac{\Delta t^2}{3}\,\frac{\omega^3A}{\bar\rho\bar c}\quad(4\cdot
 and $\nu\approx\CR\Delta^2 r_{\rm floor}\propto\Delta^2\Delta t^2\propto h^4$ at a fixed Courant number,
 \emph{whatever $N$}. That $\nu$ damps the wave by $\nu k^2t$ ($k=2\pi$), a state error of $0.14\,\nu k^2 t$:
 \begin{itemize}[leftmargin=12pt]
-\item it predicts the measured error with no fitted constant ($N=6$ on $16^2$: $5.4\cdot10^{-8}$ predicted and
-measured; $N=5,6,7$ within $0.95$--$1.4\times$ from $8^2$ on);
+\item it predicts the measured error with no fitted constant ($N=6$ on $16^2$: $5.4\cdot10^{-8}$ both;
+$N=5,6,7$ within $0.95$--$1.4\times$ from $8^2$ on);
 \item DynSGS converges at $\approx4$ for $N=5,6,7$, and at equal \#DOFs the three curves coincide, since $\Delta$ and
 $\Delta t$ are both set by the node spacing;
 \item halving $\Delta t$ alone divides the error by $3.9$--$4.0$, and the Galerkin error does not move;
@@ -80,8 +86,9 @@ $\nu$ up to $9\cdot10^{-5}$, error $3.6\times$ Galerkin's. There the viscosity a
 \item \emph{Shocks.} $c=10^{-3}$ is above this wave's floor on every mesh (at most $7\cdot10^{-4}$) and 5 decades below
 a shock's $r_K$, but it has not been run on the shock cases (Brio--Wu, Orszag--Tang, rotor, blast). On the smooth MHD vortex ($N=6$, $32^2$,
 $t=0.5$) the cutoff likewise gives Galerkin bit for bit; there the excess without it was only 2\%.
-\item \emph{What $10^{-3}$ means.} $c$ is compared with $r_K$, i.e.\ with the residual \emph{divided by} $n_i$: another
-normalization (\code{:dsgs\_rel}, element norms) changes the threshold it stands for.
+\item \emph{What $10^{-3}$ means.} $c$ is compared with $r_K$, the residual \emph{divided by} $n_i$, so it is a rate in
+the problem's time units: another normalization (\code{:dsgs\_rel}, element norms, \code{:dsgs\_fast\_floors}, which puts
+the fast speed in place of $\bar c$) or another time scale changes the threshold it stands for.
 \end{itemize}
 
 \textbf{Reproduce.} \code{tools/alfven\_wave\_scan.sh} runs the deck as committed, $c=10^{-3}$, for $N=3\ldots7$
