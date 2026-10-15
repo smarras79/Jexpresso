@@ -2995,6 +2995,12 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     native_periodic = n_grid_nodes != n_topo_verts
     if inputs[:AD] == DiscGal()
         println_rank(" # Natively periodic model: $(native_periodic) ($(n_grid_nodes) grid nodes, $(n_topo_verts) topology vertices)"; msg_rank = rank, suppress = false)
+    elseif native_periodic && mesh.nsd == 2
+        # The continuous paths size their vertex-coordinate fill by the
+        # topology vertex count while indexing grid node ids, and then merge
+        # periodic partners by coordinate -- neither is right on a model whose
+        # wrap is already glued. Only the DG path reads such a model correctly.
+        error("mod_mesh_read_gmsh!: the mesh carries gmsh Periodic constraints ($(n_grid_nodes) grid nodes, $(n_topo_verts) topology vertices), which only :AD => DiscGal() supports in 2D; use a periodic mesh with boundary tags only for ContGal() or FD()")
     end
 
     #----------------------------------------------------------------------
@@ -3083,11 +3089,11 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             # list, so every consumer sees only real boundaries. Order is kept
             # and isboundary_edge cleared for each removed edge, so the rebuild
             # below walks the kept edges in the same order as the arrays.
+            is_periodic_tag(t) = t !== nothing && startswith(String(t), "periodic")
             if native_periodic
                 bdy_iedge = findall(isboundary_edge)
                 length(bdy_iedge) == mesh.nedges_bdy ||
                     error("DG native periodicity: $(length(bdy_iedge)) tagged edges but nedges_bdy = $(mesh.nedges_bdy)")
-                is_periodic_tag(t) = t !== nothing && startswith(String(t), "periodic")
                 keep = [k for k = 1:mesh.nedges_bdy if !is_periodic_tag(mesh.bdy_edge_type[k])]
                 for k = 1:mesh.nedges_bdy
                     is_periodic_tag(mesh.bdy_edge_type[k]) && (isboundary_edge[bdy_iedge[k]] = false)
@@ -3101,6 +3107,14 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                 mesh.nedges_bdy                = length(keep)
                 mesh.nedges_int                = mesh.nedges - mesh.nedges_bdy
                 println_rank(" # DG native periodicity: boundary-edge list $(n_bdy_before) -> $(mesh.nedges_bdy) (periodic-tagged edges are faces across the wrap)"; msg_rank = rank, suppress = false)
+            elseif ladaptive && any(is_periodic_tag, mesh.bdy_edge_type)
+                # A periodic edge carried by boundary tags alone is a domain
+                # boundary to the forest: no 2:1 balance and no hanging-face
+                # glue are built across it, so the first refinement next to the
+                # wrap leaves a non-conforming periodic face nothing can couple.
+                # DG adaptivity on a periodic domain needs the periodicity in
+                # the mesh itself (gmsh Periodic constraints, points at z = 0).
+                error("mod_mesh_read_gmsh!: DG adaptivity on a periodic mesh whose periodicity is carried by boundary tags only; regenerate the mesh with gmsh Periodic constraints (points at z = 0) so the forest treats the wrap as a neighbour, or run without :lamr/:lpreadapt")
             end
             node_coords = get_node_coordinates(get_grid(model))
             ngl_dg = mesh.ngl
@@ -5613,12 +5627,12 @@ function build_dg_faces_2D!(mesh::St_mesh; native_periodic::Bool = false)
         # Which axis is NORMAL to this tag's faces? Never inferred from the
         # tag's name — measured 2026-08-11 on hexa_TFI_10x20_periodic: the tag
         # names the axis the edge RUNS ALONG ("periodicx" = bottom/top edges,
-        # y-normal; "periodicz" = left/right, x-normal — 2D remaps y→z),
-        # matching detect_periodic_ncf_parent_gels_2D!'s branch (x tangential
-        # for "periodicx"). Derived geometrically regardless: each tagged
-        # element votes for the axis on which it has a constant-coordinate
-        # slice at that axis's domain extremum; corner elements vote both,
-        # the rest disambiguate; a tie is a hard error.
+        # y-normal; "periodicz" = left/right, x-normal — 2D remaps y→z) — and
+        # not taken from any other routine's reading of these tags either.
+        # Derived geometrically: each tagged element votes for the axis on
+        # which it has a constant-coordinate slice at that axis's domain
+        # extremum; corner elements vote both, the rest disambiguate; a tie is
+        # a hard error.
         xlo, xhi = extrema(mesh.x); ylo, yhi = extrema(mesh.y)
         tolx = 1.0e-8 * (xhi - xlo); toly = 1.0e-8 * (yhi - ylo)
         vx = 0; vy = 0
