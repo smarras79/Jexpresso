@@ -199,40 +199,40 @@ dies with a bus error (it happened while this sweep was being set up).
 
 ## What this test found
 
-Measured here with `tools/alfven_wave_scan.sh`, t = 2: DynSGS without the cutoff
-(`AW_CUTOFF = 0`, the deck before it had one) and Galerkin (`JEXPRESSO_AW_VISC=none`),
-CarpenterKennedy2N54 up to N = 5 and Vern7 above. Item 5 compares the coefficient computed
-at every stage (`JEXPRESSO_AW_FREEZE=0`), and item 6 is DynSGS with the cutoff, the deck as
-committed.
+Measured here with `tools/alfven_wave_scan.sh`, t = 2: DynSGS as the deck runs it (with the
+cutoff, `AW_CUTOFF = 1e-3`), DynSGS without the cutoff (`AW_CUTOFF = 0`), and Galerkin
+(`JEXPRESSO_AW_VISC=none`); CarpenterKennedy2N54 up to N = 5 and Vern7 above. Item 6
+compares the coefficient computed at every stage (`JEXPRESSO_AW_FREEZE=0`).
 
 - "ρ" is the paper's measure.
 - "state" is sqrt(Σ_k e(q_k)²) over the nine conserved variables.
-- Each cell is the error, with the rate between consecutive meshes in brackets.
+- Each cell is the error, with the rate between consecutive meshes in brackets. "=" marks a
+  DynSGS run identical to Galerkin bit for bit (all nine variables, L² and L∞).
 - The paper's values are those of its Fig. 13 for N = 3 on the same number of elements. They
   were read from the PDF's vector paths (marker centres, calibrated on the gridlines); the
   calibration puts the points on exactly 16, 32, 64, 128 elements.
 
-| N | elements | #DOFs | ρ, DSGS | ρ, Galerkin | state, DSGS | state, Galerkin | DSGS/Galerkin (state) | paper ρ, (a) GLL g₂ | paper ρ, (b) GL Radau |
+| N | elements | #DOFs | ρ, DSGS | ρ, Galerkin | state, DSGS | state, DSGS no cutoff | state, Galerkin | paper ρ, (a) GLL g₂ | paper ρ, (b) GL Radau |
 |---|---|---|---|---|---|---|---|---|---|
-| 3 | 8² | 24² | 9.67e-04 | 1.22e-03 | 2.00e-03 | 1.23e-03 | 1.6 |  |  |
-| 3 | 16² | 48² | 1.17e-04 (3.0) | 1.19e-04 (3.4) | 1.20e-04 (4.1) | 1.20e-04 (3.4) | 1.0 | 7.60e-05 | 2.91e-07 |
-| 3 | 32² | 96² | 1.02e-05 (3.5) | 1.02e-05 (3.5) | 1.03e-05 (3.6) | 1.03e-05 (3.5) | 1.0 | 7.18e-06 | 1.06e-08 |
-| 3 | 64² | 192² | 3.63e-07 (4.8) | 3.63e-07 (4.8) | 3.66e-07 (4.8) | 3.65e-07 (4.8) | 1.0 | 2.44e-07 | 5.89e-10 |
-| 4 | 8² | 32² | 1.24e-05 | 6.90e-06 | 6.57e-05 | 7.98e-06 | 8.2 |  |  |
-| 4 | 16² | 64² | 4.02e-07 (4.9) | 3.93e-07 (4.1) | 1.93e-06 (5.1) | 4.28e-07 (4.2) | 4.5 |  |  |
-| 4 | 32² | 128² | 1.88e-08 (4.4) | 2.33e-08 (4.1) | 6.75e-08 (4.8) | 2.60e-08 (4.0) | 2.6 |  |  |
-| 4 | 64² | 256² | 1.33e-09 (3.8) | 1.45e-09 (4.0) | 2.43e-09 (4.8) | 1.63e-09 (4.0) | 1.5 |  |  |
-| 5 | 4² | 20² | 1.34e-04 | 1.28e-04 | 4.96e-04 | 1.29e-04 | 3.8 |  |  |
-| 5 | 8² | 40² | 2.33e-06 (5.8) | 2.38e-06 (5.7) | 3.42e-06 (7.2) | 2.40e-06 (5.8) | 1.4 |  |  |
-| 5 | 16² | 80² | 4.52e-08 (5.7) | 4.40e-08 (5.8) | 1.10e-07 (5.0) | 4.43e-08 (5.8) | 2.5 |  |  |
-| 5 | 32² | 160² | 6.35e-10 (6.2) | 4.74e-10 (6.5) | 6.39e-09 (4.1) | 4.76e-10 (6.5) | 13.4 |  |  |
-| 6 | 4² | 24² | 3.68e-06 | 1.04e-06 | 2.28e-05 | 1.08e-06 | 21.0 |  |  |
-| 6 | 8² | 48² | 2.64e-07 (3.8) | 1.83e-08 (5.8) | 1.04e-06 (4.4) | 2.04e-08 (5.7) | 51.3 |  |  |
-| 6 | 16² | 96² | 1.08e-08 (4.6) | 2.09e-10 (6.5) | 5.42e-08 (4.3) | 2.36e-10 (6.4) | 229.9 |  |  |
-| 6 | 32² | 192² | 8.37e-10 (3.7) | 3.30e-12 (6.0) | 3.20e-09 (4.1) | 3.75e-12 (6.0) | 854.4 |  |  |
-| 7 | 4² | 28² | 5.07e-07 | 4.51e-07 | 7.94e-06 | 4.54e-07 | 17.5 |  |  |
-| 7 | 8² | 56² | 8.53e-08 (2.6) | 2.10e-09 (7.7) | 6.45e-07 (3.6) | 2.12e-09 (7.7) | 305.0 |  |  |
-| 7 | 16² | 112² | 6.17e-09 (3.8) | 5.42e-12 (8.6) | 4.22e-08 (3.9) | 5.53e-12 (8.6) | 7626.2 |  |  |
+| 3 | 8² | 24² | 9.69e-04 | 1.22e-03 | 1.99e-03 | 2.00e-03 | 1.23e-03 |  |  |
+| 3 | 16² | 48² | 1.18e-04 (3.0) | 1.19e-04 (3.4) | 1.20e-04 (4.0) | 1.20e-04 (4.1) | 1.20e-04 (3.4) | 7.60e-05 | 2.91e-07 |
+| 3 | 32² | 96² | 1.02e-05 (3.5) | 1.02e-05 (3.5) | 1.03e-05 (3.5) = | 1.03e-05 (3.6) | 1.03e-05 (3.5) | 7.18e-06 | 1.06e-08 |
+| 3 | 64² | 192² | 3.63e-07 (4.8) | 3.63e-07 (4.8) | 3.65e-07 (4.8) = | 3.66e-07 (4.8) | 3.65e-07 (4.8) | 2.44e-07 | 5.89e-10 |
+| 4 | 8² | 32² | 1.24e-05 | 6.90e-06 | 5.29e-05 | 6.57e-05 | 7.98e-06 |  |  |
+| 4 | 16² | 64² | 3.82e-07 (5.0) | 3.93e-07 (4.1) | 4.19e-07 (7.0) | 1.93e-06 (5.1) | 4.28e-07 (4.2) |  |  |
+| 4 | 32² | 128² | 2.33e-08 (4.0) | 2.33e-08 (4.1) | 2.60e-08 (4.0) = | 6.75e-08 (4.8) | 2.60e-08 (4.0) |  |  |
+| 4 | 64² | 256² | 1.45e-09 (4.0) | 1.45e-09 (4.0) | 1.63e-09 (4.0) = | 2.43e-09 (4.8) | 1.63e-09 (4.0) |  |  |
+| 5 | 4² | 20² | 1.35e-04 | 1.28e-04 | 4.62e-04 | 4.96e-04 | 1.29e-04 |  |  |
+| 5 | 8² | 40² | 2.38e-06 (5.8) | 2.38e-06 (5.7) | 2.40e-06 (7.6) = | 3.42e-06 (7.2) | 2.40e-06 (5.8) |  |  |
+| 5 | 16² | 80² | 4.40e-08 (5.8) | 4.40e-08 (5.8) | 4.43e-08 (5.8) = | 1.10e-07 (5.0) | 4.43e-08 (5.8) |  |  |
+| 5 | 32² | 160² | 4.74e-10 (6.5) | 4.74e-10 (6.5) | 4.76e-10 (6.5) = | 6.39e-09 (4.1) | 4.76e-10 (6.5) |  |  |
+| 6 | 4² | 24² | 1.04e-06 | 1.04e-06 | 1.08e-06 = | 2.28e-05 | 1.08e-06 |  |  |
+| 6 | 8² | 48² | 1.83e-08 (5.8) | 1.83e-08 (5.8) | 2.04e-08 (5.7) = | 1.04e-06 (4.4) | 2.04e-08 (5.7) |  |  |
+| 6 | 16² | 96² | 2.09e-10 (6.5) | 2.09e-10 (6.5) | 2.36e-10 (6.4) = | 5.42e-08 (4.3) | 2.36e-10 (6.4) |  |  |
+| 6 | 32² | 192² | 3.30e-12 (6.0) | 3.30e-12 (6.0) | 3.75e-12 (6.0) = | 3.20e-09 (4.1) | 3.75e-12 (6.0) |  |  |
+| 7 | 4² | 28² | 4.51e-07 | 4.51e-07 | 4.54e-07 = | 7.94e-06 | 4.54e-07 |  |  |
+| 7 | 8² | 56² | 2.10e-09 (7.7) | 2.10e-09 (7.7) | 2.12e-09 (7.7) = | 6.45e-07 (3.6) | 2.12e-09 (7.7) |  |  |
+| 7 | 16² | 112² | 5.42e-12 (8.6) | 5.42e-12 (8.6) | 5.53e-12 (8.6) = | 4.22e-08 (3.9) | 5.53e-12 (8.6) |  |  |
 
 1. **Galerkin converges at N + 1 or better for odd N, and at N for even N.**
    - Odd N, on the finest pair: 4.8 for N = 3, 6.5 for N = 5, 8.6 for N = 7.
@@ -240,21 +240,33 @@ committed.
    - Order N is what the standard error estimate guarantees for unstabilized Galerkin on a
      hyperbolic problem; the odd orders do better on these uniform meshes.
    - N = 7 reaches 5.5e-12 on 16², and N = 6 reaches 3.75e-12 on 32².
-2. **DynSGS costs nothing at N = 3, little at N = 4, and converges at about 4 from N = 5 on.**
-   - N = 3: on 32² and 64² the ρ error is the same to three digits with and without DynSGS,
-     and it converges at 4.8 on the finest pair, as the paper's Fig. 13(a) does (4.9).
-   - N = 4: on 64² the state error is within 1.5× of Galerkin's, at order 4.8 (item 5).
+2. **DynSGS as committed is Galerkin wherever the wave is resolved.** With the cutoff the
+   normalized residual enters ν as max(0, ratio − 10⁻³), and its floor on this wave is 4e-6
+   to 7e-4. So ν is exactly zero, and DynSGS reproduces Galerkin bit for bit: from 32² on
+   for N = 3 and 4, from 8² on for N = 5, and on every mesh for N = 6 and 7. It keeps
+   Galerkin's orders: 4.8, 4.0, 6.5, 6.0 and 8.6 on the finest pairs.
+   - Where it differs, the mesh is coarse and the spatial part of the residual is above the
+     cutoff: N = 3 and 4 on 8² and 16², N = 5 on 4² (ν up to 9e-5 at t = 2). On 8² that adds
+     to the error (1.6× Galerkin's at N = 3, 6.6× at N = 4); on 16² DynSGS is within 1% of
+     Galerkin at N = 3 and 2% below it at N = 4; N = 5 on 4² is 3.6× Galerkin's.
+   - At N = 3 the ρ error is Galerkin's from 32² on, and it converges at 4.8 on the finest
+     pair, as the paper's Fig. 13(a) does (4.9).
+   - The cutoff is meant to leave a shock alone (the normalized residual is O(10²) there),
+     but that has not been checked on the shock cases with this value.
+3. **Without the cutoff, DynSGS converges at about 4 from N = 5 on.**
+   - N = 3: on 32² and 64² the ρ error is the same to three digits as Galerkin's.
+   - N = 4: on 64² the state error is within 1.5× of Galerkin's, at order 4.8 (item 6).
    - N = 5, 6, 7: the state error converges at 4.1, 4.1 and 3.9 on the finest pairs. There
      it is 13×, 850× and 7600× the Galerkin error (32², 32², 16²). At equal #DOFs the three
-     DynSGS curves lie within 1.5× of each other from about 48² DOFs on (panel (b) of the
-     figure), so with DynSGS a higher N buys no accuracy on this wave.
+     curves lie within 1.5× of each other from about 48² DOFs on, so without the cutoff a
+     higher N buys no accuracy on this wave.
    - The paper's measure shows it less at N = 5 (ρ: 6.3e-10 against 4.7e-10 on 32²), but at
      N = 6 and 7 the ρ error is 250× and 1100× Galerkin's.
-3. **Why order 4: the time derivative in the frozen residual.** At the stage where the
-   coefficient is computed, the residual's ∂ₜq is the BDF2 of three step-level states, whose
-   truncation error is (Δt²/3)∂ₜ³q. A travelling wave has ∂ₜ³q ≠ 0 however well it is
-   resolved, so that is the floor of the residual, and ν ≈ C_R Δ² O(Δt²) ∝ h⁴ at a fixed
-   Courant number, whatever N.
+4. **Why order 4 without the cutoff: the time derivative in the frozen residual.** At the
+   stage where the coefficient is computed, the residual's ∂ₜq is the BDF2 of three
+   step-level states, whose truncation error is (Δt²/3)∂ₜ³q. A travelling wave has ∂ₜ³q ≠ 0
+   however well it is resolved, so that is the floor of the residual, and ν ≈ C_R Δ² O(Δt²)
+   ∝ h⁴ at a fixed Courant number, whatever N.
    - The floor predicts the error with no fitted constant. The residual is normalized by
      ρ̄c̄ = 0.42 (the floor of the momentum and B norms, above the wave's spread), so
      ν ≈ C_R Δ² (Δt²/3) ω³A/(ρ̄c̄), with ω = 2π and A = 0.1. The wave is damped by ν k² t
@@ -270,14 +282,16 @@ committed.
    - On 8² the dependence is not clean (N = 6: 1.04e-6, 3.96e-7, 4.61e-7 at Δt, Δt/2, Δt/4):
      on that mesh the spatial part of the residual still counts.
    - A backward difference of higher order for ∂ₜq would lower that floor to O(Δt^k), at one
-     more stored state per order. The cutoff removes it instead (item 6).
-4. **Against the paper**, at equal #DOFs rather than on equal meshes, N = 3 is about 2.7×
+     more stored state per order. The cutoff removes it instead (item 2); the one-page
+     `../setup_notes/dsgsCutoff.pdf` sums this up.
+5. **Against the paper**, at equal #DOFs rather than on equal meshes, N = 3 is about 2.7×
    below the GLL/g₂ variant of Fig. 13(a) and about 190× above the GL/Radau variant of (b).
    At N = 3, from 16² on, the ρ error is the largest error. The errors of the wave variables
-   (ρu, ρv, ρw, B) are 8–16× smaller, so the state error follows ρ. On 8² with DynSGS, they
-   are as large as the ρ error. On 64², DynSGS's B error is twice the Galerkin one (7.4e-9
-   against 3.8e-9).
-5. **At N = 4, DynSGS converges at 4.8 because its coefficient is frozen per step.**
+   (ρu, ρv, ρw, B) are 8–16× smaller, so the state error follows ρ. On 8² with DynSGS they
+   are as large as the ρ error. Without the cutoff, DynSGS's B error on 64² is twice the
+   Galerkin one (7.4e-9 against 3.8e-9); with it, the two are the same.
+6. **Without the cutoff, DynSGS converges at 4.8 at N = 4 because its coefficient is frozen
+   per step.**
    - With the frozen coefficient, on 64² the state error is within 1.5× of Galerkin's
      (2.4e-9 against 1.6e-9), and the ρ error is below Galerkin's (1.3e-9 against 1.4e-9).
    - Computed at every stage (`JEXPRESSO_AW_FREEZE=0`, the default before b956ccd), the
@@ -301,34 +315,6 @@ committed.
    - The legacy sensor is not frozen (it would read −½∂ₜq at the frozen stage). On this wave
      it is far more dissipative: N = 4 on 16² gives a state error of 3.5e-3, against 1.9e-6
      with the residual sensor.
-
-6. **The cutoff removes the floor.** With `AW_CUTOFF = 1e-3` (`:dsgs_cutoff`), the deck as
-   committed, the normalized residual enters ν as max(0, ratio − 10⁻³). The floor is 4e-6
-   to 7e-4 over the sweep, so ν is exactly zero, and DynSGS reproduces Galerkin bit for
-   bit (all nine variables, L² and L∞) on every mesh of N = 5, 6, 7 but the coarsest of
-   N = 5:
-
-   | N | elements | state, DSGS without the cutoff | state, DSGS, cutoff 1e-3 | state, Galerkin |
-   |---|---|---|---|---|
-   | 5 | 4² | 4.96e-04 | 4.62e-04 | 1.29e-04 |
-   | 5 | 8² | 3.42e-06 (7.2) | 2.40e-06 (7.6) | 2.40e-06 (5.8) |
-   | 5 | 16² | 1.10e-07 (5.0) | 4.43e-08 (5.8) | 4.43e-08 (5.8) |
-   | 5 | 32² | 6.39e-09 (4.1) | 4.76e-10 (6.5) | 4.76e-10 (6.5) |
-   | 6 | 4² | 2.28e-05 | 1.08e-06 | 1.08e-06 |
-   | 6 | 8² | 1.04e-06 (4.4) | 2.04e-08 (5.7) | 2.04e-08 (5.7) |
-   | 6 | 16² | 5.42e-08 (4.3) | 2.36e-10 (6.4) | 2.36e-10 (6.4) |
-   | 6 | 32² | 3.20e-09 (4.1) | 3.75e-12 (6.0) | 3.75e-12 (6.0) |
-   | 7 | 4² | 7.94e-06 | 4.54e-07 | 4.54e-07 |
-   | 7 | 8² | 6.45e-07 (3.6) | 2.12e-09 (7.7) | 2.12e-09 (7.7) |
-   | 7 | 16² | 4.22e-08 (3.9) | 5.53e-12 (8.6) | 5.53e-12 (8.6) |
-
-   - N = 5 on 4² (20² DOFs, the least resolved run of the sweep) is the exception. There the
-     residual is above the cutoff (ν up to 9e-5 at t = 2), and the error is 3.6× Galerkin's,
-     mostly in the wave variables.
-   - N = 3 and 4 have not been rerun with the cutoff; their DynSGS rows above are without it.
-   - The cutoff is meant to leave a shock alone (the normalized ratio is O(10²) there), but
-     that has not been checked on the shock cases with this value.
-
 
 ## Files
 
