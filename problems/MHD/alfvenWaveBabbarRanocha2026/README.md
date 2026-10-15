@@ -176,7 +176,7 @@ about 1e-12, short of round-off, so the five curves cover about the same span of
 | `AW_VISC=dsgs` | only the DynSGS runs (default `dsgs none`) |
 | `AW_JOBS=5` | up to 5 orders at once, one Julia session each (default 1) |
 | `AW_KEEP=1` | keep the stored errors (they are cleared first by default) |
-| `JULIA=/path/to/julia` | default: `julia` on the PATH, else the macOS app's |
+| `JULIA=/path/to/julia` | default: the macOS app's julia if it starts, else the one on the PATH (a juliaup launcher is bypassed: the runs call the binary itself) |
 
 The sweep as committed, measured here with `AW_JOBS=4` on four cores, took 83 min. That
 is the time of the N = 4 session, whose two 64² runs take 67 of its 82 min. The five

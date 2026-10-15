@@ -12,7 +12,7 @@
 #   AW_NOPS="3 4" AW_NELX="16 32 64 128" tools/alfven_wave_scan.sh   # the paper's meshes
 #   AW_NELX_7="4 8 16" tools/alfven_wave_scan.sh    # other meshes for one order
 #   AW_VISC=dsgs tools/alfven_wave_scan.sh          # only the DynSGS runs
-#   JULIA=/path/to/julia tools/alfven_wave_scan.sh  # default: julia on the PATH, else the macOS app's
+#   JULIA=/path/to/julia tools/alfven_wave_scan.sh  # default: the macOS app's julia, else the PATH's
 #
 # MESHES. Each order gets the meshes that take its Galerkin error from the
 # coarse-mesh range down to about 1e-12, short of the round-off level, so that
@@ -47,7 +47,21 @@ OUT=output/MHD/alfvenWaveBabbarRanocha2026
 NOPS=${AW_NOPS:-"3 4 5 6 7"}
 VISCS=${AW_VISC:-"dsgs none"}
 JOBS=${AW_JOBS:-1}
-JULIA=${JULIA:-$(command -v julia || echo /Applications/Julia-1.11.app/Contents/Resources/julia/bin/julia)}
+# JULIA: as given, or else the first that starts of the macOS app's julia and
+# the julia on the PATH. On a Mac the one on the PATH can be a juliaup launcher
+# with no default channel, which fails every call ("failed to figure out which
+# juliaup channel to use"). Whichever it is, the runs then call the binary
+# itself, not a launcher in front of it: several launchers started at once can
+# also fail on juliaup's lock.
+if [ -z "${JULIA:-}" ]; then
+    for j in /Applications/Julia-1.11.app/Contents/Resources/julia/bin/julia "$(command -v julia 2>/dev/null)"; do
+        [ -n "$j" ] && "$j" --version >/dev/null 2>&1 && { JULIA=$j; break; }
+    done
+fi
+JULIA_IN=${JULIA:-julia}
+JULIA=$("$JULIA_IN" --startup-file=no -e 'print(joinpath(Sys.BINDIR, Base.julia_exename()))' 2>/dev/null) || {
+    echo "=== $JULIA_IN does not start: set JULIA=/path/to/julia (or run 'juliaup default 1.11')"; exit 1; }
+export JULIA
 export GKSwstype=${GKSwstype:-100}
 
 # the meshes of order $1

@@ -73,7 +73,21 @@ NP=${SV_NP:-4}
 JOBS=${SV_JOBS:-1}
 SOLVER=${SV_SOLVER:-ck54}
 TEND=${SV_TEND:-1.0}
-JULIA=${JULIA:-julia}
+# JULIA: as given, or else the first that starts of the macOS app's julia and
+# the julia on the PATH. On a Mac the one on the PATH can be a juliaup launcher
+# with no default channel, which fails every call ("failed to figure out which
+# juliaup channel to use"). Whichever it is, the runs then call the binary
+# itself, not a launcher in front of it: several launchers started at once can
+# also fail on juliaup's lock.
+if [ -z "${JULIA:-}" ]; then
+    for j in /Applications/Julia-1.11.app/Contents/Resources/julia/bin/julia "$(command -v julia 2>/dev/null)"; do
+        [ -n "$j" ] && "$j" --version >/dev/null 2>&1 && { JULIA=$j; break; }
+    done
+fi
+JULIA_IN=${JULIA:-julia}
+JULIA=$("$JULIA_IN" --startup-file=no -e 'print(joinpath(Sys.BINDIR, Base.julia_exename()))' 2>/dev/null) || {
+    echo "=== $JULIA_IN does not start: set JULIA=/path/to/julia (or run 'juliaup default 1.11')"; exit 1; }
+export JULIA
 MPIEXEC=${MPIEXEC:-mpiexec}
 PLOT_NOPS=${SV_PLOT_NOPS:-}
 # The box WIDTH. The default 20 is [-10,10]^2, the box Dao & Nazarov run this
