@@ -87,7 +87,9 @@ the discretization's own ∇·B and ψ errors.
   - physical form (`:dsgs_conserved => false`) with the split energy flux;
   - the coefficient computed once per step (`:dsgs_freeze_stage`, the default for
     `DSGS_MHD` with the residual sensor; `JEXPRESSO_AW_FREEZE=0` computes it at every
-    stage).
+    stage);
+  - the smoothness cutoff `:dsgs_cutoff`, set by the deck entry `AW_CUTOFF` in
+    `user_inputs.jl`: 1e-3, or 0 for DynSGS without it (item 6 of the results).
 
   `JEXPRESSO_AW_VISC=none` gives the plain Galerkin run.
 - **Time step.** Δt gives a Courant number of 0.1 on the mean node spacing √2/(nelx N),
@@ -129,10 +131,11 @@ At t = 2, a run stores the error of every conserved variable in
 `errors/nop<N>_nelx<M>_<visc>.dat`, in this directory. Each record holds the L² error
 above and the largest pointwise error at the Gauss points.
 
-`<visc>` is `dsgs` for the deck as committed and `galerkin` for `JEXPRESSO_AW_VISC=none`.
-Anything else a run changes is added to it, so that the record does not replace the
-deck's: `perstage` (`JEXPRESSO_AW_FREEZE=0`), `legacy`, `cmin`, an integrator other than
-the deck's for that N (`vern9`, ...), or a time step of its own (`dt0.00124`).
+`<visc>` is `galerkin` for `JEXPRESSO_AW_VISC=none`, and `dsgs` for DynSGS without the
+cutoff (`AW_CUTOFF = 0`). Anything else a run changes is added to it, so that no variant
+replaces the record of another: `cut1e-03` (`AW_CUTOFF`, the deck as committed),
+`perstage` (`JEXPRESSO_AW_FREEZE=0`), `legacy`, `cmin`, an integrator other than the
+deck's for that N (`vern9`, ...), or a time step of its own (`dt0.00124`).
 
 From every record stored for the same final time, the run then:
 
@@ -193,9 +196,11 @@ dies with a bus error (it happened while this sweep was being set up).
 
 ## What this test found
 
-Measured here with `tools/alfven_wave_scan.sh` as committed, t = 2: DynSGS (the deck) and
-Galerkin (`JEXPRESSO_AW_VISC=none`), CarpenterKennedy2N54 up to N = 5 and Vern7 above.
-Item 5 compares the coefficient computed at every stage (`JEXPRESSO_AW_FREEZE=0`).
+Measured here with `tools/alfven_wave_scan.sh`, t = 2: DynSGS without the cutoff
+(`AW_CUTOFF = 0`, the deck before it had one) and Galerkin (`JEXPRESSO_AW_VISC=none`),
+CarpenterKennedy2N54 up to N = 5 and Vern7 above. Item 5 compares the coefficient computed
+at every stage (`JEXPRESSO_AW_FREEZE=0`), and item 6 is DynSGS with the cutoff, the deck as
+committed.
 
 - "ρ" is the paper's measure.
 - "state" is sqrt(Σ_k e(q_k)²) over the nine conserved variables.
@@ -262,7 +267,7 @@ Item 5 compares the coefficient computed at every stage (`JEXPRESSO_AW_FREEZE=0`
    - On 8² the dependence is not clean (N = 6: 1.04e-6, 3.96e-7, 4.61e-7 at Δt, Δt/2, Δt/4):
      on that mesh the spatial part of the residual still counts.
    - A backward difference of higher order for ∂ₜq would lower that floor to O(Δt^k), at one
-     more stored state per order; the deck does not do it.
+     more stored state per order. The cutoff removes it instead (item 6).
 4. **Against the paper**, at equal #DOFs rather than on equal meshes, N = 3 is about 2.7×
    below the GLL/g₂ variant of Fig. 13(a) and about 190× above the GL/Radau variant of (b).
    At N = 3, from 16² on, the ρ error is the largest error. The errors of the wave variables
@@ -293,6 +298,34 @@ Item 5 compares the coefficient computed at every stage (`JEXPRESSO_AW_FREEZE=0`
    - The legacy sensor is not frozen (it would read −½∂ₜq at the frozen stage). On this wave
      it is far more dissipative: N = 4 on 16² gives a state error of 3.5e-3, against 1.9e-6
      with the residual sensor.
+
+6. **The cutoff removes the floor.** With `AW_CUTOFF = 1e-3` (`:dsgs_cutoff`), the deck as
+   committed, the normalized residual enters ν as max(0, ratio − 10⁻³). The floor is 2e-5
+   to 7e-4 over the sweep, so ν is exactly zero, and DynSGS reproduces Galerkin bit for
+   bit (all nine variables, L² and L∞) on every mesh of N = 5, 6, 7 but the coarsest of
+   N = 5:
+
+   | N | elements | state, DSGS without the cutoff | state, DSGS, cutoff 1e-3 | state, Galerkin |
+   |---|---|---|---|---|
+   | 5 | 4² | 4.96e-04 | 4.62e-04 | 1.29e-04 |
+   | 5 | 8² | 3.42e-06 (7.2) | 2.40e-06 (7.6) | 2.40e-06 (5.8) |
+   | 5 | 16² | 1.10e-07 (5.0) | 4.43e-08 (5.8) | 4.43e-08 (5.8) |
+   | 5 | 32² | 6.39e-09 (4.1) | 4.76e-10 (6.5) | 4.76e-10 (6.5) |
+   | 6 | 4² | 2.28e-05 | 1.08e-06 | 1.08e-06 |
+   | 6 | 8² | 1.04e-06 (4.4) | 2.04e-08 (5.7) | 2.04e-08 (5.7) |
+   | 6 | 16² | 5.42e-08 (4.3) | 2.36e-10 (6.4) | 2.36e-10 (6.4) |
+   | 6 | 32² | 3.20e-09 (4.1) | 3.75e-12 (6.0) | 3.75e-12 (6.0) |
+   | 7 | 4² | 7.94e-06 | 4.54e-07 | 4.54e-07 |
+   | 7 | 8² | 6.45e-07 (3.6) | 2.12e-09 (7.7) | 2.12e-09 (7.7) |
+   | 7 | 16² | 4.22e-08 (3.9) | 5.53e-12 (8.6) | 5.53e-12 (8.6) |
+
+   - N = 5 on 4² (20² DOFs, the least resolved run of the sweep) is the exception. There the
+     residual is above the cutoff (ν up to 9e-5 at t = 2), and the error is 3.6× Galerkin's,
+     mostly in the wave variables.
+   - N = 3 and 4 have not been rerun with the cutoff; their DynSGS rows above are without it.
+   - The cutoff is meant to leave a shock alone (the normalized ratio is O(10²) there), but
+     that has not been checked on the shock cases with this value.
+
 
 ## Files
 

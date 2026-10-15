@@ -47,15 +47,30 @@
 # about 9 Δt⁴ in the state (the wave's L² norm is 0.14). For N = 7 on 16² that
 # is 1.2e-11 against a spatial error of 5.5e-12 (measured: 1.32e-11 with it,
 # 5.53e-12 with Vern7 or Vern9); for N = 6 on 32² it would be a third of the
-# spatial error (1.4e-12 against 3.75e-12). Vern7 (7th order) is used from N = 6 on; it costs 10 right-hand sides
-# per step against CK54's 5. The density error, the paper's measure, does not
-# see this error at all: ρ = 1 whatever the phase of the wave.
+# spatial error (1.4e-12 against 3.75e-12). Vern7 (7th order) is used from
+# N = 6 on; it costs 10 right-hand sides per step against CK54's 5. The density
+# error, the paper's measure, does not see this error at all: ρ = 1 whatever
+# the phase of the wave.
+#
+# THE DYNSGS CUTOFF is a deck entry, AW_CUTOFF below (:dsgs_cutoff): set it
+# there, 0 for DynSGS without it.
 #---------------------------------------------------------------------------------
 const AW_NELX_DEFAULT = 16
 const AW_NOP_DEFAULT  = 3
 const AW_COURANT      = 0.1
 const AW_LAMBDA       = 0.1 + sqrt(5.0/3.0*0.1 + 1.01)   # |v| + c_f of the initial condition
 const AW_LBOX         = sqrt(2.0)                           # 1/cos(π/4) = 1/sin(π/4)
+
+# The DynSGS smoothness cutoff, :dsgs_cutoff (SGS.jl, _dsgs_cut): the normalized
+# residual enters ν as max(0, ratio − AW_CUTOFF). On this wave the residual
+# never falls below the truncation error of its BDF2 time derivative,
+# (Δt²/3)∂ₜ³q, and that floor alone gives ν ∝ Δ²Δt² ∝ h⁴: without the cutoff
+# the DynSGS error converges at about 4 from N = 5 on (README, "What this test
+# found"). Normalized, the floor is (Δt²/3)ω³A/(ρ̄c̄) = 2e-5 to 7e-4 over the
+# sweep, against O(10²) at a shock, so 1e-3 removes it and leaves a shock as it
+# was. 0 is DynSGS without the cutoff; a run with it stores its errors as
+# dsgs_cut<value> (user_plot.jl), beside those of DynSGS without it.
+const AW_CUTOFF       = 1.0e-3
 
 _aw_nop()  = something(tryparse(Int,     get(ENV, "JEXPRESSO_AW_NOP",  "")), AW_NOP_DEFAULT)
 _aw_nelx() = something(tryparse(Int,     get(ENV, "JEXPRESSO_AW_NELX", "")), AW_NELX_DEFAULT)
@@ -123,6 +138,7 @@ function user_inputs()
         :dsgs_CR          => 1.0,
         :dsgs_Cmax        => 0.5,
         :dsgs_Cmin        => _aw_cmin(),   # 0: a floor would add an O(h) error
+        :dsgs_cutoff      => AW_CUTOFF,    # the BDF2 floor of the residual, see AW_CUTOFF
         :dsgs_gamma       => 5.0/3.0,
         :dsgs_Prt         => 1.0,
         :dsgs_conserved      => false,     # physical form, as user_primitives.jl
