@@ -244,8 +244,18 @@ Item 5 compares the coefficient computed at every stage (`JEXPRESSO_AW_FREEZE=0`
      N = 6 and 7 the ρ error is 250× and 1100× Galerkin's.
 3. **Why order 4: the time derivative in the frozen residual.** At the stage where the
    coefficient is computed, the residual's ∂ₜq is the BDF2 of three step-level states, whose
-   truncation error is O(Δt²). On a smooth solution that is the floor of the residual, so
-   ν ≈ C_R Δ² O(Δt²) ∝ h⁴ at a fixed Courant number, whatever N.
+   truncation error is (Δt²/3)∂ₜ³q. A travelling wave has ∂ₜ³q ≠ 0 however well it is
+   resolved, so that is the floor of the residual, and ν ≈ C_R Δ² O(Δt²) ∝ h⁴ at a fixed
+   Courant number, whatever N.
+   - The floor predicts the error with no fitted constant. The residual is normalized by
+     ρ̄c̄ = 0.42 (the floor of the momentum and B norms, above the wave's spread), so
+     ν ≈ C_R Δ² (Δt²/3) ω³A/(ρ̄c̄), with ω = 2π and A = 0.1. The wave is damped by ν k² t
+     (k = 2π), so the state error is 0.14 ν k² t. Predicted against measured:
+     N = 5 on 32², 6.6e-9 against 6.4e-9; N = 6 on 16² and 32², 5.4e-8 and 3.4e-9 against
+     5.4e-8 and 3.2e-9; N = 7 on 8² and 16², 4.9e-7 and 3.0e-8 against 6.5e-7 and 4.2e-8.
+   - Δ = Δ_el/(N + 1) and Δt ∝ Δ_el/N, so at equal #DOFs ν hardly depends on N: that is why
+     the DynSGS curves of N = 5, 6, 7 coincide. At N = 3 the same floor is a hundredth of the
+     Galerkin error, so DynSGS does not show.
    - Halving Δt alone (`JEXPRESSO_AW_DT`) divides the DynSGS error by 3.9 at N = 6 and 4.0 at
      N = 7, on 16²: 5.42e-8 → 1.38e-8 and 4.22e-8 → 1.05e-8. The Galerkin error does not move
      (N = 6 on 8²: 2.036e-8 at Δt and at Δt/2).
