@@ -178,11 +178,17 @@ end
 # The record's tag names what differs from the default run: "dsgs" is the
 # deck as committed (residual sensor, coefficient frozen per step, the
 # mod_inputs.jl default), "dsgs_perstage" the coefficient at every stage
-# (JEXPRESSO_AW_FREEZE=0), "dsgs_legacy" the legacy sensor (never frozen),
-# and a time integrator other than CarpenterKennedy2N54 adds its name.
+# (JEXPRESSO_AW_FREEZE=0), "dsgs_legacy" the legacy sensor (never frozen). A
+# time integrator other than the deck's for that order (_aw_default_solver in
+# user_inputs.jl) adds its name, and a time step of its own (JEXPRESSO_AW_DT)
+# adds "dt<Δt>", so that neither replaces the record of the deck's run.
 function _aw_tag(inputs)
     s   = get(inputs, :ode_solver, nothing)
-    ode = (s === nothing || s isa CarpenterKennedy2N54) ? "" : string("_", lowercase(string(nameof(typeof(s)))))
+    nop = Int(get(inputs, :nop, 0))
+    ode = (s === nothing || nameof(typeof(s)) == nameof(typeof(_aw_solver_named(_aw_default_solver(nop))))) ?
+          "" : string("_", lowercase(string(nameof(typeof(s)))))
+    tryparse(Float64, get(ENV, "JEXPRESSO_AW_DT", "")) === nothing ||
+        (ode *= @sprintf("_dt%.3g", Float64(get(inputs, :Δt, 0.0))))
     get(inputs, :lvisc, true) || return string("galerkin", ode)
     tag    = "dsgs"
     legacy = lowercase(string(get(inputs, :dsgs_sensor, "residual"))) == "legacy"
@@ -275,11 +281,19 @@ function _aw_report(rows)
     return nothing
 end
 
-const AW_STYLE = Dict(1 => (:darkorange, :dtriangle), 2 => (:royalblue, :circle),
-                      3 => (:seagreen, :diamond),     4 => (:crimson, :rect),
-                      5 => (:purple, :utriangle),     6 => (:goldenrod, :star5),
-                      7 => (:black, :xcross))
-_aw_style(n) = get(AW_STYLE, n, (:gray, :cross))
+# One colour and one marker per order, in a fixed order: N = 3 ... 7 take the
+# first five slots of a categorical palette checked for colour-vision
+# deficiency on neighbouring curves (blue, orange, aqua, yellow, magenta), and
+# every marker can be drawn hollow (the Galerkin runs).
+const AW_STYLE = Dict(3 => (Plots.RGB(0x2a/255, 0x78/255, 0xd6/255), :diamond),
+                      4 => (Plots.RGB(0xeb/255, 0x68/255, 0x34/255), :rect),
+                      5 => (Plots.RGB(0x1b/255, 0xaf/255, 0x7a/255), :utriangle),
+                      6 => (Plots.RGB(0xed/255, 0xa1/255, 0x00/255), :star5),
+                      7 => (Plots.RGB(0xe8/255, 0x7b/255, 0xa4/255), :hexagon),
+                      1 => (Plots.RGB(0x00/255, 0x83/255, 0x00/255), :dtriangle),
+                      2 => (Plots.RGB(0x62/255, 0x50/255, 0xd6/255), :circle))
+_aw_style(n) = get(AW_STYLE, n, (Plots.RGB(0.5, 0.5, 0.5), :pentagon))
+const AW_INK = Plots.RGB(0x52/255, 0x51/255, 0x4e/255)   # text beside a curve
 # solid = DSGS as committed, dashed = Galerkin, and the DSGS variants (another
 # integrator, :dsgs_freeze_stage, ...) the dash patterns left, in tag order
 const AW_VARIANT_LINES = (:dashdot, :dashdotdot, :dot)
@@ -292,57 +306,77 @@ end
 _aw_label(tag) = startswith(tag, "galerkin") ? replace(tag, "galerkin" => "Galerkin", "_" => " ") :
                  replace(tag, "dsgs" => "DSGS", "_" => " ")
 
-function _aw_panel(rows, fld, ylab, title)
+function _aw_panel(rows, fld, ylab, title; legend = true)
     pl = Plots.plot(; xscale = :log10, yscale = :log10,
                     xlabel = "#DOFs = (nelx N)²", ylabel = ylab, title = title,
                     framestyle = :box, grid = true, gridalpha = 0.25,
-                    legend = :bottomleft, legendfontsize = 9, titlefontsize = 12,
+                    legend = legend ? :topright : false, legendfontsize = 9, titlefontsize = 12,
                     guidefontsize = 11, tickfontsize = 9, show = false)
-    # the resolutions actually run, labelled as the paper labels them (32², 64², ...)
+    # The resolutions actually run, labelled as the paper labels them (32², 64², ...).
+    # With several orders on several meshes those are too many to label: nelx N
+    # on the powers of two instead.
     dofs = sort(unique(Float64(r.ndofs) for r in rows))
-    Plots.plot!(pl; xticks = (dofs, [string(isqrt(round(Int, d)), "²") for d in dofs]))
+    side = length(dofs) <= 8 ? sqrt.(dofs) :
+           [2.0^k for k in floor(Int, log2(sqrt(dofs[1]))):ceil(Int, log2(sqrt(dofs[end])))]
+    Plots.plot!(pl; xticks = (side.^2, [string(round(Int, s), "²") for s in side]),
+                    xlims = (dofs[1]/1.25, dofs[end]*1.6))   # room on the right for the slope labels
     tags = sort(unique(r.visc for r in rows))
     ally = Float64[]
-    for tag in tags, n in sort(unique(r.nop for r in rows))
-        g = filter(r -> r.visc == tag && r.nop == n, rows)
-        xs = [Float64(r.ndofs) for r in g]; ys = [getfield(r, fld) for r in g]
-        keep = isfinite.(ys) .& (ys .> 0)
-        any(keep) || continue
-        xs = xs[keep]; ys = ys[keep]
-        append!(ally, ys)
+    for n in sort(unique(r.nop for r in rows))
         col, mk = _aw_style(n)
-        Plots.plot!(pl, xs, ys; line = (col, 1.6, _aw_line(tag, tags)), marker = (mk, 6),
-                    markercolor = startswith(tag, "galerkin") ? :white : col, markerstrokecolor = col,
-                    label = string("N = ", n, ", ", _aw_label(tag)))
-        # the optimal order, O(h^(N+1)) = #DOFs^(-(N+1)/2), a factor 4 below the
-        # finest point, over the span of the curve
-        if length(xs) >= 2 && tag == first(sort(unique(r.visc for r in rows if r.nop == n)))
-            A = ys[end]/4.0*xs[end]^((n + 1)/2)
-            Plots.plot!(pl, [xs[1], xs[end]], [A*x^(-(n + 1)/2) for x in (xs[1], xs[end])];
-                        line = (col, 1.0, :dot), label = string("O(h^", n + 1, ")"))
+        ends = Tuple{Vector{Float64},Float64}[]      # (DOFs of the curve, its finest error)
+        for tag in tags
+            g = filter(r -> r.visc == tag && r.nop == n, rows)
+            xs = [Float64(r.ndofs) for r in g]; ys = [getfield(r, fld) for r in g]
+            keep = isfinite.(ys) .& (ys .> 0)
+            any(keep) || continue
+            xs = xs[keep]; ys = ys[keep]
+            append!(ally, ys)
+            Plots.plot!(pl, xs, ys; line = (col, 2.0, _aw_line(tag, tags)), marker = (mk, 6),
+                        markercolor = startswith(tag, "galerkin") ? :white : col, markerstrokecolor = col,
+                        label = string("N = ", n, ", ", _aw_label(tag)))
+            length(xs) >= 2 && push!(ends, (xs, ys[end]))
         end
+        # the optimal order, O(h^(N+1)) = #DOFs^(-(N+1)/2): over the widest curve
+        # of this order, a factor 3 below the smallest of its finest errors, and
+        # labelled at its end
+        isempty(ends) && continue
+        xs = ends[argmax([length(e[1]) for e in ends])][1]
+        A  = minimum(e[2] for e in ends)/3.0*xs[end]^((n + 1)/2)
+        y2 = A*xs[end]^(-(n + 1)/2)
+        Plots.plot!(pl, [xs[1], xs[end]], [A*xs[1]^(-(n + 1)/2), y2];
+                    line = (col, 1.0, :dot), label = "")
+        Plots.annotate!(pl, xs[end]*1.08, y2,
+                        Plots.text(LaTeXStrings.latexstring("h^{", n + 1, "}"), AW_INK, :left, 10))
+        push!(ally, y2)
     end
-    # decades on the error axis (10^-7.5 is not a number anyone reports)
+    # decades on the error axis (10^-7.5 is not a number anyone reports), and
+    # the axis set by the errors: a slope line that starts above them is cut
     if !isempty(ally)
         lo = floor(Int, log10(minimum(ally))); hi = ceil(Int, log10(maximum(ally)))
-        Plots.plot!(pl; yticks = ([10.0^e for e in lo:hi],
+        Plots.plot!(pl; ylims = (10.0^lo/1.5, 10.0^hi*1.5),   # end ticks clear of the frame
+                        yticks = ([10.0^e for e in lo:hi],
                                   [LaTeXStrings.latexstring(string("10^{", e, "}")) for e in lo:hi]))
     end
     return pl
 end
 
-function _aw_plot(rows, OUTPUT_DIR, iout)
+# Returns the file written, or nothing when no order/tag has two meshes yet.
+function _aw_plot(rows, OUTPUT_DIR, iout; name = "convergence")
     any(count(r -> r.visc == v && r.nop == n, rows) >= 2
         for v in unique(r.visc for r in rows), n in unique(r.nop for r in rows)) || return nothing
     tt = rows[1].t
+    # one legend, in panel (a), once the curves are too many to repeat it
+    many = length(unique((r.visc, r.nop) for r in rows)) > 6
     p1 = _aw_panel(rows, :rho,   "L² error of ρ",
                    "(a) ρ, the measure of the paper's Fig. 13, t = $(tt)")
     p2 = _aw_panel(rows, :state, "L² error of the conserved state",
-                   "(b) all conserved variables, t = $(tt)")
+                   "(b) all conserved variables, t = $(tt)"; legend = !many)
     plt = Plots.plot(p1, p2; layout = (1, 2), size = (1500, 620),
                      left_margin = 8Plots.mm, bottom_margin = 8Plots.mm, show = false)
-    _aw_atomic(string(OUTPUT_DIR, "/convergence-it", iout, ".png"), f -> _savefig_silent(plt, f))
-    return nothing
+    f = string(OUTPUT_DIR, "/", name, "-it", iout, ".png")
+    _aw_atomic(f, tmp -> _savefig_silent(plt, tmp))
+    return f
 end
 
 function user_plot_2d(mesh, q, t, outvar, inputs, OUTPUT_DIR, iout; Minv = nothing)

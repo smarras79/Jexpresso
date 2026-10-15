@@ -508,8 +508,13 @@ the three values is an RK internal stage, whose own error is $O(\Delta t)$, so t
 residual never falls below $O(\Delta t)$ on a resolved smooth solution. At $\tau = 0$
 the three values are step-level states and the floor is the BDF2 truncation error,
 $O(\Delta t^2)$. On the MHD Alfvén wave at $N = 4$ that is the difference between
-order 3.2 and 4.8 (`problems/MHD/alfvenWaveBabbarRanocha2026`). On Brio–Wu
-($N = 4, 7$; 600 and 1200 DOFs) the frozen and per-stage density errors differ by
+order 3.2 and 4.8 (`problems/MHD/alfvenWaveBabbarRanocha2026`). That floor is also
+the limit of the frozen coefficient: $\nu \approx C_R\,\Delta^2\,O(\Delta t^2)$, so at a
+fixed Courant number DynSGS adds an error of order $h^4$, whatever $N$. On the same
+wave it shows from $N = 5$ on: the DynSGS error converges at about 4 while the Galerkin
+error converges at 6 to 8 ($N = 7$ on $16^2$: $4.2\cdot10^{-8}$ against
+$5.5\cdot10^{-12}$), and halving $\Delta t$ alone divides it by 3.9 and 4.0 ($N = 6$ and
+7 on $16^2$). On Brio–Wu ($N = 4, 7$; 600 and 1200 DOFs) the frozen and per-stage density errors differ by
 under 1% over the tube and by under 5% in the rarefaction fan, either way, with the
 same total variation; without its background floor, where the residual alone sets
 $\nu$ at the jumps, by under 3%, with slightly less excess total variation frozen. On
