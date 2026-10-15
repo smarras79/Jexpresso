@@ -175,14 +175,20 @@ function _aw_errors(mesh, q, t, outvar)
     return (l2 = sqrt.(s2 ./ area), linf = sm, area = area)
 end
 
+# The record's tag names what differs from the default run: "dsgs" is the
+# deck as committed (residual sensor, coefficient frozen per step, the
+# mod_inputs.jl default), "dsgs_perstage" the coefficient at every stage
+# (JEXPRESSO_AW_FREEZE=0), "dsgs_legacy" the legacy sensor (never frozen),
+# and a time integrator other than CarpenterKennedy2N54 adds its name.
 function _aw_tag(inputs)
-    # a run with another time integrator is another experiment: its own record
     s   = get(inputs, :ode_solver, nothing)
     ode = (s === nothing || s isa CarpenterKennedy2N54) ? "" : string("_", lowercase(string(nameof(typeof(s)))))
     get(inputs, :lvisc, true) || return string("galerkin", ode)
-    tag = "dsgs"
-    lowercase(string(get(inputs, :dsgs_sensor, "residual"))) == "legacy" && (tag *= "_legacy")
+    tag    = "dsgs"
+    legacy = lowercase(string(get(inputs, :dsgs_sensor, "residual"))) == "legacy"
+    legacy && (tag *= "_legacy")
     Float64(get(inputs, :dsgs_Cmin, 0.0)) > 0 && (tag *= "_cmin")
+    !legacy && get(inputs, :dsgs_freeze_stage, false) != true && (tag *= "_perstage")
     return string(tag, ode)
 end
 
@@ -274,8 +280,17 @@ const AW_STYLE = Dict(1 => (:darkorange, :dtriangle), 2 => (:royalblue, :circle)
                       5 => (:purple, :utriangle),     6 => (:goldenrod, :star5),
                       7 => (:black, :xcross))
 _aw_style(n) = get(AW_STYLE, n, (:gray, :cross))
-_aw_line(tag) = startswith(tag, "galerkin") ? :dash : startswith(tag, "dsgs_") ? :dashdot : :solid
-_aw_label(tag) = tag == "galerkin" ? "Galerkin" : tag == "dsgs" ? "DSGS" : replace(tag, "_" => " ")
+# solid = DSGS as committed, dashed = Galerkin, and the DSGS variants (another
+# integrator, :dsgs_freeze_stage, ...) the dash patterns left, in tag order
+const AW_VARIANT_LINES = (:dashdot, :dashdotdot, :dot)
+function _aw_line(tag, tags)
+    startswith(tag, "galerkin") && return :dash
+    tag == "dsgs" && return :solid
+    variants = sort([t for t in tags if !startswith(t, "galerkin") && t != "dsgs"])
+    return AW_VARIANT_LINES[mod1(something(findfirst(==(tag), variants), 1), length(AW_VARIANT_LINES))]
+end
+_aw_label(tag) = startswith(tag, "galerkin") ? replace(tag, "galerkin" => "Galerkin", "_" => " ") :
+                 replace(tag, "dsgs" => "DSGS", "_" => " ")
 
 function _aw_panel(rows, fld, ylab, title)
     pl = Plots.plot(; xscale = :log10, yscale = :log10,
@@ -286,14 +301,17 @@ function _aw_panel(rows, fld, ylab, title)
     # the resolutions actually run, labelled as the paper labels them (32², 64², ...)
     dofs = sort(unique(Float64(r.ndofs) for r in rows))
     Plots.plot!(pl; xticks = (dofs, [string(isqrt(round(Int, d)), "²") for d in dofs]))
-    for tag in sort(unique(r.visc for r in rows)), n in sort(unique(r.nop for r in rows))
+    tags = sort(unique(r.visc for r in rows))
+    ally = Float64[]
+    for tag in tags, n in sort(unique(r.nop for r in rows))
         g = filter(r -> r.visc == tag && r.nop == n, rows)
         xs = [Float64(r.ndofs) for r in g]; ys = [getfield(r, fld) for r in g]
         keep = isfinite.(ys) .& (ys .> 0)
         any(keep) || continue
         xs = xs[keep]; ys = ys[keep]
+        append!(ally, ys)
         col, mk = _aw_style(n)
-        Plots.plot!(pl, xs, ys; line = (col, 1.6, _aw_line(tag)), marker = (mk, 6),
+        Plots.plot!(pl, xs, ys; line = (col, 1.6, _aw_line(tag, tags)), marker = (mk, 6),
                     markercolor = startswith(tag, "galerkin") ? :white : col, markerstrokecolor = col,
                     label = string("N = ", n, ", ", _aw_label(tag)))
         # the optimal order, O(h^(N+1)) = #DOFs^(-(N+1)/2), a factor 4 below the
@@ -303,6 +321,12 @@ function _aw_panel(rows, fld, ylab, title)
             Plots.plot!(pl, [xs[1], xs[end]], [A*x^(-(n + 1)/2) for x in (xs[1], xs[end])];
                         line = (col, 1.0, :dot), label = string("O(h^", n + 1, ")"))
         end
+    end
+    # decades on the error axis (10^-7.5 is not a number anyone reports)
+    if !isempty(ally)
+        lo = floor(Int, log10(minimum(ally))); hi = ceil(Int, log10(maximum(ally)))
+        Plots.plot!(pl; yticks = ([10.0^e for e in lo:hi],
+                                  [LaTeXStrings.latexstring(string("10^{", e, "}")) for e in lo:hi]))
     end
     return pl
 end

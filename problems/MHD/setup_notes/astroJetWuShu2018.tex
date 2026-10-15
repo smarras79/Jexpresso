@@ -46,7 +46,7 @@ Other switches & \cm{\code{:lfilter}, \code{:lkep}, \code{:entropy\_variables}, 
 \code{:dsgs\_conserved} & \mj{true} & \\
 \code{:dsgs\_ref\_weight}, \code{:dsgs\_thermal\_residual} & \mj{false} & \\
 \code{:dsgs\_nazarov\_energy} & false & \\
-\code{:ldsgs\_nodal}, \code{:dsgs\_freeze\_stage}, \code{:dsgs\_reference}, \code{:dsgs\_nodal\_rho} & \cm{false} & \\
+\code{:ldsgs\_nodal}, \code{:dsgs\_freeze\_stage}, \code{:dsgs\_reference}, \code{:dsgs\_nodal\_rho} & \cm{false} & freeze: true since \code{b956ccd}\\
 \end{keytable}
 
 \section{DynSGS as it runs for this case}
@@ -98,6 +98,8 @@ boundary-node treatment, which the \code{"legacy"} path does not have.
 \item $p$ in this beam is $\approx5.6\times10^{-6}$ of $E$; the deck comment on \code{:dsgs\_norms} explains the
 element norms by that ratio, and \code{Positivity.jl:275--289} quantifies how small $p_{\min}$ may usefully be
 ($(\gamma-1)\,\mathrm{ulp}(E)\approx2.3\times10^{-11}$ against $p_{\min}=10^{-6}$).
+\item \textbf{[Changed in \code{b956ccd}.]} With the residual sensor this deck now runs with the coefficient frozen
+per step, the \code{DSGS\_MHD} default (\code{:dsgs\_freeze\_stage}; see the Brio--Wu note for the check). Not re-run here.
 \end{enumerate}
 
 \input{codemap}

@@ -53,7 +53,7 @@ $\Delta = \Delta x/(N+1)$, and the scaling turns it into Dao \& Nazarov's $\Delt
 \code{:dsgs\_thermal\_residual} & \mj{false} (default) & 2D only in any case\\
 \code{:dsgs\_hold\_steps} & \mj{2} & \code{JEXPRESSO\_BW\_HOLD}\\
 \code{:dsgs\_cutoff} & \cm{0} & \code{JEXPRESSO\_BW\_CUTOFF}\\
-\code{:dsgs\_freeze\_stage} & \cm{false} (default) & recomputed at every RK stage\\
+\code{:dsgs\_freeze\_stage} & false at \commit{}; true since \code{b956ccd} (default) & at \commit{} recomputed at every RK stage; now once per step\\
 \code{:ldsgs\_nodal} & \cm{false} (element form) & \code{JEXPRESSO\_BW\_NODAL}; \code{:dsgs\_Cl => 0.4} only acts in the nodal form\\
 \code{:dsgs\_nodal\_rho}, \code{:dsgs\_ref\_weight}, \code{:dsgs\_reference} & \cm{false} & defaults\\
 \code{:dsgs\_local\_rel} & \cm{1.0} (default) & unused (domain norms)\\
@@ -147,6 +147,12 @@ there, and the same call returns a bit-identical coefficient with \code{lthermal
 \code{CarpenterKennedy2N54()}.
 \item \code{DSGS.md} \S4.7 says this case needs a 3\% $C_{\min}$ floor; the deck sets
 $0.06\,h_{fac}$ (its own comment says 6\%; relative to the cap $\Cmax$ that is 12\%).
+\item \textbf{[Changed in \code{b956ccd}.]} \code{:dsgs\_freeze\_stage} now defaults to true for \code{DSGS\_MHD}
+with the residual sensor: the coefficient is computed once per step, at the stage on $t^n$, and held over the stages,
+which removes the $O(\Delta t)$ floor the RK internal stages put under the residual. Checked on this case, frozen
+against per stage ($N=4,7$; 600 and 1200 DOFs): with the deck's floor the density errors differ by under 1\% over
+the tube and under 5\% in the fan; without it (\code{JEXPRESSO\_BW\_CMIN=0}) by under 3\%, with slightly less excess
+total variation frozen; $\rho$ bounds unchanged. \code{JEXPRESSO\_BW\_FREEZE=0} gives the per-stage run.
 \end{enumerate}
 
 \input{codemap}

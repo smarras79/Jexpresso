@@ -500,8 +500,24 @@ $$
 the second being the three-point derivative at $\tau$ through
 $(q(\tau), q^n, q^{n-1})$: second order at every stage, equal to BDF2 at
 $\tau = h$, weights summing to zero. Dao & Nazarov compute the coefficient once
-per step from $t^n$ and freeze it over the stages; here it is re-evaluated at
-every stage, consistently.
+per step from $t^n$ and freeze it over the stages; here it can be re-evaluated at
+every stage, consistently. Since October 2026, `DSGS_MHD` and the CompEuler `DSGS`
+with this sensor freeze it by default (`:dsgs_freeze_stage`, `src/io/mod_inputs.jl`;
+the ShallowWater `DSGS` and `DSGS_SW` keep the per-stage coefficient): at $\tau > 0$ one of
+the three values is an RK internal stage, whose own error is $O(\Delta t)$, so the
+residual never falls below $O(\Delta t)$ on a resolved smooth solution. At $\tau = 0$
+the three values are step-level states and the floor is the BDF2 truncation error,
+$O(\Delta t^2)$. On the MHD Alfvén wave at $N = 4$ that is the difference between
+order 3.2 and 4.8 (`problems/MHD/alfvenWaveBabbarRanocha2026`). On Brio–Wu
+($N = 4, 7$; 600 and 1200 DOFs) the frozen and per-stage density errors differ by
+under 1% over the tube and by under 5% in the rarefaction fan, either way, with the
+same total variation; without its background floor, where the residual alone sets
+$\nu$ at the jumps, by under 3%, with slightly less excess total variation frozen. On
+Sod (`sod1d`, its CI copy) the frozen density error against the exact solution is 2.3%
+larger in $L^1$ (0.8% in $L^2$), with a pressure dip of 0.8% of the ambient value just
+ahead of the shock that the per-stage run does not have. The
+legacy sensor below must not be frozen (its stencil reads $-\tfrac12\partial_t q$ at
+$\tau = 0$), and an explicit request for it is ignored.
 
 Every DynSGS result obtained before this change (September 2026) used the
 fixed BDF2 on $(q(\tau), q^n, q^{n-1})$ together with the assembled RHS

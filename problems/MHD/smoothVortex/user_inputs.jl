@@ -125,7 +125,10 @@ end
 # The default is the box of the paper, [-10,10]^2, i.e. L = 20.
 _sv_hold() = something(tryparse(Int, get(ENV, "JEXPRESSO_SV_HOLD", "")), 2)
 _sv_cutoff() = something(tryparse(Float64, get(ENV, "JEXPRESSO_SV_CUTOFF", "")), 0.0)
-_sv_freeze() = get(ENV, "JEXPRESSO_SV_FREEZE", "0") in ("1", "true", "yes")
+# JEXPRESSO_SV_FREEZE=1 or 0 forces :dsgs_freeze_stage; unset, the key is left
+# to mod_inputs.jl, whose default is on with the residual sensor.
+_sv_freeze() = (v = strip(get(ENV, "JEXPRESSO_SV_FREEZE", ""));
+                isempty(v) ? nothing : v in ("1", "true", "yes"))
 _sv_lbox() = something(tryparse(Float64, get(ENV, "JEXPRESSO_SV_L", "")), 20.0)
 # The box is ALWAYS in the mesh name (vortex_L20_32x32.msh): a mesh whose name
 # does not say which box it is cannot be told apart from one that is a
@@ -186,11 +189,11 @@ function user_inputs()
         # per RHS call (a few doubles) and is what Dao & Nazarov's eq. 4.8
         # means by the norm over Ω.
         :dsgs_norms       => _sv_norms(),
-        # Compute the coefficient once per step instead of once per stage:
-        # JEXPRESSO_SV_FREEZE=1 (see :dsgs_freeze_stage in mod_inputs.jl).
-        # It is what keeps the residual, and with it nu, from stalling at
-        # O(dt) and capping a high-order accuracy test at second order.
-        :dsgs_freeze_stage => _sv_freeze(),
+        # :dsgs_freeze_stage, the coefficient once per step instead of once
+        # per stage, is mod_inputs.jl's default with the residual sensor: it
+        # is what keeps the residual, and with it nu, from stalling at O(dt)
+        # and capping a high-order accuracy test. JEXPRESSO_SV_FREEZE=0 (or 1)
+        # forces it; see _sv_freeze and the end of this function.
         # Smoothness cutoff on the normalized residual (JEXPRESSO_SV_CUTOFF,
         # :dsgs_cutoff in mod_inputs.jl): nu is zero where the sensor is only
         # reading the element-local jump of a dt-proportional grid-scale
@@ -221,5 +224,7 @@ function user_inputs()
         :linitial_refine     => false,
         :ladapt              => false,
     ) #Dict
+    f = _sv_freeze()
+    f === nothing || (inputs[:dsgs_freeze_stage] = f)
     return inputs
 end

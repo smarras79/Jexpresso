@@ -46,7 +46,7 @@ Other switches & \cm{\code{:lfilter}, \code{:lkep}, \code{:entropy\_variables}, 
 \code{:dsgs\_ref\_weight}, \code{:dsgs\_nodal\_rho}, \code{:dsgs\_reference} & \mj{false}, \cm{false}, \cm{false} & defaults\\
 \code{:dsgs\_hold\_steps} & \mj{2} & \code{JEXPRESSO\_SV\_HOLD}\\
 \code{:dsgs\_cutoff} & \cm{0} & \code{JEXPRESSO\_SV\_CUTOFF}\\
-\code{:dsgs\_freeze\_stage} & \cm{false} & \code{JEXPRESSO\_SV\_FREEZE}\\
+\code{:dsgs\_freeze\_stage} & false at \commit{}; true since \code{b956ccd} & \code{JEXPRESSO\_SV\_FREEZE}=0/1 forces it\\
 \code{:ldsgs\_nodal} & \cm{false} (element form) & default\\
 \code{:dsgs\_local\_rel} & \cm{1.0} (default) & unused (domain norms)\\
 \end{keytable}
@@ -163,6 +163,9 @@ the case measures accuracy, not robustness.
 \item Since \code{f9cdb02} the deck, \code{user\_primitives.jl} and the kernel agree (the physical form above).
 \item Everything else in the deck matches its comments (domain norms, hold 2, no floor, no cutoff,
 the residual sensor).
+\item \textbf{[Changed in \code{b956ccd}.]} The deck no longer sets \code{:dsgs\_freeze\_stage} unless
+\code{JEXPRESSO\_SV\_FREEZE} is given, so the \code{DSGS\_MHD} default applies: the coefficient frozen per step. The
+before-and-after test above (\emph{Test: before against after}) was run per stage.
 \end{enumerate}
 
 \input{codemap}

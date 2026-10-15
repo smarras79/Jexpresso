@@ -75,7 +75,9 @@ resolutions therefore builds the whole comparison and each run replaces only
 its own (order, DOFs) point:
 
 ```bash
-tools/brio_wu_order_scan.sh          # orders 4-7 at 150, 300, 600, 1200 DOFs
+tools/brio_wu_order_scan.sh                              # orders 4-7 at 600 and 1200 DOFs (Fig. 2)
+BW_DOFS="150 300 600 1200" tools/brio_wu_order_scan.sh   # also 150 and 300: the convergence figure
+JULIA=/path/to/julia tools/brio_wu_order_scan.sh         # the default is the macOS app's julia
 ```
 
 **The scan clears the store before it starts** (`BW_KEEP=1` to accumulate

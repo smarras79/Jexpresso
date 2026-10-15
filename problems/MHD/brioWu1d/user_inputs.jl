@@ -42,6 +42,9 @@
 #   JEXPRESSO_BW_NELX   element count, overrides JEXPRESSO_BW_DOFS
 #   JEXPRESSO_BW_DT     time step, overrides the rule above
 #   JEXPRESSO_BW_CMIN   the DynSGS background floor :dsgs_Cmin (default 0.06)
+#   JEXPRESSO_BW_FREEZE 1 or 0 forces :dsgs_freeze_stage (the coefficient once
+#                       per step, or at every stage); unset, mod_inputs.jl's
+#                       default applies: on with the residual sensor
 #---------------------------------------------------------------------------------
 const BW_DOFS_DEFAULT = 600
 const BW_DT_AT_DEFAULT = 5.0e-5
@@ -51,6 +54,8 @@ _bw_dofs() = something(tryparse(Int,     get(ENV, "JEXPRESSO_BW_DOFS", "")), BW_
 _bw_hold() = something(tryparse(Int, get(ENV, "JEXPRESSO_BW_HOLD", "")), 2)
 _bw_cutoff() = something(tryparse(Float64, get(ENV, "JEXPRESSO_BW_CUTOFF", "")), 0.0)
 _bw_cmin() = something(tryparse(Float64, get(ENV, "JEXPRESSO_BW_CMIN", "")), 0.06)
+_bw_freeze() = (v = strip(get(ENV, "JEXPRESSO_BW_FREEZE", ""));
+                isempty(v) ? nothing : v in ("1", "true", "yes"))
 
 # The coefficient per NODE (Dao & Nazarov's own form, their eq. 4.10) instead
 # of per element. At a fixed number of degrees of freedom the element form
@@ -207,5 +212,7 @@ function user_inputs()
         :loverwrite_output    => true,
         :output_dir           => "./output",
     )
+    f = _bw_freeze()
+    f === nothing || (inputs[:dsgs_freeze_stage] = f)
     return inputs
 end
