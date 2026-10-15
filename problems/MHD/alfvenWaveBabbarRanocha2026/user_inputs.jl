@@ -9,10 +9,11 @@
 # freedom for N = 1, 2, 3 on 16², 32², 64², 128² elements. `user_plot.jl` here
 # measures the same thing at the final time (errors/nop<N>_nelx<M>_<visc>.dat)
 # and draws every stored error as that figure. Jexpresso is run at N >= 3, so
-# the sweep is N = 3 (the paper's highest order) and 4.
+# the sweep is N = 3 (the paper's highest order) to 7.
 #
+#     tools/alfven_wave_scan.sh        # the sweep: N = 3 ... 7, DSGS and Galerkin, and its figure
+#     tools/alfven_wave_plot.jl        # the figure and the table again, from the stored errors
 #     tools/alfven_wave_mesh.sh        # the meshes (4² ... 128² are in the repo)
-#     tools/alfven_wave_scan.sh        # the sweep: N = 3, 4 x 16² ... 128²
 #
 # or one run by hand,
 #
@@ -30,15 +31,25 @@
 #   JEXPRESSO_AW_FREEZE 1 or 0 forces :dsgs_freeze_stage (the coefficient once
 #                       per step, or at every stage); unset, mod_inputs.jl's
 #                       default applies: on with the residual sensor
-#   JEXPRESSO_AW_SOLVER ck54 (default), ssprk54, vern9, dp8 — the time
-#                       integrator; CarpenterKennedy2N54 is 4th order, enough
-#                       for N <= 3 (see smoothVortex/user_inputs.jl for N > 3)
+#   JEXPRESSO_AW_SOLVER ck54, vern7, vern9, dp8, ssprk54 — the time integrator;
+#                       unset, the rule below (ck54 up to N = 5, vern7 above)
 #
 # The time step follows the resolution: a Courant number of 0.1 on the mean
 # node spacing √2/(nelx N) against the fastest wave of the initial condition
 # (|v| + c_f <= 0.1 + sqrt(γp + |B|²) = 1.185), rounded down so that a whole
 # number of steps reaches t_end. On the smallest LGL spacing that is 0.12 for
 # N = 3, 0.14 for N = 4 and 0.22 for N = 7.
+#
+# THE TIME INTEGRATOR follows N, so that its error stays below the spatial one
+# at that Courant number. CarpenterKennedy2N54 is 4th order: its stability
+# polynomial is 1 + z + z²/2 + z³/6 + z⁴/24 + z⁵/200, so it shifts the phase of
+# the wave (ω = 2π) by (ωΔt)⁵/300 per step, and by t = 2 that is an error of
+# about 9 Δt⁴ in the state (the wave's L² norm is 0.14). For N = 7 on 16² that
+# is 1.2e-11 against a spatial error of 5.5e-12 (measured: 1.32e-11 with it,
+# 5.53e-12 with Vern7 or Vern9); for N = 6 on 32² it would be a third of the
+# spatial error (1.4e-12 against 3.75e-12). Vern7 (7th order) is used from N = 6 on; it costs 10 right-hand sides
+# per step against CK54's 5. The density error, the paper's measure, does not
+# see this error at all: ρ = 1 whatever the phase of the wave.
 #---------------------------------------------------------------------------------
 const AW_NELX_DEFAULT = 16
 const AW_NOP_DEFAULT  = 3
@@ -63,13 +74,21 @@ function _aw_dt()
     return tend/ceil(tend/dt)
 end
 
-function _aw_solver()
-    name = lowercase(strip(get(ENV, "JEXPRESSO_AW_SOLVER", "ck54")))
+# the integrator of the rule above for order N
+_aw_default_solver(N) = N <= 5 ? "ck54" : "vern7"
+
+function _aw_solver_named(name)
+    name == "vern7"   && return Vern7()
     name == "vern9"   && return Vern9()
     name == "dp8"     && return DP8()
     name == "ssprk54" && return SSPRK54()
     name == "ck54"    || @warn "alfvenWaveBabbarRanocha2026: unknown JEXPRESSO_AW_SOLVER=$(name); using CarpenterKennedy2N54"
     return CarpenterKennedy2N54()
+end
+
+function _aw_solver()
+    name = lowercase(strip(get(ENV, "JEXPRESSO_AW_SOLVER", "")))
+    return _aw_solver_named(isempty(name) ? _aw_default_solver(_aw_nop()) : name)
 end
 
 _aw_mesh() = string("./problems/MHD/alfvenWaveBabbarRanocha2026/alfven_",
