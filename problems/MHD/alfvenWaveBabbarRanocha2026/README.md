@@ -343,3 +343,4 @@ committed.
 | `../../../tools/alfven_wave_mesh.sh` | meshes from the `.geo` (gmsh) |
 | `../../../tools/alfven_wave_scan.sh` | the sweep, N = 3 ... 7, in one Julia session or one per order |
 | `../../../tools/alfven_wave_plot.jl` | the figure and the table from the stored errors, without running |
+| `../setup_notes/dsgsCutoff.pdf` | one page: what DynSGS without the cutoff does here, against the cutoff 1e-3 |
