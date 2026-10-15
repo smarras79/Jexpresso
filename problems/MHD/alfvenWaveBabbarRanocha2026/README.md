@@ -131,11 +131,14 @@ At t = 2, a run stores the error of every conserved variable in
 `errors/nop<N>_nelx<M>_<visc>.dat`, in this directory. Each record holds the L² error
 above and the largest pointwise error at the Gauss points.
 
-`<visc>` is `galerkin` for `JEXPRESSO_AW_VISC=none`, and `dsgs` for DynSGS without the
-cutoff (`AW_CUTOFF = 0`). Anything else a run changes is added to it, so that no variant
-replaces the record of another: `cut1e-03` (`AW_CUTOFF`, the deck as committed),
-`perstage` (`JEXPRESSO_AW_FREEZE=0`), `legacy`, `cmin`, an integrator other than the
-deck's for that N (`vern9`, ...), or a time step of its own (`dt0.00124`).
+`<visc>` is `galerkin` for `JEXPRESSO_AW_VISC=none`, and `dsgs` for DynSGS as the deck
+runs it (with the cutoff `AW_CUTOFF = 1e-3`). Anything else a run changes is added to it,
+so that no variant replaces the record of another: `nocut` (`AW_CUTOFF = 0`) or `cut<x>`
+(another value), `perstage` (`JEXPRESSO_AW_FREEZE=0`), `legacy`, `cmin`, an integrator
+other than the deck's for that N (`vern9`, ...), or a time step of its own (`dt0.00124`).
+Stores written before 16 Oct 2026 used `dsgs` for the run without the cutoff and
+`dsgs_cut1e-03` for the one with it; the sweep clears the store, so this only matters with
+`AW_KEEP=1`.
 
 From every record stored for the same final time, the run then:
 
@@ -300,7 +303,7 @@ committed.
      with the residual sensor.
 
 6. **The cutoff removes the floor.** With `AW_CUTOFF = 1e-3` (`:dsgs_cutoff`), the deck as
-   committed, the normalized residual enters ν as max(0, ratio − 10⁻³). The floor is 2e-5
+   committed, the normalized residual enters ν as max(0, ratio − 10⁻³). The floor is 4e-6
    to 7e-4 over the sweep, so ν is exactly zero, and DynSGS reproduces Galerkin bit for
    bit (all nine variables, L² and L∞) on every mesh of N = 5, 6, 7 but the coarsest of
    N = 5:

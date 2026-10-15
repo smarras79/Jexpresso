@@ -515,8 +515,9 @@ wave it shows from $N = 5$ on: the DynSGS error converges at about 4 while the G
 error converges at 6 to 8 ($N = 7$ on $16^2$: $4.2\cdot10^{-8}$ against
 $5.5\cdot10^{-12}$), and halving $\Delta t$ alone divides it by 3.9 and 4.0 ($N = 6$ and
 7 on $16^2$). The smoothness cutoff removes that floor: with `:dsgs_cutoff` $= 10^{-3}$
-(the floor is $2\cdot10^{-5}$ to $7\cdot10^{-4}$ there) the DynSGS runs of $N = 5, 6, 7$
-reproduce the Galerkin ones bit for bit on every mesh but the coarsest of $N = 5$. On
+(the floor is $4\cdot10^{-6}$ to $7\cdot10^{-4}$ there) the DynSGS runs of $N = 5, 6, 7$
+reproduce the Galerkin ones bit for bit on every mesh but the coarsest of $N = 5$; it is
+that deck's default. On
 Brio–Wu ($N = 4, 7$; 600 and 1200 DOFs) the frozen and per-stage density errors differ by
 under 1% over the tube and by under 5% in the rarefaction fan, either way, with the
 same total variation; without its background floor, where the residual alone sets

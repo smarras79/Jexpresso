@@ -66,10 +66,12 @@ const AW_LBOX         = sqrt(2.0)                           # 1/cos(π/4) = 1/si
 # never falls below the truncation error of its BDF2 time derivative,
 # (Δt²/3)∂ₜ³q, and that floor alone gives ν ∝ Δ²Δt² ∝ h⁴: without the cutoff
 # the DynSGS error converges at about 4 from N = 5 on (README, "What this test
-# found"). Normalized, the floor is (Δt²/3)ω³A/(ρ̄c̄) = 2e-5 to 7e-4 over the
+# found"). Normalized, the floor is (Δt²/3)ω³A/(ρ̄c̄) = 4e-6 to 7e-4 over the
 # sweep, against O(10²) at a shock, so 1e-3 removes it and leaves a shock as it
-# was. 0 is DynSGS without the cutoff; a run with it stores its errors as
-# dsgs_cut<value> (user_plot.jl), beside those of DynSGS without it.
+# was: with it, DynSGS reproduces Galerkin bit for bit on all but the coarsest
+# meshes, and keeps its order. This is the deck's default; its records are
+# "dsgs". 0 is DynSGS without the cutoff, stored as "dsgs_nocut" beside them
+# (user_plot.jl, AW_DSGS_CUTOFF: keep that equal to the value here).
 const AW_CUTOFF       = 1.0e-3
 
 _aw_nop()  = something(tryparse(Int,     get(ENV, "JEXPRESSO_AW_NOP",  "")), AW_NOP_DEFAULT)

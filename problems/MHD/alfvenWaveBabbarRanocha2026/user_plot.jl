@@ -175,14 +175,22 @@ function _aw_errors(mesh, q, t, outvar)
     return (l2 = sqrt.(s2 ./ area), linf = sm, area = area)
 end
 
-# The record's tag names what differs from plain DynSGS: "dsgs" is the residual
-# sensor with the coefficient frozen per step (the mod_inputs.jl default) and
-# no cutoff, "dsgs_cut<x>" the same with :dsgs_cutoff = x (AW_CUTOFF in
-# user_inputs.jl), "dsgs_perstage" the coefficient at every stage
-# (JEXPRESSO_AW_FREEZE=0), "dsgs_legacy" the legacy sensor (never frozen). A
-# time integrator other than the deck's for that order (_aw_default_solver in
-# user_inputs.jl) adds its name, and a time step of its own (JEXPRESSO_AW_DT)
-# adds "dt<Δt>", so that no variant replaces the record of another.
+# The record's tag names what differs from the deck as committed: "dsgs" is
+# DynSGS as the deck runs it (residual sensor, coefficient frozen per step, the
+# smoothness cutoff AW_DSGS_CUTOFF), "dsgs_nocut" the same without the cutoff
+# (AW_CUTOFF = 0 in user_inputs.jl) and "dsgs_cut<x>" with another one,
+# "dsgs_perstage" the coefficient at every stage (JEXPRESSO_AW_FREEZE=0),
+# "dsgs_legacy" the legacy sensor (never frozen). A time integrator other than
+# the deck's for that order (_aw_default_solver in user_inputs.jl) adds its
+# name, and a time step of its own (JEXPRESSO_AW_DT) adds "dt<Δt>", so that no
+# variant replaces the record of another.
+#
+# AW_DSGS_CUTOFF is the cutoff of the deck as committed, AW_CUTOFF's value in
+# user_inputs.jl; keep the two equal. It is a constant of its own so that a run
+# with AW_CUTOFF edited to 0 is still stored as "dsgs_nocut", not as "dsgs".
+# (Records stored before this convention, 16 Oct 2026, called the run without
+# the cutoff "dsgs" and the one with it "dsgs_cut1e-03".)
+const AW_DSGS_CUTOFF = 1.0e-3
 function _aw_tag(inputs)
     s   = get(inputs, :ode_solver, nothing)
     nop = Int(get(inputs, :nop, 0))
@@ -196,7 +204,7 @@ function _aw_tag(inputs)
     legacy && (tag *= "_legacy")
     Float64(get(inputs, :dsgs_Cmin, 0.0)) > 0 && (tag *= "_cmin")
     cut = Float64(get(inputs, :dsgs_cutoff, 0.0))
-    cut > 0 && (tag *= @sprintf("_cut%.0e", cut))
+    cut == AW_DSGS_CUTOFF || (tag *= cut > 0 ? @sprintf("_cut%.0e", cut) : "_nocut")
     !legacy && get(inputs, :dsgs_freeze_stage, false) != true && (tag *= "_perstage")
     return string(tag, ode)
 end
@@ -310,7 +318,8 @@ function _aw_line(tag, tags)
     return AW_VARIANT_LINES[mod1(something(findfirst(==(tag), variants), 1), length(AW_VARIANT_LINES))]
 end
 _aw_label(tag) = startswith(tag, "galerkin") ? replace(tag, "galerkin" => "Galerkin", "_" => " ") :
-                 replace(tag, "dsgs" => "DSGS", r"_cut([0-9.e+-]+)" => s" cutoff \1", "_" => " ")
+                 replace(tag, "dsgs" => "DSGS", "_nocut" => ", no cutoff",
+                         r"_cut([0-9.e+-]+)" => s", cutoff \1", "_" => " ")
 
 function _aw_panel(rows, fld, ylab, title; legend = true)
     pl = Plots.plot(; xscale = :log10, yscale = :log10,
