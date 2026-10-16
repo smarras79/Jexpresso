@@ -1,6 +1,6 @@
 \documentclass[10pt]{article}
 \input{preamble}
-\newgeometry{margin=0.62in,top=0.5in,bottom=0.6in}
+\newgeometry{margin=0.62in,top=0.45in,bottom=0.55in}
 \setlist{itemsep=1pt,topsep=2pt,parsep=0pt}
 \captionsetup{font=small,labelfont=bf,skip=3pt}
 \setlength{\parskip}{3pt}
@@ -35,13 +35,18 @@ With $\Delta_e=h_e/(N+1)$ (15), $C_1=1$, $C_2=\tfrac12$, and $\mu_{\max}|_e$, $\
 r_e=\max_{i\in\Ic}\frac{\Linf{R_i}{\Omega_e}}{\max\big(\Linf{q_i-\avg{q_i}}{\Omega},\ \sigma_i\big)} .
 \tag{C}
 \end{equation}
+The two maxima run over different indices. As in (11)--(12), $i$ is the \emph{equation} and $p$ the \emph{node}: the norm
+$\Linf{R_i}{\Omega_e}=\max_{p\in\Omega_e}|R_{i,p}|$ is the largest residual of equation $i$ on the element, and
+$\max_{i\in\Ic}$ is the largest over the equations ($\Ic$: the eight conservation laws, $\psi$ excluded). Each equation is divided
+by its own scale first, which makes all eight rates (1/time) and so comparable; $\mu|_e$ is one coefficient for all of them.
 \textbf{Without the cutoff}, $c=0$, (C) is (12) with the floors (16). \textbf{With it}, $c=10^{-3}$ is subtracted from the
-normalized residual $r_e$ first, so $\mu|_e=0$ wherever $r_e\le c$, and $\mu|_e$ stays continuous across the threshold (it is
-not an on/off switch). The floors are those of (16) with $\erel=1$ (\code{:dsgs\_rel}; (16) says $10^{-3}$):
+normalized residual $r_e$ first, so $\mu|_e=0$ wherever $r_e\le c$, and $\mu|_e$ is continuous across it (not an on/off
+switch). The floors are those of (16) with $\erel=1$ (\code{:dsgs\_rel}; (16) says $10^{-3}$):
 $\sigma_\rho=\bar\rho$, $\sigma_{\rho\vv}=\bar\rho\bar c$, $\sigma_E=\bar\rho\bar c^{\,2}$, $\sigma_{\BB}=\sqrt{\bar\rho}\,\bar c$.
-For this wave $\bar\rho=1$ and $\bar c=\sqrt{\gamma\bar p/\bar\rho}=0.42$, the sound speed of the mean state ($\bar p=0.107$, the
-equation of state evaluated on $\avg{E}$, $\avg{\rho\vv}$, $\avg{\BB}$). The wave's spread ($\le0.1$) is below the floors, so the
-momentum and $\BB$ residuals are divided by $\sigma=\bar\rho\bar c=0.42$, and $r_e$ is a rate (1/time).
+For this wave $\bar\rho=1$ and $\bar c=\sqrt{\gamma\bar p/\bar\rho}=0.42$, the sound speed of the mean state ($\bar p=0.107$, from
+$\avg{E}$, $\avg{\rho\vv}$, $\avg{\BB}$). The wave's spread ($\le0.1$) is below the floors, so the
+momentum and $\BB$ residuals are divided by $\sigma=\bar\rho\bar c=0.42$. Since $\rho\equiv1$, the max over $i$ is decided by
+the transverse components, $\rho w$ and $B_z$ (amplitude $A=0.1$).
 
 \textbf{2.\ The two sensors: what $R_i$ is.}
 ``Legacy'' is the code's name for the sensor of the runs before September 2026; ``residual'' is the default since. Both
@@ -84,10 +89,9 @@ only at $\theta_s=1$. Hence $R_i\approx\tfrac32(\theta_s-1)\,\partial_tq_i$, the
 ($\lambda\,\partial_xq$ for a wave), on resolved and unresolved flow alike: a gradient sensor rather than a residual. On this wave
 $r_e\approx\tfrac32\,\omega A/\sigma\approx2$ at $s=1$ ($\omega=2\pi$, $A=0.1$), so $\mres\approx2\Delta_e^2$, $O(h^2)$ whatever $N$.
 $N=4$ on $16^2$ ends with a state error of $3.5\cdot10^{-3}$, against $1.9\cdot10^{-6}$ for (R) without the cutoff,
-$4.2\cdot10^{-7}$ with it, and $4.3\cdot10^{-7}$ for Galerkin; no cutoff $c\ll2$ changes that. A consistent time difference would
-not rescue the assembled rate either: the residual is then that difference's truncation error alone, as small at a shock as on a
-smooth wave (measured on \code{sod1d}: $\mu$ at the shock $0.5\%$ of the cap). (L) sees a shock only through the
-inconsistency of its stencil.
+$4.2\cdot10^{-7}$ with it, and $4.3\cdot10^{-7}$ for Galerkin; no cutoff $c\ll2$ changes that. With a consistent time difference the
+assembled rate would leave only that difference's truncation error, as small at a shock as on a smooth wave (\code{sod1d}: $\mu$ at
+the shock $0.5\%$ of the cap): (L) sees a shock only through its stencil's inconsistency.
 
 \textbf{What (R) measures.} With the LGL rule (summation by parts),
 $\big(M_e^{-1}\Rc_{e,i}\big)_p=-\big(\nabla\cdot\FF_{h,i}-s_i\big)\big|_{\Omega_e,p}$, the strong form on $\Omega_e$'s own
@@ -99,14 +103,14 @@ R_i\big|_p=\underbrace{-\tfrac{\Delta t^2}{3}\,\partial_t^3q_{i,p}}_{\text{BDF2 
 \;+\;\underbrace{\tfrac{m_{e'}}{m_e+m_{e'}}\,\jump{\nabla\cdot\FF_{h,i}}_p}_{\text{face nodes only}} .
 \]
 The jump is the spatial information the paper describes: $O(h^N)$ where the solution is smooth and resolved, $O(1/h)$ across an
-under-resolved discontinuity. The first term does not depend on the mesh at a given $\Delta t$: it is the floor of \S3. Computing
-$\mu|_e$ at $s=1$ only keeps that floor $O(\Delta t^2)$. At a later stage the consistent three-point difference through
-$(\qq^{(s)},\qq^n,\qq^{n-1})$ would carry the $O(\Delta t)$ error of the internal stage (at $N=4$, order 3.2 instead of 4.8).
+under-resolved discontinuity. The first term does not depend on the mesh at a given $\Delta t$: it is the floor of \S3.
 
 \newpage
 \begin{minipage}[t]{0.52\textwidth}
 \textbf{3.\ Without the cutoff: a floor that converges at order 4.}
-A travelling wave has $\partial_t^3\qq=\omega^3A\neq0$ however well it is resolved, so the first term of (R) keeps $r_e$ above
+Computing $\mu|_e$ at $s=1$ only keeps the floor $O(\Delta t^2)$: at a later stage the $O(\Delta t)$ error of the internal
+stage would enter (order 3.2 instead of 4.8 at $N=4$). A travelling wave has $\partial_t^3\qq=\omega^3A\neq0$ however well it
+is resolved, so the first term of (R) keeps $r_e$ above
 \[
 r_{\rm floor}=\frac{\Delta t^2}{3}\,\frac{\omega^3A}{\bar\rho\bar c}\quad(4\cdot10^{-6}\ \text{to}\ 7\cdot10^{-4}\ \text{over the sweep}),
 \]
