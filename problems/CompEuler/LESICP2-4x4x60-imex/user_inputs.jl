@@ -338,6 +338,12 @@ function user_inputs()
         :mu_y                => 0.05,
         :mu_z                => 0.1,
         :filter_type         => "erf",
+        # upper-layer horizontal filter, as in LESICP6-64x64x60-imex; DBG_FUP=1 turns it on
+        :lfilter_upper       => parse(Bool,    get(ENV, "DBG_FUP", "false")),
+        :filter_upper_deg    => parse(Int,     get(ENV, "DBG_FUP_DEG", "2")),
+        :filter_upper_mu     => parse(Float64, get(ENV, "DBG_FUP_MU", "0.05")),
+        :filter_upper_z0     => parse(Float64, get(ENV, "DBG_FUP_Z0", "1300.0")),
+        :filter_upper_z1     => parse(Float64, get(ENV, "DBG_FUP_Z1", "1600.0")),
         #---------------------------------------------------------------------------
         # Output -- LOCAL, not /scratch. One tree per scheme.
         #---------------------------------------------------------------------------

@@ -425,6 +425,7 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
                         fz = init_filter(mesh.ngl-1,ξ,inputs[:mu_z],mesh,inputs, rank)
                     end
                 else
+                    inputs[:lfilter_upper] && error(":lfilter_upper is implemented for the CPU filter only")
                     ξ_temp = KernelAbstractions.zeros(CPU(), Float64, Int64(mesh.ngl))
                     KernelAbstractions.copyto!(CPU(),ξ_temp,ξ)
                     fx_1 = init_filter(mesh.ngl-1,ξ_temp,inputs[:mu_x],mesh,inputs, rank)
@@ -458,6 +459,13 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
                 if (inputs[:lwarp]) warp_mesh_3D!(mesh,inputs) end
             else
                 if (inputs[:lwarp]) warp_mesh!(mesh,inputs) end
+            end
+
+            # after stretch/warp: its strength is set from the final element heights
+            if inputs[:lfilter] && inputs[:lfilter_upper]
+                set_upper_filter!(mesh, ξ, fx, fy, inputs, rank)
+            else
+                UPPER_FILTER[] = nothing
             end
 
             if loaded_from_cache

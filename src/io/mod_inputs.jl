@@ -423,6 +423,29 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:mu_z] = 0.0
     end
 
+    # Upper-layer horizontal filter (filter.jl, set_upper_filter!): damps the
+    # in-element modes of degree >= :filter_upper_deg along ξ and η, equations
+    # :filter_upper_eqs only, by :filter_upper_mu per application at full
+    # strength; strength ramps 0 -> 1 between element-mean z = z0 and z1.
+    if(!haskey(inputs,:lfilter_upper))
+        inputs[:lfilter_upper] = false
+    end
+    if(!haskey(inputs,:filter_upper_deg))
+        inputs[:filter_upper_deg] = 2
+    end
+    if(!haskey(inputs,:filter_upper_mu))
+        inputs[:filter_upper_mu] = 0.0
+    end
+    if(!haskey(inputs,:filter_upper_z0))
+        inputs[:filter_upper_z0] = 1.0e30
+    end
+    if(!haskey(inputs,:filter_upper_z1))
+        inputs[:filter_upper_z1] = 1.0e30
+    end
+    if(!haskey(inputs,:filter_upper_eqs))
+        inputs[:filter_upper_eqs] = 2:4
+    end
+
     if(!haskey(inputs,:lwarp))
         inputs[:lwarp] = false
     end

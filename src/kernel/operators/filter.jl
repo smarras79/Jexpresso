@@ -25,6 +25,110 @@ const FILTER_NO_JE_LAG_3D   = zeros(Float64, 0, 0, 0, 0)
 
 
 #---------------------------------------------------------------------------------------
+# Upper-layer horizontal filter (:lfilter_upper; 3D ::TOTAL CPU path only).
+#
+# The erf filter leaves every mode up to 2N/3 alone: at N = 4 its weights are
+# (1, 1, 1, 0.996, 0), so it damps the degree-4 mode only and :mu_x only sets
+# how much. In the stable layer above the convective boundary layer
+# Smagorinsky-Lilly is off (Ri >= Pr_t) and the LESICP runs carry a bump with
+# the period of one element in u, v, w there, mostly degree 2 along x
+# (LESICP2 128x128, z = 1.4 km: 61% of the v variance at 60-100 m wavelength,
+# none at 160 m). That mode is never touched by the erf filter at any :mu_x.
+#
+# This pass damps the in-element orthogonal Legendre modes of degree
+# >= :filter_upper_deg along ξ and η, in equations :filter_upper_eqs (momentum
+# by default), by a fraction r*:filter_upper_mu per application. r ramps
+# linearly from 0 at element-mean z = :filter_upper_z0 to 1 at
+# :filter_upper_z1. Element means are kept, and ζ is not filtered, so the
+# inversion's vertical structure is left alone. It acts after the erf filter:
+# per element the ξ operator is (I - r*μ*H)*fx, the η operator likewise.
+#---------------------------------------------------------------------------------------
+struct UpperFilter
+    r     :: Vector{Float64}     # per-element strength in [0,1]
+    eqs   :: UnitRange{Int}      # equations it acts on
+    Hfx   :: Matrix{Float64}     # μ*H*fx
+    Hfy_t :: Matrix{Float64}     # (μ*H*fy)^T
+    fxe   :: Matrix{Float64}     # per-element scratch: fx - r*Hfx
+    fye_t :: Matrix{Float64}     # per-element scratch: fy_t - r*Hfy_t
+end
+const UPPER_FILTER = Ref{Union{Nothing,UpperFilter}}(nothing)
+
+function set_upper_filter!(mesh, xgl, fx, fy, inputs, rank)
+    if inputs[:SOL_VARS_TYPE] != TOTAL() || inputs[:backend] != CPU() || mesh.nsd != 3
+        error(":lfilter_upper is implemented for the 3D ::TOTAL CPU filter only")
+    end
+    nelem = Int64(mesh.nelem); ngl = Int64(mesh.ngl)
+    deg = Int(inputs[:filter_upper_deg]); μ = Float64(inputs[:filter_upper_mu])
+    z0  = Float64(inputs[:filter_upper_z0]); z1 = Float64(inputs[:filter_upper_z1])
+    # H projects onto the ORTHOGONAL Legendre modes P_deg..P_N. Each of them
+    # integrates to zero, so the element mean is kept exactly. (The
+    # hierarchical bubble P_2 - P_0 of the erf filter's basis does not
+    # integrate to zero: damping it removed momentum -- 4x4x60, mu 0.5: v_mean
+    # moved 2.5e-3 m/s in 2 s.) Face values do change; the DSS average that
+    # follows restores continuity, as for the other filters here.
+    x = Float64.(xgl[1:ngl])
+    V = zeros(Float64, ngl, ngl)                 # V[i,k] = P_{k-1}(x_i)
+    V[:,1] .= 1.0
+    ngl > 1 && (V[:,2] .= x)
+    for n = 1:ngl-2                              # Bonnet recursion
+        V[:,n+2] .= ((2n+1) .* x .* V[:,n+1] .- n .* V[:,n]) ./ (n+1)
+    end
+    H = V * Diagonal([k - 1 >= deg ? 1.0 : 0.0 for k = 1:ngl]) / V
+    Hfx   = μ .* (H * Float64.(fx))
+    Hfy_t = Matrix(transpose(μ .* (H * Float64.(fy))))
+    r = zeros(Float64, nelem)
+    for e = 1:nelem
+        zc = 0.0
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            zc += mesh.z[mesh.connijk[e,i,j,k]]
+        end
+        zc /= ngl^3
+        r[e] = clamp((zc - z0) / max(z1 - z0, eps()), 0.0, 1.0)
+    end
+    eqs = UnitRange{Int}(inputs[:filter_upper_eqs])
+    UPPER_FILTER[] = UpperFilter(r, eqs, Hfx, Hfy_t, zeros(ngl, ngl), zeros(ngl, ngl))
+    if rank == 0
+        println(" # upper filter on: degree >= $deg along ξ,η, eqs $eqs, μ = $μ, ramp z = $z0 -> $z1 m; ",
+                count(>(0), r), " of $nelem rank-0 elements")
+    end
+    return nothing
+end
+
+# ξ, η, ζ contractions of one equation of one element (q_t -> fqf).
+@inline function _filter_elem_3d!(fqf, q_t, q_ti, q_tij, fx, fy_t, fz_t, m, ngl, ::Type{TF}) where TF
+    @inbounds begin
+        ## KSI derivative
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            acc = zero(TF)
+            for l = 1:ngl
+                acc += fx[i,l] * q_t[m,l,j,k]
+            end
+            q_ti[i,j,k] = acc
+        end
+
+        ## ETA derivative
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            acc = zero(TF)
+            for l = 1:ngl
+                acc += q_ti[i,l,k] * fy_t[l,j]
+            end
+            q_tij[i,j,k] = acc
+        end
+
+        ## ZETA derivative
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            acc = zero(TF)
+            for l = 1:ngl
+                acc += q_tij[i,j,l] * fz_t[l,k]
+            end
+            fqf[m,i,j,k] = acc
+        end
+    end
+    return nothing
+end
+
+
+#---------------------------------------------------------------------------------------
 # NOTE on the element-local scratch array `b` (params.b):
 #
 # `b` is dimensioned (nelem, ngl^d, neqs) — for a 3D LES mesh that is tens to
@@ -487,6 +591,8 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D, ::TOTAL;
     ## ρE for TOTAL) before filtering — see 2D ::TOTAL comment for rationale.
     @views uaux[:,1:neqs] .-= qe[:,1:neqs]
 
+    uf = UPPER_FILTER[]     # nothing unless :lfilter_upper (set_upper_filter!)
+
     ## Loop through the elements
     @inbounds for e = 1:nelem
 
@@ -497,34 +603,20 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D, ::TOTAL;
             end
         end
 
+        re = uf === nothing ? 0.0 : uf.r[e]
+        if re > 0.0
+            for j = 1:ngl, i = 1:ngl
+                uf.fxe[i,j]   = fx[i,j]   - re*uf.Hfx[i,j]
+                uf.fye_t[i,j] = fy_t[i,j] - re*uf.Hfy_t[i,j]
+            end
+        end
+
         ### Construct local derivatives for prognostic variables
         for m = 1:neqs
-
-            ## KSI derivative
-            for k = 1:ngl, j = 1:ngl, i = 1:ngl
-                acc = zero(TF)
-                for l = 1:ngl
-                    acc += fx[i,l] * q_t[m,l,j,k]
-                end
-                q_ti[i,j,k] = acc
-            end
-
-            ## ETA derivative
-            for k = 1:ngl, j = 1:ngl, i = 1:ngl
-                acc = zero(TF)
-                for l = 1:ngl
-                    acc += q_ti[i,l,k] * fy_t[l,j]
-                end
-                q_tij[i,j,k] = acc
-            end
-
-            ## ZETA derivative
-            for k = 1:ngl, j = 1:ngl, i = 1:ngl
-                acc = zero(TF)
-                for l = 1:ngl
-                    acc += q_tij[i,j,l] * fz_t[l,k]
-                end
-                fqf[m,i,j,k] = acc
+            if re > 0.0 && m in uf.eqs
+                _filter_elem_3d!(fqf, q_t, q_ti, q_tij, uf.fxe, uf.fye_t, fz_t, m, ngl, TF)
+            else
+                _filter_elem_3d!(fqf, q_t, q_ti, q_tij, fx, fy_t, fz_t, m, ngl, TF)
             end
         end
 

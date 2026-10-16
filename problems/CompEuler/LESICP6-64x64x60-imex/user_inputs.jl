@@ -507,6 +507,18 @@ function user_inputs()
         :mu_y                => parse(Float64, get(ENV, "DBG_MU", "0.15")),
 	:mu_z                => parse(Float64, get(ENV, "DBG_MUZ", "0.15")),
         :filter_type         => "erf",
+        # Upper-layer horizontal filter (filter.jl, set_upper_filter!). The erf
+        # filter damps the degree-4 mode only (N = 4 weights 1,1,1,0.996,0), at
+        # any mu. Above the BL, where f_Ri = 0, u/v/w carry a bump with the
+        # period of one element, mostly degree 2 along x, that it never touches.
+        # This damps degree >= DBG_FUP_DEG along xi/eta, momentum only, ramping
+        # in between element-mean z = DBG_FUP_Z0 and DBG_FUP_Z1 (absolute z;
+        # the v2 mean inversion is at 1.65-1.78 km). DBG_FUP=1 turns it on.
+        :lfilter_upper       => parse(Bool,    get(ENV, "DBG_FUP", "false")),
+        :filter_upper_deg    => parse(Int,     get(ENV, "DBG_FUP_DEG", "2")),
+        :filter_upper_mu     => parse(Float64, get(ENV, "DBG_FUP_MU", "0.05")),
+        :filter_upper_z0     => parse(Float64, get(ENV, "DBG_FUP_Z0", "1800.0")),
+        :filter_upper_z1     => parse(Float64, get(ENV, "DBG_FUP_Z1", "2100.0")),
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
