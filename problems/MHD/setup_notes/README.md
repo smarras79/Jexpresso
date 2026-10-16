@@ -19,7 +19,7 @@ branch `sm/MHD` (commit `dcc3653`)**: deck values, the defaults
 | `rotorDaoNazarov2022.pdf` | MHD rotor (conservative element limiter) |
 | `blastBalsaraSpicer1999.pdf` | MHD blast (limiter, fast floors, thermal residual) |
 | `astroJetWuShu2018.pdf` | Mach-800 magnetized jet (limiter, residual sensor) |
-| `dsgsCutoff.pdf` | one page: DynSGS without and with the smoothness cutoff 1e-3, on the Alfvén wave (`dsgsCutoff_fig.py` draws its figure) |
+| `dsgsCutoff.pdf` | two pages, in the paper's notation: the legacy and residual sensors, and DynSGS without and with the smoothness cutoff 1e-3 on the Alfvén wave (`dsgsCutoff_fig.py` draws its figure) |
 
 **Underlines.** Solid: identical in every case to which the item applies
 (all nine for general settings, the eight `DSGS_MHD` cases for DynSGS, the
