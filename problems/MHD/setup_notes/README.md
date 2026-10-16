@@ -20,6 +20,7 @@ branch `sm/MHD` (commit `dcc3653`)**: deck values, the defaults
 | `blastBalsaraSpicer1999.pdf` | MHD blast (limiter, fast floors, thermal residual) |
 | `astroJetWuShu2018.pdf` | Mach-800 magnetized jet (limiter, residual sensor) |
 | `dsgsCutoff.pdf` | two pages, in the paper's notation: the legacy and residual sensors, and DynSGS without and with the smoothness cutoff 1e-3 on the Alfvén wave (`dsgsCutoff_fig.py` draws its figure) |
+| `dsgsSetups.pdf` | the DynSGS setup of every test in the paper (smooth vortices, Brio–Wu, Orszag–Tang, rotor, blast, jet, flux emergence) in its notation, as the decks stand at `66ebb9c`, with where the paper's text and the decks differ and the dated default changes |
 
 **Underlines.** Solid: identical in every case to which the item applies
 (all nine for general settings, the eight `DSGS_MHD` cases for DynSGS, the
