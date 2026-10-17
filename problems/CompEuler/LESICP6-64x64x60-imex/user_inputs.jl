@@ -513,10 +513,14 @@ function user_inputs()
         # period of one element, mostly degree 2 along x, that it never touches.
         # This damps degree >= DBG_FUP_DEG along xi/eta, momentum only, ramping
         # in between element-mean z = DBG_FUP_Z0 and DBG_FUP_Z1 (absolute z;
-        # the v2 mean inversion is at 1.65-1.78 km). DBG_FUP=1 turns it on.
-        :lfilter_upper       => parse(Bool,    get(ENV, "DBG_FUP", "false")),
+        # the v2 mean inversion is at 1.65-1.78 km). ON by default: restarts
+        # 1420884/85 (mu 0.01/0.05 from 8000 s) removed the stripes (element-
+        # scale share of the variance above the BL 46-95% -> 0%; v'v' at
+        # 1.9-2.2 km 0.166 -> 0.037) with BL statistics and means within 1-4%;
+        # 0.05 gave the same as 0.01. DBG_FUP=0 turns it off.
+        :lfilter_upper       => parse(Bool,    get(ENV, "DBG_FUP", "true")),
         :filter_upper_deg    => parse(Int,     get(ENV, "DBG_FUP_DEG", "2")),
-        :filter_upper_mu     => parse(Float64, get(ENV, "DBG_FUP_MU", "0.05")),
+        :filter_upper_mu     => parse(Float64, get(ENV, "DBG_FUP_MU", "0.01")),
         :filter_upper_z0     => parse(Float64, get(ENV, "DBG_FUP_Z0", "1800.0")),
         :filter_upper_z1     => parse(Float64, get(ENV, "DBG_FUP_Z1", "2100.0")),
         #---------------------------------------------------------------------------
