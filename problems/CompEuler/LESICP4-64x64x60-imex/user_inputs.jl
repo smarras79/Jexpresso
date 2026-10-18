@@ -502,6 +502,19 @@ function user_inputs()
         :mu_y                => parse(Float64, get(ENV, "DBG_MU", "0.05")),
 	:mu_z                => 0.1,
         :filter_type         => "erf",
+        # UPPER-LAYER HORIZONTAL FILTER, as LESICP6-64x64x60-imex (08a0d7e8,
+        # bfc2f27e). Above the BL the erf filter (degree-4 only at N = 4) leaves
+        # an element-periodic degree-2 mode in u/v/w; the 10800 s snapshot of
+        # job 1387540 had 74% of the v variance above 1.5 km at <= 200 m. This
+        # damps degree >= DBG_FUP_DEG along xi/eta, momentum only, ramping in
+        # between element-mean z = DBG_FUP_Z0 and DBG_FUP_Z1: here just above the
+        # LESICP4 inversion (theta'theta' peak 1.12 km, top ~1.25 km). DBG_FUP=0
+        # turns it off.
+        :lfilter_upper       => parse(Bool,    get(ENV, "DBG_FUP", "true")),
+        :filter_upper_deg    => parse(Int,     get(ENV, "DBG_FUP_DEG", "2")),
+        :filter_upper_mu     => parse(Float64, get(ENV, "DBG_FUP_MU", "0.01")),
+        :filter_upper_z0     => parse(Float64, get(ENV, "DBG_FUP_Z0", "1250.0")),
+        :filter_upper_z1     => parse(Float64, get(ENV, "DBG_FUP_Z1", "1550.0")),
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
