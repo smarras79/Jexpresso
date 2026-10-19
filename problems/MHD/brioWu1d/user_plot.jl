@@ -496,6 +496,8 @@ function _bw_label(c, lshow_cmin)
     lshow_cmin && (s = string(s, ",\\ C_{min} = ", c.Cmin))
     return LaTeXStrings.latexstring(s)
 end
+# the reference's entry, in the same (LaTeX) font as the curves'
+const BW_REF_LABEL = LaTeXStrings.L"\mathrm{Reference\ solution}"
 
 #---------------------------------------------------------------------------------
 # The density figure itself: the curves handed to it (one per order, ALL at the
@@ -536,7 +538,7 @@ function _bw_plot_density(curves, xs, href, inputs, OUTPUT_DIR, iout, tag)
 
     if href !== nothing
         # The only solid line on the figure.
-        Plots.plot!(plt, xs, href; line = (:black, 1.8, :solid), label = "Reference solution")
+        Plots.plot!(plt, xs, href; line = (:black, 1.8, :solid), label = BW_REF_LABEL)
 
         # Zoom boxes: the paper's four (_bw_add_insets! draws the frame, the
         # connector and the inset; this fills it with every stored curve).
@@ -622,7 +624,7 @@ function _bw_plot_density_nu(curves, xs, href, inputs, OUTPUT_DIR, iout, tag;
         end
     end
     if href !== nothing
-        Plots.plot!(plt, xs, href; subplot = 1, line = (:black, 1.8, :solid), label = "Reference solution")
+        Plots.plot!(plt, xs, href; subplot = 1, line = (:black, 1.8, :solid), label = BW_REF_LABEL)
         # the insets of the left panel become subplots 3, 4, ...: 1 and 2 are the panels
         _bw_add_insets!(plt, BW_INSETS, xl, yl, (sp, xr, yr) -> begin
             sel = (xs .>= xr[1]) .& (xs .<= xr[2])
@@ -719,7 +721,7 @@ function _bw_plot_rho_By(curves, xs, href, hBy, inputs, OUTPUT_DIR, iout, tag;
         nsub += length(BW_INSETS)
     end
     if hBy !== nothing
-        Plots.plot!(plt, xs, hBy; subplot = 2, line = (:black, 1.8, :solid), label = "Reference solution")
+        Plots.plot!(plt, xs, hBy; subplot = 2, line = (:black, 1.8, :solid), label = BW_REF_LABEL)
         _bw_add_insets!(plt, BW_PAIR_BY_INSETS, xl, ylB,
                         (sp, xr, yr) -> _bw_fill_inset!(sp, xr, xs, hBy, withBy, c -> c.By, style);
                         parent = 2, first = nsub)
@@ -757,7 +759,7 @@ function _bw_plot_nu(curves, inputs, OUTPUT_DIR, iout, tag;
                      yscale = llog ? :log10 : :identity, ylims = llog ? :auto : (0.0, 1.08*νmax),
                      titlefontsize = 16, guidefontsize = 18, tickfontsize = 13,
                      size = (1000, 650), left_margin = 8Plots.mm, bottom_margin = 6Plots.mm,
-                     show = false)
+                     right_margin = 5Plots.mm, show = false)   # room for the last x tick
     for (k, c) in enumerate(withnu)
         col, ls, mk = style(c)
         ν    = llog ? [v > 0 ? v : NaN for v in c.nu] : c.nu
@@ -809,6 +811,19 @@ function _bw_draw_store(stored, xs, href, inputs, OUTPUT_DIR, iout;
                         hBy = nothing, lerrors = href !== nothing)
     isempty(stored) && return nothing
     right = lowercase(strip(get(ENV, "JEXPRESSO_BW_RIGHT", "by")))   # the right panel: "by" or "nu"
+    # Curves stored before B_y was have none to draw: when no curve has it, the
+    # ρ-and-ν figures stand in for the ρ-and-B_y ones.
+    noBy = count(c -> isempty(c.By), stored)
+    if right != "nu" && noBy > 0
+        if noBy == length(stored)
+            println(" #   brioWu1d: no B_y stored with these curves (written before it was): ",
+                    "density_nu* (ρ and ν) instead of rho_By*; rerun the sweep for ρ and B_y.")
+            right = "nu"
+        else
+            println(" #   brioWu1d: ", noBy, " curve(s) stored without B_y (written before it was) ",
+                    "are left out of rho_By*; rerun them.")
+        end
+    end
     figs = Tuple{Any,String}[]
     # ONE FIGURE PER RESOLUTION. Orders may only be compared at equal
     # degrees of freedom, so each DOF bucket gets its own file and a sweep

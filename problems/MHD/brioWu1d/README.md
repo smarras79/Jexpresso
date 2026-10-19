@@ -110,7 +110,7 @@ another method, which it leaves off the figure.
 | `nu_dof<M>-it<n>.svg`, `nu-it<n>.svg`, `nu_all-it<n>.svg` | **the DynSGS coefficient $\nu$ alone**, of the same curves (the $\rho u$ slot, which in this deck's conserved form is the one $\nu$ of every equation; per element, so a staircase through the nodes). Linear axis, or $\log_{10}$ when $\nu$ spans more than two decades ($C_{min}=0$); in the all-resolutions figure it falls into one band per resolution ($\nu \propto \Delta \propto 1/\#\mathrm{DOFs}$) |
 | `density_dof<M>-it<n>.svg` | **one file per resolution**: every order that ran at $M$ degrees of freedom, against the reference, with the four zoom boxes. A sweep over 150, 300, 600 and 1200 DOFs leaves `density_dof150-it<n>.svg`, `density_dof300-it<n>.svg`, … side by side |
 | `density-it<n>.svg` | the same figure for the finest resolution in the store, under the plain name |
-| `density_nu_dof<M>-it<n>.svg`, `density_nu-it<n>.svg`, `density_nu_all-it<n>.svg` | the earlier layout, $\rho$ and $\nu$ side by side, in place of the $\rho$–$B_y$ figures: `JEXPRESSO_BW_RIGHT=nu`, or `--right=nu` for `tools/brio_wu_plot.jl` |
+| `density_nu_dof<M>-it<n>.svg`, `density_nu-it<n>.svg`, `density_nu_all-it<n>.svg` | the earlier layout, $\rho$ and $\nu$ side by side, in place of the $\rho$–$B_y$ figures: `JEXPRESSO_BW_RIGHT=nu`, or `--right=nu` for `tools/brio_wu_plot.jl`; also what a store from a sweep run before $B_y$ was stored gets |
 | `convergence-it<n>.svg` | the layout of the paper's Fig. 1: the relative $L^1$, $L^2$ and $L^\infty$ error of $\rho$ against $1/\#\mathrm{DOFs}$ on log-log axes, one line per order, with slope guides and the measured rate in each legend entry |
 | `convergence_smooth-it<n>.svg` | the same, restricted to $x \in (0.33, 0.41)$ inside the fast rarefaction — the one smooth, non-constant part of this solution |
 
@@ -147,14 +147,16 @@ $1.15\times10^{-3}$ at $N = 4$ to $7.5\times10^{-4}$ at $N = 7$, so the Courant
 number against the fast speed of the right state runs from 0.16 to 0.25 and
 the parabolic number stays below 0.25.
 
-A sweep's directory therefore holds its complete comparison: the all-results
-figure, one density figure and one density-and-coefficient figure per
-resolution, and the two convergence histories. `tools/brio_wu_plot.jl` draws
-the same from a store alone (`--store=Cmin0.03` for the sweep at
-$C_{min} = 0.03$, `4,7` for a subset of the orders, `--dofs=600` for one
-resolution, `--fmt=pdf`, `--out=dir`); the scan calls it at the end of each
-sweep. Curves stored before the coefficient or $B_y$ was are drawn on the
-density figures and left off the figures that need them (rerun them).
+A sweep's directory therefore holds its complete comparison: the
+all-results figures, one density figure, one $\rho$–$B_y$ figure and one
+$\nu$ figure per resolution, and the two convergence histories.
+`tools/brio_wu_plot.jl` draws the same from a store alone (`--store=Cmin0.03`
+for the sweep at $C_{min} = 0.03$, `4,7` for a subset of the orders,
+`--dofs=600` for one resolution, `--fmt=pdf`, `--out=dir`); the scan calls it
+at the end of each sweep. Curves stored before the coefficient or $B_y$ was
+are drawn on the density figures and left off the figures that need them
+(rerun them); a store with no $B_y$ at all, from a sweep run before it was
+stored, gets the $\rho$–$\nu$ figures in place of the $\rho$–$B_y$ ones.
 `rm -r problems/MHD/brioWu1d/curves` clears every store; it is
 git-ignored. Curves whose stored final time differs from the current one are
 ignored, so changing `:tend` cannot silently mix solutions from different

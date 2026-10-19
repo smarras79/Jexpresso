@@ -34,7 +34,9 @@
 #   --t=T      the final time; default the latest in the store
 #   --fmt=F    svg (default), pdf or png
 #   --right=nu ρ and ν side by side instead of ρ and B_y (density_nu_*-it<n>,
-#              the earlier layout; JEXPRESSO_BW_RIGHT=nu does the same)
+#              the earlier layout; JEXPRESSO_BW_RIGHT=nu does the same). A
+#              store from a sweep run before B_y was stored gets it anyway:
+#              rerun that sweep for ρ and B_y
 using Plots, LaTeXStrings, Printf
 
 const CASE = joinpath(@__DIR__, "..", "problems", "MHD", "brioWu1d")
