@@ -76,9 +76,9 @@ Sensor & residual & residual & \mj{legacy} & \na & \mj{legacy} & \mj{legacy} & \
 Norms & domain & domain & domain & \na & \mj{element} & \mj{element} & \mj{element} & \mj{element} & \mj{element}\\
 Fast-speed floors & \mj{no} & \mj{no} & \mj{no} & \na & \mj{no} & \mj{no} & \mj{no} & yes & yes\\
 Thermal residual & \mj{no} & \mj{no} & \mj{no} & \na & \mj{no} & \mj{no} & \mj{no} & yes & \mj{no}\\
-$\CR$ & 1.5625$^\ast$ & \mj{1} & \mj{1} & \na & \mj{1} & \mj{1} & \mj{1} & \mj{1} & \mj{1}\\
-$\Cmax$ & 0.625$^\ast$ & \mj{0.5} & \mj{0.5} & \na & \mj{0.5} & \mj{0.5} & \mj{0.5} & \mj{0.5} & \mj{0.5}\\
-$\Cmin$ & 0.075$^\ast$ & \mj{0} & \mj{0} & \na & 0.03 & 0.03 & \mj{0} & \mj{0} & \mj{0}\\
+$\CR$ & \cm{1}$^\ast$ & \cm{1} & \cm{1} & \na & \cm{1} & \cm{1} & \cm{1} & \cm{1} & \cm{1}\\
+$\Cmax$ & \cm{0.5}$^\ast$ & \cm{0.5} & \cm{0.5} & \na & \cm{0.5} & \cm{0.5} & \cm{0.5} & \cm{0.5} & \cm{0.5}\\
+$\Cmin$ & 0.06$^\ast$ & \mj{0} & \mj{0} & \na & 0.03 & 0.03 & \mj{0} & \mj{0} & \mj{0}\\
 \cm{$\Delta_K=\Delta^{elem}_K/(N+1)$} (value) & 1/750 & 0.25 & 1/320 & \na & 0.2 & 0.1 & 1/512 & 1/256 & 0.00125\\
 \code{:dsgs\_gamma}$=\gamma$, $\Pr=1$, \code{rel}$=$\code{local\_rel}$=1$ & \cm{yes} & \cm{yes} & \cm{yes} & \na & \cm{yes} & \cm{yes} & \cm{yes} & \cm{yes} & \cm{yes}\\
 Hold (steps) & \mj{2} & \mj{2} & \mj{2} & \na & \mj{2} & \mj{2} & \mj{2} & 0 & 0\\
@@ -94,9 +94,9 @@ Dirichlet-node zeroing & yes (ends) & \no{} (periodic) & \no{} (periodic) & \na 
 \end{tabular}
 
 \smallskip
-$^\ast$ BW's deck multiplies $(\CR,\Cmax,\Cmin)$ by $((N+1)/N)^2$, $(N+1)/N$, $(N+1)/N$ with base $(1,0.5,0.06)$, i.e.\ the
-paper's $\Delta x/N$ in place of the kernels' $\Delta x/(N+1)$; on that length the constants are the majority's
-$(1,0.5)$ and a 6\% floor.
+$^\ast$ BW since \code{2bb4c2a1}: the kernels' $\Delta x/(N+1)$ with $(\CR,\Cmax,\Cmin)=(1,0.5,0.06)$ unscaled. Before, its
+deck multiplied them by $((N+1)/N)^2$, $(N+1)/N$, $(N+1)/N$ (Dao \& Nazarov's $\Delta x/N$: 1.5625, 0.625, 0.075 at
+$N=4$), which \code{JEXPRESSO\_BW\_HSCALE=nop} still gives.
 FE/FED: $\kappa^E=\max(\gamma(\gamma-1)/\Pr\cdot\nuc,\ \nufl)=\max(0.0525\,\nuc,\nufl)$ on the thermal part
 $p/(\gamma-1)$ of $E$; the non-thermal part takes $\nu$. OT, SV: $\bar\rho$ = element mean, $\kappa=\bar\rho\nu/\Pr$ on $\nabla T$.
 $^\dagger$ SV since \code{f9cdb02} (\code{:dsgs\_conserved => false}, \code{:dsgs\_nazarov\_energy => true}); at \commit{} it had
@@ -146,7 +146,8 @@ damped by a linear source.
 \item \textbf{DynSGS (8/8):} \code{DSGS\_MHD}, one coefficient per element recomputed at every RK stage (since \code{b956ccd} once per step for the residual-sensor cases BW, SV, AJ; finding 8), element
 length $\Delta^{elem}_K/(N+1)$, history rotated once per step, max over the eight non-$\psi$ normalized residuals,
 cap $\Cmax\Delta_K\max(|\bv|+c_f)$ with $c_f$ bounded by $\sqrt{(\gamma p+|\bB|^2)/\rho}$ (BW: exact $x$-fast speed),
-all multipliers $\mu=1$ (mass diffusion on), \code{:dsgs\_gamma} $=\gamma$, $\Pr=1$, \code{:dsgs\_rel} $=$
+all multipliers $\mu=1$ (mass diffusion on), $\CR=1$ and $\Cmax=0.5$ (BW since \code{2bb4c2a1}),
+\code{:dsgs\_gamma} $=\gamma$, $\Pr=1$, \code{:dsgs\_rel} $=$
 \code{:dsgs\_local\_rel} $=1$, no cutoff, no stage freezing, no nodal coefficient, no nodal-$\rho$ scaling, no
 reference-RHS subtraction.
 \item \textbf{Conservative limiter (3/3):} hook, validation, $\gamma$ from \code{:dsgs\_gamma}, floors at $10^{-6}$ of the
@@ -157,7 +158,7 @@ increments, non-conservative node floor as fallback.
 \section*{Shared by a majority (dashed underline)}
 2D with nine slots (8/9); $N=4$ (6/9); $\psi$ damping $c_h/0.18$ (6/8); \code{:lsource} on (8/9); doubly periodic (5/9);
 p4est initial refinement (5/9); no state modification for positivity (5/9) and \code{:lpositivity} false (6/9);
-among the \dsgs{} cases: legacy sensor (5/8), element norms (5/8), $\CR=1$ and $\Cmax=0.5$ (7/8), $\Cmin=0$ (5/8),
+among the \dsgs{} cases: legacy sensor (5/8), element norms (5/8), $\Cmin=0$ (5/8),
 hold 2 (6/8), \code{:dsgs\_conserved} (6/8), no work terms in $E$ (6/8), no fast floors (6/8), no thermal residual
 (7/8), no reference weight (7/8) (\code{:dsgs\_nazarov\_energy} is now 4 true, 4 false: no majority); report every 1000 calls (2/3 limiter cases).
 

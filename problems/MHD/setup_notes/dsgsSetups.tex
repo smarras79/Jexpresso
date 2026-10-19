@@ -19,7 +19,7 @@
 
 \begin{landscape}
 {\large\bfseries DynSGS setups of the paper's numerical tests}\hfill
-{\small decks of branch \branch{} at commit \code{66ebb9c}; notation of the paper, (11)--(16) and Table~\emph{split}}
+{\small decks of branch \branch{} at commit \code{2bb4c2a1}; notation of the paper, (11)--(16) and Table~\emph{split}}
 
 \vspace{2pt}
 {\scriptsize\setlength{\tabcolsep}{3pt}\renewcommand{\arraystretch}{1.0}
@@ -49,9 +49,9 @@ Time integrator & \multicolumn{8}{l}{\code{CarpenterKennedy2N54} at fixed $\Delt
 Sensor $R_i$ (\code{:dsgs\_sensor}) & (R) residual & (R) residual & (R) residual & (L) legacy & (L) legacy & (L) legacy & (R) residual & (L) legacy\\
 $\mu|_e$ computed (\code{:dsgs\_freeze\_stage}) & once per step & once per step & once per step & every RK stage & every RK stage
  & every RK stage & once per step & every RK stage\\
-$C_1$, $C_2$ (\code{:dsgs\_CR}, \code{:dsgs\_Cmax}) & 1, 0.5 & 1, 0.5 & 1, 0.5$^{a}$ & 1, 0.5 & 1, 0.5 & 1, 0.5 & 1, 0.5 & 1, 0.5\\
-Floor $C_{\min}\Delta_e(\lVert\vv\rVert+c_f)$ (\code{:dsgs\_Cmin}) & 0 & 0 & 0.06$^{a}$ & 0 & 0 & 0 & 0 & 0.03\\
-Length $\Delta_e$, (15) & $h_e/(N+1)$ & $h_e/(N+1)$ & $h_e/N$$^{a}$ & $h_e/(N+1)$ & $h_e/(N+1)$ & $h_e/(N+1)$ & $h_e/(N+1)$ & $h_e/(N+1)$\\
+$C_1$, $C_2$ (\code{:dsgs\_CR}, \code{:dsgs\_Cmax}) & 1, 0.5 & 1, 0.5 & 1, 0.5 & 1, 0.5 & 1, 0.5 & 1, 0.5 & 1, 0.5 & 1, 0.5\\
+Floor $C_{\min}\Delta_e(\lVert\vv\rVert+c_f)$ (\code{:dsgs\_Cmin}) & 0 & 0 & 0.06 & 0 & 0 & 0 & 0 & 0.03\\
+Length $\Delta_e$, (15) & $h_e/(N+1)$ & $h_e/(N+1)$ & $h_e/(N+1)$$^{a}$ & $h_e/(N+1)$ & $h_e/(N+1)$ & $h_e/(N+1)$ & $h_e/(N+1)$ & $h_e/(N+1)$\\
 Cutoff $c$ (\code{:dsgs\_cutoff}) & \multicolumn{8}{l}{0 in every deck (no cutoff; the Alfv\'en wave, not in the paper, runs $10^{-3}$)}\\
 $\mu|_e=0$ for the first (steps) (\code{:dsgs\_hold\_steps}) & 2 & 2 & 2 & 2 & 2 & 0 & 0 & 2\\
 Residual set $\Ic$ & 8, $\psi$ excluded & $\rho$, $\lvert\bm{m}\rvert$, $E$ & all 8 & 8, $\psi$ excluded & 8, $\psi$ excluded
@@ -96,9 +96,10 @@ Notes $a$--$d$: next page.}
 
 \section*{Notes to the table}
 \begin{itemize}[leftmargin=14pt]
-\item[$a$] The Brio--Wu deck sets $(C_1,C_2,C_{\min})=\big(((N+1)/N)^2,\ 0.5\,(N+1)/N,\ 0.06\,(N+1)/N\big)$ on the kernel's
-$h_e/(N+1)$, i.e.\ $(1,0.5,0.06)$ on Dao \& Nazarov's $\Delta_e=h_e/N$, the same at every $N$ for a fixed number of DOFs. The paper
-varies $C_{\min}$ (\code{JEXPRESSO\_BW\_CMIN}).
+\item[$a$] Since \code{2bb4c2a1} (2026-10-19) the Brio--Wu deck uses the paper's $\Delta_e=h_e/(N+1)$ with
+$(C_1,C_2,C_{\min})=(1,0.5,0.06)$, as every other deck. Before, it scaled them by $((N+1)/N)^2$, $(N+1)/N$, $(N+1)/N$, i.e.\
+$(1,0.5,0.06)$ on Dao \& Nazarov's $\Delta_e=h_e/N$, the same at every $N$ for a fixed number of DOFs;
+\code{JEXPRESSO\_BW\_HSCALE=nop} still gives that. The paper varies $C_{\min}$ (\code{JEXPRESSO\_BW\_CMIN}).
 \item[$b$] The Euler vortex uses the CompEuler kernel: $\mu_{\rm res}|_e=C_1\Delta_e^2\,n_\rho\,r_e$ and
 $\mu_{\max}|_e=C_2\Delta_e\lVert\rho\rVert_{\infty,\Omega_e}\lVert\lVert\vv\rVert+c\rVert_{\infty,\Omega_e}$ are dynamic ($n_\rho$: the
 density denominator); the momentum residual enters as one vector norm; heat conduction $\mathrm{P}\mu/(\gamma-1)$ with the artificial
@@ -131,8 +132,7 @@ no stress, no work terms.
 \item \textbf{Normalization, (12) and (16).} (12) normalizes by the domain spread; the rotor, the blast, the jet and the flux
 emergence normalize by the element's own spread, floored at the element's scales. (16) has $\erel=10^{-3}$; every deck runs
 $\erel=1$, the floor being the full physical scale.
-\item \textbf{Constants and length.} $C_{\min}$ is not in (12)--(14); Brio--Wu runs 0.06 and the flux emergence 0.03. Brio--Wu
-uses $\Delta_e=h_e/N$, not (15).
+\item \textbf{Constants.} $C_{\min}$ is not in (12)--(14); Brio--Wu runs 0.06 and the flux emergence 0.03.
 \item \textbf{Per stage or per step.} The paper's algorithm evaluates \dsgs{} once per right-hand-side call (every stage); the
 (R) decks compute $\mu|_e$ once per step.
 \item \textbf{Not in the paper.} The start-up hold (2 steps; none in the blast and the jet), the fast-speed floors (blast, jet),
@@ -153,7 +153,8 @@ a nearly uniform field (the density of a vortex, $B_x$ in a shock tube) had its 
 \item \textbf{2026-10-14} (\code{b956ccd} for \code{DSGS\_MHD}, \code{e12fca8} for the CompEuler \code{DSGS}): with the residual
 sensor, $\mu|_e$ is computed once per step. Before, at every stage, where the residual stalls at $O(\Delta t)$ on smooth flow
 (\code{dsgsCutoff.pdf}).
-\item \textbf{Last change of each deck:} MHD vortex and Brio--Wu \code{b956ccd} (2026-10-14), Euler vortex \code{e12fca8}
+\item \textbf{2026-10-19} (\code{2bb4c2a1}): Brio--Wu moves from $\Delta_e=h_e/N$ to the paper's $h_e/(N+1)$ (note $a$).
+\item \textbf{Last change of each deck:} Brio--Wu \code{2bb4c2a1} (2026-10-19), MHD vortex \code{b956ccd} (2026-10-14), Euler vortex \code{e12fca8}
 (2026-10-14), Orszag--Tang \code{6829a2c} (10-08), rotor \code{7bd7bc2} (10-09), blast \code{e4fcf14} (10-12), jet
 \code{2590be6} (10-12), flux emergence \code{c1d5b46} (10-13).
 \end{itemize}
