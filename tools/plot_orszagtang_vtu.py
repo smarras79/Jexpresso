@@ -411,7 +411,9 @@ def cuts(a, dirs, tags, labels):
                         f"({100 * np.mean(np.abs(dv)) / np.ptp(ref[:, 1]):.1f}% of its range), "
                         f"max |dp| = {abs(dv[k]):.4f} at x = {ref[k, 0]:.3f}")
             print(msg)
-            ax.plot(x, v, "-", lw=1.3, color=CUT_COLORS[i % len(CUT_COLORS)], zorder=2, label=f"Jexpresso, {lab}")
+            m = re.fullmatch(r"(\d+)x(\d+)", tag)                 # elements per direction, e.g. 128x128
+            leg = (f"${int(m.group(1)) * N}^2$" if m and m.group(1) == m.group(2) else lab)   # -> 512^2 with N = 4
+            ax.plot(x, v, "-", lw=1.3, color=CUT_COLORS[i % len(CUT_COLORS)], zorder=2, label=f"Jexpresso, {leg}")
             lo, hi = min(lo, np.nanmin(v)), max(hi, np.nanmax(v))
             with open(f"{stem}_y{y0:g}_{tag}.csv", "w") as io:
                 io.write("x p\n")
