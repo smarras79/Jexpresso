@@ -514,13 +514,16 @@ function user_inputs()
         # job 1387540 had 74% of the v variance above 1.5 km at <= 200 m. This
         # damps degree >= DBG_FUP_DEG along xi/eta, momentum only, ramping in
         # between element-mean z = DBG_FUP_Z0 and DBG_FUP_Z1: here just above the
-        # LESICP4 inversion (theta'theta' peak 1.12 km, top ~1.25 km). DBG_FUP=0
-        # turns it off.
+        # LESICP4 inversion (theta'theta' peak 1.12 km): ramp 1150 -> 1350 m,
+        # mu 0.05. With 1250 -> 1550 m / 0.01 a row of element-scale cells
+        # survived at 1.3-1.45 km and w kept 9.6% of its variance above 1.5 km at
+        # <= 200 m; this setting (test 1429977, 600 s from 10200 s) removed the
+        # cells and halved w (4.3%). DBG_FUP=0 turns it off.
         :lfilter_upper       => parse(Bool,    get(ENV, "DBG_FUP", "true")),
         :filter_upper_deg    => parse(Int,     get(ENV, "DBG_FUP_DEG", "2")),
-        :filter_upper_mu     => parse(Float64, get(ENV, "DBG_FUP_MU", "0.01")),
-        :filter_upper_z0     => parse(Float64, get(ENV, "DBG_FUP_Z0", "1250.0")),
-        :filter_upper_z1     => parse(Float64, get(ENV, "DBG_FUP_Z1", "1550.0")),
+        :filter_upper_mu     => parse(Float64, get(ENV, "DBG_FUP_MU", "0.05")),
+        :filter_upper_z0     => parse(Float64, get(ENV, "DBG_FUP_Z0", "1150.0")),
+        :filter_upper_z1     => parse(Float64, get(ENV, "DBG_FUP_Z1", "1350.0")),
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
