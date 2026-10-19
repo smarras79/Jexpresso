@@ -17,7 +17,7 @@
 #
 #   tools/brio_wu_order_scan.sh                       # N = 4 ... 7 at 600 and 1200 DOFs, C_min = 0.06
 #   BW_JOBS=4 tools/brio_wu_order_scan.sh             # the four orders at once
-#   BW_JOBS=4 BW_CMIN="0.06 0.03" tools/brio_wu_order_scan.sh   # one sweep per C_min
+#   BW_JOBS=4 BW_CMIN="0.06 0.03 0" tools/brio_wu_order_scan.sh   # one sweep per C_min, to compare
 #   BW_DOFS=600 tools/brio_wu_order_scan.sh           # the paper's resolution alone
 #   BW_DOFS="150 300 600 1200" tools/brio_wu_order_scan.sh   # for the convergence figures
 #   BW_NOPS="4 7" tools/brio_wu_order_scan.sh

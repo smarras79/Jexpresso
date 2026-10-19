@@ -78,7 +78,7 @@ its own (order, DOFs) point:
 
 ```bash
 BW_JOBS=4 tools/brio_wu_order_scan.sh                    # orders 4-7 at 600 and 1200 DOFs, C_min = 0.06
-BW_JOBS=4 BW_CMIN="0.06 0.03" tools/brio_wu_order_scan.sh   # one complete sweep per C_min
+BW_JOBS=4 BW_CMIN="0.06 0.03 0" tools/brio_wu_order_scan.sh   # one complete sweep per C_min, to compare
 BW_JOBS=4 BW_DOFS=600 tools/brio_wu_order_scan.sh        # the paper's 600 DOFs alone
 BW_DOFS="150 300 600 1200" tools/brio_wu_order_scan.sh   # also 150 and 300: the convergence figure
 JULIA=/path/to/julia tools/brio_wu_order_scan.sh         # default: the macOS app's julia, else the PATH's
