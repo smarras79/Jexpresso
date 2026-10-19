@@ -66,8 +66,10 @@ back to the generic panels of the 1D plotter.
 
 ### Comparing polynomial orders, and the convergence history
 
-At the final time a run stores its density profile in
-`curves/nop<N>_dof<M>_<form>.dat` in this case directory, and the figures are
+At the final time a run stores its density profile and its DynSGS
+coefficient $\nu$ in `curves/nop<N>_dof<M>_<form>.dat` in this case directory
+(`curves/<store>/` when `JEXPRESSO_BW_STORE` names one: the scan keeps one per
+$C_{min}$, `curves/Cmin0.06/`, `curves/Cmin0.03/`, …), and the figures are
 drawn from **every** curve stored there whose `<form>` — the coefficient form
 and the length-scale convention, the two things that make one run a different
 method from another — matches the run drawing them. A sweep over orders and
@@ -75,22 +77,38 @@ resolutions therefore builds the whole comparison and each run replaces only
 its own (order, DOFs) point:
 
 ```bash
-tools/brio_wu_order_scan.sh                              # orders 4-7 at 600 and 1200 DOFs (Fig. 2)
+BW_JOBS=4 tools/brio_wu_order_scan.sh                    # orders 4-7 at 600 and 1200 DOFs, C_min = 0.06
+BW_JOBS=4 BW_CMIN="0.06 0.03 0" tools/brio_wu_order_scan.sh   # one complete sweep per C_min, to compare
+BW_JOBS=4 BW_DOFS=600 tools/brio_wu_order_scan.sh        # the paper's 600 DOFs alone
 BW_DOFS="150 300 600 1200" tools/brio_wu_order_scan.sh   # also 150 and 300: the convergence figure
-JULIA=/path/to/julia tools/brio_wu_order_scan.sh         # the default is the macOS app's julia
+JULIA=/path/to/julia tools/brio_wu_order_scan.sh         # default: the macOS app's julia, else the PATH's
+julia --project=. tools/brio_wu_plot.jl --store=Cmin0.06 # the figures again, from the store alone
 ```
 
-**The scan clears the store before it starts** (`BW_KEEP=1` to accumulate
-instead, to finish a partial sweep). Since the figure is redrawn from the
-whole store at every run, a leftover sweep would otherwise appear on the
-comparison from its very first run — with orders that this comparison has not
-computed yet. A run that finds curves of another method in the store says so
-on stdout and leaves them off the figure.
+**Every value of `BW_CMIN` is a sweep of its own**: its runs store their
+curves in `curves/Cmin<C_min>/`, and when the last of them is done the scan
+draws every figure of that sweep in
+`output/MHD/brioWu1d/output/Cmin<C_min>/`. With `BW_HSCALE` or `BW_NODAL`
+set, both names carry it too (`Cmin0.06_nop`), so different methods never
+share a figure. `BW_JOBS=n` runs up to $n$ orders at once, one Julia session
+per order (each compiles the case once, then runs its resolutions); the log
+of order $N$ goes to `output/MHD/brioWu1d/scan-Cmin<C_min>-nop<N>.log`.
+
+**Each sweep starts from an empty store**: the curves and the figures of the
+same $C_{min}$ from an earlier sweep are deleted first (`BW_KEEP=1` keeps
+them, to finish a partial sweep), so a leftover curve can never appear on
+the comparison. Inside a sweep the runs only store their curves
+(`JEXPRESSO_BW_DRAWSTORE=0`); a run started by hand redraws the comparison
+from the whole store itself, and says so when the store holds curves of
+another method, which it leaves off the figure.
 
 | figure | contents |
 |---|---|
+| `density_nu_all-it<n>.svg` | **every order at every resolution** on one figure, as Dao & Nazarov's Fig. 2 puts its two: the density with the four zoom boxes, and $\nu$ beside it; colour is the order, line type the resolution (dashed the coarsest, then dotted, dash-dot, dash-dot-dot), and $\nu$ falls into one band per resolution ($\nu \propto \Delta \propto 1/\#\mathrm{DOFs}$). Written when the store holds two resolutions or more |
 | `density_dof<M>-it<n>.svg` | **one file per resolution**: every order that ran at $M$ degrees of freedom, against the reference, with the four zoom boxes. A sweep over 150, 300, 600 and 1200 DOFs leaves `density_dof150-it<n>.svg`, `density_dof300-it<n>.svg`, … side by side |
 | `density-it<n>.svg` | the same figure for the finest resolution in the store, under the plain name |
+| `density_nu_dof<M>-it<n>.svg` | the layout of Dao & Nazarov (2024), Fig. 2: **left**, the density of every order at $M$ DOFs against the reference with the same four zoom boxes; **right**, the DynSGS coefficient $\nu$ of the same runs on the same $x$ (the $\rho u$ slot, which in this deck's conserved form is the one $\nu$ of every equation; per element, so a staircase through the nodes). Linear axis, or $\log_{10}$ when $\nu$ spans more than two decades ($C_{min}=0$) |
+| `density_nu-it<n>.svg` | the same for the finest resolution in the store |
 | `convergence-it<n>.svg` | the layout of the paper's Fig. 1: the relative $L^1$, $L^2$ and $L^\infty$ error of $\rho$ against $1/\#\mathrm{DOFs}$ on log-log axes, one line per order, with slope guides and the measured rate in each legend entry |
 | `convergence_smooth-it<n>.svg` | the same, restricted to $x \in (0.33, 0.41)$ inside the fast rarefaction — the one smooth, non-constant part of this solution |
 
@@ -115,7 +133,7 @@ Overrides, all optional, so a sweep needs no file edits:
 | `JEXPRESSO_BW_NELX` | — | element count, overriding `JEXPRESSO_BW_DOFS` |
 | `JEXPRESSO_BW_DT` | — | time step, overriding the rule below |
 | `JEXPRESSO_BW_CMIN` | 0.06 | the DynSGS background floor `:dsgs_Cmin` |
-| `JEXPRESSO_BW_HSCALE` | `nop` | the DynSGS length scale: `nop` is the paper's $\Delta_K/k$, `ngl` the kernels' own $\Delta_K/(k+1)$ |
+| `JEXPRESSO_BW_HSCALE` | `ngl` | the DynSGS length scale: `ngl` is the kernels' own $\Delta_K/(k+1) = h_e/(N+1)$, eq. (15) of the DynSGS-MHD paper; `nop` is Dao & Nazarov's $\Delta_K/k$ |
 | `JEXPRESSO_BW_NODAL` | 0 | 1 for the nodal coefficient (`:ldsgs_nodal`, their eq. 4.10) |
 
 At a fixed DOF count the orders run at equal cost: 150, 120, 100 and 86
@@ -127,10 +145,15 @@ $1.15\times10^{-3}$ at $N = 4$ to $7.5\times10^{-4}$ at $N = 7$, so the Courant
 number against the fast speed of the right state runs from 0.16 to 0.25 and
 the parabolic number stays below 0.25.
 
-The last run of a sweep rewrites every one of these figures from the whole
-store, so its output directory holds the complete comparison: one density
-figure per resolution and the two convergence histories.
-`rm -r problems/MHD/brioWu1d/curves` starts a fresh one; the store is
+A sweep's directory therefore holds its complete comparison: the all-results
+figure, one density figure and one density-and-coefficient figure per
+resolution, and the two convergence histories. `tools/brio_wu_plot.jl` draws
+the same from a store alone (`--store=Cmin0.03` for the sweep at
+$C_{min} = 0.03$, `4,7` for a subset of the orders, `--dofs=600` for one
+resolution, `--fmt=pdf`, `--out=dir`); the scan calls it at the end of each
+sweep. Curves stored before the coefficient was are drawn on the density
+figures and left off the `density_nu` ones.
+`rm -r problems/MHD/brioWu1d/curves` clears every store; it is
 git-ignored. Curves whose stored final time differs from the current one are
 ignored, so changing `:tend` cannot silently mix solutions from different
 times.
@@ -154,7 +177,7 @@ $$
 \frac{\Delta_K}{k} = \frac{L}{\#\mathrm{DOFs}} ,
 $$
 
-so the paper's convention is the same for every order while the kernels' grows
+so Dao & Nazarov's convention is the same for every order while the kernels' grows
 with $k$ (0.8 of it at $k=4$, 0.875 at $k=7$). That factor varies by 75 % over
 $k = 1\ldots7$, it is monotone in $k$, and it enters the cap and the floor
 linearly and the residual viscosity $C_R\Delta^2\mathcal{R}$ quadratically. On
@@ -173,19 +196,22 @@ $3.3$–$3.5\times10^{-3}$ for orders 2-7) — which is the statement of the
 paper's Fig. 2, that $\mathbb{P}_3$ captures the compound structure more
 accurately than $\mathbb{P}_1$ at equal degrees of freedom.
 
-**This case therefore runs $\Delta_K/k$ by default** (`JEXPRESSO_BW_HSCALE=ngl`
-for the other). It is a *deck-level* switch: `user_inputs.jl` folds the factor
-into this case's own coefficients — $C_{max}$ and $C_{min}$ by $(k+1)/k$,
-$C_R$ by $((k+1)/k)^2$, which is algebraically identical to changing $\Delta$ —
-and no kernel is touched. Every other case (`orszagTangBormanis2024`,
-`sod1d`, `thetaTracers`, the forward-facing step, the rising bubble) keeps
-$\Delta_K/(k+1)$ and is bit-for-bit unaffected. Two things to know before
-making it general: $\Delta_K/k$ is $(k+1)/k$ *larger*, so the absolute error
-level rises (at order 4, $5.6\to7.1\times10^{-3}$ over the whole tube), and it
-was the larger scale that pushed the rising bubble past the explicit viscous
-stability limit at start-up, which is why the kernels moved to $(k+1)$ in the
-first place. Making it a real `:dsgs_hscale` input, read by the kernels so
-every case can choose, is the clean way to settle that.
+**This case runs $\Delta_K/(k+1) = h_e/(N+1)$ by default**, the kernels' own
+and the $\Delta_e$ of eq. (15) of the DynSGS-MHD paper, so that $C_R = 1$,
+$C_{max} = 0.5$ and $C_{min} = 0.06$ mean here what they mean in the paper and
+in every other case. Until October 2026 the default was Dao & Nazarov's
+$\Delta_K/k$, for the order comparison above; `JEXPRESSO_BW_HSCALE=nop`
+(`BW_HSCALE=nop` for the scan) still gives it. That is a *deck-level* switch:
+`user_inputs.jl` folds the factor into this case's own coefficients —
+$C_{max}$ and $C_{min}$ by $(k+1)/k$, $C_R$ by $((k+1)/k)^2$, which is
+algebraically identical to changing $\Delta$ — and no kernel is touched. Two
+things follow from the default. At equal DOFs the higher orders get the larger
+viscosity (orders 4 to 7: 9 % more floor and cap, 20 % more residual
+viscosity), the penalty the table measures. And the absolute level is lower
+than with $\Delta_K/k$, which is $(k+1)/k$ *larger* (at order 4,
+$7.1\to5.6\times10^{-3}$ over the whole tube); that larger scale is also what
+pushed the rising bubble past the explicit viscous stability limit at
+start-up, which is why the kernels use $(k+1)$.
 
 `JEXPRESSO_BW_CMIN=0` removes the part of the viscosity that is independent of
 the solution altogether.
@@ -260,6 +286,12 @@ $\sqrt{2\nu t} \approx 0.006$ over the run, less than one element; with
 0.03 the ripples remain, with 0.06 none (measured), at the price of a
 contact about one node wider; 0.03 leaves a faint trace of them (±0.1 %)
 with sharper shocks, 0 gives the sharpest shocks with the ripples in full.
+Those were measured on Dao & Nazarov's $\Delta_K/k$. On the default
+$h_e/(N+1)$ the same 0.06 is an effective 0.048–0.053 on $\Delta_K/k$
+($N = 4$–7), and re-measured at 600 DOFs nothing is visible at the figure's
+scale: between $x = 0.425$ and $0.455$ successive extrema of $\rho$ differ by
+at most 0.4 % on either length (dip at the foot of the compound wave
+included), with a few more small extrema at $N = 4, 5$ on $h_e/(N+1)$.
 (With the residual and the time stencil of the runs before September 2026,
 DSGS.md §1.2 and §4.4, 0.03 was enough: the old sensor over-fired on the
 moving waves and supplied the rest of the damping itself;
@@ -283,10 +315,18 @@ of time stepping. At $t = 0.1$ (`density-it5.svg`; the per-variable figures with
   $\approx 0.82$; the contact and the slow shock are 2–3 nodes wide, the
   paper's zoom boxes show the same smearing for its $\mathbb{P}_3$ solution;
   $p$, $B_y$, $u$, $v$ follow the reference to plotting accuracy;
-- the DynSGS coefficient (`mu_dsgs-it5.svg`) is at its floor,
-  $\approx 1\times10^{-4}$, in the smooth regions, $2$–$4\times10^{-4}$ at the
-  compound wave and the contact and $1\times10^{-3}$ at the slow shock, a
-  third of its cap $C_{max}h(|u| + c_f) \approx 3\times10^{-3}$.
+- the DynSGS coefficient (`mu_dsgs-it5.svg`, and the right panel of
+  `density_nu-it5.svg`) is on its floor $C_{min}\Delta_e(|u| + c_f)$
+  everywhere, at 600 DOFs and $N = 4$–7: $1.4$–$1.6\times10^{-4}$ on the left
+  state, $2.9$–$3.2\times10^{-4}$ on the right one and at most
+  $3.4$–$3.8\times10^{-4}$ behind the slow shock, the higher orders a little
+  higher (the equal-DOF penalty of $h_e/(N+1)$ above). The residual part never
+  exceeds it: with the floor off (`JEXPRESSO_BW_CMIN=0`) it peaks at the
+  compound wave and at the slow shock at about the floor's size and falls to
+  $10^{-5}$–$10^{-6}$ elsewhere (measured on $\Delta_K/k$);
+- the relative $L^1$ error of $\rho$ over the tube is $6.1$, $6.6$, $6.7$ and
+  $7.0\times10^{-3}$ for $N = 4$–7; on $\Delta_K/k$ it was $7.6$–$8.0\times10^{-3}$,
+  and $2.7$–$3.7\times10^{-3}$ there with the floor off.
 
 ## Files
 

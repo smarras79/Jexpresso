@@ -33,16 +33,17 @@ The deck selects \cm{\code{:visc\_model => DSGS\_MHD()}} with \cm{\code{:lvisc =
 reaches \code{compute\_dsgs\_viscosity!(::DSGS\_MHD, ::NSD\_1D)} (\code{SGS.jl:1929}) through
 \code{viscous\_rhs\_el!(\dots, ::NSD\_1D)} (\code{rhs.jl:1398}).
 
-The deck rescales the three constants by $h_{fac}=(N+1)/N = 5/4$
-(\code{JEXPRESSO\_BW\_HSCALE} unset $\Rightarrow$ \code{"nop"}): the kernel uses
-$\Delta = \Delta x/(N+1)$, and the scaling turns it into Dao \& Nazarov's $\Delta x/N$.
+Since \code{2bb4c2a1} the deck uses the kernel's $\Delta = \Delta x/(N+1)$, the paper's $\Delta_e=h_e/(N+1)$, with
+the three constants unscaled (\code{JEXPRESSO\_BW\_HSCALE} unset $\Rightarrow$ \code{"ngl"}). With \code{"nop"}, the
+default before, it rescales them by $h_{fac}=(N+1)/N$ ($5/4$ at $N=4$), which turns $\Delta$ into Dao \& Nazarov's
+$\Delta x/N$.
 \begin{keytable}
 \code{:visc\_model} & \cm{\code{DSGS\_MHD()}} & \\
 \code{:}$\mu$ (slot multipliers) & \cm{all 1} (8 entries) & mass diffusion is on\\
 \code{:dsgs\_sensor} & \code{"residual"} & element residual, stage-consistent stencil\\
-\code{:dsgs\_CR} & $1.0\cdot h_{fac}^2 = 1.5625$ & $\equiv C_R=1$ with $\Delta x/N$\\
-\code{:dsgs\_Cmax} & $0.5\cdot h_{fac} = 0.625$ & $\equiv C_{\max}=0.5$ with $\Delta x/N$\\
-\code{:dsgs\_Cmin} & $0.06\cdot h_{fac} = 0.075$ & $\equiv C_{\min}=0.06$ with $\Delta x/N$ (\code{JEXPRESSO\_BW\_CMIN})\\
+\code{:dsgs\_CR} & 1.0 & ($\times h_{fac}^2$ with \code{"nop"})\\
+\code{:dsgs\_Cmax} & 0.5 & ($\times h_{fac}$ with \code{"nop"})\\
+\code{:dsgs\_Cmin} & 0.06 & \code{JEXPRESSO\_BW\_CMIN} ($\times h_{fac}$ with \code{"nop"})\\
 \code{:dsgs\_gamma} & \cm{$=\gamma_{mhd}$} $=2$ & \\
 \code{:dsgs\_Prt} & \cm{1.0} & no effect in the conserved form\\
 \code{:dsgs\_rel} & \cm{1.0} (default) & floor = the physical scale itself\\
@@ -102,8 +103,8 @@ $b_x^2=B_x^2/\rho$, $p$ clipped at 0 (\code{SGS.jl:2075--2088}).
 \nuc=\max\big(0,\min(\Cmax\Delta_Kw_K,\ \CR\Delta_K^2\mathcal R_K)\big),\qquad
 \nufl=\Cmin\Delta_Kw_K,\qquad \nu_K=\max(\nuc,\nufl),
 \]
-\cm{one value per element}, \cm{recomputed at every Runge--Kutta stage}; $(\CR,\Cmax,\Cmin)=(1.5625,0.625,0.075)$
-with $\Delta_K=\Delta x/5$, i.e.\ $(1,\,0.5,\,0.06)$ on $\Delta x/4$.
+\cm{one value per element}, \cm{recomputed at every Runge--Kutta stage}; $(\CR,\Cmax,\Cmin)=(1,0.5,0.06)$
+with $\Delta_K=\Delta x/5$ at $N=4$ (before \code{2bb4c2a1}: $(1.5625,0.625,0.075)$, i.e.\ $(1,0.5,0.06)$ on $\Delta x/4$).
 \item \textbf{Slot coefficients} (conserved form): $\mu^s_K=\mu[s]\,\nu_K=\nu_K$ for all 8 slots.
 \end{enumerate}
 
@@ -126,7 +127,7 @@ no stage limiter: \mj{nothing modifies the state to enforce $\rho>0$ or $p>0$}.
 (\code{const p\_floor\_mhd = 1.0e-9}, \code{user\_flux.jl}). It is used by \code{user\_flux!} and by the
 output; it changes the flux of a node whose pressure has gone below $10^{-9}$, not the state.
 \item \textbf{What keeps the solution admissible} is therefore the dissipation alone: the conserved-form
-Laplacian with $\nu\ge\nufl=0.075\,\Delta_Kw_K>0$ everywhere (a background of
+Laplacian with $\nu\ge\nufl=0.06\,\Delta_Kw_K>0$ everywhere (a background of
 $\Cmin/\Cmax=12\%$ of the cap), and the cap $\Cmax\Delta w$ at the discontinuities. Inside \dsgs{} itself the pressure
 is clipped at 0 when it builds $\bar p$ and $c_f$, so a negative nodal $p$ cannot produce a NaN coefficient.
 \end{itemize}
@@ -143,10 +144,10 @@ kernel's own source with the exact keyword set of \code{rhs.jl:1434--1456}, rais
 (\code{JEXPRESSO\_BW\_NODAL=1}) does not pass \code{lthermal} and was not affected. \code{23e4974} adds
 \code{lthermal::Bool=false} to the 1D signature; the thermal residual is 2D-only, so the keyword is ignored
 there, and the same call returns a bit-identical coefficient with \code{lthermal} omitted, false or true.
-\item The header of \code{user\_inputs.jl} says ``integrated with SSPRK53''; the deck sets
-\code{CarpenterKennedy2N54()}.
-\item \code{DSGS.md} \S4.7 says this case needs a 3\% $C_{\min}$ floor; the deck sets
-$0.06\,h_{fac}$ (its own comment says 6\%; relative to the cap $\Cmax$ that is 12\%).
+\item \textbf{[Fixed in \code{5ed7f539}.]} The header of \code{user\_inputs.jl} said ``integrated with SSPRK53''; the deck
+sets \code{CarpenterKennedy2N54()}, and the header now says so.
+\item \textbf{[Fixed in \code{5ed7f539}.]} \code{DSGS.md} \S4.7 said this case needs a 3\% $C_{\min}$ floor; the deck sets
+$C_{\min}=0.06$ (12\% of the cap $\Cmax$), its default all along, and \S4.7 now gives that value.
 \item \textbf{[Changed in \code{b956ccd}.]} \code{:dsgs\_freeze\_stage} now defaults to true for \code{DSGS\_MHD}
 with the residual sensor: the coefficient is computed once per step, at the stage on $t^n$, and held over the stages,
 which removes the $O(\Delta t)$ floor the RK internal stages put under the residual. Checked on this case, frozen

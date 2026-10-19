@@ -3,7 +3,8 @@
 # Nazarov, J. Sci. Comput. 92:77 (2022), Sec. 5.2: domain (0, 1), γ = 2,
 # t ∈ [0, 0.1] (see below), left/right states in initialize.jl. The MHD counterpart of
 # problems/CompEuler/sod1d: stabilized by DynSGS (kernel/physics/SGS.jl,
-# the 1D DSGS_MHD kernel) in its conserved form, integrated with SSPRK53.
+# the 1D DSGS_MHD kernel) in its conserved form, integrated with
+# CarpenterKennedy2N54, with the background floor C_min = 0.06 (README).
 #
 #   julia --project=. src/Jexpresso.jl MHD brioWu1d
 #
@@ -65,30 +66,31 @@ _bw_freeze() = (v = strip(get(ENV, "JEXPRESSO_BW_FREEZE", ""));
 _bw_nodal() = lowercase(strip(get(ENV, "JEXPRESSO_BW_NODAL", "false"))) in ("1", "true", "yes", "on")
 
 # Element length scale of the DynSGS coefficient. The kernels use
-# Δ = Δ_K/(k+1) (`ngl`); Dao & Nazarov's eq. 4.10 uses h_K/k, the polynomial
-# DEGREE. The difference is a factor (k+1)/k, and it is not innocent when
-# orders are compared at a FIXED number of degrees of freedom: with
-# n_elx = DOFs/k,
+# Δ = Δ_K/(k+1) (`ngl`), which is the paper's Δ_e = h_e/(N+1) (its eq. 15);
+# Dao & Nazarov's eq. 4.10 uses h_K/k, the polynomial DEGREE. The difference
+# is a factor (k+1)/k, and it is not innocent when orders are compared at a
+# FIXED number of degrees of freedom: with n_elx = DOFs/k,
 #
 #     Δ_K/(k+1) = (L/DOFs)·k/(k+1)      grows with k  (0.8 at k=4, 0.875 at k=7)
 #     Δ_K/k     =  L/DOFs               the same for every order
 #
-# so the (k+1) convention gives the higher orders a systematically larger
-# viscosity, while the paper's is order-independent. Δ enters the cap and the
-# floor linearly and the residual viscosity quadratically, so the convention
-# can be switched here without touching the kernels, by scaling the
-# coefficients: C_max, C_min by (k+1)/k and C_R by ((k+1)/k)².
+# so the (k+1) convention gives the higher orders a larger viscosity at equal
+# DOFs (from k = 4 to 7, 9 % more floor and cap, 20 % more residual
+# viscosity), while Dao & Nazarov's is order-independent. Δ enters the cap and
+# the floor linearly and the residual viscosity quadratically, so the
+# convention can be switched here without touching the kernels, by scaling
+# the coefficients: C_max, C_min by (k+1)/k and C_R by ((k+1)/k)².
 #
-# THE ORDER COMPARISON OF THIS CASE USES THE PAPER'S Δ_K/k BY DEFAULT: it is
-# the only one of the two that is order-independent at fixed DOFs, and the
-# comparison exists to reproduce their Fig. 2. Nothing outside this deck
-# changes — `src/kernel/physics/SGS.jl` still computes Δ = Δ_K/ngl for every
-# case, and every other deck (orszagTangBormanis2024, sod1d, thetaTracers, the
-# forward-facing step, the rising bubble) is untouched by this switch.
+# THIS CASE USES THE PAPER'S Δ_e = h_e/(N+1) BY DEFAULT, as every other case
+# does, so that C_1 = 1, C_2 = 0.5 and C_min = 0.06 mean here what they mean in
+# the paper and in every other deck. Until October 2026 the default was Dao &
+# Nazarov's Δ_K/k ("nop"), which reproduces their Fig. 2 at equal DOFs.
+# Nothing outside this deck changes: `src/kernel/physics/SGS.jl` computes
+# Δ = Δ_K/ngl for every case.
 #
-#     JEXPRESSO_BW_HSCALE=nop     the paper's Δ_K/k          (the default here)
-#     JEXPRESSO_BW_HSCALE=ngl     Δ_K/(k+1), the kernels' own, unscaled
-const BW_HSCALE_DEFAULT = "nop"
+#     JEXPRESSO_BW_HSCALE=ngl     Δ_K/(k+1) = h_e/(N+1), the paper's, unscaled (the default)
+#     JEXPRESSO_BW_HSCALE=nop     Dao & Nazarov's Δ_K/k
+const BW_HSCALE_DEFAULT = "ngl"
 
 _bw_hscale() = lowercase(strip(get(ENV, "JEXPRESSO_BW_HSCALE", BW_HSCALE_DEFAULT)))
 

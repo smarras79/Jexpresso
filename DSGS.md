@@ -723,8 +723,9 @@ the $C_{min}$ floor both forms give the same profile). The 3D kernel
 (§3.1) is element-form only, so the switch has no 3D counterpart yet. Measured on the Brio–Wu tube: both forms give the same
 solution, and the element-scale ripples the compound wave radiates into
 the plateau behind it are damped by neither — the residual viscosity
-scales with their amplitude — and need the $C_{min}$ floor (3 % there, see the
-case README).
+scales with their amplitude — and need the $C_{min}$ floor: $C_{min} = 0.06$,
+the deck's default (6 % of $\Delta(|u|+c_f)$, 12 % of the cap; 0.03 leaves the
+ripples, see the case README).
 
 ### 4.8 MPI
 

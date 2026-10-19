@@ -1,0 +1,162 @@
+\documentclass[10pt]{article}
+\input{preamble}
+\usepackage{pdflscape}
+\newgeometry{margin=0.45in,top=0.4in,bottom=0.45in}
+\pagestyle{plain}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{4pt}
+\setlist{itemsep=1pt,topsep=2pt,parsep=0pt}
+% --- the paper's notation ------------------------------------------------------
+\newcommand{\qq}{\bm{q}}
+\newcommand{\vv}{\bm{u}}
+\newcommand{\BB}{\bm{B}}
+\newcommand{\Ic}{\mathcal{I}}
+\newcommand{\erel}{\epsilon_{\mathrm{rel}}}
+\newcommand{\cfm}{c_f^{\max}}
+\newcommand{\mm}[1]{\textcolor{red!70!black}{#1}}   % differs from the paper
+\newcommand{\grp}[1]{\multicolumn{9}{@{}l}{\rule{0pt}{9pt}\textbf{#1}}\\[1pt]}
+\begin{document}
+
+\begin{landscape}
+{\large\bfseries DynSGS setups of the paper's numerical tests}\hfill
+{\small decks of branch \branch{} at commit \code{2bb4c2a1}; notation of the paper, (11)--(16) and Table~\emph{split}}
+
+\vspace{2pt}
+{\scriptsize\setlength{\tabcolsep}{3pt}\renewcommand{\arraystretch}{1.0}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{3.55cm}*{8}{Y}@{}}
+\toprule
+ & \textbf{Smooth vortex, MHD} & \textbf{Smooth vortex, Euler}$^{b}$ & \textbf{Brio--Wu}$^{a}$ & \textbf{Orszag--Tang}
+ & \textbf{Rotor} & \textbf{Blast} & \textbf{Jet, Mach 800} & \textbf{Flux emergence}$^{c}$\\
+\textit{deck in} \code{problems/MHD/} \textit{unless marked} & \code{smoothVortex} & \code{CompEuler/\allowbreak smoothVortex}
+ & \code{brioWu1d} & \code{orszagTang\-Bormanis2024} & \code{rotorDao\-Nazarov2022} & \code{blastBalsara\-Spicer1999}
+ & \code{astroJet\-WuShu2018} & \code{fluxEmergence\-Son2025DSGS}\\
+\midrule
+\grp{Discretization (deck; \mm{paper}, where its text or captions say otherwise)}
+Dimension, equations & 2D, 9 & 2D, 4 & 1D, 8 (no $\psi$) & 2D, 9 & 2D, 9 & 2D, 9 & 2D, 9 & 2D, 9\\
+$\gamma$ (\code{:dsgs\_gamma}) & 5/3 & 1.4 & 2 & 5/3 & 1.4 & 1.4 & 1.4 & 1.05\\
+$N$ & 4 (figure: a sweep)$^{d}$ & 4 (figure: a sweep)$^{d}$ & 4; paper 4, 5, 6, 7 & 4 & 3; \mm{paper 4} & 3; \mm{paper 4} & 4 & 4\\
+Elements & $16^2$ on $[-10,10]^2$ & $16^2$ on $[-10,10]^2$ & $600/N$: 150, 120, 100, 86
+ & $64^2$ ($32^2$, refined once); \mm{paper $128^2$ to $512^2$}
+ & $128^2$ ($32^2$, refined twice); \mm{paper $256^2$} & $64^2$ ($32^2$, refined once); \mm{paper $128^2$, $256^2$}
+ & $80\times240$ ($20\times60$, refined twice), half domain & $160\times70$ ($80\times35$, refined once)\\
+$\Delta t$ & $2\cdot10^{-3}\cdot64/(n_{el}N)$ & $2\cdot10^{-3}\cdot64/(n_{el}N)$ & $5\cdot10^{-5}\cdot600/\text{DOFs}$
+ & $2\cdot10^{-4}$; \mm{paper $10^{-4}$ to $2.5\cdot10^{-5}$}
+ & $2\cdot10^{-4}$ & $10^{-5}$ & $1.25\cdot10^{-7}$ & $5\cdot10^{-3}$\\
+$t_{\rm end}$ & 1 & 1 & 0.1 & 1 & 0.15 & 0.01 & $2\cdot10^{-3}$ & 50; \mm{paper figure $51\,\tau_0$}\\
+Time integrator & \multicolumn{8}{l}{\code{CarpenterKennedy2N54} at fixed $\Delta t$ in every deck, as in the paper}\\
+\midrule
+\grp{The coefficient: (11)--(16)}
+Sensor $R_i$ (\code{:dsgs\_sensor}) & (R) residual & (R) residual & (R) residual & (L) legacy & (L) legacy & (L) legacy & (R) residual & (L) legacy\\
+$\mu|_e$ computed (\code{:dsgs\_freeze\_stage}) & once per step & once per step & once per step & every RK stage & every RK stage
+ & every RK stage & once per step & every RK stage\\
+$C_1$, $C_2$ (\code{:dsgs\_CR}, \code{:dsgs\_Cmax}) & 1, 0.5 & 1, 0.5 & 1, 0.5 & 1, 0.5 & 1, 0.5 & 1, 0.5 & 1, 0.5 & 1, 0.5\\
+Floor $C_{\min}\Delta_e(\lVert\vv\rVert+c_f)$ (\code{:dsgs\_Cmin}) & 0 & 0 & 0.06 & 0 & 0 & 0 & 0 & 0.03\\
+Length $\Delta_e$, (15) & $h_e/(N+1)$ & $h_e/(N+1)$ & $h_e/(N+1)$$^{a}$ & $h_e/(N+1)$ & $h_e/(N+1)$ & $h_e/(N+1)$ & $h_e/(N+1)$ & $h_e/(N+1)$\\
+Cutoff $c$ (\code{:dsgs\_cutoff}) & \multicolumn{8}{l}{0 in every deck (no cutoff; the Alfv\'en wave, not in the paper, runs $10^{-3}$)}\\
+$\mu|_e=0$ for the first (steps) (\code{:dsgs\_hold\_steps}) & 2 & 2 & 2 & 2 & 2 & 0 & 0 & 2\\
+Residual set $\Ic$ & 8, $\psi$ excluded & $\rho$, $\lvert\bm{m}\rvert$, $E$ & all 8 & 8, $\psi$ excluded & 8, $\psi$ excluded
+ & 8, $\psi$ excluded, $+\rho e$ (\code{:dsgs\_thermal\_residual}) & 8, $\psi$ excluded & 8, $\psi$ excluded\\
+Denominator of (12) (\code{:dsgs\_norms}) & domain, $\Omega$ & domain, $\Omega$ & domain, $\Omega$ & domain, $\Omega$
+ & \mm{element, $\Omega_e$} & \mm{element, $\Omega_e$} & \mm{element, $\Omega_e$} & \mm{element, $\Omega_e$}\\
+Floors $\sigma_i$, (16) (\code{:dsgs\_rel}, \code{:dsgs\_local\_rel}, \code{:dsgs\_fast\_floors})
+ & \mm{$\erel=1$}: $\bar\rho$, $\bar\rho\bar c$, $\bar\rho\bar c^2$, $\sqrt{\bar\rho}\,\bar c$ & \mm{$\erel=1$}: $\bar\rho$, $\bar\rho\bar c$, $\bar\rho\bar c^2$
+ & \mm{$\erel=1$}, as SV & \mm{$\erel=1$}, as SV & element scales $\rho_e$, $\rho_ec_e$, $\rho_ec_e^2$, $\sqrt{\rho_e}c_e$, $\times1$
+ & element scales, $c_e\to c_{f,e}$ & element scales, $c_e\to c_{f,e}$ & element scales, $\times1$\\
+Speed in the cap (13) & $\lVert\vv\rVert+\cfm$ & $\rho\,(\lVert\vv\rVert+c)$, dynamic$^{b}$ & $\lVert\vv\rVert+c_f$, exact $x$-fast speed
+ & $\lVert\vv\rVert+\cfm$ & $\lVert\vv\rVert+\cfm$ & $\lVert\vv\rVert+\cfm$ & $\lVert\vv\rVert+\cfm$ & $\lVert\vv\rVert+\cfm$\\
+\midrule
+\grp{Distribution over the equations: the paper's Table \emph{split} (coefficients of $\nabla$ of the diffused variable; $\nu=\mu|_e$)}
+Diffused variables (\code{:dsgs\_conserved}, \code{:dsgs\_ref\_weight}) & physical: $\rho,\vv,T,\BB,\psi$ & physical: $\rho,\vv,T$
+ & \mm{conserved $\qq$} & physical: $\rho,\vv,T,\BB,\psi$ & \mm{conserved $\qq$} & \mm{conserved $\qq$} & \mm{conserved $\qq$}
+ & \mm{$(\qq-\qq_e)/\rho_e$}; $\BB,\psi$: $\qq-\qq_e$\\
+$\lambda_i$ (\code{:}$\mu$) & \multicolumn{8}{l}{1 for every equation in every deck, so \mm{$\lambda_1=1$: mass diffusion is on} (the paper: $\lambda_1=0$)}\\
+$\rho$ & $\nu$ & $\nu$ ($\mu/\lVert\rho\rVert_{\infty,e}$) & $\nu$ & $\nu$ & $\nu$ & $\nu$ & $\nu$ & $\rho_e\nu$\\
+$\rho u,\rho v,\rho w$ & $\bar\rho_e\nu$, stress $\bm\tau$ & $\mu$, stress $\bm\tau$ & $\nu$ & $\bar\rho_e\nu$, stress $\bm\tau$ & $\nu$ & $\nu$ & $\nu$ & $\rho_e\nu$\\
+$E$ (\code{:dsgs\_nazarov\_energy}) & \mm{$\bar\rho_e\nu/\mathrm{Pr}_t$} on $\nabla T$; $+\bm\tau\cdot\vv$, \mm{$+\eta\BB\cdot\nabla\BB$}
+ & $\mathrm{P}\,\mu/(\gamma-1)$ on $\nabla T$; $+\bm\tau\cdot\vv$ & $\nu$ on $E$
+ & \mm{$\bar\rho_e\nu/\mathrm{Pr}_t$} on $\nabla T$; $+\bm\tau\cdot\vv$, \mm{$+\eta\BB\cdot\nabla\BB$} & $\nu$ on $E$ & $\nu$ on $E$ & $\nu$ on $E$
+ & thermal part: $\rho_e\max(c_E\nu_c,\nu_{\rm fl})$, $c_E=\gamma(\gamma-1)/\mathrm{Pr}_t$; rest: $\rho_e\nu$\\
+$\mathrm{Pr}_t$ (\code{:dsgs\_Prt}) & \mm{1} & $\mathrm{P}=0.1$ (\code{:Pr})$^{b}$ & 1 (not used) & \mm{1} & 1 (not used) & 1 (not used) & 1 (not used) & \mm{1}\\
+$B_x,B_y,B_z$; $\psi$ & $\eta=\nu$; $\nu$ & --- & $\nu$; --- & $\eta=\nu$; $\nu$ & $\nu$; $\nu$ & $\nu$; $\nu$ & $\nu$; $\nu$ & $\nu$; $\nu$\\
+\midrule
+\grp{Positivity (not part of DynSGS)}
+State limiter (\code{:positivity\_method}) & none & node repair; $10^{-6}$ of the core $\rho$, $p$ & none & none
+ & conservative; $\rho,p\ge10^{-6}$ & conservative; $10^{-6}$, $10^{-7}$ & conservative; $1.4\cdot10^{-7}$, $10^{-6}$ & none\\
+\bottomrule
+\end{tabularx}}
+
+\vspace{3pt}
+{\scriptsize
+\mm{Red}: differs from the paper's text. (R), (L): the residual and legacy sensors of \code{dsgsCutoff.pdf} --- (L) is (11) at
+every RK stage against the assembled $M^{-1}\mathcal{R}$, (R) is (11) once per step against the element's own $M_e^{-1}\mathcal{R}_e$.
+$\cfm=\sqrt{(\gamma p+\lvert\BB\rvert^2)/\rho}$, the fast speed bounded over directions. $\nu_c$: the residual coefficient before the
+$C_{\min}$ floor $\nu_{\rm fl}$. $T=p/\rho$. Unset keys take \code{src/io/mod\_inputs.jl}'s defaults; environment overrides are taken unset.
+Notes $a$--$d$: next page.}
+\end{landscape}
+
+\section*{Notes to the table}
+\begin{itemize}[leftmargin=14pt]
+\item[$a$] Since \code{2bb4c2a1} (2026-10-19) the Brio--Wu deck uses the paper's $\Delta_e=h_e/(N+1)$ with
+$(C_1,C_2,C_{\min})=(1,0.5,0.06)$, as every other deck. Before, it scaled them by $((N+1)/N)^2$, $(N+1)/N$, $(N+1)/N$, i.e.\
+$(1,0.5,0.06)$ on Dao \& Nazarov's $\Delta_e=h_e/N$, the same at every $N$ for a fixed number of DOFs;
+\code{JEXPRESSO\_BW\_HSCALE=nop} still gives that. The paper varies $C_{\min}$ (\code{JEXPRESSO\_BW\_CMIN}).
+\item[$b$] The Euler vortex uses the CompEuler kernel: $\mu_{\rm res}|_e=C_1\Delta_e^2\,n_\rho\,r_e$ and
+$\mu_{\max}|_e=C_2\Delta_e\lVert\rho\rVert_{\infty,\Omega_e}\lVert\lVert\vv\rVert+c\rVert_{\infty,\Omega_e}$ are dynamic ($n_\rho$: the
+density denominator); the momentum residual enters as one vector norm; heat conduction $\mathrm{P}\mu/(\gamma-1)$ with the artificial
+Prandtl number $\mathrm{P}=$ \code{:Pr} $=0.1$ (default). The deck's \code{:dsgs\_Prt => 0.7} is not read by this kernel.
+\item[$c$] The paper's $160\times70$ run is \code{fluxEmergenceSon2025DSGS}. Its sibling \code{fluxEmergenceSon2025} ($80\times35$,
+$\Delta t=7.5\cdot10^{-3}$, $t_{\rm end}=54$, a case positivity floor as stage limiter) diffuses $\qq-\qq_e$ with $\nu$ (no
+$\rho_e$ weight) and is otherwise the same.
+\item[$d$] The deck's default is one point of the convergence figure; \code{JEXPRESSO\_SV\_NOP}, \code{\_NELX} (\code{JEXPRESSO\_EV\_*}
+for the Euler vortex) set the others, with $\Delta t$ from the rule.
+\end{itemize}
+
+\section*{Where the paper's text and the decks differ}
+These are the red entries of the table, with what each one changes.
+\begin{enumerate}[leftmargin=*]
+\item \textbf{Sensor, (11).} The paper's (11) reads the assembled rate $M^{-1}\mathcal{R}$, which is the legacy sensor (L) when
+it is evaluated at every stage. The smooth vortices, Brio--Wu and the jet run (R): the element's own rate $M_e^{-1}\mathcal{R}_e$,
+once per step. Orszag--Tang, the rotor, the blast and the flux emergence run (L).
+\item \textbf{Mass diffusion.} The paper sets $\lambda_1=0$ (mass untouched); every deck has \code{:}$\mu$\code{[1] = 1}, so $\nu\nabla\rho$
+is on, in all eight setups.
+\item \textbf{Energy.} The paper's Table \emph{split} has $\lambda_4\bar\rho_e\mu|_e\,\gamma/((\gamma-1)\mathrm{Pr}_t)$ on
+$\nabla T$ with $\mathrm{Pr}_t=0.7$. No deck uses that combination: the physical-form decks (the MHD vortex, Orszag--Tang) take
+Dao \& Nazarov's $\bar\rho_e\nu/\mathrm{Pr}_t$ (\code{:dsgs\_nazarov\_energy}) with $\mathrm{Pr}_t=1$, and the conserved-form decks
+diffuse $E$ itself (the flux emergence, its thermal part only).
+\item \textbf{Ohmic heating.} The paper's remark says the resistive term is not returned to the energy. The physical form (the MHD
+vortex, Orszag--Tang) adds the resistive work $\nabla\cdot(\eta\BB\cdot\nabla\BB)$ to the energy, so the magnetic energy removed
+reappears as heat and the total energy is conserved.
+\item \textbf{Conserved form.} The paper's stabilized system (stress, $\kappa_e\nabla T$, $\bm\tau\cdot\vv$) is the physical form.
+Brio--Wu, the rotor, the blast, the jet and the flux emergence diffuse the conserved variables with one kinematic $\nu$ instead:
+no stress, no work terms.
+\item \textbf{Normalization, (12) and (16).} (12) normalizes by the domain spread; the rotor, the blast, the jet and the flux
+emergence normalize by the element's own spread, floored at the element's scales. (16) has $\erel=10^{-3}$; every deck runs
+$\erel=1$, the floor being the full physical scale.
+\item \textbf{Constants.} $C_{\min}$ is not in (12)--(14); Brio--Wu runs 0.06 and the flux emergence 0.03.
+\item \textbf{Per stage or per step.} The paper's algorithm evaluates \dsgs{} once per right-hand-side call (every stage); the
+(R) decks compute $\mu|_e$ once per step.
+\item \textbf{Not in the paper.} The start-up hold (2 steps; none in the blast and the jet), the fast-speed floors (blast, jet),
+the residual of $\rho e$ (blast) and the reference weight $\rho_e$ (flux emergence).
+\item \textbf{Discretization.} The rotor (paper $256^2$ at $N=4$; deck $128^2$ at $N=3$), the blast (paper $128^2$, $256^2$ at
+$N=4$; deck $64^2$ at $N=3$) and Orszag--Tang (paper $128^2$ to $512^2$ in the figures and $32^2$ with $\Delta t=5\cdot10^{-4}$ in
+the text; deck $64^2$, $\Delta t=2\cdot10^{-4}$) were run on other meshes than the decks'. The flux-emergence figure is at
+$t=51\,\tau_0$; the deck stops at 50.
+\end{enumerate}
+
+\section*{Defaults that changed while the paper's runs were made}
+A run made before these dates used the old behaviour, whatever its deck says now.
+\begin{itemize}[leftmargin=*]
+\item \textbf{2026-09-10} (\code{39362212}): the residual sensor (R) becomes the default and \code{:dsgs\_sensor => "legacy"}
+keeps the old one. Before, every \dsgs{} run used (L).
+\item \textbf{2026-09-23} (\code{8a81279c}): the floors (16) go from $\erel=10^{-3}$ to $\erel=1$ (\code{:dsgs\_rel}). Before,
+a nearly uniform field (the density of a vortex, $B_x$ in a shock tube) had its residual divided by $10^{-3}$ of its scale.
+\item \textbf{2026-10-14} (\code{b956ccd} for \code{DSGS\_MHD}, \code{e12fca8} for the CompEuler \code{DSGS}): with the residual
+sensor, $\mu|_e$ is computed once per step. Before, at every stage, where the residual stalls at $O(\Delta t)$ on smooth flow
+(\code{dsgsCutoff.pdf}).
+\item \textbf{2026-10-19} (\code{2bb4c2a1}): Brio--Wu moves from $\Delta_e=h_e/N$ to the paper's $h_e/(N+1)$ (note $a$).
+\item \textbf{Last change of each deck:} Brio--Wu \code{2bb4c2a1} (2026-10-19), MHD vortex \code{b956ccd} (2026-10-14), Euler vortex \code{e12fca8}
+(2026-10-14), Orszag--Tang \code{6829a2c} (10-08), rotor \code{7bd7bc2} (10-09), blast \code{e4fcf14} (10-12), jet
+\code{2590be6} (10-12), flux emergence \code{c1d5b46} (10-13).
+\end{itemize}
+
+\end{document}
