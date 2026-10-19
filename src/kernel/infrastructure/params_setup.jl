@@ -334,11 +334,13 @@ function params_setup(sem,
             z1 = MPI.Allreduce(z1_loc, MPI.MIN, comm)
             if isfinite(z1)
                 # Floor at a fraction of z1: 1/2 (the centre of the wall node's
-                # control volume) by default. DBG_ZFLOOR_FRAC is a TEST knob: the
-                # LESICP4 wall node ran away on the windward slope at 0.5 (jobs
-                # 1426755/56, t = 6860 s), and 1.0 gives it 4x the l^2 while
-                # leaving every interior node untouched.
-                zfrac = parse(Float64, get(ENV, "DBG_ZFLOOR_FRAC", "0.5"))
+                # control volume) by default. The LESICP4 wall node ran away on the
+                # windward slope at 0.5 (jobs 1426755/56, t = 6860 s); 1.0 gives it
+                # 4x the l^2, leaves every interior node untouched, and ran clean
+                # past that point (1428233).
+                # :wall_zfloor_frac in the deck (default 0.5); DBG_ZFLOOR_FRAC overrides.
+                zfrac = haskey(ENV, "DBG_ZFLOOR_FRAC") ? parse(Float64, ENV["DBG_ZFLOOR_FRAC"]) :
+                        Float64(get(inputs, :wall_zfloor_frac, 0.5))
                 zw = max.(zw, zfrac*z1)
                 rank == 0 && @info ":lwall_damping wall-distance floor z_eff = $(round(zfrac*z1, digits=3)) m ($(zfrac) z1)"
             end

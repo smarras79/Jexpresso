@@ -312,6 +312,12 @@ function user_inputs()
         # roughly 30% of it. See sgs_mixing_length2 in kernel/physics/SGS.jl and
         # test/sgs/test_wall_damping.jl.
         :lwall_damping        => true,
+        # Wall-distance floor for the damping, as a fraction of the first-node
+        # height z1 (default 0.5 in params_setup). At 0.5 the windward-slope wall
+        # node ran away at t = 6860 s (jobs 1426755/56); 1.0 keeps the damping on
+        # and ran clean through 7500 s (1428233), wall-node2 shear 1.80 -> 1.32
+        # (switching the damping off would give ~0.5). DBG_ZFLOOR_FRAC overrides.
+        :wall_zfloor_frac     => 1.0,
         # theta diffusion: kappa_t = mu[5] nu_t / Pr_t = 3 nu_t (Pr_t = 1/3, the
         # convective-BL standard). It was mu[5] = 2.1 with Pr_t = 0.7, the same
         # kappa_t but an f_Ri cutoff at Ri = 0.7; the consistent Pr_t = 1/3 lifts
