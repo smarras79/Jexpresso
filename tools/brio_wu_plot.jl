@@ -18,8 +18,10 @@
 # --store) unless --out says otherwise:
 #
 #   rho_By_dof<M>-it<n>       ρ (left) and B_y (right) of every order at ~M DOFs
-#                             against the reference, with zoom boxes, as in Dao
-#                             & Nazarov's Brio-Wu figure
+#                             against the reference, with zoom boxes, in the
+#                             layout of the Brio-Wu figure of Dao, Nazarov &
+#                             Tomas (arXiv:2310.18467, Fig. 2), B_y with its
+#                             three boxes
 #   rho_By-it<n>              the same at the finest resolution
 #   rho_By_all-it<n>          EVERY order at EVERY resolution; colour = order,
 #                             line type = resolution
