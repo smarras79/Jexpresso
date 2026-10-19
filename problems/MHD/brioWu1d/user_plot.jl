@@ -36,17 +36,17 @@
 #                                 leaves density_dof150, density_dof300, ...
 #   density-it<n>.png             the same for the finest resolution in the
 #                                 store, under the plain name
-#   rho_By_dof<M>-it<n>.png       THE COMPARISON FIGURE, as in Dao & Nazarov's
-#   rho_By-it<n>.png              Brio-Wu figure: ρ on the left, B_y on the
-#                                 right, every order against the reference,
-#                                 with zoom boxes; per resolution, and the
-#                                 finest under the plain name
-#   rho_By_all-it<n>.png          every order at every resolution on one
-#                                 figure (colour = order, line type =
-#                                 resolution)
+#   rho_By_dof<M>-it<n>.png       THE COMPARISON FIGURE, in the layout of the
+#   rho_By-it<n>.png              Brio-Wu figure of Dao, Nazarov & Tomas: ρ on
+#                                 the left, B_y on the right, every order
+#                                 against the reference, with zoom boxes; ONE
+#                                 FIGURE PER RESOLUTION, and the finest under
+#                                 the plain name (never two resolutions in one
+#                                 B_y panel: too many curves to tell which one
+#                                 overshoots)
 #   nu_dof<M>-it<n>.png, nu-it<n>.png, nu_all-it<n>.png
 #                                 the DynSGS coefficient ν alone, of the same
-#                                 curves
+#                                 curves (nu_all: every resolution)
 #   density_nu*-it<n>.png         ρ and ν side by side in place of ρ and B_y,
 #                                 with JEXPRESSO_BW_RIGHT=nu (the earlier layout)
 #   convergence-it<n>.png         Dao & Nazarov Fig. 1 layout: the L¹, L² and
@@ -696,9 +696,6 @@ function _bw_plot_rho_By(curves, xs, href, hBy, inputs, OUTPUT_DIR, iout, tag;
     lo = minimum(minimum(c.By) for c in withBy); hi = maximum(maximum(c.By) for c in withBy)
     hBy === nothing || (lo = min(lo, minimum(hBy)); hi = max(hi, maximum(hBy)))
     pad = 0.02*(hi - lo)
-    # a legend of more than ten entries (four resolutions of four orders) in two
-    # columns, so that it ends above the rarefaction box
-    nleg = length(withBy) + (hBy === nothing ? 0 : 1)
     xl = (0.0, 1.0); yl = (0.1, 1.0); ylB = (lo - pad, hi + pad)
     font = (titlefontsize = 16, guidefontsize = 18, tickfontsize = 13)
     plt = Plots.plot(; layout = (1, 2), size = (1800, 720), show = false,
@@ -710,7 +707,7 @@ function _bw_plot_rho_By(curves, xs, href, hBy, inputs, OUTPUT_DIR, iout, tag;
     Plots.plot!(plt[2]; title = LaTeXStrings.L"B_y", xlabel = LaTeXStrings.L"x",
                 ylabel = LaTeXStrings.L"B_{y,h}", xlims = xl, ylims = ylB, xticks = 0.0:0.2:1.0,
                 framestyle = :box, grid = false, legend = :topright,
-                legend_columns = nleg > 10 ? 2 : 1, legendfontsize = legendfontsize, font...)
+                legendfontsize = legendfontsize, font...)
     for (k, c) in enumerate(withBy)
         col, ls, mk = style(c)
         midx = markers ? _bw_marker_idx(length(c.x), k, length(withBy), inputs) : (1:0)
@@ -785,25 +782,22 @@ end
 #---------------------------------------------------------------------------------
 # EVERY RESOLUTION ON ONE FIGURE, as Dao & Nazarov's Fig. 2 puts its two: the
 # colour is the order, the line type the resolution (dashed the coarsest, then
-# dotted, dash-dot, dash-dot-dot), no markers. Written as rho_By_all-it<n> and
-# nu_all-it<n> (density_nu_all-it<n> with JEXPRESSO_BW_RIGHT=nu) when the store
-# holds two resolutions or more; with four, that is sixteen curves.
+# dotted, dash-dot, dash-dot-dot), no markers. Written as nu_all-it<n> (and
+# density_nu_all-it<n> with JEXPRESSO_BW_RIGHT=nu) when the store holds two
+# resolutions or more; with four, that is sixteen curves. Not ρ and B_y: with
+# every resolution in one B_y panel there are too many curves to tell which
+# one overshoots, so those stay one figure per resolution (rho_By_dof<M>).
 #---------------------------------------------------------------------------------
 const BW_RES_LINES = [:dash, :dot, :dashdot, :dashdotdot]
 
-function _bw_plot_all(stored, xs, href, hBy, inputs, OUTPUT_DIR, iout, right)
+function _bw_plot_all(stored, xs, href, inputs, OUTPUT_DIR, iout, right)
     buckets = sort(unique(_bw_bucket(c.ndofs) for c in stored))
     length(buckets) >= 2 || return nothing
     curves = reduce(vcat, [_bw_finest(filter(c -> _bw_bucket(c.ndofs) == b, stored)) for b in buckets])
     rline(c) = BW_RES_LINES[mod1(findfirst(==(_bw_bucket(c.ndofs)), buckets), length(BW_RES_LINES))]
     style = c -> (_bw_style(c.nop)[1], rline(c), :none)
-    if right == "nu"
-        _bw_plot_density_nu(curves, xs, href, inputs, OUTPUT_DIR, iout, "_all";
-                            style = style, markers = false, legend_nu_only = true)
-    else
-        _bw_plot_rho_By(curves, xs, href, hBy, inputs, OUTPUT_DIR, iout, "_all";
-                        style = style, markers = false, legendfontsize = 9)
-    end
+    right == "nu" && _bw_plot_density_nu(curves, xs, href, inputs, OUTPUT_DIR, iout, "_all";
+                                         style = style, markers = false, legend_nu_only = true)
     _bw_plot_nu(curves, inputs, OUTPUT_DIR, iout, "_all"; style = style, markers = false, legendfontsize = 9)
     return nothing
 end
@@ -812,10 +806,11 @@ end
 # Every comparison figure of the store at the final time: per resolution the
 # density figure, the ρ-and-B_y figure (with JEXPRESSO_BW_RIGHT=nu the
 # density-and-coefficient one instead) and the coefficient alone, the finest of
-# each under the plain name, every resolution together, the error table and
-# the two convergence histories. Called by the run (user_plot_1d) and by
-# tools/brio_wu_plot.jl, which redraws them from the store alone at the end of
-# a sweep. `hBy` is the B_y reference on the abscissae `xs` of `href`.
+# each under the plain name, the coefficient of every resolution together, the
+# error table and the two convergence histories. Called by the run
+# (user_plot_1d) and by tools/brio_wu_plot.jl, which redraws them from the
+# store alone at the end of a sweep. `hBy` is the B_y reference on the
+# abscissae `xs` of `href`.
 #---------------------------------------------------------------------------------
 function _bw_draw_store(stored, xs, href, inputs, OUTPUT_DIR, iout;
                         hBy = nothing, lerrors = href !== nothing)
@@ -854,9 +849,12 @@ function _bw_draw_store(stored, xs, href, inputs, OUTPUT_DIR, iout;
             @warn "brioWu1d: a comparison figure failed; the density figure is unaffected." exception=err
         end
     end
-    # Every order at every resolution on one figure.
+    # Every order at every resolution on one figure. ρ and B_y no longer get
+    # one: an rho_By_all left by an earlier redraw would pass for current.
+    isdir(OUTPUT_DIR) && foreach(f -> occursin(r"^rho_By_all-it\d+\.(svg|pdf|png)$", f) &&
+                                      rm(joinpath(OUTPUT_DIR, f); force = true), readdir(OUTPUT_DIR))
     try
-        _bw_plot_all(stored, xs, href, hBy, inputs, OUTPUT_DIR, iout, right)
+        _bw_plot_all(stored, xs, href, inputs, OUTPUT_DIR, iout, right)
     catch err
         @warn "brioWu1d: the all-resolutions figures failed; the other figures are unaffected." exception=err
     end

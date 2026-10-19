@@ -23,10 +23,8 @@
 #                             Tomas (arXiv:2310.18467, Fig. 2), B_y with its
 #                             three boxes
 #   rho_By-it<n>              the same at the finest resolution
-#   rho_By_all-it<n>          EVERY order at EVERY resolution; colour = order,
-#                             line type = resolution
 #   nu_dof<M>-it<n>, nu-it<n>, nu_all-it<n>   the DynSGS coefficient ν alone,
-#                             of the same curves
+#                             of the same curves (nu_all: every resolution)
 #   density_dof<M>-it<n>, density-it<n>         the density alone
 #   convergence-it<n>, convergence_smooth-it<n> error against 1/#DOFs
 #
