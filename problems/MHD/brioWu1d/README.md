@@ -66,8 +66,8 @@ back to the generic panels of the 1D plotter.
 
 ### Comparing polynomial orders, and the convergence history
 
-At the final time a run stores its density profile in
-`curves/nop<N>_dof<M>_<form>.dat` in this case directory, and the figures are
+At the final time a run stores its density profile and its DynSGS
+coefficient $\nu$ in `curves/nop<N>_dof<M>_<form>.dat` in this case directory, and the figures are
 drawn from **every** curve stored there whose `<form>` — the coefficient form
 and the length-scale convention, the two things that make one run a different
 method from another — matches the run drawing them. A sweep over orders and
@@ -76,9 +76,18 @@ its own (order, DOFs) point:
 
 ```bash
 tools/brio_wu_order_scan.sh                              # orders 4-7 at 600 and 1200 DOFs (Fig. 2)
+BW_JOBS=4 BW_DOFS=600 tools/brio_wu_order_scan.sh        # the paper's 600 DOFs, the four orders at once
 BW_DOFS="150 300 600 1200" tools/brio_wu_order_scan.sh   # also 150 and 300: the convergence figure
-JULIA=/path/to/julia tools/brio_wu_order_scan.sh         # the default is the macOS app's julia
+JULIA=/path/to/julia tools/brio_wu_order_scan.sh         # default: the macOS app's julia, else the PATH's
+julia --project=. tools/brio_wu_plot.jl                  # the figures again, from the store alone
 ```
+
+`BW_JOBS=n` runs up to $n$ orders at once, one Julia session per order (each
+compiles the case once, then runs its resolutions); the log of order $N$ goes
+to `output/MHD/brioWu1d/scan-nop<N>.log`. Every figure and every stored curve
+is written under a temporary name and renamed, so the sessions never read
+each other's half-written files, and at the end `tools/brio_wu_plot.jl`
+redraws every figure from the complete store.
 
 **The scan clears the store before it starts** (`BW_KEEP=1` to accumulate
 instead, to finish a partial sweep). Since the figure is redrawn from the
@@ -91,6 +100,8 @@ on stdout and leaves them off the figure.
 |---|---|
 | `density_dof<M>-it<n>.svg` | **one file per resolution**: every order that ran at $M$ degrees of freedom, against the reference, with the four zoom boxes. A sweep over 150, 300, 600 and 1200 DOFs leaves `density_dof150-it<n>.svg`, `density_dof300-it<n>.svg`, … side by side |
 | `density-it<n>.svg` | the same figure for the finest resolution in the store, under the plain name |
+| `density_nu_dof<M>-it<n>.svg` | the layout of Dao & Nazarov (2024), Fig. 2: **left**, the density of every order at $M$ DOFs against the reference with the same four zoom boxes; **right**, the DynSGS coefficient $\nu$ of the same runs on the same $x$ (the $\rho u$ slot, which in this deck's conserved form is the one $\nu$ of every equation; per element, so a staircase through the nodes). Linear axis, or $\log_{10}$ when $\nu$ spans more than two decades ($C_{min}=0$) |
+| `density_nu-it<n>.svg` | the same for the finest resolution in the store |
 | `convergence-it<n>.svg` | the layout of the paper's Fig. 1: the relative $L^1$, $L^2$ and $L^\infty$ error of $\rho$ against $1/\#\mathrm{DOFs}$ on log-log axes, one line per order, with slope guides and the measured rate in each legend entry |
 | `convergence_smooth-it<n>.svg` | the same, restricted to $x \in (0.33, 0.41)$ inside the fast rarefaction — the one smooth, non-constant part of this solution |
 
@@ -129,7 +140,12 @@ the parabolic number stays below 0.25.
 
 The last run of a sweep rewrites every one of these figures from the whole
 store, so its output directory holds the complete comparison: one density
-figure per resolution and the two convergence histories.
+figure and one density-and-coefficient figure per resolution, and the two
+convergence histories. `tools/brio_wu_plot.jl` draws the same from the store
+alone (`4,7` for a subset of the orders, `--dofs=600` for one resolution,
+`--fmt=pdf`, `--out=dir`); the scan calls it at the end. Curves stored before
+the coefficient was are drawn on the density figures and left off the
+`density_nu` ones.
 `rm -r problems/MHD/brioWu1d/curves` starts a fresh one; the store is
 git-ignored. Curves whose stored final time differs from the current one are
 ignored, so changing `:tend` cannot silently mix solutions from different

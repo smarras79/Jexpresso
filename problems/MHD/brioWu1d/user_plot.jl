@@ -22,8 +22,8 @@
 #                       coefficient fires can be read against the waves
 #
 # ORDER COMPARISON AND CONVERGENCE HISTORY. At the final time the run stores
-# its density profile in `curves/nop<N>_dof<M>_<form>.dat` in this case
-# directory, and the figures are drawn from EVERY curve stored there whose
+# its density profile and its DynSGS coefficient ν in
+# `curves/nop<N>_dof<M>_<form>.dat` in this case directory, and the figures are drawn from EVERY curve stored there whose
 # <form> matches this run's — the coefficient form (element or nodal) and the
 # length-scale convention ("H" = the paper's Δ_K/k, the default of this deck),
 # which are what make one run a different method from another. Curves of any
@@ -35,6 +35,12 @@
 #                                 leaves density_dof150, density_dof300, ...
 #   density-it<n>.png             the same for the finest resolution in the
 #                                 store, under the plain name
+#   density_nu_dof<M>-it<n>.png   the layout of Dao & Nazarov's order
+#   density_nu-it<n>.png          comparison (2024, Fig. 2): the density with
+#                                 the zoom boxes on the left, the DynSGS
+#                                 coefficient ν of the same runs on the right;
+#                                 per resolution, and the finest under the
+#                                 plain name
 #   convergence-it<n>.png         Dao & Nazarov Fig. 1 layout: the L¹, L² and
 #                                 L∞ error against 1/#DOFs on log-log axes, one
 #                                 line per order, with slope guides
@@ -96,6 +102,18 @@ function _bw_fig_ext(inputs)
         return "svg"
     end
     return e
+end
+
+# Every figure goes through a temporary name in the same directory and is
+# renamed into place, so that a figure is never half-written when another
+# session reads or rewrites it: tools/brio_wu_order_scan.sh with BW_JOBS > 1
+# runs several orders at once into the same output directory.
+function _bw_savefig(plt, f)
+    root, ext = splitext(f)
+    tmp = string(root, ".tmp", getpid(), ext)
+    _savefig_silent(plt, tmp)
+    mv(tmp, f; force = true)
+    return nothing
 end
 
 # ASCII file names: a figure called "ρ-it5.svg" is a nuisance to reference from
@@ -174,12 +192,14 @@ _bw_curve_file(nop, ndofs, form) =
 # Store this run's density profile. One file per (order, DOFs), so a re-run at
 # the same order and resolution replaces its own point and leaves the others.
 #---------------------------------------------------------------------------------
-function _bw_save_curve(xs, ρs, inputs, t)
+function _bw_save_curve(xs, ρs, νs, inputs, t, iout)
     nop = Int(get(inputs, :nop, 0))
     nop > 0 || return nothing
     try
         mkpath(BW_CURVE_DIR)
-        open(_bw_curve_file(nop, length(xs), _bw_form(inputs)), "w") do io
+        f   = _bw_curve_file(nop, length(xs), _bw_form(inputs))
+        tmp = string(f, ".tmp", getpid())
+        open(tmp, "w") do io
             println(io, "# Brio-Wu density profile, written by user_plot.jl for the order comparison.")
             println(io, "# nop=", nop,
                         " ndofs=", length(xs),
@@ -190,12 +210,18 @@ function _bw_save_curve(xs, ρs, inputs, t)
                         " CR=", Float64(get(inputs, :dsgs_CR, 1.0)),
                         " Cmax=", Float64(get(inputs, :dsgs_Cmax, 0.5)),
                         " sensor=", string(get(inputs, :dsgs_sensor, "residual")),
+                        " iout=", iout,
                         " form=", _bw_form(inputs))
-            println(io, "# x rho")
+            # nu: the DynSGS coefficient at the node (the ρu slot, which in
+            # this deck's conserved form is the one ν of every equation)
+            println(io, "# x rho nu")
             for i in eachindex(xs)
-                println(io, xs[i], " ", ρs[i])
+                println(io, xs[i], " ", ρs[i], " ", isempty(νs) ? NaN : νs[i])
             end
         end
+        # Renamed into place: tools/brio_wu_order_scan.sh runs orders in
+        # parallel, and a session drawing the store must never read half a file.
+        mv(tmp, f; force = true)
     catch err
         @warn "brioWu1d: could not store the density curve for the order comparison" exception=err
     end
@@ -211,7 +237,7 @@ function _bw_load_curves(t)
     for fname in readdir(BW_CURVE_DIR)
         (endswith(fname, ".dat") && startswith(fname, "nop")) || continue
         meta = Dict{String,String}()
-        xs = Float64[]; ys = Float64[]
+        xs = Float64[]; ys = Float64[]; νs = Float64[]
         try
             for line in eachline(joinpath(BW_CURVE_DIR, fname))
                 if startswith(line, "#")
@@ -227,6 +253,7 @@ function _bw_load_curves(t)
                 length(p) >= 2 || continue
                 push!(xs, parse(Float64, p[1]))
                 push!(ys, parse(Float64, p[2]))
+                push!(νs, length(p) >= 3 ? parse(Float64, p[3]) : NaN)
             end
         catch err
             @warn "brioWu1d: skipping an unreadable curve" file=fname exception=err
@@ -243,7 +270,9 @@ function _bw_load_curves(t)
                        Cmin = something(tryparse(Float64, get(meta, "Cmin", "")), 0.0),
                        form = get(meta, "form", "elem"),
                        mtime = mtime(joinpath(BW_CURVE_DIR, fname)),
-                       x = xs, y = ys))
+                       iout = something(tryparse(Int, get(meta, "iout", "")), 0),
+                       x = xs, y = ys,
+                       nu = all(isnan, νs) ? Float64[] : νs))   # empty: stored before ν was
     end
     # One curve per (order, DOFs, form): the store has carried two file-naming
     # conventions, so keep the most recently written of any duplicates.
@@ -440,7 +469,7 @@ function _bw_plot_convergence(rows, inputs, OUTPUT_DIR, iout; smooth::Bool)
     end
     plt = Plots.plot(panels...; layout = (1, 3), size = (1500, 450),
                      left_margin = 9Plots.mm, bottom_margin = 8Plots.mm, show = false)
-    _savefig_silent(plt, string(OUTPUT_DIR, "/convergence", smooth ? "_smooth" : "", "-it", iout, ".", _bw_fig_ext(inputs)))
+    _bw_savefig(plt, string(OUTPUT_DIR, "/convergence", smooth ? "_smooth" : "", "-it", iout, ".", _bw_fig_ext(inputs)))
     return nothing
 end
 
@@ -505,7 +534,120 @@ function _bw_plot_density(curves, xs, href, inputs, OUTPUT_DIR, iout, tag)
             end
         end)
     end
-    _savefig_silent(plt, string(OUTPUT_DIR, "/density", tag, "-it", iout, ".", _bw_fig_ext(inputs)))
+    _bw_savefig(plt, string(OUTPUT_DIR, "/density", tag, "-it", iout, ".", _bw_fig_ext(inputs)))
+    return nothing
+end
+
+#---------------------------------------------------------------------------------
+# DENSITY AND COEFFICIENT, side by side: the layout of Dao & Nazarov's order
+# comparison (2024, Fig. 2, "first-order solutions to the Brio-Wu problem and
+# the corresponding amounts of artificial viscosity"). Left, the density of
+# every curve handed to it against the reference, with the zoom boxes of the
+# density figure; right, the DynSGS coefficient ν of the same runs at the same
+# time. Written as density_nu<tag>-it<n>, beside the density figure.
+#
+# ν is the coefficient of the ρu slot, which in this deck's conserved form is
+# THE coefficient (one kinematic ν on every equation). The element form makes
+# it constant per element, so through the nodes it is a staircase. Its axis is
+# linear, as in the paper, unless it spans more than two decades (C_min = 0,
+# where it falls to the residual's floor between the waves): then log10.
+#---------------------------------------------------------------------------------
+function _bw_plot_density_nu(curves, xs, href, inputs, OUTPUT_DIR, iout, tag)
+    withnu = filter(c -> !isempty(c.nu), curves)
+    if isempty(withnu)
+        println(" #   brioWu1d: no coefficient stored with these curves (written before ν was ",
+                "stored: rerun them); no density_nu", tag, " figure.")
+        return nothing
+    end
+    lcommon    = length(unique(c -> round(c.Cmin; digits = 12), withnu)) == 1
+    lshow_cmin = !lcommon
+    form  = withnu[1].form
+    fdesc = string(startswith(form, "nodal") ? "\\mathrm{nodal}" : "\\mathrm{element}",
+                   "\\ \\nu,\\ \\Delta_K/", endswith(form, "H") ? "k" : "(k{+}1)")
+    ttl_ρ = LaTeXStrings.latexstring(string("\\mathrm{Density}",
+                                            lcommon ? string(",\\ C_{min} = ", withnu[1].Cmin) : "",
+                                            "\\ (", fdesc, ")"))
+    νs   = reduce(vcat, [filter(isfinite, c.nu) for c in withnu])
+    νmax = maximum(νs; init = 0.0)
+    νpos = minimum(filter(>(0), νs); init = νmax)
+    llog = νmax > 0 && νmax/max(νpos, floatmin(Float64)) > 100.0
+
+    xl = (0.0, 1.0); yl = (0.1, 1.0)
+    font = (legendfontsize = 11, titlefontsize = 16, guidefontsize = 18, tickfontsize = 13)
+    plt = Plots.plot(; layout = (1, 2), size = (1800, 720), show = false,
+                     left_margin = 9Plots.mm, bottom_margin = 10Plots.mm,
+                     top_margin = 2Plots.mm, right_margin = 4Plots.mm)
+    Plots.plot!(plt[1]; title = ttl_ρ, xlabel = LaTeXStrings.L"x", ylabel = LaTeXStrings.L"\rho_h",
+                xlims = xl, ylims = yl, xticks = 0.0:0.2:1.0, yticks = 0.1:0.1:1.0,
+                framestyle = :box, grid = false, legend = :topright, font...)
+    Plots.plot!(plt[2]; title = LaTeXStrings.L"\mathrm{DynSGS\ coefficient}\ \nu",
+                xlabel = LaTeXStrings.L"x", ylabel = LaTeXStrings.L"\nu",
+                xlims = xl, xticks = 0.0:0.2:1.0, framestyle = :box, grid = false,
+                legend = :topright, yscale = llog ? :log10 : :identity,
+                ylims = llog ? :auto : (0.0, 1.08*νmax), font...)
+
+    for (k, c) in enumerate(withnu)
+        col, ls, mk = _bw_style(c.nop)
+        lab  = _bw_label(c, lshow_cmin)
+        midx = _bw_marker_idx(length(c.x), k, length(withnu), inputs)
+        ν    = llog ? [v > 0 ? v : NaN for v in c.nu] : c.nu
+        for (sp, y) in ((1, c.y), (2, ν))
+            Plots.plot!(plt, c.x, y; subplot = sp, line = (col, 1.6, ls), label = lab)
+            isempty(midx) || Plots.scatter!(plt, c.x[midx], y[midx]; subplot = sp,
+                                            marker = (mk, 3.5), markerstrokewidth = 0,
+                                            color = col, label = "")
+        end
+    end
+    if href !== nothing
+        Plots.plot!(plt, xs, href; subplot = 1, line = (:black, 1.8, :solid), label = "Reference solution")
+        # the insets of the left panel become subplots 3, 4, ...: 1 and 2 are the panels
+        _bw_add_insets!(plt, BW_INSETS, xl, yl, (sp, xr, yr) -> begin
+            sel = (xs .>= xr[1]) .& (xs .<= xr[2])
+            Plots.plot!(sp, xs[sel], href[sel]; line = (:black, 1.8, :solid), label = "")
+            for c in withnu
+                col, ls, _ = _bw_style(c.nop)
+                q = (c.x .>= xr[1]) .& (c.x .<= xr[2])
+                any(q) && Plots.plot!(sp, c.x[q], c.y[q]; line = (col, 1.6, ls), label = "")
+            end
+        end; parent = 1, first = 3)
+    end
+    _bw_savefig(plt, string(OUTPUT_DIR, "/density_nu", tag, "-it", iout, ".", _bw_fig_ext(inputs)))
+    return nothing
+end
+
+#---------------------------------------------------------------------------------
+# Every comparison figure of the store at the final time: per resolution the
+# density figure and the density-and-coefficient figure, the finest of each
+# under the plain name, the error table and the two convergence histories.
+# Called by the run (user_plot_1d) and by tools/brio_wu_plot.jl, which
+# redraws them from the store alone at the end of a sweep.
+#---------------------------------------------------------------------------------
+function _bw_draw_store(stored, xs, href, inputs, OUTPUT_DIR, iout; lerrors = href !== nothing)
+    isempty(stored) && return nothing
+    figs = Tuple{Any,String}[]
+    # ONE FIGURE PER RESOLUTION. Orders may only be compared at equal
+    # degrees of freedom, so each DOF bucket gets its own file and a sweep
+    # leaves density_dof150, density_dof300, ... behind, each holding every
+    # order that ran at that resolution.
+    for b in sort(unique(_bw_bucket(c.ndofs) for c in stored))
+        push!(figs, (_bw_finest(filter(c -> _bw_bucket(c.ndofs) == b, stored)), string("_dof", b)))
+    end
+    # The finest resolution keeps the plain name as the headline figure.
+    push!(figs, (_bw_finest(stored), ""))
+    for (sub, tag) in figs
+        _bw_plot_density(sub, xs, href, inputs, OUTPUT_DIR, iout, tag)
+        try
+            _bw_plot_density_nu(sub, xs, href, inputs, OUTPUT_DIR, iout, tag)
+        catch err
+            @warn "brioWu1d: the density_nu figure failed; the density figure is unaffected." exception=err
+        end
+    end
+    # Error table and the convergence history, from every stored curve.
+    lerrors || return nothing
+    rows = _bw_error_table(stored)
+    _bw_report_errors(rows)
+    _bw_plot_convergence(rows, inputs, OUTPUT_DIR, iout; smooth = false)
+    _bw_plot_convergence(rows, inputs, OUTPUT_DIR, iout; smooth = true)
     return nothing
 end
 
@@ -513,15 +655,16 @@ end
 # ZOOM BOXES. Shared by the density figure and the per-variable figures: the
 # gray frame on the main axes, the dashed connector from the corner of the box
 # nearest the inset to the corner of the inset nearest the box, and the inset
-# subplot itself. `draw!(sp, xr, yr)` fills the inset -- the two callers have
+# subplot itself, on subplot `parent` (the insets become subplots `first`,
+# `first`+1, ...). `draw!(sp, xr, yr)` fills the inset -- the two callers have
 # different curves to put in it (a whole store of orders, or this run and its
 # reference), which is the only part that differs.
 # ---------------------------------------------------------------------------
-function _bw_add_insets!(plt, boxes, xl, yl, draw!)
+function _bw_add_insets!(plt, boxes, xl, yl, draw!; parent = 1, first = 2)
     for (k, (xr, yr, pos)) in enumerate(boxes)
         bx = [xr[1], xr[2], xr[2], xr[1], xr[1]]
         by = [yr[1], yr[1], yr[2], yr[2], yr[1]]
-        Plots.plot!(plt, bx, by; line = (:gray, 1.0), label = "")
+        Plots.plot!(plt, bx, by; subplot = parent, line = (:gray, 1.0), label = "")
         ix  = (xl[1] + pos[1]*(xl[2] - xl[1]), xl[1] + (pos[1] + pos[3])*(xl[2] - xl[1]))
         iy  = (yl[1] + pos[2]*(yl[2] - yl[1]), yl[1] + (pos[2] + pos[4])*(yl[2] - yl[1]))
         bcx = 0.5*(xr[1] + xr[2]); bcy = 0.5*(yr[1] + yr[2])
@@ -530,10 +673,11 @@ function _bw_add_insets!(plt, boxes, xl, yl, draw!)
         cornery = (icy < bcy) ? yr[1] : yr[2]
         insx    = (icx < bcx) ? ix[2] : ix[1]
         insy    = (icy < bcy) ? iy[2] : iy[1]
-        Plots.plot!(plt, [cornerx, insx], [cornery, insy]; line = (:black, 1.0, :dash), label = "")
-        Plots.plot!(plt; inset = (1, Plots.bbox(pos[1], pos[2], pos[3], pos[4], :bottom, :left)),
-                    subplot = k + 1)
-        sp = plt[k + 1]
+        Plots.plot!(plt, [cornerx, insx], [cornery, insy]; subplot = parent,
+                    line = (:black, 1.0, :dash), label = "")
+        Plots.plot!(plt; inset = (parent, Plots.bbox(pos[1], pos[2], pos[3], pos[4], :bottom, :left)),
+                    subplot = first + k - 1)
+        sp = plt[first + k - 1]
         Plots.plot!(sp; xlims = xr, ylims = yr, framestyle = :box, grid = true,
                     tickfontsize = 8, legend = false, background_color_inside = :white)
         draw!(sp, xr, yr)
@@ -613,7 +757,7 @@ function _bw_plot_field(xs, y, yref, name, inputs, OUTPUT_DIR, iout, t, ext)
             end
         end)
     end
-    _savefig_silent(plt, string(OUTPUT_DIR, "/", _bw_slug(name), "-it", iout, ".", ext))
+    _bw_savefig(plt, string(OUTPUT_DIR, "/", _bw_slug(name), "-it", iout, ".", ext))
     return nothing
 end
 
@@ -712,7 +856,7 @@ function _bw_plot_mu(xs, qs, μs, outvar, inputs, OUTPUT_DIR, iout, t)
 
     plt = Plots.plot(top, bot; layout = (2, 1), size = (900, 700), link = :x,
                      left_margin = 7Plots.mm, bottom_margin = 5Plots.mm, show = false)
-    _savefig_silent(plt, string(OUTPUT_DIR, "/mu_dsgs-it", iout, ".", _bw_fig_ext(inputs)))
+    _bw_savefig(plt, string(OUTPUT_DIR, "/mu_dsgs-it", iout, ".", _bw_fig_ext(inputs)))
     return nothing
 end
 
@@ -746,6 +890,9 @@ function user_plot_1d(x, q, qref, μ_nodes, t, outvar, inputs, OUTPUT_DIR, iout)
 
     nop   = Int(get(inputs, :nop, 0))
     Cmin  = Float64(get(inputs, :dsgs_Cmin, 0.0))
+    # the coefficient stored with the curve: the ρu slot (see _bw_plot_density_nu)
+    νs = (μ_nodes !== nothing && size(μ_nodes, 1) == length(x)) ?
+         Float64.(μ_nodes[idx, min(2, size(μ_nodes, 2))]) : Float64[]
 
     # The reference is supplied at the final time only; that is the figure the
     # orders are compared on, so that is where the curve is stored and where
@@ -754,7 +901,7 @@ function user_plot_1d(x, q, qref, μ_nodes, t, outvar, inputs, OUTPUT_DIR, iout)
     stored = NamedTuple[]
     form   = _bw_form(inputs)
     if lfinal
-        _bw_save_curve(xs, ρs, inputs, t)
+        _bw_save_curve(xs, ρs, νs, inputs, t, iout)
         # Only this run's form: the element and the nodal coefficient, and the
         # two length-scale conventions, are different methods and do not belong
         # on one comparison. Say so when the store holds curves from another —
@@ -773,24 +920,8 @@ function user_plot_1d(x, q, qref, μ_nodes, t, outvar, inputs, OUTPUT_DIR, iout)
         _bw_plot_density([(nop = nop, ndofs = length(xs), Cmin = Cmin, form = form, x = xs, y = ρs)],
                          xs, href, inputs, OUTPUT_DIR, iout, "")
     else
-        # ONE FIGURE PER RESOLUTION. Orders may only be compared at equal
-        # degrees of freedom, so each DOF bucket gets its own file and a sweep
-        # leaves density_dof150, density_dof300, ... behind, each holding every
-        # order that ran at that resolution.
-        for b in sort(unique(_bw_bucket(c.ndofs) for c in stored))
-            sub = _bw_finest(filter(c -> _bw_bucket(c.ndofs) == b, stored))
-            _bw_plot_density(sub, xs, href, inputs, OUTPUT_DIR, iout, string("_dof", b))
-        end
-        # The finest resolution keeps the plain name as the headline figure.
-        _bw_plot_density(_bw_finest(stored), xs, href, inputs, OUTPUT_DIR, iout, "")
-    end
-
-    # Error table and the convergence history, from every stored curve.
-    if lfinal && !isempty(stored)
-        rows = _bw_error_table(stored)
-        _bw_report_errors(rows)
-        _bw_plot_convergence(rows, inputs, OUTPUT_DIR, iout; smooth = false)
-        _bw_plot_convergence(rows, inputs, OUTPUT_DIR, iout; smooth = true)
+        # every comparison figure, the error table and the convergence history
+        _bw_draw_store(stored, xs, href, inputs, OUTPUT_DIR, iout)
         println(" #   (", form, " form of the DynSGS coefficient)")
     end
     return nothing
