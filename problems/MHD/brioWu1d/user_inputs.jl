@@ -3,7 +3,8 @@
 # Nazarov, J. Sci. Comput. 92:77 (2022), Sec. 5.2: domain (0, 1), γ = 2,
 # t ∈ [0, 0.1] (see below), left/right states in initialize.jl. The MHD counterpart of
 # problems/CompEuler/sod1d: stabilized by DynSGS (kernel/physics/SGS.jl,
-# the 1D DSGS_MHD kernel) in its conserved form, integrated with SSPRK53.
+# the 1D DSGS_MHD kernel) in its conserved form, integrated with
+# CarpenterKennedy2N54, with the background floor C_min = 0.06 (README).
 #
 #   julia --project=. src/Jexpresso.jl MHD brioWu1d
 #
