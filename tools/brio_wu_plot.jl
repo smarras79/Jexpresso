@@ -9,11 +9,17 @@
 #   julia --project=. tools/brio_wu_plot.jl 4,7              # N = 4 and 7 alone
 #   julia --project=. tools/brio_wu_plot.jl --dofs=600       # one resolution
 #   julia --project=. tools/brio_wu_plot.jl --fmt=pdf --out=figs
+#   julia --project=. tools/brio_wu_plot.jl --store=Cmin0.03   # the sweep at C_min = 0.03
 #
-# It reads problems/MHD/brioWu1d/curves/*.dat and draws with the case's own
-# plotting code (user_plot.jl), so the figures are the ones a run draws, in
-# output/MHD/brioWu1d/output unless --out says otherwise:
+# It reads problems/MHD/brioWu1d/curves/*.dat (curves/<store>/*.dat with
+# --store; tools/brio_wu_order_scan.sh keeps one store per C_min, Cmin<value>)
+# and draws with the case's own plotting code (user_plot.jl), so the figures
+# are the ones a run draws, in output/MHD/brioWu1d/output (output/<store> with
+# --store) unless --out says otherwise:
 #
+#   density_nu_all-it<n>      EVERY order at EVERY resolution: density with the
+#                             zoom boxes, and the DynSGS coefficient ν; colour
+#                             = order, line type = resolution
 #   density_nu_dof<M>-it<n>   the density of every order at ~M DOFs with the
 #                             zoom boxes, and their DynSGS coefficient ν: the
 #                             layout of Dao & Nazarov (2024), Fig. 2
@@ -49,8 +55,7 @@ include(joinpath(CASE, "user_plot.jl"))
 
 function main(args)
     nops = Int[]; dofs = Int[]
-    form = nothing; t = nothing
-    out  = joinpath(@__DIR__, "..", "output", "MHD", "brioWu1d", "output")
+    form = nothing; t = nothing; out = nothing
     inputs = Dict{Symbol,Any}(:plot_markers => 20)
     for a in args
         k, v = occursin('=', a) ? split(a, '='; limit = 2) : (a, "")
@@ -58,6 +63,8 @@ function main(args)
             t = parse(Float64, v)
         elseif k == "--out"
             out = v
+        elseif k == "--store"
+            ENV["JEXPRESSO_BW_STORE"] = v      # read by _bw_curve_dir()
         elseif k == "--form"
             form = v
         elseif k == "--fmt"
@@ -71,12 +78,14 @@ function main(args)
         end
     end
 
-    isdir(BW_CURVE_DIR) || error("no curve store at $(BW_CURVE_DIR): run the case first")
+    store = strip(get(ENV, "JEXPRESSO_BW_STORE", ""))
+    out === nothing && (out = joinpath(@__DIR__, "..", "output", "MHD", "brioWu1d", "output", store))
+    isdir(_bw_curve_dir()) || error("no curve store at $(_bw_curve_dir()): run the case first")
     # the final times present in the store; without --t, the latest
     times = Float64[]
-    for f in readdir(BW_CURVE_DIR)
+    for f in readdir(_bw_curve_dir())
         (startswith(f, "nop") && endswith(f, ".dat")) || continue
-        for line in eachline(joinpath(BW_CURVE_DIR, f))
+        for line in eachline(joinpath(_bw_curve_dir(), f))
             startswith(line, "#") || break
             m = match(r"\bt=(\S+)", line)
             m === nothing && continue
@@ -84,7 +93,7 @@ function main(args)
             v === nothing || push!(times, v)
         end
     end
-    isempty(times) && error("no stored curves under $(BW_CURVE_DIR)")
+    isempty(times) && error("no stored curves under $(_bw_curve_dir())")
     t === nothing && (t = maximum(times))
 
     every = _bw_load_curves(t)

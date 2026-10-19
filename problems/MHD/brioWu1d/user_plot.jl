@@ -36,6 +36,9 @@
 #                                 leaves density_dof150, density_dof300, ...
 #   density-it<n>.png             the same for the finest resolution in the
 #                                 store, under the plain name
+#   density_nu_all-it<n>.png      every order at every resolution on one
+#                                 figure, density and ν (colour = order, line
+#                                 type = resolution)
 #   density_nu_dof<M>-it<n>.png   the layout of Dao & Nazarov's order
 #   density_nu-it<n>.png          comparison (2024, Fig. 2): the density with
 #                                 the zoom boxes on the left, the DynSGS
@@ -147,7 +150,10 @@ const BW_FIELD_INSETS = Dict{String, Vector{Any}}(
 _bw_field_insets(name) = get(BW_FIELD_INSETS, string(name), Any[])
 
 # Where the per-(order, resolution) curves accumulate.
-const BW_CURVE_DIR = joinpath(@__DIR__, "curves")
+# JEXPRESSO_BW_STORE names a subdirectory of it, so that sweeps that are
+# different methods (tools/brio_wu_order_scan.sh: one per C_min) keep their
+# curves apart: curves/Cmin0.06, curves/Cmin0.03, ...
+_bw_curve_dir() = joinpath(@__DIR__, "curves", strip(get(ENV, "JEXPRESSO_BW_STORE", "")))
 
 # One (colour, line style, marker) per order, fixed so that a given order
 # always looks the same from one figure to the next. EVERY numerical curve is
@@ -188,7 +194,7 @@ function _bw_form(inputs)
     return f
 end
 _bw_curve_file(nop, ndofs, form) =
-    joinpath(BW_CURVE_DIR, string("nop", nop, "_dof", ndofs, "_", form, ".dat"))
+    joinpath(_bw_curve_dir(), string("nop", nop, "_dof", ndofs, "_", form, ".dat"))
 
 #---------------------------------------------------------------------------------
 # Store this run's density profile. One file per (order, DOFs), so a re-run at
@@ -198,7 +204,7 @@ function _bw_save_curve(xs, ρs, νs, inputs, t, iout)
     nop = Int(get(inputs, :nop, 0))
     nop > 0 || return nothing
     try
-        mkpath(BW_CURVE_DIR)
+        mkpath(_bw_curve_dir())
         f   = _bw_curve_file(nop, length(xs), _bw_form(inputs))
         tmp = string(f, ".tmp", getpid())
         open(tmp, "w") do io
@@ -235,13 +241,13 @@ end
 #---------------------------------------------------------------------------------
 function _bw_load_curves(t)
     curves = NamedTuple[]
-    isdir(BW_CURVE_DIR) || return curves
-    for fname in readdir(BW_CURVE_DIR)
+    isdir(_bw_curve_dir()) || return curves
+    for fname in readdir(_bw_curve_dir())
         (endswith(fname, ".dat") && startswith(fname, "nop")) || continue
         meta = Dict{String,String}()
         xs = Float64[]; ys = Float64[]; νs = Float64[]
         try
-            for line in eachline(joinpath(BW_CURVE_DIR, fname))
+            for line in eachline(joinpath(_bw_curve_dir(), fname))
                 if startswith(line, "#")
                     for tok in split(line)
                         occursin('=', tok) || continue
@@ -271,7 +277,7 @@ function _bw_load_curves(t)
                        ndofs = length(xs),
                        Cmin = something(tryparse(Float64, get(meta, "Cmin", "")), 0.0),
                        form = get(meta, "form", "elem"),
-                       mtime = mtime(joinpath(BW_CURVE_DIR, fname)),
+                       mtime = mtime(joinpath(_bw_curve_dir(), fname)),
                        iout = something(tryparse(Int, get(meta, "iout", "")), 0),
                        x = xs, y = ys,
                        nu = all(isnan, νs) ? Float64[] : νs))   # empty: stored before ν was
@@ -387,8 +393,8 @@ function _bw_report_errors(rows)
                          r.l1_sm, r.l2_sm, r.linf_sm))
     end
     try
-        mkpath(BW_CURVE_DIR)
-        open(joinpath(BW_CURVE_DIR, "errors.dat"), "w") do io
+        mkpath(_bw_curve_dir())
+        open(joinpath(_bw_curve_dir(), "errors.dat"), "w") do io
             println(io, "# density error against reference_hll.dat, relative norms")
             println(io, "# smooth window = ", BW_SMOOTH_WINDOW)
             println(io, "# nop ndofs Cmin L1_all L2_all Linf_all L1_sm L2_sm Linf_sm")
@@ -553,8 +559,13 @@ end
 # it constant per element, so through the nodes it is a staircase. Its axis is
 # linear, as in the paper, unless it spans more than two decades (C_min = 0,
 # where it falls to the residual's floor between the waves): then log10.
+#
+# `style(c)` gives a curve its (colour, line style, marker), by default the
+# order's own; `markers = false` drops the markers and `legend_nu_only` keeps
+# the curves' legend in the ν panel, where a crowded figure has room for it.
 #---------------------------------------------------------------------------------
-function _bw_plot_density_nu(curves, xs, href, inputs, OUTPUT_DIR, iout, tag)
+function _bw_plot_density_nu(curves, xs, href, inputs, OUTPUT_DIR, iout, tag;
+                             style = c -> _bw_style(c.nop), markers = true, legend_nu_only = false)
     withnu = filter(c -> !isempty(c.nu), curves)
     if isempty(withnu)
         println(" #   brioWu1d: no coefficient stored with these curves (written before ν was ",
@@ -585,16 +596,18 @@ function _bw_plot_density_nu(curves, xs, href, inputs, OUTPUT_DIR, iout, tag)
     Plots.plot!(plt[2]; title = LaTeXStrings.L"\mathrm{DynSGS\ coefficient}\ \nu",
                 xlabel = LaTeXStrings.L"x", ylabel = LaTeXStrings.L"\nu",
                 xlims = xl, xticks = 0.0:0.2:1.0, framestyle = :box, grid = false,
-                legend = :topright, yscale = llog ? :log10 : :identity,
+                # the left state carries the smallest ν: the top-left corner is free
+                legend = legend_nu_only ? :topleft : :topright, yscale = llog ? :log10 : :identity,
                 ylims = llog ? :auto : (0.0, 1.08*νmax), font...)
 
     for (k, c) in enumerate(withnu)
-        col, ls, mk = _bw_style(c.nop)
+        col, ls, mk = style(c)
         lab  = _bw_label(c, lshow_cmin)
-        midx = _bw_marker_idx(length(c.x), k, length(withnu), inputs)
+        midx = markers ? _bw_marker_idx(length(c.x), k, length(withnu), inputs) : (1:0)
         ν    = llog ? [v > 0 ? v : NaN for v in c.nu] : c.nu
         for (sp, y) in ((1, c.y), (2, ν))
-            Plots.plot!(plt, c.x, y; subplot = sp, line = (col, 1.6, ls), label = lab)
+            Plots.plot!(plt, c.x, y; subplot = sp, line = (col, 1.6, ls),
+                        label = (legend_nu_only && sp == 1) ? "" : lab)
             isempty(midx) || Plots.scatter!(plt, c.x[midx], y[midx]; subplot = sp,
                                             marker = (mk, 3.5), markerstrokewidth = 0,
                                             color = col, label = "")
@@ -607,13 +620,34 @@ function _bw_plot_density_nu(curves, xs, href, inputs, OUTPUT_DIR, iout, tag)
             sel = (xs .>= xr[1]) .& (xs .<= xr[2])
             Plots.plot!(sp, xs[sel], href[sel]; line = (:black, 1.8, :solid), label = "")
             for c in withnu
-                col, ls, _ = _bw_style(c.nop)
+                col, ls, _ = style(c)
                 q = (c.x .>= xr[1]) .& (c.x .<= xr[2])
                 any(q) && Plots.plot!(sp, c.x[q], c.y[q]; line = (col, 1.6, ls), label = "")
             end
         end; parent = 1, first = 3)
     end
     _bw_savefig(plt, string(OUTPUT_DIR, "/density_nu", tag, "-it", iout, ".", _bw_fig_ext(inputs)))
+    return nothing
+end
+
+#---------------------------------------------------------------------------------
+# EVERY RESOLUTION ON ONE FIGURE, as Dao & Nazarov's Fig. 2 puts its two: the
+# colour is the order, the line type the resolution (dashed the coarsest, then
+# dotted, dash-dot, dash-dot-dot), no markers, and the curves' legend in the
+# coefficient panel, where ν falls into one band per resolution (ν ∝ Δ ∝
+# 1/#DOFs). Written as density_nu_all-it<n> when the store holds two
+# resolutions or more; with four, that is sixteen curves.
+#---------------------------------------------------------------------------------
+const BW_RES_LINES = [:dash, :dot, :dashdot, :dashdotdot]
+
+function _bw_plot_density_nu_all(stored, xs, href, inputs, OUTPUT_DIR, iout)
+    buckets = sort(unique(_bw_bucket(c.ndofs) for c in stored))
+    length(buckets) >= 2 || return nothing
+    curves = reduce(vcat, [_bw_finest(filter(c -> _bw_bucket(c.ndofs) == b, stored)) for b in buckets])
+    rline(c) = BW_RES_LINES[mod1(findfirst(==(_bw_bucket(c.ndofs)), buckets), length(BW_RES_LINES))]
+    _bw_plot_density_nu(curves, xs, href, inputs, OUTPUT_DIR, iout, "_all";
+                        style = c -> (_bw_style(c.nop)[1], rline(c), :none),
+                        markers = false, legend_nu_only = true)
     return nothing
 end
 
@@ -643,6 +677,12 @@ function _bw_draw_store(stored, xs, href, inputs, OUTPUT_DIR, iout; lerrors = hr
         catch err
             @warn "brioWu1d: the density_nu figure failed; the density figure is unaffected." exception=err
         end
+    end
+    # Every order at every resolution on one figure.
+    try
+        _bw_plot_density_nu_all(stored, xs, href, inputs, OUTPUT_DIR, iout)
+    catch err
+        @warn "brioWu1d: the density_nu_all figure failed; the other figures are unaffected." exception=err
     end
     # Error table and the convergence history, from every stored curve.
     lerrors || return nothing
@@ -905,6 +945,10 @@ function user_plot_1d(x, q, qref, μ_nodes, t, outvar, inputs, OUTPUT_DIR, iout)
     form   = _bw_form(inputs)
     if lfinal
         _bw_save_curve(xs, ρs, νs, inputs, t, iout)
+        # Inside a sweep (tools/brio_wu_order_scan.sh sets JEXPRESSO_BW_DRAWSTORE=0)
+        # the run only stores its curve: the sweep draws every comparison figure
+        # once, from the complete store, when its last run is done.
+        get(ENV, "JEXPRESSO_BW_DRAWSTORE", "1") == "0" && return nothing
         # Only this run's form: the element and the nodal coefficient, and the
         # two length-scale conventions, are different methods and do not belong
         # on one comparison. Say so when the store holds curves from another —
@@ -916,7 +960,7 @@ function user_plot_1d(x, q, qref, μ_nodes, t, outvar, inputs, OUTPUT_DIR, iout)
         isempty(other) || println(" #   brioWu1d: ", length(every) - length(stored),
                                   " stored curve(s) of another method (", join(other, ", "),
                                   ") are NOT drawn; this figure is the \"", form,
-                                  "\" comparison. rm problems/MHD/brioWu1d/curves to clear the store.")
+                                  "\" comparison. rm -r ", _bw_curve_dir(), " clears the store.")
     end
     if isempty(stored)
         # Not the final time (or an empty store): this run's own curve only.
