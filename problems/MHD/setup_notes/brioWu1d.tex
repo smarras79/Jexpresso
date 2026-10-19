@@ -143,10 +143,10 @@ kernel's own source with the exact keyword set of \code{rhs.jl:1434--1456}, rais
 (\code{JEXPRESSO\_BW\_NODAL=1}) does not pass \code{lthermal} and was not affected. \code{23e4974} adds
 \code{lthermal::Bool=false} to the 1D signature; the thermal residual is 2D-only, so the keyword is ignored
 there, and the same call returns a bit-identical coefficient with \code{lthermal} omitted, false or true.
-\item The header of \code{user\_inputs.jl} says ``integrated with SSPRK53''; the deck sets
-\code{CarpenterKennedy2N54()}.
-\item \code{DSGS.md} \S4.7 says this case needs a 3\% $C_{\min}$ floor; the deck sets
-$0.06\,h_{fac}$ (its own comment says 6\%; relative to the cap $\Cmax$ that is 12\%).
+\item \textbf{[Fixed in \code{5ed7f539}.]} The header of \code{user\_inputs.jl} said ``integrated with SSPRK53''; the deck
+sets \code{CarpenterKennedy2N54()}, and the header now says so.
+\item \textbf{[Fixed in \code{5ed7f539}.]} \code{DSGS.md} \S4.7 said this case needs a 3\% $C_{\min}$ floor; the deck sets
+$0.06\,h_{fac}$ (6\%; relative to the cap $\Cmax$, 12\%), its default all along, and \S4.7 now gives that value.
 \item \textbf{[Changed in \code{b956ccd}.]} \code{:dsgs\_freeze\_stage} now defaults to true for \code{DSGS\_MHD}
 with the residual sensor: the coefficient is computed once per step, at the stage on $t^n$, and held over the stages,
 which removes the $O(\Delta t)$ floor the RK internal stages put under the residual. Checked on this case, frozen

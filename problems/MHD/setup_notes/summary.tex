@@ -186,8 +186,8 @@ against 5 without \code{calck}, measured on the installed OrdinaryDiffEqLowStora
 \item \textbf{OT:} the comment that \code{"rank"} is the code-wide norm default is stale (it is \code{"domain"}); the
 comments on $\Delta t$ ($5\times10^{-4}$) and on $32^2$ elements giving $128^2$ points predate the current
 $\Delta t=2\times10^{-4}$ and the one-level refinement.
-\item \textbf{BW:} the header says SSPRK53, the deck uses \code{CarpenterKennedy2N54}; \code{DSGS.md} \S4.7 quotes a
-3\% floor, the deck sets $0.06\,(N+1)/N$.
+\item \textbf{[Fixed in \code{5ed7f539}.] BW:} the header said SSPRK53, the deck uses \code{CarpenterKennedy2N54};
+\code{DSGS.md} \S4.7 quoted a 3\% floor, the deck sets $0.06\,(N+1)/N$, its default all along. Both now say what the deck does.
 \item \textbf{KH:} the mesh named by the deck (\code{meshes/gmsh\_grids/hexa\_TFI\_32x32\_unitsquare.msh}) is not in
 this checkout.
 \item \textbf{[Changed in \code{b956ccd}.] All residual-sensor cases (BW, SV, AJ): the coefficient is frozen per step.}
