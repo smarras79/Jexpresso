@@ -6,12 +6,12 @@
 # problems/MHD/brioWu1d/curves/Cmin<C_min>/, and when its last run is done
 # tools/brio_wu_plot.jl draws from them, in output/MHD/brioWu1d/output/Cmin<C_min>/:
 #
-#   density_nu_all-it5.svg      EVERY order at EVERY resolution: the density with
-#                               the zoom boxes, and the DynSGS coefficient ν;
+#   rho_By_all-it5.svg          EVERY order at EVERY resolution: ρ (left) and B_y
+#                               (right) against the reference, with zoom boxes;
 #                               colour = order, line type = resolution
-#   density_nu_dof<M>-it5.svg   every order at ~M DOFs: the layout of Dao &
-#                               Nazarov (2024), Fig. 2
-#   density_nu-it5.svg          the same at the finest resolution
+#   rho_By_dof<M>-it5.svg       every order at ~M DOFs, as in Dao & Nazarov's
+#                               Brio-Wu figure; rho_By-it5.svg the finest
+#   nu_all-it5.svg, nu_dof<M>-it5.svg, nu-it5.svg   the DynSGS coefficient ν alone
 #   density_dof<M>-it5.svg, density-it5.svg    the density alone
 #   convergence-it5.svg, convergence_smooth-it5.svg   error against 1/#DOFs
 #
@@ -118,7 +118,8 @@ fi
 mkdir -p "$OUT"
 # comparison figures the runs drew in the case's output directory before the
 # sweeps drew theirs in output/Cmin<C_min>: stale, whatever they show
-rm -f "$OUT"/output/density_dof*-it* "$OUT"/output/density_nu*-it* "$OUT"/output/convergence*-it*
+rm -f "$OUT"/output/density_dof*-it* "$OUT"/output/density_nu*-it* "$OUT"/output/convergence*-it* \
+      "$OUT"/output/rho_By*-it* "$OUT"/output/nu-it* "$OUT"/output/nu_*-it*
 suffix="${BW_HSCALE:+_$BW_HSCALE}${BW_NODAL:+_nodal}"
 for c in $CMINS; do
     export JEXPRESSO_BW_CMIN="$c"

@@ -17,13 +17,14 @@
 # are the ones a run draws, in output/MHD/brioWu1d/output (output/<store> with
 # --store) unless --out says otherwise:
 #
-#   density_nu_all-it<n>      EVERY order at EVERY resolution: density with the
-#                             zoom boxes, and the DynSGS coefficient ν; colour
-#                             = order, line type = resolution
-#   density_nu_dof<M>-it<n>   the density of every order at ~M DOFs with the
-#                             zoom boxes, and their DynSGS coefficient ν: the
-#                             layout of Dao & Nazarov (2024), Fig. 2
-#   density_nu-it<n>          the same at the finest resolution
+#   rho_By_dof<M>-it<n>       ρ (left) and B_y (right) of every order at ~M DOFs
+#                             against the reference, with zoom boxes, as in Dao
+#                             & Nazarov's Brio-Wu figure
+#   rho_By-it<n>              the same at the finest resolution
+#   rho_By_all-it<n>          EVERY order at EVERY resolution; colour = order,
+#                             line type = resolution
+#   nu_dof<M>-it<n>, nu-it<n>, nu_all-it<n>   the DynSGS coefficient ν alone,
+#                             of the same curves
 #   density_dof<M>-it<n>, density-it<n>         the density alone
 #   convergence-it<n>, convergence_smooth-it<n> error against 1/#DOFs
 #
@@ -32,6 +33,10 @@
 #              stored curve
 #   --t=T      the final time; default the latest in the store
 #   --fmt=F    svg (default), pdf or png
+#   --right=nu ρ and ν side by side instead of ρ and B_y (density_nu_*-it<n>,
+#              the earlier layout; JEXPRESSO_BW_RIGHT=nu does the same). A
+#              store from a sweep run before B_y was stored gets it anyway:
+#              rerun that sweep for ρ and B_y
 using Plots, LaTeXStrings, Printf
 
 const CASE = joinpath(@__DIR__, "..", "problems", "MHD", "brioWu1d")
@@ -65,6 +70,8 @@ function main(args)
             out = v
         elseif k == "--store"
             ENV["JEXPRESSO_BW_STORE"] = v      # read by _bw_curve_dir()
+        elseif k == "--right"
+            ENV["JEXPRESSO_BW_RIGHT"] = v      # read by _bw_draw_store
         elseif k == "--form"
             form = v
         elseif k == "--fmt"
@@ -110,12 +117,13 @@ function main(args)
     tab  = _bw_read_reference()
     xs   = collect(tab[:, 1])
     href = abs(t - BW_REF_T) < 1.0e-6 ? collect(tab[:, 2]) : nothing
+    hBy  = abs(t - BW_REF_T) < 1.0e-6 ? collect(tab[:, 7]) : nothing   # x ρ u v w p By Bz
     href === nothing && println(" # t = $t: the reference is for t = $(BW_REF_T); figures without it, no errors")
     iout = maximum(c.iout for c in stored)
     iout > 0 || (iout = 5)    # curves stored before the output index was: the deck's last output
     println(" # Brio-Wu, t = ", t, ", form ", form, ": ",
             join([string("N = ", c.nop, " (", c.ndofs, " DOFs)") for c in sort(stored, by = c -> (c.ndofs, c.nop))], ", "))
-    _bw_draw_store(stored, xs, href, inputs, out, iout)
+    _bw_draw_store(stored, xs, href, inputs, out, iout; hBy = hBy)
     return nothing
 end
 
