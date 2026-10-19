@@ -733,7 +733,8 @@ function _bw_plot_field(xs, y, yref, name, inputs, OUTPUT_DIR, iout, t, ext)
                      # OUTSIDE the frame: with two entries and up to four zoom
                      # insets, any in-frame corner is one the insets want, and
                      # a legend under an inset is a legend nobody can read.
-                     legend = :outertop, legend_columns = 2, legendfontsize = 12,
+                     legend = :outertop, legend_columns = yref === nothing ? 1 : 2,
+                     legendfontsize = 12,
                      titlefontsize = 20, guidefontsize = 18, tickfontsize = 13,
                      size = (900, 720), left_margin = 6Plots.mm, bottom_margin = 5Plots.mm,
                      show = false)

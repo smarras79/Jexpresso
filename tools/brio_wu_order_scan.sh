@@ -31,9 +31,10 @@
 # other); the log of order N goes to output/MHD/brioWu1d/scan-nop<N>.log.
 # BW_JOBS=1, the default, is a single session for the whole sweep.
 #
-# THE STORE IS CLEARED FIRST. Every run redraws the figures from every curve in
+# THE STORE IS CLEARED FIRST, with the comparison figures an earlier sweep drew
+# from it. Every run redraws the figures from every curve in
 # problems/MHD/brioWu1d/curves, so a leftover sweep would appear on the
-# comparison of this one. BW_KEEP=1 accumulates instead, to finish a partial
+# comparison of this one. BW_KEEP=1 keeps both instead, to finish a partial
 # sweep. A run that fails is reported and the sweep goes on.
 set -u
 SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
@@ -102,7 +103,11 @@ if [ "${1:-}" = "--order" ]; then
     exit 0
 fi
 
-[ "${BW_KEEP:-0}" = "1" ] || rm -rf "$CASE/curves"
+if [ "${BW_KEEP:-0}" != "1" ]; then
+    # the store, and the comparison figures drawn from it by an earlier sweep
+    rm -rf "$CASE/curves"
+    rm -f "$OUT"/output/density_dof*-it* "$OUT"/output/density_nu*-it* "$OUT"/output/convergence*-it*
+fi
 mkdir -p "$OUT"
 echo "=== Brio-Wu order scan: N [$NOPS] x DOFs [$DOFS], length scale \
 $([ "$JEXPRESSO_BW_HSCALE" = nop ] && echo 'Delta_K/k' || echo 'Delta_K/(k+1)')\
