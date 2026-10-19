@@ -104,11 +104,13 @@ another method, which it leaves off the figure.
 
 | figure | contents |
 |---|---|
-| `density_nu_all-it<n>.svg` | **every order at every resolution** on one figure, as Dao & Nazarov's Fig. 2 puts its two: the density with the four zoom boxes, and $\nu$ beside it; colour is the order, line type the resolution (dashed the coarsest, then dotted, dash-dot, dash-dot-dot), and $\nu$ falls into one band per resolution ($\nu \propto \Delta \propto 1/\#\mathrm{DOFs}$). Written when the store holds two resolutions or more |
+| `rho_By_dof<M>-it<n>.svg` | **the comparison figure, one per resolution**, as in Dao & Nazarov's Brio–Wu figure: **left** $\rho$, **right** $B_y$, of every order at $M$ DOFs against the reference, $\rho$ with the four zoom boxes of the density figure, $B_y$ with two of its own (the compound wave, lower left, and the slow shock, upper right, under the legend) |
+| `rho_By-it<n>.svg` | the same for the finest resolution in the store |
+| `rho_By_all-it<n>.svg` | **every order at every resolution** on one figure, as Dao & Nazarov's Fig. 2 puts its two: colour is the order, line type the resolution (dashed the coarsest, then dotted, dash-dot, dash-dot-dot). Written when the store holds two resolutions or more |
+| `nu_dof<M>-it<n>.svg`, `nu-it<n>.svg`, `nu_all-it<n>.svg` | **the DynSGS coefficient $\nu$ alone**, of the same curves (the $\rho u$ slot, which in this deck's conserved form is the one $\nu$ of every equation; per element, so a staircase through the nodes). Linear axis, or $\log_{10}$ when $\nu$ spans more than two decades ($C_{min}=0$); in the all-resolutions figure it falls into one band per resolution ($\nu \propto \Delta \propto 1/\#\mathrm{DOFs}$) |
 | `density_dof<M>-it<n>.svg` | **one file per resolution**: every order that ran at $M$ degrees of freedom, against the reference, with the four zoom boxes. A sweep over 150, 300, 600 and 1200 DOFs leaves `density_dof150-it<n>.svg`, `density_dof300-it<n>.svg`, … side by side |
 | `density-it<n>.svg` | the same figure for the finest resolution in the store, under the plain name |
-| `density_nu_dof<M>-it<n>.svg` | the layout of Dao & Nazarov (2024), Fig. 2: **left**, the density of every order at $M$ DOFs against the reference with the same four zoom boxes; **right**, the DynSGS coefficient $\nu$ of the same runs on the same $x$ (the $\rho u$ slot, which in this deck's conserved form is the one $\nu$ of every equation; per element, so a staircase through the nodes). Linear axis, or $\log_{10}$ when $\nu$ spans more than two decades ($C_{min}=0$) |
-| `density_nu-it<n>.svg` | the same for the finest resolution in the store |
+| `density_nu_dof<M>-it<n>.svg`, `density_nu-it<n>.svg`, `density_nu_all-it<n>.svg` | the earlier layout, $\rho$ and $\nu$ side by side, in place of the $\rho$–$B_y$ figures: `JEXPRESSO_BW_RIGHT=nu`, or `--right=nu` for `tools/brio_wu_plot.jl` |
 | `convergence-it<n>.svg` | the layout of the paper's Fig. 1: the relative $L^1$, $L^2$ and $L^\infty$ error of $\rho$ against $1/\#\mathrm{DOFs}$ on log-log axes, one line per order, with slope guides and the measured rate in each legend entry |
 | `convergence_smooth-it<n>.svg` | the same, restricted to $x \in (0.33, 0.41)$ inside the fast rarefaction — the one smooth, non-constant part of this solution |
 
@@ -151,8 +153,8 @@ resolution, and the two convergence histories. `tools/brio_wu_plot.jl` draws
 the same from a store alone (`--store=Cmin0.03` for the sweep at
 $C_{min} = 0.03$, `4,7` for a subset of the orders, `--dofs=600` for one
 resolution, `--fmt=pdf`, `--out=dir`); the scan calls it at the end of each
-sweep. Curves stored before the coefficient was are drawn on the density
-figures and left off the `density_nu` ones.
+sweep. Curves stored before the coefficient or $B_y$ was are drawn on the
+density figures and left off the figures that need them (rerun them).
 `rm -r problems/MHD/brioWu1d/curves` clears every store; it is
 git-ignored. Curves whose stored final time differs from the current one are
 ignored, so changing `:tend` cannot silently mix solutions from different
@@ -315,8 +317,7 @@ of time stepping. At $t = 0.1$ (`density-it5.svg`; the per-variable figures with
   $\approx 0.82$; the contact and the slow shock are 2–3 nodes wide, the
   paper's zoom boxes show the same smearing for its $\mathbb{P}_3$ solution;
   $p$, $B_y$, $u$, $v$ follow the reference to plotting accuracy;
-- the DynSGS coefficient (`mu_dsgs-it5.svg`, and the right panel of
-  `density_nu-it5.svg`) is on its floor $C_{min}\Delta_e(|u| + c_f)$
+- the DynSGS coefficient (`mu_dsgs-it5.svg`, and `nu-it5.svg`) is on its floor $C_{min}\Delta_e(|u| + c_f)$
   everywhere, at 600 DOFs and $N = 4$–7: $1.4$–$1.6\times10^{-4}$ on the left
   state, $2.9$–$3.2\times10^{-4}$ on the right one and at most
   $3.4$–$3.8\times10^{-4}$ behind the slow shock, the higher orders a little

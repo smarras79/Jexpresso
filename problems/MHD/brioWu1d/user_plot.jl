@@ -36,15 +36,19 @@
 #                                 leaves density_dof150, density_dof300, ...
 #   density-it<n>.png             the same for the finest resolution in the
 #                                 store, under the plain name
-#   density_nu_all-it<n>.png      every order at every resolution on one
-#                                 figure, density and ν (colour = order, line
-#                                 type = resolution)
-#   density_nu_dof<M>-it<n>.png   the layout of Dao & Nazarov's order
-#   density_nu-it<n>.png          comparison (2024, Fig. 2): the density with
-#                                 the zoom boxes on the left, the DynSGS
-#                                 coefficient ν of the same runs on the right;
-#                                 per resolution, and the finest under the
-#                                 plain name
+#   rho_By_dof<M>-it<n>.png       THE COMPARISON FIGURE, as in Dao & Nazarov's
+#   rho_By-it<n>.png              Brio-Wu figure: ρ on the left, B_y on the
+#                                 right, every order against the reference,
+#                                 with zoom boxes; per resolution, and the
+#                                 finest under the plain name
+#   rho_By_all-it<n>.png          every order at every resolution on one
+#                                 figure (colour = order, line type =
+#                                 resolution)
+#   nu_dof<M>-it<n>.png, nu-it<n>.png, nu_all-it<n>.png
+#                                 the DynSGS coefficient ν alone, of the same
+#                                 curves
+#   density_nu*-it<n>.png         ρ and ν side by side in place of ρ and B_y,
+#                                 with JEXPRESSO_BW_RIGHT=nu (the earlier layout)
 #   convergence-it<n>.png         Dao & Nazarov Fig. 1 layout: the L¹, L² and
 #                                 L∞ error against 1/#DOFs on log-log axes, one
 #                                 line per order, with slope guides
@@ -197,10 +201,11 @@ _bw_curve_file(nop, ndofs, form) =
     joinpath(_bw_curve_dir(), string("nop", nop, "_dof", ndofs, "_", form, ".dat"))
 
 #---------------------------------------------------------------------------------
-# Store this run's density profile. One file per (order, DOFs), so a re-run at
-# the same order and resolution replaces its own point and leaves the others.
+# Store this run's density, coefficient and B_y profiles. One file per (order,
+# DOFs), so a re-run at the same order and resolution replaces its own point
+# and leaves the others.
 #---------------------------------------------------------------------------------
-function _bw_save_curve(xs, ρs, νs, inputs, t, iout)
+function _bw_save_curve(xs, ρs, νs, Bys, inputs, t, iout)
     nop = Int(get(inputs, :nop, 0))
     nop > 0 || return nothing
     try
@@ -222,9 +227,10 @@ function _bw_save_curve(xs, ρs, νs, inputs, t, iout)
                         " form=", _bw_form(inputs))
             # nu: the DynSGS coefficient at the node (the ρu slot, which in
             # this deck's conserved form is the one ν of every equation)
-            println(io, "# x rho nu")
+            println(io, "# x rho nu By")
             for i in eachindex(xs)
-                println(io, xs[i], " ", ρs[i], " ", isempty(νs) ? NaN : νs[i])
+                println(io, xs[i], " ", ρs[i], " ", isempty(νs) ? NaN : νs[i],
+                        " ", isempty(Bys) ? NaN : Bys[i])
             end
         end
         # Renamed into place: tools/brio_wu_order_scan.sh runs orders in
@@ -245,7 +251,7 @@ function _bw_load_curves(t)
     for fname in readdir(_bw_curve_dir())
         (endswith(fname, ".dat") && startswith(fname, "nop")) || continue
         meta = Dict{String,String}()
-        xs = Float64[]; ys = Float64[]; νs = Float64[]
+        xs = Float64[]; ys = Float64[]; νs = Float64[]; bys = Float64[]
         try
             for line in eachline(joinpath(_bw_curve_dir(), fname))
                 if startswith(line, "#")
@@ -261,7 +267,8 @@ function _bw_load_curves(t)
                 length(p) >= 2 || continue
                 push!(xs, parse(Float64, p[1]))
                 push!(ys, parse(Float64, p[2]))
-                push!(νs, length(p) >= 3 ? parse(Float64, p[3]) : NaN)
+                push!(νs,  length(p) >= 3 ? parse(Float64, p[3]) : NaN)
+                push!(bys, length(p) >= 4 ? parse(Float64, p[4]) : NaN)
             end
         catch err
             @warn "brioWu1d: skipping an unreadable curve" file=fname exception=err
@@ -280,7 +287,8 @@ function _bw_load_curves(t)
                        mtime = mtime(joinpath(_bw_curve_dir(), fname)),
                        iout = something(tryparse(Int, get(meta, "iout", "")), 0),
                        x = xs, y = ys,
-                       nu = all(isnan, νs) ? Float64[] : νs))   # empty: stored before ν was
+                       nu = all(isnan, νs) ? Float64[] : νs,    # empty: stored before ν was
+                       By = all(isnan, bys) ? Float64[] : bys))  # empty: stored before B_y was
     end
     # One curve per (order, DOFs, form): the store has carried two file-naming
     # conventions, so keep the most recently written of any duplicates.
@@ -631,35 +639,176 @@ function _bw_plot_density_nu(curves, xs, href, inputs, OUTPUT_DIR, iout, tag;
 end
 
 #---------------------------------------------------------------------------------
+# ρ AND B_y SIDE BY SIDE, the two quantities of Dao & Nazarov's Brio-Wu figure,
+# THE DEFAULT comparison figure: every curve handed to it against the
+# reference, ρ with the four zoom boxes of the density figure, B_y with two of
+# its own (the compound wave and the slow shock). B_y falls from 1 on the left
+# to -1 on the right, so its panel is empty to the upper right, where the
+# legend (every curve and the reference) and the slow-shock box go, and to the
+# lower left, where the compound-wave box goes; the ρ panel keeps all of its
+# room for its boxes. Written as rho_By<tag>-it<n>. `style` and `markers` as
+# for _bw_plot_density_nu.
+#---------------------------------------------------------------------------------
+const BW_PAIR_BY_INSETS = [   # (x-range, y-range, inset position: x, y, w, h of the axes)
+    ((0.585, 0.700), (-1.030, -0.440), (0.72, 0.33, 0.26, 0.27)),   # the slow shock
+    ((0.430, 0.520), (-0.640,  0.640), (0.11, 0.09, 0.29, 0.30)),   # the compound wave
+]
+
+# "element ν, Δ_K/(k+1)": the method of a store form, for the titles
+_bw_form_desc(form) = string(startswith(form, "nodal") ? "\\mathrm{nodal}" : "\\mathrm{element}",
+                             "\\ \\nu,\\ \\Delta_K/", endswith(form, "H") ? "k" : "(k{+}1)")
+
+# the reference and every curve's `field` inside one zoom box
+function _bw_fill_inset!(sp, xr, xs, yref, curves, field, style)
+    sel = (xs .>= xr[1]) .& (xs .<= xr[2])
+    any(sel) && Plots.plot!(sp, xs[sel], yref[sel]; line = (:black, 1.8, :solid), label = "")
+    for c in curves
+        col, ls, _ = style(c)
+        q = (c.x .>= xr[1]) .& (c.x .<= xr[2])
+        any(q) && Plots.plot!(sp, c.x[q], field(c)[q]; line = (col, 1.6, ls), label = "")
+    end
+    return nothing
+end
+
+function _bw_plot_rho_By(curves, xs, href, hBy, inputs, OUTPUT_DIR, iout, tag;
+                         style = c -> _bw_style(c.nop), markers = true, legendfontsize = 11)
+    withBy = filter(c -> !isempty(c.By), curves)
+    if isempty(withBy)
+        println(" #   brioWu1d: no B_y stored with these curves (written before B_y was ",
+                "stored: rerun them); no rho_By", tag, " figure.")
+        return nothing
+    end
+    lcommon    = length(unique(c -> round(c.Cmin; digits = 12), withBy)) == 1
+    lshow_cmin = !lcommon
+    ttl_ρ = LaTeXStrings.latexstring(string("\\rho",
+                                            lcommon ? string(",\\ C_{min} = ", withBy[1].Cmin) : "",
+                                            "\\ (", _bw_form_desc(withBy[1].form), ")"))
+    # B_y's frame: the data and the reference, padded as on the per-variable figure
+    lo = minimum(minimum(c.By) for c in withBy); hi = maximum(maximum(c.By) for c in withBy)
+    hBy === nothing || (lo = min(lo, minimum(hBy)); hi = max(hi, maximum(hBy)))
+    pad = 0.06*(hi - lo)
+    xl = (0.0, 1.0); yl = (0.1, 1.0); ylB = (lo - pad, hi + pad)
+    font = (titlefontsize = 16, guidefontsize = 18, tickfontsize = 13)
+    plt = Plots.plot(; layout = (1, 2), size = (1800, 720), show = false,
+                     left_margin = 9Plots.mm, bottom_margin = 10Plots.mm,
+                     top_margin = 2Plots.mm, right_margin = 4Plots.mm)
+    Plots.plot!(plt[1]; title = ttl_ρ, xlabel = LaTeXStrings.L"x", ylabel = LaTeXStrings.L"\rho_h",
+                xlims = xl, ylims = yl, xticks = 0.0:0.2:1.0, yticks = 0.1:0.1:1.0,
+                framestyle = :box, grid = false, legend = false, font...)
+    Plots.plot!(plt[2]; title = LaTeXStrings.L"B_y", xlabel = LaTeXStrings.L"x",
+                ylabel = LaTeXStrings.L"B_{y,h}", xlims = xl, ylims = ylB, xticks = 0.0:0.2:1.0,
+                framestyle = :box, grid = false, legend = :topright,
+                legendfontsize = legendfontsize, font...)
+    for (k, c) in enumerate(withBy)
+        col, ls, mk = style(c)
+        midx = markers ? _bw_marker_idx(length(c.x), k, length(withBy), inputs) : (1:0)
+        for (sp, y) in ((1, c.y), (2, c.By))
+            Plots.plot!(plt, c.x, y; subplot = sp, line = (col, 1.6, ls),
+                        label = sp == 2 ? _bw_label(c, lshow_cmin) : "")
+            isempty(midx) || Plots.scatter!(plt, c.x[midx], y[midx]; subplot = sp,
+                                            marker = (mk, 3.5), markerstrokewidth = 0,
+                                            color = col, label = "")
+        end
+    end
+    nsub = 3     # the panels are subplots 1 and 2; the zoom boxes follow
+    if href !== nothing
+        Plots.plot!(plt, xs, href; subplot = 1, line = (:black, 1.8, :solid), label = "")
+        _bw_add_insets!(plt, BW_INSETS, xl, yl,
+                        (sp, xr, yr) -> _bw_fill_inset!(sp, xr, xs, href, withBy, c -> c.y, style);
+                        parent = 1, first = nsub)
+        nsub += length(BW_INSETS)
+    end
+    if hBy !== nothing
+        Plots.plot!(plt, xs, hBy; subplot = 2, line = (:black, 1.8, :solid), label = "Reference solution")
+        _bw_add_insets!(plt, BW_PAIR_BY_INSETS, xl, ylB,
+                        (sp, xr, yr) -> _bw_fill_inset!(sp, xr, xs, hBy, withBy, c -> c.By, style);
+                        parent = 2, first = nsub)
+    end
+    _bw_savefig(plt, string(OUTPUT_DIR, "/rho_By", tag, "-it", iout, ".", _bw_fig_ext(inputs)))
+    return nothing
+end
+
+#---------------------------------------------------------------------------------
+# THE DYNSGS COEFFICIENT ALONE, for the same curves: ν of the ρu slot (see
+# _bw_plot_density_nu) against x, on a linear axis unless it spans more than
+# two decades (C_min = 0: then log10). The legend sits top left, over the left
+# state, where ν is smallest. Written as nu<tag>-it<n>.
+#---------------------------------------------------------------------------------
+function _bw_plot_nu(curves, inputs, OUTPUT_DIR, iout, tag;
+                     style = c -> _bw_style(c.nop), markers = true, legendfontsize = 11)
+    withnu = filter(c -> !isempty(c.nu), curves)
+    if isempty(withnu)
+        println(" #   brioWu1d: no coefficient stored with these curves (written before ν was ",
+                "stored: rerun them); no nu", tag, " figure.")
+        return nothing
+    end
+    lcommon    = length(unique(c -> round(c.Cmin; digits = 12), withnu)) == 1
+    lshow_cmin = !lcommon
+    ttl  = LaTeXStrings.latexstring(string("\\mathrm{DynSGS\\ coefficient}\\ \\nu",
+                                           lcommon ? string(",\\ C_{min} = ", withnu[1].Cmin) : "",
+                                           "\\ (", _bw_form_desc(withnu[1].form), ")"))
+    νs   = reduce(vcat, [filter(isfinite, c.nu) for c in withnu])
+    νmax = maximum(νs; init = 0.0)
+    νpos = minimum(filter(>(0), νs); init = νmax)
+    llog = νmax > 0 && νmax/max(νpos, floatmin(Float64)) > 100.0
+    plt = Plots.plot(; title = ttl, xlabel = LaTeXStrings.L"x", ylabel = LaTeXStrings.L"\nu",
+                     xlims = (0.0, 1.0), xticks = 0.0:0.2:1.0, framestyle = :box, grid = false,
+                     legend = :topleft, legendfontsize = legendfontsize,
+                     yscale = llog ? :log10 : :identity, ylims = llog ? :auto : (0.0, 1.08*νmax),
+                     titlefontsize = 16, guidefontsize = 18, tickfontsize = 13,
+                     size = (1000, 650), left_margin = 8Plots.mm, bottom_margin = 6Plots.mm,
+                     show = false)
+    for (k, c) in enumerate(withnu)
+        col, ls, mk = style(c)
+        ν    = llog ? [v > 0 ? v : NaN for v in c.nu] : c.nu
+        midx = markers ? _bw_marker_idx(length(c.x), k, length(withnu), inputs) : (1:0)
+        Plots.plot!(plt, c.x, ν; line = (col, 1.6, ls), label = _bw_label(c, lshow_cmin))
+        isempty(midx) || Plots.scatter!(plt, c.x[midx], ν[midx]; marker = (mk, 3.5),
+                                        markerstrokewidth = 0, color = col, label = "")
+    end
+    _bw_savefig(plt, string(OUTPUT_DIR, "/nu", tag, "-it", iout, ".", _bw_fig_ext(inputs)))
+    return nothing
+end
+
+#---------------------------------------------------------------------------------
 # EVERY RESOLUTION ON ONE FIGURE, as Dao & Nazarov's Fig. 2 puts its two: the
 # colour is the order, the line type the resolution (dashed the coarsest, then
-# dotted, dash-dot, dash-dot-dot), no markers, and the curves' legend in the
-# coefficient panel, where ν falls into one band per resolution (ν ∝ Δ ∝
-# 1/#DOFs). Written as density_nu_all-it<n> when the store holds two
-# resolutions or more; with four, that is sixteen curves.
+# dotted, dash-dot, dash-dot-dot), no markers. Written as rho_By_all-it<n> and
+# nu_all-it<n> (density_nu_all-it<n> with JEXPRESSO_BW_RIGHT=nu) when the store
+# holds two resolutions or more; with four, that is sixteen curves.
 #---------------------------------------------------------------------------------
 const BW_RES_LINES = [:dash, :dot, :dashdot, :dashdotdot]
 
-function _bw_plot_density_nu_all(stored, xs, href, inputs, OUTPUT_DIR, iout)
+function _bw_plot_all(stored, xs, href, hBy, inputs, OUTPUT_DIR, iout, right)
     buckets = sort(unique(_bw_bucket(c.ndofs) for c in stored))
     length(buckets) >= 2 || return nothing
     curves = reduce(vcat, [_bw_finest(filter(c -> _bw_bucket(c.ndofs) == b, stored)) for b in buckets])
     rline(c) = BW_RES_LINES[mod1(findfirst(==(_bw_bucket(c.ndofs)), buckets), length(BW_RES_LINES))]
-    _bw_plot_density_nu(curves, xs, href, inputs, OUTPUT_DIR, iout, "_all";
-                        style = c -> (_bw_style(c.nop)[1], rline(c), :none),
-                        markers = false, legend_nu_only = true)
+    style = c -> (_bw_style(c.nop)[1], rline(c), :none)
+    if right == "nu"
+        _bw_plot_density_nu(curves, xs, href, inputs, OUTPUT_DIR, iout, "_all";
+                            style = style, markers = false, legend_nu_only = true)
+    else
+        _bw_plot_rho_By(curves, xs, href, hBy, inputs, OUTPUT_DIR, iout, "_all";
+                        style = style, markers = false, legendfontsize = 9)
+    end
+    _bw_plot_nu(curves, inputs, OUTPUT_DIR, iout, "_all"; style = style, markers = false, legendfontsize = 9)
     return nothing
 end
 
 #---------------------------------------------------------------------------------
 # Every comparison figure of the store at the final time: per resolution the
-# density figure and the density-and-coefficient figure, the finest of each
-# under the plain name, the error table and the two convergence histories.
-# Called by the run (user_plot_1d) and by tools/brio_wu_plot.jl, which
-# redraws them from the store alone at the end of a sweep.
+# density figure, the ρ-and-B_y figure (with JEXPRESSO_BW_RIGHT=nu the
+# density-and-coefficient one instead) and the coefficient alone, the finest of
+# each under the plain name, every resolution together, the error table and
+# the two convergence histories. Called by the run (user_plot_1d) and by
+# tools/brio_wu_plot.jl, which redraws them from the store alone at the end of
+# a sweep. `hBy` is the B_y reference on the abscissae `xs` of `href`.
 #---------------------------------------------------------------------------------
-function _bw_draw_store(stored, xs, href, inputs, OUTPUT_DIR, iout; lerrors = href !== nothing)
+function _bw_draw_store(stored, xs, href, inputs, OUTPUT_DIR, iout;
+                        hBy = nothing, lerrors = href !== nothing)
     isempty(stored) && return nothing
+    right = lowercase(strip(get(ENV, "JEXPRESSO_BW_RIGHT", "by")))   # the right panel: "by" or "nu"
     figs = Tuple{Any,String}[]
     # ONE FIGURE PER RESOLUTION. Orders may only be compared at equal
     # degrees of freedom, so each DOF bucket gets its own file and a sweep
@@ -673,16 +822,18 @@ function _bw_draw_store(stored, xs, href, inputs, OUTPUT_DIR, iout; lerrors = hr
     for (sub, tag) in figs
         _bw_plot_density(sub, xs, href, inputs, OUTPUT_DIR, iout, tag)
         try
-            _bw_plot_density_nu(sub, xs, href, inputs, OUTPUT_DIR, iout, tag)
+            right == "nu" ? _bw_plot_density_nu(sub, xs, href, inputs, OUTPUT_DIR, iout, tag) :
+                            _bw_plot_rho_By(sub, xs, href, hBy, inputs, OUTPUT_DIR, iout, tag)
+            _bw_plot_nu(sub, inputs, OUTPUT_DIR, iout, tag)
         catch err
-            @warn "brioWu1d: the density_nu figure failed; the density figure is unaffected." exception=err
+            @warn "brioWu1d: a comparison figure failed; the density figure is unaffected." exception=err
         end
     end
     # Every order at every resolution on one figure.
     try
-        _bw_plot_density_nu_all(stored, xs, href, inputs, OUTPUT_DIR, iout)
+        _bw_plot_all(stored, xs, href, hBy, inputs, OUTPUT_DIR, iout, right)
     catch err
-        @warn "brioWu1d: the density_nu_all figure failed; the other figures are unaffected." exception=err
+        @warn "brioWu1d: the all-resolutions figures failed; the other figures are unaffected." exception=err
     end
     # Error table and the convergence history, from every stored curve.
     lerrors || return nothing
@@ -936,6 +1087,11 @@ function user_plot_1d(x, q, qref, μ_nodes, t, outvar, inputs, OUTPUT_DIR, iout)
     # the coefficient stored with the curve: the ρu slot (see _bw_plot_density_nu)
     νs = (μ_nodes !== nothing && size(μ_nodes, 1) == length(x)) ?
          Float64.(μ_nodes[idx, min(2, size(μ_nodes, 2))]) : Float64[]
+    # and B_y, the other quantity of Dao & Nazarov's figure, with its reference
+    iBy = findfirst(==("By"), string.(outvar))
+    Bys = iBy === nothing ? Float64[] : Float64.(q[idx, iBy])
+    hBy = (iBy !== nothing && qref !== nothing && any(isfinite, @view(qref[:, iBy]))) ?
+          qref[idx, iBy] : nothing
 
     # The reference is supplied at the final time only; that is the figure the
     # orders are compared on, so that is where the curve is stored and where
@@ -944,7 +1100,7 @@ function user_plot_1d(x, q, qref, μ_nodes, t, outvar, inputs, OUTPUT_DIR, iout)
     stored = NamedTuple[]
     form   = _bw_form(inputs)
     if lfinal
-        _bw_save_curve(xs, ρs, νs, inputs, t, iout)
+        _bw_save_curve(xs, ρs, νs, Bys, inputs, t, iout)
         # Inside a sweep (tools/brio_wu_order_scan.sh sets JEXPRESSO_BW_DRAWSTORE=0)
         # the run only stores its curve: the sweep draws every comparison figure
         # once, from the complete store, when its last run is done.
@@ -968,7 +1124,7 @@ function user_plot_1d(x, q, qref, μ_nodes, t, outvar, inputs, OUTPUT_DIR, iout)
                          xs, href, inputs, OUTPUT_DIR, iout, "")
     else
         # every comparison figure, the error table and the convergence history
-        _bw_draw_store(stored, xs, href, inputs, OUTPUT_DIR, iout)
+        _bw_draw_store(stored, xs, href, inputs, OUTPUT_DIR, iout; hBy = hBy)
         println(" #   (", form, " form of the DynSGS coefficient)")
     end
     return nothing
