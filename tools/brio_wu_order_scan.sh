@@ -6,11 +6,9 @@
 # problems/MHD/brioWu1d/curves/Cmin<C_min>/, and when its last run is done
 # tools/brio_wu_plot.jl draws from them, in output/MHD/brioWu1d/output/Cmin<C_min>/:
 #
-#   rho_By_all-it5.svg          EVERY order at EVERY resolution: ρ (left) and B_y
-#                               (right) against the reference, with zoom boxes;
-#                               colour = order, line type = resolution
-#   rho_By_dof<M>-it5.svg       every order at ~M DOFs, as in Dao & Nazarov's
-#                               Brio-Wu figure; rho_By-it5.svg the finest
+#   rho_By_dof<M>-it5.svg       every order at ~M DOFs, one figure per resolution:
+#                               ρ (left) and B_y (right) against the reference,
+#                               with zoom boxes; rho_By-it5.svg the finest
 #   nu_all-it5.svg, nu_dof<M>-it5.svg, nu-it5.svg   the DynSGS coefficient ν alone
 #   density_dof<M>-it5.svg, density-it5.svg    the density alone
 #   convergence-it5.svg, convergence_smooth-it5.svg   error against 1/#DOFs

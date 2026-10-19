@@ -106,8 +106,7 @@ another method, which it leaves off the figure.
 |---|---|
 | `rho_By_dof<M>-it<n>.svg` | **the comparison figure, one per resolution**, in the layout of the Brio–Wu figure of Dao, Nazarov & Tomas ([arXiv:2310.18467](https://arxiv.org/abs/2310.18467), Figs. 1–2): **left** $\rho$, **right** $B_y$, of every order at $M$ DOFs against the reference, $\rho$ with the four zoom boxes of the density figure, $B_y$ with their three: the top of the compound wave ($x \in [0.416, 0.476]$, upper left), the plateau up to the slow shock ($[0.56, 0.65]$, lower left) and the right fast rarefaction ($[0.763, 0.913]$, right, under the legend) |
 | `rho_By-it<n>.svg` | the same for the finest resolution in the store |
-| `rho_By_all-it<n>.svg` | **every order at every resolution** on one figure, as Dao & Nazarov's Fig. 2 puts its two: colour is the order, line type the resolution (dashed the coarsest, then dotted, dash-dot, dash-dot-dot). Written when the store holds two resolutions or more |
-| `nu_dof<M>-it<n>.svg`, `nu-it<n>.svg`, `nu_all-it<n>.svg` | **the DynSGS coefficient $\nu$ alone**, of the same curves (the $\rho u$ slot, which in this deck's conserved form is the one $\nu$ of every equation; per element, so a staircase through the nodes). Linear axis, or $\log_{10}$ when $\nu$ spans more than two decades ($C_{min}=0$); in the all-resolutions figure it falls into one band per resolution ($\nu \propto \Delta \propto 1/\#\mathrm{DOFs}$) |
+| `nu_dof<M>-it<n>.svg`, `nu-it<n>.svg`, `nu_all-it<n>.svg` | **the DynSGS coefficient $\nu$ alone**, of the same curves (the $\rho u$ slot, which in this deck's conserved form is the one $\nu$ of every equation; per element, so a staircase through the nodes). Linear axis, or $\log_{10}$ when $\nu$ spans more than two decades ($C_{min}=0$); `nu_all` holds every order at every resolution (colour the order, line type the resolution) and falls into one band per resolution ($\nu \propto \Delta \propto 1/\#\mathrm{DOFs}$). $\rho$ and $B_y$ get no such figure: with every resolution in one $B_y$ panel there are too many curves to tell which one overshoots |
 | `density_dof<M>-it<n>.svg` | **one file per resolution**: every order that ran at $M$ degrees of freedom, against the reference, with the four zoom boxes. A sweep over 150, 300, 600 and 1200 DOFs leaves `density_dof150-it<n>.svg`, `density_dof300-it<n>.svg`, … side by side |
 | `density-it<n>.svg` | the same figure for the finest resolution in the store, under the plain name |
 | `density_nu_dof<M>-it<n>.svg`, `density_nu-it<n>.svg`, `density_nu_all-it<n>.svg` | the earlier layout, $\rho$ and $\nu$ side by side, in place of the $\rho$–$B_y$ figures: `JEXPRESSO_BW_RIGHT=nu`, or `--right=nu` for `tools/brio_wu_plot.jl`; also what a store from a sweep run before $B_y$ was stored gets |
@@ -147,9 +146,9 @@ $1.15\times10^{-3}$ at $N = 4$ to $7.5\times10^{-4}$ at $N = 7$, so the Courant
 number against the fast speed of the right state runs from 0.16 to 0.25 and
 the parabolic number stays below 0.25.
 
-A sweep's directory therefore holds its complete comparison: the
-all-results figures, one density figure, one $\rho$–$B_y$ figure and one
-$\nu$ figure per resolution, and the two convergence histories.
+A sweep's directory therefore holds its complete comparison: one density
+figure, one $\rho$–$B_y$ figure and one $\nu$ figure per resolution, the
+$\nu$ of every resolution together, and the two convergence histories.
 `tools/brio_wu_plot.jl` draws the same from a store alone (`--store=Cmin0.03`
 for the sweep at $C_{min} = 0.03$, `4,7` for a subset of the orders,
 `--dofs=600` for one resolution, `--fmt=pdf`, `--out=dir`); the scan calls it
