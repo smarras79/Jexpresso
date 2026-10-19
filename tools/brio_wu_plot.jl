@@ -21,8 +21,9 @@
 #   density_dof<M>-it<n>, density-it<n>         the density alone
 #   convergence-it<n>, convergence_smooth-it<n> error against 1/#DOFs
 #
-#   --form=F   the method to draw: elemH (the deck: element ν, Δ_K/k), elem,
-#              nodalH or nodal; default the form of the newest stored curve
+#   --form=F   the method to draw: elem (the deck: element ν, Δ_K/(k+1)),
+#              elemH (Δ_K/k), nodal or nodalH; default the form of the newest
+#              stored curve
 #   --t=T      the final time; default the latest in the store
 #   --fmt=F    svg (default), pdf or png
 using Plots, LaTeXStrings, Printf

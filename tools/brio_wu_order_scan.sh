@@ -17,7 +17,7 @@
 #   BW_DOFS="150 300 600 1200" tools/brio_wu_order_scan.sh   # for the convergence figures
 #   BW_NOPS="4 7" tools/brio_wu_order_scan.sh
 #   BW_CMIN=0.0 tools/brio_wu_order_scan.sh           # with the DynSGS floor off
-#   BW_HSCALE=ngl tools/brio_wu_order_scan.sh         # the kernels' Δ_K/(k+1) instead
+#   BW_HSCALE=nop tools/brio_wu_order_scan.sh         # Dao & Nazarov's Δ_K/k instead of h_e/(N+1)
 #   BW_NODAL=1 tools/brio_wu_order_scan.sh            # the nodal coefficient
 #   JEXPRESSO_BW_FREEZE=0 tools/brio_wu_order_scan.sh # DynSGS per stage, as before b956ccd
 #   JEXPRESSO_BW_FIGFMT=pdf tools/brio_wu_order_scan.sh   # PDF figures (default SVG)
@@ -46,7 +46,8 @@ DOFS=${BW_DOFS:-"600 1200"}
 NOPS=${BW_NOPS:-"4 5 6 7"}
 JOBS=${BW_JOBS:-1}
 export BW_DOFS="$DOFS"     # for the per-order children of a parallel sweep
-export JEXPRESSO_BW_HSCALE=${BW_HSCALE:-nop}
+# the length scale: the deck's default (the paper's h_e/(N+1)) unless BW_HSCALE says otherwise
+[ -n "${BW_HSCALE:-}" ] && export JEXPRESSO_BW_HSCALE="$BW_HSCALE"
 [ -n "${BW_CMIN:-}" ]  && export JEXPRESSO_BW_CMIN="$BW_CMIN"
 [ -n "${BW_NODAL:-}" ] && export JEXPRESSO_BW_NODAL="$BW_NODAL"
 # JULIA: as given, or else the first that starts of the macOS app's julia and
@@ -110,7 +111,7 @@ if [ "${BW_KEEP:-0}" != "1" ]; then
 fi
 mkdir -p "$OUT"
 echo "=== Brio-Wu order scan: N [$NOPS] x DOFs [$DOFS], length scale \
-$([ "$JEXPRESSO_BW_HSCALE" = nop ] && echo 'Delta_K/k' || echo 'Delta_K/(k+1)')\
+$([ "${JEXPRESSO_BW_HSCALE:-ngl}" = nop ] && echo 'Delta_K/k' || echo 'Delta_K/(k+1)')\
 ${BW_NODAL:+, nodal coefficient}${BW_CMIN:+, Cmin $BW_CMIN}, $JOBS session(s)"
 
 if [ "$JOBS" -gt 1 ]; then

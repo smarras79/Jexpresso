@@ -25,7 +25,8 @@
 # its density profile and its DynSGS coefficient ν in
 # `curves/nop<N>_dof<M>_<form>.dat` in this case directory, and the figures are drawn from EVERY curve stored there whose
 # <form> matches this run's — the coefficient form (element or nodal) and the
-# length-scale convention ("H" = the paper's Δ_K/k, the default of this deck),
+# length-scale convention ("H" = Dao & Nazarov's Δ_K/k; none = the paper's
+# Δ_K/(k+1) = h_e/(N+1), the default of this deck),
 # which are what make one run a different method from another. Curves of any
 # other form are reported on stdout and left off the figure:
 #
@@ -165,11 +166,12 @@ _bw_style(nop) = get(BW_STYLE, nop, (:darkorange, :dash, :xcross))
 
 # Element- and nodal-form runs are different methods, so they are stored
 # apart and only drawn together when the figure says which is which.
-# The deck folds the Δ_K/k convention into the coefficients as a factor
-# (k+1)/k on C_max, C_min. Divide it back out so the figure reports the
-# method's C_min and not the per-order number that implements it.
-# `_bw_hscale()` is the deck's own switch (user_inputs.jl); it defaults to the
-# paper's "nop" here and to nothing at all anywhere else in the code.
+# With JEXPRESSO_BW_HSCALE=nop the deck folds Dao & Nazarov's Δ_K/k into the
+# coefficients as a factor (k+1)/k on C_max, C_min. Divide it back out so the
+# figure reports the method's C_min and not the per-order number that
+# implements it. `_bw_hscale()` is the deck's own switch (user_inputs.jl):
+# "ngl", the default, is the paper's h_e/(N+1) and needs no factor; nothing
+# outside this case reads it.
 function _bw_hfac(inputs)
     _bw_hscale() == "nop" || return 1.0
     N = Int(get(inputs, :nop, 0))

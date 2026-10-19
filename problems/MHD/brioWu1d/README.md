@@ -126,7 +126,7 @@ Overrides, all optional, so a sweep needs no file edits:
 | `JEXPRESSO_BW_NELX` | — | element count, overriding `JEXPRESSO_BW_DOFS` |
 | `JEXPRESSO_BW_DT` | — | time step, overriding the rule below |
 | `JEXPRESSO_BW_CMIN` | 0.06 | the DynSGS background floor `:dsgs_Cmin` |
-| `JEXPRESSO_BW_HSCALE` | `nop` | the DynSGS length scale: `nop` is the paper's $\Delta_K/k$, `ngl` the kernels' own $\Delta_K/(k+1)$ |
+| `JEXPRESSO_BW_HSCALE` | `ngl` | the DynSGS length scale: `ngl` is the kernels' own $\Delta_K/(k+1) = h_e/(N+1)$, eq. (15) of the DynSGS-MHD paper; `nop` is Dao & Nazarov's $\Delta_K/k$ |
 | `JEXPRESSO_BW_NODAL` | 0 | 1 for the nodal coefficient (`:ldsgs_nodal`, their eq. 4.10) |
 
 At a fixed DOF count the orders run at equal cost: 150, 120, 100 and 86
@@ -170,7 +170,7 @@ $$
 \frac{\Delta_K}{k} = \frac{L}{\#\mathrm{DOFs}} ,
 $$
 
-so the paper's convention is the same for every order while the kernels' grows
+so Dao & Nazarov's convention is the same for every order while the kernels' grows
 with $k$ (0.8 of it at $k=4$, 0.875 at $k=7$). That factor varies by 75 % over
 $k = 1\ldots7$, it is monotone in $k$, and it enters the cap and the floor
 linearly and the residual viscosity $C_R\Delta^2\mathcal{R}$ quadratically. On
@@ -189,19 +189,22 @@ $3.3$–$3.5\times10^{-3}$ for orders 2-7) — which is the statement of the
 paper's Fig. 2, that $\mathbb{P}_3$ captures the compound structure more
 accurately than $\mathbb{P}_1$ at equal degrees of freedom.
 
-**This case therefore runs $\Delta_K/k$ by default** (`JEXPRESSO_BW_HSCALE=ngl`
-for the other). It is a *deck-level* switch: `user_inputs.jl` folds the factor
-into this case's own coefficients — $C_{max}$ and $C_{min}$ by $(k+1)/k$,
-$C_R$ by $((k+1)/k)^2$, which is algebraically identical to changing $\Delta$ —
-and no kernel is touched. Every other case (`orszagTangBormanis2024`,
-`sod1d`, `thetaTracers`, the forward-facing step, the rising bubble) keeps
-$\Delta_K/(k+1)$ and is bit-for-bit unaffected. Two things to know before
-making it general: $\Delta_K/k$ is $(k+1)/k$ *larger*, so the absolute error
-level rises (at order 4, $5.6\to7.1\times10^{-3}$ over the whole tube), and it
-was the larger scale that pushed the rising bubble past the explicit viscous
-stability limit at start-up, which is why the kernels moved to $(k+1)$ in the
-first place. Making it a real `:dsgs_hscale` input, read by the kernels so
-every case can choose, is the clean way to settle that.
+**This case runs $\Delta_K/(k+1) = h_e/(N+1)$ by default**, the kernels' own
+and the $\Delta_e$ of eq. (15) of the DynSGS-MHD paper, so that $C_R = 1$,
+$C_{max} = 0.5$ and $C_{min} = 0.06$ mean here what they mean in the paper and
+in every other case. Until October 2026 the default was Dao & Nazarov's
+$\Delta_K/k$, for the order comparison above; `JEXPRESSO_BW_HSCALE=nop`
+(`BW_HSCALE=nop` for the scan) still gives it. That is a *deck-level* switch:
+`user_inputs.jl` folds the factor into this case's own coefficients —
+$C_{max}$ and $C_{min}$ by $(k+1)/k$, $C_R$ by $((k+1)/k)^2$, which is
+algebraically identical to changing $\Delta$ — and no kernel is touched. Two
+things follow from the default. At equal DOFs the higher orders get the larger
+viscosity (orders 4 to 7: 9 % more floor and cap, 20 % more residual
+viscosity), the penalty the table measures. And the absolute level is lower
+than with $\Delta_K/k$, which is $(k+1)/k$ *larger* (at order 4,
+$7.1\to5.6\times10^{-3}$ over the whole tube); that larger scale is also what
+pushed the rising bubble past the explicit viscous stability limit at
+start-up, which is why the kernels use $(k+1)$.
 
 `JEXPRESSO_BW_CMIN=0` removes the part of the viscosity that is independent of
 the solution altogether.
