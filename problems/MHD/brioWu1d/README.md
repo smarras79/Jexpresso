@@ -279,6 +279,12 @@ $\sqrt{2\nu t} \approx 0.006$ over the run, less than one element; with
 0.03 the ripples remain, with 0.06 none (measured), at the price of a
 contact about one node wider; 0.03 leaves a faint trace of them (±0.1 %)
 with sharper shocks, 0 gives the sharpest shocks with the ripples in full.
+Those were measured on Dao & Nazarov's $\Delta_K/k$. On the default
+$h_e/(N+1)$ the same 0.06 is an effective 0.048–0.053 on $\Delta_K/k$
+($N = 4$–7), and re-measured at 600 DOFs nothing is visible at the figure's
+scale: between $x = 0.425$ and $0.455$ successive extrema of $\rho$ differ by
+at most 0.4 % on either length (dip at the foot of the compound wave
+included), with a few more small extrema at $N = 4, 5$ on $h_e/(N+1)$.
 (With the residual and the time stencil of the runs before September 2026,
 DSGS.md §1.2 and §4.4, 0.03 was enough: the old sensor over-fired on the
 moving waves and supplied the rest of the damping itself;
@@ -302,10 +308,18 @@ of time stepping. At $t = 0.1$ (`density-it5.svg`; the per-variable figures with
   $\approx 0.82$; the contact and the slow shock are 2–3 nodes wide, the
   paper's zoom boxes show the same smearing for its $\mathbb{P}_3$ solution;
   $p$, $B_y$, $u$, $v$ follow the reference to plotting accuracy;
-- the DynSGS coefficient (`mu_dsgs-it5.svg`) is at its floor,
-  $\approx 1\times10^{-4}$, in the smooth regions, $2$–$4\times10^{-4}$ at the
-  compound wave and the contact and $1\times10^{-3}$ at the slow shock, a
-  third of its cap $C_{max}h(|u| + c_f) \approx 3\times10^{-3}$.
+- the DynSGS coefficient (`mu_dsgs-it5.svg`, and the right panel of
+  `density_nu-it5.svg`) is on its floor $C_{min}\Delta_e(|u| + c_f)$
+  everywhere, at 600 DOFs and $N = 4$–7: $1.4$–$1.6\times10^{-4}$ on the left
+  state, $2.9$–$3.2\times10^{-4}$ on the right one and at most
+  $3.4$–$3.8\times10^{-4}$ behind the slow shock, the higher orders a little
+  higher (the equal-DOF penalty of $h_e/(N+1)$ above). The residual part never
+  exceeds it: with the floor off (`JEXPRESSO_BW_CMIN=0`) it peaks at the
+  compound wave and at the slow shock at about the floor's size and falls to
+  $10^{-5}$–$10^{-6}$ elsewhere (measured on $\Delta_K/k$);
+- the relative $L^1$ error of $\rho$ over the tube is $6.1$, $6.6$, $6.7$ and
+  $7.0\times10^{-3}$ for $N = 4$–7; on $\Delta_K/k$ it was $7.6$–$8.0\times10^{-3}$,
+  and $2.7$–$3.7\times10^{-3}$ there with the floor off.
 
 ## Files
 
