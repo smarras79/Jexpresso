@@ -41,6 +41,20 @@ and $\kappa$); for $\mathrm{Pr} \neq 1$ the energy slot splits off as
 carries the simulation time as `TimeValue` field data, so ParaView shows the
 physical time rather than the output counter.
 
+Mass and energy are tracked at every step (`:conservation_every => 1`,
+`:conservation_slots => [1, 4]`), as for the rotor: `conservation.dat`, next to
+the VTK files of the run, holds t, the step and the discrete totals
+$\sum_K\sum_{ij}\omega_i\omega_j J\,\rho$ and
+$\sum_K\sum_{ij}\omega_i\omega_j J\,\rho E$ over all elements and ranks.
+Nothing in this deck adds either (no positivity floor, no filter; the only
+source is the ψ damping), so both stay at round-off: within 2e-16 to $t = 0.05$
+on the shipped 32² mesh, against 5e-13 on the mesh before the seam fix (see
+[Mesh](#mesh)). For the figure, $|Q(t) - Q(0)|/|Q(0)|$ on log axes:
+
+```bash
+python3 tools/plot_conservation.py <the run's output directory> --out ot_conservation.pdf
+```
+
 ## Figures
 
 **The solver does not write the PNGs in this README.** With

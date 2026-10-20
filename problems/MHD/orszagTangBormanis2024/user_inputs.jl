@@ -42,6 +42,8 @@ function user_inputs()
         # steps.
         :tend                 => 1.0,   # the paper's t ∈ [0, 1] interval
         :diagnostics_at_times => (0.0:0.25:1.0),
+        :conservation_every   => 1,        # mass and energy totals every step: conservation.dat
+        :conservation_slots   => [1, 4],
         :restart_time         => 0.0,
         :lrestart             => false,
         :lsource              => true,   # GLM ψ-damping source (Dedner mixed cleaning; see user_source.jl)
