@@ -636,9 +636,13 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
     inputs[:lstep_heartbeat] = get(inputs, :lstep_heartbeat, false) == true   # per-step progress line
     # Discrete totals of the :conservation_slots every :conservation_every steps (0: off) to
-    # <output_dir>/conservation.dat; plot with tools/plot_conservation.py.
+    # <output_dir>/<:conservation_file>; plot with tools/plot_conservation.py. The file name is a
+    # String, or a Function of the completed inputs that returns one, evaluated when the file is
+    # opened: one name per run for cases whose runs share an output directory (MHD/smoothVortex,
+    # MHD/alfvenWaveBabbarRanocha2026).
     inputs[:conservation_every] = Int(get(inputs, :conservation_every, 0))
     inputs[:conservation_slots] = Int.(collect(get(inputs, :conservation_slots, [1])))
+    inputs[:conservation_file]  = get(inputs, :conservation_file, "conservation.dat")
     # problems/MHD/blastBalsaraSpicer1999: ambient |B| along x (Heaviside-Lorentz); ambient β = 0.2/B0².
     # 100/√(4π) is Balsara & Spicer's B = 100 (β = 2.51e-4). Change only this for a β sweep.
     inputs[:blast_B0] = Float64(get(inputs, :blast_B0, 100.0/sqrt(4.0*π)))

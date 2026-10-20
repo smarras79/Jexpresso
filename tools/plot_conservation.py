@@ -3,6 +3,11 @@
     python3 tools/plot_conservation.py <output dir or conservation.dat> [more runs] --labels '$128^2$' '$256^2$' --out f.pdf
 
     python3 tools/plot_conservation.py output/MHD/blastBalsaraSpicer1999/blast-output-128x128 --labels '$128^2$' --out output/MHD/blastBalsaraSpicer1999/blast-output-128x128/blast_conservation_128x128.pdf
+
+The smooth vortex and the Alfven wave write one file per run, named as the run's error record
+(conservation_nop<N>_nelx<M>_<tag>.dat), into the output directory their sweep shares; pass the
+files, which are labelled by that name unless --labels says otherwise:
+    python3 tools/plot_conservation.py output/MHD/smoothVortex/output/conservation_nop4_nelx{8,16,32}_dsgs.dat
 """
 import argparse
 import os
@@ -21,6 +26,16 @@ INK, INK2, GRID = "#0b0b0b", "#52514e", "#e2e1dd"
 NAMES = {"ρ": ("mass", "M"), "rho": ("mass", "M"), "ρE": ("total energy", "E"), "rhoE": ("total energy", "E"),
          "E": ("total energy", "E"), "ρθ": (r"$\rho\theta$", r"\Theta"), "ρu": ("x-momentum", "P_x"),
          "ρv": ("y-momentum", "P_y"), "ρw": ("z-momentum", "P_z")}
+
+
+def default_label(path):
+    """A conservation.dat is named after its run's directory, any other file after itself:
+    conservation_nop4_nelx16_dsgs.dat -> nop4_nelx16_dsgs."""
+    name = os.path.basename(path)
+    if name == "conservation.dat":
+        return os.path.basename(os.path.dirname(os.path.abspath(path)))
+    stem = os.path.splitext(name)[0]
+    return stem[len("conservation_"):] if stem.startswith("conservation_") else stem
 
 
 def read(path):
@@ -50,7 +65,8 @@ def style():
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("runs", nargs="+", help="conservation.dat files or the output directories that hold them")
-    ap.add_argument("--labels", nargs="+", help="legend label per run (default: the run's directory name)")
+    ap.add_argument("--labels", nargs="+",
+                    help="legend label per run (default: the run's directory name for a conservation.dat, the file's name otherwise)")
     ap.add_argument("--vars", nargs="+", help="tracked columns to plot, by name (default: all, e.g. ρ ρE)")
     ap.add_argument("--absolute", action="store_true", help="plot the totals Q(t) instead of |Q(t)-Q(0)|/|Q(0)|")
     ap.add_argument("--no-eps", action="store_true", help="omit the machine-epsilon reference line")
@@ -67,7 +83,7 @@ def main():
     a = ap.parse_args()
 
     runs = [read(p) for p in a.runs]
-    labels = a.labels or [os.path.basename(os.path.dirname(os.path.abspath(p))) for p, *_ in runs]
+    labels = a.labels or [default_label(p) for p, *_ in runs]
     if len(labels) != len(runs):
         sys.exit("--labels needs one label per run")
     if len(runs) > len(SERIES):
@@ -107,7 +123,8 @@ def main():
                         ms=(3.2 if hollow else 2.4) if a.markers else 1.6, mew=0.6 if hollow else 0,
                         mfc="none" if hollow else SERIES[k], label=lab, zorder=2 + len(runs) - k)
         if exact:
-            ax.text(0.03, 0.92, "exactly conserved" + ("" if len(runs) == 1 else ": " + ", ".join(exact)),
+            # every run, or the ones that are, one per line: run names can be long
+            ax.text(0.03, 0.92, "exactly conserved" + ("" if len(exact) == len(runs) else ":\n" + "\n".join(exact)),
                     transform=ax.transAxes, ha="left", va="top", fontsize=8, color=INK2)
             if len(exact) == len(runs) and not a.ylim:
                 ax.set_ylim(eps / 10, eps * 100)

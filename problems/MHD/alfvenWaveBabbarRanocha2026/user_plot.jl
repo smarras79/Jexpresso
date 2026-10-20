@@ -1,8 +1,10 @@
 #---------------------------------------------------------------------------------
-# Convergence history of the smooth Alfvén wave, in the layout of
-# Babbar & Ranocha (2026), Fig. 13: the L² error at the final time against the
-# number of degrees of freedom on log-log axes, one line per polynomial order N,
-# with the optimal O(h^{N+1}) slope beside each.
+# Convergence history of the smooth Alfvén wave (Babbar & Ranocha 2026,
+# Fig. 13): the error at the final time against the number of degrees of
+# freedom on log-log axes, drawn with the convergence figure of the smooth
+# vortex (../smoothVortex/convergence_figure.jl), so that the two accuracy
+# tests show their errors the same way: every order and stabilization on the
+# same axes, dotted reference slopes, the measured rate in the legend.
 #
 # THE ERROR is the one the paper's runs report: Tenkai.jl's compute_error, read
 # as "l2_error" by run/convergence_alfven_wave/convergence.jl of the
@@ -16,8 +18,9 @@
 # the density. The exact density is 1, so that number measures how far the
 # scheme moves ρ off a constant (a by-product of the nonlinear coupling), not
 # the wave itself. Every conserved variable is stored here, and the figure has
-# two panels: ρ, the paper's measure, and the full state sqrt(Σ_k e(q_k)²),
-# which does measure the wave (it lives in u, v, w, B).
+# three panels: the L² error of ρ, the paper's measure; of the full state,
+# sqrt(Σ_k e(q_k)²), which does measure the wave (it lives in u, v, w, B); and
+# the L∞ error of the state, the largest of the variables' maxima.
 #
 # At the final time every run stores its errors in
 # `errors/nop<N>_nelx<M>_<visc>.dat` in this case directory, and the figure is
@@ -36,6 +39,9 @@
 #   t        simulation time
 #---------------------------------------------------------------------------------
 const AW_ERR_DIR = joinpath(@__DIR__, "errors")
+
+# The convergence figure: the smooth vortex's, shared.
+include(joinpath(@__DIR__, "..", "smoothVortex", "convergence_figure.jl"))
 const AW_QVARS   = ("ρ", "ρu", "ρv", "ρE", "ρw", "Bx", "By", "Bz", "ψ")   # the state order of initialize.jl
 
 # ATOMIC WRITES, as in smoothVortex: the runs of a sweep may redraw the same
@@ -242,7 +248,7 @@ function _aw_load(tnom)
     isdir(AW_ERR_DIR) || return rows
     for fname in readdir(AW_ERR_DIR)
         (startswith(fname, "nop") && endswith(fname, ".dat")) || continue
-        meta = Dict{String,String}(); l2 = Dict{String,Float64}()
+        meta = Dict{String,String}(); l2 = Dict{String,Float64}(); linf = Dict{String,Float64}()
         try
             for line in eachline(joinpath(AW_ERR_DIR, fname))
                 tok = split(line)
@@ -253,7 +259,8 @@ function _aw_load(tnom)
                         k, v = split(s, '=', limit = 2); meta[k] = v
                     end
                 elseif length(tok) >= 3
-                    l2[tok[1]] = parse(Float64, tok[2])
+                    l2[tok[1]]   = parse(Float64, tok[2])
+                    linf[tok[1]] = parse(Float64, tok[3])
                 end
             end
         catch err
@@ -266,7 +273,9 @@ function _aw_load(tnom)
         nop  = tryparse(Int, get(meta, "nop", "")); nelx = tryparse(Int, get(meta, "nelx", ""))
         (nop === nothing || nelx === nothing) && continue
         push!(rows, (nop = nop, nelx = nelx, ndofs = (nelx*nop)^2, visc = get(meta, "visc", "dsgs"),
-                     t = tc, rho = l2["ρ"], state = sqrt(sum(abs2, l2[n] for n in AW_QVARS))))
+                     t = tc, dt = something(tryparse(Float64, get(meta, "dt", "")), NaN),
+                     rho = l2["ρ"], state = sqrt(sum(abs2, l2[n] for n in AW_QVARS)),
+                     state_inf = maximum(linf[n] for n in AW_QVARS)))
     end
     return sort!(rows, by = r -> (r.visc, r.nop, r.ndofs))
 end
@@ -292,23 +301,12 @@ function _aw_report(rows)
     return nothing
 end
 
-# One colour and one marker per order, in a fixed order: N = 3 ... 7 take the
-# first five slots of a categorical palette checked for colour-vision
-# deficiency on neighbouring curves (blue, orange, aqua, yellow, magenta), and
-# every marker can be drawn hollow (the Galerkin runs).
-const AW_STYLE = Dict(3 => (Plots.RGB(0x2a/255, 0x78/255, 0xd6/255), :diamond),
-                      4 => (Plots.RGB(0xeb/255, 0x68/255, 0x34/255), :rect),
-                      5 => (Plots.RGB(0x1b/255, 0xaf/255, 0x7a/255), :utriangle),
-                      6 => (Plots.RGB(0xed/255, 0xa1/255, 0x00/255), :star5),
-                      7 => (Plots.RGB(0xe8/255, 0x7b/255, 0xa4/255), :hexagon),
-                      1 => (Plots.RGB(0x00/255, 0x83/255, 0x00/255), :dtriangle),
-                      2 => (Plots.RGB(0x62/255, 0x50/255, 0xd6/255), :circle))
-_aw_style(n) = get(AW_STYLE, n, (Plots.RGB(0.5, 0.5, 0.5), :pentagon))
-const AW_INK = Plots.RGB(0x52/255, 0x51/255, 0x4e/255)   # text beside a curve
-# solid = plain DSGS ("dsgs", or the first DSGS tag when there is none),
-# dashed = Galerkin, and the DSGS variants (the cutoff, another integrator,
-# :dsgs_freeze_stage, ...) the dash patterns left, in tag order
-const AW_VARIANT_LINES = (:dashdot, :dashdotdot, :dot)
+# The figure (../smoothVortex/convergence_figure.jl). The line style of a tag:
+# solid = DSGS as the deck runs it ("dsgs", or the first DSGS tag when there is
+# none), dashed = Galerkin, and the DSGS variants (another cutoff, another
+# integrator, :dsgs_freeze_stage, ...) the dash patterns left, in tag order;
+# dotted is the reference slopes'.
+const AW_VARIANT_LINES = (:dashdot, :dashdotdot)
 function _aw_line(tag, tags)
     startswith(tag, "galerkin") && return :dash
     dsgs = sort([t for t in tags if !startswith(t, "galerkin")])
@@ -320,85 +318,19 @@ end
 _aw_label(tag) = startswith(tag, "galerkin") ? replace(tag, "galerkin" => "Galerkin", "_" => " ") :
                  replace(tag, "dsgs" => "DSGS", "_nocut" => ", no cutoff",
                          r"_cut([0-9.e+-]+)" => s", cutoff \1", "_" => " ")
+const AW_PANELS = [   # (field, ylabel, title, file)
+    (:rho,       "\\Vert\\rho_h-\\rho\\Vert_{L^2}",                  "L^2\\mathrm{-error\\ of}\\ \\rho",               "rho"),
+    (:state,     "\\Vert\\mathbf{q}_h-\\mathbf{q}\\Vert_{L^2}",      "L^2\\mathrm{-error\\ of\\ the\\ state}",       "L2"),
+    (:state_inf, "\\Vert\\mathbf{q}_h-\\mathbf{q}\\Vert_{L^\\infty}", "L^\\infty\\mathrm{-error\\ of\\ the\\ state}", "Linf"),
+]
 
-function _aw_panel(rows, fld, ylab, title; legend = true)
-    pl = Plots.plot(; xscale = :log10, yscale = :log10,
-                    xlabel = "#DOFs = (nelx N)²", ylabel = ylab, title = title,
-                    framestyle = :box, grid = true, gridalpha = 0.25,
-                    legend = legend ? :topright : false, legendfontsize = 9, titlefontsize = 12,
-                    guidefontsize = 11, tickfontsize = 9, show = false)
-    # The resolutions actually run, labelled as the paper labels them (32², 64², ...).
-    # With several orders on several meshes those are too many to label: nelx N
-    # on the powers of two instead.
-    dofs = sort(unique(Float64(r.ndofs) for r in rows))
-    xlo, xhi = dofs[1]/1.25, dofs[end]*1.6                  # room on the right for the slope labels
-    side = length(dofs) <= 8 ? sqrt.(dofs) :
-           filter(s -> xlo <= s^2 <= xhi,                    # a tick outside the axis is drawn cut
-                  [2.0^k for k in floor(Int, log2(sqrt(dofs[1]))):ceil(Int, log2(sqrt(dofs[end])))])
-    Plots.plot!(pl; xticks = (side.^2, [string(round(Int, s), "²") for s in side]),
-                    xlims = (xlo, xhi))
-    tags = sort(unique(r.visc for r in rows))
-    ally = Float64[]
-    for n in sort(unique(r.nop for r in rows))
-        col, mk = _aw_style(n)
-        ends = Tuple{Vector{Float64},Float64}[]      # (DOFs of the curve, its finest error)
-        # Galerkin first, as a larger hollow marker, so that a DynSGS point that
-        # coincides with it (the cutoff makes ν exactly zero) shows inside it
-        # instead of being covered by its white fill
-        for tag in sort(tags, by = t -> (!startswith(t, "galerkin"), t))
-            gal = startswith(tag, "galerkin")
-            g = filter(r -> r.visc == tag && r.nop == n, rows)
-            xs = [Float64(r.ndofs) for r in g]; ys = [getfield(r, fld) for r in g]
-            keep = isfinite.(ys) .& (ys .> 0)
-            any(keep) || continue
-            xs = xs[keep]; ys = ys[keep]
-            append!(ally, ys)
-            Plots.plot!(pl, xs, ys; line = (col, 2.0, _aw_line(tag, tags)), marker = (mk, gal ? 8 : 5),
-                        markercolor = gal ? :white : col, markerstrokecolor = col,
-                        label = string("N = ", n, ", ", _aw_label(tag)))
-            length(xs) >= 2 && push!(ends, (xs, ys[end]))
-        end
-        # the optimal order, O(h^(N+1)) = #DOFs^(-(N+1)/2): over the widest curve
-        # of this order, a factor 3 below the smallest of its finest errors, and
-        # labelled at its end
-        isempty(ends) && continue
-        xs = ends[argmax([length(e[1]) for e in ends])][1]
-        A  = minimum(e[2] for e in ends)/3.0*xs[end]^((n + 1)/2)
-        y2 = A*xs[end]^(-(n + 1)/2)
-        Plots.plot!(pl, [xs[1], xs[end]], [A*xs[1]^(-(n + 1)/2), y2];
-                    line = (col, 1.0, :dot), label = "")
-        Plots.annotate!(pl, xs[end]*1.08, y2,
-                        Plots.text(LaTeXStrings.latexstring("h^{", n + 1, "}"), AW_INK, :left, 10))
-        push!(ally, y2)
-    end
-    # decades on the error axis (10^-7.5 is not a number anyone reports), and
-    # the axis set by the errors: a slope line that starts above them is cut
-    if !isempty(ally)
-        lo = floor(Int, log10(minimum(ally))); hi = ceil(Int, log10(maximum(ally)))
-        Plots.plot!(pl; ylims = (10.0^lo/1.5, 10.0^hi*1.5),   # end ticks clear of the frame
-                        yticks = ([10.0^e for e in lo:hi],
-                                  [LaTeXStrings.latexstring(string("10^{", e, "}")) for e in lo:hi]))
-    end
-    return pl
-end
-
-# Returns the file written, or nothing when no order/tag has two meshes yet.
-function _aw_plot(rows, OUTPUT_DIR, iout; name = "convergence")
-    any(count(r -> r.visc == v && r.nop == n, rows) >= 2
-        for v in unique(r.visc for r in rows), n in unique(r.nop for r in rows)) || return nothing
-    tt = rows[1].t
-    # one legend, in panel (a), once the curves are too many to repeat it
-    many = length(unique((r.visc, r.nop) for r in rows)) > 6
-    p1 = _aw_panel(rows, :rho,   "L² error of ρ",
-                   "(a) ρ, the measure of the paper's Fig. 13, t = $(tt)")
-    p2 = _aw_panel(rows, :state, "L² error of the conserved state",
-                   "(b) all conserved variables, t = $(tt)"; legend = !many)
-    plt = Plots.plot(p1, p2; layout = (1, 2), size = (1500, 620),
-                     left_margin = 8Plots.mm, bottom_margin = 8Plots.mm, show = false)
-    f = string(OUTPUT_DIR, "/", name, "-it", iout, ".png")
-    _aw_atomic(f, tmp -> _savefig_silent(plt, tmp))
-    return f
-end
+# <name>-it<iout>.png, the three panels side by side, and <name>_rho, _L2 and
+# _Linf, one each. Returns the first, or nothing when no order/tag has two
+# meshes yet.
+_aw_plot(rows, OUTPUT_DIR, iout; name = "convergence") =
+    _conv_figure(rows, AW_PANELS, OUTPUT_DIR, iout; prefix = name,
+                 tags = sort(unique(r.visc for r in rows)), label = _aw_label, line = _aw_line,
+                 galerkin = t -> startswith(t, "galerkin"))
 
 function user_plot_2d(mesh, q, t, outvar, inputs, OUTPUT_DIR, iout; Minv = nothing)
     isfinite(t) && t > 0.0 || return nothing          # a final-time product

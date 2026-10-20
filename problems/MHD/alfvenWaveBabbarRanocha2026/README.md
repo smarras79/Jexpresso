@@ -143,14 +143,34 @@ Stores written before 16 Oct 2026 used `dsgs` for the run without the cutoff and
 From every record stored for the same final time, the run then:
 
 - prints a table with the observed orders;
-- draws `output/convergence-it<n>.png` in the layout of the paper's Fig. 13 (L² error
-  against #DOFs), with panel (a) for ρ and panel (b) for the whole state. Each order has
-  its own colour and marker (filled for DynSGS, hollow and dashed for Galerkin), and a
-  dotted O(h^(N+1)) line, labelled at its end.
+- draws `output/convergence-it<n>.png` with the convergence figure of the smooth vortex
+  (`../smoothVortex/convergence_figure.jl`, shared by the two cases): the error against
+  #DOFs on log-log axes in three panels — the L² error of ρ (the measure of the paper's
+  Fig. 13), the L² error of the whole state and its L∞ error, the largest of the
+  variables' maxima — and each panel on its own as `convergence_rho-it<n>.png`,
+  `convergence_L2-it<n>.png` and `convergence_Linf-it<n>.png`, at publication size.
+  Every order and stabilization is on the same axes: one colour and marker per order,
+  DynSGS solid with a filled marker, its variants dash-dot with a hollow one, Galerkin
+  dashed with a larger hollow one, so that a DynSGS point equal to the Galerkin one (the
+  cutoff makes ν zero on the resolved wave) shows inside its ring. The measured rate p of
+  every curve is in its legend, the dotted reference slopes O(h^(N+1)) of the lowest and
+  the highest order bracket the data, and the title carries the final time.
 
 `tools/alfven_wave_plot.jl` draws the same figure and table from the store without
 running anything, as `convergence-it0.png` (`3,5,7` for a subset of the orders,
 `--visc=dsgs,galerkin` for a subset of the records, `--out=DIR` elsewhere).
+
+**Mass and energy** are tracked at every step, as for the rotor: the discrete totals
+Σ_K Σ_ij ω_iω_j J ρ and Σ_K Σ_ij ω_iω_j J ρE over all elements and ranks go to
+`output/conservation_nop<N>_nelx<M>_<visc>.dat`, one file per run, named as its error
+record (the runs of a sweep share the output directory). `tools/plot_conservation.py`
+draws |Q(t) − Q(0)|/|Q(0)| on log axes, one curve per file, labelled by the file's name
+unless `--labels` says otherwise:
+
+```bash
+python3 tools/plot_conservation.py output/MHD/alfvenWaveBabbarRanocha2026/output/conservation_nop4_nelx{8,16,32}_dsgs.dat \
+        --labels '$8^2$' '$16^2$' '$32^2$' --out alfven_conservation.pdf     # --layout column for one journal column
+```
 
 #DOFs is the number of distinct unknowns per variable of this continuous Galerkin
 discretization on the periodic box, (nelx N)². The paper's flux reconstruction has
@@ -323,10 +343,12 @@ compares the coefficient computed at every stage (`JEXPRESSO_AW_FREEZE=0`).
 | `initialize.jl` | the exact solution `aw_state(x, y, t, γ)`, the initial state, c_h |
 | `user_flux.jl`, `user_source.jl` | conservative GLM-MHD flux, ψ damping (as `smoothVortex`) |
 | `user_primitives.jl`, `user_bc.jl` | DynSGS primitives (physical form), periodic BCs (as `smoothVortex`) |
-| `user_plot.jl` | the error at the final time, its store, the convergence figure and table |
+| `user_plot.jl` | the error at the final time, its store, the panels of the convergence figure, the table |
+| `../smoothVortex/convergence_figure.jl` | the convergence figure, shared with the smooth vortex |
 | `user_inputs.jl` | the deck and its `JEXPRESSO_AW_*` overrides |
 | `alfven_periodic.geo`, `alfven_<n>x<n>.msh` | the mesh definition and the meshes, n = 4 ... 128 |
 | `../../../tools/alfven_wave_mesh.sh` | meshes from the `.geo` (gmsh) |
 | `../../../tools/alfven_wave_scan.sh` | the sweep, N = 3 ... 7, in one Julia session or one per order |
 | `../../../tools/alfven_wave_plot.jl` | the figure and the table from the stored errors, without running |
+| `../../../tools/plot_conservation.py` | mass and energy against time, from the `conservation_*.dat` files |
 | `../setup_notes/dsgsCutoff.pdf` | one page: what DynSGS without the cutoff does here, against the cutoff 1e-3 |
