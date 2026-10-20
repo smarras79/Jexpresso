@@ -10,8 +10,8 @@ function user_inputs()
         :nop                  => 4,
         :Δt                   => 6.25e-5,   # was 2.0e-4
         :tinit                => 0.0,
-        :tend                 => 0.15,
-        :diagnostics_at_times => (0.0, 0.05, 0.1, 0.15),
+        :tend                 => 0.3,
+        :diagnostics_at_times => (0.0, 0.05, 0.1, 0.15, 0.20, 0.25, 0.3),
         :conservation_every   => 1,        # mass and energy totals every step: conservation.dat
         :conservation_slots   => [1, 4],
         :restart_time         => 0.0,
