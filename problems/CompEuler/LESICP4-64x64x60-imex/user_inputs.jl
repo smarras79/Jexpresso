@@ -512,7 +512,8 @@ function user_inputs()
         # bfc2f27e). Above the BL the erf filter (degree-4 only at N = 4) leaves
         # an element-periodic degree-2 mode in u/v/w; the 10800 s snapshot of
         # job 1387540 had 74% of the v variance above 1.5 km at <= 200 m. This
-        # damps degree >= DBG_FUP_DEG along xi/eta, momentum only, ramping in
+        # damps degree >= DBG_FUP_DEG along xi/eta, in rho, momentum and
+        # rho*theta (DBG_FUP_EQS, below), ramping in
         # between element-mean z = DBG_FUP_Z0 and DBG_FUP_Z1: here just above the
         # LESICP4 inversion (theta'theta' peak 1.12 km): ramp 1150 -> 1350 m,
         # mu 0.05. With 1250 -> 1550 m / 0.01 a row of element-scale cells
@@ -524,14 +525,17 @@ function user_inputs()
         :filter_upper_mu     => parse(Float64, get(ENV, "DBG_FUP_MU", "0.05")),
         :filter_upper_z0     => parse(Float64, get(ENV, "DBG_FUP_Z0", "1150.0")),
         :filter_upper_z1     => parse(Float64, get(ENV, "DBG_FUP_Z1", "1350.0")),
-        # Equations it acts on, "a:b". Momentum only (2:4) leaves theta: with
-        # mu 0.05 the element-scale w is gone but the theta isolines above the
-        # inversion turn saw-toothed and theta'theta' at 2.2-3 km grows 15x
-        # (v2c, 1430269, restart at 8000 s). DBG_FUP_EQS=1:5 also filters rho
-        # and rho*theta; both are needed, since theta' = rho*theta/rho keeps the
+        # Equations it acts on, "a:b": all five (1:5). Momentum only (2:4)
+        # leaves theta: with mu 0.05 the element-scale w is gone but the theta
+        # isolines above the inversion turn saw-toothed and theta'theta' at
+        # 2.2-3 km grows 15x (v2c, 1430269, restart at 8000 s). rho and
+        # rho*theta are both needed, since theta' = rho*theta/rho keeps the
         # element mode in rho if only rho*theta is filtered. Element means are
-        # kept (orthogonal basis), so mass and heat are conserved.
-        :filter_upper_eqs    => let s = parse.(Int, split(get(ENV, "DBG_FUP_EQS", "2:4"), ":")); s[1]:s[2] end,
+        # kept (orthogonal basis), so mass and heat are conserved. Test 1431519
+        # (1:5, 8000 -> 9300 s from v2b): theta' rms at 2.2-3 km 0.04 (v2c 0.57),
+        # 0% of theta or w above 1.3 km at <= 200 m, inversion and BL as v2c.
+        # DBG_FUP_EQS=2:4 restores momentum only.
+        :filter_upper_eqs    => let s = parse.(Int, split(get(ENV, "DBG_FUP_EQS", "1:5"), ":")); s[1]:s[2] end,
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
