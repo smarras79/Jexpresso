@@ -45,7 +45,7 @@ Other switches & \cm{\code{:lfilter}, \code{:lkep}, \code{:entropy\_variables}, 
 \code{:dsgs\_fast\_floors}, \code{:dsgs\_thermal\_residual} & \mj{false} (defaults) & \\
 \code{:dsgs\_ref\_weight}, \code{:dsgs\_nodal\_rho}, \code{:dsgs\_reference} & \mj{false}, \cm{false}, \cm{false} & defaults\\
 \code{:dsgs\_hold\_steps} & \mj{2} & \code{JEXPRESSO\_SV\_HOLD}\\
-\code{:dsgs\_cutoff} & \cm{0} & \code{JEXPRESSO\_SV\_CUTOFF}\\
+\code{:dsgs\_cutoff} & 0 at \commit{}; $10^{-3}$ since \code{22c0907} & \code{JEXPRESSO\_SV\_CUTOFF}=0 for none\\
 \code{:dsgs\_freeze\_stage} & false at \commit{}; true since \code{b956ccd} & \code{JEXPRESSO\_SV\_FREEZE}=0/1 forces it\\
 \code{:ldsgs\_nodal} & \cm{false} (element form) & default\\
 \code{:dsgs\_local\_rel} & \cm{1.0} (default) & unused (domain norms)\\
@@ -70,8 +70,9 @@ and the continuity residual is measured against $\bar\rho=1$ (this is the case f
 raised from $10^{-3}$ of the scale to the scale itself, \code{:dsgs\_rel}).
 \item \textbf{Ratio and cap.} \cm{$\mathcal R_K=\max_{I\in K}\max_{s\le8}R^s_{K,I}/n^s$ ($\psi$ excluded)};\newline
 \cm{$w_K=\max_I(|\bv_I|+\sqrt{\max(\gamma p_I/\rho_I+|\bB_I|^2/\rho_I,0)})$}.
-\item \textbf{Coefficient.} $\nu_K=\max(0,\min(0.5\,\Delta_Kw_K,\ \Delta_K^2\mathcal R_K))$, no floor, no cutoff,
-\cm{one value per element}, \cm{recomputed at every stage}.
+\item \textbf{Coefficient.} $\nu_K=\max(0,\min(0.5\,\Delta_Kw_K,\ \Delta_K^2\mathcal R_K))$, no floor, no cutoff
+(since \code{22c0907}: $\Delta_K^2\max(0,\mathcal R_K-10^{-3})$), \cm{one value per element}, \cm{recomputed at every stage}
+(once per step since \code{b956ccd}).
 \item \textbf{Slot coefficients} (physical branch, \code{SGS.jl:1889--1900}), with $\bar\rho_K$ the plain average of
 the nodal $\rho$ over the 25 nodes of $K$:
 $\mu^\rho=\nu_K$, $\mu^{\rho u}=\mu^{\rho v}=\mu^{\rho w}=\bar\rho_K\nu_K$, $\mu^E=\bar\rho_K\nu_K/\Pr=\bar\rho_K\nu_K$,
@@ -166,6 +167,10 @@ the residual sensor).
 \item \textbf{[Changed in \code{b956ccd}.]} The deck no longer sets \code{:dsgs\_freeze\_stage} unless
 \code{JEXPRESSO\_SV\_FREEZE} is given, so the \code{DSGS\_MHD} default applies: the coefficient frozen per step. The
 before-and-after test above (\emph{Test: before against after}) was run per stage.
+\item \textbf{[Changed in \code{22c0907}.]} The deck runs the smoothness cutoff $c=10^{-3}$ by default, as the Alfv\'en wave
+does (\code{dsgsCutoff.pdf}): without it the residual sensor reads the $O(\Delta t^2)$ truncation error of its own time
+difference on the moving vortex and caps \dsgs{} near order 4 from $N=5$ on. Its records \code{dsgs} are now the runs with
+the cutoff; \code{JEXPRESSO\_SV\_CUTOFF=0} runs without it (\code{dsgs\_nocut}).
 \end{enumerate}
 
 \input{codemap}

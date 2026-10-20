@@ -62,15 +62,26 @@ const SV_STYLE = Dict(
 )
 _sv_style(nop) = get(SV_STYLE, nop, (:gray, :cross))
 
-# A run with the smoothness cutoff on is a DIFFERENT experiment from one with
-# it off, so it gets its own tag and its own curve rather than overwriting the
-# other's record.
+# The record's tag names what differs from the deck as committed: "dsgs" is
+# DynSGS as the deck runs it (residual sensor, coefficient frozen per step, the
+# smoothness cutoff SV_DSGS_CUTOFF), "dsgs_nocut" the same without the cutoff
+# (JEXPRESSO_SV_CUTOFF=0), "dsgs_cut" with another cutoff, "dsgs_hold" with a
+# startup hold other than the 2 steps of the deck (it changes the viscosity
+# over the whole initial transient), and "galerkin" the plain Galerkin run.
+# Each is its own experiment, with its own record and its own curve, so that
+# none overwrites another's.
+#
+# SV_DSGS_CUTOFF is the deck's SV_CUTOFF_DEFAULT (user_inputs.jl); keep the two
+# equal. It is a constant of its own because tools/smooth_vortex_plot.jl reads
+# the store with this file alone. (Records stored before 20 Oct 2026, when the
+# deck ran without the cutoff, called that run "dsgs" and carry no cutoff= key:
+# _sv_load_errors reads them as "dsgs_nocut".)
+const SV_DSGS_CUTOFF = 1.0e-3
+const SV_TAGS = ("dsgs", "dsgs_nocut", "dsgs_cut", "dsgs_hold", "galerkin")
 function _sv_tag(inputs)
     get(inputs, :lvisc, true) || return "galerkin"
-    Float64(get(inputs, :dsgs_cutoff, 0.0)) > 0 && return "dsgs_cut"
-    # A longer startup hold is a different experiment for the same reason: it
-    # changes the viscosity over the whole initial transient, and the two runs
-    # must not overwrite each other's record.
+    cut = Float64(get(inputs, :dsgs_cutoff, 0.0))
+    cut == SV_DSGS_CUTOFF || return cut > 0 ? "dsgs_cut" : "dsgs_nocut"
     Int(get(inputs, :dsgs_hold_steps, 2)) == 2 || return "dsgs_hold"
     return "dsgs"
 end
@@ -200,6 +211,7 @@ function _sv_save_error(e, inputs, t, tnum = t)
                         " Cmax=", Float64(get(inputs, :dsgs_Cmax, 0.0)),
                         " rel=", Float64(get(inputs, :dsgs_rel, 1.0)),
                         " hold=", Int(get(inputs, :dsgs_hold_steps, 2)),
+                        " cutoff=", Float64(get(inputs, :dsgs_cutoff, 0.0)),
                         " dt=", Float64(get(inputs, :Δt, 0.0)))
             println(io, "# relative, for reference: L1=", e.r1, " L2=", e.r2, " Linf=", e.rinf)
             println(io, "# L1 L2 Linf")
@@ -247,7 +259,11 @@ function _sv_load_errors(t)
             lw = isdefined(@__MODULE__, :_sv_lbox) ? _sv_lbox() : 20.0
             lb === nothing || abs(lb - lw) <= 1.0e-8*max(1.0, lw) || continue
         end
-        push!(rows, (nop = nop, ndofs = ndofs, visc = get(meta, "visc", "dsgs"),
+        # A DynSGS record without a cutoff= key was stored when the deck ran
+        # without the cutoff (before 20 Oct 2026), whatever its tag says.
+        visc = get(meta, "visc", "dsgs")
+        visc == "dsgs" && !haskey(meta, "cutoff") && (visc = "dsgs_nocut")
+        push!(rows, (nop = nop, ndofs = ndofs, visc = visc,
                      nelx = something(tryparse(Int, get(meta, "nelx", "")), 0),
                      t    = something(tc, NaN),
                      dt   = something(tryparse(Float64, get(meta, "dt", "")), NaN),
@@ -283,15 +299,18 @@ const SV_MS        = 7
 _sv_rate(xs, ys) = (length(xs) < 2 || ys[end-1] <= 0 || ys[end] <= 0) ? NaN :
                    -2.0*log(ys[end-1]/ys[end])/log(xs[end-1]/xs[end])
 
-_sv_visc_label(tag) = tag == "dsgs"      ? "DSGS" :
-                        tag == "dsgs_cut"  ? "DSGS + cutoff" :
-                        tag == "dsgs_hold" ? "DSGS + hold"   : "Galerkin"
-# solid = DSGS, dash-dot = DSGS with the cutoff, dash-dot-dot = DSGS with a
-# longer startup hold, dashed = plain Galerkin. The reference slopes are the
-# only DOTTED lines on the figure, so no guide can be mistaken for a curve.
-_sv_visc_style(tag) = tag == "dsgs"      ? :solid :
-                        tag == "dsgs_cut"  ? :dashdot :
-                        tag == "dsgs_hold" ? :dashdotdot : :dash
+# The legend name of a tag. It is set inside \mathrm, where a space must be "\ ".
+_sv_visc_label(tag) = tag == "dsgs"       ? "DSGS" :
+                        tag == "dsgs_nocut" ? "DSGS,\\ no\\ cutoff" :
+                        tag == "dsgs_cut"   ? "DSGS,\\ other\\ cutoff" :
+                        tag == "dsgs_hold"  ? "DSGS + hold"   : "Galerkin"
+# solid = DSGS as the deck runs it (with the cutoff), dash-dot = DSGS without
+# the cutoff, dash-dot-dot = DSGS with another cutoff or a longer startup hold,
+# dashed = plain Galerkin. The reference slopes are the only DOTTED lines on
+# the figure, so no guide can be mistaken for a curve.
+_sv_visc_style(tag) = tag == "dsgs"       ? :solid :
+                        tag == "dsgs_nocut" ? :dashdot :
+                        tag in ("dsgs_cut", "dsgs_hold") ? :dashdotdot : :dash
 
 function _sv_panel(sub, nops, fld, nm)
     # The final time the errors were measured at, and the step they were taken
@@ -322,7 +341,7 @@ function _sv_panel(sub, nops, fld, nm)
     # a filled marker, plain Galerkin dashed with a hollow one — the two are
     # compared ON THE SAME AXES, as in the paper's convergence figure, because
     # the question the figure answers is whether the viscosity costs accuracy.
-    for nop in nops, tag in ("dsgs", "dsgs_cut", "dsgs_hold", "galerkin")
+    for nop in nops, tag in SV_TAGS
         g = sort(filter(r -> r.nop == nop && r.visc == tag, sub), by = r -> r.ndofs)
         isempty(g) && continue
         xs = [Float64(r.ndofs) for r in g]
@@ -399,7 +418,7 @@ function _sv_plot(rows, OUTPUT_DIR, iout; only::Vector{Int} = Int[], suffix::Str
     nops = sort(unique(r.nop for r in sub))
     # At least one (order, stabilization) pair with two points to join.
     any(count(r -> r.nop == n && r.visc == v, sub) >= 2
-        for n in nops, v in ("dsgs", "dsgs_cut", "dsgs_hold", "galerkin")) || return nothing
+        for n in nops, v in SV_TAGS) || return nothing
 
     panels = Plots.Plot[]
     for (fld, nm, fname) in ((:l1, "L^1", "L1"), (:l2, "L^2", "L2"), (:linf, "L^\\infty", "Linf"))
@@ -428,9 +447,9 @@ end
 
 function _sv_report(rows)
     println(" # smoothVortex: ABSOLUTE velocity error against the exact solution")
-    println(" #   visc      nop  nelx   DOFs           L1           L2         Linf")
+    println(" #   visc         nop  nelx   DOFs           L1           L2         Linf")
     for r in rows
-        println(@sprintf(" #   %-8s  %3d  %4d %6d   %10.3e   %10.3e   %10.3e",
+        println(@sprintf(" #   %-10s  %3d  %4d %6d   %10.3e   %10.3e   %10.3e",
                          r.visc, r.nop, r.nelx, r.ndofs, r.l1, r.l2, r.linf))
     end
     return nothing

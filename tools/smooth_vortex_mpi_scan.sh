@@ -43,9 +43,11 @@
 #
 # SV_CUTOFF=<x> and SV_HOLD=<n> pass the DynSGS smoothness cutoff and the
 # startup hold (the number of steps at the beginning of a run over which the
-# viscosity is held off, default 2) down to the deck. Either one makes the run
-# a different experiment, so its records are tagged dsgs_cut / dsgs_hold and
-# appear as their own curve beside the default DynSGS one instead of
+# viscosity is held off, default 2) down to the deck. The MHD deck runs the
+# cutoff 1e-3 by default and the Euler one none; a cutoff other than the
+# deck's, or another hold, makes the run a different experiment, so its records
+# are tagged dsgs_nocut (SV_CUTOFF=0 on the MHD vortex), dsgs_cut or dsgs_hold
+# and appear as their own curve beside the default DynSGS one instead of
 # overwriting it.
 #
 # THE ERROR STORE IS CLEARED FIRST (SV_KEEP=1 to add to it instead): every run
@@ -65,6 +67,9 @@ if [ "${SV_PREFIX:-}" != "" ]; then PFX=$SV_PREFIX
 elif [ "$EQNS" = "CompEuler" ];  then PFX=EV
 else                                  PFX=SV
 fi
+# The cutoff each deck runs by default (SV_CUTOFF_DEFAULT in the MHD deck; the
+# Euler deck has none), whose records are plain "dsgs". Keep in step with them.
+case "$EQNS" in MHD) CUT_DEFAULT=1e-3 ;; *) CUT_DEFAULT=0 ;; esac
 
 NOPS=${SV_NOPS:-"1 2 3 4"}
 NELX=${SV_NELX:-"4 8 16 32"}
@@ -161,7 +166,7 @@ run_one() {   # $1 visc  $2 nop  $3 nelx
     # clock, costs only the cases that were in flight, not the whole run.
     if [ "${SV_KEEP:-0}" = "1" ] && [ "${SV_REDO:-0}" != "1" ]; then
         _e=$(err_file "$2" "$3" "$(_tag_of "$1")")
-        if [ -f "$_e" ]; then
+        if _have_record "$_e" "$1"; then
             echo "--- have visc $1, nop $2, ${3}x${3} already: $(tail -n 1 "$_e")"
             return 0
         fi
@@ -197,15 +202,32 @@ run_one() {   # $1 visc  $2 nop  $3 nelx
 # Where a case stores its error. The Euler deck tags the record with the vortex
 # strength (nop4_nelx8_b1_dsgs.dat), the MHD deck does not (nop4_nelx8_dsgs.dat),
 # so match either and report the plain name when nothing is there yet.
-# What the deck will call this run's record: a run with the smoothness cutoff
-# on is its own experiment and stores its own curve (SV_CUTOFF > 0), and so is
-# one with a startup hold other than the default 2 steps (SV_HOLD). The order
-# of the tests here MUST match _sv_tag in the deck's user_plot.jl, or the
-# resume check below looks for a file the run will not write.
+# What the deck will call this run's record: a run with a smoothness cutoff
+# other than the deck's is its own experiment and stores its own curve
+# (dsgs_nocut without one, dsgs_cut with another value), and so is one with a
+# startup hold other than the default 2 steps (SV_HOLD). The order of the tests
+# here MUST match _sv_tag in the deck's user_plot.jl, or the resume check below
+# looks for a file the run will not write.
 _tag_of() {
     [ "$1" = none ] && { echo galerkin; return 0; }
-    case "${SV_CUTOFF:-0}" in 0|0.0|"") ;; *) echo dsgs_cut; return 0 ;; esac
+    case $(awk -v c="${SV_CUTOFF:-$CUT_DEFAULT}" -v d="$CUT_DEFAULT" \
+               'BEGIN { c += 0; d += 0; print (c == d ? "deck" : (c == 0 ? "nocut" : "cut")) }') in
+        nocut) echo dsgs_nocut; return 0 ;;
+        cut)   echo dsgs_cut;   return 0 ;;
+    esac
     case "${SV_HOLD:-2}" in 2|"") echo dsgs ;; *) echo dsgs_hold ;; esac
+}
+
+# Does the stored record answer for this case? A Galerkin one does; a DynSGS one
+# only if it was run with the cutoff asked for now, which its tag alone does not
+# say: before the records carried their cutoff (a cutoff= key, 20 Oct 2026) the
+# MHD deck ran without it and called that run "dsgs", the name its run with the
+# cutoff has now. A record without the key is therefore run again.
+_have_record() {   # $1 record file, $2 visc
+    [ -f "$1" ] || return 1
+    [ "$2" = none ] && return 0
+    _rc=$(sed -n 's/.* cutoff=\([^ ]*\).*/\1/p' "$1" | head -n 1)
+    [ -n "$_rc" ] && awk -v a="$_rc" -v b="${SV_CUTOFF:-$CUT_DEFAULT}" 'BEGIN { exit !(a + 0 == b + 0) }'
 }
 
 err_file() {
@@ -252,7 +274,7 @@ for V in $VISCS; do
 done
 echo "=== $n_have of $n_want cases stored an error"
 echo "=== done. The figures of the last run hold the whole sweep:"
-echo "    \$PWD/output/$CASE/output/convergence_{dsgs,galerkin}[_<subset>]-it<n>.png"
+echo "    \$PWD/output/$CASE/output/convergence[_nop<subset>][_L1|_L2|_Linf]-it<n>.png"
 echo "    (a case writes them only when it REACHES ITS FINAL TIME, so nothing"
 echo "     appears until the first case completes; watch logs/sv_*.log meanwhile)"
 echo "    (replot any subset without rerunning:"
