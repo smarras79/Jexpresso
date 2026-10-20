@@ -21,7 +21,8 @@
 #                             against the reference, with zoom boxes, in the
 #                             layout of the Brio-Wu figure of Dao, Nazarov &
 #                             Tomas (arXiv:2310.18467, Fig. 2), B_y with its
-#                             three boxes
+#                             three boxes and a fourth at the foot of the
+#                             slow shock
 #   rho_By-it<n>              the same at the finest resolution
 #   nu_dof<M>-it<n>, nu-it<n>, nu_all-it<n>   the DynSGS coefficient ν alone,
 #                             of the same curves (nu_all: every resolution)

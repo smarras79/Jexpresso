@@ -644,22 +644,31 @@ end
 # ρ AND B_y SIDE BY SIDE, the layout of the Brio-Wu figure of Dao, Nazarov &
 # Tomas (arXiv:2310.18467, Figs. 1-2), THE DEFAULT comparison figure: every
 # curve handed to it against the reference, ρ with the four zoom boxes of the
-# density figure, B_y with the three of theirs (BW_PAIR_BY_INSETS). B_y falls
-# from 1 on the left to -1 on the right, so its panel is empty to the upper
-# right, where the legend (every curve and the reference) goes, above the
-# rarefaction box, and to the left, where the other two go; the ρ panel keeps
-# all of its room for its boxes. Written as rho_By<tag>-it<n>. `style` and
-# `markers` as for _bw_plot_density_nu.
+# density figure, B_y with the three of theirs and a fourth at the foot of the
+# slow shock, which theirs leave out (BW_PAIR_BY_INSETS). B_y falls from 1 on
+# the left to -1 on the right, so its panel is empty to the left, where two of
+# its boxes go, and to the right, where the other two go, one above the other;
+# the legend (every curve and the reference) goes to the top right of the ρ
+# panel, empty above its boxes, as in their figure. Written as
+# rho_By<tag>-it<n>. `style` and `markers` as for _bw_plot_density_nu.
 #---------------------------------------------------------------------------------
-const BW_PAIR_BY_INSETS = [   # (x-range, y-range, inset position: x, y, w, h of the axes, connector)
+const BW_PAIR_BY_INSETS = [   # (x-range, y-range, inset position: x, y, w, h of the axes, connector[, x ticks])
     # Dao, Nazarov & Tomas's three, read off their Fig. 2: the same windows, the
-    # insets where theirs are (the two on the left moved in a little, for
-    # their tick labels to clear the frame, and the first one smaller, to clear
-    # the fast rarefaction), and their connectors, from the bottom-left corner
-    # of the box to the bottom-left corner of the inset
+    # first two insets where theirs are (moved in a little, for their tick
+    # labels to clear the frame, and the first one smaller, to clear the fast
+    # rarefaction), and their connectors, from the bottom-left corner of the
+    # box to the bottom-left corner of the inset
     ((0.416, 0.476), ( 0.355,  0.615), (0.085, 0.58,  0.27, 0.29), (:bottomleft, :bottomleft)), # top of the compound wave
     ((0.560, 0.650), (-0.630, -0.510), (0.115, 0.065, 0.29, 0.30), (:bottomleft, :bottomleft)), # the plateau up to the slow shock
-    ((0.763, 0.913), (-1.010, -0.880), (0.68,  0.35,  0.29, 0.30), (:bottomleft, :bottomleft)), # the right fast rarefaction
+    # the foot of the slow shock, where an undershoot below the plateau sits:
+    # the inset at the top right, its left edge on the right edge of the box,
+    # so that the connector runs straight up through empty space, past the
+    # rarefaction inset, and no tick at the window's ends, where a label would
+    # sit on the connector
+    ((0.632, 0.698), (-0.950, -0.850), (0.698, 0.66,  0.24, 0.28), (:topright,   :bottomleft), [0.64, 0.66, 0.68]), # the foot of the slow shock
+    # the right fast rarefaction, below the slow-shock inset rather than at the
+    # height of theirs, a little smaller, and with their ticks
+    ((0.763, 0.913), (-1.010, -0.880), (0.72,  0.30,  0.26, 0.28), (:bottomleft, :bottomleft), [0.80, 0.85, 0.90]), # the right fast rarefaction
 ]
 
 # "element ν, Δ_K/(k+1)": the method of a store form, for the titles
@@ -703,17 +712,17 @@ function _bw_plot_rho_By(curves, xs, href, hBy, inputs, OUTPUT_DIR, iout, tag;
                      top_margin = 2Plots.mm, right_margin = 4Plots.mm)
     Plots.plot!(plt[1]; title = ttl_ρ, xlabel = LaTeXStrings.L"x", ylabel = LaTeXStrings.L"\rho_h",
                 xlims = xl, ylims = yl, xticks = 0.0:0.2:1.0, yticks = 0.1:0.1:1.0,
-                framestyle = :box, grid = false, legend = false, font...)
-    Plots.plot!(plt[2]; title = LaTeXStrings.L"B_y", xlabel = LaTeXStrings.L"x",
-                ylabel = LaTeXStrings.L"B_{y,h}", xlims = xl, ylims = ylB, xticks = 0.0:0.2:1.0,
                 framestyle = :box, grid = false, legend = :topright,
                 legendfontsize = legendfontsize, font...)
+    Plots.plot!(plt[2]; title = LaTeXStrings.L"B_y", xlabel = LaTeXStrings.L"x",
+                ylabel = LaTeXStrings.L"B_{y,h}", xlims = xl, ylims = ylB, xticks = 0.0:0.2:1.0,
+                framestyle = :box, grid = false, legend = false, font...)
     for (k, c) in enumerate(withBy)
         col, ls, mk = style(c)
         midx = markers ? _bw_marker_idx(length(c.x), k, length(withBy), inputs) : (1:0)
         for (sp, y) in ((1, c.y), (2, c.By))
             Plots.plot!(plt, c.x, y; subplot = sp, line = (col, 1.6, ls),
-                        label = sp == 2 ? _bw_label(c, lshow_cmin) : "")
+                        label = sp == 1 ? _bw_label(c, lshow_cmin) : "")
             isempty(midx) || Plots.scatter!(plt, c.x[midx], y[midx]; subplot = sp,
                                             marker = (mk, 3.5), markerstrokewidth = 0,
                                             color = col, label = "")
@@ -721,14 +730,14 @@ function _bw_plot_rho_By(curves, xs, href, hBy, inputs, OUTPUT_DIR, iout, tag;
     end
     nsub = 3     # the panels are subplots 1 and 2; the zoom boxes follow
     if href !== nothing
-        Plots.plot!(plt, xs, href; subplot = 1, line = (:black, 1.8, :solid), label = "")
+        Plots.plot!(plt, xs, href; subplot = 1, line = (:black, 1.8, :solid), label = BW_REF_LABEL)
         _bw_add_insets!(plt, BW_INSETS, xl, yl,
                         (sp, xr, yr) -> _bw_fill_inset!(sp, xr, xs, href, withBy, c -> c.y, style);
                         parent = 1, first = nsub)
         nsub += length(BW_INSETS)
     end
     if hBy !== nothing
-        Plots.plot!(plt, xs, hBy; subplot = 2, line = (:black, 1.8, :solid), label = BW_REF_LABEL)
+        Plots.plot!(plt, xs, hBy; subplot = 2, line = (:black, 1.8, :solid), label = "")
         _bw_add_insets!(plt, BW_PAIR_BY_INSETS, xl, ylB,
                         (sp, xr, yr) -> _bw_fill_inset!(sp, xr, xs, hBy, withBy, c -> c.By, style);
                         parent = 2, first = nsub)
@@ -874,9 +883,10 @@ end
 # two corners a box names in a fourth entry, (box corner, inset corner), each
 # :bottomleft, :bottomright, :topleft or :topright), and the inset subplot
 # itself, on subplot `parent` (the insets become subplots `first`, `first`+1,
-# ...). `draw!(sp, xr, yr)` fills the inset -- the two callers have
-# different curves to put in it (a whole store of orders, or this run and its
-# reference), which is the only part that differs.
+# ...), with the x ticks of a fifth entry when there is one (a narrow inset
+# would run its automatic ones together). `draw!(sp, xr, yr)` fills the inset
+# -- the two callers have different curves to put in it (a whole store of
+# orders, or this run and its reference), which is the only part that differs.
 # ---------------------------------------------------------------------------
 _bw_corner(xr, yr, c) = (c in (:bottomleft, :topleft) ? xr[1] : xr[2],
                          c in (:bottomleft, :bottomright) ? yr[1] : yr[2])
@@ -906,6 +916,7 @@ function _bw_add_insets!(plt, boxes, xl, yl, draw!; parent = 1, first = 2)
                     subplot = first + k - 1)
         sp = plt[first + k - 1]
         Plots.plot!(sp; xlims = xr, ylims = yr, framestyle = :box, grid = true,
+                    xticks = length(box) >= 5 ? box[5] : :auto,
                     tickfontsize = 8, legend = false, background_color_inside = :white)
         draw!(sp, xr, yr)
     end
