@@ -165,7 +165,11 @@ running anything, as `convergence-it0.png` (`3,5,7` for a subset of the orders,
 `output/conservation_nop<N>_nelx<M>_<visc>.dat`, one file per run, named as its error
 record (the runs of a sweep share the output directory). `tools/plot_conservation.py`
 draws |Q(t) − Q(0)|/|Q(0)| on log axes, one curve per file, labelled by the file's name
-unless `--labels` says otherwise:
+unless `--labels` says otherwise. Both are conserved to round-off (a few 1e-16) because
+the nodes paired across each periodic seam coincide to the last bit: opposite edges of
+`alfven_periodic.geo` run the same way. The meshes before 20 Oct 2026 had them running
+opposite ways, which mirrored gmsh's 1e-12 node-placement error across each seam, and mass
+and energy then drifted by up to 6e-14 and 1e-13 with the period of the wave.
 
 ```bash
 python3 tools/plot_conservation.py output/MHD/alfvenWaveBabbarRanocha2026/output/conservation_nop4_nelx{8,16,32}_dsgs.dat \
