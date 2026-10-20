@@ -52,7 +52,7 @@ $\mu|_e$ computed (\code{:dsgs\_freeze\_stage}) & once per step & once per step 
 $C_1$, $C_2$ (\code{:dsgs\_CR}, \code{:dsgs\_Cmax}) & 1, 0.5 & 1, 0.5 & 1, 0.5 & 1, 0.5 & 1, 0.5 & 1, 0.5 & 1, 0.5 & 1, 0.5\\
 Floor $C_{\min}\Delta_e(\lVert\vv\rVert+c_f)$ (\code{:dsgs\_Cmin}) & 0 & 0 & 0.06 & 0 & 0 & 0 & 0 & 0.03\\
 Length $\Delta_e$, (15) & $h_e/(N+1)$ & $h_e/(N+1)$ & $h_e/(N+1)$$^{a}$ & $h_e/(N+1)$ & $h_e/(N+1)$ & $h_e/(N+1)$ & $h_e/(N+1)$ & $h_e/(N+1)$\\
-Cutoff $c$ (\code{:dsgs\_cutoff}) & \multicolumn{8}{l}{0 in every deck (no cutoff; the Alfv\'en wave, not in the paper, runs $10^{-3}$)}\\
+Cutoff $c$ (\code{:dsgs\_cutoff}) & \multicolumn{8}{l}{$10^{-3}$ in the MHD vortex (since \code{22c0907}), 0 in every other deck (the Alfv\'en wave, not in the paper, runs $10^{-3}$ too)}\\
 $\mu|_e=0$ for the first (steps) (\code{:dsgs\_hold\_steps}) & 2 & 2 & 2 & 2 & 2 & 0 & 0 & 2\\
 Residual set $\Ic$ & 8, $\psi$ excluded & $\rho$, $\lvert\bm{m}\rvert$, $E$ & all 8 & 8, $\psi$ excluded & 8, $\psi$ excluded
  & 8, $\psi$ excluded, $+\rho e$ (\code{:dsgs\_thermal\_residual}) & 8, $\psi$ excluded & 8, $\psi$ excluded\\
@@ -154,7 +154,9 @@ a nearly uniform field (the density of a vortex, $B_x$ in a shock tube) had its 
 sensor, $\mu|_e$ is computed once per step. Before, at every stage, where the residual stalls at $O(\Delta t)$ on smooth flow
 (\code{dsgsCutoff.pdf}).
 \item \textbf{2026-10-19} (\code{2bb4c2a1}): Brio--Wu moves from $\Delta_e=h_e/N$ to the paper's $h_e/(N+1)$ (note $a$).
-\item \textbf{Last change of each deck:} Brio--Wu \code{2bb4c2a1} (2026-10-19), MHD vortex \code{b956ccd} (2026-10-14), Euler vortex \code{e12fca8}
+\item \textbf{2026-10-20} (\code{22c0907}): the MHD vortex runs the cutoff $c=10^{-3}$ by default, as the Alfv\'en wave does
+(\code{dsgsCutoff.pdf}); its records \code{dsgs} are now the runs with it, \code{dsgs\_nocut} those without.
+\item \textbf{Last change of each deck:} Brio--Wu \code{2bb4c2a1} (2026-10-19), MHD vortex \code{22c0907} (2026-10-20), Euler vortex \code{e12fca8}
 (2026-10-14), Orszag--Tang \code{6829a2c} (10-08), rotor \code{7bd7bc2} (10-09), blast \code{e4fcf14} (10-12), jet
 \code{2590be6} (10-12), flux emergence \code{c1d5b46} (10-13).
 \end{itemize}
