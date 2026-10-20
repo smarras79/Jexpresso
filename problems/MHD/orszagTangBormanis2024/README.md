@@ -275,6 +275,16 @@ To move it into the standard mesh tree instead, write it to
 `meshes/gmsh_grids/OT_32x32_periodic.msh` and switch to the commented-out
 `:gmsh_filename` line in `user_inputs.jl`.
 
+Opposite edges of the `.geo` run the same way, so the nodes Jexpresso pairs
+across each periodic seam coincide to the last bit. Until 20 Oct 2026 the top
+and left edges ran the other way, which mirrored gmsh's ~1e-12 node-placement
+error across the seams: paired nodes were 3.4e-12 apart, the flux through the
+two sides of a seam did not cancel, and mass and energy leaked at ~1e-13
+wherever the flow crosses the boundary (it does from t = 0 here). Both shipped
+meshes, 32² and 56², are regenerated; a copy made from an older `.geo`
+(`meshes/gmsh_grids`, `JexpressoMeshes`) should be regenerated too. The rotor
+and the blast read the 32² mesh.
+
 ## Files
 
 | file | contents |

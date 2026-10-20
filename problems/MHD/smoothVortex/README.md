@@ -168,7 +168,13 @@ $\sum_K\sum_{ij}\omega_i\omega_j J\,\rho E$ over all elements and ranks
 run, named as its error record, since the runs of a sweep share that directory
 (`:conservation_file`). `tools/plot_conservation.py` draws
 $|Q(t) - Q(0)|/|Q(0)|$ on log axes, one curve per file, labelled by the file's
-name unless `--labels` says otherwise:
+name unless `--labels` says otherwise. The nodes paired across each periodic
+seam coincide to the last bit, since opposite edges of `vortex_periodic.geo` run
+the same way; until 20 Oct 2026 they ran opposite ways and the paired nodes were
+1.2e-12 L apart, which leaks mass and energy at ~1e-13 wherever the flow varies
+along a seam. On the L = 20 box it barely did (the vortex tail at the seams is
+~1e-22), and the errors on the regenerated meshes agree with the old ones to
+11 digits.
 
 ```bash
 python3 tools/plot_conservation.py output/MHD/smoothVortex/output/conservation_nop4_nelx{8,16,32}_dsgs.dat \
