@@ -5,10 +5,14 @@
 nx = 40;  ny = 80;
 Point(1) = {-5,  0, 1};  Point(2) = {5,  0, 1};
 Point(3) = { 5, 20, 1};  Point(4) = {-5, 20, 1};
-Line(1) = {1, 2};  Line(2) = {2, 3};  Line(3) = {3, 4};  Line(4) = {4, 1};
+// Opposite edges run the same way (top like bottom, left like right), so that the nodes
+// Jexpresso pairs across each periodic seam coincide to the last bit: gmsh's ~1e-12
+// node-placement error follows an edge's direction, and was mirrored across the seams
+// when the top and left edges ran the other way.
+Line(1) = {1, 2};  Line(2) = {2, 3};  Line(3) = {4, 3};  Line(4) = {1, 4};
 Transfinite Curve{1, 3} = nx + 1;
 Transfinite Curve{2, 4} = ny + 1;
-Curve Loop(1) = {1, 2, 3, 4};
+Curve Loop(1) = {1, 2, -3, -4};
 Plane Surface(1) = {1};
 Transfinite Surface{1};
 Recombine Surface{1};
