@@ -374,11 +374,13 @@ afterwards, from the stored errors alone, without running anything:
 julia --project=. tools/smooth_vortex_plot.jl 1,3
 julia --project=. tools/smooth_vortex_plot.jl          # every order
 julia --project=. tools/smooth_vortex_plot.jl 1,3 --t=1.0 --out=figs
+julia --project=. tools/smooth_vortex_plot.jl 4,5,6,7 --visc=dsgs,galerkin   # leave dsgs_nocut out
 ```
 
 `tools/smooth_vortex_plot.jl` reads `errors/*.dat`, prints the error table and
 calls the case's own plotting code, so its figures are the same ones a run
-produces (as `-it0`).
+produces (as `-it0`). `--visc=` keeps only the records with the tags given
+(`dsgs`, `dsgs_nocut`, `dsgs_cut`, `dsgs_hold`, `galerkin`).
 
 ## Running it on many cores
 
