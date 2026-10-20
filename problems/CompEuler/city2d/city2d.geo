@@ -48,24 +48,16 @@ by1 = 100.0;
 
 // Coarse mesh: smallest element ~17 m near the building, ~37 m in the
 // far field (well above the requested 5 m floor).
-<<<<<<< HEAD
 //
 // IMPORTANT: with Mesh.RecombinationAlgorithm = 3 (Blossom Full-Quad)
 // each Transfinite Line MUST have an even number of segments,
 // otherwise gmsh emits "1D mesh cannot be divided by 2" and the
 // boundary loop fails to close.  Every count below is even.
-nx_A    = 18;   // bottom strip 0   ... 350   (Δx ≈ 19.4 m)
-nx_C    = 6;    // building top   350 ... 450   (Δx ≈ 16.7 m)
-nx_E    = 28;   // bottom strip 450 ... 1000  (Δx ≈ 19.6 m)
-ny_low  = 10;    // y in [0,   100]              (Δy ≈ 16.7 m)
-ny_high = 24;   // y in [100, 1000]             (Δy = 37.5 m)
-=======
 nx_A    = 18;   // x in [0,   350]   (Δx ≈ 19.4 m)
 nx_C    = 6;    // x in [350, 450]   (Δx ≈ 16.7 m)
 nx_E    = 28;   // x in [450, 1000]  (Δx ≈ 19.6 m)
 ny_low  = 6;    // y in [0,   100]    (Δy ≈ 16.7 m)
 ny_high = 24;   // y in [100, 1000]   (Δy = 37.5 m)
->>>>>>> bcabefc69dfcb80dd7ab0fd816d3eebe4df9bec4
 
 // -------- Points --------
 Point(1)  = {xmin, ymin, 0};
