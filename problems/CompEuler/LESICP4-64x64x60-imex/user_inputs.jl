@@ -524,6 +524,14 @@ function user_inputs()
         :filter_upper_mu     => parse(Float64, get(ENV, "DBG_FUP_MU", "0.05")),
         :filter_upper_z0     => parse(Float64, get(ENV, "DBG_FUP_Z0", "1150.0")),
         :filter_upper_z1     => parse(Float64, get(ENV, "DBG_FUP_Z1", "1350.0")),
+        # Equations it acts on, "a:b". Momentum only (2:4) leaves theta: with
+        # mu 0.05 the element-scale w is gone but the theta isolines above the
+        # inversion turn saw-toothed and theta'theta' at 2.2-3 km grows 15x
+        # (v2c, 1430269, restart at 8000 s). DBG_FUP_EQS=1:5 also filters rho
+        # and rho*theta; both are needed, since theta' = rho*theta/rho keeps the
+        # element mode in rho if only rho*theta is filtered. Element means are
+        # kept (orthogonal basis), so mass and heat are conserved.
+        :filter_upper_eqs    => let s = parse.(Int, split(get(ENV, "DBG_FUP_EQS", "2:4"), ":")); s[1]:s[2] end,
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
