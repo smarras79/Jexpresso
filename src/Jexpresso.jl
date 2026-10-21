@@ -181,6 +181,8 @@ include(joinpath( "kernel", "physics", "radiative_heating.jl"))
 
 include(joinpath( "kernel", "physics", "optical_depth_integral.jl"))
 
+include(joinpath( "kernel", "physics", "RT_sweep.jl"))
+
 include(joinpath( "kernel", "mesh", "Geom.jl"))
 
 include(joinpath( "kernel", "mesh", "mesh.jl"))
@@ -213,15 +215,27 @@ include(joinpath( "kernel", "operators", "operators.jl"))
 
 include(joinpath( "kernel", "operators", "rhs.jl"))
 
+include(joinpath( "kernel", "operators", "sweep_gmres.jl"))
+
 include(joinpath( "kernel", "operators", "sweep_ordering.jl"))
 
-include(joinpath( "kernel", "operators", "sweep_mpi.jl"))
-
 include(joinpath( "kernel", "operators", "sweep_nc.jl"))
+
+include(joinpath( "kernel", "operators", "sweep_profile.jl"))
+
+include(joinpath( "kernel", "operators", "sweep_cache.jl"))
 
 include(joinpath( "kernel", "operators", "sweep_nc_mpi.jl"))
 
 include(joinpath( "kernel", "operators", "sweep_periodic.jl"))
+
+include(joinpath( "kernel", "operators", "sweep_tests.jl"))
+
+include(joinpath( "kernel", "operators", "sweep_phase_functions.jl"))
+
+include(joinpath( "kernel", "operators", "sweep_exchange_tables.jl"))
+
+include(joinpath( "kernel", "operators", "sweep_plans.jl"))
 
 include(joinpath( "kernel", "operators", "rhs_2point.jl"))
 

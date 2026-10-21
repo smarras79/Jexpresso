@@ -67,8 +67,12 @@ function driver(nparts,
         end
 
         sem, partitioned_model = sem_setup(inputs, nparts, distribute)
+	
+	#test_adaptive_angular_checks(inputs, nparts, distribute, sem, partitioned_model)
+	#test_stress_combined_ncf_unified_exponential(inputs, nparts, distribute, sem, partitioned_model)
+	profile_job(inputs, nparts, distribute, sem, partitioned_model)
+	#ncf_equivalence_job(inputs, nparts, distribute, sem, partitioned_model)	
 
-	test_stress_combined_ncf_unified_manufactured(inputs, nparts, distribute, sem, partitioned_model)
 
 	if rank == 0
             @printf("DONE (%.2f s)\n", (time_ns() - _t_sem) / 1e9)

@@ -101,6 +101,11 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :RT_S0_flux))
         inputs[:RT_S0_flux] = 1361.0
     end
+
+    if(!haskey(inputs, :RT_surface_albedo))
+        inputs[:RT_surface_albedo] = 0.15
+    end
+
     if(!haskey(inputs, :RT_μ0))
         inputs[:RT_μ0] = 0.5
     end

@@ -127,65 +127,6 @@ that face were a boundary (a real limitation of this draft, not a silent
 approximation — flagged clearly so it isn't mistaken for handled).
 """
 
-#=function build_conforming_sweep_order(Ωx::Float64, Ωy::Float64, Ωz::Float64,
-                                       nelem::TInt, ngl::TInt,
-                                       neighbor_elem,   # from build_face_adjacency_from_conn_face_el
-                                       dξdx, dξdy, dξdz,
-                                       dηdx, dηdy, dηdz,
-                                       dζdx, dζdy, dζdz)
-    indegree    = zeros(TInt, nelem)
-    upwind_deps = [TInt[] for _ = 1:nelem]
-    downstream  = [TInt[] for _ = 1:nelem]
-
-    is_inflow = Vector{Bool}(undef, 6)
-    is_active = Vector{Bool}(undef, 6)
-
-    for iel = 1:nelem
-        classify_element_faces!(is_inflow, is_active, iel, Ωx, Ωy, Ωz, ngl,
-                                 dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz)
-        for fid = 1:6
-            (is_inflow[fid] && is_active[fid]) || continue
-            other = neighbor_elem[iel][fid]
-            other == zero(TInt) && continue
-            push!(upwind_deps[iel], other)
-            push!(downstream[other], iel)
-            indegree[iel] += 1
-        end
-    end
-
-
-    order  = TInt[]
-    levels = zeros(TInt, nelem)
-    queue  = TInt[iel for iel = 1:nelem if indegree[iel] == 0]
-    indeg_work = copy(indegree)
-
-    while !isempty(queue)
-        next_queue = TInt[]
-        for iel in queue
-            push!(order, iel)
-            for dsn in downstream[iel]
-                indeg_work[dsn] -= 1
-                levels[dsn] = max(levels[dsn], levels[iel] + 1)
-                if indeg_work[dsn] == 0
-                    push!(next_queue, dsn)
-                end
-            end
-        end
-        queue = next_queue
-    end
-
-    if length(order) != nelem
-        stuck = [iel for iel = 1:nelem if indeg_work[iel] > 0]
-        error("build_conforming_sweep_order: $(length(stuck)) elements never reached " *
-              "indegree 0 — indicates a cycle in the conforming-interior dependency " *
-              "graph for this direction (Ωx=$Ωx, Ωy=$Ωy, Ωz=$Ωz). Since conforming " *
-              "interior faces alone should never cycle on a single rank, this most " *
-              "likely means face_normal_sign's ascending-index assumption is wrong " *
-              "for this mesh. Stuck elements: $(stuck[1:min(5,end)])")
-    end
-
-    return order, levels
-end=#
 
 function build_conforming_sweep_order(Ωx::Float64, Ωy::Float64, Ωz::Float64,
                                        nelem::TInt, ngl::TInt,
@@ -378,339 +319,6 @@ function build_face_adjacency_from_conn_face_el(nelem::TInt, conn_face_el)
     return neighbor_elem, neighbor_fid
 end
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  verify_sweep_ordering.jl  (DRAFT — untested, meant to be run once against
-#  your test mesh before trusting build_conforming_sweep_order further)
-#
-#  Checks, in order of how conclusive they are:
-#    1. Reciprocity of neighbor_elem/neighbor_fid (pure data-structure sanity,
-#       no physics involved — a failure here means build_face_adjacency_from_conn_face_el
-#       itself is broken, not the sweep logic)
-#    2. Boundary-face count cross-check against mesh.nfaces_bdy
-#    3. FULL dependency check (not spot-check) for two directions: every
-#       element's interior upwind dependency must appear strictly earlier
-#       in `order`
-#    4. Geometric orientation check for axis-aligned Ω — tests whether
-#       face_normal_sign's ascending-index assumption is actually correct
-#       for THIS mesh, using only element centroid coordinates (independent
-#       of the ordering/adjacency code, so this is a real cross-check, not
-#       circular)
-#    5. Levels-distribution sanity print (too flat / too deep = probably wrong)
-# ─────────────────────────────────────────────────────────────────────────────
-
-function verify_sweep_ordering(mesh, metrics)
-    nelem = mesh.nelem
-    ngl   = mesh.ngl
-
-    println("═"^70)
-    println("SWEEP ORDERING VERIFICATION")
-    println("═"^70)
-    
-    println("MESH FINGERPRINT: nelem=$(mesh.nelem) nfaces_bdy=$(mesh.nfaces_bdy) " *
-        "hash(connijk)=$(hash(mesh.connijk)) hash(conn_face_el)=$(hash(mesh.conn_face_el))")
-
-    # ── Step 0: build adjacency (once) ────────────────────────────────────
-    neighbor_elem, neighbor_fid = build_face_adjacency_from_conn_face_el(nelem, mesh.conn_face_el)
-
-    # ── Check 1: reciprocity ───────────────────────────────────────────────
-    # If neighbor_elem[iel][fid] == jel, then neighbor_elem[jel][neighbor_fid[iel][fid]]
-    # must equal iel — i.e. the relation is symmetric and the local-face
-    # cross-reference is internally consistent. Pure data-structure check,
-    # no physics.
-    n_recip_fail = 0
-    n_interior_faces_checked = 0
-    for iel = 1:nelem
-        for fid = 1:6
-            jel = neighbor_elem[iel][fid]
-            jel == zero(TInt) && continue
-            n_interior_faces_checked += 1
-            jfid = neighbor_fid[iel][fid]
-            if jfid == zero(TInt) || neighbor_elem[jel][jfid] != iel
-                n_recip_fail += 1
-                n_recip_fail <= 5 && println("  RECIPROCITY FAIL: iel=$iel fid=$fid -> jel=$jel jfid=$jfid " *
-                                              "but neighbor_elem[jel][jfid]=$(jel==0 ? "N/A" : neighbor_elem[jel][max(jfid,1)])")
-            end
-        end
-    end
-    println("[1] Reciprocity check: $(n_interior_faces_checked) interior face-links examined, " *
-            "$(n_recip_fail) failures " * (n_recip_fail == 0 ? "✓ PASS" : "✗ FAIL"))
-
-    # ── Check 2: boundary face count cross-check ──────────────────────────
-    # Every (iel,fid) with neighbor_elem==0 is a boundary/periodic face as
-    # WE see it. Total such entries, divided by 1 (each boundary face is
-    # only counted once, from its single owning element — unlike interior
-    # faces which appear from both sides), should equal mesh.nfaces_bdy
-    # if that field counts local (this-rank) boundary faces. If it's a
-    # GLOBAL count instead, this will legitimately differ under MPI and
-    # should be compared to mesh.nfaces_bdy on a single-rank run only.
-    n_boundary_entries = 0
-    for iel = 1:nelem, fid = 1:6
-        neighbor_elem[iel][fid] == zero(TInt) && (n_boundary_entries += 1)
-    end
-    expected = try mesh.nfaces_bdy catch; nothing end
-    if expected === nothing
-        println("[2] Boundary face count: found $n_boundary_entries boundary-face entries " *
-                "(mesh.nfaces_bdy not accessible to compare — skipped)")
-    else
-        match = n_boundary_entries == expected
-        println("[2] Boundary face count: found $n_boundary_entries, mesh.nfaces_bdy=$expected " *
-                (match ? "✓ PASS" : "⚠ MISMATCH (expected on multi-rank runs; " *
-                 "should match exactly on a single-rank run)"))
-    end
-
-    # ── Check 3: full dependency ordering check, two directions ──────────
-    function check_order_full(Ωx, Ωy, Ωz, label; debug_violations::Bool=true, max_debug::Int=5)
-        order, levels = build_conforming_sweep_order(
-            Ωx, Ωy, Ωz, nelem, ngl, neighbor_elem,
-            metrics.dξdx, metrics.dξdy, metrics.dξdz,
-            metrics.dηdx, metrics.dηdy, metrics.dηdz,
-            metrics.dζdx, metrics.dζdy, metrics.dζdz)
-
-        pos = zeros(TInt, nelem)
-        for (p, iel) in enumerate(order)
-            pos[iel] = p
-        end
-
-        is_inflow = Vector{Bool}(undef, 6)
-        is_active = Vector{Bool}(undef, 6)
-        n_violations = 0
-        violation_pairs = Tuple{TInt,TInt}[]   # collect ALL, not just first 5
-
-        for iel = 1:nelem
-            classify_element_faces!(is_inflow, is_active, iel, Ωx, Ωy, Ωz, ngl,
-                                     metrics.dξdx, metrics.dξdy, metrics.dξdz,
-                                     metrics.dηdx, metrics.dηdy, metrics.dηdz,
-                                     metrics.dζdx, metrics.dζdy, metrics.dζdz)
-            for fid = 1:6
-                (is_inflow[fid] && is_active[fid]) || continue
-                jel = neighbor_elem[iel][fid]
-                jel == zero(TInt) && continue
-                if pos[jel] >= pos[iel]
-                    n_violations += 1
-                    push!(violation_pairs, (iel, jel))
-                end
-            end
-        end
-
-        n_levels = length(unique(levels))
-        println("[3] Full order check ($label): $(length(order))/$nelem elements ordered, " *
-                "$n_violations violations " * (n_violations == 0 ? "✓ PASS" : "✗ FAIL") *
-                "  |  levels: min=$(minimum(levels)) max=$(maximum(levels)) " *
-                "unique=$n_levels  (too close to 1 or to $nelem may indicate a problem)")
-
-        # ── Auto-debug every violation (deduplicated by unordered pair, since
-        # (iel,jel) and (jel,iel) would otherwise print the same geometry twice) ─
-        if debug_violations && n_violations > 0
-            seen = Set{Tuple{TInt,TInt}}()
-            n_shown = 0
-            println("─"^70)
-            println("[3-debug] Auto-diagnostics for violating pairs (label=$label):")
-            for (iel, jel) in violation_pairs
-                key = (min(iel,jel), max(iel,jel))
-                key in seen && continue
-                push!(seen, key)
-                n_shown += 1
-                debug_single_face_pair(mesh, metrics, iel, jel, neighbor_elem, neighbor_fid;
-                                        Ωx=Ωx, Ωy=Ωy, Ωz=Ωz)
-                if n_shown >= max_debug
-                    remaining = length(unique(violation_pairs)) - n_shown
-                    remaining > 0 && println("  ... ($remaining more distinct violating pairs not shown, " *
-                                              "increase max_debug to see more)")
-                    break
-                end
-            end
-        end
-
-        return order, levels
-    end
-
-    check_order_full(1.0, 0.0, 0.0, "Ω=(1,0,0)")
-    check_order_full(0.3, 0.5, 0.8, "Ω=(0.3,0.5,0.8) (generic oblique)")
-
-    n_periodic_faces_checked   = 0
-    n_periodic_wrongly_wired   = 0
-    n_periodic_unmatched       = 0
-
-    for iface_bdy = 1:size(mesh.bdy_face_type, 1)
-        mesh.bdy_face_type[iface_bdy] in ("periodicx","periodicy","periodicz") || continue
-        iel = mesh.bdy_face_in_elem[iface_bdy]
-
-        # Corners of THIS SPECIFIC boundary face instance only.
-        ip1 = mesh.poin_in_bdy_face[iface_bdy, 1, 1]
-        ip2 = mesh.poin_in_bdy_face[iface_bdy, ngl, 1]
-        ip3 = mesh.poin_in_bdy_face[iface_bdy, ngl, ngl]
-        ip4 = mesh.poin_in_bdy_face[iface_bdy, 1, ngl]
-        key_bdy = Tuple(sort(TInt[ip1, ip2, ip3, ip4]))
-
-        # Find which of iel's 6 local faces this actually is (order-independent
-        # match — corner listing order doesn't matter since we compare sorted sets).
-        found_fid = 0
-        for face_el = 1:6
-            my_fid = CONN_FACE_EL_TO_MY_FID[face_el]
-            n1 = mesh.conn_face_el[1, face_el, iel]
-            n2 = mesh.conn_face_el[2, face_el, iel]
-            n3 = mesh.conn_face_el[3, face_el, iel]
-            n4 = mesh.conn_face_el[4, face_el, iel]
-            if Tuple(sort(TInt[n1,n2,n3,n4])) == key_bdy
-                found_fid = my_fid
-                break
-            end
-         end
-
-        if found_fid == 0
-            n_periodic_unmatched += 1
-            continue
-        end
-
-        n_periodic_faces_checked += 1
-        jel = neighbor_elem[iel][found_fid]
-        jel != zero(TInt) && (n_periodic_wrongly_wired += 1)
-    end
-
-    println("Periodic boundary face instances checked : $n_periodic_faces_checked")
-    println("  ...unmatched to any local face (unexpected, should be 0): $n_periodic_unmatched")
-    println("  ...wrongly wired as an interior neighbor: $n_periodic_wrongly_wired")
-    
-
-    # ── Check 4: geometric orientation check (independent of adjacency code) ─
-    println("─"^70)
-    println("[4] Geometric orientation check for Ω=(1,0,0):")
-
-    cx = zeros(Float64, nelem)
-    for iel = 1:nelem
-        s = 0.0; n = 0
-        for k = 1:ngl, j = 1:ngl, i = 1:ngl
-            ip = mesh.connijk[iel,i,j,k]
-            s += mesh.x[ip]; n += 1
-        end
-        cx[iel] = s / n
-    end
-
-    indeg0 = Set{TInt}()
-    is_inflow = Vector{Bool}(undef, 6)
-    is_active = Vector{Bool}(undef, 6)
-    for iel = 1:nelem
-        classify_element_faces!(is_inflow, is_active, iel, 1.0, 0.0, 0.0, ngl,
-                                 metrics.dξdx, metrics.dξdy, metrics.dξdz,
-                                 metrics.dηdx, metrics.dηdy, metrics.dηdz,
-                                 metrics.dζdx, metrics.dζdy, metrics.dζdz)
-        has_dep = false
-        for fid = 1:6
-            if is_inflow[fid] && is_active[fid] && neighbor_elem[iel][fid] != zero(TInt)
-                has_dep = true; break
-            end
-        end
-        has_dep || push!(indeg0, iel)
-    end
-
-    cx_min, cx_max = extrema(cx)
-    tol = (cx_max - cx_min) * 1e-3
-    geometric_min_layer = Set(iel for iel = 1:nelem if cx[iel] < cx_min + tol)
-
-    overlap = length(intersect(indeg0, geometric_min_layer))
-    frac_min = overlap / max(length(geometric_min_layer), 1)
-
-    println("    Source (indegree-0) elements found: $(length(indeg0))")
-    println("    Geometric x-minimum layer elements : $(length(geometric_min_layer))")
-    println("    Overlap: $overlap ($( round(100*frac_min,digits=1) )% of x-min layer are sources)")
-    if frac_min > 0.9
-        println("    ✓ PASS — sources are (as expected) the x-MINIMUM layer: " *
-                "face_normal_sign orientation appears CORRECT for this mesh.")
-    else
-        geometric_max_layer = Set(iel for iel = 1:nelem if cx[iel] > cx_max - tol)
-        overlap_max = length(intersect(indeg0, geometric_max_layer))
-        frac_max = overlap_max / max(length(geometric_max_layer), 1)
-        if frac_max > 0.9
-            println("    ✗ FAIL — sources are the x-MAXIMUM layer instead of x-minimum. " *
-                    "face_normal_sign's sign convention is INVERTED for this mesh.")
-        else
-            println("    ⚠ Sources match neither x-min nor x-max layer cleanly " *
-                    "($(round(100*frac_max,digits=1))% overlap with x-max).")
-        end
-    end
-   
-    # Build a lookup: which (iel, fid) pairs are tagged as real boundaries
-    tagged_face_keys = Set{NTuple{4,TInt}}()
-    for iface_bdy = 1:size(mesh.bdy_face_type, 1)
-        ip1 = mesh.poin_in_bdy_face[iface_bdy, 1, 1]
-        ip2 = mesh.poin_in_bdy_face[iface_bdy, ngl, 1]
-        ip3 = mesh.poin_in_bdy_face[iface_bdy, ngl, ngl]
-        ip4 = mesh.poin_in_bdy_face[iface_bdy, 1, ngl]
-        push!(tagged_face_keys, Tuple(sort(TInt[ip1,ip2,ip3,ip4])))
-    end
-
-
-    n_true_boundary  = 0
-    n_suspected_cut  = 0
-    suspected_cuts   = Tuple{TInt,TInt}[]
-    cut_neighbor_rank = Dict{Tuple{TInt,TInt}, TInt}()
-
-    rank = MPI.Comm_rank(get_mpi_comm())
-
-    for iel = 1:nelem
-        for fid = 1:6
-            neighbor_elem[iel][fid] == zero(TInt) || continue
-            fe = findfirst(==(fid), CONN_FACE_EL_TO_MY_FID)
-            n1 = mesh.conn_face_el[1, fe, iel]
-            n2 = mesh.conn_face_el[2, fe, iel]
-            n3 = mesh.conn_face_el[3, fe, iel]
-            n4 = mesh.conn_face_el[4, fe, iel]
-            key = Tuple(sort(TInt[n1,n2,n3,n4]))
-
-            if key in tagged_face_keys
-                n_true_boundary += 1
-                continue
-            end
-
-            n_suspected_cut += 1
-            push!(suspected_cuts, (iel, fid))
-
-            # Any node strictly interior to the face (not on its bounding edges)
-            # is safe to query ownership for — requires ngl >= 3 to have such a
-            # node at all (ngl=2 means every face node IS a corner; flagged
-            # below rather than silently picked wrong).
-            irange, jrange, krange = face_ip_range(fid, ngl)
-            if ngl < 3
-               error("Face-interior ownership check requires ngl >= 3 (every node " *
-                      "on a face is a corner when ngl=2); got ngl=$ngl.")
-            end
-            i_int = length(irange) == 1 ? first(irange) : first(irange)+1
-            j_int = length(jrange) == 1 ? first(jrange) : first(jrange)+1
-            k_int = length(krange) == 1 ? first(krange) : first(krange)+1
-            ip_face_interior = mesh.connijk[iel, i_int, j_int, k_int]
-
-            owner = mesh.gip2owner[ip_face_interior]
-            cut_neighbor_rank[(iel,fid)] = owner
-        end
-    end
-
-    println("True tagged physical/periodic boundary faces: $n_true_boundary")
-    println("Suspected rank-partition-cut faces: $n_suspected_cut")
-
-    neighbor_rank_counts = Dict{TInt,Int}()
-    n_self_owned_anomaly = 0
-    for ((iel,fid), owner) in cut_neighbor_rank
-        if owner == rank
-            n_self_owned_anomaly += 1
-        else
-            neighbor_rank_counts[owner] = get(neighbor_rank_counts, owner, 0) + 1
-        end
-    end
-    println("Distinct neighbor ranks found (via face-interior node): $(sort(collect(neighbor_rank_counts)))")
-    n_self_owned_anomaly > 0 && println("⚠ $n_self_owned_anomaly cut faces resolved face-interior " *
-                                         "node owner to THIS rank — contradiction, worth investigating " *
-                                         "directly rather than assuming it's fine.")
-
-    neighbor_rank, neighbor_gel, n_unresolved = resolve_rank_cut_neighbors(mesh, suspected_cuts, comm)
-
-    println("Rank $(MPI.Comm_rank(comm)): $(length(suspected_cuts)) suspected cuts, " *
-            "$(length(neighbor_rank)) resolved, $n_unresolved unresolved")
-
-    all_ok = verify_rank_cut_neighbors(mesh, neighbor_rank, suspected_cuts, comm)
-    println("Rank $(MPI.Comm_rank(comm)): mutual verification " * (all_ok ? "✓ ALL PASS" : "✗ SOME MISMATCH"))
-
-end
-
 """
     classify_element_faces!(is_inflow, is_active, iel, Ωx, Ωy, Ωz, ngl,
                              dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz;
@@ -770,160 +378,6 @@ function classify_element_faces!(is_inflow::AbstractVector{Bool}, is_active::Abs
     return is_inflow, is_active
 end
 
-function debug_single_face_pair(mesh, metrics, iel::Int, jel::Int, neighbor_elem, neighbor_fid;
-                                 Ωx::Float64, Ωy::Float64, Ωz::Float64)
-    ngl = mesh.ngl
-    println("═"^70)
-    println("DEBUG: element $iel <-> element $jel   (Ω=($Ωx,$Ωy,$Ωz))")
-
-    for e in (iel, jel)
-        cx = cy = cz = 0.0; n = 0
-        for k=1:ngl, j=1:ngl, i=1:ngl
-            ip = mesh.connijk[e,i,j,k]
-            cx += mesh.x[ip]; cy += mesh.y[ip]; cz += mesh.z[ip]; n += 1
-        end
-        println("  centroid(iel=$e) = ($(round(cx/n,digits=4)), $(round(cy/n,digits=4)), $(round(cz/n,digits=4)))")
-    end
-
-    fid_i_to_j = 0; fid_j_to_i = 0
-    for fid = 1:6
-        neighbor_elem[iel][fid] == jel && (fid_i_to_j = fid)
-        neighbor_elem[jel][fid] == iel && (fid_j_to_i = fid)
-    end
-    println("  neighbor_elem[$iel] points to $jel via my_fid=$fid_i_to_j")
-    println("  neighbor_elem[$jel] points to $iel via my_fid=$fid_j_to_i")
-    if fid_i_to_j > 0
-        println("  neighbor_fid[$iel][$fid_i_to_j] = $(neighbor_fid[iel][fid_i_to_j]) (should equal $fid_j_to_i)")
-    end
-
-    for (e, fid, label) in ((iel, fid_i_to_j, "iel's face toward jel"),
-                            (jel, fid_j_to_i, "jel's face toward iel"))
-        fid == 0 && continue
-        msym, sgn = face_normal_sign(fid)
-        irange, jrange, krange = face_ip_range(fid, ngl)
-        println("  $label: iel=$e fid=$fid (msym=$msym sgn=$sgn)")
-        for k in krange, j in jrange, i in irange
-            if msym == 1
-                nx,ny,nz = metrics.dηdx[e,i,j,k], metrics.dηdy[e,i,j,k], metrics.dηdz[e,i,j,k]
-            elseif msym == 2
-                nx,ny,nz = metrics.dζdx[e,i,j,k], metrics.dζdy[e,i,j,k], metrics.dζdz[e,i,j,k]
-            else
-                nx,ny,nz = metrics.dξdx[e,i,j,k], metrics.dξdy[e,i,j,k], metrics.dξdz[e,i,j,k]
-            end
-            raw_dot = Ωx*nx + Ωy*ny + Ωz*nz
-            println("    node(i=$i,j=$j,k=$k): (nx,ny,nz)=($(round(nx,digits=4)),$(round(ny,digits=4)),$(round(nz,digits=4)))  " *
-                    "raw Ω·n=$(round(raw_dot,digits=6))  signed(×sgn)=$(round(sgn*raw_dot,digits=6))")
-        end
-    end
-    println("═"^70)
-end
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  resolve_rank_cut_neighbors  (DRAFT — untested, new infrastructure)
-#
-#  For every suspected rank-partition-cut face (untagged, no same-rank
-#  neighbor — see suspected_cuts from the verification diagnostics), find
-#  which remote rank actually owns the element on the other side, using a
-#  gather -> match-by-key -> scatter-back pattern (same shape as
-#  restructure4periodicity_3D_sorted!, but simpler: exact global-corner-ID
-#  set match, no geometric/coordinate matching needed).
-#
-#  ASSUMPTION BEING TESTED, not yet confirmed: a genuine two-rank partition
-#  cut's four corner nodes have IDENTICAL global point IDs (via ip2gip) on
-#  both ranks. This is a more basic property than periodic merging — it's
-#  what makes cross-rank DSS accumulation possible at all — but given that
-#  the exact same kind of "should obviously be true" assumption about
-#  gip2owner just turned out to need correction, this function verifies it
-#  directly via a mutual round-trip check rather than assuming it silently.
-#
-#  Returns:
-#    - neighbor_rank::Dict{Tuple{TInt,TInt}, TInt}  — (iel,fid) -> remote rank
-#    - neighbor_gel::Dict{Tuple{TInt,TInt}, TInt}   — (iel,fid) -> remote element's GLOBAL id (mesh.el2gel on their side)
-#    - n_unresolved::Int  — suspected cuts that found NO match anywhere
-#      (would mean either the corner-ID assumption is wrong, or this face
-#      isn't actually a 2-rank interior cut — flagged, not silently dropped)
-# ─────────────────────────────────────────────────────────────────────────────
-
-function resolve_rank_cut_neighbors(mesh, suspected_cuts::Vector{Tuple{TInt,TInt}}, comm)
-    rank    = MPI.Comm_rank(comm)
-    rank_sz = MPI.Comm_size(comm)
-    ngl     = mesh.ngl
-
-    # ── Phase 1: each rank packs (key=4 global corner IDs, rank, local iel,
-    # local fid, global element id) for each of its suspected cuts. ────────
-    local_keys = NTuple{4,TInt}[]
-    local_iel  = TInt[]
-    local_fid  = TInt[]
-    local_gel  = TInt[]
-
-    for (iel, fid) in suspected_cuts
-        fe = findfirst(==(fid), CONN_FACE_EL_TO_MY_FID)
-        n1 = mesh.conn_face_el[1, fe, iel]
-        n2 = mesh.conn_face_el[2, fe, iel]
-        n3 = mesh.conn_face_el[3, fe, iel]
-        n4 = mesh.conn_face_el[4, fe, iel]
-        key = Tuple(sort(TInt[mesh.ip2gip[n1], mesh.ip2gip[n2], mesh.ip2gip[n3], mesh.ip2gip[n4]]))
-        push!(local_keys, key)
-        push!(local_iel, iel)
-        push!(local_fid, fid)
-        push!(local_gel, mesh.el2gel[iel])
-    end
-
-    # ── Phase 2: gather everyone's entries to rank 0, match by exact key. ──
-    n_local = TInt(length(local_keys))
-    all_n   = MPI.Allgather(n_local, comm)
-
-    # Flatten each local entry to 7 Ints for easy Allgatherv:
-    # [g1,g2,g3,g4, rank, iel, fid, gel]  (rank stored explicitly so matching
-    # works after concatenation, since we lose which-rank-sent-this otherwise)
-    flat_local = TInt[]
-    for i = eachindex(local_keys)
-        k = local_keys[i]
-        append!(flat_local, [k[1],k[2],k[3],k[4], TInt(rank), local_iel[i], local_fid[i], local_gel[i]])
-    end
-    counts = all_n .* TInt(8)
-    all_flat = MPI.Allgatherv(flat_local, Cint.(counts), comm)
-
-    n_total = length(all_flat) ÷ 8
-    entries_by_key = Dict{NTuple{4,TInt}, Vector{NTuple{4,TInt}}}()  # key -> [(rank,iel,fid,gel), ...]
-    for m = 1:n_total
-        b = (m-1)*8
-        key = (all_flat[b+1], all_flat[b+2], all_flat[b+3], all_flat[b+4])
-        entry = (all_flat[b+5], all_flat[b+6], all_flat[b+7], all_flat[b+8])
-        push!(get!(entries_by_key, key, NTuple{4,TInt}[]), entry)
-    end
-
-    # ── Phase 3: each rank looks up its own suspected cuts in the global table. ─
-    neighbor_rank = Dict{Tuple{TInt,TInt}, TInt}()
-    neighbor_gel  = Dict{Tuple{TInt,TInt}, TInt}()
-    n_unresolved  = 0
-    n_bad_group   = 0   # a key matched by something other than exactly 2 DIFFERENT ranks
-
-    for i = eachindex(local_keys)
-        key = local_keys[i]
-        group = get(entries_by_key, key, NTuple{4,TInt}[])
-        others = filter(e -> e[1] != rank, group)
-        if length(group) != 2 || length(others) != 1
-            n_bad_group += 1
-            continue
-        end
-        orank, ogel_iel, ofid, ogel = others[1]
-        neighbor_rank[(local_iel[i], local_fid[i])] = orank
-        neighbor_gel[(local_iel[i], local_fid[i])]  = ogel
-    end
-    n_unresolved = length(suspected_cuts) - length(neighbor_rank)
-
-    if n_bad_group > 0
-        @warn "resolve_rank_cut_neighbors: rank $rank found $n_bad_group suspected-cut faces " *
-              "whose corner-ID key matched something OTHER than exactly one other rank " *
-              "(0 matches, self-matches, or >2-way matches). This likely means the " *
-              "assumption that partition-cut corners share identical global IDs across " *
-              "ranks does NOT hold as expected — do not trust neighbor_rank/neighbor_gel " *
-              "until this is understood."
-    end
-
-    return neighbor_rank, neighbor_gel, n_unresolved
-end
 
 """
     verify_rank_cut_neighbors(mesh, neighbor_rank, suspected_cuts, comm)
@@ -1006,20 +460,29 @@ end
     build_dg_volume_matrix!(A_vol, iel, Ωx, Ωy, Ωz, ngl,
                              ψ, dψ, ω,
                              dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
-                             Je, κ, σ, intΦ_eff, connijk)
+                             Je, κ, connijk)
 
 In-place: fills the (ngl^3 x ngl^3) buffer `A_vol` (caller-allocated once,
 reused across elements/directions — no allocation here) with the element-
-local DG volume matrix for element `iel`, direction (Ωx,Ωy,Ωz).
+local DG volume matrix for element `iel`, direction (Ωx,Ωy,Ωz), for the
+operator:
+
+    Ω·∇I + κ·I
+
+Scattering is handled ENTIRELY through the explicit outer-iteration
+source coupling (extra_source_all), never through this operator — this
+function no longer accepts σ/intΦ_eff at all, since passing a nonzero σ
+here would silently double-count extinction against any RHS/manufactured
+solution built assuming scattering is purely a source term.
 
 `ψ`, `dψ` are the 1D Lagrange basis / derivative matrices (ngl x ngl), as
 used elsewhere in this codebase's CG assembly — same basis, restricted to
 one element rather than assembled globally.
 
-`κ`, `σ`, `intΦ_eff` are indexed by GLOBAL point id (matching how
-sparse_lhs_assembly_3Dby2D_adaptive reads them: `κ_data[ip]` etc. via
+`κ` is indexed by GLOBAL point id (matching how
+sparse_lhs_assembly_3Dby2D_adaptive reads it: `κ_data[ip]` via
 `connijk`/`connijk_spa`) — `connijk` is passed in specifically to map this
-element's local (i,j,k) to the global point id needed for those lookups.
+element's local (i,j,k) to the global point id needed for that lookup.
 """
 function build_dg_volume_matrix!(A_vol::AbstractMatrix{Float64}, iel::Int,
                                   Ωx::Float64, Ωy::Float64, Ωz::Float64, ngl::Int,
@@ -1027,12 +490,10 @@ function build_dg_volume_matrix!(A_vol::AbstractMatrix{Float64}, iel::Int,
                                   dξdx, dξdy, dξdz,
                                   dηdx, dηdy, dηdz,
                                   dζdx, dζdy, dζdz,
-                                  Je, κ, σ, intΦ_eff, connijk)
+                                  Je, κ, connijk)
     fill!(A_vol, 0.0)
 
     @inbounds for k = 1:ngl, j = 1:ngl, i = 1:ngl
-        # Quadrature node (i,j,k) — this is where the weak form is evaluated,
-        # matching sparse_lhs_assembly_3Dby2D_adaptive's own (i,j,k) loop.
         ip_global = connijk[iel, i, j, k]
         ωJac = ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
 
@@ -1040,24 +501,16 @@ function build_dg_volume_matrix!(A_vol::AbstractMatrix{Float64}, iel::Int,
         dηdx_ij = dηdx[iel,i,j,k]; dηdy_ij = dηdy[iel,i,j,k]; dηdz_ij = dηdz[iel,i,j,k]
         dζdx_ij = dζdx[iel,i,j,k]; dζdy_ij = dζdy[iel,i,j,k]; dζdz_ij = dζdz[iel,i,j,k]
 
-        α = κ[ip_global] + σ[ip_global] * (1.0 - intΦ_eff[ip_global])
+        α = κ[ip_global]
         p = lidx(i,j,k,ngl)
 
         # ── Reaction term: α * ψ_q(node) * ψ_p(node) * ωJac ────────────────
-        # At a GLL nodal quadrature point, ψ_q(node_p) = δ_{pq} (Kronecker
-        # delta — the defining property of a nodal Lagrange basis evaluated
-        # at its own collocation points), so this term is PURELY diagonal —
-        # exactly matching the diagonal-only V_vec[pos] term in
-        # sparse_lhs_assembly_3Dby2D_adaptive, not a separate approximation.
+        # Purely diagonal at a GLL nodal quadrature point (ψ_q(node_p) =
+        # δ_{pq}), exactly matching the diagonal-only V_vec[pos] term in
+        # sparse_lhs_assembly_3Dby2D_adaptive.
         A_vol[p, p] += α * ωJac
 
-        # ── Streaming term: (Ω·∇ψ_q) evaluated at this node, projected onto
-        # test function ψ_p — since ψ_p is also nodal, this again collapses
-        # to contributions AT this same row p, for every q reachable via the
-        # 1D derivative matrix along ξ, η, ζ through node (i,j,k). This is
-        # exactly the prop_i/prop_j/prop_k construction from
-        # sparse_lhs_assembly_3Dby2D_adaptive, just writing into a LOCAL
-        # ngl^3 matrix instead of scattering into the global sparse matrix.
+        # ── Streaming term: (Ω·∇ψ_q) at this node, projected onto ψ_p ──────
         prop_i = (dξdx_ij*Ωx + dξdy_ij*Ωy + dξdz_ij*Ωz) * ωJac
         for m = 1:ngl
             abs(dψ[m,i]) < eps(Float64) && continue
@@ -1130,15 +583,13 @@ function test_dg_volume_matrix(; ngl::Int = 4)
 
     κ_const = 0.7
     κ        = fill(κ_const, npoin_test)
-    σ        = zeros(npoin_test)
-    intΦ_eff = zeros(npoin_test)
 
     A_vol = zeros(npoin_test, npoin_test)
 
     # ── Test 1: Ω=(1,0,0) — only ξ-direction (i-index) streaming survives ──
     build_dg_volume_matrix!(A_vol, 1, 1.0, 0.0, 0.0, ngl, ψ, dψ, ω,
                              dξdx,dξdy,dξdz, dηdx,dηdy,dηdz, dζdx,dζdy,dζdz,
-                             Je, κ, σ, intΦ_eff, connijk)
+                             Je, κ, connijk)
     max_err_1 = 0.0
     for k=1:ngl, j=1:ngl, i=1:ngl
         p = lidx(i,j,k,ngl)
@@ -1160,7 +611,7 @@ function test_dg_volume_matrix(; ngl::Int = 4)
     # ── Test 2: Ω=(0,1,0) — only η-direction (j-index) streaming survives ──
     build_dg_volume_matrix!(A_vol, 1, 0.0, 1.0, 0.0, ngl, ψ, dψ, ω,
                              dξdx,dξdy,dξdz, dηdx,dηdy,dηdz, dζdx,dζdy,dζdz,
-                             Je, κ, σ, intΦ_eff, connijk)
+                             Je, κ, connijk)
     max_err_2 = 0.0
     for k=1:ngl, j=1:ngl, i=1:ngl
         p = lidx(i,j,k,ngl)
@@ -1182,7 +633,7 @@ function test_dg_volume_matrix(; ngl::Int = 4)
     # ── Test 3: Ω=(0,0,1) — only ζ-direction (k-index) streaming survives ──
     build_dg_volume_matrix!(A_vol, 1, 0.0, 0.0, 1.0, ngl, ψ, dψ, ω,
                              dξdx,dξdy,dξdz, dηdx,dηdy,dηdz, dζdx,dζdy,dζdz,
-                             Je, κ, σ, intΦ_eff, connijk)
+                             Je, κ, connijk)
     max_err_3 = 0.0
     for k=1:ngl, j=1:ngl, i=1:ngl
         p = lidx(i,j,k,ngl)
@@ -1205,10 +656,10 @@ function test_dg_volume_matrix(; ngl::Int = 4)
     Ω1 = (0.3, 0.5, 0.8)
     Ω2 = (-0.2, 0.9, 0.1)
     A1, A2, Asum = zeros(npoin_test,npoin_test), zeros(npoin_test,npoin_test), zeros(npoin_test,npoin_test)
-    build_dg_volume_matrix!(A1, 1, Ω1[1],Ω1[2],Ω1[3], ngl, ψ,dψ,ω, dξdx,dξdy,dξdz,dηdx,dηdy,dηdz,dζdx,dζdy,dζdz, Je,κ,σ,intΦ_eff,connijk)
-    build_dg_volume_matrix!(A2, 1, Ω2[1],Ω2[2],Ω2[3], ngl, ψ,dψ,ω, dξdx,dξdy,dξdz,dηdx,dηdy,dηdz,dζdx,dζdy,dζdz, Je,κ,σ,intΦ_eff,connijk)
+    build_dg_volume_matrix!(A1, 1, Ω1[1],Ω1[2],Ω1[3], ngl, ψ,dψ,ω, dξdx,dξdy,dξdz,dηdx,dηdy,dηdz,dζdx,dζdy,dζdz, Je,κ,connijk)
+    build_dg_volume_matrix!(A2, 1, Ω2[1],Ω2[2],Ω2[3], ngl, ψ,dψ,ω, dξdx,dξdy,dξdz,dηdx,dηdy,dηdz,dζdx,dζdy,dζdz, Je,κ,connijk)
     build_dg_volume_matrix!(Asum, 1, Ω1[1]+Ω2[1], Ω1[2]+Ω2[2], Ω1[3]+Ω2[3], ngl, ψ,dψ,ω,
-                             dξdx,dξdy,dξdz,dηdx,dηdy,dηdz,dζdx,dζdy,dζdz, Je,κ,σ,intΦ_eff,connijk)
+                             dξdx,dξdy,dξdz,dηdx,dηdy,dηdz,dζdx,dζdy,dζdz, Je,κ,connijk)
 
     # Reaction-term diagonal is Ω-INDEPENDENT and gets added fresh in every
     # call, so A1+A2 double-counts it once relative to Asum — subtract one
@@ -1320,8 +771,6 @@ function test_sweep_vs_cg_coupling(; Nx=3, Ny=3, Nz=3, ngl=4,
     ψ, dψ, ω = basis.ψ, basis.dψ, lgl.ω
 
     κ        = fill(0.7, m.npoin)   # value doesn't affect this test (see note below)
-    σ        = zeros(m.npoin)
-    intΦ_eff = zeros(m.npoin)
 
     # ── DSS-assemble the global matrix from build_dg_volume_matrix! (ALREADY
     # VALIDATED per-element physics) — exactly the same scatter-add pattern
@@ -1333,7 +782,7 @@ function test_sweep_vs_cg_coupling(; Nx=3, Ny=3, Nz=3, ngl=4,
     for iel = 1:m.nelem
         build_dg_volume_matrix!(A_vol, iel, Ωx, Ωy, Ωz, ngl, ψ, dψ, ω,
                                  m.dξdx,m.dξdy,m.dξdz, m.dηdx,m.dηdy,m.dηdz, m.dζdx,m.dζdy,m.dζdz,
-                                 m.Je, κ, σ, intΦ_eff, m.connijk)
+                                 m.Je, κ, m.connijk)
         for k=1:ngl, j=1:ngl, i=1:ngl
             p = lidx(i,j,k,ngl); gp = m.connijk[iel,i,j,k]
             for kk=1:ngl, jj=1:ngl, ii=1:ngl
@@ -1399,8 +848,6 @@ function test_sweep_with_bc(; Nx=3, Ny=3, Nz=3, ngl=4,
     Ωx, Ωy, Ωz = Ω
 
     κ        = fill(κ_val, m.npoin)
-    σ        = zeros(m.npoin)
-    intΦ_eff = zeros(m.npoin)
 
     neighbor_elem, neighbor_fid = build_face_adjacency_from_conn_face_el(m.nelem, m.conn_face_el)
     order, _ = build_conforming_sweep_order(Ωx, Ωy, Ωz, m.nelem, ngl, neighbor_elem,
@@ -1435,7 +882,7 @@ function test_sweep_with_bc(; Nx=3, Ny=3, Nz=3, ngl=4,
     for iel = 1:m.nelem
         build_dg_volume_matrix!(A_vol, iel, Ωx, Ωy, Ωz, ngl, ψ, dψ, ωq,
                                  m.dξdx,m.dξdy,m.dξdz, m.dηdx,m.dηdy,m.dηdz, m.dζdx,m.dζdy,m.dζdz,
-                                 m.Je, κ, σ, intΦ_eff, m.connijk)
+                                 m.Je, κ, m.connijk)
         for k=1:ngl, j=1:ngl, i=1:ngl
             p = lidx(i,j,k,ngl); gp = m.connijk[iel,i,j,k]
             for kk=1:ngl, jj=1:ngl, ii=1:ngl
@@ -1471,7 +918,7 @@ function test_sweep_with_bc(; Nx=3, Ny=3, Nz=3, ngl=4,
     for iel in order
         build_dg_volume_matrix!(A_vol_local, iel, Ωx, Ωy, Ωz, ngl, ψ, dψ, ωq,
                                  m.dξdx,m.dξdy,m.dξdz, m.dηdx,m.dηdy,m.dηdz, m.dζdx,m.dζdy,m.dζdz,
-                                 m.Je, κ, σ, intΦ_eff, m.connijk)
+                                 m.Je, κ, m.connijk)
         gids = Array{Int}(undef, ngl^3)
         for k=1:ngl, j=1:ngl, i=1:ngl
             gids[lidx(i,j,k,ngl)] = m.connijk[iel,i,j,k]
@@ -1510,44 +957,6 @@ end
 #  beyond the early return below.
 # ─────────────────────────────────────────────────────────────────────────────
 
-#=function build_dg_flux_terms!(A_vol::AbstractMatrix{Float64}, RHS_local::AbstractVector{Float64},
-                               fid::Int, ngl::Int,
-                               Ωx::Float64, Ωy::Float64, Ωz::Float64,
-                               is_inflow::Bool, is_active::Bool,
-                               face_normal_avg::NTuple{3,Float64},
-                               ω,
-                               dξdx, dξdy, dξdz,
-                               dηdx, dηdy, dηdz,
-                               dζdx, dζdy, dζdz,
-                               Je, iel::Int,
-                               I_upwind)   # (i,j,k) -> known value (neighbor trace OR prescribed BC)
-
-    (is_active && is_inflow) || return   # tangential OR outflow → correction is exactly zero
-
-    msym, sgn = face_normal_sign(fid)
-    irange, jrange, krange = face_ip_range(fid, ngl)
-    nx, ny, nz = face_normal_avg
-    Ωdotn = Ωx*nx + Ωy*ny + Ωz*nz   # < 0 here, guaranteed by is_inflow check above
-
-    @inbounds for k in krange, j in jrange, i in irange
-        p = lidx(i,j,k,ngl)
-
-        if msym == 1;      gx,gy,gz = dηdx[iel,i,j,k], dηdy[iel,i,j,k], dηdz[iel,i,j,k]
-        elseif msym == 2;  gx,gy,gz = dζdx[iel,i,j,k], dζdy[iel,i,j,k], dζdz[iel,i,j,k]
-        else;              gx,gy,gz = dξdx[iel,i,j,k], dξdy[iel,i,j,k], dξdz[iel,i,j,k]
-        end
-        Je_face = Je[iel,i,j,k] * sqrt(gx^2+gy^2+gz^2)
-
-        if msym == 1;      wq = ω[i]*ω[k]
-        elseif msym == 2;  wq = ω[i]*ω[j]
-        else;              wq = ω[j]*ω[k]
-        end
-
-        weight = -Ωdotn * wq * Je_face   # positive, since Ωdotn < 0
-        A_vol[p,p]  += weight
-        RHS_local[p] += weight * I_upwind(i,j,k)
-    end
-end=#
 
 function build_dg_flux_terms!(A_vol::AbstractMatrix{Float64}, RHS_local::AbstractVector{Float64},
                                fid::Int, ngl::Int,
@@ -1741,15 +1150,13 @@ function test_dg_flux_terms(; ngl::Int = 4)
     x0 = 0.0   # element's low-x edge; physical x at node i: x0 + (Δx/2)*(1+ξ_i)
 
     κ        = fill(κ_val, npoin_test)
-    σ        = zeros(npoin_test)
-    intΦ_eff = zeros(npoin_test)
     connijk_1 = Array{Int}(undef,1,ngl,ngl,ngl)
     for k=1:ngl,j=1:ngl,i=1:ngl; connijk_1[1,i,j,k] = lidx(i,j,k,ngl); end
 
     fill!(A_vol, 0.0); fill!(RHS, 0.0)
     build_dg_volume_matrix!(A_vol, 1, 1.0, 0.0, 0.0, ngl, ψ, dψ, ω,
                              dξdx,dξdy,dξdz, dηdx,dηdy,dηdz, dζdx,dζdy,dζdz,
-                             Je, κ, σ, intΦ_eff, connijk_1)
+                             Je, κ, connijk_1)
     # RHS from volume is zero (q=0, and build_dg_volume_matrix! has no source
     # term anyway — see note in conversation on this being out of scope here)
 
@@ -1797,8 +1204,6 @@ function test_dg_flux_convergence(; ngl_list = [4, 6, 8, 10, 12])
 
         npoin_test = ngl^3
         κ        = fill(κ_val, npoin_test)
-        σ        = zeros(npoin_test)
-        intΦ_eff = zeros(npoin_test)
         connijk_1 = Array{Int}(undef,1,ngl,ngl,ngl)
         for k=1:ngl,j=1:ngl,i=1:ngl; connijk_1[1,i,j,k] = lidx(i,j,k,ngl); end
 
@@ -1807,7 +1212,7 @@ function test_dg_flux_convergence(; ngl_list = [4, 6, 8, 10, 12])
 
         build_dg_volume_matrix!(A_vol, 1, 1.0, 0.0, 0.0, ngl, ψ, dψ, ω,
                                  dξdx,dξdy,dξdz, dηdx,dηdy,dηdz, dζdx,dζdy,dζdz,
-                                 Je, κ, σ, intΦ_eff, connijk_1)
+                                 Je, κ, connijk_1)
 
         face5_normal = (-2/Δx, 0.0, 0.0)
         face6_normal = (2/Δx, 0.0, 0.0)
@@ -1848,8 +1253,6 @@ function test_dg_reconciliation_one_ngl(ngl::Int; Δx1 = 1.5, Δx2 = 3.0, Δy = 
 
     npoin_test = ngl^3
     κ        = fill(κ_val, npoin_test)
-    σ        = zeros(npoin_test)
-    intΦ_eff = zeros(npoin_test)
     connijk_1 = Array{Int}(undef,1,ngl,ngl,ngl)
     for k=1:ngl,j=1:ngl,i=1:ngl; connijk_1[1,i,j,k] = lidx(i,j,k,ngl); end
 
@@ -1862,7 +1265,7 @@ function test_dg_reconciliation_one_ngl(ngl::Int; Δx1 = 1.5, Δx2 = 3.0, Δy = 
     A1 = zeros(npoin_test,npoin_test); RHS1 = zeros(npoin_test)
     build_dg_volume_matrix!(A1, 1, 1.0,0.0,0.0, ngl, ψ,dψ,ω,
                              dξdx1,dξdy1,dξdz1, dηdx1,dηdy1,dηdz1, dζdx1,dζdy1,dζdz1,
-                             Je1a, κ, σ, intΦ_eff, connijk_1)
+                             Je1a, κ, connijk_1)
     build_dg_flux_terms!(A1, RHS1, 5, ngl, 1.0,0.0,0.0, true, true,
                           (-2/Δx1,0.0,0.0), ω, dξdx1,dξdy1,dξdz1, dηdx1,dηdy1,dηdz1, dζdx1,dζdy1,dζdz1,
                           Je1a, 1, (i,j,k)->I0)
@@ -1880,7 +1283,7 @@ function test_dg_reconciliation_one_ngl(ngl::Int; Δx1 = 1.5, Δx2 = 3.0, Δy = 
     A2 = zeros(npoin_test,npoin_test); RHS2 = zeros(npoin_test)
     build_dg_volume_matrix!(A2, 1, 1.0,0.0,0.0, ngl, ψ,dψ,ω,
                              dξdx2,dξdy2,dξdz2, dηdx2,dηdy2,dηdz2, dζdx2,dζdy2,dζdz2,
-                             Je2a, κ, σ, intΦ_eff, connijk_1)
+                             Je2a, κ, connijk_1)
     build_dg_flux_terms!(A2, RHS2, 5, ngl, 1.0,0.0,0.0, true, true,
                           (-2/Δx2,0.0,0.0), ω, dξdx2,dξdy2,dξdz2, dηdx2,dηdy2,dηdz2, dζdx2,dζdy2,dζdz2,
                           Je2a, 1, (i,j,k) -> x1[lidx(ngl,j,k,ngl)])
@@ -2189,468 +1592,6 @@ end
     return (nx_avg/mag, ny_avg/mag, nz_avg/mag)
 end
 
-function test_full_sweep_exponential(mesh, metrics, basis, ω; κ_val = 0.5, I0 = 4.2)
-    Ωx, Ωy, Ωz = 1.0, 0.0, 0.0
-    ngl = mesh.ngl
-    ψ, dψ = basis.ψ, basis.dψ
-
-    # ── Build (or reuse) DG infrastructure, store into mesh as requested ──
-    neighbor_elem, neighbor_fid = build_face_adjacency_from_conn_face_el(mesh.nelem, mesh.conn_face_el)
-
-    if isempty(mesh.connijk_dg)
-        connijk_dg, npoin_dg, dg_to_cg, face_correspondence =
-            build_connijk_dg(mesh, neighbor_elem, neighbor_fid)
-        face_neighbor_dg = build_face_neighbor_dg(mesh, connijk_dg, neighbor_elem,
-                                                   neighbor_fid, face_correspondence)
-        mesh.connijk_dg = connijk_dg
-        mesh.npoin_dg = npoin_dg
-        mesh.dg_to_cg = dg_to_cg
-        mesh.face_neighbor_dg = face_neighbor_dg
-        println("Built and stored DG infrastructure: npoin_dg=$npoin_dg " *
-                "(original npoin=$(length(mesh.x)))")
-    else
-        println("Reusing already-stored mesh.connijk_dg (npoin_dg=$(mesh.npoin_dg))")
-    end
-
-    # ── Sweep order for THIS Ω (direction-dependent, not cached in mesh) ──
-    order, _ = build_conforming_sweep_order(Ωx, Ωy, Ωz, mesh.nelem, ngl, neighbor_elem,
-                                             metrics.dξdx,metrics.dξdy,metrics.dξdz,
-                                             metrics.dηdx,metrics.dηdy,metrics.dηdz,
-                                             metrics.dζdx,metrics.dζdy,metrics.dζdz)
-
-    npoin_cg = length(mesh.x)
-    κ        = fill(κ_val, npoin_cg)
-    σ        = zeros(npoin_cg)
-    intΦ_eff = zeros(npoin_cg)
-
-    x_dg = fill(NaN, mesh.npoin_dg)
-    bc_fn = (x,y,z) -> I0   # a genuine function, constant-valued — NOT bare I0 itself
-    run_dg_sweep!(x_dg, mesh, metrics, ψ, dψ, ω, Ωx, Ωy, Ωz, order, neighbor_elem,
-                  mesh.connijk_dg, mesh.face_neighbor_dg, κ, σ, intΦ_eff, bc_fn)
-
-    n_nan = count(isnan, x_dg)
-    n_nan > 0 && @warn "test_full_sweep_exponential: $n_nan of $(mesh.npoin_dg) DG entries " *
-                        "were NEVER WRITTEN by the sweep — indicates a real bug " *
-                        "(unreachable node, or an element missing from `order`)."
-
-    pos = zeros(Int, mesh.nelem)
-    for (p,iel) in enumerate(order); pos[iel] = p; end
-
-    g_to_touches = Dict{Int, Vector{NTuple{4,Int}}}()
-    for iel = 1:mesh.nelem, k=1:ngl, j=1:ngl, i=1:ngl
-        g = mesh.connijk[iel,i,j,k]
-        push!(get!(g_to_touches, g, NTuple{4,Int}[]), (iel,i,j,k))
-    end
-
-    x_cg = zeros(npoin_cg)
-    for g = 1:npoin_cg
-        touches = g_to_touches[g]
-        best = touches[1]
-        for t in touches[2:end]
-            pos[t[1]] < pos[best[1]] && (best = t)
-        end
-        iel,i,j,k = best
-        x_cg[g] = x_dg[mesh.connijk_dg[iel,i,j,k]]
-    end
-
-    x0 = mesh.xmin
-    max_err = 0.0
-    for g = 1:npoin_cg
-        I_exact = I0 * exp(-κ_val * (mesh.x[g] - x0))
-        max_err = max(max_err, abs(x_cg[g] - I_exact))
-    end
-    println("Full multi-element sweep vs exact exponential: max abs error = $max_err")
-    return max_err
-end
-
-
-#=function run_dg_sweep!(x_dg::Vector{Float64}, mesh, metrics, ψ, dψ, ω,
-                        Ωx::Float64, Ωy::Float64, Ωz::Float64,
-                        order::Vector{Int}, neighbor_elem,
-                        connijk_dg, face_neighbor_dg,
-                        κ, σ, intΦ_eff, bc_fn;
-                        extra_source = nothing,
-                        timers = nothing,
-                        factor_cache = nothing,
-                        weight_cache_store = nothing,
-                        face_info_cache = nothing)   # NEW, optional: Dict{Int,Any} keyed by iel,
-                                                       # one cache PER DIRECTION — same requirement
-                                                       # as factor_cache/weight_cache_store (a shared,
-                                                       # non-direction-scoped cache here would silently
-                                                       # reuse another direction's classification/normals,
-                                                       # the same corruption bug already found once)
-    ngl = mesh.ngl
-    A_vol = zeros(ngl^3, ngl^3)
-    RHS_local = zeros(ngl^3)
-    is_inflow = Vector{Bool}(undef,6); is_active = Vector{Bool}(undef,6)
-
-    for iel in order
-        need_build = factor_cache === nothing || !haskey(factor_cache, iel)
-
-        if need_build
-            t0 = timers !== nothing ? time() : 0.0
-            fill!(A_vol, 0.0); fill!(RHS_local, 0.0)
-            build_dg_volume_matrix!(A_vol, iel, Ωx, Ωy, Ωz, ngl, ψ, dψ, ω,
-                                     metrics.dξdx,metrics.dξdy,metrics.dξdz,
-                                     metrics.dηdx,metrics.dηdy,metrics.dηdz,
-                                     metrics.dζdx,metrics.dζdy,metrics.dζdz,
-                                     metrics.Je, κ, σ, intΦ_eff, mesh.connijk)
-            timers !== nothing && (timers["build_volume"] = get(timers,"build_volume",0.0) + (time()-t0))
-        else
-            fill!(RHS_local, 0.0)
-        end
-        extra_source !== nothing &&
-            build_dg_source_term!(RHS_local, iel, ngl, ω, metrics.Je, extra_source, mesh.connijk)
-
-        # ── Face classification + normals: geometry/Ω-only, never depends on
-        # iteration — cached exactly like A_vol/factorization. ────────────────
-        face_info = face_info_cache === nothing ? nothing : get(face_info_cache, iel, nothing)
-
-        local face_normals
-        if face_info === nothing
-            t0 = timers !== nothing ? time() : 0.0
-            classify_element_faces!(is_inflow, is_active, iel, Ωx, Ωy, Ωz, ngl,
-                                     metrics.dξdx,metrics.dξdy,metrics.dξdz,
-                                     metrics.dηdx,metrics.dηdy,metrics.dηdz,
-                                     metrics.dζdx,metrics.dζdy,metrics.dζdz)
-            timers !== nothing && (timers["face_classification"] = get(timers,"face_classification",0.0) + (time()-t0))
-
-            t0 = timers !== nothing ? time() : 0.0
-            face_normals = Vector{NTuple{3,Float64}}(undef,6)
-            for fid = 1:6
-                is_active[fid] || continue
-                face_normals[fid] = compute_face_normal_avg(iel, fid, ngl,
-                    metrics.dξdx,metrics.dξdy,metrics.dξdz,
-                    metrics.dηdx,metrics.dηdy,metrics.dηdz,
-                    metrics.dζdx,metrics.dζdy,metrics.dζdz)
-            end
-            timers !== nothing && (timers["normal_computation"] = get(timers,"normal_computation",0.0) + (time()-t0))
-
-            face_info_cache !== nothing &&
-                (face_info_cache[iel] = (copy(is_inflow), copy(is_active), copy(face_normals)))
-        else
-            is_inflow_c, is_active_c, face_normals = face_info
-            is_inflow .= is_inflow_c
-            is_active .= is_active_c
-        end
-
-        t0 = timers !== nothing ? time() : 0.0
-        weight_caches = weight_cache_store === nothing ?
-            [zeros(Float64, ngl*ngl) for _=1:6] :
-            get!(weight_cache_store, iel, [zeros(Float64, ngl*ngl) for _=1:6])
-
-        for fid = 1:6
-            is_active[fid] || continue
-            face_normal = face_normals[fid]
-
-            if is_inflow[fid]
-                jel = neighbor_elem[iel][fid]
-                if jel == zero(TInt)
-                    I_upwind = (i,j,k) -> bc_fn(mesh.x[mesh.connijk[iel,i,j,k]],
-                                                 mesh.y[mesh.connijk[iel,i,j,k]],
-                                                 mesh.z[mesh.connijk[iel,i,j,k]])
-                else
-                    I_upwind = (i,j,k) -> x_dg[face_neighbor_dg[face_flat_index(fid, ngl, i, j, k), fid, iel]]
-                end
-            else
-                I_upwind = (i,j,k) -> 0.0
-            end
-
-            if need_build
-                build_dg_flux_terms!(A_vol, RHS_local, fid, ngl, Ωx, Ωy, Ωz,
-                                      is_inflow[fid], is_active[fid], face_normal, ω,
-                                      metrics.dξdx,metrics.dξdy,metrics.dξdz,
-                                      metrics.dηdx,metrics.dηdy,metrics.dηdz,
-                                      metrics.dζdx,metrics.dζdy,metrics.dζdz,
-                                      metrics.Je, iel, I_upwind; weight_out=weight_caches[fid])
-            else
-                build_dg_flux_rhs_only!(RHS_local, fid, ngl, is_inflow[fid], is_active[fid],
-                                         weight_caches[fid], I_upwind)
-            end
-        end
-        timers !== nothing && (timers["flux_and_faces"] = get(timers,"flux_and_faces",0.0) + (time()-t0))
-
-        t0 = timers !== nothing ? time() : 0.0
-        if need_build
-            fac = factorize(A_vol)
-            factor_cache !== nothing && (factor_cache[iel] = fac)
-            timers !== nothing && (timers["factorize"] = get(timers,"factorize",0.0) + (time()-t0))
-            t1 = timers !== nothing ? time() : 0.0
-            x_local = fac \ RHS_local
-            timers !== nothing && (timers["solve_only"] = get(timers,"solve_only",0.0) + (time()-t1))
-        else
-            x_local = factor_cache[iel] \ RHS_local
-            timers !== nothing && (timers["solve_only"] = get(timers,"solve_only",0.0) + (time()-t0))
-        end
-
-        for k=1:ngl, j=1:ngl, i=1:ngl
-            x_dg[connijk_dg[iel,i,j,k]] = x_local[lidx(i,j,k,ngl)]
-        end
-    end
-    return x_dg
-end=#
-
-function run_dg_sweep!(x_dg::Vector{Float64}, mesh, metrics, ψ, dψ, ω,
-                        Ωx::Float64, Ωy::Float64, Ωz::Float64,
-                        order::Vector{Int}, neighbor_elem,
-                        connijk_dg, face_neighbor_dg,
-                        κ, σ, intΦ_eff, bc_fn;
-                        extra_source = nothing,
-                        ncf_as_child = Dict{Tuple{Int,Int},Int}(),        # NEW, optional
-                        ncf_as_parent = Dict{Tuple{Int,Int},Int}(),
-			ncf_L1L2 = Dict{Int,Tuple{Matrix{Float64},Matrix{Float64}}}())  # NEW, optional
-    ngl = mesh.ngl
-    A_vol = zeros(ngl^3, ngl^3)
-    RHS_local = zeros(ngl^3)
-    is_inflow = Vector{Bool}(undef,6); is_active = Vector{Bool}(undef,6)
-
-    for iel in order
-        fill!(A_vol, 0.0); fill!(RHS_local, 0.0)
-        build_dg_volume_matrix!(A_vol, iel, Ωx, Ωy, Ωz, ngl, ψ, dψ, ω,
-                                 metrics.dξdx,metrics.dξdy,metrics.dξdz,
-                                 metrics.dηdx,metrics.dηdy,metrics.dηdz,
-                                 metrics.dζdx,metrics.dζdy,metrics.dζdz,
-                                 metrics.Je, κ, σ, intΦ_eff, mesh.connijk)
-        extra_source !== nothing &&
-            build_dg_source_term!(RHS_local, iel, ngl, ω, metrics.Je, extra_source, mesh.connijk)
-
-        classify_element_faces!(is_inflow, is_active, iel, Ωx, Ωy, Ωz, ngl,
-                                 metrics.dξdx,metrics.dξdy,metrics.dξdz,
-                                 metrics.dηdx,metrics.dηdy,metrics.dηdz,
-                                 metrics.dζdx,metrics.dζdy,metrics.dζdz)
-
-        for fid = 1:6
-            is_active[fid] || continue
-            face_normal = compute_face_normal_avg(iel, fid, ngl,
-                metrics.dξdx,metrics.dξdy,metrics.dξdz,
-                metrics.dηdx,metrics.dηdy,metrics.dηdz,
-                metrics.dζdx,metrics.dζdy,metrics.dζdz)
-
-            if is_inflow[fid]
-                jel = neighbor_elem[iel][fid]
-            	if jel == zero(TInt)
-    		    if haskey(ncf_as_child, (iel,fid))
-        		ncf_idx = ncf_as_child[(iel,fid)]
-        		parent_iel = Int(mesh.pip[ncf_idx])
-        		L1,L2 = ncf_L1L2[ncf_idx]
-        		IPc_nodes = mesh.IPc_list[:,ncf_idx]; IPp_nodes = mesh.IPp_list[:,ncf_idx]
-        		child_vals = build_dg_ncf_parent_to_child(mesh, connijk_dg, x_dg,
-                        		                            iel, parent_iel, fid,
-                                        		            IPc_nodes, IPp_nodes, L1, L2, ngl)
-        		I_upwind = (i,j,k) -> child_vals[face_flat_index(fid, ngl, i, j, k)]
-    		    elseif haskey(ncf_as_parent, (iel,fid))
-        		ncf_group = ncf_as_parent[(iel,fid)]  # Vector of ncf_idx
-        		entries = [(idx, Int(mesh.cip[idx]), mesh.IPc_list[:,idx], mesh.IPp_list[:,idx]) for idx in ncf_group]
-        		parent_grid = build_dg_ncf_child_to_parent_v5(mesh, connijk_dg, x_dg, iel, fid, entries, ngl)
-        		I_upwind = (i,j,k) -> begin
-            		    node_idx = face_flat_index(fid, ngl, i, j, k)
-            		    p1 = ((node_idx-1) % ngl) + 1
-           	 	    p2 = ((node_idx-1) ÷ ngl) + 1
-            		    parent_grid[p1,p2]
-        	    	end
-    		    else
-        	    	I_upwind = (i,j,k) -> bc_fn(mesh.x[mesh.connijk[iel,i,j,k]],
-                    			                 mesh.y[mesh.connijk[iel,i,j,k]],
-                                		         mesh.z[mesh.connijk[iel,i,j,k]])
-    		    end
-	    	else
-    		    I_upwind = (i,j,k) -> x_dg[face_neighbor_dg[face_flat_index(fid, ngl, i, j, k), fid, iel]]
-		end
-	    else
-                I_upwind = (i,j,k) -> 0.0
-            end
-
-            build_dg_flux_terms!(A_vol, RHS_local, fid, ngl, Ωx, Ωy, Ωz,
-                                  is_inflow[fid], is_active[fid], face_normal, ω,
-                                  metrics.dξdx,metrics.dξdy,metrics.dξdz,
-                                  metrics.dηdx,metrics.dηdy,metrics.dηdz,
-                                  metrics.dζdx,metrics.dζdy,metrics.dζdz,
-                                  metrics.Je, iel, I_upwind)
-        end
-
-        x_local = A_vol \ RHS_local
-        for k=1:ngl, j=1:ngl, i=1:ngl
-            x_dg[connijk_dg[iel,i,j,k]] = x_local[lidx(i,j,k,ngl)]
-        end
-    end
-    return x_dg
-end
-
-
-function test_full_sweep_exponential_layered(mesh, metrics, basis, ω; κ_val = 0.5, I0 = 4.2)
-    Ωx, Ωy, Ωz = 1.0, 0.0, 0.0
-    ngl = mesh.ngl
-    ψ, dψ = basis.ψ, basis.dψ
-
-    neighbor_elem, neighbor_fid = build_face_adjacency_from_conn_face_el(mesh.nelem, mesh.conn_face_el)
-
-    if isempty(mesh.connijk_dg)
-        connijk_dg, npoin_dg, dg_to_cg, face_correspondence =
-            build_connijk_dg(mesh, neighbor_elem, neighbor_fid)
-        face_neighbor_dg = build_face_neighbor_dg(mesh, connijk_dg, neighbor_elem,
-                                                   neighbor_fid, face_correspondence)
-        mesh.connijk_dg = connijk_dg
-        mesh.npoin_dg = npoin_dg
-        mesh.dg_to_cg = dg_to_cg
-        mesh.face_neighbor_dg = face_neighbor_dg
-    end
-
-    order, _ = build_conforming_sweep_order(Ωx, Ωy, Ωz, mesh.nelem, ngl, neighbor_elem,
-                                             metrics.dξdx,metrics.dξdy,metrics.dξdz,
-                                             metrics.dηdx,metrics.dηdy,metrics.dηdz,
-                                             metrics.dζdx,metrics.dζdy,metrics.dζdz)
-
-    npoin_cg = length(mesh.x)
-    κ        = fill(κ_val, npoin_cg)
-    σ        = zeros(npoin_cg)
-    intΦ_eff = zeros(npoin_cg)
-
-    bc_fn = (x,y,z) -> I0   # a genuine function, constant-valued — NOT bare I0 itself
-    x_dg = fill(NaN, mesh.npoin_dg)
-    run_dg_sweep!(x_dg, mesh, metrics, ψ, dψ, ω, Ωx, Ωy, Ωz, order, neighbor_elem,
-                  mesh.connijk_dg, mesh.face_neighbor_dg, κ, σ, intΦ_eff, bc_fn)
-
-    x0 = mesh.xmin
-
-    # ── LAYER 1: DG-level error — every (iel,i,j,k) checked against the
-    # EXACT solution at its OWN original physical location, using ONLY
-    # mesh.connijk (never connijk_dg, never any neighbor lookup) as the
-    # coordinate reference. This bypasses reconciliation ENTIRELY — if the
-    # sweep itself is correct, every element's own trace, including at
-    # shared interfaces, should independently already be close to exact. ──
-    max_err_dg = 0.0
-    worst = (0,0,0,0, 0.0, 0.0)
-    for iel = 1:mesh.nelem, k=1:ngl, j=1:ngl, i=1:ngl
-        g_cg = mesh.connijk[iel,i,j,k]
-        x_phys = mesh.x[g_cg]
-        I_exact = I0 * exp(-κ_val * (x_phys - x0))
-        v = x_dg[mesh.connijk_dg[iel,i,j,k]]
-        err = abs(v - I_exact)
-        if err > max_err_dg
-            max_err_dg = err
-            worst = (iel,i,j,k, v, I_exact)
-        end
-    end
-    println("LAYER 1 — DG-level error (no reconciliation): max abs error = $max_err_dg")
-    println("  worst case: iel=$(worst[1]) (i,j,k)=($(worst[2]),$(worst[3]),$(worst[4])) " *
-            "computed=$(worst[5]) exact=$(worst[6])")
-
-    # ── LAYER 2: reconciled CG-level error (upwind-only) — unchanged from before ──
-    pos = zeros(Int, mesh.nelem)
-    for (p,iel) in enumerate(order); pos[iel] = p; end
-
-    g_to_touches = Dict{Int, Vector{NTuple{4,Int}}}()
-    for iel = 1:mesh.nelem, k=1:ngl, j=1:ngl, i=1:ngl
-        g = mesh.connijk[iel,i,j,k]
-        push!(get!(g_to_touches, g, NTuple{4,Int}[]), (iel,i,j,k))
-    end
-
-    x_cg = zeros(npoin_cg)
-    for g = 1:npoin_cg
-        touches = g_to_touches[g]
-        best = touches[1]
-        for t in touches[2:end]
-            pos[t[1]] < pos[best[1]] && (best = t)
-        end
-        iel,i,j,k = best
-        x_cg[g] = x_dg[mesh.connijk_dg[iel,i,j,k]]
-    end
-
-    max_err_cg = 0.0
-    for g = 1:npoin_cg
-        I_exact = I0 * exp(-κ_val * (mesh.x[g] - x0))
-        max_err_cg = max(max_err_cg, abs(x_cg[g] - I_exact))
-    end
-    println("LAYER 2 — reconciled CG-level error (upwind-only): max abs error = $max_err_cg")
-
-    iel = 1
-    ngl = mesh.ngl
-    κ_val = 0.5
-    κ = fill(κ_val, length(mesh.x)); σ = zeros(length(mesh.x)); intΦ_eff = zeros(length(mesh.x))
-
-    println("═"^70)
-    println("ELEMENT 1 FULL TRACE — Ω=(1,0,0)")
-    println("═"^70)
-
-    # ── 1. Geometry: where is this element, and what's its physical extent? ──
-    xs = [mesh.x[mesh.connijk[iel,i,j,k]] for i=1:ngl,j=1:ngl,k=1:ngl]
-    ys = [mesh.y[mesh.connijk[iel,i,j,k]] for i=1:ngl,j=1:ngl,k=1:ngl]
-    zs = [mesh.z[mesh.connijk[iel,i,j,k]] for i=1:ngl,j=1:ngl,k=1:ngl]
-    println("[1] element 1 physical extent: x∈[$(minimum(xs)),$(maximum(xs))] " *
-            "y∈[$(minimum(ys)),$(maximum(ys))] z∈[$(minimum(zs)),$(maximum(zs))]")
-    println("    domain xmin=$(mesh.xmin) xmax=$(mesh.xmax)")
-
-    # ── 2. Face classification — repeat exactly, print ALL 6 with normals ────
-    is_inflow = Vector{Bool}(undef,6); is_active = Vector{Bool}(undef,6)
-    classify_element_faces!(is_inflow, is_active, iel, 1.0, 0.0, 0.0, ngl,
-                         metrics.dξdx,metrics.dξdy,metrics.dξdz,
-                         metrics.dηdx,metrics.dηdy,metrics.dηdz,
-                         metrics.dζdx,metrics.dζdy,metrics.dζdz)
-    neighbor_elem, neighbor_fid = build_face_adjacency_from_conn_face_el(mesh.nelem, mesh.conn_face_el)
-    println("[2] Face classification:")
-    for fid = 1:6
-        fn = compute_face_normal_avg(iel, fid, ngl,
-            metrics.dξdx,metrics.dξdy,metrics.dξdz,
-            metrics.dηdx,metrics.dηdy,metrics.dηdz,
-            metrics.dζdx,metrics.dζdy,metrics.dζdz)
-        println("    fid=$fid active=$(is_active[fid]) inflow=$(is_inflow[fid]) " *
-            "neighbor=$(neighbor_elem[iel][fid]) normal_avg=$fn")
-    end
-
-    # ── 3. Volume matrix — diagonal and a few off-diagonals at node (1,1,1) ──
-    A_vol = zeros(ngl^3, ngl^3); RHS_local = zeros(ngl^3)
-    build_dg_volume_matrix!(A_vol, iel, 1.0,0.0,0.0, ngl, basis.ψ, basis.dψ, ω,
-                            metrics.dξdx,metrics.dξdy,metrics.dξdz,
-                            metrics.dηdx,metrics.dηdy,metrics.dηdz,
-                            metrics.dζdx,metrics.dζdy,metrics.dζdz,
-                            metrics.Je, κ, σ, intΦ_eff, mesh.connijk)
-    p111 = lidx(1,1,1,ngl)
-    println("[3] AFTER volume matrix only:")
-    println("    A_vol[p111,p111] = $(A_vol[p111,p111])")
-    nzq = [(q,A_vol[p111,q]) for q=1:ngl^3 if A_vol[p111,q]!=0.0 && q!=p111]
-    println("    off-diagonal entries at row p111: $nzq")
-    println("    RHS_local[p111] = $(RHS_local[p111])  (should be 0 — no source term yet)")
-
-    # ── 4. Flux terms — print incremental change from EACH face separately ──
-    println("[4] Flux terms, applied one face at a time:")
-    for fid = 1:6
-        is_active[fid] || (println("    fid=$fid: SKIPPED (inactive)"); continue)
-        fn = compute_face_normal_avg(iel, fid, ngl,
-            metrics.dξdx,metrics.dξdy,metrics.dξdz,
-            metrics.dηdx,metrics.dηdy,metrics.dηdz,
-            metrics.dζdx,metrics.dζdy,metrics.dζdz)
-        diag_before = A_vol[p111,p111]; rhs_before = RHS_local[p111]
-        I_upwind = is_inflow[fid] ? ((i,j,k) -> 4.2) : ((i,j,k) -> 0.0)
-        build_dg_flux_terms!(A_vol, RHS_local, fid, ngl, 1.0,0.0,0.0,
-                             is_inflow[fid], is_active[fid], fn, ω,
-                             metrics.dξdx,metrics.dξdy,metrics.dξdz,
-                             metrics.dηdx,metrics.dηdy,metrics.dηdz,
-                             metrics.dζdx,metrics.dζdy,metrics.dζdz,
-                             metrics.Je, iel, I_upwind)
-        println("    fid=$fid (inflow=$(is_inflow[fid])): " *
-                "Δdiag=$(A_vol[p111,p111]-diag_before)  ΔRHS=$(RHS_local[p111]-rhs_before)")
-    end
-
-    println("[5] FINAL, before solve: A_vol[p111,p111]=$(A_vol[p111,p111])  RHS_local[p111]=$(RHS_local[p111])")
-    println("    implied value if p111 were ISOLATED (ignore off-diag coupling): " *
-            "$(RHS_local[p111]/A_vol[p111,p111])")
- 
-    x_local = A_vol \ RHS_local
-    println("[6] ACTUAL solved value at (1,1,1): $(x_local[p111])")
-    println("    exact I0 (should match if (1,1,1) truly sits at the domain's x-inflow wall): 4.2")
-
-
-    return (dg=max_err_dg, cg=max_err_cg)
-end
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  build_mass_diag  (diagonal-only, matching build_mass_matrix!'s NSD_3D,
-#  Inexact convention — under inexact integration the full ψ_p·ψ_q mass
-#  matrix collapses to purely diagonal, same collocation fact already
-#  exploited in build_dg_volume_matrix!'s own reaction term, so extracting
-#  only M[p,p] = ω[i]ω[j]ω[k]*Je avoids building/storing the full,
-#  wastefully mostly-zero (ngl^3,ngl^3) tensor build_mass_matrix! computes)
-# ─────────────────────────────────────────────────────────────────────────────
 
 function test_dg_terms_on_real_element(mesh, metrics, basis, ω, iel::Int; κ_val = 0.5)
     ngl = mesh.ngl
@@ -2690,15 +1631,13 @@ function test_dg_terms_on_real_element(mesh, metrics, basis, ω, iel::Int; κ_va
     # element's actual (much larger) scale? ─────────────────────────────
     npoin_test = ngl^3
     κ        = fill(κ_val, length(mesh.x))
-    σ        = zeros(length(mesh.x))
-    intΦ_eff = zeros(length(mesh.x))
 
     A_vol = zeros(npoin_test, npoin_test)
     build_dg_volume_matrix!(A_vol, iel, 1.0, 0.0, 0.0, ngl, ψ, dψ, ω,
                              metrics.dξdx,metrics.dξdy,metrics.dξdz,
                              metrics.dηdx,metrics.dηdy,metrics.dηdz,
                              metrics.dζdx,metrics.dζdy,metrics.dζdz,
-                             metrics.Je, κ, σ, intΦ_eff, mesh.connijk)
+                             metrics.Je, κ, mesh.connijk)
 
     max_err_vol = 0.0
     for k=1:ngl, j=1:ngl, i=1:ngl
@@ -2774,8 +1713,6 @@ function test_kappa_sweep(mesh, metrics, basis, ω, iel::Int;
     println("─"^90)
 
     npoin_test = ngl^3
-    σ        = zeros(length(mesh.x))
-    intΦ_eff = zeros(length(mesh.x))
 
     is_inflow = Vector{Bool}(undef,6); is_active = Vector{Bool}(undef,6)
     classify_element_faces!(is_inflow, is_active, iel, 1.0, 0.0, 0.0, ngl,
@@ -2792,7 +1729,7 @@ function test_kappa_sweep(mesh, metrics, basis, ω, iel::Int;
                                  metrics.dξdx,metrics.dξdy,metrics.dξdz,
                                  metrics.dηdx,metrics.dηdy,metrics.dηdz,
                                  metrics.dζdx,metrics.dζdy,metrics.dζdz,
-                                 metrics.Je, κ, σ, intΦ_eff, mesh.connijk)
+                                 metrics.Je, κ, mesh.connijk)
 
         for fid = 1:6
             is_active[fid] || continue
@@ -2826,90 +1763,6 @@ function test_kappa_sweep(mesh, metrics, basis, ω, iel::Int;
     end
 end
 
-function test_all_directions_exponential(mesh, metrics, basis, ω; κ_val = 0.0001, I0 = 4.2)
-    ngl = mesh.ngl
-    ψ, dψ = basis.ψ, basis.dψ
-    extra_npoin = mesh.extra_mesh.extra_npoin
-
-    neighbor_elem, neighbor_fid = build_face_adjacency_from_conn_face_el(mesh.nelem, mesh.conn_face_el)
-
-    if isempty(mesh.connijk_dg)
-        connijk_dg, npoin_dg, dg_to_cg, face_correspondence =
-            build_connijk_dg(mesh, neighbor_elem, neighbor_fid)
-        face_neighbor_dg = build_face_neighbor_dg(mesh, connijk_dg, neighbor_elem,
-                                                   neighbor_fid, face_correspondence)
-        mesh.connijk_dg = connijk_dg
-        mesh.npoin_dg = npoin_dg
-        mesh.dg_to_cg = dg_to_cg
-        mesh.face_neighbor_dg = face_neighbor_dg
-    end
-
-    npoin_cg = length(mesh.x)
-    κ        = fill(κ_val, npoin_cg)
-    σ        = zeros(npoin_cg)
-    intΦ_eff = zeros(npoin_cg)
-
-    # Fixed reference point for the BC family — arbitrary but fixed for all
-    # directions, so every direction's exact solution is genuinely
-    # comparable on equal footing (same r_bc, only Ω itself changes).
-    r_bc = (mesh.xmin, mesh.ymin, mesh.zmin)
-
-    println("Testing all $extra_npoin angular directions, κ=$κ_val")
-    println("─"^90)
-    println(rpad("ip_ext",8) * rpad("(Ωx,Ωy,Ωz)",34) * rpad("n_levels",10) * "max abs error")
-    println("─"^90)
-
-    worst_err = 0.0
-    worst_ip_ext = 0
-    all_errs = Float64[]
-
-    for ip_ext = 1:extra_npoin
-        θ = mesh.extra_mesh.extra_coords[1, ip_ext]
-        ϕ = mesh.extra_mesh.extra_coords[2, ip_ext]
-        Ωx = sin(θ)*cos(ϕ); Ωy = sin(θ)*sin(ϕ); Ωz = cos(θ)
-
-        order, levels = build_conforming_sweep_order(Ωx, Ωy, Ωz, mesh.nelem, ngl, neighbor_elem,
-                                                       metrics.dξdx,metrics.dξdy,metrics.dξdz,
-                                                       metrics.dηdx,metrics.dηdy,metrics.dηdz,
-                                                       metrics.dζdx,metrics.dζdy,metrics.dζdz)
-
-        bc_fn = (x,y,z) -> I0*exp(-κ_val*(Ωx*(x-r_bc[1]) + Ωy*(y-r_bc[2]) + Ωz*(z-r_bc[3])))
-
-        x_dg = fill(NaN, mesh.npoin_dg)
-        run_dg_sweep!(x_dg, mesh, metrics, ψ, dψ, ω, Ωx, Ωy, Ωz, order, neighbor_elem,
-                      mesh.connijk_dg, mesh.face_neighbor_dg, κ, σ, intΦ_eff, bc_fn)
-
-        n_nan = count(isnan, x_dg)
-        if n_nan > 0
-            println(rpad(ip_ext,8) * rpad("($Ωx,$Ωy,$Ωz)",34) * rpad(length(unique(levels)),10) *
-                    "⚠ $n_nan UNWRITTEN entries — skipping error calc")
-            continue
-        end
-
-        max_err = 0.0
-        for iel = 1:mesh.nelem, k=1:ngl, j=1:ngl, i=1:ngl
-            g_cg = mesh.connijk[iel,i,j,k]
-            x_,y_,z_ = mesh.x[g_cg], mesh.y[g_cg], mesh.z[g_cg]
-            I_exact = bc_fn(x_,y_,z_)
-            v = x_dg[mesh.connijk_dg[iel,i,j,k]]
-            max_err = max(max_err, abs(v - I_exact))
-        end
-
-        push!(all_errs, max_err)
-        if max_err > worst_err
-            worst_err = max_err; worst_ip_ext = ip_ext
-        end
-        println(rpad(ip_ext,8) * rpad("($(round(Ωx,digits=3)),$(round(Ωy,digits=3)),$(round(Ωz,digits=3)))",34) *
-                rpad(length(unique(levels)),10) * "$max_err")
-    end
-
-    println("─"^90)
-    println("Worst direction: ip_ext=$worst_ip_ext, max abs error = $worst_err")
-    println("Mean error across all directions: $(sum(all_errs)/length(all_errs))")
-    println("Median error: $(sort(all_errs)[length(all_errs)÷2 + 1])")
-
-    return all_errs
-end
 
 """
     build_dg_source_term!(RHS_local, iel, ngl, ω, Je, q, connijk)
@@ -2922,12 +1775,21 @@ argument as the reaction term (see build_dg_volume_matrix! docstring) —
 ADDITIVE, meant to be called alongside build_dg_volume_matrix! and
 build_dg_flux_terms!, never in place of either.
 """
-function build_dg_source_term!(RHS_local::AbstractVector{Float64}, iel::Int, ngl::Int,
+#=function build_dg_source_term!(RHS_local::AbstractVector{Float64}, iel::Int, ngl::Int,
                                 ω, Je, q, connijk)
     @inbounds for k=1:ngl, j=1:ngl, i=1:ngl
         p = lidx(i,j,k,ngl)
         gid = connijk[iel,i,j,k]
         RHS_local[p] += q[gid] * ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
+    end
+    return RHS_local
+end=#
+
+function build_dg_source_term!(RHS_local, iel, ngl, ω, Je, q, connijk)
+    local_q = length(q) == ngl^3
+    @inbounds for k=1:ngl, j=1:ngl, i=1:ngl
+        p = lidx(i,j,k,ngl)
+        RHS_local[p] += (local_q ? q[p] : q[connijk[iel,i,j,k]]) * ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
     end
     return RHS_local
 end
@@ -2946,8 +1808,6 @@ function test_dg_source_term(; ngl::Int = 4, κ_val = 0.7, q_val = 3.5)
 
     npoin_test = ngl^3
     κ        = fill(κ_val, npoin_test)
-    σ        = zeros(npoin_test)
-    intΦ_eff = zeros(npoin_test)
     q        = fill(q_val, npoin_test)
     connijk_1 = Array{Int}(undef,1,ngl,ngl,ngl)
     for k=1:ngl,j=1:ngl,i=1:ngl; connijk_1[1,i,j,k] = lidx(i,j,k,ngl); end
@@ -2957,7 +1817,7 @@ function test_dg_source_term(; ngl::Int = 4, κ_val = 0.7, q_val = 3.5)
     RHS   = zeros(npoin_test)
     build_dg_volume_matrix!(A_vol, 1, 0.0, 0.0, 0.0, ngl, ψ, dψ, ω,
                              dξdx,dξdy,dξdz, dηdx,dηdy,dηdz, dζdx,dζdy,dζdz,
-                             Je, κ, σ, intΦ_eff, connijk_1)
+                             Je, κ, connijk_1)
     build_dg_source_term!(RHS, 1, ngl, ω, Je, q, connijk_1)
 
     # No flux, no BC — with Ω=0 every face is tangential (is_active=false for
@@ -2989,7 +1849,7 @@ function test_scattering_toy_C_single_element(; ngl=4, Δx=1.3, Δy=1.7, Δz=2.1
     for k=1:ngl,j=1:ngl,i=1:ngl; connijk_1[1,i,j,k] = lidx(i,j,k,ngl); end
 
     npoin_test = ngl^3
-    κ = fill(κ_val, npoin_test); σ = zeros(npoin_test); intΦ_eff = zeros(npoin_test)
+    κ = fill(κ_val, npoin_test);
 
     dirs = [(1.0,0.0,0.0), (0.6,0.8,0.0), (0.3,0.5,0.8)][1:n_dir]
     if C === nothing
@@ -3005,7 +1865,7 @@ function test_scattering_toy_C_single_element(; ngl=4, Δx=1.3, Δy=1.7, Δz=2.1
         A_vol = zeros(npoin_test,npoin_test); RHS = zeros(npoin_test)
         build_dg_volume_matrix!(A_vol, 1, Ωx,Ωy,Ωz, ngl, ψ,dψ,ω,
                                  dξdx,dξdy,dξdz, dηdx,dηdy,dηdz, dζdx,dζdy,dζdz,
-                                 Je, κ, σ, intΦ_eff, connijk_1)
+                                 Je, κ, connijk_1)
         is_inflow = Vector{Bool}(undef,6); is_active = Vector{Bool}(undef,6)
         classify_element_faces!(is_inflow, is_active, 1, Ωx,Ωy,Ωz, ngl,
                                  dξdx,dξdy,dξdz, dηdx,dηdy,dηdz, dζdx,dζdy,dζdz)
@@ -3091,7 +1951,7 @@ function test_scattering_toy_C_two_element(; ngl=4, Δx1=1.3, Δx2=3.0, Δy=1.7,
     dζdx2=zeros(1,ngl,ngl,ngl); dζdy2=zeros(1,ngl,ngl,ngl); dζdz2=fill(2/Δz,1,ngl,ngl,ngl)
     Je2a = fill(Je2,1,ngl,ngl,ngl)
 
-    κ = fill(κ_val, npoin_test); σ = zeros(npoin_test); intΦ_eff = zeros(npoin_test)
+    κ = fill(κ_val, npoin_test);
 
     dirs = [(1.0,0.0,0.0), (0.6,0.8,0.0), (0.3,0.5,0.8)][1:n_dir]
     if C === nothing
@@ -3113,7 +1973,7 @@ function test_scattering_toy_C_two_element(; ngl=4, Δx1=1.3, Δx2=3.0, Δy=1.7,
         Av1 = zeros(npoin_test,npoin_test); Rv1 = zeros(npoin_test)
         build_dg_volume_matrix!(Av1, 1, Ωx,Ωy,Ωz, ngl, ψ,dψ,ω,
                                  dξdx1,dξdy1,dξdz1, dηdx1,dηdy1,dηdz1, dζdx1,dζdy1,dζdz1,
-                                 Je1a, κ, σ, intΦ_eff, connijk_1)
+                                 Je1a, κ, connijk_1)
         ii1=Vector{Bool}(undef,6); ia1=Vector{Bool}(undef,6)
         classify_element_faces!(ii1, ia1, 1, Ωx,Ωy,Ωz, ngl, dξdx1,dξdy1,dξdz1, dηdx1,dηdy1,dηdz1, dζdx1,dζdy1,dζdz1)
         for fid=1:6
@@ -3130,7 +1990,7 @@ function test_scattering_toy_C_two_element(; ngl=4, Δx1=1.3, Δx2=3.0, Δy=1.7,
         Av2 = zeros(npoin_test,npoin_test); Rv2 = zeros(npoin_test)
         build_dg_volume_matrix!(Av2, 1, Ωx,Ωy,Ωz, ngl, ψ,dψ,ω,
                                  dξdx2,dξdy2,dξdz2, dηdx2,dηdy2,dηdz2, dζdx2,dζdy2,dζdz2,
-                                 Je2a, κ, σ, intΦ_eff, connijk_1)
+                                 Je2a, κ, connijk_1)
         ii2=Vector{Bool}(undef,6); ia2=Vector{Bool}(undef,6)
         classify_element_faces!(ii2, ia2, 1, Ωx,Ωy,Ωz, ngl, dξdx2,dξdy2,dξdz2, dηdx2,dηdy2,dηdz2, dζdx2,dζdy2,dζdz2)
         for fid=1:6
@@ -3271,435 +2131,6 @@ function test_scattering_isotropic_two_element(; ngl=4, Δx1=1.3, Δx2=3.0, Δy=
     return max_err_vs_direct, max_dev_from_I0
 end
 
-function test_scattering_exact_ode_v2(; ngl=4, Δx1=1.3, Δx2=3.0, Δy=1.7, Δz=2.1,
-                                       n_dir=3, κ_val=0.5, σ_val=0.5, I0=4.2,
-                                       max_iter=200, tol=1e-10)
-    dirs = [(1.0,0.0,0.0), (0.85,0.0,0.0), (0.6,0.0,0.0)][1:n_dir]
-
-    # ── Build the 2-element toy mesh once — same pattern as test_dg_reconciliation ──
-    lgl   = basis_structs_ξ_ω!(LGL(), ngl-1, CPU())
-    basis = build_Interpolation_basis!(LagrangeBasis(), lgl.ξ, lgl.ξ, Float64, CPU())
-    ψ, dψ, ω = basis.ψ, basis.dψ, lgl.ω
-
-    m = build_toy_structured_mesh(2, 1, 1, ngl, Δx1, Δy, Δz)  # NOTE: uniform Δx across both
-                                                                # elements here — build_toy_structured_mesh
-                                                                # doesn't support per-element sizing, so
-                                                                # Δx1==Δx2 required for this rewrite (flagged below)
-    npoin_cg = m.npoin
-    npoin_test = ngl^3
-
-    κ = fill(κ_val, npoin_cg); σz = zeros(npoin_cg); intΦ_eff = zeros(npoin_cg)
-    C = fill(σ_val/n_dir, n_dir, n_dir)
-
-    neighbor_elem, neighbor_fid = build_face_adjacency_from_conn_face_el(m.nelem, m.conn_face_el)
-    connijk_dg, npoin_dg, dg_to_cg, face_correspondence = build_connijk_dg(m, neighbor_elem, neighbor_fid)
-    face_neighbor_dg = build_face_neighbor_dg(m, connijk_dg, neighbor_elem, neighbor_fid, face_correspondence)
-
-    orders = [build_conforming_sweep_order(d..., m.nelem, ngl, neighbor_elem,
-                  m.dξdx,m.dξdy,m.dξdz, m.dηdx,m.dηdy,m.dηdz, m.dζdx,m.dζdy,m.dζdz)[1] for d in dirs]
-
-    metrics_nt = (dξdx=m.dξdx,dξdy=m.dξdy,dξdz=m.dξdz,
-                  dηdx=m.dηdx,dηdy=m.dηdy,dηdz=m.dηdz,
-                  dζdx=m.dζdx,dζdy=m.dζdy,dζdz=m.dζdz, Je=m.Je)
-    bc_fn = (x,y,z) -> I0   # flat — genuine domain boundary only (fid=5 on element 1)
-
-    # ── Iterative solve, through the ACTUAL production sweep ────────────────
-    I_cg_all = [zeros(npoin_cg) for _ = 1:n_dir]
-    for it = 1:max_iter
-        max_delta = 0.0
-        for k = 1:n_dir
-            Ωx,Ωy,Ωz = dirs[k]
-            q_k = zeros(npoin_cg)
-            for mm = 1:n_dir
-                C[k,mm] == 0.0 && continue
-                q_k .+= C[k,mm] .* I_cg_all[mm]
-            end
-            x_dg = fill(NaN, npoin_dg)
-            run_dg_sweep!(x_dg, m, metrics_nt, ψ, dψ, ω, Ωx, Ωy, Ωz, orders[k], neighbor_elem,
-                          connijk_dg, face_neighbor_dg, κ, σz, intΦ_eff, bc_fn; extra_source=q_k)
-            I_new = zeros(npoin_cg)
-            for iel = 1:m.nelem, kk=1:ngl, jj=1:ngl, ii=1:ngl
-                I_new[m.connijk[iel,ii,jj,kk]] = x_dg[connijk_dg[iel,ii,jj,kk]]
-            end
-            max_delta = max(max_delta, maximum(abs.(I_new .- I_cg_all[k])))
-            I_cg_all[k] = I_new
-        end
-        max_delta < tol && (println("Converged after $it iterations, max_delta=$max_delta"); break)
-        it == max_iter && @warn "Did not converge (max_delta=$max_delta)"
-    end
-
-    # ── Exact solution via matrix exponential (unchanged derivation) ────────
-    μ = [d[1] for d in dirs]
-    M = Diagonal(μ)
-    A = -inv(M) * (κ_val*I(n_dir) - (σ_val/n_dir)*ones(n_dir,n_dir))
-    x0 = m.xmin
-    I_exact_at(x) = exp(A*(x-x0)) * (I0*ones(n_dir))
-
-    max_dev = 0.0
-    for k = 1:n_dir
-        for iel = 1:m.nelem, i=1:ngl, j=1:ngl, kk=1:ngl
-            g = m.connijk[iel,i,j,kk]
-            I_ex = I_exact_at(m.x[g])[k]
-            max_dev = max(max_dev, abs(I_cg_all[k][g] - I_ex))
-        end
-    end
-    println("Max deviation from EXACT ODE solution (via run_dg_sweep!): $max_dev")
-    return max_dev
-end
-
-function test_manufactured_isotropic(mesh, metrics, basis, ω;
-                                      I0=4.2, A=1.0, b=0.1, c=0.1, d=0.1,
-                                      κ_val=0.001, σ_val=0.0005,
-                                      max_iter=500, tol=1e-9)
-    ngl = mesh.ngl
-    ψ, dψ = basis.ψ, basis.dψ
-    extra_npoin = mesh.extra_mesh.extra_npoin
-    npoin_cg = length(mesh.x)
-
-    # ── Domain extent, one full period across the whole mesh ───────────────
-    Lx = mesh.xmax - mesh.xmin; Ly = mesh.ymax - mesh.ymin; Lz = mesh.zmax - mesh.zmin
-    kx = 2π/Lx; ky = 2π/Ly; kz = 2π/Lz
-
-    # ── Manufactured solution and its EXACT analytic gradient ──────────────
-    I_manuf(x,y,z,Ωx,Ωy,Ωz) = I0 + A*sin(kx*x+ky*y+kz*z)*(1+b*Ωx+c*Ωy+d*Ωz)
-    # ∇I = A*(kx,ky,kz)*cos(kx x+ky y+kz z)*(1+bΩx+cΩy+dΩz)  — exact, by hand
-    dI_manuf(x,y,z,Ωx,Ωy,Ωz) = A*cos(kx*x+ky*y+kz*z)*(1+b*Ωx+c*Ωy+d*Ωz) .* (kx,ky,kz)
-
-    # ── Angular quadrature: directions + weights from extra_mesh ────────────
-    dirs = Vector{NTuple{3,Float64}}(undef, extra_npoin)
-    for ip_ext = 1:extra_npoin
-        θ = mesh.extra_mesh.extra_coords[1, ip_ext]
-        ϕ = mesh.extra_mesh.extra_coords[2, ip_ext]
-        dirs[ip_ext] = (sin(θ)*cos(ϕ), sin(θ)*sin(ϕ), cos(θ))
-    end
-    w_ext = zeros(Float64, extra_npoin)
-    for e_ext = 1:mesh.extra_mesh.extra_nelem
-        nop = mesh.extra_mesh.extra_nop[e_ext]
-        for iθ = 1:nop+1, iϕ = 1:nop+1
-            ip_ext = mesh.extra_mesh.extra_connijk[e_ext, iθ, iϕ]
-            Je_ang = mesh.extra_mesh.extra_metrics.Je[e_ext, iθ, iϕ]
-            w_ext[ip_ext] += Je_ang * mesh.extra_mesh.ωθ[iθ] * mesh.extra_mesh.ωθ[iϕ]
-        end
-    end
-    W = sum(w_ext)
-    C = [σ_val*w_ext[m]/W for k=1:extra_npoin, m=1:extra_npoin]   # isotropic — same for every (k,m)
-
-    # ── Mesh infrastructure (build/reuse, as before) ────────────────────────
-    neighbor_elem, neighbor_fid = build_face_adjacency_from_conn_face_el(mesh.nelem, mesh.conn_face_el)
-    if isempty(mesh.connijk_dg)
-        connijk_dg, npoin_dg, dg_to_cg, face_correspondence =
-            build_connijk_dg(mesh, neighbor_elem, neighbor_fid)
-        face_neighbor_dg = build_face_neighbor_dg(mesh, connijk_dg, neighbor_elem,
-                                                   neighbor_fid, face_correspondence)
-        mesh.connijk_dg = connijk_dg; mesh.npoin_dg = npoin_dg
-        mesh.dg_to_cg = dg_to_cg; mesh.face_neighbor_dg = face_neighbor_dg
-    end
-
-    κ = fill(κ_val, npoin_cg); σz = zeros(npoin_cg); intΦ_eff = zeros(npoin_cg)
-    orders = [build_conforming_sweep_order(d..., mesh.nelem, ngl, neighbor_elem,
-                  metrics.dξdx,metrics.dξdy,metrics.dξdz,
-                  metrics.dηdx,metrics.dηdy,metrics.dηdz,
-                  metrics.dζdx,metrics.dζdy,metrics.dζdz)[1] for d in dirs]
-
-    # ── Per-direction EXTERNAL source q_ext, computed ONCE from the exact
-    # manufactured solution — fixed for the whole run, independent of iteration ──
-    q_ext_all = [zeros(npoin_cg) for _ = 1:extra_npoin]
-    for k = 1:extra_npoin
-        Ωx,Ωy,Ωz = dirs[k]
-        for g = 1:npoin_cg
-            x_,y_,z_ = mesh.x[g], mesh.y[g], mesh.z[g]
-            grad = dI_manuf(x_,y_,z_,Ωx,Ωy,Ωz)
-            Ω_dot_grad = Ωx*grad[1] + Ωy*grad[2] + Ωz*grad[3]
-            I_true = I_manuf(x_,y_,z_,Ωx,Ωy,Ωz)
-            scatter_true = sum(C[k,m]*I_manuf(x_,y_,z_,dirs[m]...) for m = 1:extra_npoin)
-            q_ext_all[k][g] = Ω_dot_grad + κ_val*I_true - scatter_true
-        end
-    end
-
-    bc_fn_all = [(x,y,z) -> I_manuf(x,y,z,dirs[k]...) for k = 1:extra_npoin]
-
-    # ── Iterative solve ──────────────────────────────────────────────────────
-    I_cg_all = [zeros(npoin_cg) for _ = 1:extra_npoin]
-    for it = 1:max_iter
-        max_delta = 0.0
-        for k = 1:extra_npoin
-            Ωx,Ωy,Ωz = dirs[k]
-            q_k = copy(q_ext_all[k])
-            for mm = 1:extra_npoin
-                C[k,mm] == 0.0 && continue
-                q_k .+= C[k,mm] .* I_cg_all[mm]
-            end
-            x_dg = fill(NaN, mesh.npoin_dg)
-            run_dg_sweep!(x_dg, mesh, metrics, ψ, dψ, ω, Ωx, Ωy, Ωz, orders[k], neighbor_elem,
-                          mesh.connijk_dg, mesh.face_neighbor_dg, κ, σz, intΦ_eff, bc_fn_all[k];
-                          extra_source=q_k)
-            I_new = zeros(npoin_cg)
-            for iel = 1:mesh.nelem, kk=1:ngl, jj=1:ngl, ii=1:ngl
-                I_new[mesh.connijk[iel,ii,jj,kk]] = x_dg[mesh.connijk_dg[iel,ii,jj,kk]]
-            end
-            max_delta = max(max_delta, maximum(abs.(I_new .- I_cg_all[k])))
-            I_cg_all[k] = I_new
-        end
-        println("  iter $it: max_delta=$max_delta")
-        max_delta < tol && (println("Converged after $it iterations"); break)
-        it == max_iter && @warn "Did not converge (max_delta=$max_delta)"
-    end
-
-    # ── Compare against the EXACT manufactured solution everywhere ──────────
-    max_err = 0.0
-    for k = 1:extra_npoin
-        Ωx,Ωy,Ωz = dirs[k]
-        for g = 1:npoin_cg
-            I_true = I_manuf(mesh.x[g],mesh.y[g],mesh.z[g],Ωx,Ωy,Ωz)
-            max_err = max(max_err, abs(I_cg_all[k][g] - I_true))
-        end
-    end
-    println("Manufactured solution (isotropic) — max abs error over all points, all directions: $max_err")
-    return max_err
-end
-
-function test_manufactured_HG(mesh, metrics, basis, ω;
-                               I0=4.2, A=1.0, b=0.1, c=0.1, d=0.1,
-                               κ_val=0.001, σ_val=0.0005, g=0.7,
-                               max_iter=500, tol=1e-9)
-    ngl = mesh.ngl
-    ψ, dψ = basis.ψ, basis.dψ
-    extra_npoin = mesh.extra_mesh.extra_npoin
-    npoin_cg = length(mesh.x)
-
-    Lx = mesh.xmax - mesh.xmin; Ly = mesh.ymax - mesh.ymin; Lz = mesh.zmax - mesh.zmin
-    kx = 2π/Lx; ky = 2π/Ly; kz = 2π/Lz
-
-    # Same manufactured ansatz as the isotropic test — deliberately UNCHANGED,
-    # so this test isolates ONLY the new thing: C built from a genuinely
-    # direction-pair-dependent phase function, not a richer I itself.
-    I_manuf(x,y,z,Ωx,Ωy,Ωz) = I0 + A*sin(kx*x+ky*y+kz*z)*(1+b*Ωx+c*Ωy+d*Ωz)
-    dI_manuf(x,y,z,Ωx,Ωy,Ωz) = A*cos(kx*x+ky*y+kz*z)*(1+b*Ωx+c*Ωy+d*Ωz) .* (kx,ky,kz)
-
-    dirs = Vector{NTuple{3,Float64}}(undef, extra_npoin)
-    for ip_ext = 1:extra_npoin
-        θ = mesh.extra_mesh.extra_coords[1, ip_ext]
-        ϕ = mesh.extra_mesh.extra_coords[2, ip_ext]
-        dirs[ip_ext] = (sin(θ)*cos(ϕ), sin(θ)*sin(ϕ), cos(θ))
-    end
-    w_ext = zeros(Float64, extra_npoin)
-    for e_ext = 1:mesh.extra_mesh.extra_nelem
-        nop = mesh.extra_mesh.extra_nop[e_ext]
-        for iθ = 1:nop+1, iϕ = 1:nop+1
-            ip_ext = mesh.extra_mesh.extra_connijk[e_ext, iθ, iϕ]
-            Je_ang = mesh.extra_mesh.extra_metrics.Je[e_ext, iθ, iϕ]
-            w_ext[ip_ext] += Je_ang * mesh.extra_mesh.ωθ[iθ] * mesh.extra_mesh.ωθ[iϕ]
-        end
-    end
-
-    # ── Henyey-Greenstein phase function, genuinely pairwise — the new piece ──
-    # Φ_HG(cosΘ) = (1-g²) / (4π(1+g²-2g·cosΘ)^{3/2}), cosΘ = Ω_k·Ω_m (both
-    # already unit vectors, so the dot product IS cosΘ directly, no arccos
-    # needed). NOT normalized to Σ_m C[k,m]=σ exactly by construction — per
-    # the design principle established for the isotropic test, this doesn't
-    # need to match the continuum ∫Φ dΩ'=1 exactly; q_ext is built from this
-    # SAME discrete C, so self-consistency (not continuum-exactness) is what
-    # correctness actually requires here.
-    function Φ_HG(cosΘ, g)
-        return (1 - g^2) / (4π * (1 + g^2 - 2*g*cosΘ)^1.5)
-    end
-
-    C = zeros(extra_npoin, extra_npoin)
-    for k = 1:extra_npoin, m = 1:extra_npoin
-        cosΘ = dirs[k][1]*dirs[m][1] + dirs[k][2]*dirs[m][2] + dirs[k][3]*dirs[m][3]
-        C[k,m] = σ_val * w_ext[m] * Φ_HG(cosΘ, g)
-    end
-
-    neighbor_elem, neighbor_fid = build_face_adjacency_from_conn_face_el(mesh.nelem, mesh.conn_face_el)
-    if isempty(mesh.connijk_dg)
-        connijk_dg, npoin_dg, dg_to_cg, face_correspondence =
-            build_connijk_dg(mesh, neighbor_elem, neighbor_fid)
-        face_neighbor_dg = build_face_neighbor_dg(mesh, connijk_dg, neighbor_elem,
-                                                   neighbor_fid, face_correspondence)
-        mesh.connijk_dg = connijk_dg; mesh.npoin_dg = npoin_dg
-        mesh.dg_to_cg = dg_to_cg; mesh.face_neighbor_dg = face_neighbor_dg
-    end
-
-    κ = fill(κ_val, npoin_cg); σz = zeros(npoin_cg); intΦ_eff = zeros(npoin_cg)
-    orders = [build_conforming_sweep_order(dirs[k]..., mesh.nelem, ngl, neighbor_elem,
-                  metrics.dξdx,metrics.dξdy,metrics.dξdz,
-                  metrics.dηdx,metrics.dηdy,metrics.dηdz,
-                  metrics.dζdx,metrics.dζdy,metrics.dζdz)[1] for k = 1:extra_npoin]
-
-    q_ext_all = [zeros(npoin_cg) for _ = 1:extra_npoin]
-    for k = 1:extra_npoin
-        Ωx,Ωy,Ωz = dirs[k]
-        for gnode = 1:npoin_cg
-            x_,y_,z_ = mesh.x[gnode], mesh.y[gnode], mesh.z[gnode]
-            grad = dI_manuf(x_,y_,z_,Ωx,Ωy,Ωz)
-            Ω_dot_grad = Ωx*grad[1] + Ωy*grad[2] + Ωz*grad[3]
-            I_true = I_manuf(x_,y_,z_,Ωx,Ωy,Ωz)
-            scatter_true = sum(C[k,m]*I_manuf(x_,y_,z_,dirs[m]...) for m = 1:extra_npoin)
-            q_ext_all[k][gnode] = Ω_dot_grad + κ_val*I_true - scatter_true
-        end
-    end
-
-    bc_fn_all = [(x,y,z) -> I_manuf(x,y,z,dirs[k]...) for k = 1:extra_npoin]
-
-    I_cg_all = [zeros(npoin_cg) for _ = 1:extra_npoin]
-    for it = 1:max_iter
-        max_delta = 0.0
-        for k = 1:extra_npoin
-            Ωx,Ωy,Ωz = dirs[k]
-            q_k = copy(q_ext_all[k])
-            for mm = 1:extra_npoin
-                C[k,mm] == 0.0 && continue
-                q_k .+= C[k,mm] .* I_cg_all[mm]
-            end
-            x_dg = fill(NaN, mesh.npoin_dg)
-            run_dg_sweep!(x_dg, mesh, metrics, ψ, dψ, ω, Ωx, Ωy, Ωz, orders[k], neighbor_elem,
-                          mesh.connijk_dg, mesh.face_neighbor_dg, κ, σz, intΦ_eff, bc_fn_all[k];
-                          extra_source=q_k)
-            I_new = zeros(npoin_cg)
-            for iel = 1:mesh.nelem, kk=1:ngl, jj=1:ngl, ii=1:ngl
-                I_new[mesh.connijk[iel,ii,jj,kk]] = x_dg[mesh.connijk_dg[iel,ii,jj,kk]]
-            end
-            max_delta = max(max_delta, maximum(abs.(I_new .- I_cg_all[k])))
-            I_cg_all[k] = I_new
-        end
-        println("  iter $it: max_delta=$max_delta")
-        max_delta < tol && (println("Converged after $it iterations"); break)
-        it == max_iter && @warn "Did not converge (max_delta=$max_delta)"
-    end
-
-    max_err = 0.0
-    for k = 1:extra_npoin
-        Ωx,Ωy,Ωz = dirs[k]
-        for gnode = 1:npoin_cg
-            I_true = I_manuf(mesh.x[gnode],mesh.y[gnode],mesh.z[gnode],Ωx,Ωy,Ωz)
-            max_err = max(max_err, abs(I_cg_all[k][gnode] - I_true))
-        end
-    end
-    println("Manufactured solution (Henyey-Greenstein, g=$g) — max abs error: $max_err")
-    return max_err
-end
-
-function test_manufactured_HG_angular_convergence(mesh, metrics, basis, ω;
-                                                   I0=4.2, A=1.0,
-                                                   g_manuf=0.6,        # peakedness of the MANUFACTURED angular shape
-                                                   Ω_ref=(0.0,0.0,1.0), # fixed reference direction for that shape
-                                                   κ_val=0.001, σ_val=0.0005, g_scatter=0.7,
-                                                   max_iter=500, tol=1e-9)
-    ngl = mesh.ngl
-    ψ, dψ = basis.ψ, basis.dψ
-    extra_npoin = mesh.extra_mesh.extra_npoin
-    npoin_cg = length(mesh.x)
-
-    Lx = mesh.xmax - mesh.xmin; Ly = mesh.ymax - mesh.ymin; Lz = mesh.zmax - mesh.zmin
-    kx = 2π/Lx; ky = 2π/Ly; kz = 2π/Lz
-
-    # Angular factor: Φ_HG(Ω·Ω_ref) itself — genuinely NON-polynomial in Ω,
-    # so no finite-degree angular quadrature integrates it exactly. This is
-    # the deliberate difference from the earlier linear/quadratic attempts.
-    Φ_HG(cosΘ, gg) = (1 - gg^2) / (4π * (1 + gg^2 - 2*gg*cosΘ)^1.5)
-    angular_shape(Ωx,Ωy,Ωz) = Φ_HG(Ωx*Ω_ref[1]+Ωy*Ω_ref[2]+Ωz*Ω_ref[3], g_manuf)
-
-    I_manuf(x,y,z,Ωx,Ωy,Ωz) = I0 + A*sin(kx*x+ky*y+kz*z)*angular_shape(Ωx,Ωy,Ωz)
-
-    # ── Analytic spatial gradient — angular_shape has NO x,y,z dependence,
-    # so this factors out cleanly, same structure as before ────────────────
-    dI_manuf(x,y,z,Ωx,Ωy,Ωz) = A*cos(kx*x+ky*y+kz*z)*angular_shape(Ωx,Ωy,Ωz) .* (kx,ky,kz)
-
-    dirs = Vector{NTuple{3,Float64}}(undef, extra_npoin)
-    for ip_ext = 1:extra_npoin
-        θ = mesh.extra_mesh.extra_coords[1, ip_ext]
-        ϕ = mesh.extra_mesh.extra_coords[2, ip_ext]
-        dirs[ip_ext] = (sin(θ)*cos(ϕ), sin(θ)*sin(ϕ), cos(θ))
-    end
-    w_ext = zeros(Float64, extra_npoin)
-    for e_ext = 1:mesh.extra_mesh.extra_nelem
-        nop = mesh.extra_mesh.extra_nop[e_ext]
-        for iθ = 1:nop+1, iϕ = 1:nop+1
-            ip_ext = mesh.extra_mesh.extra_connijk[e_ext, iθ, iϕ]
-            Je_ang = mesh.extra_mesh.extra_metrics.Je[e_ext, iθ, iϕ]
-            w_ext[ip_ext] += Je_ang * mesh.extra_mesh.ωθ[iθ] * mesh.extra_mesh.ωθ[iϕ]
-        end
-    end
-
-    C = zeros(extra_npoin, extra_npoin)
-    for k = 1:extra_npoin, m = 1:extra_npoin
-        cosΘ_km = dirs[k][1]*dirs[m][1] + dirs[k][2]*dirs[m][2] + dirs[k][3]*dirs[m][3]
-        C[k,m] = σ_val * w_ext[m] * Φ_HG(cosΘ_km, g_scatter)
-    end
-
-    for k in [1, extra_npoin÷2, extra_npoin]
-    	println("k=$k: sum(C[k,:]) = $(sum(C[k,:]))  (target ≈ σ_val=$σ_val for a well-resolved quadrature)")
-    end
-
-
-    neighbor_elem, neighbor_fid = build_face_adjacency_from_conn_face_el(mesh.nelem, mesh.conn_face_el)
-    if isempty(mesh.connijk_dg)
-        connijk_dg, npoin_dg, dg_to_cg, face_correspondence =
-            build_connijk_dg(mesh, neighbor_elem, neighbor_fid)
-        face_neighbor_dg = build_face_neighbor_dg(mesh, connijk_dg, neighbor_elem,
-                                                   neighbor_fid, face_correspondence)
-        mesh.connijk_dg = connijk_dg; mesh.npoin_dg = npoin_dg
-        mesh.dg_to_cg = dg_to_cg; mesh.face_neighbor_dg = face_neighbor_dg
-    end
-
-    κ = fill(κ_val, npoin_cg); σz = zeros(npoin_cg); intΦ_eff = zeros(npoin_cg)
-    orders = [build_conforming_sweep_order(dirs[k]..., mesh.nelem, ngl, neighbor_elem,
-                  metrics.dξdx,metrics.dξdy,metrics.dξdz,
-                  metrics.dηdx,metrics.dηdy,metrics.dηdz,
-                  metrics.dζdx,metrics.dζdy,metrics.dζdz)[1] for k = 1:extra_npoin]
-
-    q_ext_all = [zeros(npoin_cg) for _ = 1:extra_npoin]
-    for k = 1:extra_npoin
-        Ωx,Ωy,Ωz = dirs[k]
-        for gnode = 1:npoin_cg
-            x_,y_,z_ = mesh.x[gnode], mesh.y[gnode], mesh.z[gnode]
-            grad = dI_manuf(x_,y_,z_,Ωx,Ωy,Ωz)
-            Ω_dot_grad = Ωx*grad[1] + Ωy*grad[2] + Ωz*grad[3]
-            I_true = I_manuf(x_,y_,z_,Ωx,Ωy,Ωz)
-            scatter_true = sum(C[k,m]*I_manuf(x_,y_,z_,dirs[m]...) for m = 1:extra_npoin)
-            q_ext_all[k][gnode] = Ω_dot_grad + κ_val*I_true - scatter_true
-        end
-    end
-
-    bc_fn_all = [(x,y,z) -> I_manuf(x,y,z,dirs[k]...) for k = 1:extra_npoin]
-
-    I_cg_all = [zeros(npoin_cg) for _ = 1:extra_npoin]
-    for it = 1:max_iter
-        max_delta = 0.0
-        for k = 1:extra_npoin
-            Ωx,Ωy,Ωz = dirs[k]
-            q_k = copy(q_ext_all[k])
-            for mm = 1:extra_npoin
-                C[k,mm] == 0.0 && continue
-                q_k .+= C[k,mm] .* I_cg_all[mm]
-            end
-            x_dg = fill(NaN, mesh.npoin_dg)
-            run_dg_sweep!(x_dg, mesh, metrics, ψ, dψ, ω, Ωx, Ωy, Ωz, orders[k], neighbor_elem,
-                          mesh.connijk_dg, mesh.face_neighbor_dg, κ, σz, intΦ_eff, bc_fn_all[k];
-                          extra_source=q_k)
-            I_new = zeros(npoin_cg)
-            for iel = 1:mesh.nelem, kk=1:ngl, jj=1:ngl, ii=1:ngl
-                I_new[mesh.connijk[iel,ii,jj,kk]] = x_dg[mesh.connijk_dg[iel,ii,jj,kk]]
-            end
-            max_delta = max(max_delta, maximum(abs.(I_new .- I_cg_all[k])))
-            I_cg_all[k] = I_new
-        end
-        max_delta < tol && (println("Converged after $it iterations"); break)
-        it == max_iter && @warn "Did not converge (max_delta=$max_delta)"
-    end
-
-    max_err = 0.0
-    for k = 1:extra_npoin
-        Ωx,Ωy,Ωz = dirs[k]
-        for gnode = 1:npoin_cg
-            I_true = I_manuf(mesh.x[gnode],mesh.y[gnode],mesh.z[gnode],Ωx,Ωy,Ωz)
-            max_err = max(max_err, abs(I_cg_all[k][gnode] - I_true))
-        end
-    end
-    println("Manufactured HG (non-polynomial angular shape) — max abs error: $max_err")
-    return max_err
-end
-
 # ─────────────────────────────────────────────────────────────────────────────
 #  Mie-like proxy phase function — NOT a real Mie calculation. Built to mimic
 #  the two features that make genuine Mie phase functions hard for angular
@@ -3719,265 +2150,6 @@ function Φ_mie_like(cosΘ; g1=0.85, g2=-0.2, f=0.9, ripple_N=8, ripple_ε=0.25)
     Θ = acos(clamp(cosΘ, -1.0, 1.0))
     ripple = 1 + ripple_ε*cos(ripple_N*Θ)
     return envelope * ripple
-end
-
-function test_manufactured_mie_like(mesh, metrics, basis, ω;
-                                     I0=4.2, A=1.0,
-                                     Ω_ref=(0.0,0.0,1.0),
-                                     κ_val=0.001, σ_val=0.0005,
-                                     mie_kwargs = (g1=0.85, g2=-0.2, f=0.9, ripple_N=8, ripple_ε=0.25),
-                                     max_iter=500, tol=1e-9)
-    ngl = mesh.ngl
-    ψ, dψ = basis.ψ, basis.dψ
-    extra_npoin = mesh.extra_mesh.extra_npoin
-    npoin_cg = length(mesh.x)
-
-    Lx = mesh.xmax - mesh.xmin; Ly = mesh.ymax - mesh.ymin; Lz = mesh.zmax - mesh.zmin
-    kx = 2π/Lx; ky = 2π/Ly; kz = 2π/Lz
-
-    angular_shape(Ωx,Ωy,Ωz) = Φ_mie_like(Ωx*Ω_ref[1]+Ωy*Ω_ref[2]+Ωz*Ω_ref[3]; mie_kwargs...)
-    I_manuf(x,y,z,Ωx,Ωy,Ωz) = I0 + A*sin(kx*x+ky*y+kz*z)*angular_shape(Ωx,Ωy,Ωz)
-    dI_manuf(x,y,z,Ωx,Ωy,Ωz) = A*cos(kx*x+ky*y+kz*z)*angular_shape(Ωx,Ωy,Ωz) .* (kx,ky,kz)
-
-    # ── Honesty check: report where this proxy dips negative, since it's
-    # not built to guarantee positivity (see docstring above) ──────────────
-    sample_cosΘ = range(-1.0, 1.0, length=200)
-    sample_vals = [Φ_mie_like(c; mie_kwargs...) for c in sample_cosΘ]
-    println("Φ_mie_like sample range: [$(minimum(sample_vals)), $(maximum(sample_vals))]" *
-            (minimum(sample_vals) < 0 ? "  ⚠ goes negative — non-physical, fine for this " *
-             "numerical stress test but flagged for honesty" : ""))
-
-    dirs = Vector{NTuple{3,Float64}}(undef, extra_npoin)
-    for ip_ext = 1:extra_npoin
-        θ = mesh.extra_mesh.extra_coords[1, ip_ext]
-        ϕ = mesh.extra_mesh.extra_coords[2, ip_ext]
-        dirs[ip_ext] = (sin(θ)*cos(ϕ), sin(θ)*sin(ϕ), cos(θ))
-    end
-    w_ext = zeros(Float64, extra_npoin)
-    for e_ext = 1:mesh.extra_mesh.extra_nelem
-        nop = mesh.extra_mesh.extra_nop[e_ext]
-        for iθ = 1:nop+1, iϕ = 1:nop+1
-            ip_ext = mesh.extra_mesh.extra_connijk[e_ext, iθ, iϕ]
-            Je_ang = mesh.extra_mesh.extra_metrics.Je[e_ext, iθ, iϕ]
-            w_ext[ip_ext] += Je_ang * mesh.extra_mesh.ωθ[iθ] * mesh.extra_mesh.ωθ[iϕ]
-        end
-    end
-
-    C = zeros(extra_npoin, extra_npoin)
-    for k = 1:extra_npoin, m = 1:extra_npoin
-        cosΘ_km = dirs[k][1]*dirs[m][1] + dirs[k][2]*dirs[m][2] + dirs[k][3]*dirs[m][3]
-        C[k,m] = σ_val * w_ext[m] * Φ_mie_like(cosΘ_km; mie_kwargs...)
-    end
-
-    for kcheck in [1, extra_npoin÷2, extra_npoin]
-        println("k=$kcheck: sum(C[k,:]) = $(sum(C[kcheck,:]))  (target ≈ σ_val=$σ_val)")
-    end
-
-    neighbor_elem, neighbor_fid = build_face_adjacency_from_conn_face_el(mesh.nelem, mesh.conn_face_el)
-    if isempty(mesh.connijk_dg)
-        connijk_dg, npoin_dg, dg_to_cg, face_correspondence =
-            build_connijk_dg(mesh, neighbor_elem, neighbor_fid)
-        face_neighbor_dg = build_face_neighbor_dg(mesh, connijk_dg, neighbor_elem,
-                                                   neighbor_fid, face_correspondence)
-        mesh.connijk_dg = connijk_dg; mesh.npoin_dg = npoin_dg
-        mesh.dg_to_cg = dg_to_cg; mesh.face_neighbor_dg = face_neighbor_dg
-    end
-
-    κ = fill(κ_val, npoin_cg); σz = zeros(npoin_cg); intΦ_eff = zeros(npoin_cg)
-    orders = [build_conforming_sweep_order(dirs[k]..., mesh.nelem, ngl, neighbor_elem,
-                  metrics.dξdx,metrics.dξdy,metrics.dξdz,
-                  metrics.dηdx,metrics.dηdy,metrics.dηdz,
-                  metrics.dζdx,metrics.dζdy,metrics.dζdz)[1] for k = 1:extra_npoin]
-
-    q_ext_all = [zeros(npoin_cg) for _ = 1:extra_npoin]
-    for k = 1:extra_npoin
-        Ωx,Ωy,Ωz = dirs[k]
-        for gnode = 1:npoin_cg
-            x_,y_,z_ = mesh.x[gnode], mesh.y[gnode], mesh.z[gnode]
-            grad = dI_manuf(x_,y_,z_,Ωx,Ωy,Ωz)
-            Ω_dot_grad = Ωx*grad[1] + Ωy*grad[2] + Ωz*grad[3]
-            I_true = I_manuf(x_,y_,z_,Ωx,Ωy,Ωz)
-            scatter_true = sum(C[k,m]*I_manuf(x_,y_,z_,dirs[m]...) for m = 1:extra_npoin)
-            q_ext_all[k][gnode] = Ω_dot_grad + κ_val*I_true - scatter_true
-        end
-    end
-
-    bc_fn_all = [(x,y,z) -> I_manuf(x,y,z,dirs[k]...) for k = 1:extra_npoin]
-
-    I_cg_all = [zeros(npoin_cg) for _ = 1:extra_npoin]
-    diverged = false
-    for it = 1:max_iter
-        max_delta = 0.0
-        for k = 1:extra_npoin
-            Ωx,Ωy,Ωz = dirs[k]
-            q_k = copy(q_ext_all[k])
-            for mm = 1:extra_npoin
-                C[k,mm] == 0.0 && continue
-                q_k .+= C[k,mm] .* I_cg_all[mm]
-            end
-            x_dg = fill(NaN, mesh.npoin_dg)
-            run_dg_sweep!(x_dg, mesh, metrics, ψ, dψ, ω, Ωx, Ωy, Ωz, orders[k], neighbor_elem,
-                          mesh.connijk_dg, mesh.face_neighbor_dg, κ, σz, intΦ_eff, bc_fn_all[k];
-                          extra_source=q_k)
-            I_new = zeros(npoin_cg)
-            for iel = 1:mesh.nelem, kk=1:ngl, jj=1:ngl, ii=1:ngl
-                I_new[mesh.connijk[iel,ii,jj,kk]] = x_dg[mesh.connijk_dg[iel,ii,jj,kk]]
-            end
-            max_delta = max(max_delta, maximum(abs.(I_new .- I_cg_all[k])))
-            I_cg_all[k] = I_new
-        end
-        if !isfinite(max_delta) || max_delta > 1e10
-            println("DIVERGED at iteration $it (max_delta=$max_delta) — aborting")
-            diverged = true
-            break
-        end
-        max_delta < tol && (println("Converged after $it iterations"); break)
-        it == max_iter && @warn "Did not converge (max_delta=$max_delta)"
-    end
-    diverged && return Inf
-
-    max_err = 0.0
-    for k = 1:extra_npoin
-        Ωx,Ωy,Ωz = dirs[k]
-        for gnode = 1:npoin_cg
-            I_true = I_manuf(mesh.x[gnode],mesh.y[gnode],mesh.z[gnode],Ωx,Ωy,Ωz)
-            max_err = max(max_err, abs(I_cg_all[k][gnode] - I_true))
-        end
-    end
-    println("Manufactured Mie-like — max abs error: $max_err")
-    return max_err
-end
-
-function test_manufactured_isotropic_timed(mesh, metrics, basis, ω;
-                                      I0=4.2, A=1.0, b=0.1, c=0.1, d=0.1,
-                                      κ_val=0.001, σ_val=0.0005,
-                                      max_iter=500, tol=1e-9)
-    ngl = mesh.ngl
-    ψ, dψ = basis.ψ, basis.dψ
-    extra_npoin = mesh.extra_mesh.extra_npoin
-    npoin_cg = length(mesh.x)
-
-    # ── Domain extent, one full period across the whole mesh ───────────────
-    Lx = mesh.xmax - mesh.xmin; Ly = mesh.ymax - mesh.ymin; Lz = mesh.zmax - mesh.zmin
-    kx = 2π/Lx; ky = 2π/Ly; kz = 2π/Lz
-
-    # ── Manufactured solution and its EXACT analytic gradient ──────────────
-    I_manuf(x,y,z,Ωx,Ωy,Ωz) = I0 + A*sin(kx*x+ky*y+kz*z)*(1+b*Ωx+c*Ωy+d*Ωz)
-    # ∇I = A*(kx,ky,kz)*cos(kx x+ky y+kz z)*(1+bΩx+cΩy+dΩz)  — exact, by hand
-    dI_manuf(x,y,z,Ωx,Ωy,Ωz) = A*cos(kx*x+ky*y+kz*z)*(1+b*Ωx+c*Ωy+d*Ωz) .* (kx,ky,kz)
-
-    # ── Angular quadrature: directions + weights from extra_mesh ────────────
-    dirs = Vector{NTuple{3,Float64}}(undef, extra_npoin)
-    for ip_ext = 1:extra_npoin
-        θ = mesh.extra_mesh.extra_coords[1, ip_ext]
-        ϕ = mesh.extra_mesh.extra_coords[2, ip_ext]
-        dirs[ip_ext] = (sin(θ)*cos(ϕ), sin(θ)*sin(ϕ), cos(θ))
-    end
-    w_ext = zeros(Float64, extra_npoin)
-    for e_ext = 1:mesh.extra_mesh.extra_nelem
-        nop = mesh.extra_mesh.extra_nop[e_ext]
-        for iθ = 1:nop+1, iϕ = 1:nop+1
-            ip_ext = mesh.extra_mesh.extra_connijk[e_ext, iθ, iϕ]
-            Je_ang = mesh.extra_mesh.extra_metrics.Je[e_ext, iθ, iϕ]
-            w_ext[ip_ext] += Je_ang * mesh.extra_mesh.ωθ[iθ] * mesh.extra_mesh.ωθ[iϕ]
-        end
-    end
-    W = sum(w_ext)
-    C = [σ_val*w_ext[m]/W for k=1:extra_npoin, m=1:extra_npoin]   # isotropic — same for every (k,m)
-
-    # ── Mesh infrastructure (build/reuse, as before) ────────────────────────
-    neighbor_elem, neighbor_fid = build_face_adjacency_from_conn_face_el(mesh.nelem, mesh.conn_face_el)
-    if isempty(mesh.connijk_dg)
-        connijk_dg, npoin_dg, dg_to_cg, face_correspondence =
-            build_connijk_dg(mesh, neighbor_elem, neighbor_fid)
-        face_neighbor_dg = build_face_neighbor_dg(mesh, connijk_dg, neighbor_elem,
-                                                   neighbor_fid, face_correspondence)
-        mesh.connijk_dg = connijk_dg; mesh.npoin_dg = npoin_dg
-        mesh.dg_to_cg = dg_to_cg; mesh.face_neighbor_dg = face_neighbor_dg
-    end
-
-    κ = fill(κ_val, npoin_cg); σz = zeros(npoin_cg); intΦ_eff = zeros(npoin_cg)
-    orders = [build_conforming_sweep_order(d..., mesh.nelem, ngl, neighbor_elem,
-                  metrics.dξdx,metrics.dξdy,metrics.dξdz,
-                  metrics.dηdx,metrics.dηdy,metrics.dηdz,
-                  metrics.dζdx,metrics.dζdy,metrics.dζdz)[1] for d in dirs]
-
-    # ── Per-direction EXTERNAL source q_ext, computed ONCE from the exact
-    # manufactured solution — fixed for the whole run, independent of iteration ──
-    q_ext_all = [zeros(npoin_cg) for _ = 1:extra_npoin]
-    for k = 1:extra_npoin
-        Ωx,Ωy,Ωz = dirs[k]
-        for g = 1:npoin_cg
-            x_,y_,z_ = mesh.x[g], mesh.y[g], mesh.z[g]
-            grad = dI_manuf(x_,y_,z_,Ωx,Ωy,Ωz)
-            Ω_dot_grad = Ωx*grad[1] + Ωy*grad[2] + Ωz*grad[3]
-            I_true = I_manuf(x_,y_,z_,Ωx,Ωy,Ωz)
-            scatter_true = sum(C[k,m]*I_manuf(x_,y_,z_,dirs[m]...) for m = 1:extra_npoin)
-            q_ext_all[k][g] = Ω_dot_grad + κ_val*I_true - scatter_true
-        end
-    end
-
-    bc_fn_all = [(x,y,z) -> I_manuf(x,y,z,dirs[k]...) for k = 1:extra_npoin]
-
-    # ── Iterative solve ──────────────────────────────────────────────────────
-    timers = Dict{String,Float64}()
-    timers["scatter_update"] = 0.0
-
-    # One factorization cache PER DIRECTION — populated on iteration 1,
-    # reused for iterations 2+. Never shared across k, since A_vol
-    # genuinely differs by direction (both volume streaming term and
-    # flux terms depend on Ω).
-    factor_caches = [Dict{Int,Any}() for _ = 1:extra_npoin]
-    weight_cache_stores = [Dict{Int,Any}() for _ = 1:extra_npoin]
-    face_info_caches = [Dict{Int,Any}() for _ = 1:extra_npoin]
-
-    I_cg_all = [zeros(npoin_cg) for _ = 1:extra_npoin]
-    for it = 1:max_iter
-        max_delta = 0.0
-        for k = 1:extra_npoin
-            
-	    @info length(factor_caches[k])
-
-	    Ωx,Ωy,Ωz = dirs[k]
-            t0 = time()
-            q_k = copy(q_ext_all[k])
-            for mm = 1:extra_npoin
-                C[k,mm] == 0.0 && continue
-                q_k .+= C[k,mm] .* I_cg_all[mm]
-            end
-            timers["scatter_update"] += time() - t0
-            x_dg = fill(NaN, mesh.npoin_dg)
-            run_dg_sweep!(x_dg, mesh, metrics, ψ, dψ, ω, Ωx, Ωy, Ωz, orders[k], neighbor_elem,
-                          mesh.connijk_dg, mesh.face_neighbor_dg, κ, σz, intΦ_eff, bc_fn_all[k];
-                          extra_source=q_k, timers=timers, factor_cache=factor_caches[k], weight_cache_store=weight_cache_stores[k], face_info_cache=face_info_caches[k])
-            I_new = zeros(npoin_cg)
-            for iel = 1:mesh.nelem, kk=1:ngl, jj=1:ngl, ii=1:ngl
-                I_new[mesh.connijk[iel,ii,jj,kk]] = x_dg[mesh.connijk_dg[iel,ii,jj,kk]]
-            end
-            max_delta = max(max_delta, maximum(abs.(I_new .- I_cg_all[k])))
-            I_cg_all[k] = I_new
-        end
-        max_delta < tol && break
-    end
-
-    total = sum(values(timers))
-    println("─"^60)
-    println("TIMING BREAKDOWN (total = $(round(total,digits=2))s)")
-    for (name,t) in sort(collect(timers), by=x->-x[2])
-        println("  $name: $(round(t,digits=2))s ($(round(100*t/total,digits=1))%)")
-    end
-    # ── Compare against the EXACT manufactured solution everywhere ──────────
-    max_err = 0.0
-    for k = 1:extra_npoin
-        Ωx,Ωy,Ωz = dirs[k]
-        for g = 1:npoin_cg
-            I_true = I_manuf(mesh.x[g],mesh.y[g],mesh.z[g],Ωx,Ωy,Ωz)
-            max_err = max(max_err, abs(I_cg_all[k][g] - I_true))
-        end
-    end
-    println("Manufactured solution (isotropic) — max abs error over all points, all directions: $max_err")
-
-    return timers
 end
 
 """
