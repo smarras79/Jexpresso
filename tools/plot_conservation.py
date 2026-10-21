@@ -4,10 +4,8 @@
 All runs are overlaid on the same panels (by default one for mass, one for total energy), one curve per run.
 Legend labels are read from the element count in each file name, e.g. blast_conservation_256x256.dat -> $256^2$.
 
-    python3 tools/plot_conservation.py blast_conservation_64x64.dat blast_conservation_128x128.dat \
-        blast_conservation_256x256.dat --out blast_conservation.pdf
+    python3 tools/plot_conservation.py output/MHD/rotor-output-256x256 --vars ρ ρE --labels '$256^2$, $N=4$' --out output/MHD/rotor-output-256x256/rotor_mass_256x256.pdf
 
-    python3 tools/plot_conservation.py output/MHD/blastBalsaraSpicer1999/blast_conservation_*.dat
 """
 import argparse
 import os
