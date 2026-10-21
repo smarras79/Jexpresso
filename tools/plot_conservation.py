@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 """Mass and energy conservation from Jexpresso's conservation.dat (:conservation_every): |Q(t)-Q(0)|/|Q(0)| on log axes.
+    python3 tools/plot_conservation.py <output dir or conservation.dat> [more runs] --labels '$128^2$' '$256^2$' --out f.pdf
 
-All runs are overlaid on the same panels (by default one for mass, one for total energy), one curve per run.
-Legend labels are read from the element count in each file name, e.g. blast_conservation_256x256.dat -> $256^2$.
+    python3 tools/plot_conservation.py output/MHD/blastBalsaraSpicer1999/blast-output-128x128 --labels '$128^2$' --out output/MHD/blastBalsaraSpicer1999/blast-output-128x128/blast_conservation_128x128.pdf
 
-    python3 tools/plot_conservation.py output/MHD/rotor-output-256x256 --vars ρ ρE --labels '$256^2$, $N=4$' --out output/MHD/rotor-output-256x256/rotor_mass_256x256.pdf
+python3 tools/plot_conservation.py output/MHD/rotor-output-256x256 --vars ρ ρE --labels '$256^2$, $N=4$' --out output/MHD/rotor-output-256x256/rotor_mass_256x256.pdf
 
+The smooth vortex and the Alfven wave write one file per run, named as the run's error record
+(conservation_nop<N>_nelx<M>_<tag>.dat), into the output directory their sweep shares; pass the
+files, which are labelled by that name unless --labels says otherwise:
+    python3 tools/plot_conservation.py output/MHD/smoothVortex/output/conservation_nop4_nelx{8,16,32}_dsgs.dat
 """
 import argparse
 import os
-import re
 import sys
 
 import numpy as np
@@ -25,9 +28,16 @@ INK, INK2, GRID = "#0b0b0b", "#52514e", "#e2e1dd"
 NAMES = {"ρ": ("mass", "M"), "rho": ("mass", "M"), "ρE": ("total energy", "E"), "rhoE": ("total energy", "E"),
          "E": ("total energy", "E"), "ρθ": (r"$\rho\theta$", r"\Theta"), "ρu": ("x-momentum", "P_x"),
          "ρv": ("y-momentum", "P_y"), "ρw": ("z-momentum", "P_z")}
-MASS = ["ρ", "rho"]
-ENERGY = ["ρE", "rhoE", "E"]
-RES = re.compile(r"(\d+)x(\d+)(?:x(\d+))?")
+
+
+def default_label(path):
+    """A conservation.dat is named after its run's directory, any other file after itself:
+    conservation_nop4_nelx16_dsgs.dat -> nop4_nelx16_dsgs."""
+    name = os.path.basename(path)
+    if name == "conservation.dat":
+        return os.path.basename(os.path.dirname(os.path.abspath(path)))
+    stem = os.path.splitext(name)[0]
+    return stem[len("conservation_"):] if stem.startswith("conservation_") else stem
 
 
 def read(path):
@@ -39,31 +49,6 @@ def read(path):
     if head[:2] != ["t", "step"] or d.shape[1] != len(head):
         sys.exit(f"{path}: not a Jexpresso conservation.dat (header {head})")
     return path, head[2:], d[:, 0], d[:, 2:]
-
-
-def resolution(path):
-    """Element counts parsed from the last NxM(xK) in the file name (or its directory name), else None."""
-    for name in (os.path.basename(path), os.path.basename(os.path.dirname(os.path.abspath(path)))):
-        m = RES.findall(name)
-        if m:
-            return tuple(int(n) for n in m[-1] if n)
-    return None
-
-
-def label(path):
-    n = resolution(path)
-    if n is None:
-        return os.path.splitext(os.path.basename(path))[0].replace("_", r"\_")
-    if len(set(n)) == 1:
-        return rf"${n[0]}^{len(n)}$"
-    return "$" + r"\times".join(str(k) for k in n) + "$"
-
-
-def default_vars(cols):
-    """Mass and total energy if present, otherwise every tracked column."""
-    pick = [next((c for c in group if c in cols), None) for group in (MASS, ENERGY)]
-    pick = [c for c in pick if c]
-    return pick or cols
 
 
 def style():
@@ -81,38 +66,31 @@ def style():
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("runs", nargs="+", help="conservation files, e.g. blast_conservation_256x256.dat (or output dirs)")
-    ap.add_argument("--labels", nargs="+", help="legend label per run (default: element count from the file name)")
-    ap.add_argument("--vars", nargs="+", help="tracked columns to plot, by name (default: mass and total energy)")
-    ap.add_argument("--no-sort", action="store_true", help="keep runs in command-line order instead of by resolution")
-    ap.add_argument("--legend", choices=["each", "top"], default="each",
-                    help="a legend inside every panel, or one shared legend above the figure")
-    ap.add_argument("--legend-title", default="", help="legend title (default: none)")
+    ap.add_argument("runs", nargs="+", help="conservation.dat files or the output directories that hold them")
+    ap.add_argument("--labels", nargs="+",
+                    help="legend label per run (default: the run's directory name for a conservation.dat, the file's name otherwise)")
+    ap.add_argument("--vars", nargs="+", help="tracked columns to plot, by name (default: all, e.g. ρ ρE)")
     ap.add_argument("--absolute", action="store_true", help="plot the totals Q(t) instead of |Q(t)-Q(0)|/|Q(0)|")
     ap.add_argument("--no-eps", action="store_true", help="omit the machine-epsilon reference line")
     ap.add_argument("--markers", action="store_true", help="points only (clearer when the totals move by single ulps)")
     ap.add_argument("--floor", type=float, help="draw values below this (exact zeros included) at it, instead of omitting them")
     ap.add_argument("--layout", choices=["row", "column"], default="row", help="panels side by side or stacked")
     ap.add_argument("--width", type=float, help="figure width in inches (default 6.5 row, 3.4 column)")
-    ap.add_argument("--height", type=float, help="panel height in inches (default 2.4)")
+    ap.add_argument("--height", type=float, help="panel height in inches (default 2.2)")
     ap.add_argument("--xlabel", default="$t$")
     ap.add_argument("--ylim", nargs=2, type=float, help="common y limits")
-    ap.add_argument("--out", help="output file (default: <common prefix>.<format> next to the first run)")
+    ap.add_argument("--out", help="output file (default: conservation.<format> next to the first run)")
     ap.add_argument("--format", default="pdf")
     ap.add_argument("--dpi", type=int, default=300)
     a = ap.parse_args()
 
     runs = [read(p) for p in a.runs]
-    labels = a.labels or [label(p) for p, *_ in runs]
+    labels = a.labels or [default_label(p) for p, *_ in runs]
     if len(labels) != len(runs):
         sys.exit("--labels needs one label per run")
     if len(runs) > len(SERIES):
         sys.exit(f"at most {len(SERIES)} runs per figure: facet the rest into a second figure")
-    if not a.no_sort and not a.labels:
-        key = [np.prod(resolution(p) or (0,)) for p, *_ in runs]
-        order = sorted(range(len(runs)), key=lambda i: key[i])
-        runs, labels = [runs[i] for i in order], [labels[i] for i in order]
-    names = a.vars or default_vars(runs[0][1])
+    names = a.vars or runs[0][1]
     for p, nm, *_ in runs:
         miss = [v for v in names if v not in nm]
         if miss:
@@ -121,7 +99,7 @@ def main():
     style()
     n = len(names)
     w = a.width or (6.5 if a.layout == "row" else 3.4)
-    h = a.height or 2.4
+    h = a.height or 2.2
     shape = (1, n) if a.layout == "row" else (n, 1)
     fig, axes = plt.subplots(*shape, figsize=(w, h * shape[0]), squeeze=False, sharex=True)
     axes = axes.ravel()
@@ -147,7 +125,8 @@ def main():
                         ms=(3.2 if hollow else 2.4) if a.markers else 1.6, mew=0.6 if hollow else 0,
                         mfc="none" if hollow else SERIES[k], label=lab, zorder=2 + len(runs) - k)
         if exact:
-            ax.text(0.03, 0.92, "exactly conserved" + ("" if len(runs) == 1 else ": " + ", ".join(exact)),
+            # every run, or the ones that are, one per line: run names can be long
+            ax.text(0.03, 0.92, "exactly conserved" + ("" if len(exact) == len(runs) else ":\n" + "\n".join(exact)),
                     transform=ax.transAxes, ha="left", va="top", fontsize=8, color=INK2)
             if len(exact) == len(runs) and not a.ylim:
                 ax.set_ylim(eps / 10, eps * 100)
@@ -166,26 +145,14 @@ def main():
             pos = np.concatenate([y[np.isfinite(y) & (y > 0)] for y in ys] + [[eps]])
             lo, hi = np.floor(np.log10(pos.min())), np.ceil(np.log10(pos.max()))
             ax.set_ylim(10.0**lo, 10.0**max(hi, lo + 2))
-        if a.legend == "each" and len(runs) >= 2:
-            if not a.ylim:  # headroom on the log axis so the in-panel legend sits above the curves
-                lo, hi = ax.get_ylim()
-                ax.set_ylim(lo, hi * (hi / lo) ** 0.25)
-            ax.legend(loc="upper right", ncol=min(len(runs), 4), title=a.legend_title or None, title_fontsize=8,
-                      handlelength=2.2, columnspacing=1.0, borderaxespad=0.3,
-                      markerscale=2.0 if a.markers else 1.0)
     for ax in (axes if a.layout == "row" else axes[-1:]):
         ax.set_xlabel(a.xlabel)
     fig.tight_layout(w_pad=1.5, h_pad=0.6)
-    if a.legend == "top":
+    if len(runs) >= 2:
         hs, ls = axes[0].get_legend_handles_labels()
         fig.legend(hs, ls, loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=min(len(runs), 4), handlelength=2.6,
-                   title=a.legend_title or None, title_fontsize=8, markerscale=2.0 if a.markers else 1.0)
-    if a.out:
-        out = a.out
-    else:
-        stems = [os.path.splitext(os.path.basename(p))[0] for p, *_ in runs]
-        stem = RES.sub("", os.path.commonprefix(stems)).rstrip("_-") if len(runs) > 1 else stems[0]
-        out = os.path.join(os.path.dirname(os.path.abspath(runs[0][0])), (stem or "conservation") + "." + a.format)
+                   markerscale=2.0 if a.markers else 1.0)
+    out = a.out or os.path.join(os.path.dirname(os.path.abspath(runs[0][0])), "conservation." + a.format)
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     fig.savefig(out, dpi=a.dpi)
     print("wrote", out)

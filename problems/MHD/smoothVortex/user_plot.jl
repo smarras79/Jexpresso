@@ -47,20 +47,9 @@ function _sv_atomic(path::AbstractString, write!::Function)
     return nothing
 end
 
-_sv_savefig(plt, path) = _sv_atomic(path, f -> _savefig_silent(plt, f))
-
-# One (colour, marker) per order, fixed so an order looks the same from one
-# figure to the next.
-const SV_STYLE = Dict(
-    1 => (:darkorange, :dtriangle),
-    2 => (:goldenrod, :utriangle),
-    3 => (:purple,    :rect),
-    4 => (:seagreen,  :diamond),
-    5 => (:royalblue, :circle),
-    6 => (:crimson,   :star5),
-    7 => (:black,     :xcross),
-)
-_sv_style(nop) = get(SV_STYLE, nop, (:gray, :cross))
+# The convergence figure itself: convergence_figure.jl, shared with
+# alfvenWaveBabbarRanocha2026 so that the two accuracy tests draw the same one.
+include(joinpath(@__DIR__, "convergence_figure.jl"))
 
 # The record's tag names what differs from the deck as committed: "dsgs" is
 # DynSGS as the deck runs it (residual sensor, coefficient frozen per step, the
@@ -273,140 +262,28 @@ function _sv_load_errors(t)
 end
 
 #---------------------------------------------------------------------------------
-# The figure, in the layout of the convergence figure of Dao & Nazarov (2022):
-# the ABSOLUTE velocity error against the NUMBER OF DEGREES OF FREEDOM on
-# log-log axes — that is their abscissa, and it is the honest one for
-# comparing orders, since it compares them at equal cost rather than at equal
-# h — with the residual-viscosity and the plain Galerkin solution of each
-# order ON THE SAME AXES (solid/filled vs dashed/hollow, one colour per
-# order), and reference slopes for the nominal rates. Written both as the
-# three-panel figure (one panel per norm) and as one file per norm, at
-# publication sizes.
-#
-# In two dimensions #DOFs ∝ h^(-2), so an O(h^(N+1)) method falls as
-# #DOFs^(-(N+1)/2); the guides carry that slope and are labelled O(h^(N+1)).
-#---------------------------------------------------------------------------------
-const SV_FS_TITLE  = 22
-const SV_FS_GUIDE  = 20
-const SV_FS_TICK   = 17
-const SV_FS_LEGEND = 15
-const SV_LW        = 1.4
-const SV_MS        = 7
-
-# The measured order of accuracy from the last two points. The abscissa is
-# the DOF COUNT, and in two dimensions h ∝ #DOFs^(-1/2), so an error ∝ h^p
-# falls as #DOFs^(-p/2): the order is minus twice the log-log slope.
-_sv_rate(xs, ys) = (length(xs) < 2 || ys[end-1] <= 0 || ys[end] <= 0) ? NaN :
-                   -2.0*log(ys[end-1]/ys[end])/log(xs[end-1]/xs[end])
-
-# The legend name of a tag. It is set inside \mathrm, where a space must be "\ ".
-_sv_visc_label(tag) = tag == "dsgs"       ? "DSGS" :
-                        tag == "dsgs_nocut" ? "DSGS,\\ no\\ cutoff" :
-                        tag == "dsgs_cut"   ? "DSGS,\\ other\\ cutoff" :
-                        tag == "dsgs_hold"  ? "DSGS + hold"   : "Galerkin"
+# The figure (convergence_figure.jl): the ABSOLUTE velocity error in the three
+# norms, one panel each. The legend name of a record's tag, and its line style:
 # solid = DSGS as the deck runs it (with the cutoff), dash-dot = DSGS without
 # the cutoff, dash-dot-dot = DSGS with another cutoff or a longer startup hold,
-# dashed = plain Galerkin. The reference slopes are the only DOTTED lines on
-# the figure, so no guide can be mistaken for a curve.
-_sv_visc_style(tag) = tag == "dsgs"       ? :solid :
-                        tag == "dsgs_nocut" ? :dashdot :
-                        tag in ("dsgs_cut", "dsgs_hold") ? :dashdotdot : :dash
-
-function _sv_panel(sub, nops, fld, nm)
-    # The final time the errors were measured at, and the step they were taken
-    # with, belong ON the figure: a sweep cut short for a pipeline check
-    # produces a perfectly plausible-looking set of flat lines, and nothing in
-    # the picture would otherwise say so.
-    tt  = isempty(sub) ? NaN : sub[1].t
-    dts = unique(r.dt for r in sub)
-    stamp = string(",\\ t = ", isfinite(tt) ? tt : "?",
-                   length(dts) == 1 && isfinite(dts[1]) ? string(",\\ \\Delta t = ", dts[1]) : "")
-    allx = Float64[]; ally = Float64[]
-    pl = Plots.plot(; xscale = :log10, yscale = :log10,
-                    xlabel = LaTeXStrings.L"\#\mathrm{DOFs}",
-                    ylabel = LaTeXStrings.latexstring(string(
-                        "\\Vert\\mathbf{u}_h-\\mathbf{u}_{exact}\\Vert_{", nm, "}")),
-                    framestyle = :box, grid = true, gridalpha = 0.25,
-                    background_color_legend = Plots.RGBA(1, 1, 1, 0.72),
-                    foreground_color_legend = :gray60,
-                    legend = :outertopright, legendfontsize = SV_FS_LEGEND,
-                    titlefontsize = SV_FS_TITLE, guidefontsize = SV_FS_GUIDE,
-                    tickfontsize = SV_FS_TICK,
-                    left_margin = 14Plots.mm, bottom_margin = 10Plots.mm,
-                    top_margin = 4Plots.mm, right_margin = 6Plots.mm,
-                    title = LaTeXStrings.latexstring(string(nm, "\\mathrm{-error}", stamp)),
-                    show = false)
-
-    # One colour per order, the stabilization in the line style: DSGS solid with
-    # a filled marker, plain Galerkin dashed with a hollow one — the two are
-    # compared ON THE SAME AXES, as in the paper's convergence figure, because
-    # the question the figure answers is whether the viscosity costs accuracy.
-    for nop in nops, tag in SV_TAGS
-        g = sort(filter(r -> r.nop == nop && r.visc == tag, sub), by = r -> r.ndofs)
-        isempty(g) && continue
-        xs = [Float64(r.ndofs) for r in g]
-        ys = [getfield(r, fld) for r in g]
-        keep = isfinite.(ys) .& (ys .> 0)
-        any(keep) || continue
-        xs = xs[keep]; ys = ys[keep]
-        append!(allx, xs); append!(ally, ys)
-        col, mk = _sv_style(nop)
-        p   = _sv_rate(xs, ys)
-        lab = LaTeXStrings.latexstring(string("\\mathbb{P}_", nop, "\\ \\mathrm{",
-                  _sv_visc_label(tag), "}", isfinite(p) ? string("\\ (p=", round(p; digits = 2), ")") : ""))
-        Plots.plot!(pl, xs, ys;
-                    line = (col, SV_LW, _sv_visc_style(tag)),
-                    marker = (mk, SV_MS), markerstrokecolor = col, markerstrokewidth = 1.0,
-                    markercolor = tag == "dsgs" ? col : :white,
-                    color = col, label = lab)
-    end
-
-    # Reference slopes, one per order on the figure: an error ∝ h^(N+1) falls
-    # as #DOFs^(-(N+1)/2). Each is drawn alongside the curve it annotates and
-    # labelled by the ORDER it stands for, not by the log-log slope.
-    if !isempty(allx)
-        x1 = minimum(allx); x2 = maximum(allx)
-        ymax = maximum(ally); ymin = minimum(ally)
-        # The reference slopes BRACKET the data rather than run through it:
-        # the shallow one (the lowest order on the figure) is drawn ABOVE
-        # every curve and the steep one (the highest order) BELOW every
-        # curve, so neither crosses the lines it is there to measure. For
-        # y = A x^s the offset A is read off the data itself — the largest
-        # y_i x_i^(-s) puts the line through the topmost point, the smallest
-        # through the bottom one — and a factor of two moves it clear. The
-        # axes stay clipped to the data, so a steep guide simply leaves the
-        # panel at its ends.
-        for (nop, above, col) in ((minimum(nops), true,  :gray40),
-                                  (maximum(nops), false, :gray55))
-            sl = -(nop + 1)/2
-            r  = [ally[i]*allx[i]^(-sl) for i in eachindex(allx)]
-            A  = above ? 2.0*maximum(r) : 0.5*minimum(r)
-            Plots.plot!(pl, [x1, x2], [A*xi^sl for xi in (x1, x2)];
-                        line = (col, 1.2, :dot),
-                        label = LaTeXStrings.latexstring(string("\\mathcal{O}(h^{", nop + 1, "})")))
-        end
-
-        # Decades on the error axis, and the resolutions actually run on the
-        # DOF axis: 10^{-4.5} is not a number anyone reports.
-        lo = floor(Int, log10(ymin)); hi = ceil(Int, log10(ymax))
-        decs = collect(lo:hi)
-        stp  = max(1, cld(length(decs), 7))
-        yt   = [10.0^e for e in decs[1:stp:end]]
-        xu   = sort(unique(allx))
-        idx  = length(xu) <= 4 ? eachindex(xu) :
-               unique(round.(Int, range(1, length(xu); length = 4)))
-        xt   = xu[idx]
-        Plots.plot!(pl; xlims = (0.75*x1, 1.35*x2), ylims = (0.2*ymin, 5.0*ymax),
-                    xticks = (xt, [LaTeXStrings.latexstring(@sprintf("%d", round(Int, x))) for x in xt]),
-                    yticks = (yt, [LaTeXStrings.latexstring(string("10^{", e, "}"))
-                                   for e in decs[1:stp:end]]))
-    end
-    return pl
-end
+# dashed = plain Galerkin.
+#---------------------------------------------------------------------------------
+_sv_visc_label(tag) = tag == "dsgs"       ? "DSGS" :
+                        tag == "dsgs_nocut" ? "DSGS, no cutoff" :
+                        tag == "dsgs_cut"   ? "DSGS, other cutoff" :
+                        tag == "dsgs_hold"  ? "DSGS + hold" : "Galerkin"
+_sv_visc_style(tag, tags = SV_TAGS) = tag == "dsgs"       ? :solid :
+                                        tag == "dsgs_nocut" ? :dashdot :
+                                        tag in ("dsgs_cut", "dsgs_hold") ? :dashdotdot : :dash
+const SV_PANELS = [   # (field, ylabel, title, file)
+    (:l1,   "\\Vert\\mathbf{u}_h-\\mathbf{u}_{exact}\\Vert_{L^1}",       "L^1\\mathrm{-error}",       "L1"),
+    (:l2,   "\\Vert\\mathbf{u}_h-\\mathbf{u}_{exact}\\Vert_{L^2}",       "L^2\\mathrm{-error}",       "L2"),
+    (:linf, "\\Vert\\mathbf{u}_h-\\mathbf{u}_{exact}\\Vert_{L^\\infty}", "L^\\infty\\mathrm{-error}", "Linf"),
+]
 
 # The orders to draw on their own, beside the all-orders figure:
 # JEXPRESSO_SV_PLOT_NOPS="1 3" gives the P1-vs-P3 comparison of the paper's
-# Fig. 1 in its own file, convergence_<visc>_nop1-3-it<n>.png.
+# Fig. 1 in its own file, convergence_nop1-3-it<n>.png.
 function _sv_plot_nops()
     v = strip(get(ENV, "JEXPRESSO_SV_PLOT_NOPS", ""))
     isempty(v) && return Int[]
@@ -415,22 +292,9 @@ end
 
 function _sv_plot(rows, OUTPUT_DIR, iout; only::Vector{Int} = Int[], suffix::String = "")
     sub = isempty(only) ? rows : filter(r -> r.nop in only, rows)
-    nops = sort(unique(r.nop for r in sub))
-    # At least one (order, stabilization) pair with two points to join.
-    any(count(r -> r.nop == n && r.visc == v, sub) >= 2
-        for n in nops, v in SV_TAGS) || return nothing
-
-    panels = Plots.Plot[]
-    for (fld, nm, fname) in ((:l1, "L^1", "L1"), (:l2, "L^2", "L2"), (:linf, "L^\\infty", "Linf"))
-        pl = _sv_panel(sub, nops, fld, nm)
-        # one file per norm, for the paper
-        plt1 = Plots.plot(pl; size = (1180, 780), show = false)
-        _sv_savefig(plt1, string(OUTPUT_DIR, "/convergence", suffix, "_", fname, "-it", iout, ".png"))
-        push!(panels, pl)
-    end
-    plt = Plots.plot(panels...; layout = (1, 3), size = (2400, 800),
-                     left_margin = 18Plots.mm, bottom_margin = 14Plots.mm, show = false)
-    _sv_savefig(plt, string(OUTPUT_DIR, "/convergence", suffix, "-it", iout, ".png"))
+    _conv_figure(sub, SV_PANELS, OUTPUT_DIR, iout; prefix = string("convergence", suffix),
+                 tags = [t for t in SV_TAGS if any(r -> r.visc == t, sub)],
+                 label = _sv_visc_label, line = _sv_visc_style, galerkin = ==("galerkin"))
     return nothing
 end
 

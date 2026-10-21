@@ -128,10 +128,11 @@ its final time and box, and draws the figures from them:
 
 | file | contents |
 |---|---|
-| `convergence-it<n>.png` | the paper's Fig. 1 layout: the three norms side by side against #DOFs on log-log axes; one colour per polynomial order, the stabilization in the line style (DynSGS solid with a filled marker, DynSGS without the cutoff dash-dot, another cutoff or hold dash-dot-dot, Galerkin dashed with a hollow marker), dotted slope guides, and the measured rate $p$ of each curve in its legend; $t$ and $\Delta t$ in the titles |
+| `convergence-it<n>.png` | the paper's Fig. 1 layout: the three norms side by side against #DOFs on log-log axes; one colour per polynomial order, the stabilization in the line style (DynSGS solid with a filled marker, DynSGS without the cutoff dash-dot and another cutoff or hold dash-dot-dot, each with a hollow marker, Galerkin dashed with a larger hollow one — drawn first, so that a DynSGS point equal to the Galerkin one shows inside its ring), dotted slope guides, and the measured rate $p$ of each curve in its legend; $t$ and $\Delta t$ in the titles. The figure is `convergence_figure.jl`, which the Alfvén wave draws its errors with too |
 | `convergence_L1-it<n>.png`, `_L2`, `_Linf` | the same panels one per file, at publication size |
 | `convergence_nop<subset>[_L1…]-it<n>.png` | a subset of the orders on its own axes (`JEXPRESSO_SV_PLOT_NOPS`, or `tools/smooth_vortex_plot.jl 1,3`) |
 | `<var>-it<n>.png` | the usual field panels |
+| `conservation_nop<N>_nelx<M>_<tag>.dat` | mass and energy at every step ([below](#mass-and-energy)) |
 
 in `output/MHD/smoothVortex/output/`. Records written before the norms became
 absolute (no `norm=abs`) are never drawn; records without a box (`L=`) predate
@@ -156,6 +157,29 @@ replaces only its own point. The hook is `user_plot_2d` in `user_plot.jl`,
 the 2D counterpart of the `user_plot_1d` hook the 1D cases use, added to
 `src/io/plotting/jeplots.jl`; unlike the 1D one it is additive, and the
 generic field panels are still rendered.
+
+### Mass and energy
+
+Mass and energy are tracked at every step, as for the rotor: the discrete
+totals $\sum_K\sum_{ij}\omega_i\omega_j J\,\rho$ and
+$\sum_K\sum_{ij}\omega_i\omega_j J\,\rho E$ over all elements and ranks
+(`:conservation_every`, `:conservation_slots`) go to
+`conservation_nop<N>_nelx<M>_<tag>.dat` in the output directory, one file per
+run, named as its error record, since the runs of a sweep share that directory
+(`:conservation_file`). `tools/plot_conservation.py` draws
+$|Q(t) - Q(0)|/|Q(0)|$ on log axes, one curve per file, labelled by the file's
+name unless `--labels` says otherwise. The nodes paired across each periodic
+seam coincide to the last bit, since opposite edges of `vortex_periodic.geo` run
+the same way; until 20 Oct 2026 they ran opposite ways and the paired nodes were
+1.2e-12 L apart, which leaks mass and energy at ~1e-13 wherever the flow varies
+along a seam. On the L = 20 box it barely did (the vortex tail at the seams is
+~1e-22), and the errors on the regenerated meshes agree with the old ones to
+11 digits.
+
+```bash
+python3 tools/plot_conservation.py output/MHD/smoothVortex/output/conservation_nop4_nelx{8,16,32}_dsgs.dat \
+        --labels '$8^2$' '$16^2$' '$32^2$' --out vortex_conservation.pdf     # --layout column for one journal column
+```
 
 ## Running the sweep
 
@@ -356,11 +380,13 @@ afterwards, from the stored errors alone, without running anything:
 julia --project=. tools/smooth_vortex_plot.jl 1,3
 julia --project=. tools/smooth_vortex_plot.jl          # every order
 julia --project=. tools/smooth_vortex_plot.jl 1,3 --t=1.0 --out=figs
+julia --project=. tools/smooth_vortex_plot.jl 4,5,6,7 --visc=dsgs,galerkin   # leave dsgs_nocut out
 ```
 
 `tools/smooth_vortex_plot.jl` reads `errors/*.dat`, prints the error table and
 calls the case's own plotting code, so its figures are the same ones a run
-produces (as `-it0`).
+produces (as `-it0`). `--visc=` keeps only the records with the tags given
+(`dsgs`, `dsgs_nocut`, `dsgs_cut`, `dsgs_hold`, `galerkin`).
 
 ## Running it on many cores
 
@@ -406,10 +432,12 @@ if that is what you want to see.
 |---|---|
 | `user_inputs.jl` | the deck and the environment overrides |
 | `initialize.jl` | the vortex, its exact-solution helpers `sv_state`/`sv_wrap`, and the equilibrium derivation |
-| `user_plot.jl` | the error norms, the record tags, the store and the convergence figures |
+| `user_plot.jl` | the error norms, the record tags, the store and the panels of the convergence figure |
+| `convergence_figure.jl` | the convergence figure, shared with `alfvenWaveBabbarRanocha2026` |
 | `user_flux.jl`, `user_source.jl`, `user_bc.jl`, `user_primitives.jl` | the GLM-MHD equations, identical to `orszagTangBormanis2024` |
 | `vortex_periodic.geo` | the parameterized periodic mesh |
 | `tools/smooth_vortex_mpi_scan.sh`, `tools/smooth_vortex_scan.sh` | the sweeps |
 | `tools/smooth_vortex_plot.jl` | the table and the figures from the store alone |
+| `tools/plot_conservation.py` | mass and energy against time, from the `conservation_*.dat` files |
 | `tools/smooth_vortex_mesh.sh` | the meshes |
 | `tools/smooth_vortex_slurm.sh`, `tools/smooth_vortex_wulver.sh` | the sweep as a batch job |

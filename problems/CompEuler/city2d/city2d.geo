@@ -48,24 +48,16 @@ by1 = 100.0;
 
 // Coarse mesh: smallest element ~17 m near the building, ~37 m in the
 // far field (well above the requested 5 m floor).
-<<<<<<< HEAD
 //
 // IMPORTANT: with Mesh.RecombinationAlgorithm = 3 (Blossom Full-Quad)
 // each Transfinite Line MUST have an even number of segments,
 // otherwise gmsh emits "1D mesh cannot be divided by 2" and the
 // boundary loop fails to close.  Every count below is even.
-nx_A    = 18;   // bottom strip 0   ... 350   (Δx ≈ 19.4 m)
-nx_C    = 6;    // building top   350 ... 450   (Δx ≈ 16.7 m)
-nx_E    = 28;   // bottom strip 450 ... 1000  (Δx ≈ 19.6 m)
-ny_low  = 10;    // y in [0,   100]              (Δy ≈ 16.7 m)
-ny_high = 24;   // y in [100, 1000]             (Δy = 37.5 m)
-=======
 nx_A    = 18;   // x in [0,   350]   (Δx ≈ 19.4 m)
 nx_C    = 6;    // x in [350, 450]   (Δx ≈ 16.7 m)
 nx_E    = 28;   // x in [450, 1000]  (Δx ≈ 19.6 m)
 ny_low  = 6;    // y in [0,   100]    (Δy ≈ 16.7 m)
 ny_high = 24;   // y in [100, 1000]   (Δy = 37.5 m)
->>>>>>> bcabefc69dfcb80dd7ab0fd816d3eebe4df9bec4
 
 // -------- Points --------
 Point(1)  = {xmin, ymin, 0};
@@ -82,6 +74,13 @@ Point(11) = {bx0,  by1,  0};   // building top-left
 Point(12) = {bx1,  by1,  0};   // building top-right
 
 // -------- Outer boundary lines --------
+// THE LEFT WALL RUNS LIKE THE RIGHT ONE, bottom to top (Lines 11, 12 as 6, 7).
+// gmsh places the nodes of an edge with a small smooth error (~1e-12 of its
+// length) that follows the edge's direction; with the two periodic walls
+// running opposite ways the errors were mirrored, the nodes Jexpresso pairs
+// across the seam did not coincide, and the flux through the two sides of the
+// seam did not cancel. Run the same way, the paired nodes coincide to the last
+// bit (see problems/MHD/alfvenWaveBabbarRanocha2026).
 Line(1)  = {1,  2};   // bottom, A-strip
 Line(2)  = {2, 11};   // building, left wall
 Line(3)  = {11,12};   // building, top
@@ -92,8 +91,8 @@ Line(7)  = {5,  6};   // right wall, upper  (periodicx)
 Line(8)  = {6,  7};   // top, E-strip
 Line(9)  = {7,  8};   // top, C-strip
 Line(10) = {8,  9};   // top, B-strip
-Line(11) = {9, 10};   // left wall, upper   (periodicx)
-Line(12) = {10, 1};   // left wall, lower   (periodicx)
+Line(11) = {10, 9};   // left wall, upper   (periodicx)
+Line(12) = {1, 10};   // left wall, lower   (periodicx)
 
 // -------- Interior (block-interface) lines --------
 Line(13) = {10, 11};   // horizontal A | B interface
@@ -102,8 +101,8 @@ Line(15) = {12,  7};   // vertical   C  | DE interface (right of building, above
 Line(16) = {12,  5};   // horizontal D | E interface
 
 // -------- Curve loops (CCW) --------
-Curve Loop(1) = { 1,  2, -13,  12};  // A : lower-left
-Curve Loop(2) = {13, 14,  10,  11};  // B : upper-left
+Curve Loop(1) = { 1,  2, -13, -12};  // A : lower-left
+Curve Loop(2) = {13, 14,  10, -11};  // B : upper-left
 Curve Loop(3) = { 3, 15,   9, -14};  // C : above the building
 Curve Loop(4) = { 5,  6, -16,   4};  // D : lower-right
 Curve Loop(5) = {16,  7,   8, -15};  // E : upper-right

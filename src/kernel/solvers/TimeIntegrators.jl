@@ -626,7 +626,8 @@ function time_loop!(inputs, params, u, args...)
         cb_heartbeat = get(inputs, :lstep_heartbeat, false) == true ?
             DiscreteCallback(step_heartbeat_condition, step_heartbeat_affect!; save_positions = (false, false)) :
             nothing
-        # :conservation_every => n > 0: totals every n steps to <output_dir>/conservation.dat (rank 0).
+        # :conservation_every => n > 0: totals every n steps to <output_dir>/<:conservation_file>
+        # (rank 0; conservation.dat unless the case names it).
         # The file is opened only after the warm-up step below, which calls this callback too.
         ncons    = Int(inputs[:conservation_every])
         cons_tot = zeros(Float64, length(inputs[:conservation_slots]))
@@ -832,7 +833,9 @@ function time_loop!(inputs, params, u, args...)
         if ncons > 0
             conservation_totals!(cons_tot, u, params)
             if rank == 0
-                cons_io[] = open(joinpath(inputs[:output_dir], "conservation.dat"), "w")
+                cname = inputs[:conservation_file] isa Function ? string(inputs[:conservation_file](inputs)) :
+                                                                   string(inputs[:conservation_file])
+                cons_io[] = open(joinpath(inputs[:output_dir], cname), "w")
                 println(cons_io[], "# t step ", join(string.(params.qp.qvars[inputs[:conservation_slots]]), " "))
                 println(cons_io[], "# totals sum_K sum_ij w_i w_j J_ij q_ij over all elements and ranks (= sum_I M_I q_I)")
                 _conservation_write(cons_io[], params.tspan[1], 0, cons_tot)

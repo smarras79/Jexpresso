@@ -165,6 +165,15 @@ function user_inputs()
         :tinit                => 0.0,
         :tend                 => _sv_tend(),
         :diagnostics_at_times => (0.0, _sv_tend()),
+        # Mass and energy, the discrete totals Σ_K Σ_ij ω_iω_j J q of ρ and ρE,
+        # at every step, as for the rotor; tools/plot_conservation.py draws
+        # |Q(t) − Q(0)|/|Q(0)|. One file per run, named as its error record
+        # (user_plot.jl, _sv_tag), since the runs of a sweep share the output
+        # directory: conservation_nop<N>_nelx<M>_<tag>.dat.
+        :conservation_every   => 1,
+        :conservation_slots   => [1, 4],
+        :conservation_file    => inp -> string("conservation_nop", _sv_nop(), "_nelx", _sv_nelx(),
+                                               "_", _sv_tag(inp), ".dat"),
         :restart_time         => 0.0,
         :lrestart             => false,
         :lsource              => true,   # GLM ψ-damping source (Dedner mixed cleaning)

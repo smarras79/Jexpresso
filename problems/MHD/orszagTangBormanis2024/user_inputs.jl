@@ -11,6 +11,7 @@ _ot_norms() = lowercase(strip(get(ENV, "JEXPRESSO_OT_NORMS", "domain")))
 
 function user_inputs()
 
+    lvl = 0
     inputs = Dict(
         #---------------------------------------------------------------------------
         # 2D Orszag-Tang vortex, ideal GLM-MHD.
@@ -33,13 +34,16 @@ function user_inputs()
         #:Δt                   =>  2.5e-5,  #512 nop4
         #:Δt                   =>  5.0e-5,  #256 nop4
         #:Δt                   => 1.0e-4,  #128 nop4
-        :Δt                   => 2.0e-4,  #64 nop4
+        #:Δt                   => 2.0e-4,  #64 nop4
+        :Δt                   => 4.0e-4/2^lvl,  #32 nop4
         :tinit                => 0.0,
         # JEXPRESSO_OT_TEND shortens the run without editing the deck — a
         # smoke test of a change to the model is one short run, not 143 000
         # steps.
         :tend                 => 1.0,   # the paper's t ∈ [0, 1] interval
         :diagnostics_at_times => (0.0:0.25:1.0),
+        :conservation_every   => 1,        # mass and energy totals every step: conservation.dat
+        :conservation_slots   => [1, 4],
         :restart_time         => 0.0,
         :lrestart             => false,
         :lsource              => true,   # GLM ψ-damping source (Dedner mixed cleaning; see user_source.jl)
@@ -164,8 +168,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # AMR (off)
         #---------------------------------------------------------------------------
-        :linitial_refine     => true,
-        :init_refine_lvl     => 1,
+        :linitial_refine     => lvl>0,
+        :init_refine_lvl     => lvl,
         :ladapt              => false,
         #---------------------------------------------------------------------------
     ) #Dict

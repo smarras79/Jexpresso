@@ -41,6 +41,20 @@ and $\kappa$); for $\mathrm{Pr} \neq 1$ the energy slot splits off as
 carries the simulation time as `TimeValue` field data, so ParaView shows the
 physical time rather than the output counter.
 
+Mass and energy are tracked at every step (`:conservation_every => 1`,
+`:conservation_slots => [1, 4]`), as for the rotor: `conservation.dat`, next to
+the VTK files of the run, holds t, the step and the discrete totals
+$\sum_K\sum_{ij}\omega_i\omega_j J\,\rho$ and
+$\sum_K\sum_{ij}\omega_i\omega_j J\,\rho E$ over all elements and ranks.
+Nothing in this deck adds either (no positivity floor, no filter; the only
+source is the ψ damping), so both stay at round-off: within 2e-16 to $t = 0.05$
+on the shipped 32² mesh, against 5e-13 on the mesh before the seam fix (see
+[Mesh](#mesh)). For the figure, $|Q(t) - Q(0)|/|Q(0)|$ on log axes:
+
+```bash
+python3 tools/plot_conservation.py <the run's output directory> --out ot_conservation.pdf
+```
+
 ## Figures
 
 **The solver does not write the PNGs in this README.** With
@@ -274,6 +288,16 @@ gmsh -2 problems/MHD/orszagTangBormanis2024/OT_32x32_periodic.geo \
 To move it into the standard mesh tree instead, write it to
 `meshes/gmsh_grids/OT_32x32_periodic.msh` and switch to the commented-out
 `:gmsh_filename` line in `user_inputs.jl`.
+
+Opposite edges of the `.geo` run the same way, so the nodes Jexpresso pairs
+across each periodic seam coincide to the last bit. Until 20 Oct 2026 the top
+and left edges ran the other way, which mirrored gmsh's ~1e-12 node-placement
+error across the seams: paired nodes were 3.4e-12 apart, the flux through the
+two sides of a seam did not cancel, and mass and energy leaked at ~1e-13
+wherever the flow crosses the boundary (it does from t = 0 here). Both shipped
+meshes, 32² and 56², are regenerated; a copy made from an older `.geo`
+(`meshes/gmsh_grids`, `JexpressoMeshes`) should be regenerated too. The rotor
+and the blast read the 32² mesh.
 
 ## Files
 
