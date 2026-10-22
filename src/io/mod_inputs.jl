@@ -646,8 +646,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     # problems/MHD/blastBalsaraSpicer1999: ambient |B| along x (Heaviside-Lorentz); ambient β = 0.2/B0².
     # 100/√(4π) is Balsara & Spicer's B = 100 (β = 2.51e-4). Change only this for a β sweep.
     inputs[:blast_B0] = Float64(get(inputs, :blast_B0, 100.0/sqrt(4.0*π)))
-    # problems/MHD/shockCloudDaiWoodward1998: initial shock position (read off Dai & Woodward's Fig. 20)
-    # and the width over which the shock and the letters' edges are spread (0: DW's sharp data).
+    # problems/MHD/shockCloudDaiWoodward1998 (and shockCloudMach15DaiWoodward1998): which test ("letters",
+    # Fig. 20, or "cloud", Fig. 23), the initial shock position, and the width over which the shock and the
+    # cloud edges are spread (0: DW's sharp data).
+    inputs[:sc_problem] = String(get(inputs, :sc_problem, "letters"))
     inputs[:sc_shock_x] = Float64(get(inputs, :sc_shock_x, 0.2))
     inputs[:sc_smooth]  = Float64(get(inputs, :sc_smooth, 0.0))
     if(!haskey(inputs, :Δt))

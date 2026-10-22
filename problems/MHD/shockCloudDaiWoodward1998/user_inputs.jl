@@ -15,6 +15,7 @@ function user_inputs()
         :diagnostics_at_times => (0.0:0.0025:0.105), #(0.0, 0.02507, 0.05004, 0.08003, 0.10411),   # the four panels of Fig. 20
         :conservation_every   => 10,       # mass and energy totals: conservation.dat (they change through the open sides)
         :conservation_slots   => [1, 4],
+        :sc_problem           => "letters",   # Fig. 20; "cloud" is Fig. 23 (problems/MHD/shockCloudMach15DaiWoodward1998)
         :sc_shock_x           => 0.2,      # initial shock position (read off Fig. 20, see initialize.jl)
         :sc_smooth            => 1.5/64,   # shock and letters' edges spread over one element (1/32 on SC_64x48); 0 = DW's sharp data
         :restart_time         => 0.0,
