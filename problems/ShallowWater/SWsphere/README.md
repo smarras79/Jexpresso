@@ -53,13 +53,16 @@ only the Galewsky height perturbation, and writes run X to
 `<outdir>/trajectory_X/` (default `./trajectories/`):
 
 ```bash
-julia --project=. problems/ShallowWater/SWsphere/run_trajectories.jl            # 25 runs
+julia --project=. problems/ShallowWater/SWsphere/run_trajectories.jl            # 10 runs
 julia --project=. problems/ShallowWater/SWsphere/run_trajectories.jl --dry-run  # table only
 ```
 
-By default it runs every combination of 5 amplitudes (120 ± 80 m: 40, 80,
-120, 160, 200 m) and 5 latitudes (45 ± 15°: 30°, 37.5°, 45°, 52.5°, 60°), i.e.
-25 trajectories, with the latitude varying fastest. Each trajectory runs to the
+The parameters come from a grid of 5 amplitudes (120 ± 80 m: 40, 80, 120, 160,
+200 m) and 5 latitudes (45 ± 15°: 30°, 37.5°, 45°, 52.5°, 60°), numbered 1–25
+with the latitude varying fastest. By default only 10 of the 25 are run
+(trajectory_1, 3, 7, 9, 13, 15, 16, 19, 22, 25), chosen so that every amplitude
+and every latitude appears exactly twice; `--design grid` runs all 25 and skips
+the 10 already completed. Each trajectory runs to the
 deck's 6 days with an output every 6 hours; `--tend` and `--output-interval`
 change them. (Ranges of only ±5% give trajectories that are indistinguishable
 once the wave breaks: the jet's own fastest-growing mode takes over.)

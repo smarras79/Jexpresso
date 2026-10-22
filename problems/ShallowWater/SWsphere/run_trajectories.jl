@@ -18,14 +18,25 @@
 #   ĥ  = 120 m ± 80 m  (--amp-halfwidth) = 40, 80, 120, 160, 200 m
 #   φ₂ =  45°  ± 15°   (--lat-halfwidth) = 30, 37.5, 45, 52.5, 60°
 #
-# i.e. 5 × 5 = 25 trajectories, numbered with the latitude varying fastest:
+# The 5 × 5 = 25 combinations are numbered with the latitude varying fastest:
 #
 #   trajectory_1  … trajectory_5    ĥ =  40 m, φ₂ = 30° … 60°
 #   trajectory_6  … trajectory_10   ĥ =  80 m, φ₂ = 30° … 60°
 #   …
 #   trajectory_21 … trajectory_25   ĥ = 200 m, φ₂ = 30° … 60°
 #
-# (trajectory_13 is the reference Galewsky run.) Narrower ranges (e.g. ±5%)
+# (trajectory_13 is the reference Galewsky run.)
+#
+# By default (--design subset) only 10 of them are run: two "Latin" diagonals
+# of the grid, so every amplitude and every latitude is used exactly twice,
+# and the two parameters are not tied to each other:
+#
+#   trajectory   1   7  13  19  25 |   3   9  15  16  22
+#   ĥ [m]       40  80 120 160 200 |  40  80 120 160 200
+#   φ₂ [°]      30 37.5 45 52.5 60 |  45 52.5 60  30 37.5
+#
+# They keep their numbers in the full grid, so a later --design grid run
+# (all 25) skips these 10 as already COMPLETED and only runs the other 15. Narrower ranges (e.g. ±5%)
 # give trajectories that are hard to tell apart after the wave breaks: the
 # jet's own fastest-growing mode takes over whatever the details of the bump.
 # Trajectory X writes everything (VTK, POD, the deck copy,
@@ -93,6 +104,9 @@ function parse_sweep_args()
             help     = "number of latitude values (evenly spaced over lat0 ± lat-halfwidth)"
             arg_type = Int
             default  = 5
+        "--design"
+            help    = "grid = every (ĥ, φ₂) combination; subset = 2 Latin diagonals of that grid, i.e. 2n runs for n × n values (default)"
+            default = "subset"
         "--amplitudes"
             help    = "explicit amplitudes ĥ [m], e.g. \"100,120,140\"; replaces --hhat0/--amp-halfwidth/--namp"
             default = ""
@@ -164,6 +178,19 @@ end
 params = [(hhat = h, lat_deg = φ, iamp = ia, ilat = il)
           for (ia, h) in enumerate(amps) for (il, φ) in enumerate(lats)]
 trajectories = [(; id = args["first"] + i - 1, p...) for (i, p) in enumerate(params)]
+
+# --design subset: the cells (i, i) and (i, i + ⌊n/2⌋ mod n) of the n × n grid,
+# so each amplitude and each latitude appears exactly twice. Ids stay the
+# full-grid ids, so the subset is reused by a later full-grid sweep.
+if args["design"] == "subset"
+    n = length(amps)
+    length(lats) == n ||
+        error("--design subset needs as many amplitudes as latitudes (have $(length(amps)) and $(length(lats))); use --design grid")
+    keep = Set(vcat([(i, i) for i in 1:n], [(i, mod(i - 1 + n ÷ 2, n) + 1) for i in 1:n]))
+    filter!(t -> (t.iamp, t.ilat) in keep, trajectories)
+elseif args["design"] != "grid"
+    error("--design must be \"grid\" or \"subset\", got \"$(args["design"])\"")
+end
 
 let n = args["tend"] / args["output-interval"]
     isapprox(n, round(n)) ||
