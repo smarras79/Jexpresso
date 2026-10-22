@@ -14,6 +14,16 @@ Reads iter_N.pvtu -> iter_N/iter_N_*.vtu on the native grid.
   python3 tools/plot_mhd_matrix.py <run> --vars rho p pmag Mach mu_dsgs --cmaps pmag managua --cmaps Mach gist_ncar
   python3 tools/plot_mhd_matrix.py <run> --vars rho log10rho p log10p pmag Mach Bx By mu_dsgs --format pdf
           # log10<field>: computed when the file lacks it; --log VAR instead turns that column itself to log10
+
+
+#Reproduce the shock-cloud MHD plot:
+python3 tools/plot_mhd_matrix.py output/MHD/shockCloudDaiWoodrow1998/shockCloud-output-128x96 \
+        --times 0.025 0.05 0.08 0.105 \
+        --vars ρ p Mach mu_dsgs --log rho p \
+        --cmaps ρ gray_r \
+        --cmaps Mach YellowGreyBlue --clim Mach 0 3
+
+
 Colormaps: per-variable defaults in VAR_CMAPS (rho turbo, p inferno, pmag managua, Mach and Mach_f gist_ncar,
 schlieren Yellow - Gray - Blue, schlieren_grad_rho the same reversed (both: shocks dark red), mu_dsgs Cool to Warm Extended); --cmaps VAR NAME overrides one column (ParaView's
 XRay, CoolToWarmExtended and "Yellow - Gray - Blue", RainbowDesaturated, or any matplotlib name; _r reverses);
