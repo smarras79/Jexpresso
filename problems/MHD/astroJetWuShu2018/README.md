@@ -18,6 +18,19 @@ Wu & Shu (SISC 40 (2018) B1302, Example 5.6), after Balsara's (2012) gas-dynamic
 
 β_a is the ambient plasma beta, gas over magnetic pressure: β = 2p/|**B**|², since the magnetic pressure is ½|**B**|² in the Heaviside–Lorentz units of the code. With p = 1, β_a = 2/B_a². The beam sound speed is exactly 1, so u_jet = 800 is exactly Mach 800. The GLM cleaning speed is c_h = 812, the largest of the ambient and beam wave speeds.
 
+**What "Mach 800" means.** It is the beam's flow Mach number: its speed relative to the medium it is injected into (at rest), divided by the beam gas's own sound speed, 800/1. This is the gas-dynamics definition Balsara (2012) and Wu & Shu use. It is not the Mach number of a shock, and it is sonic, not magnetosonic.
+
+The relevant MHD speed is the fast magnetosonic speed. For motion along **B**, as here (both the beam and **B** point along y), the fast speed is max(c, v_A), with Alfvén speed v_A = |**B**|/√ρ. At β_a = 10⁻², v_A is 12 times the sound speed in both media, so the magnetosonic Mach numbers are far below 800:
+
+| | speed | sonic Mach | fast (magnetosonic) Mach |
+|---|---|---|---|
+| beam, relative to its own gas: c = 1, v_A = √(200/1.4) = 11.95 | 800 | **800** (the quoted number) | **67** |
+| bow shock at the jet head, into the ambient at rest: c = √10 = 3.16, v_A = √(200/0.14) = 37.8 | ≈ 608 (ram-pressure estimate; 600–633 measured below) | 192 | **16** |
+
+- **Shock Mach number.** The bow shock's Mach number is the head speed relative to the ambient gas divided by the ambient wave speed. At the tip, where the shock normal is along **B**, the fast Mach number is about 16. Along the oblique flanks the normal speed, and with it the Mach number, is lower.
+- **Output fields.** The `Mach_f` output (|**v**|/c_f with the isotropic bound c_f = √((γp + |**B**|²)/ρ)) reads 66.7 in the beam: the beam's fast Mach number, the second column above (see "Mach number" under Results).
+- **Same distinction in other cases.** `problems/MHD/shockCloudDaiWoodward1998` makes the same distinction for Dai & Woodward's "Mach 12" and "Mach 15" shocks, whose fast Mach numbers its plotting columns `Mach_s`/`Mach_fs` recover.
+
 **Two departures at the inlet datum**, both in `user_flux.jl` and `user_bc.jl`:
 
 | | default | the paper | restore it with |
