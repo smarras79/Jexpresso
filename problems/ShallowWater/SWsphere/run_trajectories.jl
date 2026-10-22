@@ -88,7 +88,7 @@ function parse_sweep_args()
         "--tend"
             help    = "final time :tend of every trajectory [s] (default: 3 days)"
             arg_type = Float64
-            default  = 3*24*3600.0
+            default  = 6*24*3600.0
         "--output-interval"
             help     = "time between outputs [s]; sets :ndiagnostics_outputs = tend/interval (default: 6 h)"
             arg_type = Float64

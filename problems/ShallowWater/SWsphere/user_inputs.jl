@@ -244,7 +244,7 @@ function user_inputs()
         # in any other 1-D, 2-D, 3-D or manifold case. Everything below is an
         # override. See problems/AdvDiff/PODbenchmark for the reference
         # benchmark, whose POD is known in closed form.
-        :lpod                 => true,
+        :lpod                 => false,
         # WHICH FIELDS. :vorticity is the one this test is judged on and the one
         # whose modes are worth looking at — h barely moves while the instability
         # grows. A field may also be named directly ("phi", "phiu", …, or any of
