@@ -1,5 +1,5 @@
 #!/bin/bash -l
-#SBATCH --job-name=rotor
+#SBATCH --job-name=blast
 #SBATCH --output=%x.%j.out
 #SBATCH --error=%x.%j.err
 #SBATCH --partition=general
@@ -34,4 +34,5 @@ export JULIA_PKG_PRECOMPILE_AUTO=0  # ranks must never attempt to precompile
 #mpirun -np 64 julia --project=. src/Jexpresso.jl CompEuler ffs_step
 #mpirun -np 64 julia --project=. src/Jexpresso.jl MHD orszagTangBormanis2024
 #mpirun -np 64 julia --project=. src/Jexpresso.jl MHD fluxEmergenceSon2025DSGS
-mpirun -np 64 julia --project=. src/Jexpresso.jl MHD rotorDaoNazarov2022
+#mpirun -np 64 julia --project=. src/Jexpresso.jl MHD rotorDaoNazarov2022
+mpirun -np 64 julia --project=. src/Jexpresso.jl MHD blastBalsaraSpicer1999
