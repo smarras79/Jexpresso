@@ -28,6 +28,8 @@
 # KNOBS (environment variables, all optional):
 #   SWEEP_ARGS     extra arguments for run_trajectories.jl, e.g.
 #                  SWEEP_ARGS="--namp 7 --amp-variation 0.10"   (default: none)
+#                  SWEEP_ARGS="--amplitudes 100,120,140 --latitudes 40,50 --set μ=1.0e5"
+#                  (no spaces inside a single value: SWEEP_ARGS is split on spaces)
 #   OUTDIR         parent directory of trajectory_X/        (default: ./trajectories)
 #   NP             MPI ranks per trajectory                  (default: 12)
 #   TIME_LIMIT     wall time per trajectory                  (default: 02:00:00)

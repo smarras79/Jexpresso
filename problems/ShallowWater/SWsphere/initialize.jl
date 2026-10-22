@@ -201,6 +201,8 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
                 p.umax, p.φ0, p.φ1, p.φ0*180/π, p.φ1*180/π)
         @printf(" #   balanced height: h₀ = %.10f m for a global mean depth of %.1f m\n", h0, p.hmean)
         println(" #   perturbation: ", lpert ? "ON" : "OFF (balanced steady state only)")
+        lpert && @printf(" #   perturbation: ĥ = %.4f m centred at λ = 0, φ₂ = %.6f rad = %.4f° (α = %.4f, β = %.4f)\n",
+                         p.hhat, p.φ2, p.φ2*180/π, p.α, p.β)
         if abs(p.a - 6.37122e6)/6.37122e6 > 0.01
             @warn string(" # initialize.jl: the shell radius is ", p.a,
                          " m, not the Galewsky Earth radius 6.37122e6 m. The balance is ",
