@@ -100,6 +100,23 @@ Without the thermal residual, the deep undershoot is a grid-scale band that halv
 - **After step 7:** energy holds to 4.8·10⁻¹⁶ and mass to 3·10⁻¹⁵ for the rest of the run.
 - **With sound floors:** the limiter stopped by step 200, and there were 554 startup floors (+1.5·10⁻⁵ of energy).
 
+**Sensor: legacy, not residual.** The deck keeps `:dsgs_sensor => "legacy"`, the sensor the rotor setup it builds on was tuned with. The residual sensor (the default, used by the smooth vortex and the Alfvén wave) was tried in its place, everything else in the deck unchanged, to t = 0.01 (21 Oct 2026). The thermal residual works with either: it is built from the same per-node residual as the main sensor.
+
+| | 64², legacy | 64², residual | 128², legacy | 128², residual |
+|---|---|---|---|---|
+| ρ | 0.2229 – 3.582 | 0.2172 – 3.949 | 0.2023 – 4.288 | 0.1942 – 4.648 |
+| p min | 0.0959 | 0.0954 | 0.0947 | 4.3·10⁻⁷ |
+| nodes with p < 0.0999 | 1.9% | 1.9% | 1.25% | 1.30% |
+| nodes with p < 0.09 / 0.05 / 10⁻³ | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 | 12 / 7 / 2 |
+| max M (p > 10⁻³) | 9.13 | 7.66 | 11.3 | 9.9 |
+| mean ν | 1.16·10⁻² | 0.98·10⁻² | 3.0·10⁻³ | 2.6·10⁻³ |
+| limiter active (stage calls) | 184, startup | 476 | 217, startup | 1,823 of 10,000, to the end |
+| element limitings | 3,000 | 4,094 | 5,336 | 10,229 |
+| inadmissible means / node floors | 180 / 574 | 88 / 308 | 96 / 288 | 48 / 192 |
+| energy added by the node floors | 1.75·10⁻⁵ | 1.42·10⁻⁵ | 1.7·10⁻⁶ | 2.1·10⁻⁶ |
+
+At 64² the residual sensor looks as good or better: sharper shells, a lower Mach peak, half the startup trouble. At 128² it is not. Its ν, 16% below the legacy one, no longer damps the resolved ripple of the fast front: two nodes fall to p ≈ 4·10⁻⁷ and a dozen 10–50% below the ambient, the undershoot the thermal residual was added to remove, and the limiter acts in 18% of the stage calls to the end instead of only at the initial jump. Mass holds to 8·10⁻¹⁵ either way.
+
 **Why the sound floors saturate here.** The table counts the share of nodes where ν exceeds a given fraction of its local cap C_max Δ (|**v**| + c_f):
 
 | | ν > 0.9 cap | ν > 0.5 cap | ν > 0.1 cap |

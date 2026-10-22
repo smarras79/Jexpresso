@@ -4,6 +4,8 @@
 
     python3 tools/plot_conservation.py output/MHD/blastBalsaraSpicer1999/blast-output-128x128 --labels '$128^2$' --out output/MHD/blastBalsaraSpicer1999/blast-output-128x128/blast_conservation_128x128.pdf
 
+python3 tools/plot_conservation.py output/MHD/rotor-output-256x256 --vars ρ ρE --labels '$256^2$, $N=4$' --out output/MHD/rotor-output-256x256/rotor_mass_256x256.pdf
+
 The smooth vortex and the Alfven wave write one file per run, named as the run's error record
 (conservation_nop<N>_nelx<M>_<tag>.dat), into the output directory their sweep shares; pass the
 files, which are labelled by that name unless --labels says otherwise:
