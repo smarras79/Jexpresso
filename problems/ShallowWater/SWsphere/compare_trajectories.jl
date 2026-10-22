@@ -10,8 +10,9 @@
 #   julia --project=. problems/ShallowWater/SWsphere/compare_trajectories.jl [dir] [ref]
 #
 #   dir   parent directory of the trajectory_X/   (default: ./trajectories)
-#   ref   reference trajectory number              (default: 13, ĥ=120 m, φ₂=45°
-#                                                   in the default 5 × 5 grid)
+#   ref   reference trajectory number              (default: the one with
+#                                                   ĥ = 120 m, φ₂ = 45°, from
+#                                                   trajectories.csv; else the first)
 #
 # dir is the OUTDIR the sweep was submitted with; the submit script printed it
 # ("output: …"), and every trajectory log has it on its "Output written to" line.
@@ -35,16 +36,19 @@ include(joinpath(@__DIR__, "..", "..", "..", "tools", "vtu_reader.jl"))
 using .VTUReader
 
 dir    = abspath(length(ARGS) >= 1 ? ARGS[1] : "./trajectories")
-ref_id = length(ARGS) >= 2 ? parse(Int, ARGS[2]) : 13
+ref_arg = length(ARGS) >= 2 ? parse(Int, ARGS[2]) : nothing
 FIELDS = ("h", "u")
 
 # Trajectory parameters, from the table run_trajectories.jl wrote.
-params = Dict{Int,String}()
+params  = Dict{Int,String}()
+galewsky = nothing          # the published case, ĥ = 120 m and φ₂ = 45°
 csv = joinpath(dir, "trajectories.csv")
 if isfile(csv)
     for line in Iterators.drop(eachline(csv), 1)
         c = split(line, ',')
-        params[parse(Int, c[1])] = @sprintf("ĥ=%.3f m, φ₂=%.4f°", parse(Float64, c[5]), parse(Float64, c[6]))
+        id, h, φ = parse(Int, c[1]), parse(Float64, c[5]), parse(Float64, c[6])
+        params[id] = @sprintf("ĥ=%.3f m, φ₂=%.4f°", h, φ)
+        isapprox(h, 120.0) && isapprox(φ, 45.0) && (global galewsky = id)
     end
 end
 
@@ -52,6 +56,8 @@ isdir(dir) || error("""$dir does not exist. Pass the OUTDIR the sweep wrote to a
        find it with:   grep -h "Output written to" logs/SWtraj.*.out | sort -u""")
 trajdirs = filter(d -> occursin(r"^trajectory_\d+$", d) && isdir(joinpath(dir, d)), readdir(dir))
 ids = sort!([parse(Int, d[12:end]) for d in trajdirs])
+isempty(ids) && error("no trajectory_X directories in $dir")
+ref_id = something(ref_arg, galewsky, first(ids))
 ref_id in ids || error("reference trajectory_$ref_id not found in $dir (have: $(join(ids, ", ")))")
 
 # Output files of one trajectory, in time order: the initial condition first.
