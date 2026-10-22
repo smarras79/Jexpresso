@@ -27,6 +27,14 @@ python3 tools/plot_mhd_matrix.py output/MHD/shockCloudDaiWoodrow1998/shockCloud-
 python3 tools/plot_mhd_matrix.py output/MHD/shockCloudMach15DaiWoodward1998/<run> --times 0.16 \
         --vars rho Blines --log rho --cmaps rho gray --fieldlines-on rho --nlevels 80 --xlim 0.1 0.9 --ylim 0.1 0.9
 
+#Mach number in the frame of a planar shock moving along +x at speed s (shock-cloud cases): Mach_s = |v - s e_x|/c,
+#Mach_fs = |u - s|/c_f,x with c_f,x the fast speed along x. Ahead of the shock they are the shock's Mach numbers
+#(letters: 14.4 and 12.0 = DW's "Mach 12"; cloud: 15.8 and 15.0). s is read from the run's user_inputs.jl
+#(:sc_problem), or given with --shock-speed; --gamma (default 5/3) for c:
+python3 tools/plot_mhd_matrix.py output/MHD/shockCloudDaiWoodward1998/<run> --times 0.025 0.05 0.08 0.105 \
+        --vars rho Mach Mach_s Mach_fs --log rho --cmaps rho gray_r \
+        --cmaps Mach YellowGreyBlue --clim Mach 0 3 --clim Mach_s 0 16 --clim Mach_fs 0 16
+
 Colormaps: per-variable defaults in VAR_CMAPS (rho turbo, p inferno, pmag managua, Mach and Mach_f gist_ncar,
 schlieren Yellow - Gray - Blue, schlieren_grad_rho the same reversed (both: shocks dark red), mu_dsgs Cool to Warm Extended); --cmaps VAR NAME overrides one column (ParaView's
 XRay, CoolToWarmExtended and "Yellow - Gray - Blue", RainbowDesaturated, or any matplotlib name; _r reverses);
@@ -45,9 +53,24 @@ from matplotlib.tri import Triangulation
 LABELS = {"ρ": r"$\rho$", "p": r"$p$", "pmag": r"$|\mathbf{B}|^2/2$", "Mach": r"$M$", "mu_dsgs": r"$\nu_\mathrm{DSGS}$",
           "β": r"$\beta$", "ψ": r"$\psi$", "T": r"$T$", "u": r"$u$", "v": r"$v$", "w": r"$w$",
           "Bx": r"$B_x$", "By": r"$B_y$", "Bz": r"$B_z$", "vA": r"$|\mathbf{B}|/\sqrt{\rho}$", "speed": r"$|\mathbf{v}|$",
-          "Bmag": r"$|\mathbf{B}|$", "Mach_f": r"$M_f$", "Blines": "magnetic field lines", "schlieren": "schlieren", "schlieren_grad_rho": r"$|\nabla\rho|$"}
+          "Bmag": r"$|\mathbf{B}|$", "Mach_f": r"$M_f$",
+          "Mach_s": r"$|\mathbf{v} - s\,\mathbf{e}_x|/c$", "Mach_fs": r"$|u - s|/c_{f,x}$", "Blines": "magnetic field lines", "schlieren": "schlieren", "schlieren_grad_rho": r"$|\nabla\rho|$"}
 DERIVED = {"vA": ("ρ", "Bx", "By", "Bz"), "speed": ("u", "v", "w"), "Bmag": ("Bx", "By", "Bz"),
-           "schlieren": ("ρ",), "schlieren_grad_rho": ("ρ",), "Blines": ("Bx", "By")}
+           "schlieren": ("ρ",), "schlieren_grad_rho": ("ρ",), "Blines": ("Bx", "By"),
+           "Mach_s": ("ρ", "p", "u", "v", "w"), "Mach_fs": ("ρ", "p", "u", "Bx", "By", "Bz")}
+SHOCK = {"speed": None, "gamma": 5.0 / 3.0}   # --shock-speed (or the run's :sc_problem), --gamma
+# shock speed s = (ρ₂u₂ − ρ₁u₁)/(ρ₂ − ρ₁) of the states in problems/MHD/shockCloudDaiWoodward1998/user_flux.jl
+SC_SHOCK_SPEED = {"letters": 3.91109 * 13.8388 / (3.91109 - 1.0), "cloud": 15.2677 / (3.94605 - 1.0)}
+
+
+def shock_speed_of_run(d):
+    """The shock speed of a shock-cloud run, from the :sc_problem of the user_inputs.jl copied into its output."""
+    try:
+        with open(os.path.join(d, "user_inputs.jl"), encoding="utf-8") as fh:
+            m = re.search(r':sc_problem\s*=>\s*"(\w+)"', fh.read())
+    except OSError:
+        return None
+    return SC_SHOCK_SPEED.get(m.group(1)) if m else None
 SCHLIEREN_K = 20.0   # --schlieren-k, the k of a schlieren computed here (Jexpresso's :schlieren_k default)
 ODD = ("u", "Bx")   # fields that change sign under the reflection x -> -x
 
@@ -120,6 +143,20 @@ def field(g, v, f):
         gy, gx = np.gradient(Z, g["yc"], g["xc"])
         G = np.hypot(gx, gy)[g["iy"], g["ix"]]
         return G if v == "schlieren_grad_rho" else np.exp(-SCHLIEREN_K * G / max(np.nanmax(G), 1e-300))
+    if v in ("Mach_s", "Mach_fs"):
+        # Mach number in the frame of the planar shock moving at s along +x
+        s, gam = SHOCK["speed"], SHOCK["gamma"]
+        if s is None:
+            sys.exit(f"{f}: {v} needs the shock speed: --shock-speed S (not found as :sc_problem in the run's user_inputs.jl)")
+        rho, p, du = F["ρ"], np.maximum(F["p"], 0.0), F["u"] - s
+        a2 = gam * p / rho
+        if v == "Mach_s":
+            return np.sqrt(du**2 + F["v"]**2 + F.get("w", 0.0)**2) / np.sqrt(np.maximum(a2, 1e-300))
+        # fast speed along x: c² = ½[a² + b² + √((a² + b²)² − 4a²bx²)], b² = |B|²/ρ, bx² = Bx²/ρ (Heaviside-Lorentz B)
+        b2 = (F["Bx"]**2 + F["By"]**2 + F.get("Bz", 0.0)**2) / rho
+        bx2 = F["Bx"]**2 / rho
+        cf2 = 0.5 * (a2 + b2 + np.sqrt(np.maximum((a2 + b2)**2 - 4.0 * a2 * bx2, 0.0)))
+        return np.abs(du) / np.sqrt(np.maximum(cf2, 1e-300))
     if v == "Blines":   # drawn as contours of the flux function in main(); no colored field
         return np.zeros(len(g["x"]))
     if v == "Bmag":
@@ -166,6 +203,10 @@ def main():
     p.add_argument("--fieldlines", action="store_true", help="magnetic field lines on every column except mu_*")
     p.add_argument("--fieldlines-on", nargs="+", default=[], metavar="VAR",
                    help="magnetic field lines on these columns only (the Blines column always has them)")
+    p.add_argument("--shock-speed", type=float, default=None,
+                   help="speed s of the planar shock along +x for the Mach_s / Mach_fs columns "
+                        "(default: from the run's :sc_problem, 18.59 letters, 5.18 cloud)")
+    p.add_argument("--gamma", type=float, default=5.0 / 3.0, help="γ for the sound speed of Mach_s / Mach_fs")
     p.add_argument("--xlim", nargs=2, type=float, help="x range of every panel (default: the domain)")
     p.add_argument("--ylim", nargs=2, type=float, help="y range of every panel (default: the domain)")
     p.add_argument("--mirror", action="store_true",
@@ -221,8 +262,10 @@ def main():
         want |= {"Bx", "By"}
     lines_on = {greek(v) for v in a.fieldlines_on}
 
+    SHOCK["gamma"] = a.gamma
     rows = []
     for d, snaps, t, rlab in items:
+        SHOCK["speed"] = a.shock_speed if a.shock_speed is not None else shock_speed_of_run(d)
         f = pick(snaps, t, 1e-6 * max(1.0, max(snaps)))
         if f is None:
             sys.exit(f"{d}: no snapshot at t = {t:g} (has t = {', '.join(f'{s:g}' for s in sorted(snaps))})")

@@ -173,6 +173,14 @@ python3 tools/plot_mhd_matrix.py $D --times 0.025 0.05 0.08 0.105 \
 
 `--clim Mach 0 2` is needed. Where the limiter holds p at its floor, the sound speed vanishes and M spikes to ~250 at a few nodes. In the post-shock gas M = 1.33.
 
+Mach number in the shock's frame (`Mach_s`: |**v** − s **e**_x|/c; `Mach_fs`: |u − s|/c_f,x, with c_f,x the fast speed along the shock normal). Ahead of the shock these are the shock's Mach numbers: 14.4 (sonic) and 12.0, DW's "Mach 12". Behind it the flow leaves the shock at 0.46, slower than the fast speed as a fast shock requires. The dense letters, whose sound speed is √50 times lower, saturate at the top of the range. `Mach` is the lab-frame |**v**|/c: 0 ahead, 1.33 behind. The script reads s = 18.59 from the run's `:sc_problem`; `--shock-speed` overrides it.
+
+```bash
+python3 tools/plot_mhd_matrix.py $D --times 0.025 0.05 0.08 0.105 \
+        --vars rho Mach Mach_s Mach_fs --log rho --cmaps rho gray_r \
+        --cmaps Mach YellowGreyBlue --clim Mach 0 3 --clim Mach_s 0 16 --clim Mach_fs 0 16
+```
+
 Magnetic field lines, as in DW's Fig. 19 (in-plane lines, contours of the flux function A with B_x = ∂A/∂y, B_y = −∂A/∂x; equally spaced levels, so the line density follows |**B**|):
 
 ```bash

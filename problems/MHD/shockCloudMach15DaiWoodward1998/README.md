@@ -61,6 +61,13 @@ python3 tools/plot_mhd_matrix.py $D --times 0.04 0.08 0.12 0.16 \
         --cmaps rho gray --cmaps Mach YellowGreyBlue --clim Mach 0 16     # the gas ahead enters at sonic Mach 11.8
 ```
 
+Mach number in the shock's frame (s = 5.18, read from the run): ahead of the shock `Mach_s` = 15.8 (sonic) and `Mach_fs` = 15.0, DW's "Mach 15" (see the letters README):
+
+```bash
+python3 tools/plot_mhd_matrix.py $D --times 0.04 0.08 0.12 0.16 \
+        --vars rho Mach_s Mach_fs --log rho --cmaps rho gray --clim Mach_s 0 18 --clim Mach_fs 0 18
+```
+
 Magnetic field lines as in DW's Fig. 19 (DW show them for their Mach 10 cloud), alone and zoomed on the cloud, or over ρ:
 
 ```bash
