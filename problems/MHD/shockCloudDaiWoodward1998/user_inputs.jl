@@ -9,14 +9,14 @@ function user_inputs()
     inputs = Dict(
         :ode_solver           => CarpenterKennedy2N54(),
         :nop                  => 4,
-        :Δt                   => 1.6e-5,   # CFL ≈ 0.15 at |v| + c_f = 24.4, smallest LGL spacing 2.7e-3 (128×96)
+        :Δt                   => 1.0e-5,   # CFL ≈ 0.15 at |v| + c_f = 24.4, smallest LGL spacing 2.7e-3 (128×96)
         :tinit                => 0.0,
-        :tend                 => 0.10411,
-        :diagnostics_at_times => (0.0, 0.02507, 0.05004, 0.08003, 0.10411),   # the four panels of Fig. 20
+        :tend                 => 0.105,
+        :diagnostics_at_times => (0.0:0.0025:0.105), #(0.0, 0.02507, 0.05004, 0.08003, 0.10411),   # the four panels of Fig. 20
         :conservation_every   => 10,       # mass and energy totals: conservation.dat (they change through the open sides)
         :conservation_slots   => [1, 4],
         :sc_shock_x           => 0.2,      # initial shock position (read off Fig. 20, see initialize.jl)
-        :sc_smooth            => 1.0/64,   # shock and letters' edges spread over one element (1/32 on SC_64x48); 0 = DW's sharp data
+        :sc_smooth            => 1.5/64,   # shock and letters' edges spread over one element (1/32 on SC_64x48); 0 = DW's sharp data
         :restart_time         => 0.0,
         :lrestart             => false,
         :lsource              => true,     # GLM ψ damping (user_source.jl)
