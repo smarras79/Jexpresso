@@ -523,6 +523,9 @@ function user_inputs()
         :filter_upper_mu     => parse(Float64, get(ENV, "DBG_FUP_MU", "0.01")),
         :filter_upper_z0     => parse(Float64, get(ENV, "DBG_FUP_Z0", "1800.0")),
         :filter_upper_z1     => parse(Float64, get(ENV, "DBG_FUP_Z1", "2100.0")),
+        # Equations it acts on, "a:b" (default 2:4, momentum). DBG_FUP_EQS=1:5
+        # also filters rho and rho*theta, as LESICP4/LESICP2 (4daf843e).
+        :filter_upper_eqs    => let s = parse.(Int, split(get(ENV, "DBG_FUP_EQS", "2:4"), ":")); s[1]:s[2] end,
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
