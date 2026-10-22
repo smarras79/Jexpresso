@@ -148,7 +148,11 @@ const RANK = MPI.Comm_rank(MPI.COMM_WORLD)
 
 if RANK == 0
     mkpath(outdir)
-    open(io -> print_table(io, trajectories), joinpath(outdir, "trajectories.csv"), "w")
+    # Write-then-rename: under a Slurm job array every task writes this same
+    # file at the same moment, and a rename is atomic where a write is not.
+    tmp = joinpath(outdir, "trajectories.csv.$(getpid()).$(gethostname()).tmp")
+    open(io -> print_table(io, trajectories), tmp, "w")
+    mv(tmp, joinpath(outdir, "trajectories.csv"); force = true)
     println(" # SWsphere sweep: ", length(trajectories), " trajectories → ", outdir)
 end
 MPI.Barrier(MPI.COMM_WORLD)

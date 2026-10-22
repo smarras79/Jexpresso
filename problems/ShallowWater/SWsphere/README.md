@@ -65,6 +65,16 @@ By default it runs every combination of 5 amplitudes (±5% around 120 m: 114,
 `--help` lists the options (reference values, widths, counts, `--tend`,
 `--only`, `--force`). Under `mpiexec`, all ranks run every trajectory together.
 
+On Wulver, `submit_trajectories_wulver.sh` submits all of them at once as a
+Slurm job array, one trajectory per task on 12 MPI ranks, after a single setup
+job that precompiles and warms the mesh caches:
+
+```bash
+bash problems/ShallowWater/SWsphere/submit_trajectories_wulver.sh   # with bash, not sbatch
+```
+
+Its header lists the knobs (`TIME_LIMIT`, `NP`, `ARRAY` for reruns, `SWEEP_ARGS`, …).
+
 ### In parallel
 
 The case runs on any number of MPI ranks:
