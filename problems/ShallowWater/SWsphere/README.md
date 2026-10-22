@@ -46,6 +46,25 @@ Jexpresso case.
 > session opened before you pulled will run the new `drivers.jl` against the old
 > module and die with `UndefVarError`.
 
+### Ensemble of perturbed runs (ROM training trajectories)
+
+`run_trajectories.jl` runs the case repeatedly in one Julia session, changing
+only the Galewsky height perturbation, and writes run X to
+`<outdir>/trajectory_X/` (default `./trajectories/`):
+
+```bash
+julia --project=. problems/ShallowWater/SWsphere/run_trajectories.jl            # 10 runs
+julia --project=. problems/ShallowWater/SWsphere/run_trajectories.jl --dry-run  # table only
+```
+
+By default it runs 10 trajectories around the published ĥ = 120 m, φ₂ = 45°:
+1–5 vary the amplitude over ±5% (114, 117, 120, 123, 126 m) and 6–10 vary
+the latitude over ±5% (42.75°, 43.875°, 45°, 46.125°, 47.25°).
+`trajectories.csv` maps each X to its parameters, and each directory holds an
+`input_overrides.txt`. Already-completed trajectories are skipped on relaunch.
+`--help` lists the options (reference values, widths, counts, `--tend`,
+`--only`, `--force`). Under `mpiexec`, all ranks run every trajectory together.
+
 ### In parallel
 
 The case runs on any number of MPI ranks:

@@ -337,6 +337,15 @@ include(joinpath( "auxiliary", "checks.jl"))
 const _LOADED_CASE_DIR  = Ref{String}("")
 const _CASE_FILE_MTIMES = Dict{String,Float64}()
 
+# Per-call overrides set by run_case(...; overrides, output_dir) and read by
+# run.jl: `overrides` is merged on top of the deck's user_inputs() Dict, and a
+# non-empty `output_dir` is used verbatim as OUTPUT_DIR (no <eqs>/<case>/output
+# suffix). Both are cleared again when run_case returns, so a plain run_case
+# afterwards gets the deck exactly as written. Used by parameter sweeps such as
+# problems/ShallowWater/SWsphere/run_trajectories.jl.
+const _RUN_INPUT_OVERRIDES = Dict{Symbol,Any}()
+const _RUN_OUTPUT_DIR      = Ref{String}("")
+
 # ──────────────────────────────────────────────────────────────────────
 # Lazy dependency loaders.
 #
@@ -553,11 +562,16 @@ export @timers
 # instead of problems/<eqs>/<eqs_case>; matches the third positional
 # arg of the historical command-line form.
 """
-    Jexpresso.run_case(eqs, eqs_case; CI_MODE=false)
+    Jexpresso.run_case(eqs, eqs_case; CI_MODE=false, overrides=nothing, output_dir=nothing)
 
 Run a single Jexpresso case from the REPL. `eqs` and `eqs_case` are
 the directory names under `problems/<eqs>/<eqs_case>/` (e.g.
 `run_case("CompEuler", "3d")`). Returns `nothing`.
+
+`overrides` (a Dict of input keys → values) is merged on top of the
+case's `user_inputs()` for this call only, e.g.
+`overrides = Dict(:galewsky_hhat => 60.0, :tend => 86400.0)`.
+`output_dir`, when given, is the exact directory the run writes to.
 
 Prefer this to `include("./src/Jexpresso.jl")` — the include path
 re-defines the module on every call (the `WARNING: replacing module
@@ -566,7 +580,24 @@ orchestration layer. With `run_case`, `using Jexpresso` happens
 exactly once per session and the second case onward is launch-cost-only.
 """
 function run_case(eqs::AbstractString, eqs_case::AbstractString;
-                  CI_MODE::Bool=false)
+                  CI_MODE::Bool=false,
+                  overrides::Union{Nothing,AbstractDict}=nothing,
+                  output_dir::Union{Nothing,AbstractString}=nothing)
+    empty!(_RUN_INPUT_OVERRIDES)
+    overrides === nothing || for (k, v) in overrides
+        _RUN_INPUT_OVERRIDES[Symbol(k)] = v
+    end
+    _RUN_OUTPUT_DIR[] = output_dir === nothing ? "" : String(output_dir)
+    try
+        _run_case(eqs, eqs_case, CI_MODE)
+    finally
+        empty!(_RUN_INPUT_OVERRIDES)
+        _RUN_OUTPUT_DIR[] = ""
+    end
+    return nothing
+end
+
+function _run_case(eqs::AbstractString, eqs_case::AbstractString, CI_MODE::Bool)
     push!(empty!(ARGS), String(eqs), String(eqs_case), string(CI_MODE))
     # run.jl is a script — no `module …` declaration — so re-`include`ing
     # it from inside the already-loaded Jexpresso module just re-runs

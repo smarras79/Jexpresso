@@ -175,6 +175,16 @@ inputs = Dict{}()
 je_clear_prefetched_caches!()
 
 inputs = user_inputs()
+# Per-call overrides from run_case(...; overrides=...), e.g. a parameter sweep.
+if !isempty(_RUN_INPUT_OVERRIDES)
+    for (k, v) in _RUN_INPUT_OVERRIDES
+        if rank == 0
+            println(" # run_case override: :", k, " => ", repr(v),
+                    haskey(inputs, k) ? string(" (deck: ", repr(inputs[k]), ")") : " (not in deck)")
+        end
+        inputs[k] = v
+    end
+end
 # Make the case directory available to the mesh/SEM cache helpers so cache
 # files live next to user_inputs.jl (per-case), not next to the shared
 # *.msh file.  This is what lets two cases that happen to point at the same
@@ -292,7 +302,11 @@ else
     outstring = rank == 0 ? string("output-",  Dates.format(now(), "dduyyyy-HHMMSS")) : ""
     outstring = MPI.bcast(outstring, 0, comm)
 end
-if user_defined_output_dir == "none"
+if !isempty(_RUN_OUTPUT_DIR[])
+    # Exact directory requested by run_case(...; output_dir=...).
+    OUTPUT_DIR = abspath(_RUN_OUTPUT_DIR[])
+    inputs[:output_dir] = OUTPUT_DIR
+elseif user_defined_output_dir == "none"
     OUTPUT_DIR = joinpath(case_name_dir, outstring)
     inputs[:output_dir] = OUTPUT_DIR
 else
@@ -323,6 +337,14 @@ end
 #--------------------------------------------------------
 if rank == 0
     cp(user_input_file, joinpath(OUTPUT_DIR, basename(user_input_file)); force = true)
+    # The copied deck does not show the run_case overrides; record them next to it.
+    if !isempty(_RUN_INPUT_OVERRIDES)
+        open(joinpath(OUTPUT_DIR, "input_overrides.txt"), "w") do io
+            for k in sort!(collect(keys(_RUN_INPUT_OVERRIDES)))
+                println(io, ":", k, " => ", repr(_RUN_INPUT_OVERRIDES[k]))
+            end
+        end
+    end
 end
 
 #--------------------------------------------------------
