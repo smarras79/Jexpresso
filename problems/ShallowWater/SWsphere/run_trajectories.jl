@@ -5,7 +5,9 @@
 # Each TRAJECTORY is one SWsphere run, identical to the shipped deck
 # (user_inputs.jl) except for the height perturbation and the final time,
 # which is 3 days (:tend = 259200 s) by default instead of the deck's 6
-# (change it with --tend <seconds>). The perturbation is
+# (change it with --tend <seconds>). Output is written every 6 hours
+# (--output-interval), i.e. :ndiagnostics_outputs = tend / 6 h = 12 dumps.
+# The perturbation is
 #
 #     h'(λ,φ) = ĥ cos φ exp[-(λ/α)²] exp[-((φ₂-φ)/β)²]
 #
@@ -87,6 +89,10 @@ function parse_sweep_args()
             help    = "final time :tend of every trajectory [s] (default: 3 days)"
             arg_type = Float64
             default  = 3*24*3600.0
+        "--output-interval"
+            help     = "time between outputs [s]; sets :ndiagnostics_outputs = tend/interval (default: 6 h)"
+            arg_type = Float64
+            default  = 6*3600.0
         "--first"
             help    = "number of the first trajectory (directory trajectory_<first>)"
             arg_type = Int
@@ -123,6 +129,12 @@ lats = family(lat0,  args["lat-variation"], args["nlat"])
 params = [(hhat = h, lat_deg = φ, iamp = ia, ilat = il)
           for (ia, h) in enumerate(amps) for (il, φ) in enumerate(lats)]
 trajectories = [(; id = args["first"] + i - 1, p...) for (i, p) in enumerate(params)]
+
+let n = args["tend"] / args["output-interval"]
+    isapprox(n, round(n)) ||
+        @warn @sprintf("tend = %g s is not a multiple of --output-interval = %g s; outputs will be every %g s",
+                       args["tend"], args["output-interval"], args["tend"] / max(1, round(Int, n)))
+end
 
 φ0_deg, φ1_deg = rad2deg(π/7), rad2deg(π/2 - π/7)
 for t in trajectories
@@ -178,6 +190,8 @@ for t in trajectories
         :loverwrite_output      => true,
     )
     overrides[:tend] = args["tend"]
+    # The sphere solver writes every tend/:ndiagnostics_outputs seconds.
+    overrides[:ndiagnostics_outputs] = max(1, round(Int, args["tend"] / args["output-interval"]))
 
     if RANK == 0
         @printf(" # ===== trajectory_%d of %d: ĥ = %g m, φ₂ = %g° =====\n",

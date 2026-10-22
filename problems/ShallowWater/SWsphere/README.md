@@ -60,7 +60,8 @@ julia --project=. problems/ShallowWater/SWsphere/run_trajectories.jl --dry-run  
 By default it runs every combination of 5 amplitudes (±5% around 120 m: 114,
 117, 120, 123, 126 m) and 5 latitudes (±5% around 45°: 42.75°, 43.875°, 45°,
 46.125°, 47.25°), i.e. 25 trajectories, with the latitude varying fastest.
-Each trajectory runs to `:tend` = 3 days (not the deck's 6); `--tend` changes it.
+Each trajectory runs to `:tend` = 3 days (not the deck's 6) with an output
+every 6 hours, as in the deck; `--tend` and `--output-interval` change them.
 `trajectories.csv` maps each X to its parameters, and each directory holds an
 `input_overrides.txt`. Already-completed trajectories are skipped on relaunch.
 `--help` lists the options (reference values, widths, counts, `--tend`,
