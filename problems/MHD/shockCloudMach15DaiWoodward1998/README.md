@@ -2,7 +2,7 @@
 
 A Mach 15 MHD fast shock hits a round cloud 10 times denser than the gas ahead of it. Dai & Woodward (1998, JCP 142:331, p. 365) use this test to compare their scheme in two forms: one keeps ∇·**B** = 0 exactly, the other only to second order. Figs. 23–25 show ρ, B_x and B_y from both.
 
-The physics, the boundaries and the stabilization are those of `problems/MHD/shockCloudDaiWoodward1998` (the letters "MHD", Fig. 20). This directory holds only its own deck, mesh and output hook. It includes the rest from that case, and `:sc_problem => "cloud"` selects this test. See that README for the units, the boundary condition and the stabilization.
+The physics, the boundaries and the stabilization are those of `problems/MHD/shockCloudDaiWoodward1998` (the letters "MHD", Fig. 20). This directory holds only its own deck, mesh and output hook. It includes the rest from that case, and `:sc_problem => "cloud"` selects this test. See that README for the units, the boundary condition (with a LaTeX version for the paper, under "Boundaries") and the stabilization.
 
 ## Setup
 
