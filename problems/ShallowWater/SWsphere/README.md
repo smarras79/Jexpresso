@@ -82,7 +82,15 @@ job that precompiles and warms the mesh caches:
 bash problems/ShallowWater/SWsphere/submit_trajectories_wulver.sh   # with bash, not sbatch
 ```
 
-Its header lists the knobs (`TIME_LIMIT`, `NP`, `ARRAY` for reruns, `SWEEP_ARGS`, …).
+On a workstation (e.g. a 10-core iMac), `run_trajectories_local.sh` is the
+same thing without Slurm: the trajectories one after another on all 10 cores
+(`NP=10`), or `NP=5 JOBS=2` for two at a time:
+
+```bash
+bash problems/ShallowWater/SWsphere/run_trajectories_local.sh
+```
+
+Each script's header lists the knobs (`TIME_LIMIT`, `NP`, `ARRAY` for reruns, `SWEEP_ARGS`, …).
 
 ### In parallel
 
