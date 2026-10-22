@@ -7,14 +7,21 @@
 #
 #     h'(λ,φ) = ĥ cos φ exp[-(λ/α)²] exp[-((φ₂-φ)/β)²]
 #
-# The default ensemble is 10 trajectories, varying one parameter at a time
-# around the published case (ĥ = 120 m, φ₂ = 45°):
+# The amplitude ĥ and latitude φ₂ are each varied over a symmetric family
+# around the published case (ĥ = 120 m, φ₂ = 45°), and EVERY combination of
+# the two is run. By default each family has 5 members within ±5%:
 #
-#   trajectory_1  … trajectory_5   amplitude ĥ  = 120 m × (1 + [-5, -2.5, 0, +2.5, +5] %),  φ₂ = 45°
-#   trajectory_6  … trajectory_10  latitude  φ₂ =  45°  × (1 + [-5, -2.5, 0, +2.5, +5] %),  ĥ = 120 m
+#   ĥ  = 120 m × (1 + [-5, -2.5, 0, +2.5, +5] %) = 114, 117, 120, 123, 126 m
+#   φ₂ =  45°  × (1 + [-5, -2.5, 0, +2.5, +5] %) = 42.75, 43.875, 45, 46.125, 47.25°
 #
-# (the 0 % member of each group is the reference Galewsky run; it appears in
-# both groups so each group is a complete, symmetric 5-point family.)
+# i.e. 5 × 5 = 25 trajectories, numbered with the latitude varying fastest:
+#
+#   trajectory_1  … trajectory_5    ĥ = 114 m, φ₂ = 42.75° … 47.25°
+#   trajectory_6  … trajectory_10   ĥ = 117 m, φ₂ = 42.75° … 47.25°
+#   …
+#   trajectory_21 … trajectory_25   ĥ = 126 m, φ₂ = 42.75° … 47.25°
+#
+# (trajectory_13 is the reference Galewsky run.)
 # Trajectory X writes everything (VTK, POD, the deck copy,
 # input_overrides.txt) to
 #
@@ -30,7 +37,7 @@
 #   # parallel: every rank runs every trajectory together
 #   mpiexec -n 4 julia --project=. problems/ShallowWater/SWsphere/run_trajectories.jl
 #
-#   # wider/denser families, a different reference, shorter runs:
+#   # wider/denser grid (7 × 5 = 35 runs), shorter runs:
 #   julia --project=. problems/ShallowWater/SWsphere/run_trajectories.jl \
 #         --amp-variation 0.10 --namp 7 --lat-variation 0.05 --nlat 5 --tend 86400
 #
@@ -64,11 +71,11 @@ function parse_sweep_args()
             arg_type = Float64
             default  = 0.05
         "--namp"
-            help     = "number of amplitude trajectories (evenly spaced over ±variation)"
+            help     = "number of amplitude values (evenly spaced over ±variation)"
             arg_type = Int
             default  = 5
         "--nlat"
-            help     = "number of latitude trajectories (evenly spaced over ±variation)"
+            help     = "number of latitude values (evenly spaced over ±variation)"
             arg_type = Int
             default  = 5
         "--outdir", "-o"
@@ -107,10 +114,11 @@ only   = isempty(strip(args["only"])) ? nothing : Set(parse.(Int, split(args["on
 family(x0, δ, n) = n == 1 ? [x0] : collect(x0 .* (1 .+ range(-δ, δ; length = n)))
 
 hhat0, lat0 = args["hhat0"], args["lat0"]
-params = vcat([(hhat = h, lat_deg = lat0, family = "amplitude")
-               for h in family(hhat0, args["amp-variation"], args["namp"])],
-              [(hhat = hhat0, lat_deg = φ, family = "latitude")
-               for φ in family(lat0, args["lat-variation"], args["nlat"])])
+amps = family(hhat0, args["amp-variation"], args["namp"])
+lats = family(lat0,  args["lat-variation"], args["nlat"])
+# Every (amplitude, latitude) pair; the latitude varies fastest.
+params = [(hhat = h, lat_deg = φ, iamp = ia, ilat = il)
+          for (ia, h) in enumerate(amps) for (il, φ) in enumerate(lats)]
 trajectories = [(; id = args["first"] + i - 1, p...) for (i, p) in enumerate(params)]
 
 φ0_deg, φ1_deg = rad2deg(π/7), rad2deg(π/2 - π/7)
@@ -121,10 +129,10 @@ for t in trajectories
 end
 
 function print_table(io, trajectories)
-    println(io, "trajectory,directory,family,galewsky_hhat_m,galewsky_phi2_deg,galewsky_phi2_rad")
+    println(io, "trajectory,directory,amp_index,lat_index,galewsky_hhat_m,galewsky_phi2_deg,galewsky_phi2_rad")
     for t in trajectories
-        @printf(io, "%d,trajectory_%d,%s,%.10g,%.10g,%.16g\n",
-                t.id, t.id, t.family, t.hhat, t.lat_deg, deg2rad(t.lat_deg))
+        @printf(io, "%d,trajectory_%d,%d,%d,%.10g,%.10g,%.16g\n",
+                t.id, t.id, t.iamp, t.ilat, t.hhat, t.lat_deg, deg2rad(t.lat_deg))
     end
 end
 
