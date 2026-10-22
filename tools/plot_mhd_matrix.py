@@ -14,6 +14,12 @@ Reads iter_N.pvtu -> iter_N/iter_N_*.vtu on the native grid.
   python3 tools/plot_mhd_matrix.py <run> --vars rho p pmag Mach mu_dsgs --cmaps pmag managua --cmaps Mach gist_ncar
   python3 tools/plot_mhd_matrix.py <run> --vars rho log10rho p log10p pmag Mach Bx By mu_dsgs --format pdf
           # log10<field>: computed when the file lacks it; --log VAR instead turns that column itself to log10
+  python3 tools/plot_mhd_matrix.py output/MHD/shockCloudDaiWoodward1998/<run> --times 0.025 0.05 0.08 0.105 \
+          --vars rho p schlieren_grad_rho Mach mu_dsgs --log rho p \
+          --cmaps schlieren_grad_rho XRay --clim schlieren_grad_rho 0 40 --cmaps Mach YellowGreyBlue
+          # schlieren_grad_rho = |grad rho| and schlieren = exp(-k |grad rho|/max): read from the run when it wrote them
+          # (:lschlieren => true), computed here from rho otherwise (--schlieren-k, default 20, as :schlieren_k).
+          # A lower --clim maximum on |grad rho| saturates sooner: weaker fronts turn dark
 Colormaps: per-variable defaults in VAR_CMAPS (rho turbo, p inferno, pmag managua, Mach and Mach_f gist_ncar,
 schlieren Yellow - Gray - Blue, schlieren_grad_rho the same reversed (both: shocks dark red), mu_dsgs Cool to Warm Extended); --cmaps VAR NAME overrides one column (ParaView's
 XRay, CoolToWarmExtended and "Yellow - Gray - Blue", RainbowDesaturated, or any matplotlib name; _r reverses);
@@ -33,7 +39,9 @@ LABELS = {"ρ": r"$\rho$", "p": r"$p$", "pmag": r"$|\mathbf{B}|^2/2$", "Mach": r
           "β": r"$\beta$", "ψ": r"$\psi$", "T": r"$T$", "u": r"$u$", "v": r"$v$", "w": r"$w$",
           "Bx": r"$B_x$", "By": r"$B_y$", "Bz": r"$B_z$", "vA": r"$|\mathbf{B}|/\sqrt{\rho}$", "speed": r"$|\mathbf{v}|$",
           "Bmag": r"$|\mathbf{B}|$", "Mach_f": r"$M_f$", "schlieren": "schlieren", "schlieren_grad_rho": r"$|\nabla\rho|$"}
-DERIVED = {"vA": ("ρ", "Bx", "By", "Bz"), "speed": ("u", "v", "w"), "Bmag": ("Bx", "By", "Bz")}
+DERIVED = {"vA": ("ρ", "Bx", "By", "Bz"), "speed": ("u", "v", "w"), "Bmag": ("Bx", "By", "Bz"),
+           "schlieren": ("ρ",), "schlieren_grad_rho": ("ρ",)}
+SCHLIEREN_K = 20.0   # --schlieren-k, the k of a schlieren computed here (Jexpresso's :schlieren_k default)
 ODD = ("u", "Bx")   # fields that change sign under the reflection x -> -x
 
 
@@ -95,6 +103,16 @@ def field(g, v, f):
     if b and greek(v) not in F and v not in F:   # log10 of any field, clipped like --log
         q = np.asarray(field(g, b, f), dtype=float)
         return np.log10(np.maximum(q, max(np.nanmax(q), 1e-300) * 1e-6))
+    if v in ("schlieren", "schlieren_grad_rho") and v not in F:
+        # the run did not write it (:lschlieren => false): |grad rho| on the tensor-product node grid
+        # (np.gradient handles the LGL spacing), and Quirk's S = exp(-k |grad rho| / max |grad rho|),
+        # as src/kernel/physics/schlieren.jl computes them
+        Z = grid2d(g, np.asarray(F["ρ"], dtype=float))
+        if Z is None:
+            sys.exit(f"{f}: no '{v}' in the file, and the nodes are not a tensor-product grid to compute it from ρ")
+        gy, gx = np.gradient(Z, g["yc"], g["xc"])
+        G = np.hypot(gx, gy)[g["iy"], g["ix"]]
+        return G if v == "schlieren_grad_rho" else np.exp(-SCHLIEREN_K * G / max(np.nanmax(G), 1e-300))
     if v == "Bmag":
         return np.sqrt(F["Bx"]**2 + F["By"]**2 + F.get("Bz", 0.0)**2)
     if v == "vA":
@@ -131,6 +149,8 @@ def main():
     p.add_argument("--vars", nargs="+", default=["rho", "p", "pmag", "Mach", "mu_dsgs"],
                    help="columns: any point field (rho, psi, beta accepted), vA = |B|/sqrt(rho), speed = |v|, Bmag = |B|, "
                         "and log10<field> (e.g. log10rho, log10p) when the file does not have it")
+    p.add_argument("--schlieren-k", type=float, default=20.0,
+                   help="k of a schlieren computed here, exp(-k |grad rho|/max|grad rho|), for runs that did not write one")
     p.add_argument("--log", nargs="*", default=[], help="variables drawn as log10 (values below max·1e-6 clipped)")
     p.add_argument("--clim", nargs=3, action="append", default=[], metavar=("VAR", "MIN", "MAX"),
                    help="color range of one variable (after log10 if --log), repeatable")
@@ -157,6 +177,8 @@ def main():
     p.add_argument("--format", default="png")
     p.add_argument("--dpi", type=int, default=200)
     a = p.parse_args()
+    global SCHLIEREN_K
+    SCHLIEREN_K = a.schlieren_k
 
     runs = [(d, snapshots(d)) for d in a.outdirs]
     if len(runs) == 1:

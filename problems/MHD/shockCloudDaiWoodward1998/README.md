@@ -162,13 +162,20 @@ For a quick look, set `:gmsh_filename` to `SC_64x48.msh`, `:Δt => 3.2e-5` and `
 
 Output is VTK at DW's four times. The fields are ρ, u, v, w, p, **B**, ψ, T, `pmag`, `Mach`, `β`, `Mach_f`, `log10ρ` and `mu_dsgs`. Mass and energy totals are written every 10 steps to `conservation.dat`; they change through the open sides.
 
-To draw Fig. 20, gray with dense regions dark:
+To plot ρ, p, |∇ρ|, the Mach number and ν at DW's times (log ρ in gray as in DW's Fig. 20, dense regions dark):
 
 ```bash
 D=output/MHD/shockCloudDaiWoodward1998/output-<date>
-python3 tools/plot_mhd_matrix.py $D --times 0.02507 0.05004 0.08003 0.10411 --vars log10rho mu_dsgs \
-        --cmaps log10rho gray_r --log mu_dsgs
+python3 tools/plot_mhd_matrix.py $D --times 0.025 0.05 0.08 0.105 \
+        --vars rho p schlieren_grad_rho Mach mu_dsgs --log rho p \
+        --cmaps rho gray_r --cmaps schlieren_grad_rho XRay --clim schlieren_grad_rho 0 150 \
+        --cmaps Mach YellowGreyBlue --clim Mach 0 2
 ```
+
+- **|∇ρ|:** the deck writes `schlieren_grad_rho` and `schlieren` (`:lschlieren => true`). For an older run without them, `plot_mhd_matrix.py` computes both from ρ.
+- **Saturation of |∇ρ|:** the maximum of `--clim schlieren_grad_rho` sets where the gray saturates. Lower it to darken weaker fronts. The letters' edges are far steeper than the shocks and saturate at any useful value.
+- **Exponential schlieren:** `--vars ... schlieren --cmaps schlieren gray` shows exp(−k|∇ρ|/max|∇ρ|) instead, with k from `--schlieren-k` (default 20) when computed here.
+- **Mach range:** `--clim Mach 0 2` is needed. Where the limiter holds p at its floor, the sound speed vanishes and M spikes to ~250 at a few nodes. In the post-shock gas M = 1.33.
 
 To regenerate the meshes:
 

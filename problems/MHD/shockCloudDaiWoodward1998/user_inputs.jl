@@ -60,6 +60,8 @@ function user_inputs()
         :ladapt               => false,
         :lfilter              => false,
         :outformat            => "vtk",
+        :lschlieren           => true,     # |∇ρ| (schlieren_grad_rho) and exp(-k|∇ρ|/max) (schlieren) at output times
+        :schlieren_k          => 20.0,
         :loverwrite_output    => false,
         :lwrite_initial       => true,
         :output_dir           => "./output/",
