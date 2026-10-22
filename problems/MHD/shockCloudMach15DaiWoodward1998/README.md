@@ -57,9 +57,8 @@ To draw Fig. 23 (ρ, light where dense) and the fields of Figs. 24–25:
 D=output/MHD/shockCloudMach15DaiWoodward1998/output-<date>
 python3 tools/plot_mhd_matrix.py $D --times 0.16 --vars rho Bx By mu_dsgs --cmaps rho gray --log mu_dsgs
 python3 tools/plot_mhd_matrix.py $D --times 0.04 0.08 0.12 0.16 \
-        --vars rho p schlieren_grad_rho Mach mu_dsgs --log rho p \
-        --cmaps rho gray --cmaps schlieren_grad_rho XRay --clim schlieren_grad_rho 0 150 \
-        --cmaps Mach YellowGreyBlue --clim Mach 0 16     # the gas ahead enters at sonic Mach 11.8
+        --vars rho p Mach mu_dsgs --log rho p \
+        --cmaps rho gray --cmaps Mach YellowGreyBlue --clim Mach 0 16     # the gas ahead enters at sonic Mach 11.8
 ```
 
 To regenerate the meshes:
