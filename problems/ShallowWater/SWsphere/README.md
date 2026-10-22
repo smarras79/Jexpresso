@@ -57,15 +57,16 @@ julia --project=. problems/ShallowWater/SWsphere/run_trajectories.jl            
 julia --project=. problems/ShallowWater/SWsphere/run_trajectories.jl --dry-run  # table only
 ```
 
-By default it runs every combination of 5 amplitudes (±5% around 120 m: 114,
-117, 120, 123, 126 m) and 5 latitudes (±5% around 45°: 42.75°, 43.875°, 45°,
-46.125°, 47.25°), i.e. 25 trajectories, with the latitude varying fastest.
-Each trajectory runs to `:tend` = 3 days (not the deck's 6) with an output
-every 6 hours, as in the deck; `--tend` and `--output-interval` change them.
+By default it runs every combination of 5 amplitudes (120 ± 80 m: 40, 80,
+120, 160, 200 m) and 5 latitudes (45 ± 15°: 30°, 37.5°, 45°, 52.5°, 60°), i.e.
+25 trajectories, with the latitude varying fastest. Each trajectory runs to the
+deck's 6 days with an output every 6 hours; `--tend` and `--output-interval`
+change them. (Ranges of only ±5% give trajectories that are indistinguishable
+once the wave breaks: the jet's own fastest-growing mode takes over.)
 `trajectories.csv` maps each X to its parameters, and each directory holds an
 `input_overrides.txt`. Already-completed trajectories are skipped on relaunch.
 `--amplitudes 100,120,140 --latitudes 40,50` runs exactly those values instead
-of the ±5% grid, and `--set KEY=VALUE` (repeatable) overrides any other deck
+of the default grid, and `--set KEY=VALUE` (repeatable) overrides any other deck
 input in every trajectory, e.g. `--set μ=1.0e5 --set filter_alpha=0.02`.
 `--help` lists the options (reference values, widths, counts, `--tend`,
 `--only`, `--force`). Under `mpiexec`, all ranks run every trajectory together.
