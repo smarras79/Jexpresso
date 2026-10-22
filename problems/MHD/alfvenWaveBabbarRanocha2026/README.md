@@ -32,7 +32,39 @@ $$
 \mathbf B = (\cos\alpha + v_1,\ \sin\alpha + v_2,\ v_3).
 $$
 
+Component by component, with the phase φ = 2π(x⊥ + t):
+
+$$
+\mathbf v(x,y,t) =
+\begin{pmatrix}
+  -0.1\sin\phi\,\sin\alpha\\
+  \phantom{-}0.1\sin\phi\,\cos\alpha\\
+  \phantom{-}0.1\cos\phi
+\end{pmatrix},
+\qquad
+\mathbf B(x,y,t) =
+\begin{pmatrix}
+  \cos\alpha - 0.1\sin\phi\,\sin\alpha\\
+  \sin\alpha + 0.1\sin\phi\,\cos\alpha\\
+  0.1\cos\phi
+\end{pmatrix}.
+$$
+
+The initial condition is this solution at t = 0 (φ = 2πx⊥). In the basis
+e∥ = (cos α, sin α, 0), e⊥ = (−sin α, cos α, 0), e_z of Tóth (2000, §6.3.1), it reads
+v∥ = 0, v⊥ = B⊥ = 0.1 sin φ, v_z = B_z = 0.1 cos φ, B∥ = 1: a background field along the
+direction of propagation, and a perturbation of fixed length 0.1 that rotates in the
+(e⊥, e_z) plane. Nothing depends on z, but the out-of-plane components w and B_z are half
+of the wave; without them the wave would be linearly polarized, its magnetic pressure
+would not be uniform, and it would not be an exact solution.
+
+Babbar & Ranocha print **v** = v⊥ (−sin α, cos α, 0.1 cos(2π(x⊥ + t))) with
+v⊥ = 0.1 sin(2πx⊥). Read literally, that multiplies the third component by v⊥ as well and
+drops the + t from v⊥; the form above is the one Trixi.jl implements and the paper's runs
+use, and it is what `initialize.jl` evaluates (`aw_state`).
+
 The box is [0, 1/cos α] × [0, 1/sin α] = [0, √2]², periodic, and the run ends at t = 2.
+(Tóth uses α = 30°, i.e. [0, 1/cos 30°] × [0, 2]; the rates do not depend on α.)
 
 - |B|² = 1.01 and p are uniform, so the total pressure is too, and the wave keeps its
   shape.
