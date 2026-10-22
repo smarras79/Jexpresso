@@ -3,29 +3,31 @@
 # run_trajectories.jl — ensemble of SWsphere (Galewsky jet) runs for ROM training.
 #
 # Each TRAJECTORY is one SWsphere run, identical to the shipped deck
-# (user_inputs.jl) except for the height perturbation and the final time,
-# which is 3 days (:tend = 259200 s) by default instead of the deck's 6
-# (change it with --tend <seconds>). Output is written every 6 hours
-# (--output-interval), i.e. :ndiagnostics_outputs = tend / 6 h = 12 dumps.
-# The perturbation is
+# (user_inputs.jl) except for the height perturbation
 #
 #     h'(λ,φ) = ĥ cos φ exp[-(λ/α)²] exp[-((φ₂-φ)/β)²]
 #
-# The amplitude ĥ and latitude φ₂ are each varied over a symmetric family
-# around the published case (ĥ = 120 m, φ₂ = 45°), and EVERY combination of
-# the two is run. By default each family has 5 members within ±5%:
+# Output is written every 6 hours (--output-interval), i.e.
+# :ndiagnostics_outputs = tend / 6 h, and every trajectory runs to the deck's
+# 6 days (--tend), when the wave has broken.
 #
-#   ĥ  = 120 m × (1 + [-5, -2.5, 0, +2.5, +5] %) = 114, 117, 120, 123, 126 m
-#   φ₂ =  45°  × (1 + [-5, -2.5, 0, +2.5, +5] %) = 42.75, 43.875, 45, 46.125, 47.25°
+# The amplitude ĥ and latitude φ₂ are each varied over an evenly spaced range
+# around the published case (ĥ = 120 m, φ₂ = 45°), and EVERY combination of
+# the two is run. By default:
+#
+#   ĥ  = 120 m ± 80 m  (--amp-halfwidth) = 40, 80, 120, 160, 200 m
+#   φ₂ =  45°  ± 15°   (--lat-halfwidth) = 30, 37.5, 45, 52.5, 60°
 #
 # i.e. 5 × 5 = 25 trajectories, numbered with the latitude varying fastest:
 #
-#   trajectory_1  … trajectory_5    ĥ = 114 m, φ₂ = 42.75° … 47.25°
-#   trajectory_6  … trajectory_10   ĥ = 117 m, φ₂ = 42.75° … 47.25°
+#   trajectory_1  … trajectory_5    ĥ =  40 m, φ₂ = 30° … 60°
+#   trajectory_6  … trajectory_10   ĥ =  80 m, φ₂ = 30° … 60°
 #   …
-#   trajectory_21 … trajectory_25   ĥ = 126 m, φ₂ = 42.75° … 47.25°
+#   trajectory_21 … trajectory_25   ĥ = 200 m, φ₂ = 30° … 60°
 #
-# (trajectory_13 is the reference Galewsky run.)
+# (trajectory_13 is the reference Galewsky run.) Narrower ranges (e.g. ±5%)
+# give trajectories that are hard to tell apart after the wave breaks: the
+# jet's own fastest-growing mode takes over whatever the details of the bump.
 # Trajectory X writes everything (VTK, POD, the deck copy,
 # input_overrides.txt) to
 #
@@ -43,7 +45,7 @@
 #
 #   # wider/denser grid (7 × 5 = 35 runs), shorter runs:
 #   julia --project=. problems/ShallowWater/SWsphere/run_trajectories.jl \
-#         --amp-variation 0.10 --namp 7 --lat-variation 0.05 --nlat 5 --tend 86400
+#         --amp-halfwidth 90 --namp 7 --lat-halfwidth 10 --nlat 5 --tend 86400
 #
 #   # exactly the values you want (3 × 2 = 6 runs):
 #   julia --project=. problems/ShallowWater/SWsphere/run_trajectories.jl \
@@ -75,27 +77,27 @@ function parse_sweep_args()
             help     = "reference perturbation latitude φ₂ [deg]"
             arg_type = Float64
             default  = 45.0
-        "--amp-variation"
-            help     = "relative half-width of the amplitude family (0.05 means plus or minus 5 percent)"
+        "--amp-halfwidth"
+            help     = "amplitudes span hhat0 ± this [m]"
             arg_type = Float64
-            default  = 0.05
-        "--lat-variation"
-            help     = "relative half-width of the latitude family (0.05 means plus or minus 5 percent)"
+            default  = 80.0
+        "--lat-halfwidth"
+            help     = "latitudes span lat0 ± this [deg]"
             arg_type = Float64
-            default  = 0.05
+            default  = 15.0
         "--namp"
-            help     = "number of amplitude values (evenly spaced over ±variation)"
+            help     = "number of amplitude values (evenly spaced over hhat0 ± amp-halfwidth)"
             arg_type = Int
             default  = 5
         "--nlat"
-            help     = "number of latitude values (evenly spaced over ±variation)"
+            help     = "number of latitude values (evenly spaced over lat0 ± lat-halfwidth)"
             arg_type = Int
             default  = 5
         "--amplitudes"
-            help    = "explicit amplitudes ĥ [m], e.g. \"100,120,140\"; replaces --hhat0/--amp-variation/--namp"
+            help    = "explicit amplitudes ĥ [m], e.g. \"100,120,140\"; replaces --hhat0/--amp-halfwidth/--namp"
             default = ""
         "--latitudes"
-            help    = "explicit latitudes φ₂ [deg], e.g. \"40,45,50\"; replaces --lat0/--lat-variation/--nlat"
+            help    = "explicit latitudes φ₂ [deg], e.g. \"40,45,50\"; replaces --lat0/--lat-halfwidth/--nlat"
             default = ""
         "--set"
             help   = "override any deck input in every trajectory, KEY=VALUE with VALUE a Julia expression, e.g. --set μ=1.0e5 (repeatable)"
@@ -104,7 +106,7 @@ function parse_sweep_args()
             help    = "parent directory of the trajectory_X directories"
             default = "./trajectories"
         "--tend"
-            help    = "final time :tend of every trajectory [s] (default: 3 days)"
+            help    = "final time :tend of every trajectory [s] (default: 6 days)"
             arg_type = Float64
             default  = 6*24*3600.0
         "--output-interval"
@@ -138,14 +140,14 @@ args   = parse_sweep_args()
 outdir = abspath(args["outdir"])
 only   = isempty(strip(args["only"])) ? nothing : Set(parse.(Int, split(args["only"], ',')))
 
-family(x0, δ, n) = n == 1 ? [x0] : collect(x0 .* (1 .+ range(-δ, δ; length = n)))
+family(x0, w, n) = n == 1 ? [x0] : collect(range(x0 - w, x0 + w; length = n))
 
 parse_list(str) = parse.(Float64, split(str, ','))
 
 hhat0, lat0 = args["hhat0"], args["lat0"]
-amps = isempty(strip(args["amplitudes"])) ? family(hhat0, args["amp-variation"], args["namp"]) :
+amps = isempty(strip(args["amplitudes"])) ? family(hhat0, args["amp-halfwidth"], args["namp"]) :
                                             parse_list(args["amplitudes"])
-lats = isempty(strip(args["latitudes"]))  ? family(lat0,  args["lat-variation"], args["nlat"]) :
+lats = isempty(strip(args["latitudes"]))  ? family(lat0,  args["lat-halfwidth"], args["nlat"]) :
                                             parse_list(args["latitudes"])
 
 # --set KEY=VALUE: parsed now (so a typo fails before anything is submitted),

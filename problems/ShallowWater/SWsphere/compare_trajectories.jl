@@ -13,11 +13,15 @@
 #   ref   reference trajectory number              (default: 13, ĥ=120 m, φ₂=45°
 #                                                   in the default 5 × 5 grid)
 #
+# dir is the OUTDIR the sweep was submitted with; the submit script printed it
+# ("output: …"), and every trajectory log has it on its "Output written to" line.
+#
 # WHAT TO EXPECT AT t = 0 (file sphere_grid_ho). The trajectories differ only
 # in the height bump h' = ĥ cos φ exp[-(λ/α)²] exp[-((φ₂-φ)/β)²], so:
-#   * h:  a 5% change of ĥ = 120 m moves the bump by ~0.05·120·cos 45° ≈ 4 m;
-#         a 2.25° shift of φ₂ moves it by tens of metres. Exactly 0 means the
-#         perturbation did NOT reach the initial condition.
+#   * h:  of the order of the difference in ĥ·cos φ₂ (e.g. 40 vs 120 m at
+#         45° ≈ 57 m) between amplitudes, and up to ~ĥ between latitudes whose
+#         bumps do not overlap. Exactly 0 means the perturbation did NOT reach
+#         the initial condition.
 #   * u:  identical (0) at t = 0 for every trajectory — the Galewsky
 #         perturbation is in h only; the wind only picks it up as the flow
 #         adjusts. Differences in u then GROW with time if the jet is unstable
@@ -44,6 +48,8 @@ if isfile(csv)
     end
 end
 
+isdir(dir) || error("""$dir does not exist. Pass the OUTDIR the sweep wrote to as the first argument;
+       find it with:   grep -h "Output written to" logs/SWtraj.*.out | sort -u""")
 trajdirs = filter(d -> occursin(r"^trajectory_\d+$", d) && isdir(joinpath(dir, d)), readdir(dir))
 ids = sort!([parse(Int, d[12:end]) for d in trajdirs])
 ref_id in ids || error("reference trajectory_$ref_id not found in $dir (have: $(join(ids, ", ")))")

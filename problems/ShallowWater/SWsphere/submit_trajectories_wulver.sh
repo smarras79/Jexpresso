@@ -20,14 +20,14 @@
 #        runs `run_trajectories.jl --only X` and writes <OUTDIR>/trajectory_X/.
 #
 # The trajectories are the ones run_trajectories.jl defines — by default the
-# 5 × 5 grid of amplitudes (±5% of 120 m) and latitudes (±5% of 45°), i.e.
-# trajectory_1 … trajectory_25, each run to tend = 3 days (SWEEP_ARGS="--tend <s>"
+# 5 × 5 grid of amplitudes (40…200 m) and latitudes (30…60°), i.e.
+# trajectory_1 … trajectory_25, each run to tend = 6 days (SWEEP_ARGS="--tend <s>"
 # changes it). Change the grid with SWEEP_ARGS (below); the
 # array is sized from it automatically.
 #
 # KNOBS (environment variables, all optional):
 #   SWEEP_ARGS     extra arguments for run_trajectories.jl, e.g.
-#                  SWEEP_ARGS="--namp 7 --amp-variation 0.10"   (default: none)
+#                  SWEEP_ARGS="--namp 7 --amp-halfwidth 90"   (default: none)
 #                  SWEEP_ARGS="--amplitudes 100,120,140 --latitudes 40,50 --set μ=1.0e5"
 #                  (no spaces inside a single value: SWEEP_ARGS is split on spaces)
 #   OUTDIR         parent directory of trajectory_X/        (default: ./trajectories)
