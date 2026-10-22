@@ -7,7 +7,7 @@ function user_inputs()
 
     inputs = Dict(
         :ode_solver           => CarpenterKennedy2N54(),
-        :Δt                   => 1.0e-5,   # CFL ≈ 0.15 at |v| + c_f ≈ 65, smallest LGL spacing ≈ 4.3e-3
+        :Δt                   => 0.2e-5,   # CFL ≈ 0.15 at |v| + c_f ≈ 65, smallest LGL spacing ≈ 4.3e-3
         :tinit                => 0.0,
         :tend                 => 0.01,
         :diagnostics_at_times => (0.0:0.001:0.01),
@@ -20,7 +20,7 @@ function user_inputs()
         :SOL_VARS_TYPE        => TOTAL(),
         :ode_adaptive_solver  => false,
         :interpolation_nodes  => "lgl",
-        :nop                  => 3,
+        :nop                  => 4,
         #---------------------------------------------------------------------------
         # DynSGS in its conserved form: one ν per element and ∇·(ν∇q) on every conserved variable, with the
         # legacy residual normalized per element; ρ or p that still undershoot are fixed by the conservative
@@ -56,7 +56,7 @@ function user_inputs()
         :lread_gmsh           => true,
         :gmsh_filename        => "./problems/MHD/orszagTangBormanis2024/OT_32x32_periodic.msh",
         :linitial_refine      => true,
-        :init_refine_lvl      => 1,
+        :init_refine_lvl      => 3,
         :ladapt               => false,
         :lfilter              => false,
         :outformat            => "vtk",
