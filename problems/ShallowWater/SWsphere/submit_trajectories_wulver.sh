@@ -20,8 +20,10 @@
 #        runs `run_trajectories.jl --only X` and writes <OUTDIR>/trajectory_X/.
 #
 # The trajectories are the ones run_trajectories.jl defines — by default the
-# 5 × 5 grid of amplitudes (40…200 m) and latitudes (30…60°), i.e.
-# trajectory_1 … trajectory_25, each run to tend = 6 days (SWEEP_ARGS="--tend <s>"
+# 10 trajectories picked from the 5 × 5 grid of amplitudes (40…200 m) and
+# latitudes (30…60°): trajectory_1, 3, 7, 9, 13, 15, 16, 19, 22, 25. All 25
+# with SWEEP_ARGS="--design grid" (the 10 already done are skipped). Each runs
+# to tend = 6 days (SWEEP_ARGS="--tend <s>"
 # changes it). Change the grid with SWEEP_ARGS (below); the
 # array is sized from it automatically.
 #
@@ -93,7 +95,7 @@ if [[ -z "${SLURM_JOB_ID:-}" ]]; then
         # shellcheck disable=SC2086
         IDS=$(julia --project=. "$SWEEP_SCRIPT" $SWEEP_ARGS --dry-run | tail -n +2 | cut -d, -f1)
         [[ -n "$IDS" ]] || { echo "run_trajectories.jl --dry-run listed no trajectories" >&2; exit 1; }
-        ARRAY="$(echo "$IDS" | head -1)-$(echo "$IDS" | tail -1)"
+        ARRAY=$(echo "$IDS" | paste -sd, -)      # ids need not be contiguous (--design subset)
     fi
     FIRST_ID=${ARRAY%%[-,]*}
     [[ -n "${MAX_RUNNING:-}" ]] && ARRAY="${ARRAY}%${MAX_RUNNING}"
