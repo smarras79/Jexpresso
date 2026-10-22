@@ -162,6 +162,21 @@ For a quick look, set `:gmsh_filename` to `SC_64x48.msh`, `:Δt => 3.2e-5` and `
 
 Output is VTK at DW's four times. The fields are ρ, u, v, w, p, **B**, ψ, T, `pmag`, `Mach`, `β`, `Mach_f`, `log10ρ` and `mu_dsgs`. Mass and energy totals are written every 10 steps to `conservation.dat`; they change through the open sides.
 
+**All the paper's figures of both shock-cloud cases in one go:**
+
+```bash
+python3 tools/plot_shock_cloud_figures.py --letters output/MHD/shockCloudDaiWoodward1998/<run> \
+                                          --cloud   output/MHD/shockCloudMach15DaiWoodward1998/<run>
+```
+
+This writes `letters_{fields,fieldlines,shockmach}` and `cloud_{fields,final,fieldlines,shockmach}` to `figures/shockCloud/` as PDF, printing each `plot_mhd_matrix.py` command as it runs it. Useful options:
+
+- `--letters-times` and `--cloud-times` set the rows; the times must be output times of the run;
+- `--out-dir` and `--format` set where the figures go and in what format;
+- `--dry-run` prints the commands without running them.
+
+The commands below are the individual figures.
+
 To plot ρ, p, the Mach number and ν at DW's times (log ρ in gray as in DW's Fig. 20, dense regions dark):
 
 ```bash

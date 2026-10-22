@@ -51,6 +51,21 @@ julia --project=. src/Jexpresso.jl MHD shockCloudMach15DaiWoodward1998
 
 Output is VTK every 0.02 to t = 0.16. The fields are those of the letters case.
 
+**All the paper's figures of both shock-cloud cases in one go:**
+
+```bash
+python3 tools/plot_shock_cloud_figures.py --letters output/MHD/shockCloudDaiWoodward1998/<run> \
+                                          --cloud   output/MHD/shockCloudMach15DaiWoodward1998/<run>
+```
+
+This writes `letters_{fields,fieldlines,shockmach}` and `cloud_{fields,final,fieldlines,shockmach}` to `figures/shockCloud/` as PDF, printing each `plot_mhd_matrix.py` command as it runs it. Useful options:
+
+- `--letters-times` and `--cloud-times` set the rows; the times must be output times of the run;
+- `--out-dir` and `--format` set where the figures go and in what format;
+- `--dry-run` prints the commands without running them.
+
+The commands below are the individual figures.
+
 To draw Fig. 23 (ρ, light where dense) and the fields of Figs. 24–25:
 
 ```bash
