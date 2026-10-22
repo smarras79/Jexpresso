@@ -45,6 +45,15 @@
 #   julia --project=. problems/ShallowWater/SWsphere/run_trajectories.jl \
 #         --amp-variation 0.10 --namp 7 --lat-variation 0.05 --nlat 5 --tend 86400
 #
+#   # exactly the values you want (3 × 2 = 6 runs):
+#   julia --project=. problems/ShallowWater/SWsphere/run_trajectories.jl \
+#         --amplitudes 100,120,140 --latitudes 40,50
+#
+#   # change ANY other deck input, in every trajectory (repeat --set as needed;
+#   # the value is a Julia expression, the key a user_inputs.jl key):
+#   julia --project=. problems/ShallowWater/SWsphere/run_trajectories.jl \
+#         --set μ=1.0e5 --set filter_alpha=0.02 --set lvisc=false
+#
 # Latitudes are in DEGREES. The jet occupies φ₀ = π/7 ≈ 25.7° to
 # φ₁ = π/2 - π/7 ≈ 64.3°.
 #
@@ -82,6 +91,15 @@ function parse_sweep_args()
             help     = "number of latitude values (evenly spaced over ±variation)"
             arg_type = Int
             default  = 5
+        "--amplitudes"
+            help    = "explicit amplitudes ĥ [m], e.g. \"100,120,140\"; replaces --hhat0/--amp-variation/--namp"
+            default = ""
+        "--latitudes"
+            help    = "explicit latitudes φ₂ [deg], e.g. \"40,45,50\"; replaces --lat0/--lat-variation/--nlat"
+            default = ""
+        "--set"
+            help   = "override any deck input in every trajectory, KEY=VALUE with VALUE a Julia expression, e.g. --set μ=1.0e5 (repeatable)"
+            action = :append_arg
         "--outdir", "-o"
             help    = "parent directory of the trajectory_X directories"
             default = "./trajectories"
@@ -122,9 +140,24 @@ only   = isempty(strip(args["only"])) ? nothing : Set(parse.(Int, split(args["on
 
 family(x0, δ, n) = n == 1 ? [x0] : collect(x0 .* (1 .+ range(-δ, δ; length = n)))
 
+parse_list(str) = parse.(Float64, split(str, ','))
+
 hhat0, lat0 = args["hhat0"], args["lat0"]
-amps = family(hhat0, args["amp-variation"], args["namp"])
-lats = family(lat0,  args["lat-variation"], args["nlat"])
+amps = isempty(strip(args["amplitudes"])) ? family(hhat0, args["amp-variation"], args["namp"]) :
+                                            parse_list(args["amplitudes"])
+lats = isempty(strip(args["latitudes"]))  ? family(lat0,  args["lat-variation"], args["nlat"]) :
+                                            parse_list(args["latitudes"])
+
+# --set KEY=VALUE: parsed now (so a typo fails before anything is submitted),
+# evaluated after Jexpresso is loaded, so values like CarpenterKennedy2N54() work.
+const SWEEP_KEYS = (:galewsky_hhat, :galewsky_phi2)
+user_sets = map(args["set"]) do kv
+    i = findfirst('=', kv)
+    i === nothing && error("--set expects KEY=VALUE, got \"$kv\"")
+    key = Symbol(lstrip(strip(kv[1:prevind(kv, i)]), ':'))
+    key in SWEEP_KEYS && error("--set $key: the sweep sets it; use --amplitudes/--latitudes instead")
+    key => Meta.parse(strip(kv[nextind(kv, i):end]))
+end
 # Every (amplitude, latitude) pair; the latitude varies fastest.
 params = [(hhat = h, lat_deg = φ, iamp = ia, ilat = il)
           for (ia, h) in enumerate(amps) for (il, φ) in enumerate(lats)]
@@ -153,6 +186,9 @@ end
 
 if args["dry-run"]
     print_table(stdout, trajectories)
+    for (k, ex) in user_sets
+        println(stderr, " # --set :", k, " => ", ex, "  (every trajectory)")
+    end
     exit(0)
 end
 
@@ -160,6 +196,8 @@ using Jexpresso
 using MPI
 MPI.Initialized() || MPI.Init()
 const RANK = MPI.Comm_rank(MPI.COMM_WORLD)
+
+user_overrides = Dict{Symbol,Any}(k => Core.eval(Jexpresso, ex) for (k, ex) in user_sets)
 
 if RANK == 0
     mkpath(outdir)
@@ -192,6 +230,8 @@ for t in trajectories
     overrides[:tend] = args["tend"]
     # The sphere solver writes every tend/:ndiagnostics_outputs seconds.
     overrides[:ndiagnostics_outputs] = max(1, round(Int, args["tend"] / args["output-interval"]))
+    # --set wins over everything except the swept ĥ, φ₂ (rejected above).
+    merge!(overrides, user_overrides)
 
     if RANK == 0
         @printf(" # ===== trajectory_%d of %d: ĥ = %g m, φ₂ = %g° =====\n",

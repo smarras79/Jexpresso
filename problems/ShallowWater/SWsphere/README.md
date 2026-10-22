@@ -64,6 +64,9 @@ Each trajectory runs to `:tend` = 3 days (not the deck's 6) with an output
 every 6 hours, as in the deck; `--tend` and `--output-interval` change them.
 `trajectories.csv` maps each X to its parameters, and each directory holds an
 `input_overrides.txt`. Already-completed trajectories are skipped on relaunch.
+`--amplitudes 100,120,140 --latitudes 40,50` runs exactly those values instead
+of the ±5% grid, and `--set KEY=VALUE` (repeatable) overrides any other deck
+input in every trajectory, e.g. `--set μ=1.0e5 --set filter_alpha=0.02`.
 `--help` lists the options (reference values, widths, counts, `--tend`,
 `--only`, `--force`). Under `mpiexec`, all ranks run every trajectory together.
 
