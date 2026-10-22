@@ -2,8 +2,10 @@
 #-------------------------------------------------------------------------------
 # run_trajectories.jl — ensemble of SWsphere (Galewsky jet) runs for ROM training.
 #
-# Each TRAJECTORY is one full SWsphere run, identical to the shipped deck
-# (user_inputs.jl) except for the height perturbation
+# Each TRAJECTORY is one SWsphere run, identical to the shipped deck
+# (user_inputs.jl) except for the height perturbation and the final time,
+# which is 3 days (:tend = 259200 s) by default instead of the deck's 6
+# (change it with --tend <seconds>). The perturbation is
 #
 #     h'(λ,φ) = ĥ cos φ exp[-(λ/α)²] exp[-((φ₂-φ)/β)²]
 #
@@ -82,8 +84,9 @@ function parse_sweep_args()
             help    = "parent directory of the trajectory_X directories"
             default = "./trajectories"
         "--tend"
-            help    = "override :tend [s] (default: the deck's value)"
+            help    = "final time :tend of every trajectory [s] (default: 3 days)"
             arg_type = Float64
+            default  = 3*24*3600.0
         "--first"
             help    = "number of the first trajectory (directory trajectory_<first>)"
             arg_type = Int
@@ -174,7 +177,7 @@ for t in trajectories
         :galewsky_phi2          => deg2rad(t.lat_deg),
         :loverwrite_output      => true,
     )
-    args["tend"] === nothing || (overrides[:tend] = args["tend"])
+    overrides[:tend] = args["tend"]
 
     if RANK == 0
         @printf(" # ===== trajectory_%d of %d: ĥ = %g m, φ₂ = %g° =====\n",

@@ -21,7 +21,8 @@
 #
 # The trajectories are the ones run_trajectories.jl defines — by default the
 # 5 × 5 grid of amplitudes (±5% of 120 m) and latitudes (±5% of 45°), i.e.
-# trajectory_1 … trajectory_25. Change the grid with SWEEP_ARGS (below); the
+# trajectory_1 … trajectory_25, each run to tend = 3 days (SWEEP_ARGS="--tend <s>"
+# changes it). Change the grid with SWEEP_ARGS (below); the
 # array is sized from it automatically.
 #
 # KNOBS (environment variables, all optional):
@@ -29,7 +30,7 @@
 #                  SWEEP_ARGS="--namp 7 --amp-variation 0.10"   (default: none)
 #   OUTDIR         parent directory of trajectory_X/        (default: ./trajectories)
 #   NP             MPI ranks per trajectory                  (default: 12)
-#   TIME_LIMIT     wall time per trajectory                  (default: 3-00:00:00)
+#   TIME_LIMIT     wall time per trajectory                  (default: 02:00:00)
 #   ARRAY          which trajectories to submit, Slurm syntax, e.g. "3,7,12-14"
 #                  to rerun a few                            (default: all of them)
 #   MAX_RUNNING    cap on simultaneously running trajectories (default: no cap)
@@ -40,7 +41,7 @@
 #
 # Examples:
 #   bash problems/ShallowWater/SWsphere/submit_trajectories_wulver.sh
-#   TIME_LIMIT=12:00:00 bash problems/ShallowWater/SWsphere/submit_trajectories_wulver.sh
+#   TIME_LIMIT=04:00:00 bash problems/ShallowWater/SWsphere/submit_trajectories_wulver.sh
 #   SKIP_SETUP=1 ARRAY=4,17 bash problems/ShallowWater/SWsphere/submit_trajectories_wulver.sh
 #
 # A finished trajectory leaves trajectory_X/COMPLETED and is skipped if it is
@@ -56,7 +57,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=12
 #SBATCH --cpus-per-task=1
-#SBATCH --time=3-00:00:00
+#SBATCH --time=02:00:00
 #SBATCH --mem-per-cpu=4000M
 
 set -eo pipefail
@@ -81,7 +82,7 @@ if [[ -z "${SLURM_JOB_ID:-}" ]]; then
     export OUTDIR=$(realpath -m "${OUTDIR:-./trajectories}")
     export NP=${NP:-12}
     export LAUNCHER=${LAUNCHER:-"srun --mpi=pmi2"}
-    TIME_LIMIT=${TIME_LIMIT:-3-00:00:00}
+    TIME_LIMIT=${TIME_LIMIT:-02:00:00}
     mkdir -p logs "$OUTDIR"
 
     # Size the array from the sweep definition itself (--dry-run only parses
