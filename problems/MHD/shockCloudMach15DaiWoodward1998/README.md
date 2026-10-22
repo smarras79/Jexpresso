@@ -61,6 +61,15 @@ python3 tools/plot_mhd_matrix.py $D --times 0.04 0.08 0.12 0.16 \
         --cmaps rho gray --cmaps Mach YellowGreyBlue --clim Mach 0 16     # the gas ahead enters at sonic Mach 11.8
 ```
 
+Magnetic field lines as in DW's Fig. 19 (DW show them for their Mach 10 cloud), alone and zoomed on the cloud, or over ρ:
+
+```bash
+python3 tools/plot_mhd_matrix.py $D --times 0.16 --vars Blines --nlevels 100 --xlim 0.1 0.9 --ylim 0.1 0.9
+python3 tools/plot_mhd_matrix.py $D --times 0.04 0.08 0.12 0.16 --vars rho Blines --log rho --cmaps rho gray --fieldlines-on rho --nlevels 80
+```
+
+See the letters README for the options.
+
 To regenerate the meshes:
 
 ```bash

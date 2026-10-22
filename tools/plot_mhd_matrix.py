@@ -22,6 +22,11 @@ python3 tools/plot_mhd_matrix.py output/MHD/shockCloudDaiWoodrow1998/shockCloud-
         --cmaps ρ gray_r \
         --cmaps Mach YellowGreyBlue --clim Mach 0 3
 
+#Magnetic field lines (Dai & Woodward 1998, Fig. 19): Blines = the lines alone, black on white;
+#--fieldlines-on VAR... = the lines over those columns only (--fieldlines: over all but mu_*); --xlim/--ylim zoom:
+python3 tools/plot_mhd_matrix.py output/MHD/shockCloudMach15DaiWoodward1998/<run> --times 0.16 \
+        --vars rho Blines --log rho --cmaps rho gray --fieldlines-on rho --nlevels 80 --xlim 0.1 0.9 --ylim 0.1 0.9
+
 Colormaps: per-variable defaults in VAR_CMAPS (rho turbo, p inferno, pmag managua, Mach and Mach_f gist_ncar,
 schlieren Yellow - Gray - Blue, schlieren_grad_rho the same reversed (both: shocks dark red), mu_dsgs Cool to Warm Extended); --cmaps VAR NAME overrides one column (ParaView's
 XRay, CoolToWarmExtended and "Yellow - Gray - Blue", RainbowDesaturated, or any matplotlib name; _r reverses);
@@ -40,9 +45,9 @@ from matplotlib.tri import Triangulation
 LABELS = {"ρ": r"$\rho$", "p": r"$p$", "pmag": r"$|\mathbf{B}|^2/2$", "Mach": r"$M$", "mu_dsgs": r"$\nu_\mathrm{DSGS}$",
           "β": r"$\beta$", "ψ": r"$\psi$", "T": r"$T$", "u": r"$u$", "v": r"$v$", "w": r"$w$",
           "Bx": r"$B_x$", "By": r"$B_y$", "Bz": r"$B_z$", "vA": r"$|\mathbf{B}|/\sqrt{\rho}$", "speed": r"$|\mathbf{v}|$",
-          "Bmag": r"$|\mathbf{B}|$", "Mach_f": r"$M_f$", "schlieren": "schlieren", "schlieren_grad_rho": r"$|\nabla\rho|$"}
+          "Bmag": r"$|\mathbf{B}|$", "Mach_f": r"$M_f$", "Blines": "magnetic field lines", "schlieren": "schlieren", "schlieren_grad_rho": r"$|\nabla\rho|$"}
 DERIVED = {"vA": ("ρ", "Bx", "By", "Bz"), "speed": ("u", "v", "w"), "Bmag": ("Bx", "By", "Bz"),
-           "schlieren": ("ρ",), "schlieren_grad_rho": ("ρ",)}
+           "schlieren": ("ρ",), "schlieren_grad_rho": ("ρ",), "Blines": ("Bx", "By")}
 SCHLIEREN_K = 20.0   # --schlieren-k, the k of a schlieren computed here (Jexpresso's :schlieren_k default)
 ODD = ("u", "Bx")   # fields that change sign under the reflection x -> -x
 
@@ -115,6 +120,8 @@ def field(g, v, f):
         gy, gx = np.gradient(Z, g["yc"], g["xc"])
         G = np.hypot(gx, gy)[g["iy"], g["ix"]]
         return G if v == "schlieren_grad_rho" else np.exp(-SCHLIEREN_K * G / max(np.nanmax(G), 1e-300))
+    if v == "Blines":   # drawn as contours of the flux function in main(); no colored field
+        return np.zeros(len(g["x"]))
     if v == "Bmag":
         return np.sqrt(F["Bx"]**2 + F["By"]**2 + F.get("Bz", 0.0)**2)
     if v == "vA":
@@ -157,6 +164,10 @@ def main():
     p.add_argument("--clim", nargs=3, action="append", default=[], metavar=("VAR", "MIN", "MAX"),
                    help="color range of one variable (after log10 if --log), repeatable")
     p.add_argument("--fieldlines", action="store_true", help="magnetic field lines on every column except mu_*")
+    p.add_argument("--fieldlines-on", nargs="+", default=[], metavar="VAR",
+                   help="magnetic field lines on these columns only (the Blines column always has them)")
+    p.add_argument("--xlim", nargs=2, type=float, help="x range of every panel (default: the domain)")
+    p.add_argument("--ylim", nargs=2, type=float, help="y range of every panel (default: the domain)")
     p.add_argument("--mirror", action="store_true",
                    help="reflect the run about its left edge (the symmetry axis), for the plot only; automatic when the "
                         "run's mesh is a half-domain one (AJ_half_*)")
@@ -198,15 +209,17 @@ def main():
     clims = {greek(v): (float(lo), float(hi)) for v, lo, hi in a.clim}
     cmap_over = {greek(v): c for v, c in a.cmaps}
     cols = {greek(v) for v in a.vars} | {greek(log_base(v)) for v in a.vars if log_base(v)}
-    for opt, names in (("--log", a.log), ("--clim", [c[0] for c in a.clim]), ("--cmaps", [c[0] for c in a.cmaps])):
+    for opt, names in (("--log", a.log), ("--clim", [c[0] for c in a.clim]), ("--cmaps", [c[0] for c in a.cmaps]),
+                       ("--fieldlines-on", a.fieldlines_on)):
         stray = [v for v in names if greek(v) not in cols]
         if stray:   # e.g. "--log rho p u v": u, v were meant as columns
             print(f" warning: {opt} {' '.join(stray)}: not a column (--vars {' '.join(a.vars)}); put columns after --vars")
     base = [log_base(v) or v for v in a.vars]
     want = ({greek(v) for v in a.vars + base} | set(a.vars) |
             {f for v in base for f in DERIVED.get(v, ())})
-    if a.fieldlines:
+    if a.fieldlines or a.fieldlines_on:
         want |= {"Bx", "By"}
+    lines_on = {greek(v) for v in a.fieldlines_on}
 
     rows = []
     for d, snaps, t, rlab in items:
@@ -242,15 +255,23 @@ def main():
 
     g0 = rows[0][1]
     x0, x1, y0, y1 = g0["x"].min(), g0["x"].max(), g0["y"].min(), g0["y"].max()
-    W = a.width or 2.2 * nv
+    if a.xlim:
+        x0, x1 = a.xlim
+    if a.ylim:
+        y0, y1 = a.ylim
+    W = a.width or max(2.2 * nv, 4.5)
     fig, axs = plt.subplots(nt, nv, figsize=(W, W / nv * nt * (y1 - y0) / (x1 - x0) + 1.2),
                             sharex=True, sharey=True, squeeze=False, layout="constrained")
     for i, (rlab, g, cols) in enumerate(rows):
         cache = {}
         for j, q in enumerate(cols):
             ax = axs[i, j]
-            fill(ax, g, lambda: cache.setdefault("tri", triangles(g)), q, cmaps[j], norms[j].vmin, norms[j].vmax, a.shading)
-            if a.fieldlines and not a.vars[j].startswith("mu"):
+            v = a.vars[j]
+            if v == "Blines":
+                ax.set_facecolor("white")
+            else:
+                fill(ax, g, lambda: cache.setdefault("tri", triangles(g)), q, cmaps[j], norms[j].vmin, norms[j].vmax, a.shading)
+            if v == "Blines" or greek(v) in lines_on or (a.fieldlines and not v.startswith("mu")):
                 flux_lines(ax, g, a.nlevels, a.linewidth)
             ax.set_aspect("equal")
             ax.set_xlim(x0, x1); ax.set_ylim(y0, y1)
@@ -263,6 +284,8 @@ def main():
     if a.title or len(runs) > 1:
         fig.suptitle(a.title or f"$t = {items[0][2]:g}$")
     for j in range(nv):
+        if a.vars[j] == "Blines":
+            continue
         cb = fig.colorbar(plt.cm.ScalarMappable(norms[j], cmaps[j]), ax=axs[:, j], orientation="horizontal",
                           location="bottom", fraction=0.04, pad=0.0, aspect=12)
         cb.ax.tick_params(labelsize=7)

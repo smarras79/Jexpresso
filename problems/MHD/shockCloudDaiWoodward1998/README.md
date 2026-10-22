@@ -173,6 +173,18 @@ python3 tools/plot_mhd_matrix.py $D --times 0.025 0.05 0.08 0.105 \
 
 `--clim Mach 0 2` is needed. Where the limiter holds p at its floor, the sound speed vanishes and M spikes to ~250 at a few nodes. In the post-shock gas M = 1.33.
 
+Magnetic field lines, as in DW's Fig. 19 (in-plane lines, contours of the flux function A with B_x = ∂A/∂y, B_y = −∂A/∂x; equally spaced levels, so the line density follows |**B**|):
+
+```bash
+python3 tools/plot_mhd_matrix.py $D --times 0.025 0.05 0.08 0.105 \
+        --vars rho Blines --log rho --cmaps rho gray_r --fieldlines-on rho --nlevels 80
+```
+
+- `Blines` is a column of the lines alone, black on white.
+- `--fieldlines-on VAR ...` draws the lines over those columns only (`--fieldlines` over every column except ν).
+- `--nlevels` sets the number of lines.
+- `--xlim X0 X1 --ylim Y0 Y1` zooms in, as DW's Fig. 19 does.
+
 To regenerate the meshes:
 
 ```bash
