@@ -169,7 +169,7 @@ python3 tools/plot_shock_cloud_figures.py --letters output/MHD/shockCloudDaiWood
                                           --cloud   output/MHD/shockCloudMach15DaiWoodward1998/<run>
 ```
 
-This writes `letters_{fields,paper,fieldlines,shockmach}` and `cloud_{fields,final,fieldlines,shockmach}` to `figures/shockCloud/` as PDF, printing each `plot_mhd_matrix.py` command as it runs it. Useful options:
+This writes `letters_{fields,paper,fieldlines,shockmach}` and `cloud_{fields,paper,final,fieldlines,shockmach}` to `figures/shockCloud/` as PDF, printing each `plot_mhd_matrix.py` command as it runs it. Useful options:
 
 - `--letters-times` and `--cloud-times` set the rows; the times must be output times of the run;
 - `--out-dir` and `--format` set where the figures go and in what format;

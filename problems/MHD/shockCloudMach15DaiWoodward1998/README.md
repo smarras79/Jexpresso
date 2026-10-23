@@ -58,7 +58,7 @@ python3 tools/plot_shock_cloud_figures.py --letters output/MHD/shockCloudDaiWood
                                           --cloud   output/MHD/shockCloudMach15DaiWoodward1998/<run>
 ```
 
-This writes `letters_{fields,paper,fieldlines,shockmach}` and `cloud_{fields,final,fieldlines,shockmach}` to `figures/shockCloud/` as PDF, printing each `plot_mhd_matrix.py` command as it runs it. Useful options:
+This writes `letters_{fields,paper,fieldlines,shockmach}` and `cloud_{fields,paper,final,fieldlines,shockmach}` to `figures/shockCloud/` as PDF, printing each `plot_mhd_matrix.py` command as it runs it. Useful options:
 
 - `--letters-times` and `--cloud-times` set the rows; the times must be output times of the run;
 - `--out-dir` and `--format` set where the figures go and in what format;
@@ -75,6 +75,14 @@ python3 tools/plot_mhd_matrix.py $D --times 0.04 0.08 0.12 0.16 \
         --vars rho log10rho p Mach_fs mu_dsgs --log rho p --cmaps rho gray \
         --fieldlines-on log10rho --nlevels 60 --cmaps Mach_fs YellowGreyBlue --clim Mach_fs 0 15
         # log ρ | log ρ with the field lines | log p | shock-frame fast Mach (15.0 ahead of the shock = DW's "Mach 15") | ν
+```
+
+The paper's version (the script's `cloud_paper`) has the columns log ρ | field lines | `Mach_fs` (15.0 ahead of the shock, DW's "Mach 15") | ν:
+
+```bash
+python3 tools/plot_mhd_matrix.py $D --times 0.04 0.08 0.12 0.16 \
+        --vars rho Blines Mach_fs mu_dsgs --log rho --cmaps rho gray --nlevels 60 \
+        --cmaps Mach_fs YellowGreyBlue --clim Mach_fs 0 15
 ```
 
 Mach number in the shock's frame (s = 5.18, read from the run): ahead of the shock `Mach_s` = 15.8 (sonic) and `Mach_fs` = 15.0, DW's "Mach 15" (see the letters README):
