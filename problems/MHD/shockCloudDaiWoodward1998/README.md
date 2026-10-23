@@ -177,14 +177,22 @@ This writes `letters_{fields,fieldlines,shockmach}` and `cloud_{fields,final,fie
 
 The commands below are the individual figures.
 
-To plot ρ, p, the Mach number and ν at DW's times (log ρ in gray as in DW's Fig. 20, dense regions dark):
+The main matrix (the script's `letters_fields`) shows DW's times. Its columns:
+
+- log ρ in gray, as in DW's Fig. 20, dense regions dark;
+- log ρ again, with the in-plane field lines over it;
+- log p;
+- `Mach_fs`, the fast Mach number in the shock's frame. The gas ahead of the shock sits at 12.0, the top of the scale: DW's "Mach 12";
+- ν.
 
 ```bash
 D=output/MHD/shockCloudDaiWoodward1998/output-<date>
 python3 tools/plot_mhd_matrix.py $D --times 0.025 0.05 0.08 0.105 \
-        --vars rho p Mach mu_dsgs --log rho p \
-        --cmaps rho gray_r --cmaps Mach YellowGreyBlue --clim Mach 0 2
+        --vars rho log10rho p Mach_fs mu_dsgs --log rho p --cmaps rho gray_r \
+        --fieldlines-on log10rho --nlevels 60 --cmaps Mach_fs YellowGreyBlue --clim Mach_fs 0 12
 ```
+
+For the lab-frame Mach number |**v**|/c instead (0 ahead of the shock, 1.33 behind), use `--vars rho p Mach mu_dsgs --cmaps Mach YellowGreyBlue --clim Mach 0 2`.
 
 `--clim Mach 0 2` is needed. Where the limiter holds p at its floor, the sound speed vanishes and M spikes to ~250 at a few nodes. In the post-shock gas M = 1.33.
 

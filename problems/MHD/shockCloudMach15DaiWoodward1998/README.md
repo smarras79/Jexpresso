@@ -72,8 +72,9 @@ To draw Fig. 23 (ρ, light where dense) and the fields of Figs. 24–25:
 D=output/MHD/shockCloudMach15DaiWoodward1998/output-<date>
 python3 tools/plot_mhd_matrix.py $D --times 0.16 --vars rho Bx By mu_dsgs --cmaps rho gray --log mu_dsgs
 python3 tools/plot_mhd_matrix.py $D --times 0.04 0.08 0.12 0.16 \
-        --vars rho p Mach mu_dsgs --log rho p \
-        --cmaps rho gray --cmaps Mach YellowGreyBlue --clim Mach 0 16     # the gas ahead enters at sonic Mach 11.8
+        --vars rho log10rho p Mach_fs mu_dsgs --log rho p --cmaps rho gray \
+        --fieldlines-on log10rho --nlevels 60 --cmaps Mach_fs YellowGreyBlue --clim Mach_fs 0 15
+        # log ρ | log ρ with the field lines | log p | shock-frame fast Mach (15.0 ahead of the shock = DW's "Mach 15") | ν
 ```
 
 Mach number in the shock's frame (s = 5.18, read from the run): ahead of the shock `Mach_s` = 15.8 (sonic) and `Mach_fs` = 15.0, DW's "Mach 15" (see the letters README):

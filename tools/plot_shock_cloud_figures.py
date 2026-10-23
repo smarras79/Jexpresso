@@ -9,12 +9,14 @@ Either case may be left out. Each figure is one plot_mhd_matrix.py call, printed
 only), so any figure can be redone by hand. Written to --out-dir (default figures/shockCloud), as --format (pdf):
 
   letters (problems/MHD/shockCloudDaiWoodward1998, DW Fig. 20), rows = --letters-times:
-    letters_fields      log10 rho (gray, DW's Fig. 20) | log10 p | Mach (lab frame) | nu_DSGS
+    letters_fields      log10 rho (gray, DW's Fig. 20) | log10 rho with the field lines over it | log10 p |
+                        Mach_fs (the fast Mach number in the shock's frame: 12.0 ahead of the shock, DW's "Mach 12") | nu_DSGS
     letters_fieldlines  log10 rho with the field lines over it | the field lines alone (DW Fig. 19 style)
     letters_shockmach   Mach | Mach_s | Mach_fs: the Mach number in the lab frame and in the shock's frame
                         (ahead of the shock: 14.4 sonic, 12.0 fast = DW's "Mach 12")
   cloud (problems/MHD/shockCloudMach15DaiWoodward1998, DW Figs. 23-25), rows = --cloud-times:
-    cloud_fields        log10 rho (gray, light where dense, DW's Fig. 23) | log10 p | Mach | nu_DSGS
+    cloud_fields        log10 rho (gray, light where dense, DW's Fig. 23) | log10 rho with the field lines over it |
+                        log10 p | Mach_fs (15.0 ahead of the shock, DW's "Mach 15") | nu_DSGS
     cloud_final         rho | Bx | By | nu_DSGS at the last of --cloud-times (DW Figs. 23-25)
     cloud_fieldlines    the field lines alone at the last time, zoomed on the cloud (DW Fig. 19)
     cloud_shockmach     Mach_s | Mach_fs (ahead of the shock: 15.8 sonic, 15.0 fast = DW's "Mach 15")
@@ -36,8 +38,9 @@ def figures(case, run, times):
     T = ["--times", *times]
     if case == "letters":
         return [
-            ("letters_fields", [run, *T, "--vars", "rho", "p", "Mach", "mu_dsgs", "--log", "rho", "p",
-                                "--cmaps", "rho", "gray_r", "--cmaps", "Mach", "YellowGreyBlue", "--clim", "Mach", "0", "3"]),
+            ("letters_fields", [run, *T, "--vars", "rho", "log10rho", "p", "Mach_fs", "mu_dsgs", "--log", "rho", "p",
+                                "--cmaps", "rho", "gray_r", "--fieldlines-on", "log10rho", "--nlevels", "60",
+                                "--cmaps", "Mach_fs", "YellowGreyBlue", "--clim", "Mach_fs", "0", "12"]),
             ("letters_fieldlines", [run, *T, "--vars", "rho", "Blines", "--log", "rho", "--cmaps", "rho", "gray_r",
                                     "--fieldlines-on", "rho", "--nlevels", "80"]),
             ("letters_shockmach", [run, *T, "--vars", "Mach", "Mach_s", "Mach_fs",
@@ -46,8 +49,9 @@ def figures(case, run, times):
         ]
     last = ["--times", times[-1]]
     return [
-        ("cloud_fields", [run, *T, "--vars", "rho", "p", "Mach", "mu_dsgs", "--log", "rho", "p",
-                          "--cmaps", "rho", "gray", "--cmaps", "Mach", "YellowGreyBlue", "--clim", "Mach", "0", "16"]),
+        ("cloud_fields", [run, *T, "--vars", "rho", "log10rho", "p", "Mach_fs", "mu_dsgs", "--log", "rho", "p",
+                          "--cmaps", "rho", "gray", "--fieldlines-on", "log10rho", "--nlevels", "60",
+                          "--cmaps", "Mach_fs", "YellowGreyBlue", "--clim", "Mach_fs", "0", "15"]),
         ("cloud_final", [run, *last, "--vars", "rho", "Bx", "By", "mu_dsgs", "--cmaps", "rho", "gray"]),
         ("cloud_fieldlines", [run, *last, "--vars", "Blines", "--nlevels", "100",
                               "--xlim", "0.1", "0.9", "--ylim", "0.1", "0.9"]),
