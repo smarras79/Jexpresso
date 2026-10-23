@@ -30,6 +30,39 @@ function numerical_flux!(Fstar, FL, FR, qL, qR, λ, neqs, ::upwind_flux)
     end
 end
 
+# Per-call scratch of the DG surface term, sized once in params_setup and
+# carried in params as dg_scratch, so that no RHS evaluation allocates for
+# it. Under a discretization other than DiscGal the arrays are 1-sized
+# placeholders: the field is always present with a concrete type, and the
+# DG surface term is never called.
+struct St_dg_scratch{T}
+    FL::Vector{T}
+    GL::Vector{T}
+    FR::Vector{T}
+    GR::Vector{T}
+    FnL::Vector{T}
+    FnR::Vector{T}
+    Fstar::Vector{T}
+    qB::Vector{T}          # ghost trace of a physical boundary face
+    Qp::Matrix{T}          # parent trace of a 2:1 face (ngl x ncol)
+    Qs::Matrix{T}          # parent trace at one child half's nodes
+    Fnp::Matrix{T}         # parent's own normal flux (ngl x neqs)
+    Fsh::Array{T,3}        # numerical flux on each child half (ngl x neqs x 2)
+    Fsp::Matrix{T}         # numerical flux projected to the parent
+end
+
+function allocate_dg_scratch(AD, ngl, neqs, ncol, T)
+    if AD == DiscGal()
+        n, g, c = Int(neqs), Int(ngl), Int(ncol)
+    else
+        n, g, c = 1, 1, 1
+    end
+    return St_dg_scratch{T}(zeros(T, n), zeros(T, n), zeros(T, n), zeros(T, n),
+                            zeros(T, n), zeros(T, n), zeros(T, n), zeros(T, n),
+                            zeros(T, g, c), zeros(T, g, c),
+                            zeros(T, g, n), zeros(T, g, n, 2), zeros(T, g, n))
+end
+
 # Ghost ("+" side) trace of a physical boundary face, from the case's
 # Dirichlet routine.
 #
@@ -72,9 +105,10 @@ function surface_rhs_el!(params, uaux, connijk, qe, mesh, time,
 
     lperiodic = params.inputs[:lperiodic_1d]
 
-    # neqs is tiny; these allocate — hoist to params scratch (or reuse two rows
-    # of params.F, free after the volume loop) to make this allocation-free.
-    FL    = zeros(neqs); FR = zeros(neqs); Fstar = zeros(neqs); Gdum = zeros(neqs)
+    # scratch from the workspace built in params_setup (St_dg_scratch above);
+    # GL stands in for the unused G of the 1D flux
+    ws    = params.dg_scratch
+    FL    = ws.FL; FR = ws.FR; Fstar = ws.Fstar; Gdum = ws.GL
 
     nfaces = lperiodic ? nelem : nelem - 1
     for f = 1:nfaces
@@ -118,10 +152,11 @@ function surface_rhs_el!(params, uaux, connijk, qe, mesh, time,
 
     ω = params.ω   # 1D LGL weights (length ngl); face quadrature on [-1,1]
 
-    # neqs is tiny; these allocate — same hoist-to-scratch note as the 1D method.
-    FL  = zeros(neqs); GL = zeros(neqs); FR = zeros(neqs); GR = zeros(neqs)
-    FnL = zeros(neqs); FnR = zeros(neqs); Fstar = zeros(neqs)
-    qB  = zeros(neqs)   # ghost trace of a physical boundary face
+    # scratch from the workspace built in params_setup (St_dg_scratch above)
+    ws  = params.dg_scratch
+    FL  = ws.FL; GL = ws.GL; FR = ws.FR; GR = ws.GR
+    FnL = ws.FnL; FnR = ws.FnR; Fstar = ws.Fstar
+    qB  = ws.qB         # ghost trace of a physical boundary face
 
     # (lfid, k) → (i, j): slice convention 1=x-min, 2=x-max, 3=y-min, 4=y-max
     @inline face_ij(lfid, k) = lfid == 1 ? (1, k)   :
@@ -174,7 +209,11 @@ function surface_rhs_el!(params, uaux, connijk, qe, mesh, time,
     # nothing to scatter on the R side because there is no R element.
     # Empty on a fully periodic mesh, so this loop costs nothing there.
     #--------------------------------------------------------------------------
-    nbfac = length(mesh.dg_bfac_e)
+    # mesh.coords is an untyped field of St_mesh: read once here, with its
+    # type stated, so the per-node view below and the ghost-state call are
+    # compiled statically rather than dispatched at run time on every node
+    coords = mesh.coords::Matrix{eltype(uaux)}
+    nbfac  = length(mesh.dg_bfac_e)
     for f = 1:nbfac
         e   = mesh.dg_bfac_e[f];  lf = mesh.dg_bfac_lf[f]
         nx  = mesh.dg_bfac_nx[f]; ny = mesh.dg_bfac_ny[f]
@@ -186,7 +225,7 @@ function surface_rhs_el!(params, uaux, connijk, qe, mesh, time,
             ip   = connijk[e, i, j]
 
             qL = @view uaux[ip, :]
-            dg_boundary_ghost!(qB, qL, @view(qe[ip,:]), @view(mesh.coords[:, ip]),
+            dg_boundary_ghost!(qB, qL, @view(qe[ip,:]), @view(coords[:, ip]),
                                time, tag, nx, ny, SVT, neqs)
 
             user_flux!(FL, GL, SD, qL, @view(qe[ip,:]), mesh, CL, SVT; neqs=neqs, ip=ip)
@@ -226,11 +265,11 @@ function surface_rhs_el!(params, uaux, connijk, qe, mesh, time,
         interp  = params.interp
         project = params.project
         ncol = size(uaux, 2)
-        Qp   = zeros(eltype(uaux), ngl, ncol)   # parent trace
-        Qs   = zeros(eltype(uaux), ngl, ncol)   # parent trace at one child half's nodes
-        Fnp  = zeros(ngl, neqs)                 # parent's own normal flux
-        Fsh  = zeros(ngl, neqs, 2)              # numerical flux on each child half
-        Fsp  = zeros(ngl, neqs)                 # numerical flux projected to the parent
+        Qp   = ws.Qp    # parent trace (ngl x ncol)
+        Qs   = ws.Qs    # parent trace at one child half's nodes
+        Fnp  = ws.Fnp   # parent's own normal flux
+        Fsh  = ws.Fsh   # numerical flux on each child half
+        Fsp  = ws.Fsp   # numerical flux projected to the parent
 
         for r = 1:npf
             p   = mesh.dg_ncfp_p[r]
