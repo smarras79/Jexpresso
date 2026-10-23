@@ -169,7 +169,7 @@ python3 tools/plot_shock_cloud_figures.py --letters output/MHD/shockCloudDaiWood
                                           --cloud   output/MHD/shockCloudMach15DaiWoodward1998/<run>
 ```
 
-This writes `letters_{fields,fieldlines,shockmach}` and `cloud_{fields,final,fieldlines,shockmach}` to `figures/shockCloud/` as PDF, printing each `plot_mhd_matrix.py` command as it runs it. Useful options:
+This writes `letters_{fields,paper,fieldlines,shockmach}` and `cloud_{fields,final,fieldlines,shockmach}` to `figures/shockCloud/` as PDF, printing each `plot_mhd_matrix.py` command as it runs it. Useful options:
 
 - `--letters-times` and `--cloud-times` set the rows; the times must be output times of the run;
 - `--out-dir` and `--format` set where the figures go and in what format;
@@ -190,6 +190,14 @@ D=output/MHD/shockCloudDaiWoodward1998/output-<date>
 python3 tools/plot_mhd_matrix.py $D --times 0.025 0.05 0.08 0.105 \
         --vars rho log10rho p Mach_fs mu_dsgs --log rho p --cmaps rho gray_r \
         --fieldlines-on log10rho --nlevels 60 --cmaps Mach_fs YellowGreyBlue --clim Mach_fs 0 12
+```
+
+The paper's version (the script's `letters_paper`) has the columns log ρ | field lines | `Mach_fs` | ν:
+
+```bash
+python3 tools/plot_mhd_matrix.py $D --times 0 0.025 0.05 0.105 \
+        --vars rho Blines Mach_fs mu_dsgs --log rho --cmaps rho gray_r --nlevels 60 \
+        --cmaps Mach_fs YellowGreyBlue --clim Mach_fs 0 12
 ```
 
 For the lab-frame Mach number |**v**|/c instead (0 ahead of the shock, 1.33 behind), use `--vars rho p Mach mu_dsgs --cmaps Mach YellowGreyBlue --clim Mach 0 2`.

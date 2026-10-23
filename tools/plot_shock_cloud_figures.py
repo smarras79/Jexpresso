@@ -11,6 +11,7 @@ only), so any figure can be redone by hand. Written to --out-dir (default figure
   letters (problems/MHD/shockCloudDaiWoodward1998, DW Fig. 20), rows = --letters-times:
     letters_fields      log10 rho (gray, DW's Fig. 20) | log10 rho with the field lines over it | log10 p |
                         Mach_fs (the fast Mach number in the shock's frame: 12.0 ahead of the shock, DW's "Mach 12") | nu_DSGS
+    letters_paper       log10 rho (gray) | the field lines alone | Mach_fs (0-12) | nu_DSGS
     letters_fieldlines  log10 rho with the field lines over it | the field lines alone (DW Fig. 19 style)
     letters_shockmach   Mach | Mach_s | Mach_fs: the Mach number in the lab frame and in the shock's frame
                         (ahead of the shock: 14.4 sonic, 12.0 fast = DW's "Mach 12")
@@ -41,6 +42,9 @@ def figures(case, run, times):
             ("letters_fields", [run, *T, "--vars", "rho", "log10rho", "p", "Mach_fs", "mu_dsgs", "--log", "rho", "p",
                                 "--cmaps", "rho", "gray_r", "--fieldlines-on", "log10rho", "--nlevels", "60",
                                 "--cmaps", "Mach_fs", "YellowGreyBlue", "--clim", "Mach_fs", "0", "12"]),
+            ("letters_paper", [run, *T, "--vars", "rho", "Blines", "Mach_fs", "mu_dsgs", "--log", "rho",
+                               "--cmaps", "rho", "gray_r", "--nlevels", "60",
+                               "--cmaps", "Mach_fs", "YellowGreyBlue", "--clim", "Mach_fs", "0", "12"]),
             ("letters_fieldlines", [run, *T, "--vars", "rho", "Blines", "--log", "rho", "--cmaps", "rho", "gray_r",
                                     "--fieldlines-on", "rho", "--nlevels", "80"]),
             ("letters_shockmach", [run, *T, "--vars", "Mach", "Mach_s", "Mach_fs",
