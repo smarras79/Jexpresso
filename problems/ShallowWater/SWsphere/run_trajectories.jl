@@ -115,19 +115,19 @@ function parse_sweep_args()
             action = :append_arg
         "--outdir", "-o"
             help    = "parent directory of the trajectory_X directories"
-            default = "./trajectories"
+            default = "/scratch/smarras/trajectories"
         "--tend"
             help    = "final time :tend of every trajectory [s] (default: 20 days)"
             arg_type = Float64
-            default  = 20*24*3600.0
+            default  = 100*24*3600.0
         "--early-interval"
             help     = "time between outputs up to --early-until [s] (default: 1 h)"
             arg_type = Float64
             default  = 3600.0
         "--early-until"
-            help     = "end of the densely written early phase [s] (default: 2 days; 0 = none)"
+            help     = "end of the densely written early phase [s] (default: 4 days; 0 = none)"
             arg_type = Float64
-            default  = 2*24*3600.0
+            default  = 4*24*3600.0
         "--output-interval"
             help     = "time between outputs after --early-until [s] (default: 6 h)"
             arg_type = Float64
