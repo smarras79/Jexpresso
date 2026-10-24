@@ -140,7 +140,7 @@ function user_inputs()
         # Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes  => "lgl",
-        :nop                  => 5,
+        :nop                  => 8,
         #---------------------------------------------------------------------------
         # Mesh: the cubed sphere that ships with this case (600 quads, 602
         # vertices, 10 elements per panel edge).
@@ -151,11 +151,11 @@ function user_inputs()
         # Time integration.
         #---------------------------------------------------------------------------
         #:ljacc                => true,
-        :ode_solver           => CarpenterKennedy2N54(), #SSPRK33(),
+        :ode_solver           => SSPRK33(), #CarpenterKennedy2N54(), #SSPRK33(),
         :lcfl_dt              => true,           # take Δt from the CFL condition
-        :cfl                  => 1.0,
+        :cfl                  => 0.4,
         :tinit                => 0.0,
-        :tend                 => 6*24*3600,       # 144 h = 6 days, as in the test
+        :tend                 => 100*24*3600,       # 144 h = 6 days, as in the test
         :ndiagnostics_outputs => 48,             # a VTK dump every 6 h
         :ndiagnostics_prints  => 200,            # steps between diagnostic lines
         :case                 => "swsphere",
@@ -183,8 +183,7 @@ function user_inputs()
         # help a run that fails this way, which is the tell.
         #---------------------------------------------------------------------------
         :lvisc                => true,
-        :ivisc_equations      => [2, 3, 4],
-        :μ                    => 1.0e5,      # the paper's value (was 1.5e5)
+        :μ                    => [0.0, 1.0e5, 1.0e5],     # the paper's value (was 1.5e5)
         #---------------------------------------------------------------------------
         # ... AND the modal filter, which is what actually keeps the run alive
         # here (see the table at the top). The two mechanisms compose, and the
@@ -199,9 +198,16 @@ function user_inputs()
         # at 0.05 the filter, applied every step, wipes out the post-breaking
         # eddies within weeks and long runs relax back to a smooth zonal jet.
         # If a run goes non-finite, raise it back towards 0.05.
-        :filter_alpha         => 0.01,
+        #
+        # Rules of thumb:
+        #
+        #More stability:
+        # Raise filter_alpha, or lower filter_kcut so mode 3 is damped too. Lowering kcut is the stronger change.
+        # Less damping of the eddies: lower filter_alpha, or raise filter_order (mainly spares mode 4).
+        # Filter fewer steps: the filter can’t currently be applied every n steps. Lowering α has a similar effect.       
+        :filter_alpha         => 0.05,
         :filter_order         => 8,
-        :filter_kcut          => 2/3,
+        :filter_kcut          => 7/8, #2/3, ## 4/5 damp mode 5. 2/3 damps modes 4 and 5
         #---------------------------------------------------------------------------
         # POD — PROPER ORTHOGONAL DECOMPOSITION, and the basis of a reduced-order
         # model built on this run.
