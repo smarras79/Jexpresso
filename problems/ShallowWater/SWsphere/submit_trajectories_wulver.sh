@@ -22,7 +22,7 @@
 # The trajectories are the ones run_trajectories.jl defines — by default the
 # 10 trajectories, trajectory_1 … trajectory_10, picked from the 5 × 5 grid of
 # amplitudes (40…200 m) and latitudes (30…60°). All 25 with
-# SWEEP_ARGS="--design grid" (and a new OUTDIR). Each runs to tend = 6 days (SWEEP_ARGS="--tend <s>"
+# SWEEP_ARGS="--design grid" (and a new OUTDIR). Each runs to tend = 20 days (SWEEP_ARGS="--tend <s>"
 # changes it). Change the grid with SWEEP_ARGS (below); the
 # array is sized from it automatically.
 #
