@@ -7,9 +7,13 @@
 #
 #     h'(λ,φ) = ĥ cos φ exp[-(λ/α)²] exp[-((φ₂-φ)/β)²]
 #
-# Output is written every 6 hours (--output-interval), i.e.
-# :ndiagnostics_outputs = tend / 6 h, and every trajectory runs to the deck's
-# 6 days (--tend), when the wave has broken.
+# Every trajectory runs to 20 days (--tend). Output is written every hour for
+# the first 2 days (--early-interval, --early-until), when the wave grows and
+# breaks, and every 6 hours from then to the end (--output-interval):
+#
+#   t = 1, 2, …, 48 h, then 54, 60, …, 480 h   → 48 + 72 = 120 outputs
+#
+# passed to the solver as :diagnostics_at_times.
 #
 # The amplitude ĥ and latitude φ₂ are each varied over an evenly spaced range
 # around the published case (ĥ = 120 m, φ₂ = 45°), and EVERY combination of
@@ -113,11 +117,19 @@ function parse_sweep_args()
             help    = "parent directory of the trajectory_X directories"
             default = "./trajectories"
         "--tend"
-            help    = "final time :tend of every trajectory [s] (default: 6 days)"
+            help    = "final time :tend of every trajectory [s] (default: 20 days)"
             arg_type = Float64
-            default  = 6*24*3600.0
+            default  = 20*24*3600.0
+        "--early-interval"
+            help     = "time between outputs up to --early-until [s] (default: 1 h)"
+            arg_type = Float64
+            default  = 3600.0
+        "--early-until"
+            help     = "end of the densely written early phase [s] (default: 2 days; 0 = none)"
+            arg_type = Float64
+            default  = 2*24*3600.0
         "--output-interval"
-            help     = "time between outputs [s]; sets :ndiagnostics_outputs = tend/interval (default: 6 h)"
+            help     = "time between outputs after --early-until [s] (default: 6 h)"
             arg_type = Float64
             default  = 6*3600.0
         "--first"
@@ -185,11 +197,19 @@ end
 # Contiguous numbering of whatever was kept, in grid order.
 trajectories = [(; id = args["first"] + i - 1, p...) for (i, p) in enumerate(params)]
 
-let n = args["tend"] / args["output-interval"]
-    isapprox(n, round(n)) ||
-        @warn @sprintf("tend = %g s is not a multiple of --output-interval = %g s; outputs will be every %g s",
-                       args["tend"], args["output-interval"], args["tend"] / max(1, round(Int, n)))
+# Output times: every --early-interval up to --early-until, then every
+# --output-interval to tend (always ending exactly at tend).
+function output_times(tend, dt_early, t_early, dt_late)
+    (dt_early > 0 && dt_late > 0) || error("output intervals must be positive")
+    t_early = min(t_early, tend)
+    ts = collect(dt_early:dt_early:t_early)
+    t0 = isempty(ts) ? 0.0 : ts[end]
+    append!(ts, (t0 + dt_late):dt_late:tend)
+    (isempty(ts) || !isapprox(ts[end], tend)) && push!(ts, tend)
+    return ts
 end
+const OUTPUT_TIMES = output_times(args["tend"], args["early-interval"],
+                                  args["early-until"], args["output-interval"])
 
 φ0_deg, φ1_deg = rad2deg(π/7), rad2deg(π/2 - π/7)
 for t in trajectories
@@ -211,6 +231,8 @@ if args["dry-run"]
     for (k, ex) in user_sets
         println(stderr, " # --set :", k, " => ", ex, "  (every trajectory)")
     end
+    @printf(stderr, " # tend = %g h; %d outputs at t = %s h\n", args["tend"]/3600, length(OUTPUT_TIMES),
+            join((@sprintf("%g", x/3600) for x in OUTPUT_TIMES), ", "))
     exit(0)
 end
 
@@ -250,8 +272,10 @@ for t in trajectories
         :loverwrite_output      => true,
     )
     overrides[:tend] = args["tend"]
-    # The sphere solver writes every tend/:ndiagnostics_outputs seconds.
-    overrides[:ndiagnostics_outputs] = max(1, round(Int, args["tend"] / args["output-interval"]))
+    # An explicit output schedule: the sphere solver writes at these times
+    # when :ndiagnostics_outputs is 0.
+    overrides[:diagnostics_at_times] = OUTPUT_TIMES
+    overrides[:ndiagnostics_outputs] = 0
     # --set wins over everything except the swept ĥ, φ₂ (rejected above).
     merge!(overrides, user_overrides)
 

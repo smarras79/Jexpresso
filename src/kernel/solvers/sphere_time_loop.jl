@@ -290,7 +290,7 @@ mutable struct St_sphere_monitor{TQ, TMesh, TMetrics, TParams, TIn, TSVT, TPod, 
     nsteps::Int
     nprint::Int
     nout::Int
-    outdt::Float64
+    touts::Vector{Float64}   # the output times, ascending; touts[iout+1] is next
     tnext::Float64
     iout::Int
     verbose::Bool
@@ -380,7 +380,7 @@ function (mon::St_sphere_monitor)(integrator)
         sphere_relative_vorticity!(mon.ζ, u, mon.mesh, mon.metrics, mon.sp)
         _sphere_write!(mon.q, mon.mesh, mon.inputs, mon.OUTPUT_DIR, mon.iout, t, mon.SVT;
                        verbose = mon.verbose, extra = ("vorticity" => mon.ζ,))
-        mon.tnext += mon.outdt
+        mon.tnext = mon.iout < mon.nout ? mon.touts[mon.iout + 1] : Inf
     end
 
     #--- POD snapshot. Nothing is written: the snapshots are held in memory and
@@ -498,8 +498,22 @@ function _sphere_march!(mesh::St_mesh,
         @warn " # sphere_time_loop.jl: :ode_adaptive_solver is ignored on the shell; the CFL step is fixed."
 
     #--- output times
-    nout   = Int(get(inputs, :ndiagnostics_outputs, 10))
-    outdt  = nout > 0 ? (tend - t)/nout : Inf
+    #
+    # Either :ndiagnostics_outputs evenly spaced outputs over (tinit, tend], or,
+    # when that is 0, the times listed in :diagnostics_at_times — which is how
+    # a deck asks for an uneven schedule (e.g. hourly early on, 6-hourly after).
+    # mod_inputs_user_inputs! zeroes :ndiagnostics_outputs whenever the deck sets
+    # :diagnostics_at_times, so the two are never both in force.
+    #
+    nout_uniform = Int(get(inputs, :ndiagnostics_outputs, 10))
+    dat          = get(inputs, :diagnostics_at_times, nothing)
+    touts = if nout_uniform > 0 || dat === nothing
+        outdt = nout_uniform > 0 ? (tend - t)/nout_uniform : Inf
+        Float64[t + k*outdt for k = 1:nout_uniform]
+    else
+        sort!(unique!(Float64[Float64(x) for x in dat if t < x <= tend*(1 + 1.0e-12)]))
+    end
+    nout = length(touts)
     nprint = Int(get(inputs, :ndiagnostics_prints, max(1, nsteps ÷ 20)))
 
     if verbose
@@ -507,6 +521,12 @@ function _sphere_march!(mesh::St_mesh,
         println(" # TIME INTEGRATION (", nameof(typeof(alg)), ", projection every stage) ..........")
         @printf(" #   Δt = %.4f s ; %d steps to t = %.1f s (%.3f days) ; CFL = %.2f\n",
                 Δt, nsteps, tend, tend/86400, cfl)
+        if nout > 0
+            @printf(" #   %d output%s, t = %.1f h … %.1f h\n", nout, nout == 1 ? "" : "s",
+                    touts[1]/3600, touts[end]/3600)
+        else
+            println(" #   no output times (set :ndiagnostics_outputs or :diagnostics_at_times)")
+        end
         println(" #   filter: ", sp.lfilter ? "ON" : "OFF")
         if sp.lvisc
             @printf(" #   artificial viscosity: ON, ν = [%s] m²/s per equation\n",
@@ -571,7 +591,8 @@ function _sphere_march!(mesh::St_mesh,
 
     monitor = St_sphere_monitor(q, mesh, metrics, sp, inputs, SVT, OUTPUT_DIR,
                                 ζ, ζ0, mass0, ener0, npoin, nsteps, nprint,
-                                nout, outdt, t + outdt, 0, verbose, pod, forcing)
+                                nout, touts, isempty(touts) ? Inf : touts[1], 0,
+                                verbose, pod, forcing)
 
     # save_positions = (false,false): the monitor only reads the state, so there
     # is no need to snapshot it around the callback.

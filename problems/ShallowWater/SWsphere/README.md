@@ -62,9 +62,10 @@ The parameters come from a grid of 5 amplitudes (120 ± 80 m: 40, 80, 120, 160,
 only 10 of the 25 combinations are run, `trajectory_1` … `trajectory_10`,
 chosen so that every amplitude and every latitude appears exactly twice
 (`trajectory_5` is the published 120 m, 45° case); `--design grid` runs all 25,
-numbered 1–25 with the latitude varying fastest, into a fresh `--outdir`. Each trajectory runs to the
-deck's 6 days with an output every 6 hours; `--tend` and `--output-interval`
-change them. (Ranges of only ±5% give trajectories that are indistinguishable
+numbered 1–25 with the latitude varying fastest, into a fresh `--outdir`. Each trajectory runs to
+20 days, with an output every hour for the first 2 days and every 6 hours
+after that (120 outputs); `--tend`, `--early-interval`, `--early-until` and
+`--output-interval` change them. (Ranges of only ±5% give trajectories that are indistinguishable
 once the wave breaks: the jet's own fastest-growing mode takes over.)
 `trajectories.csv` maps each X to its parameters, and each directory holds an
 `input_overrides.txt`. Already-completed trajectories are skipped on relaunch.
