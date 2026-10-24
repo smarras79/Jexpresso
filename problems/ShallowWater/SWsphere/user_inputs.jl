@@ -184,7 +184,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => true,
         :ivisc_equations      => [2, 3, 4],
-        :μ                    => 1.5e5,      # set to 1.0e5 together with :lvisc => true
+        :μ                    => 1.0e5,      # the paper's value (was 1.5e5)
         #---------------------------------------------------------------------------
         # ... AND the modal filter, which is what actually keeps the run alive
         # here (see the table at the top). The two mechanisms compose, and the
@@ -195,7 +195,11 @@ function user_inputs()
         # the vorticity off it: at 5e5 half of max|ζ| is gone by day 3.
         #---------------------------------------------------------------------------
         :lfilter              => true,
-        :filter_alpha         => 0.05,
+        # α = 0.01 (top mode reduced by 1% per step) instead of the paper's 0.05:
+        # at 0.05 the filter, applied every step, wipes out the post-breaking
+        # eddies within weeks and long runs relax back to a smooth zonal jet.
+        # If a run goes non-finite, raise it back towards 0.05.
+        :filter_alpha         => 0.01,
         :filter_order         => 8,
         :filter_kcut          => 2/3,
         #---------------------------------------------------------------------------
