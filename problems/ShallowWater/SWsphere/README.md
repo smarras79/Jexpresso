@@ -38,7 +38,14 @@ gmsh -2 problems/ShallowWater/SWsphere/cubed_sphere.geo \
 
 Any gmsh output format works — MSH 2.2 or 4.1, parametric nodes or not — because
 the file is read by GridapGmsh, i.e. by gmsh itself, exactly like every other
-Jexpresso case.
+Jexpresso case. Every quad must be wound counter-clockwise seen from outside the
+sphere, or the metrics stop with "non-positive surface Jacobian"; the `.geo` is
+written that way (a version before this note had the south panel reversed). The
+same grid without gmsh, with that winding checked as it is written:
+
+```bash
+julia tools/generate_cubed_sphere.jl 9 6.37122e6 problems/ShallowWater/SWsphere/cubed_sphere.msh equiangular
+```
 
 > **Run this in a fresh Julia session after pulling.** `run_case` re-includes
 > `run.jl`, `problems/drivers.jl` and the case's `user_*.jl`, but *not* the rest

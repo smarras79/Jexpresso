@@ -73,7 +73,11 @@ Circle(10) = {3, 1, 7};
 Circle(11) = {4, 1, 8};
 Circle(12) = {5, 1, 9};
 
-Line Loop(1) = { 1,  2,  3,  4};        // -z  (south)
+// Every loop runs counter-clockwise seen from OUTSIDE the sphere, so that
+// every quad's normal points outward: sphere_metrics.jl requires it (a quad
+// wound inward has a negative surface Jacobian and the run stops). The south
+// panel therefore runs 5 -> 4 -> 3 -> 2, the reverse of the north one.
+Line Loop(1) = {-4, -3, -2, -1};        // -z  (south)
 Line Loop(2) = { 5,  6,  7,  8};        // +z  (north)
 Line Loop(3) = { 1, 10, -5, -9};        // -y
 Line Loop(4) = { 2, 11, -6, -10};       // +x
