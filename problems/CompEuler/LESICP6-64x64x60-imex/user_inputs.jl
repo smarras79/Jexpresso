@@ -507,6 +507,11 @@ function user_inputs()
         :mu_y                => parse(Float64, get(ENV, "DBG_MU", "0.15")),
 	:mu_z                => parse(Float64, get(ENV, "DBG_MUZ", "0.15")),
         :filter_type         => "erf",
+        # "orthogonal": filter in the plain Legendre basis instead of the
+        # hierarchical one, whose top-mode damping feeds P2 (filter.jl,
+        # init_filter); "orthogonal_xy": horizontal only, vertical stays
+        # hierarchical. DBG_FILTER_BASIS overrides.
+        :filter_basis        => get(ENV, "DBG_FILTER_BASIS", "hierarchical"),
         # Upper-layer horizontal filter (filter.jl, set_upper_filter!). The erf
         # filter damps the degree-4 mode only (N = 4 weights 1,1,1,0.996,0), at
         # any mu. Above the BL, where f_Ri = 0, u/v/w carry a bump with the

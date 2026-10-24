@@ -534,6 +534,11 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :filter_type))
         inputs[:filter_type] = "erf"
     end
+    # modal basis of the Legendre filter (filter.jl, init_filter):
+    # "hierarchical" (default, P_k - P_{k-2} bubbles) or "orthogonal"
+    if(!haskey(inputs, :filter_basis))
+        inputs[:filter_basis] = "hierarchical"
+    end
     #
     # Plotting parameters:
     #

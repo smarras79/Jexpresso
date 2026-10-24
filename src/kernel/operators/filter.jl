@@ -761,7 +761,7 @@ end
 end
 
 
-function init_filter(nop,xgl,mu_x,mesh,inputs, rank)
+function init_filter(nop,xgl,mu_x,mesh,inputs, rank; vertical = false)
     
     if rank == 0
         println(" # Legendre filter")
@@ -801,6 +801,23 @@ function init_filter(nop,xgl,mu_x,mesh,inputs, rank)
                     leg2[i,j] = leg[i,j] - leg[i,j-2]
                 end
             end
+        end
+        # :filter_basis => "orthogonal" filters in the plain Legendre basis;
+        # "orthogonal_xy" does so in the horizontal directions only and keeps
+        # the hierarchical basis in the vertical, which never moves a face
+        # value, so wall nodes are left alone.
+        # In the hierarchical one the top mode is the bubble P_N - P_{N-2}, so
+        # damping it moves its P_N amplitude into P_{N-2}: at N = 4, mu 0.15,
+        # P2 <- P4 is +0.15, and the filter is not a contraction in the LGL
+        # mass-weighted norm (max singular value 1.028). Times the L-stable
+        # ARS343 implicit step that grows a one-element P2 mode under IMEX
+        # (GIGALES linear experiment, A + implicit step + filter only, 10x2,
+        # dt 0.8: xi/eta hierarchical 6e-7 -> 2180 in 9000 s; orthogonal
+        # decays). The orthogonal filter is an exact contraction in that norm;
+        # it changes face values, which the DSS average that follows restores.
+        basis = get(inputs, :filter_basis, "hierarchical")
+        if basis == "orthogonal" || (basis == "orthogonal_xy" && !vertical)
+            leg2 .= leg
         end
     elseif (nop+1 == mesh.ngr)
         
@@ -843,7 +860,7 @@ function init_filter(nop,xgl,mu_x,mesh,inputs, rank)
     filter_type = inputs[:filter_type]
     if (filter_type == "erf")   
         if rank == 0
-            println(" # erf filtering on")
+            println(" # erf filtering on (", get(inputs, :filter_basis, "hierarchical"), " basis", vertical ? ", vertical)" : ")")
         end
         
         for k=1:nop+1
