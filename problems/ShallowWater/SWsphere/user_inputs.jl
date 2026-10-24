@@ -142,8 +142,9 @@ function user_inputs()
         :interpolation_nodes  => "lgl",
         :nop                  => 8,
         #---------------------------------------------------------------------------
-        # Mesh: the cubed sphere that ships with this case (600 quads, 602
-        # vertices, 10 elements per panel edge).
+        # Mesh: the cubed sphere that ships with this case (486 quads, 488
+        # vertices, 9 elements per panel edge: 72 nodes per 90° at nop = 8,
+        # i.e. 1.25°, the paper's Hex 1.25° grid).
         #---------------------------------------------------------------------------
         :lread_gmsh           => true,
         :gmsh_filename        => "./problems/ShallowWater/SWsphere/cubed_sphere.msh",
@@ -183,7 +184,7 @@ function user_inputs()
         # help a run that fails this way, which is the tell.
         #---------------------------------------------------------------------------
         :lvisc                => true,
-        :μ                    => [0.0, 1.0e5, 1.0e5],     # the paper's value (was 1.5e5)
+        :μ                    => [0.0, 1.0e5, 1.0e5, 1.0e5],  # per equation (φ, φu, φv, φw): momentum only, the paper's ν
         #---------------------------------------------------------------------------
         # ... AND the modal filter, which is what actually keeps the run alive
         # here (see the table at the top). The two mechanisms compose, and the
