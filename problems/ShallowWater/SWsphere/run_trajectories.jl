@@ -119,11 +119,11 @@ function parse_sweep_args()
         "--tend"
             help    = "final time :tend of every trajectory [s] (default: 20 days)"
             arg_type = Float64
-            default  = 100*24*3600.0
+            default  = 20*24*3600.0
         "--early-interval"
             help     = "time between outputs up to --early-until [s] (default: 1 h)"
             arg_type = Float64
-            default  = 3600.0
+            default  = 1*3600.0
         "--early-until"
             help     = "end of the densely written early phase [s] (default: 4 days; 0 = none)"
             arg_type = Float64
