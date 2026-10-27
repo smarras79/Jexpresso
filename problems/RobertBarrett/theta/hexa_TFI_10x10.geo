@@ -4,20 +4,19 @@ nelemz = 1;
 
 xmin = 0;
 xmax = 10;
-ymin = 0;
-ymax = 8;
+ymin =  0;
+ymax =  8;
 gridsize = (xmax-xmin) / nelemx;
 
-Point(1) = {xmin, ymin, 0};
-Point(2) = {xmax, ymin, 0};
-Point(3) = {xmax, ymax, 0};
-Point(4) = {xmin, ymax, 0};
+Point(1) = {xmin, ymin, gridsize};
+Point(2) = {xmax, ymin, gridsize};
+Point(3) = {xmax, ymax, gridsize};
+Point(4) = {xmin, ymax, gridsize};
 
 Line(1) = {1, 2};
 Line(2) = {2, 3};
 Line(3) = {3, 4};
 Line(4) = {4, 1};
-
 
 npx = nelemx + 1;
 npy = nelemy + 1;
@@ -26,7 +25,6 @@ npy = nelemy + 1;
 Transfinite Line {1, 3} = npx; //Ceil((xmax-xmin)/gridsize) Using Progression 1;
 //Vertical sides
 Transfinite Line {4, -2} = npy Using Progression 1.0;
-
 
 Line Loop(11) = {4, 1, 2, 3};
 Plane Surface(12) = {11};
@@ -57,6 +55,40 @@ Recombine Surface {12};
 // "My surface" (with an automatic tag) containing the geometrical surface 1:
 //
 Physical Point("boundary",   1) = {1, 2, 3, 4};
-//Physical Curve("solid",  2) = {3};
-Physical Curve("solid",  3) = {1, 2, 3, 4};
-Physical Surface("domain") = {12};
+Physical Curve("inflow",     2) = {4};
+Physical Curve("outflow",    3) = {2};
+Physical Curve("free_slip1",  4) = {3};
+Physical Curve("free_slip2",   5) = {1};
+Physical Surface("domain") = {1};
+
+//
+// You can save the mesh in older
+// versions of the MSH format:
+//
+// - In the GUI: open `File->Export', enter your `filename.msh' and then pick
+//   the version in the dropdown menu.
+// - On the command line: use the `-format' option (e.g. `gmsh file.geo -format
+//   msh2 -2').
+// - In a `.geo' script: add `Mesh.MshFileVersion = x.y;' for any version
+//   number `x.y'.
+// - As an alternative method, you can also not specify the format explicitly,
+//   and just choose a filename with the `.msh2' or `.msh4' extension.
+
+// Note that starting with Gmsh 3.0, models can be built using other geometry
+// kernels than the default built-in kernel. By specifying
+//
+//   SetFactory("OpenCASCADE");
+//
+// any subsequent command in the `.geo' file would be handled by the OpenCASCADE
+// geometry kernel instead of the built-in kernel. Different geometry kernels
+// have different features. With OpenCASCADE, instead of defining the surface by
+// successively defining 4 points, 4 curves and 1 curve loop, one can define the
+// rectangular surface directly with
+//
+//   Rectangle(2) = {.2, 0, 0, .1, .3};
+//
+// The underlying curves and points could be accessed with the `Boundary' or
+// `CombinedBoundary' operators.
+//
+// See e.g. `t16.geo', `t18.geo', `t19.geo' or `t20.geo' for complete examples
+// based on OpenCASCADE, and `demos/boolean' for more.
