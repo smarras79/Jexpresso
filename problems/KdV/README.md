@@ -55,3 +55,21 @@ The overlay is the KdV solution, not the KdVH one. The gap between the curves
 is therefore discretisation error plus the O(cτ) model error of the
 relaxation. τ, c and x0 are set in `kdv_parameters()` in `user_flux.jl`. If
 you lower τ, lower `:Δt` in proportion.
+
+`kdv-it<n>.png` shows u, v and w against η, ∂ₓη and ∂ₓ²η, plus the error
+u − η (`user_plot.jl`). Each output time also prints max|error|/max|exact|
+per field:
+
+| t | u (τ = 1e-3) | v (τ = 1e-3) | w (τ = 1e-3) | u (τ = 5e-4) | v (τ = 5e-4) | w (τ = 5e-4) |
+|---|---|---|---|---|---|---|
+| 5  | 2.34e-3 | 6.48e-3 | 5.87e-3 | 1.17e-3 | 3.42e-3 | 3.10e-3 |
+| 10 | 3.51e-3 | 1.01e-2 | 8.18e-3 | 1.75e-3 | 5.02e-3 | 3.97e-3 |
+| 20 | 6.14e-3 | 1.97e-2 | 1.65e-2 | 3.08e-3 | 9.91e-3 | 8.05e-3 |
+
+The τ = 5e-4 run used Δt = 1.25e-5. Halving τ halves every entry, so the
+error is the first-order model error of the relaxation, and the spectral
+element discretisation contributes almost nothing at this resolution. The
+error is antisymmetric about the crest: the KdVH soliton runs about cτ
+slower than the KdV one, and the error grows linearly in time as that phase
+lag builds up. The shipped τ = 1e-3 run to t = 20 (800,000 steps) takes about
+8 minutes on one core.

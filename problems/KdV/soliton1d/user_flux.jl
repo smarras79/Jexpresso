@@ -38,7 +38,9 @@
 # switched within a session, and a const would collide.
 #
 #   τ   relaxation parameter. The KdVH soliton differs from the KdV one by
-#       O(cτ), so τ = 1e-3 puts that model error near 0.1% of the amplitude.
+#       O(cτ), showing up mainly as a phase lag: with τ = 1e-3 the soliton
+#       runs ≈ cτ slower, and u is off the KdV soliton by 0.6% of the
+#       amplitude at t = 20. Halving τ halves it (see ../README.md).
 #   c   soliton speed; the amplitude is 3c.
 #   x0  soliton centre at t = 0.
 #---------------------------------------------------------------------------------
