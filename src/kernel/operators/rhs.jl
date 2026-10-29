@@ -775,7 +775,11 @@ function _build_rhs!(RHS, u, params, time)
     ngl     = params.mesh.ngl
     nelem   = params.mesh.nelem
     npoin   = params.mesh.npoin
-    lsource = params.inputs[:lsource]
+    lsource = params.inputs[:lsource]::Bool
+    # 1D: the concretely typed connectivity (params_setup.jl, mesh1d), so the
+    # DSS and viscous calls that take it are resolved at compile time. SD is a
+    # constant here, so the branch is folded away.
+    connijk_rhs = SD == NSD_1D() ? params.mesh1d.connijk : params.mesh.connijk
     xmin    = params.mesh.xmin
     xmax    = params.mesh.xmax
     ymin    = params.mesh.ymin
@@ -831,20 +835,26 @@ function _build_rhs!(RHS, u, params, time)
     end
     
     @timeit_debug JEXPRESSO_TIMER "reset_bdyflux" resetbdyfluxToZero!(params)
-    @timeit_debug JEXPRESSO_TIMER "BC_dirichlet" apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
-                                         params.mesh.coords,
-                                         params.metrics.nx, params.metrics.ny, params.metrics.nz,
-                                         params.mesh.npoin, params.mesh.npoin_linear, 
-                                         params.mesh.poin_in_bdy_edge, params.mesh.poin_in_bdy_face,
-                                         params.mesh.nedges_bdy, params.mesh.nfaces_bdy, params.mesh.ngl, 
-                                         params.mesh.ngr, params.mesh.nelem_semi_inf, params.basis.ψ, params.basis.dψ,
-                                         xmax, ymax, zmax, xmin, ymin, zmin, params.RHS, params.rhs_el, params.ubdy,
-                                         params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem, 
-                                         params.mesh.bdy_edge_type, params.mesh.bdy_face_in_elem, params.mesh.bdy_face_type,
-                                         params.mesh.connijk, params.metrics.Jef, params.S_face, 
-                                         params.S_flux, params.F_surf, params.M_surf_inv, params.M_edge_inv, params.Minv,
-                                         params.mp.Tabs, params.mp.qn,
-                                         params.ω, neqs, params.inputs, AD, SD)
+    if SD == NSD_1D()
+        # Typed arguments (params.mesh1d), so the call is resolved at compile
+        # time and allocates nothing; see apply_boundary_conditions_dirichlet_1d!.
+        @timeit_debug JEXPRESSO_TIMER "BC_dirichlet" apply_boundary_conditions_dirichlet_1d!(u, params, time)
+    else
+        @timeit_debug JEXPRESSO_TIMER "BC_dirichlet" apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
+                                             params.mesh.coords,
+                                             params.metrics.nx, params.metrics.ny, params.metrics.nz,
+                                             params.mesh.npoin, params.mesh.npoin_linear, 
+                                             params.mesh.poin_in_bdy_edge, params.mesh.poin_in_bdy_face,
+                                             params.mesh.nedges_bdy, params.mesh.nfaces_bdy, params.mesh.ngl, 
+                                             params.mesh.ngr, params.mesh.nelem_semi_inf, params.basis.ψ, params.basis.dψ,
+                                             xmax, ymax, zmax, xmin, ymin, zmin, params.RHS, params.rhs_el, params.ubdy,
+                                             params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem, 
+                                             params.mesh.bdy_edge_type, params.mesh.bdy_face_in_elem, params.mesh.bdy_face_type,
+                                             params.mesh.connijk, params.metrics.Jef, params.S_face, 
+                                             params.S_flux, params.F_surf, params.M_surf_inv, params.M_edge_inv, params.Minv,
+                                             params.mp.Tabs, params.mp.qn,
+                                             params.ω, neqs, params.inputs, AD, SD)
+    end
 
     if (params.inputs[:lmoist])
         
@@ -884,8 +894,15 @@ function _build_rhs!(RHS, u, params, time)
     end
 
      
-    @timeit_debug JEXPRESSO_TIMER "inviscid_rhs_el" inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, lsource, 
-                     params.mp.S_micro, params.mp.qn, params.mp.flux_lw, params.mp.flux_sw, SD)
+    if SD == NSD_1D()
+        # Typed arguments (params.mesh1d): resolved at compile time, so params
+        # is not boxed on every call. The 1D kernel has no microphysics.
+        @timeit_debug JEXPRESSO_TIMER "inviscid_rhs_el" inviscid_rhs_el!(u, params, params.mesh1d.connijk, params.qp.qe, params.mesh1d.coords, lsource,
+                         nothing, nothing, nothing, nothing, SD)
+    else
+        @timeit_debug JEXPRESSO_TIMER "inviscid_rhs_el" inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, lsource, 
+                         params.mp.S_micro, params.mp.qn, params.mp.flux_lw, params.mp.flux_sw, SD)
+    end
 
     if inputs[:ladapt] == true
         DSS_nc_gather_rhs!(params.RHS, SD, QT, params.rhs_el,
@@ -904,7 +921,7 @@ function _build_rhs!(RHS, u, params, time)
             nelem, ngl, neqs, CL, params.SOL_VARS_TYPE, params.inputs[:numerical_flux], SD)
     end
     
-    @timeit_debug JEXPRESSO_TIMER "DSS_rhs" DSS_rhs!(params.RHS, params.rhs_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
+    @timeit_debug JEXPRESSO_TIMER "DSS_rhs" DSS_rhs!(params.RHS, params.rhs_el, connijk_rhs, nelem, ngl, neqs, SD, AD)
 
     #-----------------------------------------------------------------------------------
     # DynSGS-MHD: advance the step-cadenced BDF2 history.
@@ -981,7 +998,7 @@ function _build_rhs!(RHS, u, params, time)
 
         @timeit_debug JEXPRESSO_TIMER "resetRHS_visc" resetRHSToZero_viscous!(params, SD)
         
-        @timeit_debug JEXPRESSO_TIMER "viscous_rhs_el" viscous_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, SD)
+        @timeit_debug JEXPRESSO_TIMER "viscous_rhs_el" viscous_rhs_el!(u, params, connijk_rhs, params.qp.qe, SD)
         
         if inputs[:ladapt] == true
             DSS_nc_gather_rhs!(params.RHS_visc, SD, QT, params.rhs_diff_el,
@@ -993,24 +1010,30 @@ function _build_rhs!(RHS, u, params, time)
                                params.mesh.pgip_local, ngl-1, neqs, params.interp)
         end
         
-        @timeit_debug JEXPRESSO_TIMER "DSS_rhs_visc" DSS_rhs!(params.RHS_visc, params.rhs_diff_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
+        @timeit_debug JEXPRESSO_TIMER "DSS_rhs_visc" DSS_rhs!(params.RHS_visc, params.rhs_diff_el, connijk_rhs, nelem, ngl, neqs, SD, AD)
         params.RHS[:,:] .= @view(params.RHS[:,:]) .+ @view(params.RHS_visc[:,:])
     end
-    @timeit_debug JEXPRESSO_TIMER "BC_neumann" apply_boundary_conditions_neumann!(u, params.uaux, time, params.qp.qe,
-                                       params.mesh.coords,
-                                       params.metrics.nx, params.metrics.ny, params.metrics.nz,
-                                       params.mesh.npoin, params.mesh.npoin_linear,
-                                       params.mesh.poin_in_bdy_edge, params.mesh.poin_in_bdy_face,
-                                       params.mesh.nedges_bdy, params.mesh.nfaces_bdy, params.mesh.ngl,
-                                       params.mesh.ngr, params.mesh.nelem_semi_inf, params.basis.ψ, params.basis.dψ,
-                                       xmax, ymax, zmax, xmin, ymin, zmin, params.RHS, params.rhs_el, params.ubdy,
-                                       params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem, 
-                                       params.mesh.bdy_edge_type, params.mesh.bdy_face_in_elem, params.mesh.bdy_face_type,
-                                       params.mesh.connijk, params.metrics.Jef, params.S_face, 
-                                       params.S_flux, params.F_surf, params.M_surf_inv, params.M_edge_inv, params.Minv,
-                                       params.WM.τ_f, params.WM.wθ, params.WM.wqv,
-                                       params.mp.Tabs, params.mp.qn,
-                                       params.ω, neqs, params.inputs, AD, SD) 
+    # No 1D method of the Neumann path does anything (build_custom_bcs_neumann!
+    # (::NSD_1D, ...) and the DiscGal wrapper are no-ops), and the call, with
+    # its untyped mesh arguments, is dispatched at run time and boxes its
+    # Float64 arguments on every RHS evaluation. So 1D skips it.
+    if SD != NSD_1D()
+        @timeit_debug JEXPRESSO_TIMER "BC_neumann" apply_boundary_conditions_neumann!(u, params.uaux, time, params.qp.qe,
+                                           params.mesh.coords,
+                                           params.metrics.nx, params.metrics.ny, params.metrics.nz,
+                                           params.mesh.npoin, params.mesh.npoin_linear,
+                                           params.mesh.poin_in_bdy_edge, params.mesh.poin_in_bdy_face,
+                                           params.mesh.nedges_bdy, params.mesh.nfaces_bdy, params.mesh.ngl,
+                                           params.mesh.ngr, params.mesh.nelem_semi_inf, params.basis.ψ, params.basis.dψ,
+                                           xmax, ymax, zmax, xmin, ymin, zmin, params.RHS, params.rhs_el, params.ubdy,
+                                           params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem, 
+                                           params.mesh.bdy_edge_type, params.mesh.bdy_face_in_elem, params.mesh.bdy_face_type,
+                                           params.mesh.connijk, params.metrics.Jef, params.S_face, 
+                                           params.S_flux, params.F_surf, params.M_surf_inv, params.M_edge_inv, params.Minv,
+                                           params.WM.τ_f, params.WM.wθ, params.WM.wqv,
+                                           params.mp.Tabs, params.mp.qn,
+                                           params.ω, neqs, params.inputs, AD, SD)
+    end 
 
     @timeit_debug JEXPRESSO_TIMER "DSS_global_RHS" DSS_global_RHS!(@view(params.RHS[:,:]), params.g_dss_cache, params.neqs)
     
@@ -1358,6 +1381,10 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
     nelem::Int = params.mesh.nelem
     ngl::Int   = params.mesh.ngl
     neqs::Int  = params.neqs
+    # concretely typed mesh/metric/basis arrays (params_setup.jl, mesh1d): with
+    # params.mesh.* / params.metrics.* the calls below are dispatched at run
+    # time and allocate on every RHS evaluation
+    m = params.mesh1d
 
     # Marras-style Dynamic SGS: fill the pre-allocated per-element
     # μ_dsgs[1:nelem, 1:neqs] buffer (sized in params_setup.jl) before
@@ -1373,9 +1400,9 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
         compute_dsgs_viscosity!(params.μ_dsgs, DSGS(), SD,
                                 params.uaux, dsgs_qA, dsgs_qB,
                                 params.qp.qe,
-                                dsgs_rhs, params.ω, params.metrics.Je, params.visc_coeff,
+                                dsgs_rhs, params.ω, m.Je, params.visc_coeff,
                                 dsgs_wt,
-                                params.mesh.connijk, params.mesh.Δx,
+                                m.connijk, m.Δx,
                                 Int(nelem), Int(ngl);
                                 CR   = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_CR,   1.0)),
                                 Cmax = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_Cmax, 0.5)),
@@ -1383,7 +1410,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                 cutoff = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_cutoff, 0.0)),
                                 lglobal_norms = params.dsgs_global_norms)
         broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
-                                 params.mesh.connijk,
+                                 m.connijk,
                                  Int(nelem), Int(ngl), SD)
     end
 
@@ -1397,26 +1424,26 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
         TT = eltype(params.μ_dsgs)
         dsgs_qA, dsgs_qB, dsgs_wt = _dsgs_stencil(params, TT)
         dsgs_rhs = _dsgs_residual_rhs!(u, params, SD)
-        lnodal_mhd = get(params.inputs, :ldsgs_nodal, false)
+        lnodal_mhd = get(params.inputs, :ldsgs_nodal, false)::Bool
         if lnodal_mhd
             # Nodal (Dao & Nazarov) form: ν at every node, a continuous field
             # the element loop interpolates; μ_dsgs gets the element means.
             compute_dsgs_viscosity_nodal!(params.μ_dsgs, params.μ_dsgs_pnode, DSGS_MHD(), SD,
                                           params.uaux, dsgs_qA, dsgs_qB,
-                                          dsgs_rhs, params.ω, params.metrics.Je, params.visc_coeff,
+                                          dsgs_rhs, params.ω, m.Je, params.visc_coeff,
                                           params.dsgs_avg, params.dsgs_denom,
                                           params.dsgs_qmin, params.dsgs_qmax,
                                           params.dsgs_nmin, params.dsgs_nmax, params.dsgs_hnod,
                                           params.dsgs_Rnod, params.dsgs_mnod,
                                           dsgs_wt,
-                                          params.mesh.connijk, params.mesh.Δx,
+                                          m.connijk, m.Δx,
                                           TT(get(params.inputs, :dsgs_gamma, 5.0/3.0)),
                                           TT(get(params.inputs, :dsgs_Prt,   0.7)),
                                           TT(get(params.inputs, :dsgs_CR,    1.0)),
                                           TT(get(params.inputs, :dsgs_Cmax,    0.5)),
                                           TT(get(params.inputs, :dsgs_Cl,    0.0)),
                                           get_mpi_comm(),
-                                          Int(nelem), Int(ngl), Int(params.mesh.npoin);
+                                          Int(nelem), Int(ngl), m.npoin;
                                           lglobal_norms = params.dsgs_global_norms,
                                           lconserved    = get(params.inputs, :dsgs_conserved, false),
                                           Cmin            = TT(get(params.inputs, :dsgs_Cmin, 0.0)),
@@ -1425,11 +1452,11 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
         else
             compute_dsgs_viscosity!(params.μ_dsgs, DSGS_MHD(), SD,
                                     params.uaux, dsgs_qA, dsgs_qB,
-                                    dsgs_rhs, params.ω, params.metrics.Je, params.visc_coeff,
+                                    dsgs_rhs, params.ω, m.Je, params.visc_coeff,
                                     params.dsgs_avg, params.dsgs_denom,
                                     params.dsgs_avg_e, params.dsgs_den_e,
                                     dsgs_wt,
-                                    params.mesh.connijk, params.mesh.Δx,
+                                    m.connijk, m.Δx,
                                     TT(get(params.inputs, :dsgs_gamma, 5.0/3.0)),
                                     TT(get(params.inputs, :dsgs_Prt,   0.7)),
                                     TT(get(params.inputs, :dsgs_CR,    1.0)),
@@ -1445,21 +1472,35 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                     cutoff          = TT(get(params.inputs, :dsgs_cutoff, 0.0)),
                                     lnazarov_energy = get(params.inputs, :dsgs_nazarov_energy, false))
             broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
-                                     params.mesh.connijk,
+                                     m.connijk,
                                      Int(nelem), Int(ngl), SD)
         end
     end
 
-    _visc_el_loop_1d!(params.rhs_diffξ_el, params.uprimitive,
-                      params.μ_dsgs, params.visc_coeff,
-                      params.ω, ngl, params.basis.dψ,
-                      params.metrics.Je, params.metrics.dξdx,
-                      params.inputs, params.rhs_el,
-                      nelem, neqs, connijk, params.uaux, qe,
-                      params.SOL_VARS_TYPE, params.QT, params.VT, params.AD, SD,
-                      params.VT == DSGS() || params.VT == DSGS_MHD();
-                      μ_pnode = lnodal_mhd ? params.μ_dsgs_pnode : nothing,
-                      μloc    = params.dsgs_μloc)
+    # one call per kwarg type: `lnodal_mhd ? μ_pnode : nothing` would make the
+    # keyword NamedTuple a Union and allocate it on every call
+    if lnodal_mhd
+        _visc_el_loop_1d!(params.rhs_diffξ_el, params.uprimitive,
+                          params.μ_dsgs, params.visc_coeff,
+                          params.ω, ngl, m.dψ,
+                          m.Je, m.dξdx,
+                          params.inputs, params.rhs_el,
+                          nelem, neqs, connijk, params.uaux, qe,
+                          params.SOL_VARS_TYPE, params.QT, params.VT, params.AD, SD,
+                          params.VT == DSGS() || params.VT == DSGS_MHD();
+                          μ_pnode = params.μ_dsgs_pnode,
+                          μloc    = params.dsgs_μloc)
+    else
+        _visc_el_loop_1d!(params.rhs_diffξ_el, params.uprimitive,
+                          params.μ_dsgs, params.visc_coeff,
+                          params.ω, ngl, m.dψ,
+                          m.Je, m.dξdx,
+                          params.inputs, params.rhs_el,
+                          nelem, neqs, connijk, params.uaux, qe,
+                          params.SOL_VARS_TYPE, params.QT, params.VT, params.AD, SD,
+                          params.VT == DSGS() || params.VT == DSGS_MHD();
+                          μloc    = params.dsgs_μloc)
+    end
 
     params.rhs_diff_el .= @views (params.rhs_diffξ_el)
 

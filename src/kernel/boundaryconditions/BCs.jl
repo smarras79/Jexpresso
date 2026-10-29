@@ -56,6 +56,35 @@ function apply_boundary_conditions_dirichlet!(u, uaux, t,qe,
 end
 
 #
+# 1D entry point, called by _build_rhs! (rhs.jl) on every RHS evaluation.
+#
+# Forwards to apply_boundary_conditions_dirichlet! above with the arrays taken
+# from params.mesh1d, whose types are concrete, so the call is resolved at
+# compile time and allocates nothing. The generic call passes params.mesh.*
+# fields that St_mesh declares untyped: it is dispatched at run time and boxes
+# its Float64 arguments every time. The arguments no 1D method reads
+# (apply_periodicity! and build_custom_bcs_dirichlet!(::NSD_1D, ...) use u,
+# uaux, t, qe, coords, npoin, npoin_linear, ubdy, RHS, neqs and inputs) are
+# passed as `nothing`.
+#
+function apply_boundary_conditions_dirichlet_1d!(u, params, t)
+    m = params.mesh1d
+    apply_boundary_conditions_dirichlet!(u, params.uaux, t, params.qp.qe,
+                                         m.coords,
+                                         nothing, nothing, nothing,
+                                         m.npoin, m.npoin_linear,
+                                         nothing, nothing,
+                                         nothing, nothing, nothing, nothing, nothing, nothing, nothing,
+                                         nothing, nothing, nothing, nothing, nothing, nothing,
+                                         params.RHS, params.rhs_el, params.ubdy,
+                                         nothing,
+                                         nothing, nothing, nothing, nothing,
+                                         m.connijk, nothing, nothing, nothing, nothing, nothing, nothing, params.Minv,
+                                         nothing, nothing,
+                                         params.ω, params.neqs, params.inputs, params.AD, params.SD)
+end
+
+#
 # DG (DiscGal): boundary conditions are FLUXES, not node values.
 #
 # The strong path above overwrites uaux/RHS at the points listed in

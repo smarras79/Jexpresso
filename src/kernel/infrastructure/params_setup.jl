@@ -451,6 +451,32 @@ function params_setup(sem,
     les_bottom_cache  = build_les_bottom_cache(sem.mesh, sem.metrics, inputs)
 
     #------------------------------------------------------------------------------------
+    # Concretely typed handles on the mesh, metric and basis arrays the 1D RHS
+    # reads on every call (_build_rhs! / viscous_rhs_el! in rhs.jl).
+    #
+    # St_mesh and St_metrics declare these fields untyped, so a call that passes
+    # params.mesh.coords (or .connijk, .Je, ...) cannot be resolved at compile
+    # time. It is dispatched at run time, which boxes every isbits argument, and
+    # the whole params NamedTuple, on every RHS evaluation: 83 allocations and
+    # 7.5 KB per time step on a 1D case (kuramotoSivashinsky, measured). A
+    # NamedTuple built from the values takes their concrete types instead.
+    #
+    # Read by the 1D path only. 1D has no AMR, so these arrays are never
+    # replaced after setup; 2D/3D keep reading params.mesh/params.metrics.
+    #------------------------------------------------------------------------------------
+    llag     = sem.mesh.lLaguerre || inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left]
+    metrics1 = llag ? sem.metrics[1] : sem.metrics
+    basis1   = llag ? sem.basis[1]   : sem.basis
+    mesh1d   = (coords       = sem.mesh.coords,
+                connijk      = sem.mesh.connijk,
+                npoin        = Int(sem.mesh.npoin),
+                npoin_linear = Int(sem.mesh.npoin_linear),
+                Δx           = sem.mesh.Δx,
+                Je           = metrics1.Je,
+                dξdx         = metrics1.dξdx,
+                dψ           = basis1.dψ)
+
+    #------------------------------------------------------------------------------------
     # Populate params tuple to carry global arrays and constants around
     #------------------------------------------------------------------------------------
     if (sem.mesh.lLaguerre ||
@@ -477,7 +503,7 @@ function params_setup(sem,
                   SD=sem.mesh.SD, sem.QT, sem.CL, sem.AD,
                   sem.SOL_VARS_TYPE, sem.volume_flux,
                   neqs=qp.neqs,
-                  sem.mesh,
+                  sem.mesh, mesh1d,
                   sem.connijk_original, sem.poin_in_bdy_face_original, sem.x_original, sem.y_original, sem.z_original,
 		  basis=sem.basis[1], basis_lag = sem.basis[2],
                   ω = sem.ω[1], ω_lag = sem.ω[2],
@@ -520,7 +546,7 @@ function params_setup(sem,
                   sem.SOL_VARS_TYPE, sem.volume_flux,
                   neqs=qp.neqs,
                   sem.connijk_original, sem.poin_in_bdy_face_original, sem.x_original, sem.y_original, sem.z_original,
-                  sem.basis, sem.ω, sem.mesh, sem.metrics,
+                  sem.basis, sem.ω, sem.mesh, sem.metrics, mesh1d,
                   thermo_params, VT = inputs[:visc_model], visc_coeff, μ_dsgs, μ_dsgs_pnode, visc_coeff_dsgs,
                   dsgs_qn, dsgs_qnm1, dsgs_qnm2, dsgs_avg, dsgs_denom, dsgs_thist, dsgs_nhist, dsgs_wt, dsgs_stage,
                   dsgs_avg_e, dsgs_den_e, dsgs_qmin, dsgs_qmax, dsgs_nmin, dsgs_nmax, dsgs_hnod, dsgs_Rnod, dsgs_mnod, dsgs_μloc, dsgs_rhs_ref, dsgs_rhs_res, dsgs_qe_flat, dsgs_ref_done, dsgs_have_ref, dsgs_bdy_done, dsgs_bdy_pairs, dsgs_legacy, dsgs_global_norms, dsgs_local_norms,

@@ -767,6 +767,9 @@ function time_loop!(inputs, params, u, args...)
                 end
                 flush(stdout)
             end
+            # On one rank there is nothing to reduce, and the scalar
+            # Allreduce allocates a Ref on every time step.
+            MPI.Comm_size(comm) == 1 && return bad
             return MPI.Allreduce(bad, MPI.LOR, comm)
         end
 
