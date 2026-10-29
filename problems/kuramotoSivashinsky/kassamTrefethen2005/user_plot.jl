@@ -8,9 +8,9 @@
 # with q the numerical (u, w). Writes
 #
 #   ks-it<n>.png       u and w ≈ ∂ₓ²u at this output time, every
-#                      KS_FRAME_EVERY-th output
+#                      ks_frame_every()-th output
 #   ks-spacetime.png   u(x,t) from t = 0 to now, the picture of Kassam &
-#                      Trefethen's Fig. 4.1, redrawn every KS_FRAME_EVERY-th
+#                      Trefethen's Fig. 4.1, redrawn every ks_frame_every()-th
 #                      output and at tend
 #
 # The space-time diagram is drawn on the NATIVE grid, not resampled: every
@@ -27,8 +27,14 @@
 # The frames of the space-time diagram are kept in ks_history (reset by
 # initialize.jl), so set :diagnostics_at_times densely enough for it.
 #---------------------------------------------------------------------------------
+#
+# A method and not a `const` for the frame interval, so that re-including this
+# file in a session where ks_history already exists (from an earlier run of
+# this case) still defines it; the `if` below skips everything inside it then.
+#---------------------------------------------------------------------------------
+@inline ks_frame_every() = 10
+
 if !@isdefined(ks_history)
-    const KS_FRAME_EVERY = 10
     const ks_history = (t = Float64[], x = Ref(Float64[]), u = Vector{Vector{Float64}}())
 end
 
@@ -46,7 +52,7 @@ function user_plot_1d(x, q, qref, μ_nodes, t, outvar, inputs, OUTPUT_DIR, iout)
     tt  = @sprintf "t = %.2f" t
 
     lfinal = t >= inputs[:tend] - 1.0e-10
-    ldraw  = mod(iout - 1, KS_FRAME_EVERY) == 0 || lfinal
+    ldraw  = mod(iout - 1, ks_frame_every()) == 0 || lfinal
 
     #-----------------------------------------------------------------------------
     # This output time.
