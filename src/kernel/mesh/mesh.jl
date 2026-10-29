@@ -3114,7 +3114,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                 # wrap leaves a non-conforming periodic face nothing can couple.
                 # DG adaptivity on a periodic domain needs the periodicity in
                 # the mesh itself (gmsh Periodic constraints, points at z = 0).
-                error("mod_mesh_read_gmsh!: DG adaptivity on a periodic mesh whose periodicity is carried by boundary tags only; regenerate the mesh with gmsh Periodic constraints (points at z = 0) so the forest treats the wrap as a neighbour, or run without :lamr/:lpreadapt")
+                error("mod_mesh_read_gmsh!: DG adaptivity on a periodic mesh whose periodicity is carried by boundary tags only; regenerate the mesh with gmsh Periodic constraints (points at z = 0) so the forest treats the wrap as a neighbor, or run without :lamr/:lpreadapt")
             end
             node_coords = get_node_coordinates(get_grid(model))
             ngl_dg = mesh.ngl
