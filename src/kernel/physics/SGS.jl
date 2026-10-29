@@ -745,6 +745,65 @@ const _DSGS_RR     = Float64[]     # the normalized ratio there
     return nothing
 end
 
+# Scalar 1D conservation law ∂ₜu + ∂ₓ(u²/2) = 0 (inviscid Burgers): the same
+# three passes as the Euler kernel below, with one residual and the Burgers
+# characteristic speed f'(u) = u in place of |u| + a in the cap μ_max.
+function _dsgs_1d_burgers!(μ_dsgs::AbstractMatrix{TT},
+                           q::AbstractMatrix{TT}, q1::AbstractMatrix{TT}, q2::AbstractMatrix{TT},
+                           rhs_el::AbstractArray{TT}, ω::AbstractVector{TT}, Je::AbstractArray{TT},
+                           visc_coeff::AbstractVector{TT}, wt::NTuple{3,TT},
+                           connijk::AbstractArray{TI,4}, Δx::AbstractVector{TT},
+                           nelem::Int, ngl::Int,
+                           CR::TT, Cmax::TT, Cmin::TT, cutoff::TT,
+                           lglobal_norms::Bool) where {TT<:AbstractFloat, TI<:Integer}
+
+    # --- Pass 1: average of u ------------------------------------------
+    u_avg = zero(TT)
+    @inbounds for ie = 1:nelem, i = 1:ngl
+        u_avg += q[connijk[ie,i,1,1], 1]
+    end
+    if lglobal_norms
+        sums = TT[u_avg, TT(nelem*ngl)]
+        MPI.Allreduce!(sums, MPI.SUM, get_mpi_comm())
+        u_avg = sums[1]/max(sums[2], one(TT))
+    else
+        u_avg /= nelem*ngl
+    end
+
+    # --- Pass 2: L∞ norm of |u - ⟨u⟩| ----------------------------------
+    denom = zero(TT)
+    @inbounds for ie = 1:nelem, i = 1:ngl
+        denom = max(denom, abs(q[connijk[ie,i,1,1], 1] - u_avg))
+    end
+    if lglobal_norms
+        denom = MPI.Allreduce(denom, MPI.MAX, get_mpi_comm())
+    end
+    denom += Base.eps(TT)
+
+    # --- Pass 3: per-element coefficient -------------------------------
+    @inbounds for ie = 1:nelem
+        Δ = Δx[ie]/ngl
+
+        nR   = zero(TT)
+        umax = zero(TT)
+        for i = 1:ngl
+            ip  = connijk[ie,i,1,1]
+            imK = one(TT)/(ω[i]*Je[ie,i])   # element lumped mass at the node
+
+            R    = abs((wt[1]*q[ip,1] + wt[2]*q1[ip,1] + wt[3]*q2[ip,1]) - imK*rhs_el[ie,i,1])
+            nR   = max(nR, R)
+            umax = max(umax, abs(q[ip,1]))
+        end
+
+        μ_res = CR*Δ*Δ*_dsgs_cut(nR/denom, cutoff)
+        μ_max = Cmax*Δ*umax
+        μ_fl  = Cmin > zero(TT) ? Cmin*Δ*umax : zero(TT)
+        μ_dsgs[ie, 1] = visc_coeff[1]*max(μ_fl, min(μ_max, μ_res))
+    end
+
+    return nothing
+end
+
 function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  ::DSGS, ::NSD_1D,
                                  q::AbstractMatrix{TT},
@@ -763,6 +822,13 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  cutoff::TT=zero(TT),
                                  lglobal_norms::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
     _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
+
+    # One equation: the scalar Burgers law (problems/Burgers/case1_dsgs).
+    if size(μ_dsgs, 2) == 1
+        _dsgs_1d_burgers!(μ_dsgs, q, q1, q2, rhs_el, ω, Je, visc_coeff, wt,
+                          connijk, Δx, nelem, ngl, CR, Cmax, Cmin, cutoff, lglobal_norms)
+        return nothing
+    end
 
     # 1D CompEuler in total-energy form q = (ρ, ρu, ρE). Marras's
     # unified formula gives ONE residual-based coefficient per element;
