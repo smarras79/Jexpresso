@@ -12,7 +12,8 @@
 # Prints, at every output time, the amplitude max|c| and the growth rate it
 # implies, ln(max|c|/δ)/t, next to the Cahn-Hilliard rate σ(k), and, while
 # the linear solution applies, the max-norm error of c and μ relative to their
-# peaks.
+# peaks. After that it prints the amplitude of the exact steady state
+# (ch_equilibrium_amplitude in user_flux.jl) and how far max|c| is from it.
 #---------------------------------------------------------------------------------
 function user_plot_1d(x, q, qref, μ_nodes, t, outvar, inputs, OUTPUT_DIR, iout)
 
@@ -52,6 +53,9 @@ function user_plot_1d(x, q, qref, μ_nodes, t, outvar, inputs, OUTPUT_DIR, iout)
     end
     if llinear
         @printf ", max|err|/max|exact|  c: %.3e  μ: %.3e" errs[1] errs[2]
+    else
+        Aeq = ch_equilibrium_amplitude()
+        @printf ", steady amplitude %.6f, max|c|/A_eq - 1 = %.3e" Aeq A/Aeq - 1.0
     end
     @printf "\n"
 

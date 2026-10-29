@@ -68,9 +68,35 @@ Roundoff in the other modes therefore grows more slowly than the seeded one.
 
 Until the amplitude reaches 0.05 (t ≈ 0.49), every frame overlays the exact
 linear solution c = δe^{σt}cos(kx), μ = (ε²k² - 1)c (`user_analytic.jl`).
-After that the cubic term takes over and c saturates into four pairs of
-c = ±1 domains, separated by tanh interfaces of width ≈ √2ε.
+After that the cubic term takes over, and c saturates into the steady
+periodic profile with the same wavelength 2π/k and μ = 0. That profile is a
+periodic orbit of ε²c'' = c³ - c. Its amplitude A is fixed by requiring the
+orbit's period,
+
+```
+P(A) = 4ε ∫₀^{π/2} dθ / √(1 - A²(1 + sin²θ)/2),
+```
+
+to equal 2π/k (`ch_equilibrium_amplitude`). For the shipped parameters that
+gives A = 0.800781. At this ε the wavelength π/2 is only about six interface
+widths, too short for separate c = ±1 plateaus to form.
 
 `ch-it<n>.png` shows c and μ (`user_plot.jl`). Each output time also prints
-max|c|, the growth rate it implies, ln(max|c|/δ)/t, next to σ, and, during
-the linear phase, max|error|/max|exact| of c and μ.
+max|c| and the growth rate it implies, ln(max|c|/δ)/t, next to σ. During the
+linear phase it adds max|error|/max|exact| of c and μ, and afterwards the
+distance of max|c| from A.
+
+Output of the shipped run, which takes about 10 minutes on one core
+(800,000 steps of Δt = 2.5e-6):
+
+| t | max\|c\| | ln(max\|c\|/δ)/t | error against the exact solution |
+|---|---|---|---|
+| 0.25 | 7.377e-3 | 7.9934 | c: 1.6e-3, μ: 2.5e-3 (linear solution) |
+| 0.5  | 5.429e-2 | 7.9888 | — (cubic term starts to act) |
+| 1.0  | 0.7707   | 6.647  | max\|c\|/A − 1 = −3.8e-2 |
+| 1.5  | 0.80077  | 4.457  | max\|c\|/A − 1 = −1.6e-5 |
+| 2.0  | 0.80078  | 3.343  | max\|c\|/A − 1 = −6.7e-9 |
+
+During the linear phase the growth rate is 7.9934 against σ = 8. That gap,
+8e-4 relative, is the τσ the relaxation predicts. At t = 2 the solution has
+settled on the steady amplitude to 7e-9, with |μ| < 6e-9.

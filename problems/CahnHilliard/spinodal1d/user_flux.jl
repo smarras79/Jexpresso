@@ -82,6 +82,41 @@ end
 end
 
 #---------------------------------------------------------------------------------
+# Amplitude of the steady state the run saturates into.
+#
+# By symmetry the mode cos(kx) saturates into a steady profile of the same
+# period 2π/k with μ = 0, i.e. a periodic orbit of
+#
+#     ε² c'' = c³ - c,       c(0) = A,  c'(0) = 0
+#
+# With F(c) = c⁴/4 - c²/2, energy conservation gives the period
+#
+#     P(A) = 4ε ∫₀ᴬ dc / √(2(F(c) - F(A)))
+#          = 4ε ∫₀^{π/2} dθ / √(1 - A²(1 + sin²θ)/2)        (c = A sin θ)
+#
+# which grows from 2πε at A → 0 to ∞ at A → 1. Bisection on P(A) = 2π/k
+# gives the amplitude: 0.80078 for the shipped parameters. Midpoint rule on
+# the smooth θ-integrand; called only at output times.
+#---------------------------------------------------------------------------------
+function ch_equilibrium_amplitude()
+    p = ch_parameters()
+
+    n = 4000
+    h = 0.5π/n
+    period(A) = 4.0*p.ε*h*sum(1.0/sqrt(1.0 - 0.5*A*A*(1.0 + sin((i - 0.5)*h)^2)) for i = 1:n)
+
+    target = 2π/p.k
+    period(0.0) >= target && return 0.0     # k ≥ 1/ε: c = 0 is stable
+
+    lo, hi = 0.0, 1.0 - 1.0e-12
+    for _ = 1:60
+        m = 0.5*(lo + hi)
+        period(m) < target ? (lo = m) : (hi = m)
+    end
+    return 0.5*(lo + hi)
+end
+
+#---------------------------------------------------------------------------------
 # F = 0: every derivative of this system goes through the viscous operator.
 #---------------------------------------------------------------------------------
 function user_flux!(F, G, SD::NSD_1D,

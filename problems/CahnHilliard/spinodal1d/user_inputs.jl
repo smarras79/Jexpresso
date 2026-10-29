@@ -10,8 +10,10 @@ function user_inputs()
     # which is ∂ₜc = ∂ₓ²(c³ - c - ε²∂ₓ²c) as τ → 0. ε, τ and the initial mode
     # are in ch_parameters() (user_flux.jl). A perturbation δ cos(4x) of the
     # mixture c = 0 grows at the Cahn-Hilliard rate σ = 8 until t ≈ 0.5, where
-    # it is overlaid on the exact linear solution (user_analytic.jl), and then
-    # saturates into a periodic array of c = ±1 domains.
+    # it is overlaid on the exact linear solution (user_analytic.jl). It then
+    # saturates into the steady periodic profile of amplitude 0.8008 (μ = 0;
+    # see ch_equilibrium_amplitude in user_flux.jl): at this ε the wavelength
+    # π/2 is too short for separate ±1 plateaus.
     #---------------------------------------------------------------------------
     p    = ch_parameters()
     tend = 2.0
@@ -43,8 +45,8 @@ function user_inputs()
         :lvisc                => true,
         :μ                    => [1.0, -p.ε^2/p.τ],
         #---------------------------------------------------------------------------
-        # Mesh: 64 elements at p = 4 on [0, 2π]. The interfaces that form
-        # have width ≈ √2 ε = 0.25, against an element width of 0.098.
+        # Mesh: 64 elements at p = 4 on [0, 2π]: 16 elements per wavelength
+        # of the saturated profile, whose fronts have width ≈ √2 ε = 0.25.
         #---------------------------------------------------------------------------
         :lread_gmsh           => false,
         :xmin                 => 0.0,
