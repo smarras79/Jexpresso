@@ -51,6 +51,10 @@ function user_inputs()
         # Output
         #---------------------------------------------------------------------------
         :outformat            => "png",
+        # The case's figures (user_plot.jl): ks-it<n>.png and ks-spacetime.png.
+        # false switches the plotting hook off altogether; "none" above
+        # switches off all output.
+        :ks_plot              => true,
         :ks_clims             => (-1.9, 1.0),   # saturated inferno range of ks-spacetime.png
         :loverwrite_output    => true,
         :output_dir           => "./output",

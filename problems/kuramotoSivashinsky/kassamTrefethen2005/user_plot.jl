@@ -27,6 +27,11 @@
 #
 # The frames of the space-time diagram are kept in ks_history (reset by
 # initialize.jl), so set :diagnostics_at_times densely enough for it.
+#
+# :ks_plot => false (user_inputs.jl) switches this hook off: it returns at once,
+# with no figures, no history and no diagnostic line. (:plot_user => false
+# would instead hand the output to the generic 1D panels, which also plot;
+# :outformat => "none" switches off all output.)
 #---------------------------------------------------------------------------------
 #
 # A method and not a `const` for the frame interval, so that re-including this
@@ -47,6 +52,8 @@ function ks_reset_history!()
 end
 
 function user_plot_1d(x, q, qref, μ_nodes, t, outvar, inputs, OUTPUT_DIR, iout)
+
+    get(inputs, :ks_plot, true)::Bool || return nothing
 
     idx = sortperm(x)
     xs  = x[idx]
