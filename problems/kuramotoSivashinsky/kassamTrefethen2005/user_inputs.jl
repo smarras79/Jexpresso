@@ -24,7 +24,7 @@ function user_inputs()
         # τ = 1e-4; Δt shrinks like √τ.
         #---------------------------------------------------------------------------
         :Δt                   => 2.0e-4,
-        :diagnostics_at_times => collect(0.0:1.0:tend),
+        :diagnostics_at_times => collect(0.0:0.5:tend),   # rows of ks-spacetime.png
         #---------------------------------------------------------------------------
         # Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -51,6 +51,7 @@ function user_inputs()
         # Output
         #---------------------------------------------------------------------------
         :outformat            => "png",
+        :ks_clims             => (-1.9, 1.0),   # saturated inferno range of ks-spacetime.png
         :loverwrite_output    => true,
         :output_dir           => "./output",
     ) #Dict

@@ -56,12 +56,17 @@ Fig. 4.1: u(x,0) = cos(x/16)(1 + sin(x/16)) on a periodic domain of length
 is set by the fast oscillation, |Im s| ≈ λ/√τ, where λ ≈ 74 is the largest
 eigenvalue of -∂ₓ² on this mesh. The run takes about 10 minutes on one core.
 
-Output, every Δt = 1 (`user_plot.jl`):
+Output (`user_plot.jl`). The solution is sampled every Δt = 0.5:
 
-- `ks-it<n>.png`: u and w ≈ ∂ₓ²u at that time.
+- `ks-it<n>.png`: u and w ≈ ∂ₓ²u, written every tenth output.
 - `ks-spacetime.png`: u(x,t) from 0 to the current time, the picture of
-  their Fig. 4.1. It is rebuilt at every output, so the last one covers the
-  whole run.
+  their Fig. 4.1, also redrawn every tenth output and at the end. It is
+  drawn on the native grid, with no resampling onto a uniform x. Each LGL
+  node is one column of cells, bounded by the midpoints to its neighbours,
+  so the columns keep the non-uniform LGL widths. Each output time is one
+  row. The colours are inferno, saturated: `:ks_clims` (default
+  (-1.9, 1.0)) clips the range well inside max|u| ≈ 2.6, so crests turn
+  yellow, troughs turn black, and u = 0 is orange.
 
 A few steady cells form early, the first near x ≈ 25 at t ≈ 10. From
 t ≈ 45 the cells split and merge, and the run is chaotic.
