@@ -873,7 +873,7 @@ end
 
 function DSS_rhs!(RHS, rhs_el, connijk, nelem, ngl, neqs, ::NSD_1D, ::ContGal)
 
-    for ieq = 1:neqs
+    @inbounds for ieq = 1:neqs
         for iel = 1:nelem
             for i = 1:ngl
                 I = connijk[iel,i,1]
@@ -885,7 +885,7 @@ function DSS_rhs!(RHS, rhs_el, connijk, nelem, ngl, neqs, ::NSD_1D, ::ContGal)
 end
 
 function DSS_rhs!(RHS, rhs_el, connijk, nelem, ngl, neqs, ::NSD_1D, ::DiscGal)
-    for ieq = 1:neqs
+    @inbounds for ieq = 1:neqs
         for iel = 1:nelem
             for i = 1:ngl
                 I = connijk[iel,i,1]
@@ -997,7 +997,7 @@ end
 
 function divide_by_mass_matrix!(RHS, RHSaux, Minv::AbstractVector, neqs, npoin, ::ContGal)
     
-    for ip=1:npoin
+    @inbounds for ip=1:npoin
         RHS[ip] = Minv[ip]*RHS[ip]
     end
     
@@ -1005,7 +1005,7 @@ end
 
 function divide_by_mass_matrix!(RHS, RHSaux, Minv::AbstractVector, neqs, npoin, ::DiscGal)
 
-    for ip = 1:npoin
+    @inbounds for ip = 1:npoin
         RHS[ip] = Minv[ip]*RHS[ip]
     end
 end

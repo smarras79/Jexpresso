@@ -18,7 +18,7 @@ function RHStoDU!(du, RHS, neqs, npoin)
     # form was incompatible with FullSpecialize'd ODEProblem and also
     # less cache-friendly than the straight scalar loop. RHS keeps
     # its [npoin, neqs] layout.
-    for i=1:neqs
+    @inbounds for i=1:neqs
         idx = (i-1)*npoin
         for j=1:npoin
             du[idx+j] = RHS[j,i]
@@ -389,12 +389,18 @@ function _dsgs_boundary_pairs!(params, SD)
 end
 
 function rhs!(du, u, params, time)
-    backend = params.inputs[:backend]
+    # params.backend, not params.inputs[:backend]: the Dict value is `Any`, so
+    # the comparison below would be resolved at run time on every call
+    backend = params.backend
     # for @timers, do not delete
     timers = params.timers
 
     if (backend == CPU())
-        @timeit_debug JEXPRESSO_TIMER "build_rhs" _build_rhs!(@view(params.RHS[:,:]), u, params, time)
+        if params.SD isa NSD_1D
+            @timeit_debug JEXPRESSO_TIMER "build_rhs" _build_rhs_1d!(params.RHS, u, params, time)
+        else
+            @timeit_debug JEXPRESSO_TIMER "build_rhs" _build_rhs!(@view(params.RHS[:,:]), u, params, time)
+        end
 
         if (params.laguerre)
             @timeit_debug JEXPRESSO_TIMER "build_rhs_laguerre" build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
@@ -765,6 +771,186 @@ end
 end
 end
 
+#-----------------------------------------------------------------------------------
+# Moist microphysics source terms (:lmoist), shared by _build_rhs! and
+# _build_rhs_1d!.
+#-----------------------------------------------------------------------------------
+function _moist_rhs!(u, params, SD)
+    @timeit_debug JEXPRESSO_TIMER "do_micro_physics" do_micro_physics!(params.mp.Tabs, params.mp.qn, params.mp.qc, params.mp.qi, params.mp.qr,
+                      params.mp.qs, params.mp.qg, params.mp.Pr, params.mp.Ps, params.mp.Pg,
+                      params.mp.S_micro, params.mp.qsatt, params.mesh.npoin,
+                      params.uaux, @view(params.mesh.coords[end, :]),
+                      params.qp.qe, SD, params.SOL_VARS_TYPE)
+
+    # if inputs[:ladapt] == true
+    #     conformity4ncf_mp!(params.mp.Tabs, params.mp.qn, params.mp.qc, params.mp.qi, params.mp.qr,
+    #                     params.mp.qs, params.mp.qg, params.mp.Pr, params.mp.Ps, params.mp.Pg,
+    #                     params.mp.S_micro, params.mp.qsatt,
+    #                     @view(params.uaux[:,end]), params.rhs_el_tmp, @view(params.utmp[:,1]), params.vaux,
+    #                     params.g_dss_cache,
+    #                     params.mesh.SD,
+    #                     params.QT, params.mesh.connijk,
+    #                     params.mesh, params.Minv,
+    #                     params.metrics.Je, params.ω, params.AD,
+    #                     params.neqs,
+    #                     params.q_el, params.q_el_pro,
+    #                     params.cache_ghost_p, params.q_ghost_p,
+    #                     params.cache_ghost_c, params.q_ghost_c,
+    #                     params.interp)
+    # end
+    
+    if (params.inputs[:lprecip])
+        @timeit_debug JEXPRESSO_TIMER "precip_derivs" compute_precipitation_derivatives!(params.mp.dqpdt, params.mp.dqtdt, params.mp.dhldt, params.mp.Pr, params.mp.Ps,
+                                           params.mp.Pg, params.mp.Tabs, params.mp.qi,
+                                           @view(params.uaux[:,1]), @view(params.qp.qe[:,1]), 
+                                           params.mesh.nelem, params.mesh.ngl, params.mesh.connijk, params.H,
+                                           params.metrics, params.ω, params.basis.dψ, SD, params.SOL_VARS_TYPE)
+    
+        @timeit_debug JEXPRESSO_TIMER "micro2rhs" micro2rhs!(params.rhs_el,params.mp.dhldt, params.mp.dqtdt, params.mp.dqpdt, SD)
+    end
+    @timeit_debug JEXPRESSO_TIMER "uaux2u" uaux2u!(u, params.uaux, params.neqs, params.mesh.npoin)
+end
+
+#-----------------------------------------------------------------------------------
+# DynSGS: advance the step-cadenced BDF2 history and set the stage-consistent
+# stencil weights. Shared by _build_rhs! and _build_rhs_1d!, called only when
+# :lvisc is on with a DynSGS model (see the note at the call in _build_rhs!).
+#-----------------------------------------------------------------------------------
+function _dsgs_advance_history!(params, time)
+    if time - params.dsgs_thist[] >= 0.999*params.Δt
+        params.dsgs_qnm2 .= params.dsgs_qnm1
+        params.dsgs_qnm1 .= params.dsgs_qn
+        params.dsgs_qn   .= params.uaux
+        params.dsgs_thist[] = time
+        params.dsgs_nhist[] += 1
+    end
+    # Stage-consistent time-derivative stencil for the residual (see
+    # _dsgs_stencil): the weights depend on the stage time τ = t − tⁿ.
+    τ = time - params.dsgs_thist[]
+    h = params.Δt
+    if params.dsgs_nhist[] < _dsgs_hold_steps(params)
+        # The history is still seeded from the initial condition, so the
+        # BDF2 is not a time derivative yet: 0 on the first step, 1.5·∂ₜq
+        # on the second. Left alone it makes the residual the WHOLE flux
+        # divergence on step one — the sensor then reads a smooth, fully
+        # resolved initial condition as unresolved everywhere and puts ν
+        # on its cap (measured on the smooth vortex: ν = the cap exactly
+        # at the first call, on a solution the same scheme integrates to
+        # seven digits without it). Zero weights, and a residual RHS held
+        # at zero in _dsgs_residual_rhs!, make R ≡ 0 for those two steps,
+        # so ν is the background floor and nothing else.
+        params.dsgs_stage[] = false
+        params.dsgs_wt[]    = (0.0, 0.0, 0.0)
+    elseif params.dsgs_legacy[]
+        # the sensor of the runs before Sep 2026 (see _dsgs_residual_rhs!):
+        # BDF2 on (q_stage, qⁿ, qⁿ⁻¹) at every stage, which is ∂ₜq only at
+        # τ = Δt (−∂ₜq/2 at τ = 0), against the assembled RHS
+        params.dsgs_stage[] = true
+        params.dsgs_wt[]    = (1.5/h, -2.0/h, 0.5/h)
+    elseif τ <= 1.0e-8*h
+        params.dsgs_stage[] = false
+        params.dsgs_wt[]    = (1.5/h, -2.0/h, 0.5/h)
+    else
+        params.dsgs_stage[] = true
+        params.dsgs_wt[]    = ((2τ + h)/(τ*(τ + h)), -(τ + h)/(τ*h), τ/(h*(τ + h)))
+    end
+    # :dsgs_freeze_stage (SGS.jl, _DSGS_FROZEN): compute the coefficient
+    # only at the stage that sits on tⁿ and hold it for the rest of the
+    # step. The stage-consistent stencil above is second order in the
+    # values it is given, but at τ > 0 one of them is an RK internal
+    # stage, whose own error is O(Δt) — so the residual, and with it ν,
+    # stalls at O(Δt) however well resolved the solution is. At τ = 0 the
+    # three values are step-level states and the residual is the BDF2
+    # truncation error, O(Δt²).
+    _DSGS_FROZEN[] = get(params.inputs, :dsgs_freeze_stage, false) &&
+                     params.dsgs_nhist[] >= 3 && τ > 1.0e-8*h
+end
+
+#-----------------------------------------------------------------------------------
+# The 1D right-hand side: the steps of _build_rhs! that a 1D case can have, in
+# a function of its own.
+#
+# _build_rhs! carries every option of every dimension (AMR, filters, LES,
+# 2D/3D boundary integrals) and reads its flags from the Dict inputs, as
+# `Any`, on every call. Going through it cost more than the whole work of a
+# 256-node 1D right-hand side: 15.9 μs per call against 7.1 μs for these same
+# steps here (kuramotoSivashinsky, measured; most of the rest was bounds
+# checks in the element kernel, see inviscid_rhs_el!(::NSD_1D)). The flags
+# are read once and typed, and the arrays come from params.mesh1d, whose
+# types are concrete, so every call below is resolved at compile time.
+#
+# 1D has no AMR and no modal filter (filter! has methods for 2D and 3D only),
+# so those are refused here rather than failing further down. The Neumann
+# boundary path is not called: none of its 1D methods does anything.
+#-----------------------------------------------------------------------------------
+# A deck flag as a Bool. `inputs[key] == true` on the Dict's `Any` value is
+# a run-time dispatch whose result is `Any` too; the isa test resolves the
+# usual Bool case at compile time and keeps the result typed.
+@inline _deck_flag(inputs, key) = (v = inputs[key]; v isa Bool ? v : (v == true)::Bool)
+
+function _build_rhs_1d!(RHS, u, params, time)
+
+    inputs = params.inputs
+    _deck_flag(inputs, :lfilter) &&
+        error(":lfilter is not available in 1D (filter! has methods for 2D and 3D only).")
+    _deck_flag(inputs, :ladapt) &&
+        error(":ladapt (adaptive mesh refinement) is not available in 1D.")
+    lsource = inputs[:lsource]::Bool
+    lmoist  = _deck_flag(inputs, :lmoist)
+    lvisc   = _deck_flag(inputs, :lvisc)
+
+    SD    = params.SD
+    AD    = params.AD
+    neqs  = params.neqs
+    m     = params.mesh1d
+    npoin = m.npoin
+    nelem = Int(params.mesh.nelem)
+    ngl   = Int(params.mesh.ngl)
+
+    @timeit_debug JEXPRESSO_TIMER "resetRHS_inv" resetRHSToZero_inviscid!(params)
+    @timeit_debug JEXPRESSO_TIMER "u2uaux" u2uaux!(@view(params.uaux[:,:]), u, neqs, npoin)
+
+    # Realizability repair, BEFORE any flux sees the state (see _build_rhs!)
+    @timeit_debug JEXPRESSO_TIMER "positivity" apply_positivity!(u, params, SD)
+
+    @timeit_debug JEXPRESSO_TIMER "BC_dirichlet" apply_boundary_conditions_dirichlet_1d!(u, params, time)
+
+    lmoist && _moist_rhs!(u, params, SD)
+
+    @timeit_debug JEXPRESSO_TIMER "inviscid_rhs_el" inviscid_rhs_el!(u, params, m.connijk, params.qp.qe, m.coords, lsource,
+                                                                      nothing, nothing, nothing, nothing, SD)
+    if AD == DiscGal()
+        @timeit_debug JEXPRESSO_TIMER "surface_rhs" surface_rhs_el!(
+            params, params.uaux, m.connijk, params.qp.qe, params.mesh, time,
+            nelem, ngl, neqs, params.CL, params.SOL_VARS_TYPE, inputs[:numerical_flux], SD)
+    end
+
+    @timeit_debug JEXPRESSO_TIMER "DSS_rhs" DSS_rhs!(params.RHS, params.rhs_el, m.connijk, nelem, ngl, neqs, SD, AD)
+
+    if lvisc
+        if params.VT == DSGS_MHD() || params.VT == DSGS() || params.VT == DSGS_SW()
+            _dsgs_advance_history!(params, time)
+        end
+        @timeit_debug JEXPRESSO_TIMER "resetRHS_visc" resetRHSToZero_viscous!(params, SD)
+        @timeit_debug JEXPRESSO_TIMER "viscous_rhs_el" viscous_rhs_el!(u, params, m.connijk, params.qp.qe, SD)
+        @timeit_debug JEXPRESSO_TIMER "DSS_rhs_visc" DSS_rhs!(params.RHS_visc, params.rhs_diff_el, m.connijk, nelem, ngl, neqs, SD, AD)
+        params.RHS .+= params.RHS_visc
+    end
+
+    @timeit_debug JEXPRESSO_TIMER "DSS_global_RHS" DSS_global_RHS!(params.RHS, params.g_dss_cache, neqs)
+
+    if time > 0.0
+        params.qp.qnm1 .= params.qp.qnm2
+        params.qp.qnm2 .= params.uaux
+    end
+
+    for ieq = 1:neqs
+        divide_by_mass_matrix!(@view(params.RHS[:,ieq]), params.vaux, params.Minv, neqs, npoin, AD)
+    end
+    return nothing
+end
+
+# 2D and 3D (1D: _build_rhs_1d! above)
 function _build_rhs!(RHS, u, params, time)
 
     T       = Float64
@@ -778,10 +964,6 @@ function _build_rhs!(RHS, u, params, time)
     nelem   = params.mesh.nelem
     npoin   = params.mesh.npoin
     lsource = params.inputs[:lsource]::Bool
-    # 1D: the concretely typed connectivity (params_setup.jl, mesh1d), so the
-    # DSS and viscous calls that take it are resolved at compile time. SD is a
-    # constant here, so the branch is folded away.
-    connijk_rhs = SD == NSD_1D() ? params.mesh1d.connijk : params.mesh.connijk
     xmin    = params.mesh.xmin
     xmax    = params.mesh.xmax
     ymin    = params.mesh.ymin
@@ -836,77 +1018,29 @@ function _build_rhs!(RHS, u, params, time)
                           params.interp; neqs = neqs)
     end
     
-    # F_surf/S_face/S_flux are the 2D/3D boundary surface integrals; nothing in
-    # the 1D path reads them, so 1D does not clear them on every evaluation
-    SD != NSD_1D() && @timeit_debug JEXPRESSO_TIMER "reset_bdyflux" resetbdyfluxToZero!(params)
-    if SD == NSD_1D()
-        # Typed arguments (params.mesh1d), so the call is resolved at compile
-        # time and allocates nothing; see apply_boundary_conditions_dirichlet_1d!.
-        @timeit_debug JEXPRESSO_TIMER "BC_dirichlet" apply_boundary_conditions_dirichlet_1d!(u, params, time)
-    else
-        @timeit_debug JEXPRESSO_TIMER "BC_dirichlet" apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
-                                             params.mesh.coords,
-                                             params.metrics.nx, params.metrics.ny, params.metrics.nz,
-                                             params.mesh.npoin, params.mesh.npoin_linear, 
-                                             params.mesh.poin_in_bdy_edge, params.mesh.poin_in_bdy_face,
-                                             params.mesh.nedges_bdy, params.mesh.nfaces_bdy, params.mesh.ngl, 
-                                             params.mesh.ngr, params.mesh.nelem_semi_inf, params.basis.ψ, params.basis.dψ,
-                                             xmax, ymax, zmax, xmin, ymin, zmin, params.RHS, params.rhs_el, params.ubdy,
-                                             params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem, 
-                                             params.mesh.bdy_edge_type, params.mesh.bdy_face_in_elem, params.mesh.bdy_face_type,
-                                             params.mesh.connijk, params.metrics.Jef, params.S_face, 
-                                             params.S_flux, params.F_surf, params.M_surf_inv, params.M_edge_inv, params.Minv,
-                                             params.mp.Tabs, params.mp.qn,
-                                             params.ω, neqs, params.inputs, AD, SD)
-    end
+    @timeit_debug JEXPRESSO_TIMER "reset_bdyflux" resetbdyfluxToZero!(params)
+    @timeit_debug JEXPRESSO_TIMER "BC_dirichlet" apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
+                                         params.mesh.coords,
+                                         params.metrics.nx, params.metrics.ny, params.metrics.nz,
+                                         params.mesh.npoin, params.mesh.npoin_linear, 
+                                         params.mesh.poin_in_bdy_edge, params.mesh.poin_in_bdy_face,
+                                         params.mesh.nedges_bdy, params.mesh.nfaces_bdy, params.mesh.ngl, 
+                                         params.mesh.ngr, params.mesh.nelem_semi_inf, params.basis.ψ, params.basis.dψ,
+                                         xmax, ymax, zmax, xmin, ymin, zmin, params.RHS, params.rhs_el, params.ubdy,
+                                         params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem, 
+                                         params.mesh.bdy_edge_type, params.mesh.bdy_face_in_elem, params.mesh.bdy_face_type,
+                                         params.mesh.connijk, params.metrics.Jef, params.S_face, 
+                                         params.S_flux, params.F_surf, params.M_surf_inv, params.M_edge_inv, params.Minv,
+                                         params.mp.Tabs, params.mp.qn,
+                                         params.ω, neqs, params.inputs, AD, SD)
 
     if (params.inputs[:lmoist])
-        
-        @timeit_debug JEXPRESSO_TIMER "do_micro_physics" do_micro_physics!(params.mp.Tabs, params.mp.qn, params.mp.qc, params.mp.qi, params.mp.qr,
-                          params.mp.qs, params.mp.qg, params.mp.Pr, params.mp.Ps, params.mp.Pg,
-                          params.mp.S_micro, params.mp.qsatt, params.mesh.npoin,
-                          params.uaux, @view(params.mesh.coords[end, :]),
-                          params.qp.qe, SD, params.SOL_VARS_TYPE)
-
-        # if inputs[:ladapt] == true
-        #     conformity4ncf_mp!(params.mp.Tabs, params.mp.qn, params.mp.qc, params.mp.qi, params.mp.qr,
-        #                     params.mp.qs, params.mp.qg, params.mp.Pr, params.mp.Ps, params.mp.Pg,
-        #                     params.mp.S_micro, params.mp.qsatt,
-        #                     @view(params.uaux[:,end]), params.rhs_el_tmp, @view(params.utmp[:,1]), params.vaux,
-        #                     params.g_dss_cache,
-        #                     params.mesh.SD,
-        #                     params.QT, params.mesh.connijk,
-        #                     params.mesh, params.Minv,
-        #                     params.metrics.Je, params.ω, params.AD,
-        #                     params.neqs,
-        #                     params.q_el, params.q_el_pro,
-        #                     params.cache_ghost_p, params.q_ghost_p,
-        #                     params.cache_ghost_c, params.q_ghost_c,
-        #                     params.interp)
-        # end
-            
-        if (params.inputs[:lprecip])
-            @timeit_debug JEXPRESSO_TIMER "precip_derivs" compute_precipitation_derivatives!(params.mp.dqpdt, params.mp.dqtdt, params.mp.dhldt, params.mp.Pr, params.mp.Ps,
-                                               params.mp.Pg, params.mp.Tabs, params.mp.qi,
-                                               @view(params.uaux[:,1]), @view(params.qp.qe[:,1]), 
-                                               params.mesh.nelem, params.mesh.ngl, params.mesh.connijk, params.H,
-                                               params.metrics, params.ω, params.basis.dψ, SD, params.SOL_VARS_TYPE)
-            
-            @timeit_debug JEXPRESSO_TIMER "micro2rhs" micro2rhs!(params.rhs_el,params.mp.dhldt, params.mp.dqtdt, params.mp.dqpdt, SD)
-        end
-        @timeit_debug JEXPRESSO_TIMER "uaux2u" uaux2u!(u, params.uaux, params.neqs, params.mesh.npoin)
+        _moist_rhs!(u, params, SD)
     end
 
      
-    if SD == NSD_1D()
-        # Typed arguments (params.mesh1d): resolved at compile time, so params
-        # is not boxed on every call. The 1D kernel has no microphysics.
-        @timeit_debug JEXPRESSO_TIMER "inviscid_rhs_el" inviscid_rhs_el!(u, params, params.mesh1d.connijk, params.qp.qe, params.mesh1d.coords, lsource,
-                         nothing, nothing, nothing, nothing, SD)
-    else
-        @timeit_debug JEXPRESSO_TIMER "inviscid_rhs_el" inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, lsource, 
-                         params.mp.S_micro, params.mp.qn, params.mp.flux_lw, params.mp.flux_sw, SD)
-    end
+    @timeit_debug JEXPRESSO_TIMER "inviscid_rhs_el" inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, lsource, 
+                     params.mp.S_micro, params.mp.qn, params.mp.flux_lw, params.mp.flux_sw, SD)
 
     if inputs[:ladapt] == true
         DSS_nc_gather_rhs!(params.RHS, SD, QT, params.rhs_el,
@@ -925,7 +1059,7 @@ function _build_rhs!(RHS, u, params, time)
             nelem, ngl, neqs, CL, params.SOL_VARS_TYPE, params.inputs[:numerical_flux], SD)
     end
     
-    @timeit_debug JEXPRESSO_TIMER "DSS_rhs" DSS_rhs!(params.RHS, params.rhs_el, connijk_rhs, nelem, ngl, neqs, SD, AD)
+    @timeit_debug JEXPRESSO_TIMER "DSS_rhs" DSS_rhs!(params.RHS, params.rhs_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
 
     #-----------------------------------------------------------------------------------
     # DynSGS-MHD: advance the step-cadenced BDF2 history.
@@ -946,53 +1080,7 @@ function _build_rhs!(RHS, u, params, time)
     # with the allocation condition in params_setup.jl.
     if params.inputs[:lvisc] == true &&
         (params.VT == DSGS_MHD() || params.VT == DSGS() || params.VT == DSGS_SW())
-        if time - params.dsgs_thist[] >= 0.999*params.Δt
-            params.dsgs_qnm2 .= params.dsgs_qnm1
-            params.dsgs_qnm1 .= params.dsgs_qn
-            params.dsgs_qn   .= params.uaux
-            params.dsgs_thist[] = time
-            params.dsgs_nhist[] += 1
-        end
-        # Stage-consistent time-derivative stencil for the residual (see
-        # _dsgs_stencil): the weights depend on the stage time τ = t − tⁿ.
-        τ = time - params.dsgs_thist[]
-        h = params.Δt
-        if params.dsgs_nhist[] < _dsgs_hold_steps(params)
-            # The history is still seeded from the initial condition, so the
-            # BDF2 is not a time derivative yet: 0 on the first step, 1.5·∂ₜq
-            # on the second. Left alone it makes the residual the WHOLE flux
-            # divergence on step one — the sensor then reads a smooth, fully
-            # resolved initial condition as unresolved everywhere and puts ν
-            # on its cap (measured on the smooth vortex: ν = the cap exactly
-            # at the first call, on a solution the same scheme integrates to
-            # seven digits without it). Zero weights, and a residual RHS held
-            # at zero in _dsgs_residual_rhs!, make R ≡ 0 for those two steps,
-            # so ν is the background floor and nothing else.
-            params.dsgs_stage[] = false
-            params.dsgs_wt[]    = (0.0, 0.0, 0.0)
-        elseif params.dsgs_legacy[]
-            # the sensor of the runs before Sep 2026 (see _dsgs_residual_rhs!):
-            # BDF2 on (q_stage, qⁿ, qⁿ⁻¹) at every stage, which is ∂ₜq only at
-            # τ = Δt (−∂ₜq/2 at τ = 0), against the assembled RHS
-            params.dsgs_stage[] = true
-            params.dsgs_wt[]    = (1.5/h, -2.0/h, 0.5/h)
-        elseif τ <= 1.0e-8*h
-            params.dsgs_stage[] = false
-            params.dsgs_wt[]    = (1.5/h, -2.0/h, 0.5/h)
-        else
-            params.dsgs_stage[] = true
-            params.dsgs_wt[]    = ((2τ + h)/(τ*(τ + h)), -(τ + h)/(τ*h), τ/(h*(τ + h)))
-        end
-        # :dsgs_freeze_stage (SGS.jl, _DSGS_FROZEN): compute the coefficient
-        # only at the stage that sits on tⁿ and hold it for the rest of the
-        # step. The stage-consistent stencil above is second order in the
-        # values it is given, but at τ > 0 one of them is an RK internal
-        # stage, whose own error is O(Δt) — so the residual, and with it ν,
-        # stalls at O(Δt) however well resolved the solution is. At τ = 0 the
-        # three values are step-level states and the residual is the BDF2
-        # truncation error, O(Δt²).
-        _DSGS_FROZEN[] = get(params.inputs, :dsgs_freeze_stage, false) &&
-                         params.dsgs_nhist[] >= 3 && τ > 1.0e-8*h
+        _dsgs_advance_history!(params, time)
     end
 
     #-----------------------------------------------------------------------------------
@@ -1002,7 +1090,7 @@ function _build_rhs!(RHS, u, params, time)
 
         @timeit_debug JEXPRESSO_TIMER "resetRHS_visc" resetRHSToZero_viscous!(params, SD)
         
-        @timeit_debug JEXPRESSO_TIMER "viscous_rhs_el" viscous_rhs_el!(u, params, connijk_rhs, params.qp.qe, SD)
+        @timeit_debug JEXPRESSO_TIMER "viscous_rhs_el" viscous_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, SD)
         
         if inputs[:ladapt] == true
             DSS_nc_gather_rhs!(params.RHS_visc, SD, QT, params.rhs_diff_el,
@@ -1014,30 +1102,24 @@ function _build_rhs!(RHS, u, params, time)
                                params.mesh.pgip_local, ngl-1, neqs, params.interp)
         end
         
-        @timeit_debug JEXPRESSO_TIMER "DSS_rhs_visc" DSS_rhs!(params.RHS_visc, params.rhs_diff_el, connijk_rhs, nelem, ngl, neqs, SD, AD)
+        @timeit_debug JEXPRESSO_TIMER "DSS_rhs_visc" DSS_rhs!(params.RHS_visc, params.rhs_diff_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
         params.RHS[:,:] .= @view(params.RHS[:,:]) .+ @view(params.RHS_visc[:,:])
     end
-    # No 1D method of the Neumann path does anything (build_custom_bcs_neumann!
-    # (::NSD_1D, ...) and the DiscGal wrapper are no-ops), and the call, with
-    # its untyped mesh arguments, is dispatched at run time and boxes its
-    # Float64 arguments on every RHS evaluation. So 1D skips it.
-    if SD != NSD_1D()
-        @timeit_debug JEXPRESSO_TIMER "BC_neumann" apply_boundary_conditions_neumann!(u, params.uaux, time, params.qp.qe,
-                                           params.mesh.coords,
-                                           params.metrics.nx, params.metrics.ny, params.metrics.nz,
-                                           params.mesh.npoin, params.mesh.npoin_linear,
-                                           params.mesh.poin_in_bdy_edge, params.mesh.poin_in_bdy_face,
-                                           params.mesh.nedges_bdy, params.mesh.nfaces_bdy, params.mesh.ngl,
-                                           params.mesh.ngr, params.mesh.nelem_semi_inf, params.basis.ψ, params.basis.dψ,
-                                           xmax, ymax, zmax, xmin, ymin, zmin, params.RHS, params.rhs_el, params.ubdy,
-                                           params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem, 
-                                           params.mesh.bdy_edge_type, params.mesh.bdy_face_in_elem, params.mesh.bdy_face_type,
-                                           params.mesh.connijk, params.metrics.Jef, params.S_face, 
-                                           params.S_flux, params.F_surf, params.M_surf_inv, params.M_edge_inv, params.Minv,
-                                           params.WM.τ_f, params.WM.wθ, params.WM.wqv,
-                                           params.mp.Tabs, params.mp.qn,
-                                           params.ω, neqs, params.inputs, AD, SD)
-    end 
+    @timeit_debug JEXPRESSO_TIMER "BC_neumann" apply_boundary_conditions_neumann!(u, params.uaux, time, params.qp.qe,
+                                       params.mesh.coords,
+                                       params.metrics.nx, params.metrics.ny, params.metrics.nz,
+                                       params.mesh.npoin, params.mesh.npoin_linear,
+                                       params.mesh.poin_in_bdy_edge, params.mesh.poin_in_bdy_face,
+                                       params.mesh.nedges_bdy, params.mesh.nfaces_bdy, params.mesh.ngl,
+                                       params.mesh.ngr, params.mesh.nelem_semi_inf, params.basis.ψ, params.basis.dψ,
+                                       xmax, ymax, zmax, xmin, ymin, zmin, params.RHS, params.rhs_el, params.ubdy,
+                                       params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem, 
+                                       params.mesh.bdy_edge_type, params.mesh.bdy_face_in_elem, params.mesh.bdy_face_type,
+                                       params.mesh.connijk, params.metrics.Jef, params.S_face, 
+                                       params.S_flux, params.F_surf, params.M_surf_inv, params.M_edge_inv, params.Minv,
+                                       params.WM.τ_f, params.WM.wθ, params.WM.wqv,
+                                       params.mp.Tabs, params.mp.qn,
+                                       params.ω, neqs, params.inputs, AD, SD)
 
     @timeit_debug JEXPRESSO_TIMER "DSS_global_RHS" DSS_global_RHS!(@view(params.RHS[:,:]), params.g_dss_cache, params.neqs)
     
@@ -1067,49 +1149,60 @@ function inviscid_rhs_el!(u, params,
                           connijk::Array{Int64,4},
                           qe::Matrix{Float64},
                           coords, lsource, S_micro_vec, qn_vec, flux_lw_vec, flux_sw_vec, SD::NSD_1D)
-    
+
     @timeit_debug JEXPRESSO_TIMER "u2uaux" u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
 
-    ngl::Int   = params.mesh.ngl
-    npoin::Int = params.mesh.npoin
-    nelem::Int = params.mesh.nelem
-    neqs::Int  = params.neqs
+    # Every array in the loop is a concretely typed local: params.metrics.Je
+    # and params.basis... are untyped struct fields, and passing one made the
+    # element call below a run-time dispatch, once per element. The loop runs
+    # @inbounds: bounds checks were most of the remaining cost (measured,
+    # 256 nodes: 7.7 μs -> 2.5 μs). The indices are the mesh's own, and
+    # @inbounds does not reach into user_flux!/user_source!: a function not
+    # marked @propagate_inbounds keeps its own checks even when inlined.
+    # user_primitives! is not called here: the inviscid flux does not read
+    # uprimitive, and the viscous loop fills it itself.
+    m      = params.mesh1d
+    ngl    = Int(params.mesh.ngl)
+    nelem  = Int(params.mesh.nelem)
+    neqs   = Int(params.neqs)
+    npoin  = m.npoin
+    uaux   = params.uaux
+    F      = params.F
+    G      = params.G
+    S      = params.S
+    mesh   = params.mesh
+    CL     = params.CL
+    SVT    = params.SOL_VARS_TYPE
+    dψ     = m.dψ
+    ω      = params.ω
+    Je     = m.Je
+    rhs_el = params.rhs_el
+    QT     = params.QT
+    AD     = params.AD
+    xmin = params.xmin; xmax = params.xmax
 
-    xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
-
-    for iel=1:nelem   
-        for i=1:ngl
+    @inbounds for iel = 1:nelem
+        for i = 1:ngl
             ip = connijk[iel,i,1]
-            
-            user_primitives!(@view(params.uaux[ip,:]),
-                             @view(qe[ip,:]),
-                             @view(params.uprimitive[i,:]),
-                             params.SOL_VARS_TYPE)
 
-            user_flux!(@view(params.F[i,:]),
-                       @view(params.G[i,:]), SD,
-                       @view(params.uaux[ip,:]),
+            user_flux!(@view(F[i,:]),
+                       @view(G[i,:]), SD,
+                       @view(uaux[ip,:]),
                        @view(qe[ip,:]),
-                       params.mesh,
-                       params.CL, params.SOL_VARS_TYPE;
-                       neqs=params.neqs, ip=ip)
-            
+                       mesh,
+                       CL, SVT;
+                       neqs=neqs, ip=ip)
+
             if lsource
-                user_source!(@view(params.S[i,:]),
-                             @view(params.uaux[ip,:]),
+                user_source!(@view(S[i,:]),
+                             @view(uaux[ip,:]),
                              @view(qe[ip,:]),
-                             params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
-                             neqs=params.neqs, x=coords[1, ip], y=0.0, xmax=xmax,xmin=xmin)
+                             npoin, CL, SVT;
+                             neqs=neqs, x=coords[1, ip], y=0.0, xmax=xmax, xmin=xmin)
             end
         end
 
-        _expansion_inviscid!(u, params.neqs, ngl,
-                             params.basis.dψ, params.ω,
-                             params.F, params.S,
-                             params.metrics.Je,
-                             params.rhs_el,
-                             iel, params.CL, params.QT, SD, params.AD)
-        
+        _expansion_inviscid!(u, neqs, ngl, dψ, ω, F, S, Je, rhs_el, iel, CL, QT, SD, AD)
     end
 end
 
@@ -2372,7 +2465,7 @@ function _expansion_inviscid!(u, neqs, ngl,
                               Je,
                               rhs_el,
                               iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
-    for ieq = 1:neqs
+    @inbounds for ieq = 1:neqs
         for i=1:ngl
             dFdξ = 0.0
             for k = 1:ngl
@@ -2389,7 +2482,7 @@ function _expansion_inviscid!(u, neqs, ngl,
                               Je,
                               rhs_el,
                               iel, ::CL, QT::Inexact, SD::NSD_1D, AD::DiscGal)
-    for ieq = 1:neqs
+    @inbounds for ieq = 1:neqs
         for i = 1:ngl
             dFdξ = 0.0
             for k = 1:ngl

@@ -85,8 +85,12 @@ The time loop to t = 150, measured on one core with compilation excluded:
 
 | | time | allocations |
 |---|---|---|
-| `:outformat => "none"` | 0.20 s | 13 k (3.3 MiB): setup and per-output bookkeeping, none per step |
+| `:outformat => "none"` | 0.13-0.14 s | 13 k (3.3 MiB): setup and per-output bookkeeping, none per step |
 | default output (301 times, `ks_plot`) | 1.7 s | the rest is the plotting |
+
+The run makes about 2 700 evaluations of the nonlinear right-hand side, at
+4 μs each for the 256 nodes. The rest is mostly ETDRK4's seven products with
+the φ operators per step and the output callbacks.
 
 The earlier version of this case relaxed a second field onto ∂ₓ²u and
 stepped everything explicitly. It needed Δt = 2e-4, which is 750 000 steps

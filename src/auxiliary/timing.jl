@@ -32,6 +32,26 @@ let
     @eval timeit_debug_enabled() = $on
 end
 
+# Jexpresso's own @timeit_debug, which shadows TimerOutputs' inside this
+# module and is what every call site uses.
+#
+# TimerOutputs.@timeit_debug does NOT expand to nothing with the gate off: it
+# wraps the expression in try/finally and only skips the bookkeeping inside.
+# The try region stays, and on every call it saves the execution context and
+# forces every live variable, the whole params NamedTuple included, into its
+# catch path. Measured on a 256-node 1D right-hand side: the nine
+# @timeit_debug of _build_rhs_1d! cost about as much as all of its work.
+# This macro decides when it is expanded (when the file using it is loaded,
+# the same moment the gate above is meant for): gate off, the bare
+# expression; gate on, TimerOutputs' timed version.
+macro timeit_debug(args...)
+    if timeit_debug_enabled()
+        return esc(:(TimerOutputs.@timeit_debug $(args...)))
+    else
+        return esc(args[end])
+    end
+end
+
 """
 Mutable struct to store timing statistics for a function that's called multiple times
 """
