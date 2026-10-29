@@ -9,9 +9,10 @@
 #
 #   ks-it<n>.png       u and w ≈ ∂ₓ²u at this output time, every
 #                      ks_frame_every()-th output
-#   ks-spacetime.png   u(x,t) from t = 0 to now, the picture of Kassam &
-#                      Trefethen's Fig. 4.1, redrawn every ks_frame_every()-th
-#                      output and at tend
+#   ks-spacetime.png   u(x,t) over the whole run, the picture of Kassam &
+#                      Trefethen's Fig. 4.1, drawn once, at tend. Redrawing
+#                      the growing diagram during the run cost 4.7 M of the
+#                      5.6 M allocations of this hook (measured, 301 outputs)
 #
 # The space-time diagram is drawn on the NATIVE grid, not resampled: every
 # LGL node is one column of cells, bounded by the midpoints to its neighbours
@@ -80,7 +81,7 @@ function user_plot_1d(x, q, qref, μ_nodes, t, outvar, inputs, OUTPUT_DIR, iout)
         push!(ks_history.t, t)
         push!(ks_history.u, q[idx, 1])
     end
-    if ldraw && length(ks_history.t) >= 2
+    if lfinal && length(ks_history.t) >= 2
         xn = ks_history.x[]
         tn = ks_history.t
         U  = permutedims(reduce(hcat, ks_history.u))     # ntimes × npoin
@@ -101,7 +102,7 @@ function user_plot_1d(x, q, qref, μ_nodes, t, outvar, inputs, OUTPUT_DIR, iout)
         _savefig_silent(hm, string(OUTPUT_DIR, "/ks-spacetime.png"))
     end
 
-    @printf " # Kuramoto-Sivashinsky, t = %8.3f: max|u| = %.4f, max|w| = %.4f\n" t maximum(abs.(q[:, 1])) maximum(abs.(q[:, 2]))
+    @printf " # Kuramoto-Sivashinsky, t = %8.3f: max|u| = %.4f, max|w| = %.4f\n" t maximum(abs, @view(q[:, 1])) maximum(abs, @view(q[:, 2]))
 
     return nothing
 end

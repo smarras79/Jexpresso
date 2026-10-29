@@ -59,8 +59,8 @@ eigenvalue of -∂ₓ² on this mesh. The run takes about 10 minutes on one core
 Output (`user_plot.jl`). The solution is sampled every Δt = 0.5:
 
 - `ks-it<n>.png`: u and w ≈ ∂ₓ²u, written every tenth output.
-- `ks-spacetime.png`: u(x,t) from 0 to the current time, the picture of
-  their Fig. 4.1, also redrawn every tenth output and at the end. It is
+- `ks-spacetime.png`: u(x,t) over the whole run, the picture of their
+  Fig. 4.1, drawn once at the end. It is
   drawn on the native grid, with no resampling onto a uniform x. Each LGL
   node is one column of cells, bounded by the midpoints to its neighbours,
   so the columns keep the non-uniform LGL widths. Each output time is one
