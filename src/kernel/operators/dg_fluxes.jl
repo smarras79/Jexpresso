@@ -30,6 +30,39 @@ function numerical_flux!(Fstar, FL, FR, qL, qR, λ, neqs, ::upwind_flux)
     end
 end
 
+# Per-call scratch of the DG surface term, sized once in params_setup and
+# carried in params as dg_scratch, so that no RHS evaluation allocates for
+# it. Under a discretization other than DiscGal the arrays are 1-sized
+# placeholders: the field is always present with a concrete type, and the
+# DG surface term is never called.
+struct St_dg_scratch{T}
+    FL::Vector{T}
+    GL::Vector{T}
+    FR::Vector{T}
+    GR::Vector{T}
+    FnL::Vector{T}
+    FnR::Vector{T}
+    Fstar::Vector{T}
+    qB::Vector{T}          # ghost trace of a physical boundary face
+    Qp::Matrix{T}          # parent trace of a 2:1 face (ngl x ncol)
+    Qs::Matrix{T}          # parent trace at one child half's nodes
+    Fnp::Matrix{T}         # parent's own normal flux (ngl x neqs)
+    Fsh::Array{T,3}        # numerical flux on each child half (ngl x neqs x 2)
+    Fsp::Matrix{T}         # numerical flux projected to the parent
+end
+
+function allocate_dg_scratch(AD, ngl, neqs, ncol, T)
+    if AD == DiscGal()
+        n, g, c = Int(neqs), Int(ngl), Int(ncol)
+    else
+        n, g, c = 1, 1, 1
+    end
+    return St_dg_scratch{T}(zeros(T, n), zeros(T, n), zeros(T, n), zeros(T, n),
+                            zeros(T, n), zeros(T, n), zeros(T, n), zeros(T, n),
+                            zeros(T, g, c), zeros(T, g, c),
+                            zeros(T, g, n), zeros(T, g, n, 2), zeros(T, g, n))
+end
+
 # Ghost ("+" side) trace of a physical boundary face, from the case's
 # Dirichlet routine.
 #
@@ -72,9 +105,10 @@ function surface_rhs_el!(params, uaux, connijk, qe, mesh, time,
 
     lperiodic = params.inputs[:lperiodic_1d]
 
-    # neqs is tiny; these allocate — hoist to params scratch (or reuse two rows
-    # of params.F, free after the volume loop) to make this allocation-free.
-    FL    = zeros(neqs); FR = zeros(neqs); Fstar = zeros(neqs); Gdum = zeros(neqs)
+    # scratch from the workspace built in params_setup (St_dg_scratch above);
+    # GL stands in for the unused G of the 1D flux
+    ws    = params.dg_scratch
+    FL    = ws.FL; FR = ws.FR; Fstar = ws.Fstar; Gdum = ws.GL
 
     nfaces = lperiodic ? nelem : nelem - 1
     for f = 1:nfaces
@@ -118,10 +152,11 @@ function surface_rhs_el!(params, uaux, connijk, qe, mesh, time,
 
     ω = params.ω   # 1D LGL weights (length ngl); face quadrature on [-1,1]
 
-    # neqs is tiny; these allocate — same hoist-to-scratch note as the 1D method.
-    FL  = zeros(neqs); GL = zeros(neqs); FR = zeros(neqs); GR = zeros(neqs)
-    FnL = zeros(neqs); FnR = zeros(neqs); Fstar = zeros(neqs)
-    qB  = zeros(neqs)   # ghost trace of a physical boundary face
+    # scratch from the workspace built in params_setup (St_dg_scratch above)
+    ws  = params.dg_scratch
+    FL  = ws.FL; GL = ws.GL; FR = ws.FR; GR = ws.GR
+    FnL = ws.FnL; FnR = ws.FnR; Fstar = ws.Fstar
+    qB  = ws.qB         # ghost trace of a physical boundary face
 
     # (lfid, k) → (i, j): slice convention 1=x-min, 2=x-max, 3=y-min, 4=y-max
     @inline face_ij(lfid, k) = lfid == 1 ? (1, k)   :
@@ -174,7 +209,11 @@ function surface_rhs_el!(params, uaux, connijk, qe, mesh, time,
     # nothing to scatter on the R side because there is no R element.
     # Empty on a fully periodic mesh, so this loop costs nothing there.
     #--------------------------------------------------------------------------
-    nbfac = length(mesh.dg_bfac_e)
+    # mesh.coords is an untyped field of St_mesh: read once here, with its
+    # type stated, so the per-node view below and the ghost-state call are
+    # compiled statically rather than dispatched at run time on every node
+    coords = mesh.coords::Matrix{eltype(uaux)}
+    nbfac  = length(mesh.dg_bfac_e)
     for f = 1:nbfac
         e   = mesh.dg_bfac_e[f];  lf = mesh.dg_bfac_lf[f]
         nx  = mesh.dg_bfac_nx[f]; ny = mesh.dg_bfac_ny[f]
@@ -186,7 +225,7 @@ function surface_rhs_el!(params, uaux, connijk, qe, mesh, time,
             ip   = connijk[e, i, j]
 
             qL = @view uaux[ip, :]
-            dg_boundary_ghost!(qB, qL, @view(qe[ip,:]), @view(mesh.coords[:, ip]),
+            dg_boundary_ghost!(qB, qL, @view(qe[ip,:]), @view(coords[:, ip]),
                                time, tag, nx, ny, SVT, neqs)
 
             user_flux!(FL, GL, SD, qL, @view(qe[ip,:]), mesh, CL, SVT; neqs=neqs, ip=ip)
@@ -204,6 +243,104 @@ function surface_rhs_el!(params, uaux, connijk, qe, mesh, time,
 
             @inbounds for ieq = 1:neqs
                 params.rhs_el[e, i, j, ieq] += ω[k] * Jf * (FnL[ieq] - Fstar[ieq])
+            end
+        end
+    end
+
+    # --- 2:1 mortar faces ------------------------------------------------
+    # One parent face against two child halves (mesh.dg_ncfp_*, built by
+    # build_dg_faces_2D!). Per half h: evaluate the parent trace at the
+    # child's nodes with interp[:,:,h], take the numerical flux there
+    # against the child trace, and apply the child correction exactly as on
+    # a conforming face. The parent then takes the L2 projection of the two
+    # halves' fluxes, project[:,:,1]*F*_1 + project[:,:,2]*F*_2 (project
+    # already carries the half-interval factor 1/2), and applies its
+    # correction against its OWN trace flux, never the flux of the
+    # interpolated states (F(interp*q) != interp*F(q) for a nonlinear flux).
+    # The normal points child -> parent, so the parent takes the conforming
+    # loop's R-side sign. Conservation: w'*project[:,:,h] = w'/2 and
+    # Jfp = 2*Jfc, so the parent absorbs exactly what the children emit.
+    npf = length(mesh.dg_ncfp_p)
+    if npf > 0
+        interp  = params.interp
+        project = params.project
+        ncol = size(uaux, 2)
+        Qp   = ws.Qp    # parent trace (ngl x ncol)
+        Qs   = ws.Qs    # parent trace at one child half's nodes
+        Fnp  = ws.Fnp   # parent's own normal flux
+        Fsh  = ws.Fsh   # numerical flux on each child half
+        Fsp  = ws.Fsp   # numerical flux projected to the parent
+
+        for r = 1:npf
+            p   = mesh.dg_ncfp_p[r]
+            lfp = mesh.dg_ncfp_lfp[r]
+            e1  = mesh.dg_ncfp_h1[r]
+            nx  = mesh.dg_ncf_nx[e1];  ny = mesh.dg_ncf_ny[e1]
+            Jfp = mesh.dg_ncf_Jfp[e1]
+
+            # parent trace, ascending along the slice (the order interp and
+            # project assume), and the parent's own normal flux on it
+            for k = 1:ngl
+                ik, jk = face_ij(lfp, k)
+                ipp = connijk[p, ik, jk]
+                @inbounds for m = 1:ncol
+                    Qp[k, m] = uaux[ipp, m]
+                end
+                user_flux!(FR, GR, SD, @view(uaux[ipp, :]), @view(qe[ipp,:]), mesh, CL, SVT; neqs=neqs, ip=ipp)
+                @inbounds for ieq = 1:neqs
+                    Fnp[k, ieq] = FR[ieq]*nx + GR[ieq]*ny
+                end
+            end
+
+            # the two child halves: parent trace evaluated at the child's
+            # nodes, numerical flux against the child trace, child correction
+            for h = 1:2
+                idx = h == 1 ? mesh.dg_ncfp_h1[r] : mesh.dg_ncfp_h2[r]
+                c   = mesh.dg_ncf_c[idx]
+                lfc = mesh.dg_ncf_lfc[idx]
+                Jfc = mesh.dg_ncf_Jfc[idx]
+                @inbounds for m = 1:ncol, b = 1:ngl
+                    s = zero(eltype(Qs))
+                    for a = 1:ngl
+                        s += interp[b, a, h] * Qp[a, m]
+                    end
+                    Qs[b, m] = s
+                end
+                for k = 1:ngl
+                    ik, jk = face_ij(lfc, k)
+                    ipc = connijk[c, ik, jk]
+                    qC = @view uaux[ipc, :]
+                    qS = @view Qs[k, :]
+                    user_flux!(FL, GL, SD, qC, @view(qe[ipc,:]), mesh, CL, SVT; neqs=neqs, ip=ipc)
+                    user_flux!(FR, GR, SD, qS, @view(qe[ipc,:]), mesh, CL, SVT; neqs=neqs, ip=ipc)
+                    @inbounds for ieq = 1:neqs
+                        FnL[ieq] = FL[ieq]*nx + GL[ieq]*ny
+                        FnR[ieq] = FR[ieq]*nx + GR[ieq]*ny
+                    end
+                    λ = max(user_max_wave_speed(qC, @view(qe[ipc,:]), SD, SVT; nx=nx, ny=ny, neqs=neqs),
+                            user_max_wave_speed(qS, @view(qe[ipc,:]), SD, SVT; nx=nx, ny=ny, neqs=neqs))
+                    numerical_flux!(Fstar, FnL, FnR, qC, qS, λ, neqs, nflux)
+                    @inbounds for ieq = 1:neqs
+                        params.rhs_el[c, ik, jk, ieq] += ω[k] * Jfc * (FnL[ieq] - Fstar[ieq])
+                        Fsh[k, ieq, h] = Fstar[ieq]
+                    end
+                end
+            end
+
+            # gather: L2 projection of the two halves' fluxes onto the parent
+            # trace, then the parent correction against its own flux
+            @inbounds for ieq = 1:neqs, a = 1:ngl
+                s = zero(eltype(Fsp))
+                for b = 1:ngl
+                    s += project[a, b, 1] * Fsh[b, ieq, 1] + project[a, b, 2] * Fsh[b, ieq, 2]
+                end
+                Fsp[a, ieq] = s
+            end
+            for k = 1:ngl
+                ik, jk = face_ij(lfp, k)
+                @inbounds for ieq = 1:neqs
+                    params.rhs_el[p, ik, jk, ieq] -= ω[k] * Jfp * (Fnp[k, ieq] - Fsp[k, ieq])
+                end
             end
         end
     end

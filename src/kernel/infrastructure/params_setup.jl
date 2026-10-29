@@ -93,7 +93,10 @@ function params_setup(sem,
     rhs_diffζ_el = rhs.rhs_diffζ_el
     μsgs         = viscsgs.μ
     μ_max        = viscsgs.μ_max
-    
+    # per-call scratch of the DG surface term (St_dg_scratch, dg_fluxes.jl);
+    # 1-sized under any discretization but DiscGal
+    dg_scratch   = allocate_dg_scratch(sem.AD, sem.mesh.ngl, qp.neqs, size(uaux, 2), T)
+
     rhs_el_tmp   = rhs.rhs_el_tmp
     
     #------------------------------------------------------------------------------------
@@ -495,6 +498,7 @@ function params_setup(sem,
                   sgs,
                   sgs_stress,
                   timers,
+                  dg_scratch,
                   coupling = coupling)
 
     else
@@ -538,6 +542,7 @@ function params_setup(sem,
                   OUTPUT_DIR,
                   timers,
                   sem.interp, sem.project, sem.nparts, sem.distribute,
+                  dg_scratch,
                   coupling = coupling)
     end
 

@@ -2983,6 +2983,25 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     for (ip, gip) in enumerate(mesh.ip2gip)
         mesh.gip2ip[gip] = ip
     end
+    #
+    # Natively periodic model? When the gmsh file carries Periodic constraints,
+    # the topology glues each pair of matching boundary vertices while the grid
+    # keeps both sides' nodes, so the grid has more nodes than the topology has
+    # vertices -- the same test GridapP4est uses to build a periodic forest. A
+    # mesh whose periodicity is carried by boundary tags alone has equal counts.
+    #
+    n_grid_nodes    = length(get_node_coordinates(get_grid(model)))
+    n_topo_verts    = num_faces(model, 0)
+    native_periodic = n_grid_nodes != n_topo_verts
+    if inputs[:AD] == DiscGal()
+        println_rank(" # Natively periodic model: $(native_periodic) ($(n_grid_nodes) grid nodes, $(n_topo_verts) topology vertices)"; msg_rank = rank, suppress = false)
+    elseif native_periodic && mesh.nsd == 2
+        # The continuous paths size their vertex-coordinate fill by the
+        # topology vertex count while indexing grid node ids, and then merge
+        # periodic partners by coordinate -- neither is right on a model whose
+        # wrap is already glued. Only the DG path reads such a model correctly.
+        error("mod_mesh_read_gmsh!: the mesh carries gmsh Periodic constraints ($(n_grid_nodes) grid nodes, $(n_topo_verts) topology vertices), which only :AD => DiscGal() supports in 2D; use a periodic mesh with boundary tags only for ContGal() or FD()")
+    end
 
     #----------------------------------------------------------------------
     # Extract boundary edges and faces nodes:
@@ -3047,6 +3066,101 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                 end
                 iedge_bdy += 1
             end
+        end
+
+        # DG (DiscGal): poin_in_bdy_edge was just copied from poin_in_edge,
+        # which the CG edge builder filled with shared-node (CG) point ids.
+        # Under the duplicated-DOF DG numbering, mesh.x/y are DG-sized, so
+        # those ids index arbitrary DG nodes — every consumer of this list
+        # (elem_to_edge, DSS_global_normals!, BCs.jl, the periodic-NCF
+        # detector) would read wrong coordinates with no error. Rebuild the
+        # list from the owning element's connijk slice: a boundary edge has
+        # exactly one owner (bdy_edge_in_elem, topology-derived), and its
+        # nodes are one of the four edge slices of that element. The slice is
+        # chosen by matching its endpoints to the edge's two Gridap vertices,
+        # and ordered as CG orders it (k=1 at conn_unique_edges[iedge][1]) so
+        # no downstream convention changes.
+        if inputs[:AD] == DiscGal()
+            # On a natively periodic model the periodic-tagged edges are not
+            # domain boundaries: each is a face across the wrap with a cell on
+            # either side, or, on an adapted mesh, part of a non-conforming face
+            # across it. Boundary edges are selected by physical tag, so those
+            # edges are listed above. Remove them before anything reads the
+            # list, so every consumer sees only real boundaries. Order is kept
+            # and isboundary_edge cleared for each removed edge, so the rebuild
+            # below walks the kept edges in the same order as the arrays.
+            is_periodic_tag(t) = t !== nothing && startswith(String(t), "periodic")
+            if native_periodic
+                bdy_iedge = findall(isboundary_edge)
+                length(bdy_iedge) == mesh.nedges_bdy ||
+                    error("DG native periodicity: $(length(bdy_iedge)) tagged edges but nedges_bdy = $(mesh.nedges_bdy)")
+                keep = [k for k = 1:mesh.nedges_bdy if !is_periodic_tag(mesh.bdy_edge_type[k])]
+                for k = 1:mesh.nedges_bdy
+                    is_periodic_tag(mesh.bdy_edge_type[k]) && (isboundary_edge[bdy_iedge[k]] = false)
+                end
+                n_bdy_before = mesh.nedges_bdy
+                mesh.bdy_edge_in_elem          = mesh.bdy_edge_in_elem[keep]
+                mesh.poin_in_bdy_edge          = mesh.poin_in_bdy_edge[keep, :]
+                mesh.internal_poin_in_bdy_edge = mesh.internal_poin_in_bdy_edge[keep, :]
+                mesh.bdy_edge_type             = mesh.bdy_edge_type[keep]
+                mesh.bdy_edge_type_id          = mesh.bdy_edge_type_id[keep]
+                mesh.nedges_bdy                = length(keep)
+                mesh.nedges_int                = mesh.nedges - mesh.nedges_bdy
+                println_rank(" # DG native periodicity: boundary-edge list $(n_bdy_before) -> $(mesh.nedges_bdy) (periodic-tagged edges are faces across the wrap)"; msg_rank = rank, suppress = false)
+            elseif ladaptive && any(is_periodic_tag, mesh.bdy_edge_type)
+                # A periodic edge carried by boundary tags alone is a domain
+                # boundary to the forest: no 2:1 balance and no hanging-face
+                # glue are built across it, so the first refinement next to the
+                # wrap leaves a non-conforming periodic face nothing can couple.
+                # DG adaptivity on a periodic domain needs the periodicity in
+                # the mesh itself (gmsh Periodic constraints, points at z = 0).
+                error("mod_mesh_read_gmsh!: DG adaptivity on a periodic mesh whose periodicity is carried by boundary tags only; regenerate the mesh with gmsh Periodic constraints (points at z = 0) so the forest treats the wrap as a neighbor, or run without :lamr/:lpreadapt")
+            end
+            node_coords = get_node_coordinates(get_grid(model))
+            ngl_dg = mesh.ngl
+
+            dg_slice_ip(e, lfid, k) = lfid == 1 ? mesh.connijk[e, 1,      k] :
+                                      lfid == 2 ? mesh.connijk[e, ngl_dg, k] :
+                                      lfid == 3 ? mesh.connijk[e, k,      1] :
+                                                  mesh.connijk[e, k, ngl_dg]
+
+            n_bdy_dg = 0
+            iedge_bdy = 1
+            for iedge = 1:mesh.nedges
+                isboundary_edge[iedge] || continue
+
+                e  = mesh.bdy_edge_in_elem[iedge_bdy]
+                v1 = mesh.conn_unique_edges[iedge][1]
+                v2 = mesh.conn_unique_edges[iedge][2]
+                x1, y1 = node_coords[v1][1], node_coords[v1][2]
+                x2, y2 = node_coords[v2][1], node_coords[v2][2]
+                tol = 1.0e-8 * hypot(x2 - x1, y2 - y1)
+
+                found = 0
+                rev   = false
+                for lf = 1:4
+                    ipa = dg_slice_ip(e, lf, 1)
+                    ipb = dg_slice_ip(e, lf, ngl_dg)
+                    fwd = abs(mesh.x[ipa] - x1) <= tol && abs(mesh.y[ipa] - y1) <= tol &&
+                          abs(mesh.x[ipb] - x2) <= tol && abs(mesh.y[ipb] - y2) <= tol
+                    bwd = abs(mesh.x[ipa] - x2) <= tol && abs(mesh.y[ipa] - y2) <= tol &&
+                          abs(mesh.x[ipb] - x1) <= tol && abs(mesh.y[ipb] - y1) <= tol
+                    if fwd || bwd
+                        found = lf
+                        rev   = bwd
+                        break
+                    end
+                end
+                found == 0 && error("DG boundary-edge rebuild: no connijk slice of element $e matches boundary edge $iedge (bdy $iedge_bdy) with vertices ($x1,$y1)-($x2,$y2)")
+
+                for igl = 1:ngl_dg
+                    k = rev ? ngl_dg - igl + 1 : igl
+                    mesh.poin_in_bdy_edge[iedge_bdy, igl] = dg_slice_ip(e, found, k)
+                end
+                n_bdy_dg  += 1
+                iedge_bdy += 1
+            end
+            println_rank(" # DG boundary-edge lists rebuilt from connijk: $(n_bdy_dg) edges"; msg_rank = rank, suppress = mesh.msg_suppress)
         end
 
         # PERF: elem_to_edge by hash lookup, not by scanning.
@@ -3513,7 +3627,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             # node merge. Build the interior + periodic face list here — same
             # inputs in scope, inside the cached region (its Gridap inputs are
             # cache-skip-listed; its flat-array products are cached).
-            build_dg_faces_2D!(mesh)
+            build_dg_faces_2D!(mesh; native_periodic = native_periodic)
         end
         # restructure_el2gel_for_periodicity_2D!(mesh, norx, "periodicx")
         # restructure_el2gel_for_periodicity_2D!(mesh, nory, "periodicy")
@@ -5343,7 +5457,7 @@ end
 # cache hit; the flat-array products are cached). Serial semantics only for
 # now (parallel DG indexing is deferred).
 #
-function build_dg_faces_2D!(mesh::St_mesh)
+function build_dg_faces_2D!(mesh::St_mesh; native_periodic::Bool = false)
     ngl = mesh.ngl
     TF  = eltype(mesh.dg_face_nx)
 
@@ -5371,8 +5485,12 @@ function build_dg_faces_2D!(mesh::St_mesh)
 
     # Do slices (a,la) and (b,lb) hold the same physical nodes, forward or
     # reversed? usex/usey select which coordinates to compare (both for
-    # interior faces; tangential-only for periodic pairs).
-    function slices_match(a, la, b, lb; usex::Bool=true, usey::Bool=true)
+    # interior faces; tangential-only for periodic pairs). sx/sy shift b's
+    # coordinates: on a natively periodic mesh each side of the wrap keeps its
+    # own coordinates, so the two slices of a face across the wrap differ by a
+    # domain length in one direction.
+    function slices_match(a, la, b, lb; usex::Bool=true, usey::Bool=true,
+                          sx = zero(TF), sy = zero(TF))
         ip1 = slice_ip(a, la, 1); ipn = slice_ip(a, la, ngl)
         Lf  = hypot(mesh.x[ipn] - mesh.x[ip1], mesh.y[ipn] - mesh.y[ip1])
         tol = 1.0e-8 * Lf
@@ -5382,12 +5500,12 @@ function build_dg_faces_2D!(mesh::St_mesh)
             ipf = slice_ip(b, lb, k)
             ipr = slice_ip(b, lb, ngl - k + 1)
             if usex
-                fwd &= abs(mesh.x[ipa] - mesh.x[ipf]) <= tol
-                rev &= abs(mesh.x[ipa] - mesh.x[ipr]) <= tol
+                fwd &= abs(mesh.x[ipa] - (mesh.x[ipf] + sx)) <= tol
+                rev &= abs(mesh.x[ipa] - (mesh.x[ipr] + sx)) <= tol
             end
             if usey
-                fwd &= abs(mesh.y[ipa] - mesh.y[ipf]) <= tol
-                rev &= abs(mesh.y[ipa] - mesh.y[ipr]) <= tol
+                fwd &= abs(mesh.y[ipa] - (mesh.y[ipf] + sy)) <= tol
+                rev &= abs(mesh.y[ipa] - (mesh.y[ipr] + sy)) <= tol
             end
             (fwd || rev) || return (false, false)
         end
@@ -5437,12 +5555,13 @@ function build_dg_faces_2D!(mesh::St_mesh)
     # cell_face_ids position g → slice lfid. Discovered from the interior
     # faces, where both (e, lf) are known geometrically, and then USED to
     # place the physical boundary faces below — a boundary facet touches one
-    # element, so there is no second slice to match it against, and the
-    # coordinate route is closed under DG (poin_in_bdy_edge carries CG point
-    # ids, and mesh.x has been renumbered). The map is well defined because
-    # every element's (i,j) lattice is laid out from the same corner slot
-    # map; that is asserted below rather than assumed, since the boundary
-    # list now depends on it.
+    # element, so there is no second slice to match it against. The census
+    # at the end of this function checks every such placement against an
+    # independent route: the boundary-edge table, whose point ids
+    # (poin_in_bdy_edge) are rebuilt from connijk under DG, matched to a
+    # slice by exact id. The map is well defined because every element's
+    # (i,j) lattice is laid out from the same corner slot map; that is
+    # asserted below rather than assumed, since the boundary list depends on it.
     conv_map = zeros(Int, 4)
     function note_conv!(e, f, lf)
         length(mesh.cell_face_ids) >= e && length(mesh.cell_face_ids[e]) == 4 || return
@@ -5453,6 +5572,15 @@ function build_dg_faces_2D!(mesh::St_mesh)
         elseif conv_map[g] != lf
             error("build_dg_faces_2D!: cell_face_ids position $g maps to slice $(conv_map[g]) on one element and $lf on element $e — the local facet order is not uniform, so the physical boundary faces cannot be placed from it")
         end
+    end
+    # On a natively periodic mesh a face across the wrap joins two cells whose
+    # slices differ by one domain length; those faces are matched with a shift.
+    n_wrap = 0
+    wrap_shifts = Tuple{TF,TF}[]
+    if native_periodic
+        Lx = maximum(mesh.x) - minimum(mesh.x)
+        Ly = maximum(mesh.y) - minimum(mesh.y)
+        wrap_shifts = [(Lx, zero(TF)), (-Lx, zero(TF)), (zero(TF), Ly), (zero(TF), -Ly)]
     end
     n_int = 0
     for f = 1:length(mesh.facet_cell_ids)
@@ -5467,6 +5595,15 @@ function build_dg_faces_2D!(mesh::St_mesh)
                 found += 1; mla = la; mlb = lb; mrev = rev
             end
         end
+        if found == 0 && native_periodic
+            for (sx, sy) in wrap_shifts, la = 1:4, lb = 1:4
+                ok, rev = slices_match(a, la, b, lb; sx = sx, sy = sy)
+                if ok
+                    found += 1; mla = la; mlb = lb; mrev = rev
+                end
+            end
+            found == 1 && (n_wrap += 1)
+        end
         found == 1 || error("build_dg_faces_2D!: facet $f (elements $a, $b) matched $found slice pairs, expected exactly 1 — numbering/geometry inconsistency")
         push_face!(a, mla, b, mlb, mrev)
         n_int += 1
@@ -5480,6 +5617,7 @@ function build_dg_faces_2D!(mesh::St_mesh)
         note_conv!(a, f, mla)
         note_conv!(b, f, mlb)
     end
+    native_periodic && println(" # build_dg_faces_2D!: ", n_wrap, " of ", n_int, " interior faces matched across the wrap")
     println(" # build_dg_faces_2D!: cell_face_ids order → slice lfid map (1=x-min, 2=x-max, 3=y-min, 4=y-max; 0 = never observed): ", conv_map)
     sort(conv_map) == [1, 2, 3, 4] ||
         println(" # build_dg_faces_2D!: WARNING — the map is not a permutation of 1:4; a physical boundary facet on an unobserved side will be refused below")
@@ -5489,12 +5627,12 @@ function build_dg_faces_2D!(mesh::St_mesh)
         # Which axis is NORMAL to this tag's faces? Never inferred from the
         # tag's name — measured 2026-08-11 on hexa_TFI_10x20_periodic: the tag
         # names the axis the edge RUNS ALONG ("periodicx" = bottom/top edges,
-        # y-normal; "periodicz" = left/right, x-normal — 2D remaps y→z),
-        # matching detect_periodic_ncf_parent_gels_2D!'s branch (x tangential
-        # for "periodicx"). Derived geometrically regardless: each tagged
-        # element votes for the axis on which it has a constant-coordinate
-        # slice at that axis's domain extremum; corner elements vote both,
-        # the rest disambiguate; a tie is a hard error.
+        # y-normal; "periodicz" = left/right, x-normal — 2D remaps y→z) — and
+        # not taken from any other routine's reading of these tags either.
+        # Derived geometrically: each tagged element votes for the axis on
+        # which it has a constant-coordinate slice at that axis's domain
+        # extremum; corner elements vote both, the rest disambiguate; a tie is
+        # a hard error.
         xlo, xhi = extrema(mesh.x); ylo, yhi = extrema(mesh.y)
         tolx = 1.0e-8 * (xhi - xlo); toly = 1.0e-8 * (yhi - ylo)
         vx = 0; vy = 0
@@ -5589,9 +5727,78 @@ function build_dg_faces_2D!(mesh::St_mesh)
     end
 
     n_per = periodic_pairs!("periodicx") + periodic_pairs!("periodicz")
+    native_periodic && n_per != 0 &&
+        error("build_dg_faces_2D!: $n_per periodic pairs built on a natively periodic mesh — the boundary-edge list still holds periodic-tagged edges, which should have been removed before the face list is built")
 
-    println(" # build_dg_faces_2D!: ", n_int, " interior + ", n_per, " periodic = ",
-            length(mesh.dg_face_eL), " faces")
+    # --- 2:1 mortar faces: from the p4est non-conforming glue ----------------
+    empty!(mesh.dg_ncf_c);   empty!(mesh.dg_ncf_p);   empty!(mesh.dg_ncf_half)
+    empty!(mesh.dg_ncf_lfc); empty!(mesh.dg_ncf_lfp)
+    empty!(mesh.dg_ncf_nx);  empty!(mesh.dg_ncf_ny)
+    empty!(mesh.dg_ncf_Jfc); empty!(mesh.dg_ncf_Jfp)
+    empty!(mesh.dg_ncfp_p);  empty!(mesh.dg_ncfp_lfp)
+    empty!(mesh.dg_ncfp_h1); empty!(mesh.dg_ncfp_h2)
+
+    # Which slice of element e holds exactly the point ids ips[1:ngl], in that
+    # order? Exact integer match against connijk — no tolerance, no coordinate
+    # test. A reversed match is reported separately so the caller can refuse it.
+    function slice_of(e, ips)
+        for lf = 1:4
+            fwd = true; rev = true
+            for k = 1:ngl
+                fwd &= slice_ip(e, lf, k) == ips[k]
+                rev &= slice_ip(e, lf, ngl - k + 1) == ips[k]
+            end
+            fwd && return (lf, false)
+            rev && return (lf, true)
+        end
+        return (0, false)
+    end
+
+    n_ncf = length(mesh.non_conforming_facets)
+    n_ncf == mesh.num_ncf || error("build_dg_faces_2D!: non_conforming_facets has $n_ncf entries but num_ncf = $(mesh.num_ncf)")
+    pface = Dict{Tuple{Int,Int},Int}()          # (p, lfp) → row in dg_ncfp_*
+    for idx = 1:n_ncf
+        c, p, _, half = mesh.non_conforming_facets[idx]
+        (half == 1 || half == 2) || error("build_dg_faces_2D!: mortar entry $idx has half = $half, expected 1 or 2")
+        mesh.ad_lvl[c] == mesh.ad_lvl[p] + 1 || error("build_dg_faces_2D!: mortar entry $idx (child $c level $(mesh.ad_lvl[c]), parent $p level $(mesh.ad_lvl[p])) is not a one-level 2:1 face")
+        ipc = @view mesh.IPc_list[:, idx]
+        ipp = @view mesh.IPp_list[:, idx]
+        lfc, revc = slice_of(c, ipc)
+        lfp, revp = slice_of(p, ipp)
+        lfc != 0 || error("build_dg_faces_2D!: child trace of mortar entry $idx (element $c) matches no slice of connijk")
+        lfp != 0 || error("build_dg_faces_2D!: parent trace of mortar entry $idx (element $p) matches no slice of connijk")
+        (revc || revp) && error("build_dg_faces_2D!: mortar entry $idx trace runs against the slice direction (child rev=$revc, parent rev=$revp) — the projection operators assume ascending traces")
+        # normal from the child slice tangent, oriented out of the child (= toward the parent)
+        tx = mesh.x[ipc[ngl]] - mesh.x[ipc[1]]; ty = mesh.y[ipc[ngl]] - mesh.y[ipc[1]]
+        Lc = hypot(tx, ty)
+        nx = ty / Lc; ny = -tx / Lc
+        fcx = zero(TF); fcy = zero(TF)
+        for k = 1:ngl
+            fcx += mesh.x[ipc[k]] / ngl; fcy += mesh.y[ipc[k]] / ngl
+        end
+        ecx, ecy = cent(c)
+        if nx * (fcx - ecx) + ny * (fcy - ecy) < 0
+            nx = -nx; ny = -ny
+        end
+        Lp = hypot(mesh.x[ipp[ngl]] - mesh.x[ipp[1]], mesh.y[ipp[ngl]] - mesh.y[ipp[1]])
+        push!(mesh.dg_ncf_c, c);        push!(mesh.dg_ncf_p, p)
+        push!(mesh.dg_ncf_half, half)
+        push!(mesh.dg_ncf_lfc, lfc);    push!(mesh.dg_ncf_lfp, lfp)
+        push!(mesh.dg_ncf_nx, nx);      push!(mesh.dg_ncf_ny, ny)
+        push!(mesh.dg_ncf_Jfc, Lc / 2); push!(mesh.dg_ncf_Jfp, Lp / 2)
+        row = get!(pface, (p, lfp)) do
+            push!(mesh.dg_ncfp_p, p); push!(mesh.dg_ncfp_lfp, lfp)
+            push!(mesh.dg_ncfp_h1, 0); push!(mesh.dg_ncfp_h2, 0)
+            length(mesh.dg_ncfp_p)
+        end
+        slot = half == 1 ? mesh.dg_ncfp_h1 : mesh.dg_ncfp_h2
+        slot[row] == 0 || error("build_dg_faces_2D!: parent face (element $p, slice $lfp) has two children claiming half $half")
+        slot[row] = idx
+    end
+    n_pf = length(mesh.dg_ncfp_p)
+    for r = 1:n_pf
+        (mesh.dg_ncfp_h1[r] != 0 && mesh.dg_ncfp_h2[r] != 0) || error("build_dg_faces_2D!: parent face (element $(mesh.dg_ncfp_p[r]), slice $(mesh.dg_ncfp_lfp[r])) is missing a child half")
+    end
 
     # --- physical boundary faces: facet_cell_ids entries with ONE cell -----
     #
@@ -5624,6 +5831,11 @@ function build_dg_faces_2D!(mesh::St_mesh)
         # skipped in silence, because on a domain meant to be closed it is
         # the difference between a wall and an open side, and the run would
         # otherwise look healthy while draining.
+        # On an adapted mesh the mortar facets arrive here too: each coarse
+        # parent facet and each hanging half-facet has one cell and no tag.
+        # They are coupled by the mortar loop in surface_rhs_el!; the census
+        # below tells them apart from free walls and accounts for every
+        # untagged facet.
         if tag === nothing
             n_untagged += 1
             continue
@@ -5641,9 +5853,68 @@ function build_dg_faces_2D!(mesh::St_mesh)
         push_bfac!(e, lf, String(tag))
         n_bdy += 1
     end
-    println(" # build_dg_faces_2D!: ", n_bdy, " physical boundary faces (",
-            n_per_facets, " periodic facets already paired above, ",
-            n_untagged, " untagged => free/transmissive)")
+
+    # --- census: every element side claimed by exactly one face object -------
+    claimed = zeros(Int, mesh.nelem, 4)
+    wall = falses(mesh.nelem, 4)
+    for f = 1:length(mesh.dg_face_eL)
+        claimed[mesh.dg_face_eL[f], mesh.dg_face_lfL[f]] += 1
+        claimed[mesh.dg_face_eR[f], mesh.dg_face_lfR[f]] += 1
+    end
+    for idx = 1:n_ncf
+        claimed[mesh.dg_ncf_c[idx], mesh.dg_ncf_lfc[idx]] += 1
+    end
+    for r = 1:n_pf
+        claimed[mesh.dg_ncfp_p[r], mesh.dg_ncfp_lfp[r]] += 1
+    end
+    n_wall = 0
+    for iedge_bdy = 1:length(mesh.bdy_edge_type)
+        tag = mesh.bdy_edge_type[iedge_bdy]
+        (tag == "periodicx" || tag == "periodicz") && continue
+        e = mesh.bdy_edge_in_elem[iedge_bdy]
+        lf, _ = slice_of(e, @view mesh.poin_in_bdy_edge[iedge_bdy, 1:ngl])
+        lf != 0 || error("build_dg_faces_2D!: boundary edge $iedge_bdy (element $e, tag $tag) matches no slice of connijk")
+        claimed[e, lf] += 1
+        wall[e, lf] = true
+        n_wall += 1
+    end
+    # Every boundary-flux row sits on a wall side found above, at most once.
+    # The two routes share no input (topology and the conv_map there; the
+    # boundary-edge table and exact point ids here), so this also checks
+    # each row's placement.
+    onwall = falses(mesh.nelem, 4)
+    for b = 1:length(mesh.dg_bfac_e)
+        e = mesh.dg_bfac_e[b]; lf = mesh.dg_bfac_lf[b]
+        wall[e, lf] || error("build_dg_faces_2D!: boundary-flux row $b (element $e, slice $lf, tag $(mesh.dg_bfac_tag[b])) is not on a domain-boundary side — it would add a boundary flux to a face that is already coupled")
+        onwall[e, lf] && error("build_dg_faces_2D!: element $e slice $lf carries two boundary-flux rows")
+        onwall[e, lf] = true
+    end
+    n_bad = 0
+    for e = 1:mesh.nelem, lf = 1:4
+        if claimed[e, lf] != 1
+            n_bad += 1
+            n_bad <= 10 && println(" # build_dg_faces_2D!: element $e slice $lf claimed $(claimed[e, lf]) times")
+        end
+    end
+    n_bad == 0 || error("build_dg_faces_2D!: face census failed — $n_bad element sides are not claimed exactly once (listed above); a missing or duplicated face would couple wrongly and silently")
+
+    # Every one-cell facet is periodic, a tagged wall (a flux row), an
+    # untagged wall (free/transmissive), or a mortar facet (a coarse parent
+    # facet or a hanging half-facet). An unexplained one is coupled by
+    # nothing that knows about it.
+    n_free = n_wall - n_bdy
+    # On a natively periodic mesh a periodic-tagged one-cell facet is a piece of
+    # a non-conforming face across the wrap: a refined facet can keep its tag,
+    # but the facet is a mortar facet like the untagged ones.
+    n_unpaired = native_periodic ? n_untagged + n_per_facets : n_untagged
+    n_unpaired == n_free + n_pf + n_ncf || error("build_dg_faces_2D!: $n_unpaired untagged one-cell facets (counting periodic-tagged ones on a natively periodic mesh), but $n_free untagged walls + $n_pf mortar parent facets + $n_ncf hanging half-facets = $(n_free + n_pf + n_ncf) — an unexplained facet")
+    println(" # build_dg_faces_2D!: ", n_int, " interior + ", n_per, " periodic = ",
+            length(mesh.dg_face_eL), " conforming faces; ", n_pf, " mortar parent faces (",
+            n_ncf, " child halves); ", n_wall, " wall sides (", n_bdy, " with a boundary flux, ",
+            n_free, " free/transmissive); census ",
+            4 * mesh.nelem, "/", 4 * mesh.nelem, " element sides claimed once")
+    println(" # build_dg_faces_2D!: one-cell facets: ", native_periodic ? 0 : n_per_facets, " periodic, ", n_bdy,
+            " tagged walls, ", n_free, " untagged walls, ", n_pf + n_ncf, " mortar")
 end
 
 function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D, elm2pelm)
