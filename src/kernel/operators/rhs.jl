@@ -65,9 +65,11 @@ end
 
 
 
+# zero(eltype(...)), not zero(params.T): params.T is a DataType field, so
+# zero(params.T) is resolved at run time on every RHS evaluation
 function resetRHSToZero_inviscid!(params)
-    fill!(params.rhs_el, zero(params.T))   
-    fill!(params.RHS,    zero(params.T))
+    fill!(params.rhs_el, zero(eltype(params.rhs_el)))
+    fill!(params.RHS,    zero(eltype(params.RHS)))
 end
 
 function reset_filters!(params)
@@ -92,9 +94,9 @@ function reset_laguerre_filters!(params)
 end
 
 function resetRHSToZero_viscous!(params, SD::NSD_1D)
-    fill!(params.rhs_diff_el,  zero(params.T))
-    fill!(params.rhs_diffξ_el, zero(params.T))
-    fill!(params.RHS_visc,     zero(params.T))
+    fill!(params.rhs_diff_el,  zero(eltype(params.rhs_diff_el)))
+    fill!(params.rhs_diffξ_el, zero(eltype(params.rhs_diffξ_el)))
+    fill!(params.RHS_visc,     zero(eltype(params.RHS_visc)))
 end
 
 
@@ -114,9 +116,9 @@ function resetRHSToZero_viscous!(params, SD::NSD_3D)
 end
 
 function resetbdyfluxToZero!(params)
-    fill!(params.F_surf,  zero(params.T))
-    fill!(params.S_face,  zero(params.T))
-    fill!(params.S_flux,  zero(params.T))
+    fill!(params.F_surf,  zero(eltype(params.F_surf)))
+    fill!(params.S_face,  zero(eltype(params.S_face)))
+    fill!(params.S_flux,  zero(eltype(params.S_flux)))
 end
 
 function reset∇fToZero!(params, SD::NSD_1D)
@@ -834,7 +836,9 @@ function _build_rhs!(RHS, u, params, time)
                           params.interp; neqs = neqs)
     end
     
-    @timeit_debug JEXPRESSO_TIMER "reset_bdyflux" resetbdyfluxToZero!(params)
+    # F_surf/S_face/S_flux are the 2D/3D boundary surface integrals; nothing in
+    # the 1D path reads them, so 1D does not clear them on every evaluation
+    SD != NSD_1D() && @timeit_debug JEXPRESSO_TIMER "reset_bdyflux" resetbdyfluxToZero!(params)
     if SD == NSD_1D()
         # Typed arguments (params.mesh1d), so the call is resolved at compile
         # time and allocates nothing; see apply_boundary_conditions_dirichlet_1d!.

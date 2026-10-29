@@ -57,6 +57,8 @@ using StaticArrays
 using StaticArrays: SVector, MVector
 using OrdinaryDiffEq
 using OrdinaryDiffEq: solve
+# φ-functions of the SEM linear operator of split problems (kernel/solvers/split_linear.jl)
+import ExponentialUtilities
 # using SnoopCompile  # incompatible with sysimage builds
 using LinearSolve
 using LinearSolve: solve
@@ -252,6 +254,7 @@ include(joinpath( "kernel", "operators", "rhs_laguerre.jl"))
 
 include(joinpath( "kernel", "operators", "filter.jl"))
 
+include(joinpath( "kernel", "solvers", "split_linear.jl"))
 include(joinpath( "kernel", "solvers", "TimeIntegrators.jl"))
 
 # Proper Orthogonal Decomposition and the reduced-order-model basis it builds.

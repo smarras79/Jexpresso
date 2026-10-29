@@ -159,7 +159,7 @@ function precompile_warmup_run!(inputs, params, u,
                    get(inputs, :lvisc, false) == true
     nstep_warmup = ldsgs_warmup ? max(1, _dsgs_hold_steps(params) + 1) : 1
     warmup_tspan = (t0_warmup, t0_warmup + nstep_warmup*Δt_warmup)
-    warmup_prob  = ODEProblem{true, FullSpecialize}(rhs!, u, warmup_tspan, params)
+    warmup_prob  = jexpresso_ode_problem(inputs, params, u, warmup_tspan)
 
     # Silence all log output during the warm-up step. Also silences the
     # SciMLBase "Using arrays or dicts..." warning so it doesn't appear
@@ -238,10 +238,9 @@ function time_loop!(inputs, params, u, args...)
     # adding ~2 KiB / RK stage on this case. FullSpecialize keeps the
     # concrete params type all the way down. Paired with the typed
     # function barriers below in inviscid_rhs_el!/viscous_rhs_el!.
-    prob = ODEProblem{true, FullSpecialize}(rhs!,
-                      u,
-                      params.tspan,
-                      params);
+    # (:lsplit_linear => true: a SplitODEProblem with the SEM linear operator;
+    # see kernel/solvers/split_linear.jl)
+    prob = jexpresso_ode_problem(inputs, params, u, params.tspan)
     
     #------------------------------------------------------------------------
     # Runtime callbacks
@@ -429,7 +428,7 @@ function time_loop!(inputs, params, u, args...)
                 ad_lvl_max = MPI.Allreduce(maximum(prob.p.mesh.ad_lvl; init=0), MPI.MAX, comm)
                 dt         = Float32(inputs[:Δt]/(2.0^(ad_lvl_max)))
                 computeCFL(integrator.p.mesh.npoin, integrator.p.qp.neqs,
-                        integrator.p.mp, integrator.p.uaux[:,end], Float32(dt),
+                        integrator.p.mp, @view(integrator.p.uaux[:,end]), Float32(dt),
                         integrator.p.mesh.Δeffective_s,
                         integrator,
                         integrator.p.SD; visc=inputs[:μ])
@@ -468,6 +467,10 @@ function time_loop!(inputs, params, u, args...)
                 write_p4est_checkpoint(inputs[:output_dir], idx, partitioned_model)
             end
         end
+        # Writing output leaves the state alone. Without this OrdinaryDiffEq
+        # assumes the callback changed u and re-evaluates f(u) for the FSAL
+        # slot after every output (a full RHS, and L u for split problems).
+        u_modified!(integrator, false)
     end
     #------------------------------------------------------------------------
     # POD.
@@ -547,6 +550,12 @@ function time_loop!(inputs, params, u, args...)
     else
         ad_lvl_max = MPI.Allreduce(maximum(prob.p.mesh.ad_lvl; init=0), MPI.MAX, comm)
         dt         = Float32(inputs[:Δt]/(2.0^(ad_lvl_max)))
+        if get(inputs, :lsplit_linear, false) == true
+            # exponential integrators build their operators for this one Δt,
+            # so it must be exact and land on every output time
+            dt = Float64(inputs[:Δt])
+            check_split_time_grid(inputs, tstops_all)
+        end
         # Include cb_coupling in coupled mode so Julia's per-timestep
         # send to Alya actually fires; without it Alya's MPI.Waitall
         # blocks and its VTS output never gets written.

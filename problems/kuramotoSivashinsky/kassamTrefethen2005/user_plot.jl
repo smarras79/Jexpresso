@@ -5,9 +5,9 @@
 #
 #     user_plot_1d(x, q, qref, μ_nodes, t, outvar, inputs, OUTPUT_DIR, iout)
 #
-# with q the numerical (u, w). Writes
+# with q the numerical u. Writes
 #
-#   ks-it<n>.png       u and w ≈ ∂ₓ²u at this output time, every
+#   ks-it<n>.png       u at this output time, every
 #                      ks_frame_every()-th output
 #   ks-spacetime.png   u(x,t) over the whole run, the picture of Kassam &
 #                      Trefethen's Fig. 4.1, drawn once, at tend. Redrawing
@@ -66,17 +66,11 @@ function user_plot_1d(x, q, qref, μ_nodes, t, outvar, inputs, OUTPUT_DIR, iout)
     # This output time.
     #-----------------------------------------------------------------------------
     if ldraw
-        labels = ("u", "w ≈ ∂ₓ²u")
-        plts   = []
-        for ivar = 1:2
-            plt = Plots.plot(xs, q[idx, ivar];
-                             line = (:blue, 2), legend = false,
-                             title = string(labels[ivar], "   ", tt), xlabel = "x",
-                             titlefontsize = 16, guidefontsize = 14, tickfontsize = 11,
-                             show = false)
-            push!(plts, plt)
-        end
-        fig = Plots.plot(plts...; layout = (2, 1), size = (1200, 800), margin = 5Plots.mm)
+        fig = Plots.plot(xs, q[idx, 1];
+                         line = (:blue, 2), legend = false,
+                         title = string("u   ", tt), xlabel = "x",
+                         titlefontsize = 16, guidefontsize = 14, tickfontsize = 11,
+                         size = (1200, 450), margin = 5Plots.mm, show = false)
         _savefig_silent(fig, string(OUTPUT_DIR, "/ks-it", iout, ".png"))
     end
 
@@ -109,7 +103,7 @@ function user_plot_1d(x, q, qref, μ_nodes, t, outvar, inputs, OUTPUT_DIR, iout)
         _savefig_silent(hm, string(OUTPUT_DIR, "/ks-spacetime.png"))
     end
 
-    @printf " # Kuramoto-Sivashinsky, t = %8.3f: max|u| = %.4f, max|w| = %.4f\n" t maximum(abs, @view(q[:, 1])) maximum(abs, @view(q[:, 2]))
+    @printf " # Kuramoto-Sivashinsky, t = %8.3f: max|u| = %.4f\n" t maximum(abs, @view(q[:, 1]))
 
     return nothing
 end

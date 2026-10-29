@@ -16,5 +16,5 @@ end
 
 function user_bc_dirichlet_gpu(q, qe, coords, t, lpert)
     T = eltype(q)
-    return T(q[1]), T(q[2])
+    return T(q[1])
 end
