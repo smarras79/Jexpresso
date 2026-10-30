@@ -31,7 +31,6 @@ mesh:
 - **Second derivative:** ∂ₓ² is the SEM weak Laplacian D₂ = -M⁻¹K. This is
   the same operator the viscous term applies.
 - **Fourth derivative:** ∂ₓ⁴ = D₂², the C⁰ mixed (Ciarlet-Raviart) form.
-- **Products:** L u uses the sparse matrix, 14 nonzeros per row.
 
 The deck's `ETDRK4()` is OrdinaryDiffEq's exponential Runge-Kutta, the scheme
 Kassam & Trefethen use. It integrates L exactly, through its φ-functions.
@@ -40,9 +39,29 @@ eigenvalues (about 5500 on this mesh). The step is h = 1/4, as in Kassam &
 Trefethen; an explicit scheme would need Δt ≈ 2e-4.
 
 L is similar to a symmetric matrix: L = S⁻¹(B - B²)S with S = M^{1/2} and
-B = S⁻¹KS⁻¹. So one 256×256 symmetric eigendecomposition gives every φₖ(hL)
-exactly, in about 10 ms. ExponentialUtilities' general dense algorithm takes
-about 10 s for the same matrices.
+B = S⁻¹KS⁻¹. Every φₖ(hL) is therefore S⁻¹φₖ(h(B - B²))S, exactly, and all
+it takes is the eigendecomposition of B.
+
+The 64 elements are identical, so B is block-circulant. Numbered element by
+element, it is fixed by the 4×4 blocks that couple an element to itself and
+to its two neighbours. A discrete Fourier transform over the elements splits
+it into 33 Hermitian 4×4 blocks, one per wavenumber (Bloch waves), whose
+eigenvalues are the spectrum of B. A product with L or with any φₖ(hL) is
+then a real FFT over the elements, one 4×4 block per wavenumber and the
+inverse FFT:
+
+| product, 256 nodes | time |
+|---|---|
+| φₖ(hL) through the FFT | 1.2 μs |
+| L u through the FFT | 1.2 μs |
+| L u with the sparse matrix (14 nonzeros per row) | 2.0 μs |
+| φₖ(hL) through the dense 256×256 eigenvectors | 12 μs |
+
+That is the cost of a Fourier pseudospectral code, at O(n log n).
+`kernel/solvers/split_linear.jl` checks the block-circulant structure entry
+by entry. On a non-uniform mesh it falls back to the dense eigenvectors,
+built by one 256×256 eigensolve. Setting up the operators takes about 3 ms.
+ExponentialUtilities' general dense algorithm takes about 10 s.
 
 ```bash
 julia --project=. src/Jexpresso.jl kuramotoSivashinsky kassamTrefethen2005
@@ -63,7 +82,8 @@ it does not hold.
 
 Output (`user_plot.jl`). The solution is sampled every Δt = 0.5:
 
-- `ks-it<n>.png`: u, written every tenth output.
+- `ks-it<n>.png`: u, written every tenth output (`:ks_frame_every`, 0 for
+  none).
 - `ks-spacetime.png`: u(x,t) over the whole run, the picture of their
   Fig. 4.1, drawn once at the end. It is drawn on the native grid, with no
   resampling onto a uniform x. Each LGL node is one column of cells, bounded
@@ -85,12 +105,17 @@ The time loop to t = 150, measured on one core with compilation excluded:
 
 | | time | allocations |
 |---|---|---|
-| `:outformat => "none"` | 0.13-0.14 s | 13 k (3.3 MiB): setup and per-output bookkeeping, none per step |
-| default output (301 times, `ks_plot`) | 1.7 s | the rest is the plotting |
+| `:outformat => "none"` | 0.021 s | 12 k (2.7 MiB): setup and per-output bookkeeping, none per step |
+| default output (301 times, `ks_plot`) | 1.2 s | the PNG files |
+| default output, `:ks_frame_every => 0` | 0.14 s | ks-spacetime.png only |
 
-The run makes about 2 700 evaluations of the nonlinear right-hand side, at
-4 μs each for the 256 nodes. The rest is mostly ETDRK4's seven products with
-the φ operators per step and the output callbacks.
+One ETDRK4 step takes 25 μs: four evaluations of the nonlinear
+right-hand side (2.3 μs each), seven products with φ operators and two with
+L (1.2 μs each, see above), and OrdinaryDiffEq's own work. Each of the 301
+outputs adds 6 μs with output off. With output on, the PNG files take most
+of the time: GR needs about 30 ms to rasterize and encode one 1200×450
+frame, so the 31 default frames take about 1 s. The space-time diagram takes
+about 0.12 s.
 
 The earlier version of this case relaxed a second field onto ∂ₓ²u and
 stepped everything explicitly. It needed Δt = 2e-4, which is 750 000 steps

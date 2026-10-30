@@ -67,8 +67,6 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q, title::String, OUTPUT_DIR::S
 
     qout = reshape(q, npoin, nvar)   # 2D view (3x4) - NO allocation
     x_coords = mesh.coords[1, 1:npoin]
-    sort_idx = sortperm(x_coords)
-    plts = []
 
     # Optional per-case reference/analytic solution.
     #
@@ -119,6 +117,8 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q, title::String, OUTPUT_DIR::S
         end
     end
 
+    sort_idx = sortperm(x_coords)
+    plts = []
     for ivar=1:nvar
 
         idx = (ivar - 1)*npoin

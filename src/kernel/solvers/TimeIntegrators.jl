@@ -424,7 +424,10 @@ function time_loop!(inputs, params, u, args...)
 
             #CFL
             # if inputs[:ladapt] == false
-
+            # (not in 1D, where computeCFL does nothing: its arguments alone
+            # cost a collective Allreduce and a dozen dynamic lookups into the
+            # untyped mesh at every output)
+            if !(integrator.p.SD isa NSD_1D)
                 ad_lvl_max = MPI.Allreduce(maximum(prob.p.mesh.ad_lvl; init=0), MPI.MAX, comm)
                 dt         = Float32(inputs[:Δt]/(2.0^(ad_lvl_max)))
                 computeCFL(integrator.p.mesh.npoin, integrator.p.qp.neqs,
@@ -432,6 +435,7 @@ function time_loop!(inputs, params, u, args...)
                         integrator.p.mesh.Δeffective_s,
                         integrator,
                         integrator.p.SD; visc=inputs[:μ])
+            end
             # end
             write_output(integrator.p.SD, integrator.u, integrator.p.uaux, integrator.t, idx,
                          integrator.p.mesh, integrator.p.mp,

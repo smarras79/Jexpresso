@@ -59,6 +59,7 @@ function user_inputs()
         # false switches the plotting hook off altogether; "none" above
         # switches off all output.
         :ks_plot              => true,
+        :ks_frame_every       => 10,            # ks-it<n>.png every 10th output; 0: ks-spacetime.png alone
         :ks_clims             => (-1.9, 1.0),   # saturated inferno range of ks-spacetime.png
         :loverwrite_output    => true,
         :output_dir           => "./output",

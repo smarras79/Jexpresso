@@ -57,8 +57,10 @@ using StaticArrays
 using StaticArrays: SVector, MVector
 using OrdinaryDiffEq
 using OrdinaryDiffEq: solve
-# φ-functions of the SEM linear operator of split problems (kernel/solvers/split_linear.jl)
+# φ-functions of the SEM linear operator of split problems, and the FFTs that
+# apply them on uniform periodic meshes (kernel/solvers/split_linear.jl)
 import ExponentialUtilities
+import FFTW
 # using SnoopCompile  # incompatible with sysimage builds
 using LinearSolve
 using LinearSolve: solve
