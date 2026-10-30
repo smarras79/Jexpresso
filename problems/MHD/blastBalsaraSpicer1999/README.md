@@ -100,6 +100,62 @@ Without the thermal residual, the deep undershoot is a grid-scale band that halv
 - **After step 7:** energy holds to 4.8·10⁻¹⁶ and mass to 3·10⁻¹⁵ for the rest of the run.
 - **With sound floors:** the limiter stopped by step 200, and there were 554 startup floors (+1.5·10⁻⁵ of energy).
 
+**Why only the blast's floor adds energy.** The node floor adds energy only where a node's kinetic and thermal energy are used up together. Where the gas moves, it removes momentum first, which leaves E unchanged (`cpos_floor!`, `src/kernel/positivity/Positivity.jl`). At t = 0 the blast's gas is at rest. Its only non-magnetic energy is the thermal 6.3·10⁻⁴ of E, the smallest of any initial state among the MHD cases. The pressure jump is also sampled at the nodes without smoothing. The rotor has neither: β ≈ 1, uniform initial pressure and a tapered disc. It never has an inadmissible element mean, and E stays at round-off. The jet is also strongly magnetized (β = 10⁻²), but its beam is ramped in smoothly in space and time, and the floor never fires either.
+
+The table gives the initial states of the MHD cases, sorted by β. Both value columns are the minimum over the domain, with e_th = p/(γ − 1) and E = e_th + ½ρ|**u**|² + ½|**B**|². Unlike β, e_th/E includes the kinetic energy, so it depends on the frame.
+
+| case | β | e_th/E | notes |
+|---|---|---|---|
+| **MHD blast wave** | **2.5·10⁻⁴** | **6.3·10⁻⁴** | ambient; inside the initial disc β = 2.5, e_th/E = 0.86 |
+| magnetized astrophysical jet | 10⁻² | 2.4·10⁻² | ambient; the beam entering through the nozzle has β = 10⁻², e_th/E = 5.6·10⁻⁶ |
+| Brio–Wu shock tube | 0.13 | 0.11 | right state; left state β = 1.28, e_th/E = 0.56 |
+| circularly polarized Alfvén wave | 0.20 | 0.23 | uniform |
+| MHD rotor | 1.0 | 0.11 | β uniform; e_th/E smallest at the edge of the spinning disc, 0.72 in the ambient |
+| flux emergence | 1 | 0.95 | at the centre of the field sheet (γ = 1.05); β → ∞ and e_th/E → 1 away from it |
+| Orszag–Tang vortex | 5/3 | 0.43 | domain totals β = 10/3, e_th/E = 0.57 |
+| shock–cloud, MHD letters | 2.1 | 0.50 | β ahead of the shock (and in the letters), where e_th/E = 0.76; e_th/E behind it, where β = 50 |
+| shock–cloud, round cloud | 4.2 | 1.3·10⁻³ | in the cloud, which moves at u = −15.27; ahead of the shock outside the cloud e_th/E = 0.013; behind it β = 222, e_th/E = 0.997 |
+| smooth vortex | 78 | 0.54 | in the vortex; far field β → ∞, e_th/E = 0.60 |
+| Kelvin–Helmholtz instability | 128 | 0.85 | β uniform; e_th/E smallest in the dense layer |
+
+Notes on the values:
+
+- **Kinetic-dominated cases.** The round cloud and the jet's beam have small thermal fractions too, but from their kinetic energy.
+- **Flux-emergence β.** β = 1 at the sheet centre is the deck's inferred `fe_beta_star`.
+- **Jet cases.** The jet row is Wu & Shu's case (i). Cases (ii) and (iii) have β = 10⁻³ and 10⁻⁴.
+
+LaTeX for the paper (use `table*` in two-column REVTeX):
+
+```latex
+\begin{table}
+\caption{Plasma $\beta = 2p/|\mathbf{B}|^2$ and thermal energy fraction
+$e_{\mathrm{th}}/E$ of the initial conditions of the MHD test cases, with
+$e_{\mathrm{th}} = p/(\gamma - 1)$ and
+$E = e_{\mathrm{th}} + \tfrac12\rho|\mathbf{u}|^2 + \tfrac12|\mathbf{B}|^2$
+(Heaviside--Lorentz units). Both columns give the minimum over the domain; the
+notes give the values elsewhere. Unlike $\beta$, $e_{\mathrm{th}}/E$ includes
+the kinetic energy and therefore depends on the frame.}
+\label{tab:beta}
+\begin{tabular}{lllp{6.2cm}}
+\hline
+Case & $\beta$ & $e_{\mathrm{th}}/E$ & Notes \\
+\hline
+MHD blast wave                     & $2.5\times10^{-4}$ & $6.3\times10^{-4}$ & ambient; inside the initial disc $\beta = 2.5$, $e_{\mathrm{th}}/E = 0.86$ \\
+Magnetized astrophysical jet       & $10^{-2}$          & $2.4\times10^{-2}$ & ambient; the beam entering through the nozzle has $\beta = 10^{-2}$, $e_{\mathrm{th}}/E = 5.6\times10^{-6}$ \\
+Brio--Wu shock tube                & $0.13$             & $0.11$             & right state; left state $\beta = 1.28$, $e_{\mathrm{th}}/E = 0.56$ \\
+Circularly polarized Alfv\'en wave & $0.20$             & $0.23$             & uniform \\
+MHD rotor                          & $1.0$              & $0.11$             & $\beta$ uniform; $e_{\mathrm{th}}/E$ smallest at the edge of the spinning disc, $0.72$ in the ambient \\
+Flux emergence                     & $1$                & $0.95$             & at the centre of the field sheet ($\gamma = 1.05$); $\beta \to \infty$ and $e_{\mathrm{th}}/E \to 1$ away from it \\
+Orszag--Tang vortex                & $5/3$              & $0.43$             & domain totals $\beta = 10/3$, $e_{\mathrm{th}}/E = 0.57$ \\
+Shock--cloud, MHD letters          & $2.1$              & $0.50$             & $\beta$ ahead of the shock (and in the letters), where $e_{\mathrm{th}}/E = 0.76$; $e_{\mathrm{th}}/E$ behind it, where $\beta = 50$ \\
+Shock--cloud, round cloud          & $4.2$              & $1.3\times10^{-3}$ & in the cloud, which moves at $u = -15.27$; ahead of the shock outside the cloud $e_{\mathrm{th}}/E = 0.013$; behind it $\beta = 222$, $e_{\mathrm{th}}/E = 0.997$ \\
+Smooth vortex                      & $78$               & $0.54$             & in the vortex; far field $\beta \to \infty$, $e_{\mathrm{th}}/E = 0.60$ \\
+Kelvin--Helmholtz instability      & $128$              & $0.85$             & $\beta$ uniform; $e_{\mathrm{th}}/E$ smallest in the dense layer \\
+\hline
+\end{tabular}
+\end{table}
+```
+
 **Sensor: legacy, not residual.** The deck keeps `:dsgs_sensor => "legacy"`, the sensor the rotor setup it builds on was tuned with. The residual sensor (the default, used by the smooth vortex and the Alfvén wave) was tried in its place, everything else in the deck unchanged, to t = 0.01 (21 Oct 2026). The thermal residual works with either: it is built from the same per-node residual as the main sensor.
 
 | | 64², legacy | 64², residual | 128², legacy | 128², residual |
