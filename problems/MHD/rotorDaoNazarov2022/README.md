@@ -65,6 +65,33 @@ the solution is invariant under the 180° rotation about (0.5, 0.5) to 2e-10 (ρ
 256²: min p = 0.0144 at t = 0.10, at four interior nodes on the edge of the disc (r ≈ 0.108; Mach 9.9 there, the old operator had p = −0.0026 at the same nodes); between t ≈ 0.11 and 0.13 the limiter made 1,126 element limitings (θ_p ≥ 0.993, no element with an inadmissible mean, no node floor); the pressure noise is 0.008% / 0.04%, the symmetry error 2e-9.
 Mass and energy (`conservation.dat`, every step): |ΔM|/M ≤ 6.7e-16 (128²) and 1.7e-15 (256²), |ΔE|/E ≤ 1.2e-16 and 2.3e-16, i.e. a few ulps; see [conservation.pdf](conservation.pdf).
 
+**Why the energy stays at round-off here but not in the blast.**
+- **The rotor:** its initial state is far from the positivity floors. β = 1.0 everywhere, the thermal energy is at least 0.11 of E (at the edge of the spinning disc), the initial pressure is uniform and the disc is tapered. No element mean ever becomes inadmissible, so the non-conservative node floor never fires (above).
+- **The blast** (`problems/MHD/blastBalsaraSpicer1999`): the opposite on every count. Its gas starts at rest, and its ambient thermal energy is 6.3·10⁻⁴ of E, the rest being magnetic. That is the smallest thermal fraction of any initial state in the table below. Its pressure jump is also sampled at the nodes without smoothing. In the first step the node floor adds 1.7·10⁻⁶ of E (128², nop 3), and that offset then stays constant.
+
+The table gives the initial states of the MHD cases, sorted by β. Both value columns are the minimum over the domain, with e_th = p/(γ − 1) and E = e_th + ½ρ|**u**|² + ½|**B**|². Unlike β, e_th/E includes the kinetic energy, so it depends on the frame.
+
+| case | β | e_th/E | notes |
+|---|---|---|---|
+| MHD blast wave | 2.5·10⁻⁴ | 6.3·10⁻⁴ | ambient; inside the initial disc β = 2.5, e_th/E = 0.86 |
+| magnetized astrophysical jet | 10⁻² | 2.4·10⁻² | ambient; the beam entering through the nozzle has β = 10⁻², e_th/E = 5.6·10⁻⁶ |
+| Brio–Wu shock tube | 0.13 | 0.11 | right state; left state β = 1.28, e_th/E = 0.56 |
+| circularly polarized Alfvén wave | 0.20 | 0.23 | uniform |
+| **MHD rotor** | **1.0** | **0.11** | β uniform; e_th/E smallest at the edge of the spinning disc, 0.72 in the ambient |
+| flux emergence | 1 | 0.95 | at the centre of the field sheet (γ = 1.05); β → ∞ and e_th/E → 1 away from it |
+| Orszag–Tang vortex | 5/3 | 0.43 | domain totals β = 10/3, e_th/E = 0.57 |
+| shock–cloud, MHD letters | 2.1 | 0.50 | β ahead of the shock (and in the letters), where e_th/E = 0.76; e_th/E behind it, where β = 50 |
+| shock–cloud, round cloud | 4.2 | 1.3·10⁻³ | in the cloud, which moves at u = −15.27; ahead of the shock outside the cloud e_th/E = 0.013; behind it β = 222, e_th/E = 0.997 |
+| smooth vortex | 78 | 0.54 | in the vortex; far field β → ∞, e_th/E = 0.60 |
+| Kelvin–Helmholtz instability | 128 | 0.85 | β uniform; e_th/E smallest in the dense layer |
+
+Notes on the values:
+
+- **Kinetic-dominated cases.** The round cloud and the jet's beam have small thermal fractions too, but from their kinetic energy.
+- **Flux-emergence β.** β = 1 at the sheet centre is the deck's inferred `fe_beta_star`.
+- **Jet cases.** The jet row is Wu & Shu's case (i). Cases (ii) and (iii) have β = 10⁻³ and 10⁻⁴.
+- **LaTeX.** The LaTeX version of the table is in the blast README, after "Why only the blast's floor adds energy".
+
 **Fast-speed floors (tested, not on).** `:dsgs_fast_floors => true` builds the normalization floors on c_f = √((γp + |**B**|²)/ρ) instead of the sound speed (DSGS.md §4.5). The blast and the jet use it. Here, at 128² and t = 0.15, it gives:
 
 | | ρ | p | ½\|**B**\|² | max Mach | mean ν | p noise in r < 0.08 (median / 95th pct. / max) |
