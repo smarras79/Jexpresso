@@ -113,7 +113,7 @@ The table gives the initial states of the MHD cases, sorted by β. Both value co
 | MHD rotor | 1.0 | 0.11 | β uniform; e_th/E smallest at the edge of the spinning disc, 0.72 in the ambient |
 | flux emergence | 1 | 0.95 | at the centre of the field sheet (γ = 1.05); β → ∞ and e_th/E → 1 away from it |
 | Orszag–Tang vortex | 5/3 | 0.43 | domain totals β = 10/3, e_th/E = 0.57 |
-| shock–cloud, MHD letters | 2.1 | 0.50 | β ahead of the shock (and in the letters), where e_th/E = 0.76; e_th/E behind it, where β = 50 |
+| shock–cloud, MHD letters | 2.1 | 0.50 | smallest β ahead of the shock and in the letters, where e_th/E = 0.76; smallest e_th/E behind the shock, where β = 50 |
 | shock–cloud, round cloud | 4.2 | 1.3·10⁻³ | in the cloud, which moves at u = −15.27; ahead of the shock outside the cloud e_th/E = 0.013; behind it β = 222, e_th/E = 0.997 |
 | smooth vortex | 78 | 0.54 | in the vortex; far field β → ∞, e_th/E = 0.60 |
 | Kelvin–Helmholtz instability | 128 | 0.85 | β uniform; e_th/E smallest in the dense layer |
@@ -147,7 +147,7 @@ Circularly polarized Alfv\'en wave & $0.20$             & $0.23$             & u
 MHD rotor                          & $1.0$              & $0.11$             & $\beta$ uniform; $e_{\mathrm{th}}/E$ smallest at the edge of the spinning disc, $0.72$ in the ambient \\
 Flux emergence                     & $1$                & $0.95$             & at the centre of the field sheet ($\gamma = 1.05$); $\beta \to \infty$ and $e_{\mathrm{th}}/E \to 1$ away from it \\
 Orszag--Tang vortex                & $5/3$              & $0.43$             & domain totals $\beta = 10/3$, $e_{\mathrm{th}}/E = 0.57$ \\
-Shock--cloud, MHD letters          & $2.1$              & $0.50$             & $\beta$ ahead of the shock (and in the letters), where $e_{\mathrm{th}}/E = 0.76$; $e_{\mathrm{th}}/E$ behind it, where $\beta = 50$ \\
+Shock--cloud, MHD letters          & $2.1$              & $0.50$             & smallest $\beta$ ahead of the shock and in the letters, where $e_{\mathrm{th}}/E = 0.76$; smallest $e_{\mathrm{th}}/E$ behind the shock, where $\beta = 50$ \\
 Shock--cloud, round cloud          & $4.2$              & $1.3\times10^{-3}$ & in the cloud, which moves at $u = -15.27$; ahead of the shock outside the cloud $e_{\mathrm{th}}/E = 0.013$; behind it $\beta = 222$, $e_{\mathrm{th}}/E = 0.997$ \\
 Smooth vortex                      & $78$               & $0.54$             & in the vortex; far field $\beta \to \infty$, $e_{\mathrm{th}}/E = 0.60$ \\
 Kelvin--Helmholtz instability      & $128$              & $0.85$             & $\beta$ uniform; $e_{\mathrm{th}}/E$ smallest in the dense layer \\
