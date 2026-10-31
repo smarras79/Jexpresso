@@ -146,6 +146,24 @@ So keep `p_min` several orders above `(γ−1)·eps(ρE_max)`, and do not expect
 state, not of the repair: the same limit binds any scheme that carries `ρE` and
 recovers `p` from it.
 
+## The conservative element limiter (`:positivity_method => "conservative"`)
+
+This is the Zhang–Shu scaling limiter (Zhang & Shu 2010b below), adapted to CG. It is run as the stage limiter of `CarpenterKennedy2N54` (`Positivity.cpos_*`, 2D GLM-MHD only). Each element holding a bad node is scaled toward its lumped-mass mean: θ_ρ for the density, then θ_p, the root of p(q̄ + t(q̃ − q̄)) = p_min along the segment to the mean. The root exists because the pressure is concave in the conserved variables.
+
+Two changes make it work on CG:
+
+- **Assembled increments.** The scaling is not written into the element's nodes. Each element's change, w (θ − 1)(q − q̄), is assembled over shared nodes like the right-hand side and divided by the lumped mass. Continuity is kept, and ρ, ρ**v** and E are conserved to round-off. **B** and ψ are untouched.
+- **A fallback for inadmissible means.** In DG with a positivity-preserving flux, Zhang & Shu prove that the cell averages stay admissible under a CFL condition. CG has no such guarantee. An element whose mean itself has ρ̄ ≤ ρ_min or p̄ ≤ p_min cannot be fixed by any scaling. Its nodes go to `cpos_floor!`, the nodal repair of branches 2a/2b above. That repair is **not conservative**: it adds energy through branch 2b.
+
+On the MHD blast (`problems/MHD/blastBalsaraSpicer1999`, β = 2.5·10⁻⁴, gas at rest, sharp pressure jump), this fallback fires only during the startup. At 128², nop 3, that is step 1, adding 1.7·10⁻⁶ of E; at 64² it is steps 1–7, adding 1.75·10⁻⁵ (see that README). Pseudo-code and proofs are in `problems/MHD/rotorDaoNazarov2022/algorithm.pdf`.
+
+## References
+
+- X. Zhang, C.-W. Shu, "On maximum-principle-satisfying high order schemes for scalar conservation laws", *J. Comput. Phys.* 229 (2010) 3091–3120. The original scaling limiter, for scalar equations.
+- X. Zhang, C.-W. Shu, "On positivity-preserving high order discontinuous Galerkin schemes for compressible Euler equations on rectangular meshes", *J. Comput. Phys.* 229 (2010) 8918–8934. The density-then-pressure limiter adapted here.
+- X. Zhang, C.-W. Shu, "Maximum-principle-satisfying and positivity-preserving high-order schemes for conservation laws: survey and new developments", *Proc. R. Soc. A* 467 (2011) 2752–2776.
+- J.-L. Guermond, B. Popov, I. Tomas, "Invariant domain preserving discretization-independent schemes and convex limiting for hyperbolic systems", *Comput. Methods Appl. Mech. Engrg.* 347 (2019) 143–175. This is the CG-native route discussed under "What this is not".
+
 ## Settings
 
 | input | default | |
