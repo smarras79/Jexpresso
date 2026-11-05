@@ -156,7 +156,7 @@ end
 #------------------------------------------------------------------------------
 # GitHub Actions matrix
 #------------------------------------------------------------------------------
-"Minutes added to a case timeout to cover checkout, setup-julia and buildpkg."
+"Minutes added to a case timeout to cover checkout, setup-julia, buildpkg and precompile."
 const JOB_TIMEOUT_HEADROOM = 30
 
 json_escape(s::AbstractString) = replace(String(s), '\\' => "\\\\", '"' => "\\\"")
