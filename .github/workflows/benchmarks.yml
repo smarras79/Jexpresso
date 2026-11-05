@@ -104,6 +104,12 @@ jobs:
 
       - uses: julia-actions/julia-buildpkg@v1
 
+      # julia-buildpkg runs Pkg.build only. Without this step the full
+      # precompile happens inside the timed step below, at `using Jexpresso`,
+      # and on a cold runner it takes about nine of a ten-minute case timeout.
+      - name: Precompile
+        run: julia --project=. -e 'using Pkg; Pkg.precompile()'
+
       - name: Simulate
         id: sim
         continue-on-error: true
