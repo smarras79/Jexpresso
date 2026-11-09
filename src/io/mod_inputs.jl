@@ -1195,17 +1195,23 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :dsgs_local_rel))
         inputs[:dsgs_local_rel] = 1.0
     end
-    #   :dsgs_fast_floors  DSGS_MHD (1D, 2D): the floors ρc, ρc², √ρ c of the normalization (domain and
+    #   :dsgs_fast_floors  DSGS_MHD (1D, 2D, 3D): the floors ρc, ρc², √ρ c of the normalization (domain and
     #                      element) use the fast-speed bound √((γp + |B|²)/ρ) in place of the sound
     #                      speed c; for low-β plasma, where c ≪ c_f
     if(!haskey(inputs, :dsgs_fast_floors))
         inputs[:dsgs_fast_floors] = false
     end
-    #   :dsgs_thermal_residual  DSGS_MHD 2D: add the residual of ρe = E − ½|m|²/ρ − ½|B|² − ½ψ² (chain rule on the
+    #   :dsgs_thermal_residual  DSGS_MHD 2D, 3D: add the residual of ρe = E − ½|m|²/ρ − ½|B|² − ½ψ² (chain rule on the
     #                      conserved residuals) over max(its element spread, local_rel·γp̄), per element for any :dsgs_norms
     if(!haskey(inputs, :dsgs_thermal_residual))
         inputs[:dsgs_thermal_residual] = false
     end
+    #   DSGS_MHD in 3D (compute_dsgs_viscosity!(::DSGS_MHD, ::NSD_3D)): element form and conserved
+    #                      form only (:dsgs_conserved => true), domain or element norms.
+    #   :mhd_dissipation   optional function (x, y, z) -> (ν, η): explicit kinematic viscosity and
+    #                      magnetic diffusivity of a visco-resistive 3D MHD case, added per element (at
+    #                      its centroid) to the DynSGS coefficient of the momentum and B slots
+    #                      (problems/MHD/fluxEmergenceLeake2014). Unset: none.
     if(!haskey(inputs, :dsgs_nodal_rho))
         inputs[:dsgs_nodal_rho] = false
     end
@@ -1386,6 +1392,18 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #                      a shock tube's qe is its initial jump.
     if(!haskey(inputs, :dsgs_reference))
         inputs[:dsgs_reference] = false
+    end
+    #   :lwell_balanced    TOTAL variables, CG: evaluate the inviscid element
+    #                      RHS of the reference state qe (fluxes and sources)
+    #                      once and subtract it at every stage, so that qe is an
+    #                      exact discrete steady state (rhs.jl,
+    #                      _well_balanced_reference!). For equilibria the
+    #                      discrete operator balances only to the interpolation
+    #                      error: a strongly stratified atmosphere, a low-β
+    #                      potential field (problems/MHD/fluxEmergenceLeake2014).
+    #                      Supersedes :dsgs_reference, which it implies.
+    if(!haskey(inputs, :lwell_balanced))
+        inputs[:lwell_balanced] = false
     end
     if haskey(inputs, :dsgs_legacy_stencil)
         error(" user_inputs.jl: :dsgs_legacy_stencil has been replaced by :dsgs_sensor => \"legacy\" | \"residual\".")

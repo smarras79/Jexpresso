@@ -228,7 +228,8 @@ function _dsgs_residual_rhs!(u, params, SD)
         # (:dsgs_reference): for a shock tube qe holds the initial jump and
         # subtracting its element RHS would plant a residual at x = 0.5 for
         # the whole run (measured on sod1d)
-        lref  = get(params.inputs, :dsgs_reference, false) &&
+        # (:lwell_balanced has already subtracted it from params.rhs_el)
+        lref  = get(params.inputs, :dsgs_reference, false) && !get(params.inputs, :lwell_balanced, false) &&
                 params.SOL_VARS_TYPE == TOTAL() && size(qe, 2) >= neqs &&
                 any(x -> x != 0, @view(qe[1:npoin, 1:neqs]))
         params.dsgs_have_ref[] = lref
@@ -766,6 +767,56 @@ end
 end
 end
 
+#-----------------------------------------------------------------------------------
+# :lwell_balanced (TOTAL variables, CG): the element RHS of the reference state
+# qe — flux divergence plus sources, everything inviscid_rhs_el! computes — is
+# evaluated once and subtracted from the element RHS at every stage, so that
+# the discrete operator is exactly zero on qe. An analytic equilibrium (a
+# hydrostatic atmosphere, a potential field) is balanced only to the
+# interpolation error of the discrete operator; where that equilibrium is
+# strong against the dynamics, as the gravity of a 12-decade stratification or
+# the Lorentz force of a low-β coronal field, the imbalance is a spurious force
+# that drives flows from t = 0. The subtraction removes it exactly, leaving the
+# operator acting on the departure from qe; it is the TOTAL-variable form of
+# solving for the perturbation (Botta et al. 2004, Giraldo & Restelli 2008).
+# The viscous terms are not included: DynSGS acts on u − qe through
+# user_primitives. The reference is cached per run (keyed on params.rhs_el).
+#-----------------------------------------------------------------------------------
+const _WB_REF = Ref{Any}(nothing)
+
+function _well_balanced_reference!(u, params, lsource, SD)
+    c = _WB_REF[]
+    c !== nothing && c[1] === params.rhs_el && return nothing
+    params.SOL_VARS_TYPE == TOTAL() ||
+        error(" :lwell_balanced requires :SOL_VARS_TYPE => TOTAL() (PERT() is already the departure from qe).")
+    params.AD == ContGal() ||
+        error(" :lwell_balanced: CG only (the DG surface terms are not part of the reference).")
+    neqs  = params.neqs
+    npoin = params.mesh.npoin
+    qe    = params.qp.qe
+    size(qe, 2) >= neqs || error(" :lwell_balanced: qe has fewer columns than neqs.")
+    qe_flat = similar(u)
+    for ieq = 1:neqs
+        qe_flat[(ieq-1)*npoin+1:ieq*npoin] .= @view(qe[1:npoin, ieq])
+    end
+    saved = copy(params.rhs_el)
+    fill!(params.rhs_el, zero(params.T))
+    # the 1D/2D routines read the state from params.uaux, the 3D one refreshes it from its u argument
+    u2uaux!(@view(params.uaux[:,:]), qe_flat, neqs, npoin)
+    inviscid_rhs_el!(qe_flat, params, params.mesh.connijk, qe, params.mesh.coords, lsource,
+                     params.mp.S_micro, params.mp.qn, params.mp.flux_lw, params.mp.flux_sw, SD)
+    ref = copy(params.rhs_el)
+    copyto!(params.rhs_el, saved)
+    u2uaux!(@view(params.uaux[:,:]), u, neqs, npoin)
+    _WB_REF[] = (params.rhs_el, ref)
+    return nothing
+end
+
+function _well_balanced_subtract!(rhs_el, ref)
+    rhs_el .-= ref
+    return nothing
+end
+
 function _build_rhs!(RHS, u, params, time)
 
     T       = Float64
@@ -887,8 +938,13 @@ function _build_rhs!(RHS, u, params, time)
     end
 
      
+    lwb = get(params.inputs, :lwell_balanced, false)::Bool
+    lwb && _well_balanced_reference!(u, params, lsource, SD)
+
     @timeit_debug JEXPRESSO_TIMER "inviscid_rhs_el" inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, lsource, 
                      params.mp.S_micro, params.mp.qn, params.mp.flux_lw, params.mp.flux_sw, SD)
+
+    lwb && _well_balanced_subtract!(params.rhs_el, _WB_REF[][2])
 
     if inputs[:ladapt] == true
         DSS_nc_gather_rhs!(params.RHS, SD, QT, params.rhs_el,
@@ -2081,6 +2137,61 @@ end
 
 
 function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}, SD::NSD_3D)
+    # 3D GLM-MHD DynSGS (compute_dsgs_viscosity!(::DSGS_MHD, ::NSD_3D) in
+    # SGS.jl): element form, conserved variables, plus the case's explicit
+    # kinematic viscosity and magnetic diffusivity (:mhd_dissipation, a
+    # function (x, y, z) -> (ν, η) evaluated once at the element centroids).
+    # Assembled through the same Laplacian-per-slot barrier as the θ kernel.
+    if params.VT == DSGS_MHD()
+        TT = eltype(params.μ_dsgs)
+        # the 2D-only switches read by the MHD user_primitives! must stay off
+        dsgs_ref_weight[]   = false
+        dsgs_nodal_rho[]    = false
+        dsgs_split_energy[] = false
+        dsgs_qA, dsgs_qB, dsgs_wt = _dsgs_stencil(params, TT)
+        dsgs_rhs = _dsgs_residual_rhs!(u, params, SD)
+        νphys, ηphys = _mhd_dissipation_3d(params, TT)
+        compute_dsgs_viscosity!(params.μ_dsgs, DSGS_MHD(), SD,
+                                params.uaux, dsgs_qA, dsgs_qB,
+                                dsgs_rhs, params.ω, params.metrics.Je, params.visc_coeff,
+                                params.dsgs_avg, params.dsgs_denom,
+                                params.dsgs_avg_e, params.dsgs_den_e,
+                                dsgs_wt,
+                                params.mesh.connijk, params.mesh.Δelem,
+                                TT(get(params.inputs, :dsgs_gamma, 5.0/3.0)),
+                                TT(get(params.inputs, :dsgs_Cmax,  0.5)),
+                                get_mpi_comm(),
+                                Int(params.mesh.nelem), Int(params.mesh.ngl);
+                                CR            = TT(get(params.inputs, :dsgs_CR, 1.0)),
+                                lglobal_norms = params.dsgs_global_norms,
+                                llocal_norms  = params.dsgs_local_norms,
+                                local_rel     = TT(get(params.inputs, :dsgs_local_rel, 1.0)),
+                                lconserved    = get(params.inputs, :dsgs_conserved, false),
+                                Cmin          = TT(get(params.inputs, :dsgs_Cmin, 0.0)),
+                                cutoff        = TT(get(params.inputs, :dsgs_cutoff, 0.0)),
+                                lfast_floors  = get(params.inputs, :dsgs_fast_floors, false)::Bool,
+                                lthermal      = get(params.inputs, :dsgs_thermal_residual, false)::Bool,
+                                νphys = νphys, ηphys = ηphys)
+        broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
+                                 params.mesh.connijk,
+                                 Int(params.mesh.nelem),
+                                 Int(params.mesh.ngl), SD)
+        _viscous_rhs_el_3d_dsgs!(params.uaux, qe, params.uprimitive,
+                                 params.rhs_diffξ_el, params.rhs_diffη_el, params.rhs_diffζ_el,
+                                 params.rhs_diff_el,
+                                 params.visc_coeff_dsgs, params.μ_dsgs, params.ω,
+                                 Int64(params.mesh.ngl), params.basis.dψ, params.metrics.Je,
+                                 params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz,
+                                 params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz,
+                                 params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz,
+                                 params.rhs_el, params.mesh.connijk,
+                                 params.mesh.coords, params.mesh.poin_in_bdy_face,
+                                 params.mesh.elem_to_face, params.mesh.bdy_face_type,
+                                 Int64(params.mesh.nelem), Int64(params.neqs),
+                                 connijk, params.QT, params.AD, params.SOL_VARS_TYPE)
+        return
+    end
+
     # Marras-style Dynamic SGS in 3D. Same three steps as the 2D branch of
     # viscous_rhs_el!(NSD_2D): fill the per-element, per-equation μ_dsgs
     # from the element residual, broadcast it to the nodes for the output,
@@ -2155,6 +2266,39 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                         params.mesh.ad_lvl, connijk, Float64(params.mesh.Δeffective_l),
                         params.QT, params.VT, SD, params.AD, params.SOL_VARS_TYPE,
                         params.sgs, params.mp)
+end
+
+# Per-element explicit (ν, η) of a visco-resistive 3D MHD case, from its
+# :mhd_dissipation function (x, y, z) -> (ν, η) at the element centroids,
+# built once per mesh and cached (the coefficients are static). Returns
+# (nothing, nothing) when the deck has no :mhd_dissipation.
+const _MHD_DISS_CACHE = Ref{Any}(nothing)
+function _mhd_dissipation_3d(params, ::Type{TT}) where {TT}
+    f = get(params.inputs, :mhd_dissipation, nothing)
+    f === nothing && return nothing, nothing
+    c = _MHD_DISS_CACHE[]
+    nelem = Int(params.mesh.nelem)
+    if c === nothing || c[1] !== params.mesh || length(c[2]) != nelem
+        ngl = Int(params.mesh.ngl)
+        νe = zeros(TT, nelem); ηe = zeros(TT, nelem)
+        _mhd_fill_dissipation!(νe, ηe, f, params.mesh.connijk, params.mesh.coords, nelem, ngl)
+        c = (params.mesh, νe, ηe)
+        _MHD_DISS_CACHE[] = c
+    end
+    return c[2], c[3]
+end
+
+function _mhd_fill_dissipation!(νe, ηe, f, connijk, coords, nelem, ngl)
+    for ie = 1:nelem
+        xc = 0.0; yc = 0.0; zc = 0.0
+        for (i, j, k) in ((1,1,1), (ngl,1,1), (1,ngl,1), (ngl,ngl,1), (1,1,ngl), (ngl,1,ngl), (1,ngl,ngl), (ngl,ngl,ngl))
+            ip = connijk[ie,i,j,k]
+            xc += coords[1,ip]; yc += coords[2,ip]; zc += coords[3,ip]
+        end
+        ν, η = f(xc/8, yc/8, zc/8)
+        νe[ie] = ν; ηe[ie] = η
+    end
+    return nothing
 end
 
 function _viscous_rhs_el_3d!(uaux, qe, uprimitive,
