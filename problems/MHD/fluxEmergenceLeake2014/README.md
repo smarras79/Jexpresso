@@ -44,7 +44,7 @@ The simulation is chosen in `user_inputs.jl`:
 | `:lk_tube` | `true` / `false` | `false` runs the background alone (atmosphere + dipole), which must stay at rest |
 | `:lk_cz_gradient` | `1.0` (default) / `1.25` | $a$ of the convection-zone temperature gradient (below) |
 | `:lk_damp_xd`, `:lk_damp_zd` | 96, 180 | start of the side and top velocity-damping layers (Paper I used 170 at the top) |
-| `:lk_glm_alpha` | 1.0 | Dedner damping $\alpha_p$ of $\psi$, rate $\alpha_pc_h/\Delta h$ (Deviations, item 7) |
+| `:lk_glm_alpha` | 1.0 | Dedner damping $\alpha_p$ of $\psi$, rate $\alpha_pc_h/\Delta h$ (Deviations, item 8) |
 | `LK_REF` (top of `user_inputs()`) | 1, 2 (default), 3 | mesh and time step (below) |
 
 ## Units
@@ -182,26 +182,32 @@ $c_h\Delta t/\Delta h \approx 0.28$ for SD and 0.21 for MD; for WD and ND
    than the wave one). The papers' "Re = 100" is evaluated with the
    normalizing density. This case uses the kinematic $\nu = 0.01$
    everywhere, i.e. Re = 100 at every height.
-2. **Dipole strength from Paper II's flux ratios.** Paper I lists
+2. **Twist sign.** Paper I's tube is right-handed with $q = 1/R$; Paper II
+   prints $q = -1/a$ but states that its configuration is Paper I's with only
+   the dipole reversed, and that the dipole's $B_x < 0$ is antiparallel to
+   the top of the tube. With $B_y > 0$ only the right-handed tube has
+   $B_x > 0$ at its top, so $q = -1/a$ is read as a different sign
+   convention for $\theta$ and the case keeps $q = 1/R$.
+3. **Dipole strength from Paper II's flux ratios.** Paper I lists
    $B_d = [10, 7.5, 5]\times10^3$; with $B_t = 5$ those give
    $\Phi_{dip}/\Phi_{tube} = 0.166,\ 0.123,\ 0.081$, not Paper II's 0.13, 0.1,
    0.067. Paper II defines its simulations by the ratios, so $B_d$ is solved
    from them. `:lk_Bd` sets it directly.
-3. **Convection-zone gradient.** Paper I writes
+4. **Convection-zone gradient.** Paper I writes
    $T = 1 - (\gamma - 1)/\gamma\cdot z$ and calls it adiabatic; in its own
    normalization ($\mu_m = m_fm_p$) the adiabatic gradient is $m_f$ times that.
    The printed formula ($a = 1$, slightly sub-adiabatic, i.e. stable) is
    used; `:lk_cz_gradient => 1.25` makes it exactly adiabatic.
-4. **Numerics.** The papers use Lare3d (staggered Lagrangian-remap, shock
+5. **Numerics.** The papers use Lare3d (staggered Lagrangian-remap, shock
    viscosity, constrained transport). Here: continuous spectral elements at
    $N = 4$ with GLM divergence cleaning ($c_h$ above, Dedner damping
-   $\alpha_p = 1$, item 7), DynSGS shock capturing in conserved form on the
+   $\alpha_p = 1$, item 8), DynSGS shock capturing in conserved form on the
    departure from the reference state (`DSGS_MHD`, legacy sensor, fast-speed
    floors, thermal-energy residual), the explicit $\nu$ and $\eta$ added to
    the DynSGS coefficient element by element (`:mhd_dissipation`), and
    positivity floors $\rho \ge 0.2\rho_e(z)$, $p \ge 0.2p_e(z)$ as the
    Runge–Kutta stage limiter (every hit is counted and printed).
-5. **Discrete equilibrium (`:lwell_balanced`).** Neither the stratification
+6. **Discrete equilibrium (`:lwell_balanced`).** Neither the stratification
    nor the dipole is an exact equilibrium of the discrete operator, and in the
    corona ($\rho \sim 10^{-9}$, $\beta \sim 10^{-2}$) their interpolation errors
    are large accelerations. Without correction the background alone (no tube,
@@ -212,12 +218,12 @@ $c_h\Delta t/\Delta h \approx 0.28$ for SD and 0.21 for MD; for WD and ND
    fluxes and sources) once and subtracts it at every stage, so the background
    is an exact discrete steady state (unchanged to the last bit at
    $t = 0.1t_0$) and only the departure from it (the tube) drives the flow.
-6. **Boundaries.** CG imposes the three velocity components and $\psi = 0$
+7. **Boundaries.** CG imposes the three velocity components and $\psi = 0$
    strongly on all faces; $\rho$, $E$ and $\mathbf B$ on the boundary nodes
    evolve with their own element derivatives, and the natural condition of the
    dissipative terms is a zero normal gradient. This is the CG counterpart of
    the papers' zero-gradient conditions, not a ghost-cell copy.
-7. **GLM transient and $\alpha_p$.** Constrained transport keeps Lare3d's
+8. **GLM transient and $\alpha_p$.** Constrained transport keeps Lare3d's
    $\nabla\cdot\mathbf B$ at round-off. Here the tube's nodal field has a
    discrete divergence that GLM carries away at $c_h$ (155 for MD), i.e. from
    the tube to the transition region in $0.15t_0$. There $\beta \approx 0.007$,
@@ -239,8 +245,82 @@ $c_h\Delta t/\Delta h \approx 0.28$ for SD and 0.21 for MD; for WD and ND
 `ρ, u, v, w, p, Bx, By, Bz, ψ` and the derived `T` ($= m_fp/\rho$, in $T_0$),
 `β` ($= 2p/|\mathbf B|^2$), `Bmag` and `log10ρ`, as `.pvtu` per snapshot.
 Mass and total energy are logged every 10 steps (`:conservation_slots`).
-Paper II's main diagnostic, the height of the O-point of $(B_x, B_z)$ in the
-$y = 0$ plane against time (its Fig. 11), can be read from the $y = 0$ slice.
+
+**Disk.** A snapshot holds about 240 bytes per node: 65 MB at `LK_REF = 1`,
+0.85 GB at 2 and 6.7 GB at 3, so the default 33 snapshots (every $5t_0$)
+take 28 GB at `LK_REF = 2`. Paper II's rise speed (Fig. 12) and Fig. 9
+($t = 122.5t_0$) need a denser cadence late in the run, for example
+
+```julia
+:diagnostics_at_times => vcat(0.0:5.0:100.0, 101.0:1.0:165.0, [122.5]),
+```
+
+(any list of times works; 87 snapshots, 74 GB at `LK_REF = 2`).
+
+## Figures
+
+`tools/plot_leake2014.py` draws Paper II's figures from the output
+(`numpy` and `matplotlib`; the 3D field-line figures also need
+`pip install pyvista`, which renders off-screen, so it also runs on a cluster
+node). `RUN` is an output directory `output/MHD/fluxEmergenceLeake2014/output-<date>`;
+a restarted run is `DIR1,DIR2`. Every command takes `--outdir` (default
+`figs_leake2014`), `--times` (nearest snapshots) and `-h`.
+
+```bash
+T=tools/plot_leake2014.py
+python3 $T ic MD=$MD                                              # Fig. 1(a), with the nodal values of MD at t = 0
+python3 $T render $MD --preset ic        --times 0                # Fig. 1(b)
+python3 $T render $MD --preset emergence --times 5,40,60          # Fig. 2(a-c)
+python3 $T render $MD --preset emergence --times 5,40,60 --view top   # Fig. 2(d-f)
+python3 $T render $MD --preset arcade    --times 100,110,120      # Fig. 3
+python3 $T render $SD --preset dipoles   --times 100              # Fig. 4 (and $MD, $WD)
+python3 $T render $MD --preset rotation  --times 70,85,100        # Fig. 5(a-c)
+python3 $T slice  $MD --plane z=0 --var Bz --clim -0.2,0.2 --cmap jet --vectors \
+                      --xlim 0,30 --ylim -20,20 --times 70,85,100 # Fig. 5(d-f): zoom on the positive polarity
+python3 $T render $MD --preset fluxrope  --times 100,110,120      # Fig. 6
+python3 $T slice  $MD --plane y=0 --var jy --fieldlines 1.5 --nulls --line-color k \
+                      --xlim -60,60 --zlim -10,80 --times 100,110,120   # the (Bx, Bz) lines of Figs. 6-7, O/X-points
+python3 $T render $MD --preset current   --times 100,110,120      # Fig. 7(a-c)
+python3 $T render $MD --preset current   --times 100,110,120 --view top --bz-cmap gray  # Fig. 7(d-f)
+python3 $T slice  $MD --plane y=0 --var j --cmap gist_heat --clim 0,0.01 \
+                      --xlim -40,40 --zlim 15,85 --times 140,150,160    # Fig. 8(a-c)
+python3 $T line   $MD --var w --zlim 15,45 --times 140,150,160    # Fig. 8(d-f)
+python3 $T render $MD --preset eruption  --times 110,120,130,140,150,160  # Fig. 10
+python3 $T height SD=$SD MD=$MD WD=$WD ND=$ND                     # Figs. 11 and 12 (+ one CSV per run)
+python3 $T height MD=$MD MD2=$MD2 MD3=$MD3 MD4=$MD4 --mono        # Fig. 13
+python3 $T axflux SD=$SD MD=$MD WD=$WD                            # Fig. 14(b) (+ CSVs)
+```
+
+How the quantities are computed:
+
+- **Current density.** $\mathbf j = \nabla\times\mathbf B$ in $j_0 = B_0/(\mu_0L_0)$,
+  second-order differences on the node lattice (the output is in the papers'
+  units; `LK.geo` makes the nodes a tensor-product lattice, which the script
+  rebuilds from the rank pieces).
+- **O-point** (Figs. 6, 10, 11). The nulls of $(B_x, B_z)$ in $y = 0$ are found
+  cell by cell (bilinear), classified by the sign of the Jacobian determinant
+  (O-point $> 0$, X-point $< 0$); O–X pairs closer than `--pair-dist`
+  ($3L_0$) are grid noise and dropped; the flux-rope axis is the highest
+  O-point with $|x| \le$ `--xwin` (30) and $z \le 180$, as in Paper II
+  ("the higher one is used"). The position is accurate to the local node
+  spacing (at $t = 0$ it sits at $z = -11.6$ on the $16^3$ mesh, $-12$
+  exactly). `height` writes every time, height and the O/X counts to a CSV:
+  check the counts, and the `slice --nulls` plot, where the curve jumps.
+- **Rise speed** (Fig. 12): $\partial z/\partial t$ of the height by centred
+  differences, in `--speed-range` (120–165); `--smooth N` averages over N
+  snapshots first.
+- **Axial flux** (Fig. 14b): $\int\!\!\int_{z > z_h} B_y\,dx\,dz \,/
+  \int\!\!\int B_y\,dx\,dz$ in $y = 0$ (trapezoids), for `--heights` 0 and 10.
+- **3D figures.** Field lines are traced (VTK) from the papers' seeds: the
+  bottom boundary for the gray dipole lines, circles around the tube axis on
+  the side boundaries $y = \pm127.6$ (radii 0.5, 1, 2 in Fig. 4), the axis
+  itself (black/purple), the O-point in $y = 0$ (orange) and a disk of radius
+  10 around it (blue, Fig. 10). The $B_z$ plane at $z = 0$ uses the papers'
+  rainbow and range (±0.5 Fig. 2, ±0.2 Figs. 5–7 and 10, ±7.5 G in Fig. 1b);
+  `--box`, `--azimuth`, `--elevation`, `--zoom`, `--dipole-seeds`,
+  `--tube-radii`, `--bz-clim` override a preset. Paper II's seed points and
+  camera are not published, so the presets match its figures by eye. Fig. 9
+  (hand-picked seeds) has no preset.
 
 ## Verification here
 
@@ -254,11 +334,11 @@ Short runs on 4 threads; the full runs are for a cluster.
   values.
 - **Background at rest** (`:lk_tube => false`, `LK_REF = 1`): with
   `:lwell_balanced` every field at $t = 0.1t_0$ equals the initial one to the
-  last bit, and no floor fires. Without it, see Deviations, item 5.
+  last bit, and no floor fires. Without it, see Deviations, item 6.
 - **Full problem** (MD, `LK_REF = 1`): runs to $t = 0.4t_0$ with no NaN. The
   $16^3$ mesh does not resolve the tube (12.5-wide elements for $R = 2.5$),
   so this is a test of the pipeline, not of the physics. The GLM transient of
-  item 7 at $t = 0.2t_0$:
+  item 8 at $t = 0.2t_0$:
 
   | $\alpha_p$ | max $\lvert\mathbf v\rvert$ (at $z \approx 19$) | max $p/p(t=0)$ | max $\lvert\psi\rvert$ at $z = 12$–$19$ |
   |---|---|---|---|
