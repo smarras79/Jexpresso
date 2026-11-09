@@ -72,7 +72,8 @@ function atmos_to_rad_longwave(atmos_data, npoin)
     # In clouds, absorption dominates over scattering at 10 μm.
     # Single-scatter albedo ω₀ ≈ 0.02–0.08 for liquid clouds in thermal IR.
     ω₀_clear = 0.0    # clear-sky: no scattering
-    ω₀_cloud = 0.05   # in-cloud: small but non-zero
+    #ω₀_cloud = 0.05   # in-cloud: small but non-zero
+    ω₀_cloud = 0.2   # in-cloud: small but non-zero
 
     # ── Reference pressure for collision-broadening scaling ───────────────
     P_ref = 101325.0   # Pa

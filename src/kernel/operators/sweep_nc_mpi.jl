@@ -1,6 +1,10 @@
 const GS_MODE = Ref(:cached)            # :reference | :cached | :cached_upwind
 const USE_GS_INPLACE = Ref(true)
 const USE_GS_GC_OFF = Ref(true)
+const USE_GS_SKIP = Ref(true)
+const GS_SCC_DIAG = Ref(false)
+const USE_GS_CYCLIC = Ref(true)
+
 struct GSStatic
     F::Any                              # LU factors, or nothing when the matrix was triangular
     A::Any                              # the matrix, kept only when F === nothing
@@ -12,10 +16,383 @@ end
 gs_static_bytes(ngl) = 8 * (ngl^6 + 2*ngl^3 + 6*ngl^2)
 gs_solve(st::GSStatic, rhs) = st.F === nothing ? st.A \ rhs : st.F \ rhs
 
+struct GSXRecorder <: AbstractDict{Tuple{TInt,Int,Int},Float64}
+    t::Any
+    seen::Set{Tuple{TInt,Int}}
+end
+
+Base.get(r::GSXRecorder, k::Tuple{TInt,Int,Int}, default) = (push!(r.seen, (TInt(k[1]), Int(k[2]))); get(r.t, k, default))
+Base.getindex(r::GSXRecorder, k::Tuple{TInt,Int,Int}) = (push!(r.seen, (TInt(k[1]), Int(k[2]))); r.t[k])
+Base.haskey(r::GSXRecorder, k::Tuple{TInt,Int,Int}) = haskey(r.t, k)
+Base.length(r::GSXRecorder) = length(r.t)
+Base.iterate(r::GSXRecorder, s...) = iterate(r.t, s...)
+
+struct GSXLocalRecorder <: AbstractDict{Tuple{Int,Int},Vector{Float64}}
+    d::Dict{Tuple{Int,Int},Vector{Float64}}
+    seen::Set{Tuple{Int,Int}}
+end
+
+Base.getindex(r::GSXLocalRecorder, k::Tuple{Int,Int}) = (push!(r.seen, k); r.d[k])
+Base.get(r::GSXLocalRecorder, k::Tuple{Int,Int}, default) = (push!(r.seen, k); get(r.d, k, default))
+Base.haskey(r::GSXLocalRecorder, k::Tuple{Int,Int}) = haskey(r.d, k)
+Base.setindex!(r::GSXLocalRecorder, v, k::Tuple{Int,Int}) = (r.d[k] = v)
+Base.length(r::GSXLocalRecorder) = length(r.d)
+Base.iterate(r::GSXLocalRecorder, s...) = iterate(r.d, s...)
+
+const USE_GS_CYCLE_CACHE = Ref(true)
+
+struct GSCycleCache
+    local_members::Vector{Vector{Tuple{Int,Int}}}   # per cyclic component: my (iel,d) members
+    sizes::Vector{Int}                              # global member count
+    anc::Vector{Vector{Int}}                        # cyclic components it depends on
+end
+const GS_CYCLE_CACHE = IdDict{Any,GSCycleCache}()
+
+const USE_ASYNC_SWEEP = Ref(false)
+const ASYNC_CHUNK = Ref(96)
+const ASYNC_INTERVAL = Ref(0.02)
+const ASYNC_TAG = 5
+
+struct AsyncLayout
+    pos::Vector{Int32}      # position of flat entry m inside its peer's buffer
+    peer::Vector{Int32}     # destination rank (0-based) of flat entry m
+    roff::Vector{Int}       # offset of source s's block in combined_recv_data
+end
+const ASYNC_LAYOUTS = IdDict{Any,AsyncLayout}()
+const AUTO_BUDGET_FN = Ref{Any}(nothing)      # set by run_unified_case_solve; consumed once by the first sweep
+
+function consume_auto_budget!(cache)
+    f = AUTO_BUDGET_FN[]
+    f === nothing && return nothing
+    AUTO_BUDGET_FN[] = nothing
+    cache.budget_bytes = f() * 1e6                # collective: every rank reaches this at the same sweep
+    return nothing
+end
+
+function async_layout!(exch)
+    get!(ASYNC_LAYOUTS, exch.val_cache) do
+        c = exch.val_cache; np = c.size; n = exch.n_flat
+        pos = Vector{Int32}(undef, n); peer = Vector{Int32}(undef, n); cnt = zeros(Int32, np)
+        for m in 1:n
+            t = c.send_targets[m]; cnt[t+1] += 1; pos[m] = cnt[t+1]; peer[m] = Int32(t)
+        end
+        roff = zeros(Int, np); for s in 2:np; roff[s] = roff[s-1] + c.recv_sizes[s-1]; end
+        AsyncLayout(pos, peer, roff)
+    end
+end
+
+# incremental when the sweep packs incrementally, otherwise a full repack
+function gs_exchange_active!(exch, x_dg, active, ngl)
+    USE_INCREMENTAL_PACK[] ? exchange_ncf_gid_table_incremental!(exch, x_dg, active, ngl) : gs_full_exchange!(exch, x_dg)
+end
 
 function gs_solve!(st::GSStatic, rhs)            # returns the solution; may reuse rhs
     st.F === nothing && return st.A \ rhs
     ldiv!(st.F, rhs); return rhs
+end
+
+
+function tarjan_scc(succ::Vector{Vector{Int32}})
+    n = length(succ); idx = zeros(Int32, n); low = zeros(Int32, n); onstk = falses(n)
+    comp = zeros(Int32, n); stk = Int32[]; counter = Int32(0); ncomp = Int32(0)
+    work = Tuple{Int32,Int32}[]
+    for r in 1:n
+        idx[r] != 0 && continue
+        push!(work, (Int32(r), Int32(1)))
+        while !isempty(work)
+            v, i = work[end]
+            if i == 1 && idx[v] == 0
+                counter += 1; idx[v] = counter; low[v] = counter; push!(stk, v); onstk[v] = true
+            end
+            if i <= length(succ[v])
+                w = succ[v][i]; work[end] = (v, i + Int32(1))
+                if idx[w] == 0
+                    push!(work, (w, Int32(1)))
+                elseif onstk[w]
+                    low[v] = min(low[v], idx[w])
+                end
+            else
+                if low[v] == idx[v]
+                    ncomp += 1
+                    while true
+                        w = pop!(stk); onstk[w] = false; comp[w] = ncomp
+                        w == v && break
+                    end
+                end
+                pop!(work)
+                if !isempty(work)
+                    u = work[end][1]; low[u] = min(low[u], low[v])
+                end
+            end
+        end
+    end
+    return comp, Int(ncomp)
+end
+
+function gs_scc_report(ldeps, rdeps, my_off::Int, nc::Int, n_tot::Int, comm)      # collective
+    flat = Int[]
+    for c in 1:nc
+        ds = vcat(Int[my_off + Int(s) for s in ldeps[c]], Int[Int(r) for r in rdeps[c]])
+        push!(flat, my_off + c); push!(flat, length(ds)); append!(flat, ds)
+    end
+    my_sizes = zeros(Int, MPI.Comm_size(comm)); my_sizes[MPI.Comm_rank(comm)+1] = length(flat)
+    MPI.Allreduce!(my_sizes, +, comm)
+    cnts = MPI.Allgather(Int[length(flat)], comm)
+    allf = Vector{Int}(undef, sum(cnts))
+    MPI.Allgatherv!(flat, MPI.VBuffer(allf, Cint.(cnts)), comm)
+    MPI.Comm_rank(comm) == 0 || return String[]
+    succ = [Int32[] for _ in 1:n_tot]; n_edges = 0; n_self = 0; p = 1
+    while p <= length(allf)
+        g = allf[p]; nd = allf[p+1]
+        for q in (p+2):(p+1+nd)
+            s = allf[q]; push!(succ[s], Int32(g)); n_edges += 1; s == g && (n_self += 1)
+        end
+        p += 2 + nd
+    end
+    comp, ncomp = tarjan_scc(succ)
+    sizes = zeros(Int, ncomp); for v in 1:n_tot; sizes[comp[v]] += 1; end
+    in_cycles = sum(s for s in sizes if s > 1; init=0)
+    lev = zeros(Int, ncomp)
+    for v in sortperm(comp; rev=true)           # sources first (Tarjan numbers sinks first)
+        a = comp[v]
+        for w in succ[v]; b = comp[w]; b != a && (lev[b] = max(lev[b], lev[a] + 1)); end
+    end
+    return String["GS dependency graph: $n_tot candidates, $n_edges edges ($n_self self-references), $ncomp components; " *
+        "largest component $(maximum(sizes)), $(count(>(1), sizes)) components with more than one member holding $in_cycles candidates " *
+        "($(round(100*in_cycles/max(n_tot,1); digits=1))%); longest chain of components $(maximum(lev)+1)"]
+end
+
+function gs_full_exchange!(exch, x_dg)
+    send = exch.send_buf
+    fill!(send, NaN)
+    for p in 1:exch.n_pairs
+        v = get(x_dg, (exch.pair_iel[p], exch.pair_d[p]), nothing)
+        v === nothing && continue
+        for e in exch.pair_ptr[p]:(exch.pair_ptr[p+1]-1)
+            send[exch.entry_slot[e]] = v[exch.entry_lidx[e]]
+        end
+    end
+    send_and_receive!(exch.val_cache, send)
+    return exch.table
+end
+
+# Concatenate Int vectors from all ranks. Use the Allgatherv form that already works in your gs_scc_report.
+function gs_gather_ints(loc::Vector{Int}, comm)
+    cnts = MPI.Allgather(Int[length(loc)], comm)
+    all = Vector{Int}(undef, sum(cnts))
+    MPI.Allgatherv!(loc, MPI.VBuffer(all, Cint.(cnts)), comm)
+    return all, cnts
+end
+
+function resolve_stall_cycles_gs!(mesh, metrics, ψ, dψ, ω,
+        neighbor_elem, face_correspondence, periodic_face_correspondence,
+        neighbor_rank, neighbor_kind, neighbor_gel, neighbor_gel_group, neighbor_is_periodic,
+        same_rank_kind, same_rank_partner, same_rank_is_periodic,
+        ncf_as_child, ncf_L1L2, ncf_as_parent, remote_gid_coords,
+        angular_deps, angular_deps_cr, remote_angular_mesh, gid_exch, periodic_gid_received,
+        x_dg, solved, n_dirs, κ, bc_fn_all, comm;
+        extra_source_all=nothing, I_cg_all_prev=nothing,
+        max_gs_iter::Int=100, gs_tol::Float64=1e-9, prof=nothing)
+    rank = MPI.Comm_rank(comm); ngl = mesh.ngl
+    gs_gc_prev = USE_GS_GC_OFF[] ? GC.enable(false) : true
+    t_start = time_ns()
+    cand = Tuple{Int,Int}[]
+    for iel = 1:mesh.nelem, d = 1:n_dirs[iel]
+        solved[iel][d] || push!(cand, (iel,d))
+    end
+    nc = length(cand)
+    active = Tuple{Int,Int}[]; path = :graph; t_graph = 0.0
+    n_tot = 0; ncomp = 0; n_sel = 0; n_sel_comp = 0; largest = 0; fallback = false
+
+    # ---------- fast path: cached cyclic components ----------
+    cc = USE_GS_CYCLE_CACHE[] ? get(GS_CYCLE_CACHE, angular_deps, nothing) : nothing
+    if cc !== nothing
+        t_g = time_ns(); nco = length(cc.sizes)
+        v = Int[count(k -> solved[k[1]][k[2]], cc.local_members[c]) for c in 1:nco]
+        tot = MPI.Allreduce(v, +, comm)                         # identical on every rank
+        consistent = all(c -> tot[c] == 0 || tot[c] == cc.sizes[c], 1:nco)
+        uns = [tot[c] == 0 for c in 1:nco]
+        ready = [uns[c] && !any(a -> uns[a], cc.anc[c]) for c in 1:nco]
+        if consistent && any(ready)
+            for c in 1:nco; ready[c] && append!(active, cc.local_members[c]); end
+            path = :cache; n_sel_comp = count(ready)
+            n_sel = sum(cc.sizes[c] for c in 1:nco if ready[c]); largest = maximum(cc.sizes[c] for c in 1:nco if ready[c])
+        else
+            delete!(GS_CYCLE_CACHE, angular_deps); path = :graph_fallback
+        end
+        t_graph = (time_ns() - t_g) * 1e-9
+    end
+
+    # ---------- slow path: build the dependency graph of the unsolved pairs ----------
+    if path != :cache
+        t_g = time_ns()
+        counts = MPI.Allgather(Int[nc], comm)
+        offs = vcat(0, cumsum(counts)); n_tot = offs[end]; my_off = offs[rank+1]
+        flat = Vector{Int}(undef, 2*nc)
+        for (c,(iel,d)) in enumerate(cand); flat[2c-1] = Int(mesh.el2gel[iel]); flat[2c] = d; end
+        allk, _ = gs_gather_ints(flat, comm)
+        memprobe("GS graph: after gathering keys", comm)
+	gindex = Dict{Tuple{TInt,Int},Int}(); for j in 1:n_tot; gindex[(TInt(allk[2j-1]), allk[2j])] = j; end
+        local_index = Dict{Tuple{Int,Int},Int}(); for (c,k) in enumerate(cand); local_index[k] = c; end
+        for k in cand; x_dg[k] = zeros(ngl^3); end
+        is_solved_gs = (jel,dj) -> haskey(x_dg, (jel,dj))
+        gid_received = gs_full_exchange!(gid_exch, x_dg)
+        xrec = GSXLocalRecorder(x_dg, Set{Tuple{Int,Int}}())
+        grec = GSXRecorder(gid_received, Set{Tuple{TInt,Int}}())
+        is_in = Vector{Bool}(undef,6); is_act = Vector{Bool}(undef,6)
+        deps_flat = Int[]
+        for (c,(iel,d)) in enumerate(cand)
+            empty!(xrec.seen); empty!(grec.seen)
+            em = mesh.extra_mesh[iel]; θ = em.extra_coords[1,d]; ϕ = em.extra_coords[2,d]
+            Ωx = sin(θ)*cos(ϕ); Ωy = sin(θ)*sin(ϕ); Ωz = cos(θ)
+            classify_element_faces!(is_in, is_act, iel, Ωx, Ωy, Ωz, ngl,
+                metrics.dξdx,metrics.dξdy,metrics.dξdz, metrics.dηdx,metrics.dηdy,metrics.dηdz, metrics.dζdx,metrics.dζdy,metrics.dζdz)
+            for fid = 1:6
+                (is_in[fid] && is_act[fid]) || continue
+                avail, clo = build_face_upwind(mesh, metrics, iel, fid, d, ngl,
+                    neighbor_elem, face_correspondence, ncf_as_child, ncf_L1L2, ncf_as_parent,
+                    neighbor_rank, neighbor_kind, neighbor_gel, neighbor_gel_group,
+                    neighbor_is_periodic, same_rank_kind, same_rank_partner, same_rank_is_periodic,
+                    periodic_face_correspondence, angular_deps, angular_deps_cr, remote_angular_mesh,
+                    remote_gid_coords, grec, periodic_gid_received,
+                    is_solved_gs, xrec, I_cg_all_prev, bc_fn_all)
+                avail || continue
+                ir, jr, kr = face_ip_range(fid, ngl)
+                for k in kr, j in jr, i in ir; clo(i,j,k); end
+            end
+            deps = Int[]
+            for k in xrec.seen
+                k == (iel,d) && continue
+                j = get(local_index, k, 0); j != 0 && push!(deps, my_off + j)
+            end
+            for k in grec.seen
+                j = get(gindex, k, 0); j != 0 && push!(deps, j)
+            end
+            push!(deps_flat, my_off + c); push!(deps_flat, length(deps)); append!(deps_flat, deps)
+        end
+        allf, _ = gs_gather_ints(deps_flat, comm)
+        memprobe("GS graph: after gathering edges", comm)
+	succ = [Int32[] for _ in 1:n_tot]
+        p = 1
+        while p <= length(allf)
+            g = allf[p]; nd = allf[p+1]
+            for q in (p+2):(p+1+nd); push!(succ[allf[q]], Int32(g)); end
+            p += 2 + nd
+        end
+        comp, ncomp = tarjan_scc(succ)
+        memprobe("GS graph: after tarjan", comm)
+	csize = zeros(Int, ncomp); for v in 1:n_tot; csize[comp[v]] += 1; end
+        cyc = [csize[c] > 1 for c in 1:ncomp]; ext = falses(ncomp)
+        for v in 1:n_tot, w in succ[v]
+            comp[v] == comp[w] ? (v == Int(w) && (cyc[comp[v]] = true)) : (ext[comp[w]] = true)
+        end
+        sel = [cyc[c] && !ext[c] for c in 1:ncomp]
+        n_sel = sum(csize[c] for c in 1:ncomp if sel[c]; init=0)
+        n_sel_comp = count(sel); largest = maximum((csize[c] for c in 1:ncomp if sel[c]); init=0)
+        fallback = n_sel == 0
+
+        # ---- build the cache from this graph (all cyclic components, their cyclic ancestors) ----
+        if USE_GS_CYCLE_CACHE[] && !haskey(GS_CYCLE_CACHE, angular_deps)
+            cyc_ids = [c for c in 1:ncomp if cyc[c]]; nco = length(cyc_ids)
+            cidx = Dict{Int,Int}(c => i for (i,c) in enumerate(cyc_ids))
+            lm = [Tuple{Int,Int}[] for _ in 1:nco]; sz = zeros(Int, nco)
+            for v in 1:n_tot
+                i = get(cidx, Int(comp[v]), 0); i == 0 && continue
+                sz[i] += 1
+                (my_off < v <= my_off + nc) && push!(lm[i], cand[v - my_off])
+            end
+            anc_sets = [Set{Int}() for _ in 1:nco]
+            for (i,c) in enumerate(cyc_ids)                      # everything reachable from component i
+                seen = falses(n_tot); stack = Int32[v for v in 1:n_tot if comp[v] == c]
+                for v in stack; seen[v] = true; end
+                while !isempty(stack)
+                    v = pop!(stack)
+                    for w in succ[v]
+                        seen[w] && continue
+                        seen[w] = true; push!(stack, w)
+                        j = get(cidx, Int(comp[w]), 0)
+                        j != 0 && j != i && push!(anc_sets[j], i)
+                    end
+                end
+            end
+            GS_CYCLE_CACHE[angular_deps] = GSCycleCache(lm, sz, [sort!(collect(s)) for s in anc_sets])
+        end
+
+        for (c,k) in enumerate(cand)
+            if fallback || sel[comp[my_off + c]]; push!(active, k); else delete!(x_dg, k); end
+        end
+        t_graph = (time_ns() - t_g) * 1e-9
+        memprobe("after GS graph build", comm)
+    end
+
+    # ---------- common: order, start from zeros, GS on the selected pairs ----------
+    cent = Dict{Int,NTuple{3,Float64}}()
+    for (iel,_) in active
+        haskey(cent, iel) && continue
+        cx = 0.0; cy = 0.0; cz = 0.0
+        for k=1:ngl, j=1:ngl, i=1:ngl
+            ip = mesh.connijk[iel,i,j,k]; cx += mesh.x[ip]; cy += mesh.y[ip]; cz += mesh.z[ip]
+        end
+        cent[iel] = (cx/ngl^3, cy/ngl^3, cz/ngl^3)
+    end
+    upkey(c) = (em = mesh.extra_mesh[c[1]]; θ = em.extra_coords[1,c[2]]; ϕ = em.extra_coords[2,c[2]]; q = cent[c[1]];
+                q[1]*sin(θ)*cos(ϕ) + q[2]*sin(θ)*sin(ϕ) + q[3]*cos(θ))
+    sort!(active; by=upkey, alg=Base.Sort.MergeSort)
+    for k in active; x_dg[k] = zeros(ngl^3); end
+    is_solved_gs = (jel,dj) -> haskey(x_dg, (jel,dj))
+    gid_received = path == :cache ? gs_exchange_active!(gid_exch, x_dg, active, ngl) : gs_full_exchange!(gid_exch, x_dg)
+
+    statics = Dict{Tuple{Int,Int},GSStatic}()
+    deltas = Float64[]; iters = 0; n_unavail = 0
+    for gs_iter = 1:max_gs_iter
+        iters = gs_iter; mdl = 0.0
+        for (iel,d) in active
+            st = get!(statics, (iel,d)) do
+                gs_build_static(mesh, metrics, ψ, dψ, ω, κ, iel, d, ngl, extra_source_all)
+            end
+            RHS = copy(st.rhs_src)
+            for (q, fid) in enumerate(st.faces)
+                avail, clo = build_face_upwind(mesh, metrics, iel, fid, d, ngl,
+                    neighbor_elem, face_correspondence, ncf_as_child, ncf_L1L2, ncf_as_parent,
+                    neighbor_rank, neighbor_kind, neighbor_gel, neighbor_gel_group,
+                    neighbor_is_periodic, same_rank_kind, same_rank_partner, same_rank_is_periodic,
+                    periodic_face_correspondence, angular_deps, angular_deps_cr, remote_angular_mesh,
+                    remote_gid_coords, gid_received, periodic_gid_received,
+                    is_solved_gs, x_dg, I_cg_all_prev, bc_fn_all)
+                if !avail; n_unavail += 1; continue; end
+                w = st.weights[q]
+                irange, jrange, krange = face_ip_range(fid, ngl)
+                idx = 0
+                for k in krange, j in jrange, i in irange
+                    idx += 1
+                    v = clo(i,j,k); isnan(v) && (v = 0.0)
+                    RHS[lidx(i,j,k,ngl)] += w[idx] * v
+                end
+            end
+            x_new = gs_solve!(st, RHS)
+            old = x_dg[(iel,d)]; dc = 0.0
+            for q in eachindex(x_new); dc = max(dc, abs(x_new[q] - old[q])); end
+            mdl = max(mdl, dc)
+            x_dg[(iel,d)] = x_new
+        end
+        gid_received = gs_exchange_active!(gid_exch, x_dg, active, ngl)
+        delta_g = MPI.Allreduce(mdl, MPI.MAX, comm); push!(deltas, delta_g)
+        delta_g < gs_tol && break
+        gs_iter == max_gs_iter && rank == 0 && @warn "GS cyclic did not converge (max_delta=$delta_g)"
+    end
+
+    for (iel,d) in active; solved[iel][d] = true; end
+    unav = MPI.Allreduce(n_unavail, +, comm)
+    na = MPI.Allreduce(length(active), +, comm); nmax = MPI.Allreduce(length(active), MPI.MAX, comm)
+    tg = MPI.Allreduce(t_graph, MPI.MAX, comm); secs = MPI.Allreduce((time_ns() - t_start) * 1e-9, MPI.MAX, comm)
+    prof === nothing || padd!(prof, :gs_graph, t_graph)
+    rank == 0 && println("GS cyclic[$(path)]: unsolved $(path == :cache ? -1 : n_tot), $(n_sel_comp) source cycles holding $n_sel pairs " *
+        "(largest $largest; fallback $fallback), active $na (max per rank $nmax), iterations $iters, unavailable inputs $unav, " *
+        "selection $(round(tg; digits=3)) s of $(round(secs; digits=2)) s total, deltas: " * join([@sprintf("%.2e", x) for x in deltas], " "))
+    if USE_GS_GC_OFF[]
+        GC.enable(gs_gc_prev); gs_gc_prev && GC.gc(false)
+    end
+    return nothing
 end
 
 """
@@ -711,31 +1088,6 @@ function build_face_upwind(mesh, metrics, iel::Int, fid::Int, d::Int, ngl::Int,
     elseif haskey(neighbor_rank, (iel,fid))
         kind = neighbor_kind[(iel,fid)]
 
-        #=if kind == :i_am_fine
-            remote_gel_f = neighbor_gel_group[(iel,fid)][1]
-            haskey(remote_gid_coords, remote_gel_f) || return false, nothing
-            child_vals = build_dg_ncf_parent_to_child_remote_by_coords(mesh, iel, fid, d, remote_gel_f,
-                remote_gid_coords, gid_received, ngl)
-            any(isnan, child_vals) && return false, nothing
-            return true, (i,j,k) -> child_vals[face_flat_index(fid,ngl,i,j,k)]
-
-        elseif kind == :i_am_coarse
-            remote_gels_c = neighbor_gel_group[(iel,fid)]
-            all(g -> haskey(remote_gid_coords, g), remote_gels_c) || return false, nothing
-            #=parent_grid = build_dg_ncf_child_to_parent_remote_by_coords(mesh, iel, fid, d, remote_gels_c,
-                remote_gid_coords, gid_received, ngl)=#
-	    try
-        	parent_grid = build_dg_ncf_child_to_parent_remote_by_coords(mesh, iel, fid, d, remote_gels_c,
-            	remote_gid_coords, gid_received, ngl)
-    	    catch e
-        	debug_dump_on_plane_coords(mesh, iel, fid, remote_gels_c, remote_gid_coords, ngl)
-        	rethrow(e)
-    	    end
-            any(isnan, parent_grid) && return false, nothing
-            return true, (i,j,k) -> begin
-                ni=face_flat_index(fid,ngl,i,j,k); p1=((ni-1)%ngl)+1; p2=((ni-1)÷ngl)+1
-                parent_grid[p1,p2]
-            end=#
 	if kind == :i_am_fine
     	    remote_gel_f = neighbor_gel_group[(iel,fid)][1]
     	    haskey(remote_gid_coords, remote_gel_f) || return false, nothing
@@ -973,11 +1325,28 @@ function run_dg_sweep_multirank_unified!(mesh, metrics, ψ, dψ, ω,
         prof::Union{Nothing,SweepProfile}=nothing, local_passes::Bool=false, measure_skew::Bool=false,
 	gc_mode::Symbol=:auto, gc_every::Int=0,
         max_rounds::Int=500, max_gs_iter::Int=100, gs_tol::Float64=1e-9, round_cap::Int=0)
+    
+    if USE_ASYNC_SWEEP[]
+    	return run_dg_sweep_async!(mesh, metrics, ψ, dψ, ω,
+        	neighbor_elem, neighbor_fid, face_correspondence, periodic_face_correspondence,
+        	neighbor_rank, neighbor_kind, neighbor_gel, neighbor_gel_group, neighbor_is_periodic,
+        	same_rank_kind, same_rank_partner, same_rank_is_periodic,
+        	ncf_as_child, ncf_L1L2, ncf_as_parent, remote_gid_coords,
+        	angular_deps, angular_deps_cr, remote_angular_mesh, gid_exch, periodic_gid_exch,
+        	κ, bc_fn_all, comm;
+		async_epoch=ASYNC_EPOCH[],
+        	extra_source_all=extra_source_all, I_cg_all_prev=I_cg_all_prev, elem_cache=elem_cache,
+        	prof=prof, local_passes=local_passes, measure_skew=measure_skew,
+        	gc_mode=gc_mode, gc_every=gc_every, round_cap=round_cap,
+        	max_rounds=max_rounds, max_gs_iter=max_gs_iter, gs_tol=gs_tol,
+        	async_chunk=ASYNC_CHUNK[], async_interval=ASYNC_INTERVAL[])
+    end
     t_sweep = gtic(prof)
     gc_t0 = Base.gc_time_ns(); gc_b0 = Base.gc_bytes()
     rank = MPI.Comm_rank(comm); ngl = mesh.ngl
     n_dirs = [mesh.extra_mesh[iel].extra_npoin for iel = 1:mesh.nelem]
     cache = elem_cache === nothing ? make_elem_cache(mesh, metrics, n_dirs, ngl; budget_mb=0.0) : elem_cache
+    consume_auto_budget!(cache)
     solved = [falses(n_dirs[iel]) for iel = 1:mesh.nelem]
     x_dg = Dict{Tuple{Int,Int}, Vector{Float64}}()
     total_pairs = sum(n_dirs)
@@ -1296,17 +1665,26 @@ function resolve_stall_distributed_gauss_seidel_unified!(mesh, metrics, ψ, dψ,
             neighbor_elem, face_correspondence, periodic_face_correspondence,
             neighbor_rank, neighbor_kind, neighbor_gel, neighbor_gel_group, neighbor_is_periodic,
             same_rank_kind, same_rank_partner, same_rank_is_periodic,
-            ncf_as_child, ncf_L1L2, ncf_as_parent,
-            remote_gid_coords,
-            angular_deps, angular_deps_cr, remote_angular_mesh, gid_exch,
-            periodic_gid_received,
+            ncf_as_child, ncf_L1L2, ncf_as_parent, remote_gid_coords,
+            angular_deps, angular_deps_cr, remote_angular_mesh, gid_exch, periodic_gid_received,
+            x_dg, solved, n_dirs, κ, bc_fn_all, comm;
+            extra_source_all=extra_source_all, I_cg_all_prev=I_cg_all_prev, max_gs_iter=max_gs_iter, gs_tol=gs_tol)
+    end
+    if USE_GS_CYCLIC[]
+    	return resolve_stall_cycles_gs!(mesh, metrics, ψ, dψ, ω,
+            neighbor_elem, face_correspondence, periodic_face_correspondence,
+            neighbor_rank, neighbor_kind, neighbor_gel, neighbor_gel_group, neighbor_is_periodic,
+            same_rank_kind, same_rank_partner, same_rank_is_periodic,
+            ncf_as_child, ncf_L1L2, ncf_as_parent, remote_gid_coords,
+            angular_deps, angular_deps_cr, remote_angular_mesh, gid_exch, periodic_gid_received,
             x_dg, solved, n_dirs, κ, bc_fn_all, comm;
             extra_source_all=extra_source_all, I_cg_all_prev=I_cg_all_prev,
-            max_gs_iter=max_gs_iter, gs_tol=gs_tol)
+    	    max_gs_iter=max_gs_iter, gs_tol=gs_tol, prof=prof)
     end
-    rank = MPI.Comm_rank(comm); ngl = mesh.ngl
+
+    rank = MPI.Comm_rank(comm); np = MPI.Comm_size(comm); ngl = mesh.ngl
     gs_gc_prev = USE_GS_GC_OFF[] ? GC.enable(false) : true
-    t_start = time_ns()
+    t_start = time_ns(); diag = prof !== nothing
 
     candidates = Tuple{Int,Int}[]
     for iel = 1:mesh.nelem, d = 1:n_dirs[iel]
@@ -1324,47 +1702,93 @@ function resolve_stall_distributed_gauss_seidel_unified!(mesh, metrics, ψ, dψ,
         end
         upkey(c) = (em = mesh.extra_mesh[c[1]]; θ = em.extra_coords[1,c[2]]; ϕ = em.extra_coords[2,c[2]]; p = cent[c[1]];
                     p[1]*sin(θ)*cos(ϕ) + p[2]*sin(θ)*sin(ϕ) + p[3]*cos(θ))
-        sort!(candidates; by=upkey, alg=Base.Sort.MergeSort)          # upstream first, stable
+        sort!(candidates; by=upkey, alg=Base.Sort.MergeSort)
     end
-
+    nc = length(candidates)
     for (iel,d) in candidates; x_dg[(iel,d)] = zeros(ngl^3); end
     is_solved_gs = (jel,dj) -> haskey(x_dg, (jel,dj))
-    t0 = gtic(prof)
     gid_received = exchange_ncf_gid_table!(gid_exch, x_dg, ngl)
-    gtoc!(prof, :gs_exchange, t0)
-    statics = Vector{Union{GSStatic,Nothing}}(nothing, length(candidates))
+
+    # ---- global candidate numbering and dependency storage (only when needed) ----
+    skip_on = USE_GS_SKIP[]; scc_on = GS_SCC_DIAG[]; graph_on = skip_on || scc_on
+    local_index = Dict{Tuple{Int,Int},Int32}(); gindex = Dict{Tuple{TInt,Int},Int32}()
+    ldeps = Vector{Vector{Int32}}(); rdeps = Vector{Vector{Int32}}()
+    n_tot = 0; my_off = 0
+    if graph_on
+        for (c,k) in enumerate(candidates); local_index[k] = Int32(c); end
+        counts = MPI.Allgather(Int[nc], comm)
+        offs = vcat(0, cumsum(counts)); n_tot = offs[end]; my_off = offs[rank+1]
+        flat = Vector{Int}(undef, 2*nc)
+        for (c,(iel,d)) in enumerate(candidates); flat[2c-1] = Int(mesh.el2gel[iel]); flat[2c] = d; end
+	allk = MPI.Allgatherv(flat, Cint.(2 .* counts), comm)
+	for j in 1:n_tot; gindex[(TInt(allk[2j-1]), allk[2j])] = Int32(j); end
+        ldeps = [Int32[] for _ in 1:nc]; rdeps = [Int32[] for _ in 1:nc]
+    end
+    computed_iter = zeros(Int32, nc); comp_seq = zeros(Int, nc); lchg_seq = zeros(Int, nc)
+    rchg_iter = zeros(Int32, n_tot); seq = 0
+    mask = zeros(UInt64, cld(max(n_tot, 1), 64))
+    xrec = nothing; grec = nothing
+
+    statics = Vector{Union{GSStatic,Nothing}}(nothing, nc)
     budget = gs_cache_mb * 1e6; bytes_each = gs_static_bytes(ngl); n_cached = 0
-    deltas = Float64[]; t_iter1 = 0.0; iters = 0
-    diag = prof !== nothing
-    np_gs = MPI.Comm_size(comm)
-    cnt_hist = Vector{NTuple{4,Int}}(); tcomp_mean = Float64[]; tcomp_max = Float64[]
-    gc_max_hist = Float64[]
+    deltas = Float64[]; t_iter1 = 0.0; iters = 0; skipped_total = 0
+    cnt_hist = Vector{NTuple{5,Int}}(); tcomp_mean = Float64[]; tcomp_max = Float64[]; gc_max_hist = Float64[]
+    scc_lines = String[]
+
     for gs_iter = 1:max_gs_iter
         t_it = time_ns(); iters = gs_iter
         max_delta_local = 0.0
-        n0 = 0; n1 = 0; n2 = 0; n3 = 0; t_c0 = time_ns()
-	gc_c0 = Base.gc_time_ns()
-	for (c,(iel,d)) in enumerate(candidates)
+        n0 = 0; n1 = 0; n2 = 0; n3 = 0; nskip = 0
+        t_c0 = time_ns(); gc_c0 = Base.gc_time_ns()
+        recording = graph_on && gs_iter == 1
+        if recording
+            xrec = GSXLocalRecorder(x_dg, Set{Tuple{Int,Int}}())
+            grec = GSXRecorder(gid_received, Set{Tuple{TInt,Int}}())
+        end
+        graph_on && fill!(mask, UInt64(0))
+
+        for (c,(iel,d)) in enumerate(candidates)
+            if skip_on && gs_iter > 1
+                need = computed_iter[c] == 0
+                if !need
+                    cj = computed_iter[c]; cs = comp_seq[c]
+                    for s in ldeps[c]; if lchg_seq[s] > cs; need = true; break; end; end
+                    if !need
+                        for r in rdeps[c]; if rchg_iter[r] >= cj; need = true; break; end; end
+                    end
+                end
+                if !need; nskip += 1; continue; end
+            end
+
             st = statics[c]
             if st === nothing
-		t0 = gtic(prof)
+                t0 = gtic(prof)
                 st = gs_build_static(mesh, metrics, ψ, dψ, ω, κ, iel, d, ngl, extra_source_all)
                 gtoc!(prof, :gs_build, t0)
-		if (n_cached + 1) * bytes_each <= budget
+                if (n_cached + 1) * bytes_each <= budget
                     statics[c] = st; n_cached += 1
                 end
             end
             RHS = copy(st.rhs_src)
-            #=t0 = gtic(prof)
-	    for (q, fid) in enumerate(st.faces)
+            if recording; empty!(xrec.seen); empty!(grec.seen); end
+            xa = recording ? xrec : x_dg
+            ga = recording ? grec : gid_received
+
+            t0 = gtic(prof)
+            for (q, fid) in enumerate(st.faces)
+                br = prof === nothing ? :none : face_branch(neighbor_elem, neighbor_rank, neighbor_kind, ncf_as_child,
+                        ncf_as_parent, same_rank_is_periodic, neighbor_is_periodic, angular_deps_cr, iel, fid, d)
+                tu = gtic(prof)
                 avail, clo = build_face_upwind(mesh, metrics, iel, fid, d, ngl,
                     neighbor_elem, face_correspondence, ncf_as_child, ncf_L1L2, ncf_as_parent,
                     neighbor_rank, neighbor_kind, neighbor_gel, neighbor_gel_group,
                     neighbor_is_periodic, same_rank_kind, same_rank_partner, same_rank_is_periodic,
                     periodic_face_correspondence, angular_deps, angular_deps_cr, remote_angular_mesh,
-                    remote_gid_coords, gid_received, periodic_gid_received,
-                    is_solved_gs, x_dg, I_cg_all_prev, bc_fn_all)
-                avail || continue                                       # the original adds weight*0.0 here
+                    remote_gid_coords, ga, periodic_gid_received,
+                    is_solved_gs, xa, I_cg_all_prev, bc_fn_all)
+                prof === nothing || padd!(prof, GS_BRANCH_UP[br], (time_ns() - tu) * 1e-9)
+                avail || continue
+                te = gtic(prof)
                 w = st.weights[q]
                 irange, jrange, krange = face_ip_range(fid, ngl)
                 idx = 0
@@ -1374,96 +1798,96 @@ function resolve_stall_distributed_gauss_seidel_unified!(mesh, metrics, ψ, dψ,
                     isnan(v) && (v = 0.0)
                     RHS[lidx(i,j,k,ngl)] += w[idx] * v
                 end
+                prof === nothing || padd!(prof, GS_BRANCH_EV[br], (time_ns() - te) * 1e-9)
             end
-	    gtoc!(prof, :gs_upwind, t0)=#
-	    t0 = gtic(prof)
-	    for (q, fid) in enumerate(st.faces)
-    		br = prof === nothing ? :none : face_branch(neighbor_elem, neighbor_rank, neighbor_kind, ncf_as_child,
-            		ncf_as_parent, same_rank_is_periodic, neighbor_is_periodic, angular_deps_cr, iel, fid, d)
-    		tu = gtic(prof)
-		avail, clo = build_face_upwind(mesh, metrics, iel, fid, d, ngl,
-                    neighbor_elem, face_correspondence, ncf_as_child, ncf_L1L2, ncf_as_parent,
-                    neighbor_rank, neighbor_kind, neighbor_gel, neighbor_gel_group,
-                    neighbor_is_periodic, same_rank_kind, same_rank_partner, same_rank_is_periodic,
-                    periodic_face_correspondence, angular_deps, angular_deps_cr, remote_angular_mesh,
-                    remote_gid_coords, gid_received, periodic_gid_received,
-                    is_solved_gs, x_dg, I_cg_all_prev, bc_fn_all)    
-    		prof === nothing || padd!(prof, GS_BRANCH_UP[br], (time_ns() - tu) * 1e-9)
-    		avail || continue
-    		te = gtic(prof)
-    		w = st.weights[q]
-    		irange, jrange, krange = face_ip_range(fid, ngl)
-    		idx = 0
-    		for k in krange, j in jrange, i in irange
-        	    idx += 1
-        	    v = clo(i,j,k)
-        	    isnan(v) && (v = 0.0)
-        	    RHS[lidx(i,j,k,ngl)] += w[idx] * v
-    		end
-    		prof === nothing || padd!(prof, GS_BRANCH_EV[br], (time_ns() - te) * 1e-9)
-	    end
-	    gtoc!(prof, :gs_upwind, t0)
-	    t0 = gtic(prof)
-	    x_new = USE_GS_INPLACE[] ? gs_solve!(st, RHS) : gs_solve(st, RHS)
-	    gtoc!(prof, :gs_solve, t0)
-            #max_delta_local = max(max_delta_local, maximum(abs.(x_new .- x_dg[(iel,d)])))
-            #dc = maximum(abs.(x_new .- x_dg[(iel,d)]))
-	    old = x_dg[(iel,d)]; dc = 0.0
-	    for p in eachindex(x_new); dc = max(dc, abs(x_new[p] - old[p])); end
-	    max_delta_local = max(max_delta_local, dc)
-	    if diag
-    	       if dc == 0.0; n0 += 1 elseif dc < 1e-12; n1 += 1 elseif dc < 1e-9; n2 += 1 else n3 += 1 end
-	    end
-	    x_dg[(iel,d)] = x_new
+            gtoc!(prof, :gs_upwind, t0)
+
+            if recording
+                ldeps[c] = Int32[local_index[k] for k in xrec.seen if haskey(local_index, k) && k != (iel,d)]
+                rdeps[c] = Int32[gindex[k] for k in grec.seen if haskey(gindex, k)]
+            end
+
+            t0 = gtic(prof)
+            x_new = USE_GS_INPLACE[] ? gs_solve!(st, RHS) : gs_solve(st, RHS)
+            gtoc!(prof, :gs_solve, t0)
+            old = x_dg[(iel,d)]; dc = 0.0
+            for p in eachindex(x_new); dc = max(dc, abs(x_new[p] - old[p])); end
+            max_delta_local = max(max_delta_local, dc)
+            if diag
+                if dc == 0.0; n0 += 1 elseif dc < 1e-12; n1 += 1 elseif dc < 1e-9; n2 += 1 else n3 += 1 end
+            end
+            x_dg[(iel,d)] = x_new
+            if graph_on
+                seq += 1; comp_seq[c] = seq; computed_iter[c] = Int32(gs_iter)
+                if dc > 0.0
+                    lchg_seq[c] = seq
+                    g = my_off + c - 1
+                    mask[(g >> 6) + 1] |= UInt64(1) << (g & 63)
+                end
+            end
         end
-	t_comp = (time_ns() - t_c0) * 1e-9
-	gc_comp = (Base.gc_time_ns() - gc_c0) * 1e-9
-	t0 = gtic(prof)
+        skipped_total += nskip
+        t_comp = (time_ns() - t_c0) * 1e-9
+        gc_comp = (Base.gc_time_ns() - gc_c0) * 1e-9
+
+        t0 = gtic(prof)
         gid_received = exchange_ncf_gid_table!(gid_exch, x_dg, ngl)
         gtoc!(prof, :gs_exchange, t0)
-	t0 = gtic(prof)
-	delta_g = MPI.Allreduce(max_delta_local, MPI.MAX, comm)
-        if diag
-    	    g = MPI.Allreduce(Float64[n0, n1, n2, n3, t_comp], +, comm)
-    	    tm = MPI.Allreduce(t_comp, MPI.MAX, comm)
-    	    push!(cnt_hist, (Int(g[1]), Int(g[2]), Int(g[3]), Int(g[4])))
-    	    push!(tcomp_mean, g[5]/np_gs); push!(tcomp_max, tm)
-	    push!(gc_max_hist, MPI.Allreduce(gc_comp, MPI.MAX, comm))
-	end
+        t0 = gtic(prof)
+        delta_g = MPI.Allreduce(max_delta_local, MPI.MAX, comm)
         gtoc!(prof, :gs_reduce, t0)
-	push!(deltas, delta_g)
+        if graph_on
+            MPI.Allreduce!(mask, MPI.BOR, comm)                      # which candidates changed, anywhere
+            for w in eachindex(mask)
+                m = mask[w]; m == 0 && continue
+                for b in 0:63
+                    (m >> b) & 1 == 1 && (rchg_iter[(w-1)*64 + b + 1] = Int32(gs_iter))
+                end
+            end
+        end
+        if diag
+            g = MPI.Allreduce(Float64[n0, n1, n2, n3, nskip, t_comp], +, comm)
+            tm = MPI.Allreduce(t_comp, MPI.MAX, comm); gm = MPI.Allreduce(gc_comp, MPI.MAX, comm)
+            push!(cnt_hist, (Int(g[1]), Int(g[2]), Int(g[3]), Int(g[4]), Int(g[5])))
+            push!(tcomp_mean, g[6] / np); push!(tcomp_max, tm); push!(gc_max_hist, gm)
+        end
+        if recording && scc_on
+            scc_lines = gs_scc_report(ldeps, rdeps, my_off, nc, n_tot, comm)
+        end
+        push!(deltas, delta_g)
         gs_iter == 1 && (t_iter1 = (time_ns() - t_it) * 1e-9)
         delta_g < gs_tol && break
         gs_iter == max_gs_iter && rank == 0 && @warn "GS-unified did not converge (max_delta=$delta_g)"
     end
 
-    n_tot = MPI.Allreduce(length(candidates), +, comm); n_max = MPI.Allreduce(length(candidates), MPI.MAX, comm)
+    n_tot_c = MPI.Allreduce(nc, +, comm); n_max = MPI.Allreduce(nc, MPI.MAX, comm)
     n_cached_tot = MPI.Allreduce(n_cached, +, comm)
+    skipped_all = MPI.Allreduce(skipped_total, +, comm)
     secs = MPI.Allreduce((time_ns() - t_start) * 1e-9, MPI.MAX, comm)
     t1 = MPI.Allreduce(t_iter1, MPI.MAX, comm)
     if rank == 0
-    	println("GS[$(GS_MODE[])]: candidates $n_tot (max per rank $n_max), cached $n_cached_tot, iterations $iters, " *
-        	    "first iteration $(round(t1; digits=2)) s of $(round(secs; digits=2)) s total, deltas: " *
-            	    join([@sprintf("%.2e", x) for x in deltas], " "))
+        println("GS[$(GS_MODE[])]: candidates $n_tot_c (max per rank $n_max), cached $n_cached_tot, iterations $iters, " *
+                "skipped $skipped_all of $(n_tot_c * iters) candidate-iterations (skip $(skip_on)), " *
+                "first iteration $(round(t1; digits=2)) s of $(round(secs; digits=2)) s total, deltas: " *
+                join([@sprintf("%.2e", x) for x in deltas], " "))
+        foreach(println, scc_lines)
         if diag
             parts = String[]
             for k in eachindex(cnt_hist)
-            	h = cnt_hist[k]
-            	gcs = k <= length(gc_max_hist) ? round(gc_max_hist[k]; digits=3) : NaN
-            	push!(parts, "it$(k): unchanged $(h[1]) <1e-12 $(h[2]) <1e-9 $(h[3]) >=1e-9 $(h[4]) " *
+                h = cnt_hist[k]
+                push!(parts, "it$(k): skipped $(h[5]) unchanged $(h[1]) <1e-12 $(h[2]) <1e-9 $(h[3]) >=1e-9 $(h[4]) " *
                              "compute mean/max $(round(tcomp_mean[k]; digits=3))/$(round(tcomp_max[k]; digits=3)) s " *
-                             "gc max $(gcs) s")
+                             "gc max $(round(gc_max_hist[k]; digits=3)) s")
             end
             println("GS detail: " * join(parts, " | "))
-    	end
+        end
     end
     if USE_GS_GC_OFF[]
-    	GC.enable(gs_gc_prev)
-    	gs_gc_prev && GC.gc(false)          # one young-generation collection after GS
+        GC.enable(gs_gc_prev)
+        gs_gc_prev && GC.gc(false)
     end
     for (iel,d) in candidates; solved[iel][d] = true; end
 end
-
 
 
 function test_exchange_ncf_gid_values(inputs, nparts, distribute, sem, partitioned_model;
@@ -2053,33 +2477,37 @@ function node_memory_limit_bytes()
     return lim
 end
 
-function auto_cache_budget_mb(setup, ni, comm; krylov_vectors::Int=0, usable_frac::Float64=0.85, min_pairs_per_rank::Int=3000)
+function auto_cache_budget_mb(setup, ni, comm; krylov_vectors::Int=0, min_pairs_per_rank::Int=0,
+                              margin_gb::Float64=3.0)
     rank = MPI.Comm_rank(comm); np = MPI.Comm_size(comm)
     ngl = setup.mesh.ngl; n3 = ngl^3
     pairs = Float64(sum(setup.n_dirs))
     bpp = 8.0*(n3*n3 + n3 + 6*ngl*ngl) + 200.0
     GC.gc()
-    base = Float64(Sys.maxrss())
-    kry = (krylov_vectors + 3) * 8.0 * n3 * pairs
-    all = reshape(gather_all(Float64[base + kry, pairs, node_memory_limit_bytes()], comm), 3, np)   # collective
+    base = max(Float64(Sys.maxrss()), 1e9*Base.gc_live_bytes()/1e9)
+    total_pairs = MPI.Allreduce(pairs, +, comm)
+    kry = krylov_vectors > 0 ? (krylov_vectors + 6) * 8.0 * n3 * pairs : 0.0   # basis + matvec temporaries
+    graph = 200.0 * total_pairs                      # replicated GS graph build (measured ~100-190 B per global pair)
+    reserve = base + kry + graph + margin_gb*1e9
+    all = reshape(gather_all(Float64[reserve, pairs, node_memory_limit_bytes()], comm), 3, np)
     mine = [r for r in 1:np if ni.node_of_rank[r] == ni.node_of_rank[rank+1]]
+    nper = length(mine)
+    usable_frac = nper <= 8 ? 0.85 : (nper <= 20 ? 0.75 : 0.65)
     node_need = sum(all[1,r] for r in mine); node_pairs = sum(all[2,r] for r in mine)
     node_lim = minimum(all[3,r] for r in mine)
     free = max(usable_frac*node_lim - node_need, 0.0)
     budget = min(free * pairs / max(node_pairs, 1.0), pairs*bpp)
-    mean_pairs = MPI.Allreduce(pairs, +, comm) / np
-    skipped = mean_pairs < min_pairs_per_rank
-    skipped && (budget = 0.0)
+    mean_pairs = total_pairs / np
+    mean_pairs < min_pairs_per_rank && (budget = 0.0)
     bmin = MPI.Allreduce(budget, MPI.MIN, comm); bmax = MPI.Allreduce(budget, MPI.MAX, comm)
-    full_max = MPI.Allreduce(pairs*bpp, MPI.MAX, comm)
-    need_max = MPI.Allreduce(node_need, MPI.MAX, comm); lim_min = MPI.Allreduce(node_lim, MPI.MIN, comm)
+    full_max = MPI.Allreduce(pairs*bpp, MPI.MAX, comm); need_max = MPI.Allreduce(node_need, MPI.MAX, comm)
+    proj = MPI.Allreduce(node_need + sum(budget for _ in mine), MPI.MAX, comm)
     lines = String[]
     if rank == 0
-        push!(lines, "auto cache budget: smallest node memory limit $(round(lim_min/1e9; digits=0)) GB, usable fraction $usable_frac, " *
-            "baseline (peak RSS) + Krylov reserve on the fullest node $(round(need_max/1e9; digits=1)) GB; " *
-            "budget per rank min $(round(bmin/1e6; digits=0)) max $(round(bmax/1e6; digits=0)) MB " *
-	    " | mean pairs/rank $(round(Int, mean_pairs)), threshold $min_pairs_per_rank" * (skipped ? ": cache skipped" : "") *
-            "(a full cache needs up to $(round(full_max/1e6; digits=0)) MB on the busiest rank)")
+        push!(lines, "auto cache budget: ranks/node $nper, usable fraction $usable_frac, reserve per fullest node " *
+            "$(round(need_max/1e9; digits=1)) GB (baseline + Krylov $(krylov_vectors>0) + graph $(round(graph/1e9; digits=2)) GB/rank + margin), " *
+            "budget per rank min $(round(bmin/1e6; digits=0)) max $(round(bmax/1e6; digits=0)) MB (full cache up to $(round(full_max/1e6; digits=0)) MB), " *
+            "projected node total $(round(proj/1e9; digits=0)) GB of $(round(node_lim/1e9; digits=0)) GB")
     end
     return budget/1e6, lines
 end

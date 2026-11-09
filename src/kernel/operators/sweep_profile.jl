@@ -1,6 +1,6 @@
 using Printf, Dates
 
-const PROFILE_CODE_TAG = "prof-v18"                                        # bump when the profiling code changes
+const PROFILE_CODE_TAG = "prof-v24"                                        # bump when the profiling code changes
 const PROFILE_SRC_HASH = try string(hash(read(@__FILE__)); base=16) catch; "unavailable" end
 
 Base.@kwdef struct RunConfig
@@ -32,6 +32,15 @@ Base.@kwdef struct RunConfig
     gs_inplace::Bool = true
     gs_gc_off::Bool = true
     cache_min_pairs::Int = 30000
+    gs_skip::Bool = true
+    gs_scc::Bool = false
+    gs_cyclic::Bool = true
+    gs_tol::Float64 = 1e-9
+    gs_cycle_cache::Bool = true
+    async_sweep::Bool = false
+    async_chunk::Int = 96
+    async_interval_ms::Float64 = 20.0
+    async_epoch_ms::Float64 = 5.0
 end
 
 mutable struct SweepLog
@@ -82,6 +91,8 @@ append!(PROF_SECTIONS, [:run_fields, :run_init, :run_cache])
 @inline gtoc!(p, k::Symbol, t0::UInt64) = (p === nothing || ptoc!(p, k, t0); nothing)
 append!(PROF_SECTIONS, [:gs_build, :gs_upwind, :gs_solve, :gs_exchange, :gs_reduce])
 push!(PROF_SECTIONS, :entry_wait2)
+push!(PROF_SECTIONS, :gs_graph)
+push!(PROF_SECTIONS, :async_discover)
 
 function rank_features(setup)
     cnt(k) = count(v -> v == k, values(setup.neighbor_kind))
@@ -213,8 +224,13 @@ function config_from_env()
         seed=parse(Int, e("SEED","42")), κ_val=parse(Float64, e("KAPPA","0.001")), σ_val=parse(Float64, e("SIGMA","0.0005")),
 	face_plans=parse(Bool, e("FACE_PLANS","true")), gs_mode=Symbol(e("GS_MODE","cached")),
 	upwind_order=parse(Bool, e("UPWIND_ORDER","true")), angular_plans=parse(Bool, e("ANGULAR_PLANS","true")),
+	gs_skip=parse(Bool, e("GS_SKIP","true")), gs_scc=parse(Bool, e("GS_SCC","false")),
 	local_plans=parse(Bool, e("LOCAL_PLANS","true")), flat_faces=parse(Bool, e("FLAT_FACES","true")),
-	cache_min_pairs=parse(Bool, e("CACHE_MIN_PAIRS","true")), gs_inplace=parse(Bool, e("GS_INPLACE","true")), gs_gc_off=parse(Bool, e("GS_GC_OFF","true")),
+	cache_min_pairs=parse(Int, e("CACHE_MIN_PAIRS",0)), gs_inplace=parse(Bool, e("GS_INPLACE","true")), gs_gc_off=parse(Bool, e("GS_GC_OFF","true")),
+	async_sweep=parse(Bool, e("ASYNC_SWEEP","false")), async_interval_ms=parse(Float64, e("ASYNC_INTERVAL_MS","20.0")), async_chunk=parse(Int, e("ASYNC_CHUNK","96")),
+	async_epoch_ms=parse(Float64, e("ASYNC_EPOCH_MS","5.0")),
+	gs_cycle_cache=parse(Bool, e("GS_CYCLE_CACHE","true")),
+	gs_cyclic=parse(Bool, e("GS_CYCLIC","true")), gs_tol=parse(Float64, e("GS_TOL","1e-9")), 
 	incremental_pack=parse(Bool, e("INCREMENTAL_PACK","true")), round_cap=parse(Int, e("ROUND_CAP","0")), entry_barrier=parse(Bool, e("ENTRY_BARRIER","false")),
 	spatial=parse(Bool, e("SPATIAL","true")), angular=parse(Bool, e("ANGULAR","true")), lu_cache_mb=parse(Float64, e("LU_CACHE_MB","0")))
 end
@@ -332,6 +348,7 @@ function profile_job(inputs, nparts, distribute, sem, partitioned_model; cfg::Ru
     n_ncf = MPI.Allreduce(mesh.num_ncf, +, comm); n_pairs = MPI.Allreduce(sum(setup.n_dirs), +, comm)
     lv = Float64[mesh.nelem, sum(setup.n_dirs), setup.gid_exch.n_flat, mesh.npoin]
     lmin = MPI.Allreduce(lv, MPI.MIN, comm); lmax = MPI.Allreduce(lv, MPI.MAX, comm); lmean = MPI.Allreduce(lv, MPI.SUM, comm) ./ np
+    test_iallreduce(comm)
 
     # ---------------- global switches (set BEFORE the warm-up so warm-up and measured phase run the same code paths) ----------------
     USE_FACE_PLANS[] = cfg.face_plans
@@ -343,6 +360,13 @@ function profile_job(inputs, nparts, distribute, sem, partitioned_model; cfg::Ru
     USE_GS_INPLACE[] = cfg.gs_inplace
     USE_GS_GC_OFF[] = cfg.gs_gc_off
     GS_MODE[] = cfg.gs_mode
+    USE_GS_SKIP[] = cfg.gs_skip; GS_SCC_DIAG[] = cfg.gs_scc
+    USE_GS_CYCLIC[] = cfg.gs_cyclic
+    USE_GS_CYCLE_CACHE[] = cfg.gs_cycle_cache
+    USE_ASYNC_SWEEP[] = cfg.async_sweep
+    ASYNC_CHUNK[] = cfg.async_chunk
+    ASYNC_INTERVAL[] = cfg.async_interval_ms / 1000
+    ASYNC_EPOCH[] = cfg.async_epoch_ms / 1000
     clear_face_plans!()
     cache_mb = cfg.lu_cache_mb
     budget_lines = String[]
@@ -355,7 +379,7 @@ function profile_job(inputs, nparts, distribute, sem, partitioned_model; cfg::Ru
     if cfg.warmup_outer > 0
         run_unified_manufactured_check_profiled(setup, comm, SweepProfile(); κ_val=cfg.κ_val, σ_val=cfg.σ_val,
             n_outer=cfg.warmup_outer, local_passes=cfg.local_passes, measure_skew=false, coupling=cfg.coupling,
-            gc_mode=:auto, gc_every=0, lu_cache_mb=min(cache_mb, 100.0), round_cap = cfg.round_cap, entry_barrier = cfg.entry_barrier)   # small cache: compiles cached AND workspace paths
+            gc_mode=:auto, gc_every=0, lu_cache_mb=min(cache_mb, 100.0), round_cap = cfg.round_cap, entry_barrier = cfg.entry_barrier, gs_tol=cfg.gs_tol)   # small cache: compiles cached AND workspace paths
     end
     t_warm = MPI.Allreduce((time_ns()-t0)*1e-9, MPI.MAX, comm)
     GC.gc(); MPI.Barrier(comm)
@@ -388,6 +412,7 @@ function profile_job(inputs, nparts, distribute, sem, partitioned_model; cfg::Ru
     fp_lines     = solution_fingerprint(mesh, I_final, comm)
     gel_lines    = per_gel_fingerprint_csv(setup, I_final, comm, base * "_gel.csv")
     cache_lines  = elem_cache_report(ecache, sum(setup.n_dirs), comm)
+    al_lines = verify_async_layout(setup.gid_exch, comm)
 
     GC.gc(); MPI.Barrier(comm)                                                 # memory after a full GC (live heap includes the LU cache)
     memv = Float64[Base.gc_live_bytes()/1e9, Sys.maxrss()/1e9, sum(setup.n_dirs), setup.mesh.nelem]
@@ -437,6 +462,7 @@ function profile_job(inputs, nparts, distribute, sem, partitioned_model; cfg::Ru
 	foreach(l -> emit(rep, l), budget_lines)
         foreach(l -> emit(rep, l), cache_lines)
         foreach(l -> emit(rep, l), mem_lines)
+	foreach(l -> emit(rep, l), al_lines)
         emit(rep, "timings [s]: setup $(f2(t_setup))  warmup $(f2(t_warm))  measured wall $(f2(t_wall))  " *
                   "sweep_total(max rank) $(f2(red.stat[:sweep_total].tmax))  max_delta after $(cfg.n_outer) outer iterations $(f15(last_delta))")
         emit(rep, "rounds (all measured sweeps): $(Int(red.misc.rounds))   allocated: $(f1(red.misc.alloc/1e9)) GB total   " *
@@ -447,8 +473,8 @@ function profile_job(inputs, nparts, distribute, sem, partitioned_model; cfg::Ru
         emit(rep, "section                 mean s     max s       calls")
         for k in (:attempt_solved, :attempt_wasted, :solve, :lu_build, :face_upwind, :classify, :alloc_A, :vol_matrix,
                   :flux_terms, :source_term, :ex_pack, :ex_mpi, :ex_unpack, :allreduce, :skew_exchange, :skew_reduce,
-                  :sync_gc, :gs_total, :gs_build, :gs_upwind, :gs_solve, :gs_exchange, :gs_reduce, :empty_pass,
-		  :outer_src, :outer_update, :run_fields, :run_init, :run_cache, :periodic_exch, :bookkeeping, :trial_eval, :entry_wait, :entry_wait2)
+                  :async_discover, :sync_gc, :gs_total, :gs_build, :gs_upwind, :gs_solve, :gs_exchange, :gs_reduce, :empty_pass,
+		  :outer_src, :outer_update, :gs_graph, :run_fields, :run_init, :run_cache, :periodic_exch, :bookkeeping, :trial_eval, :entry_wait, :entry_wait2)
             s = red.stat[k]
             emit(rep, rpad(String(k), 20) * lpad(f3(s.tsum/np), 11) * lpad(f3(s.tmax), 10) * lpad(string(Int(round(s.nsum))), 12))
         end
@@ -577,7 +603,7 @@ end
 function run_unified_manufactured_check_profiled(setup, comm, prof::SweepProfile;
         κ_val=0.001, σ_val=0.0005, n_outer::Int=2, local_passes::Bool=true,
         measure_skew::Bool=true, coupling::Symbol=:isotropic, lu_cache_mb::Float64=0.0, gc_mode::Symbol=:auto, gc_every::Int=8,
-        round_cap::Int=0, entry_barrier::Bool=false, field_kw...)
+        round_cap::Int=0, entry_barrier::Bool=false, gs_tol=1e-9, field_kw...)
     mesh = setup.mesh; metrics = setup.metrics
     ψ, dψ, ω = setup.sem.basis.ψ, setup.sem.basis.dψ, setup.sem.ω
     ngl = mesh.ngl; n_dirs = setup.n_dirs
@@ -615,7 +641,7 @@ function run_unified_manufactured_check_profiled(setup, comm, prof::SweepProfile
             	setup.angular_deps, setup.angular_deps_cr, setup.remote_angular_mesh,
             	setup.gid_exch, setup.periodic_gid_exch,
             	f.κ, f.bc_fn_all, comm;
-            	prof=prof, local_passes=local_passes, elem_cache=cache, measure_skew=measure_skew,
+            	prof=prof, local_passes=local_passes, gs_tol = gs_tol, elem_cache=cache, measure_skew=measure_skew,
             	extra_source_all=extra_source_all, I_cg_all_prev=I_cg_all, gc_mode=gc_mode, gc_every=gc_every, round_cap=round_cap)
 
             t0 = ptic()
@@ -1127,4 +1153,42 @@ function bench_packed_cache(comm; npairs::Int=1000, n3::Int=125, reps_cached::In
             "$(round(bytes/s[1]/1e9*ni.ranks_on_node; digits=1)) GB/s per node")
     end
     return nothing
+end
+
+function verify_async_layout(exch, comm)
+    c = exch.val_cache; np = MPI.Comm_size(comm); rank = MPI.Comm_rank(comm)
+    n = exch.n_flat; tg = c.send_targets
+    pos = Vector{Int}(undef, n); cnt = zeros(Int, np)
+    for m in 1:n; p = tg[m] + 1; cnt[p] += 1; pos[m] = cnt[p]; end
+    roff = zeros(Int, np); for s in 2:np; roff[s] = roff[s-1] + c.recv_sizes[s-1]; end
+
+    vals = Float64[rank * 1e7 + m for m in 1:n]
+    send_and_receive!(c, vals)                       # reference path
+    ref = copy(c.combined_recv_data)
+
+    bufs = Dict{Int,Vector{Float64}}()               # per-peer message: [positions; values]
+    for p in 1:np; cnt[p] > 0 && (bufs[p-1] = Vector{Float64}(undef, 2*cnt[p])); end
+    for m in 1:n
+        b = bufs[tg[m]]; k = length(b) ÷ 2
+        b[pos[m]] = pos[m]; b[k + pos[m]] = vals[m]
+    end
+    reqs = MPI.Request[]
+    for (peer, b) in bufs; push!(reqs, MPI.Isend(b, peer, 5, comm)); end
+
+    got = fill(NaN, length(ref))
+    nsrc = count(>(0), c.recv_sizes); seen = 0; t0 = time()
+    while seen < nsrc && time() - t0 < 30
+        flag, st = MPI.Iprobe(MPI.ANY_SOURCE, 5, comm)
+        flag || continue
+        cntv = MPI.Get_count(st, Float64); rb = zeros(Float64, cntv)
+        MPI.Recv!(rb, comm; source = st.source, tag = 5)
+        k = cntv ÷ 2
+        for i in 1:k; got[roff[st.source + 1] + Int(rb[i])] = rb[k + i]; end
+        seen += 1
+    end
+    MPI.Waitall(reqs)
+    bad = count(i -> !(got[i] == ref[i]), eachindex(ref)) + (nsrc - seen)
+    tot = MPI.Allreduce(bad, +, comm)
+    rank == 0 || return String[]
+    return String["async layout check: $(length(ref)) entries on rank 0, $tot mismatches or missing messages over all ranks (expected 0)"]
 end

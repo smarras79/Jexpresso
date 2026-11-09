@@ -637,7 +637,7 @@ function build_custom_bcs_dirichlet!(::NSD_3D, t, coords, nx, ny, nz, npoin, npo
                                        zmin, zmax,
                                        @view(qe[ip,:]), inputs[:SOL_VARS_TYPE])
                     for ieq =1:neqs
-                        if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
+                        if !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
                             uaux[ip,ieq] = qbdy[ieq]
                             RHS[ip, ieq] = 0.0
                         end

@@ -1,4 +1,14 @@
 const USE_FACE_PLANS = Ref(true)
+const ASYNC_EPOCH = Ref(0.005)
+struct AsyncDeps
+    poff::Vector{Int}; pid_iel::Vector{Int32}; pid_d::Vector{Int32}
+    ldp::Vector{Int}; ldl::Vector{Int32}          # pair -> local pairs it reads
+    rdp::Vector{Int}; rdl::Vector{Int32}          # pair -> remote keys it reads
+    rlp::Vector{Int}; rll::Vector{Int32}          # local pair -> local dependents
+    krp::Vector{Int}; krl::Vector{Int32}          # remote key -> local dependents
+    nkey::Int; rep_slot::Vector{Int}; slot2key::Vector{Int32}
+end
+const ASYNC_DEPS = IdDict{Any,AsyncDeps}()
 
 struct FinePlan
     remote_gel::TInt
@@ -81,6 +91,9 @@ function clear_face_plans!()      # REPLACES the existing definition
     empty!(FINE_PLANS); empty!(COARSE_PLANS)
     empty!(LOCAL_FINE_PLANS); empty!(LOCAL_COARSE_PLANS); empty!(FLAT_CORR)
     empty!(ANGULAR_SAME_PLANS); empty!(ANGULAR_REMOTE_PLANS)
+    empty!(GS_CYCLE_CACHE)
+    empty!(ASYNC_LAYOUTS)
+    empty!(ASYNC_DEPS)
     fill!(ANG_STATS, 0)
     return nothing
 end
@@ -698,4 +711,378 @@ function verify_angular_plans(setup, I_cg_all, comm; max_items::Int=300)
     mxs = @sprintf("%.2e", mx)
     return String["angular plan verification: same-rank $(Int(tot[1])) faces, cross-rank $(Int(tot[2])) faces via table and " *
                   "$(Int(tot[3])) via Dict, $(Int(tot[4])) bitwise mismatches, max |Δ| $mxs (expected 0; a category with 0 faces verified nothing)"]
+end
+
+function csr_from(lists::Vector{Vector{Int32}})
+    n = length(lists); ptr = Vector{Int}(undef, n+1); ptr[1] = 1
+    for i in 1:n; ptr[i+1] = ptr[i] + length(lists[i]); end
+    idx = Vector{Int32}(undef, ptr[end]-1)
+    for i in 1:n; copyto!(idx, ptr[i], lists[i], 1, length(lists[i])); end
+    return ptr, idx
+end
+
+function csr_reverse(ptr::Vector{Int}, idx::Vector{Int32}, ncols::Int)
+    cnt = zeros(Int, ncols); for v in idx; cnt[v] += 1; end
+    rptr = Vector{Int}(undef, ncols+1); rptr[1] = 1
+    for c in 1:ncols; rptr[c+1] = rptr[c] + cnt[c]; end
+    pos = copy(rptr[1:ncols]); ridx = Vector{Int32}(undef, length(idx))
+    for r in 1:length(ptr)-1, e in ptr[r]:(ptr[r+1]-1)
+        c = idx[e]; ridx[pos[c]] = r; pos[c] += 1
+    end
+    return rptr, ridx
+end
+
+function run_dg_sweep_async!(mesh, metrics, ψ, dψ, ω,
+        neighbor_elem, neighbor_fid, face_correspondence, periodic_face_correspondence,
+        neighbor_rank, neighbor_kind, neighbor_gel, neighbor_gel_group, neighbor_is_periodic,
+        same_rank_kind, same_rank_partner, same_rank_is_periodic,
+        ncf_as_child, ncf_L1L2, ncf_as_parent,
+        remote_gid_coords,
+        angular_deps, angular_deps_cr, remote_angular_mesh, gid_exch, periodic_gid_exch,
+        κ, bc_fn_all, comm::MPI.Comm;
+        extra_source_all=nothing, I_cg_all_prev=nothing,
+        elem_cache::Union{ElemCache,Nothing}=nothing,
+        prof::Union{Nothing,SweepProfile}=nothing, local_passes::Bool=false, measure_skew::Bool=false,
+        gc_mode::Symbol=:auto, gc_every::Int=0, round_cap::Int=0,
+        max_rounds::Int=500, max_gs_iter::Int=100, gs_tol::Float64=1e-9,
+        async_chunk::Int=256, async_interval::Float64=0.02, async_epoch::Float64=0.005)   # async_epoch unused now
+    t_sweep = gtic(prof)
+    gc_t0 = Base.gc_time_ns(); gc_b0 = Base.gc_bytes()
+    rank = MPI.Comm_rank(comm); np = MPI.Comm_size(comm); ngl = mesh.ngl
+    n_dirs = [mesh.extra_mesh[iel].extra_npoin for iel = 1:mesh.nelem]
+    cache = elem_cache === nothing ? make_elem_cache(mesh, metrics, n_dirs, ngl; budget_mb=0.0) : elem_cache
+    solved = [falses(n_dirs[iel]) for iel = 1:mesh.nelem]
+    x_dg = Dict{Tuple{Int,Int}, Vector{Float64}}()
+    total_pairs = sum(n_dirs)
+    slog = prof === nothing ? nothing : SweepLog()
+
+    lay = async_layout!(gid_exch)
+    comb = gid_exch.val_cache.combined_recv_data
+    gid_received = gid_exch.table
+    periodic_gid_received = I_cg_all_prev === nothing ? Dict{Tuple{TInt,Int,Int}, Float64}() :
+                            exchange_ncf_gid_table!(periodic_gid_exch, I_cg_all_prev, ngl)
+    is_solved_sweep = (jel,dj) -> solved[jel][dj]
+
+    # ---------- dependency discovery (once per angular mesh; collective) ----------
+    function discover!()::AsyncDeps
+        npid = total_pairs
+        poff = zeros(Int, mesh.nelem); for e in 2:mesh.nelem; poff[e] = poff[e-1] + n_dirs[e-1]; end
+        pid_iel = Vector{Int32}(undef, npid); pid_d = Vector{Int32}(undef, npid)
+        xz = Dict{Tuple{Int,Int},Vector{Float64}}()
+        for iel = 1:mesh.nelem, d = 1:n_dirs[iel]
+            p = poff[iel] + d; pid_iel[p] = Int32(iel); pid_d[p] = Int32(d); xz[(iel,d)] = zeros(ngl^3)
+        end
+        tbl = gs_full_exchange!(gid_exch, xz)              # every table slot becomes 0.0 (collective)
+        xrec = GSXLocalRecorder(xz, Set{Tuple{Int,Int}}())
+        grec = GSXRecorder(tbl, Set{Tuple{TInt,Int}}())
+        all_solved = (jel,dj) -> haskey(xz, (jel,dj))
+        kdict = Dict{Tuple{Int,Int},Int32}()
+        ldeps = Vector{Vector{Int32}}(undef, npid); rdeps = Vector{Vector{Int32}}(undef, npid)
+        for iel = 1:mesh.nelem, d = 1:n_dirs[iel]
+            empty!(xrec.seen); empty!(grec.seen)
+            m = cache.faceinfo[iel][d]
+            for fid = 1:6
+                mask_inflow(m, fid) || continue
+                avail, clo = build_face_upwind(mesh, metrics, iel, fid, d, ngl,
+                    neighbor_elem, face_correspondence, ncf_as_child, ncf_L1L2, ncf_as_parent,
+                    neighbor_rank, neighbor_kind, neighbor_gel, neighbor_gel_group,
+                    neighbor_is_periodic, same_rank_kind, same_rank_partner, same_rank_is_periodic,
+                    periodic_face_correspondence, angular_deps, angular_deps_cr, remote_angular_mesh,
+                    remote_gid_coords, grec, periodic_gid_received,
+                    all_solved, xrec, I_cg_all_prev, bc_fn_all)
+                avail || continue
+                ir, jr, kr = face_ip_range(fid, ngl)
+                for k in kr, j in jr, i in ir; clo(i,j,k); end       # force lazy closures to read their inputs
+            end
+            p = poff[iel] + d
+            ll = Int32[]
+            for k in xrec.seen
+                k == (iel,d) && continue
+                push!(ll, Int32(poff[k[1]] + k[2]))
+            end
+            rl = Int32[]
+            for k in grec.seen
+                kk = (Int(k[1]), Int(k[2]))
+                kid = get!(kdict, kk) do; Int32(length(kdict) + 1); end
+                push!(rl, kid)
+            end
+            ldeps[p] = ll; rdeps[p] = rl
+        end
+        nkey = length(kdict)
+        gelv = gid_exch.gel_cache.combined_recv_data; dv = gid_exch.d_cache.combined_recv_data
+        slot2key = zeros(Int32, length(comb)); rep = zeros(Int, nkey)
+        for s in eachindex(slot2key)
+            kid = get(kdict, (Int(round(gelv[s])), Int(round(dv[s]))), Int32(0))
+            slot2key[s] = kid
+            kid != 0 && rep[kid] == 0 && (rep[kid] = s)
+        end
+        ldp, ldl = csr_from(ldeps); rdp, rdl = csr_from(rdeps)
+        rlp, rll = csr_reverse(ldp, ldl, npid); krp, krl = csr_reverse(rdp, rdl, nkey)
+        n_norep = count(==(0), rep)
+        n_norep > 0 && @warn "async deps: $n_norep remote keys have no receive slot on rank $rank (treated as available)"
+        return AsyncDeps(poff, pid_iel, pid_d, ldp, ldl, rdp, rdl, rlp, rll, krp, krl, nkey, rep, slot2key)
+    end
+
+    D = get(ASYNC_DEPS, angular_deps, nothing)
+    if D === nothing
+        t0 = gtic(prof); D = discover!(); ASYNC_DEPS[angular_deps] = D
+        gtoc!(prof, :async_discover, t0)
+	memprobe("after discover!", comm)
+    end
+    consume_auto_budget!(cache)
+    memprobe("sweep start", comm)
+    fill!(comb, NaN)                                    # "not present"; the table aliases comb
+
+    function attempt!(iel::Int, d::Int)::Bool
+        t_att = gtic(prof)
+        m = cache.faceinfo[iel][d]
+        ready = true
+        fill!(cache.ws_faces, nothing)
+        prof === nothing || fill!(cache.ws_br, :none)
+        for fid = 1:6
+            mask_inflow(m, fid) || continue
+            br = prof === nothing ? :none : face_branch(neighbor_elem, neighbor_rank, neighbor_kind, ncf_as_child,
+                    ncf_as_parent, same_rank_is_periodic, neighbor_is_periodic, angular_deps_cr, iel, fid, d)
+            prof === nothing || (cache.ws_br[fid] = br)
+            t0 = gtic(prof)
+            avail, clo = build_face_upwind(mesh, metrics, iel, fid, d, ngl,
+                neighbor_elem, face_correspondence, ncf_as_child, ncf_L1L2, ncf_as_parent,
+                neighbor_rank, neighbor_kind, neighbor_gel, neighbor_gel_group,
+                neighbor_is_periodic, same_rank_kind, same_rank_partner, same_rank_is_periodic,
+                periodic_face_correspondence, angular_deps, angular_deps_cr, remote_angular_mesh,
+                remote_gid_coords, gid_received, periodic_gid_received,
+                is_solved_sweep, x_dg, I_cg_all_prev, bc_fn_all)
+            if prof !== nothing
+                dtf = (time_ns() - t0) * 1e-9
+                padd!(prof, :face_upwind, dtf)
+                padd!(prof, avail ? BRANCH_READY[br] : BRANCH_BLOCKED[br], dtf)
+            end
+            if !avail; ready = false; break; end
+            t0 = gtic(prof)
+            irange, jrange, krange = face_ip_range(fid, ngl)
+            trial = clo(first(irange), first(jrange), first(krange))
+            gtoc!(prof, :trial_eval, t0)
+            if isnan(trial); ready = false; break; end
+            cache.ws_faces[fid] = clo
+        end
+        if !ready
+            gtoc!(prof, :attempt_wasted, t_att)
+            return false
+        end
+        x_dg[(iel,d)] = solve_pair!(cache, mesh, metrics, ψ, dψ, ω, κ, iel, d, ngl, m, extra_source_all, prof)
+        solved[iel][d] = true
+        gtoc!(prof, :attempt_solved, t_att)
+        return true
+    end
+
+    # ---------- messaging ----------
+    n_sent = Ref(0); n_recv = Ref(0)
+    out_pos = [Float64[] for _ in 1:np]; out_val = [Float64[] for _ in 1:np]
+    inflight = Tuple{MPI.Request,Vector{Float64}}[]
+
+    function flush!(newly::Vector{Tuple{Int,Int}})
+        isempty(newly) && return nothing
+        for (iel,d) in newly
+            p = get(gid_exch.pair_index, (iel,d), 0); p == 0 && continue
+            v = x_dg[(iel,d)]
+            for e in gid_exch.pair_ptr[p]:(gid_exch.pair_ptr[p+1]-1)
+                mm = gid_exch.entry_slot[e]; t = Int(lay.peer[mm]) + 1
+                push!(out_pos[t], Float64(lay.pos[mm])); push!(out_val[t], v[gid_exch.entry_lidx[e]])
+            end
+        end
+        for t in 1:np
+            k = length(out_pos[t]); k == 0 && continue
+            buf = Vector{Float64}(undef, 2k)
+            copyto!(buf, 1, out_pos[t], 1, k); copyto!(buf, k+1, out_val[t], 1, k)
+            push!(inflight, (MPI.Isend(buf, t-1, ASYNC_TAG, comm), buf)); n_sent[] += 1
+            empty!(out_pos[t]); empty!(out_val[t])
+        end
+        empty!(newly)
+        return nothing
+    end
+
+    # ---------- readiness state ----------
+    npid = total_pairs
+    remaining = Vector{Int32}(undef, npid)
+    got = falses(D.nkey)
+    queue = Int32[]; qh = Ref(1); retry = Int32[]
+    ord_iel = cache.ord_iel; ord_d = cache.ord_d
+
+    function recount!()
+        for kid in 1:D.nkey
+            rs = D.rep_slot[kid]; got[kid] = (rs == 0) || !isnan(comb[rs])
+        end
+        empty!(queue); qh[] = 1; empty!(retry)
+        for oi in 1:length(ord_iel)
+            iel = Int(ord_iel[oi]); d = Int(ord_d[oi]); solved[iel][d] && continue
+            p = D.poff[iel] + d; c = 0
+            for e in D.ldp[p]:(D.ldp[p+1]-1)
+                q = D.ldl[e]; solved[D.pid_iel[q]][D.pid_d[q]] || (c += 1)
+            end
+            for e in D.rdp[p]:(D.rdp[p+1]-1); got[D.rdl[e]] || (c += 1); end
+            remaining[p] = c; c == 0 && push!(queue, Int32(p))
+        end
+        return nothing
+    end
+
+    function poll!()::Int
+        nmsg = 0
+        while true
+            flag, st = MPI.Iprobe(MPI.ANY_SOURCE, ASYNC_TAG, comm)
+            flag || break
+            cnt = MPI.Get_count(st, Float64)
+            rb = Vector{Float64}(undef, cnt)
+            MPI.Recv!(rb, comm; source = st.source, tag = ASYNC_TAG)
+            k = cnt ÷ 2; off = lay.roff[st.source + 1]
+            for i in 1:k                                   # write every entry first, then wake dependents
+                comb[off + Int(rb[i])] = rb[k + i]
+            end
+            for i in 1:k
+                kid = D.slot2key[off + Int(rb[i])]
+                (kid == 0 || got[kid]) && continue
+                got[kid] = true
+                for e in D.krp[kid]:(D.krp[kid+1]-1)
+                    q = D.krl[e]; remaining[q] -= 1
+                    remaining[q] == 0 && !solved[D.pid_iel[q]][D.pid_d[q]] && push!(queue, q)
+                end
+            end
+            n_recv[] += 1; nmsg += 1
+        end
+        return nmsg
+    end
+
+    newly = Tuple{Int,Int}[]
+    n_fail = Ref(0); n_retry_scans = Ref(0)
+    function try_pair!(p::Int)::Bool
+        iel = Int(D.pid_iel[p]); d = Int(D.pid_d[p])
+        solved[iel][d] && return false
+        if attempt!(iel, d)
+            push!(newly, (iel,d))
+            for e in D.rlp[p]:(D.rlp[p+1]-1)
+                q = D.rll[e]; remaining[q] -= 1
+                remaining[q] == 0 && !solved[D.pid_iel[q]][D.pid_d[q]] && push!(queue, q)
+            end
+            return true
+        end
+        return false
+    end
+
+    recount!()
+    retry_dirty = false; just_resolved = false; prev = nothing
+    n_solved_local = 0; solved_period = 0
+    n_red = 0; t_last = time_ns(); t_comp_p = 0.0; t_exch_p = 0.0; t_red_p = 0.0
+    gc_p0 = Base.gc_time_ns()
+    iar = IAllreduce(comm, 5); iar_active = false
+
+    while true
+        te0 = time_ns()
+        poll!() > 0 && (retry_dirty = true)
+        t_exch_p += (time_ns() - te0) * 1e-9
+
+        tc0 = time_ns(); ns = 0
+        while qh[] <= length(queue) && ns < async_chunk
+            p = Int(queue[qh[]]); qh[] += 1
+            if try_pair!(p); ns += 1
+            elseif !solved[Int(D.pid_iel[p])][Int(D.pid_d[p])]
+                n_fail[] += 1; push!(retry, Int32(p))              # discovery missed a dependency
+            end
+        end
+        if qh[] > length(queue); empty!(queue); qh[] = 1; end
+        if ns > 0
+            n_solved_local += ns; solved_period += ns; retry_dirty = true
+            te1 = time_ns(); flush!(newly); t_exch_p += (time_ns() - te1) * 1e-9
+        end
+        if qh[] > length(queue) && retry_dirty                      # idle: one pass over the retry list, only if something changed
+            retry_dirty = false
+            if !isempty(retry)
+                n_retry_scans[] += 1
+                old = copy(retry); empty!(retry); ns2 = 0
+                for p in old
+                    if try_pair!(Int(p)); ns2 += 1
+                    elseif !solved[Int(D.pid_iel[p])][Int(D.pid_d[p])]; push!(retry, p); end
+                end
+                if ns2 > 0
+                    n_solved_local += ns2; solved_period += ns2; retry_dirty = true
+                    te1 = time_ns(); flush!(newly); t_exch_p += (time_ns() - te1) * 1e-9
+                end
+            end
+        end
+        t_comp_p += (time_ns() - tc0) * 1e-9
+
+        if !iar_active && (time_ns() - t_last) * 1e-9 >= async_interval
+            Base.filter!(x -> !MPI.Test(x[1]), inflight)
+            quiet = qh[] > length(queue) && !retry_dirty && solved_period == 0
+            iar_start!(iar, Float64[total_pairs - n_solved_local, n_sent[], n_recv[], quiet ? 1.0 : 0.0, solved_period])
+            iar_active = true; solved_period = 0
+        end
+
+        if iar_active
+            tt = time_ns(); done = iar_progress!(iar); dtr = (time_ns() - tt) * 1e-9
+            t_red_p += dtr
+            prof === nothing || padd!(prof, :allreduce, dtr)
+            if done
+                iar_active = false; n_red += 1
+                g = iar.result; U = g[1]; S = g[2]; R = g[3]; Q = g[4]; Nn = g[5]
+                if slog !== nothing
+                    el = (time_ns() - t_last) * 1e-9
+                    push!(slog.passes, 1); push!(slog.solved, Int(round(Nn))); push!(slog.t_compute, t_comp_p)
+                    push!(slog.t_exchange, max(el - t_comp_p - t_red_p, t_exch_p)); push!(slog.t_skew, 0.0); push!(slog.t_reduce, t_red_p)
+                    push!(slog.sent, 0); push!(slog.valid, 0); push!(slog.fresh, 0); push!(slog.t_empty, 0.0)
+                    push!(slog.gc_compute, (Base.gc_time_ns() - gc_p0) * 1e-9); push!(slog.gc_exchange, 0.0)
+                end
+                gc_p0 = Base.gc_time_ns()
+                t_comp_p = 0.0; t_exch_p = 0.0; t_red_p = 0.0
+                Nn > 0 && (just_resolved = false)
+
+                if U == 0
+                    while true
+                        poll!()
+                        gg = MPI.Allreduce(Float64[n_sent[], n_recv[]], +, comm)
+                        gg[1] == gg[2] && break
+                    end
+                    isempty(inflight) || MPI.Waitall([r for (r,_) in inflight])
+                    break
+                end
+
+                stall = Q == np && S == R && prev !== nothing && prev[1] == S && prev[2] == R
+                prev = (S, R)
+                if stall
+                    just_resolved && error("no progress after GS resolution (async sweep)")
+                    gs_full_exchange!(gid_exch, x_dg)
+                    t0 = gtic(prof)
+                    resolve_stall_distributed_gauss_seidel_unified!(mesh, metrics, ψ, dψ, ω,
+                        neighbor_elem, face_correspondence, periodic_face_correspondence,
+                        neighbor_rank, neighbor_kind, neighbor_gel, neighbor_gel_group, neighbor_is_periodic,
+                        same_rank_kind, same_rank_partner, same_rank_is_periodic,
+                        ncf_as_child, ncf_L1L2, ncf_as_parent,
+                        remote_gid_coords,
+                        angular_deps, angular_deps_cr, remote_angular_mesh, gid_exch, periodic_gid_received,
+                        x_dg, solved, n_dirs, κ, bc_fn_all, comm;
+                        extra_source_all=extra_source_all, I_cg_all_prev=I_cg_all_prev,
+                        max_gs_iter=max_gs_iter, gs_tol=gs_tol, prof=prof)
+                    gtoc!(prof, :gs_total, t0)
+                    n_solved_local = sum(count(identity, solved[iel]) for iel = 1:mesh.nelem)
+                    recount!(); retry_dirty = false
+                    just_resolved = true; prev = nothing
+                end
+                if gc_mode == :sync && gc_every > 0 && n_red % (4*gc_every) == 0
+                    tt = time_ns(); GC.enable(true); GC.gc(true); GC.enable(false)
+                    prof === nothing || padd!(prof, :sync_gc, (time_ns() - tt) * 1e-9)
+                end
+                n_red > 4_000_000 && error("async sweep: too many reductions")
+                t_last = time_ns()
+            end
+        end
+    end
+
+    tot = MPI.Allreduce(Float64[n_fail[], n_retry_scans[]], +, comm)
+    rank == 0 && println("async targeted: attempts failing at remaining==0: $(Int(tot[1])) (expected 0), retry scans: $(Int(tot[2]))")
+    if prof !== nothing
+        prof.n[:rounds] = get(prof.n, :rounds, 0) + n_red
+        prof.t[:gc_seconds] = get(prof.t, :gc_seconds, 0.0) + (Base.gc_time_ns() - gc_t0) * 1e-9
+        prof.n[:alloc_bytes] = get(prof.n, :alloc_bytes, 0) + Int(Base.gc_bytes() - gc_b0)
+        push!(prof.sweeps, slog)
+        ptoc!(prof, :sweep_total, t_sweep)
+    end
+    return x_dg, n_dirs
 end

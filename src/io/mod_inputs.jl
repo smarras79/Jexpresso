@@ -49,6 +49,47 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         end
     end
 
+    if(!haskey(inputs, :restart_uniform_yc))
+       inputs[:restart_uniform_yc] = nothing
+    end
+
+    if(!haskey(inputs, :restart_uniform_xc))
+       inputs[:restart_uniform_xc] = nothing
+    end
+
+    if(!haskey(inputs, :restart_interp_uniform))
+       inputs[:restart_interp_uniform] = false
+    end    
+
+    if(!haskey(inputs, :restart_interp_order))
+       inputs[:restart_interp_order] = 4
+    end
+
+    if(!haskey(inputs, :restart_interp_nranks))
+       inputs[:restart_interp_nranks] = 0
+    end
+
+
+    if(!haskey(inputs, :RT_adaptive_angular))
+       inputs[:RT_adaptive_angular] = false
+    end
+
+
+    if(!haskey(inputs, :RT_ind_tol))
+       inputs[:RT_ind_tol] = 1e-3
+    end
+
+     if(!haskey(inputs, :RT_halo))
+       inputs[:RT_halo] = 1
+    end
+
+     if(!haskey(inputs, :RT_max_level))
+       inputs[:RT_max_level] = 2
+    end
+
+     if(!haskey(inputs, :RT_tol_quad))
+       inputs[:RT_tol_quad] = 1e-3
+    end
 
     if(!haskey(inputs, :RT_atmos_coupling))
        inputs[:RT_atmos_coupling] = false

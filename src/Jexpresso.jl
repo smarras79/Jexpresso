@@ -183,6 +183,8 @@ include(joinpath( "kernel", "physics", "optical_depth_integral.jl"))
 
 include(joinpath( "kernel", "physics", "RT_sweep.jl"))
 
+include(joinpath( "kernel", "physics", "RT_adapt.jl"))
+
 include(joinpath( "kernel", "mesh", "Geom.jl"))
 
 include(joinpath( "kernel", "mesh", "mesh.jl"))
@@ -236,6 +238,8 @@ include(joinpath( "kernel", "operators", "sweep_phase_functions.jl"))
 include(joinpath( "kernel", "operators", "sweep_exchange_tables.jl"))
 
 include(joinpath( "kernel", "operators", "sweep_plans.jl"))
+
+include(joinpath( "kernel", "operators", "sweep_adaptive.jl"))
 
 include(joinpath( "kernel", "operators", "rhs_2point.jl"))
 

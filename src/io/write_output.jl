@@ -649,13 +649,258 @@ function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, i
     MPI.Comm_rank(get_mpi_comm()) == 0 && println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ... DONE") )
 
 end
-function read_output(SD, INPUT_DIR::String, inputs, npoin, outformat::HDF5; nvar=1)
+#=function read_output(SD, INPUT_DIR::String, inputs, npoin, outformat::HDF5; nvar=1)
     
     #println(string(" # Reading restart HDF5 file:", INPUT_DIR, "*.h5 ...  ") )
     q, qe = read_hdf5(SD, INPUT_DIR, inputs, npoin, nvar)
     println_rank(string(" # Reading restart HDF5 file:", INPUT_DIR, "*.h5 ... DONE") ; msg_rank = rank)
 
     return q, qe
+end=#
+
+function read_output(SD, INPUT_DIR::String, inputs, npoin, outformat::HDF5;
+                     nvar=1, mesh=nothing, qe_new=nothing)
+
+    if get(inputs, :restart_interp_nranks, 0) > 0
+        (mesh === nothing || qe_new === nothing) &&
+            error("read_output: restart interpolation needs mesh= and qe_new= (the reference state built on the NEW mesh)")
+        _, q = read_hdf5_interp(SD, INPUT_DIR, inputs, mesh, npoin, nvar;
+                        old_nranks = inputs[:restart_interp_nranks],
+                        order_old  = get(inputs, :restart_interp_order, 4),
+                        uniform    = get(inputs, :restart_interp_uniform, false),
+                        xc         = get(inputs, :restart_uniform_xc, nothing),
+                        yc         = get(inputs, :restart_uniform_yc, nothing))
+	println_rank(string(" # Interpolated restart from ", INPUT_DIR, " ... DONE"); msg_rank = rank)
+        return q, qe_new
+    end
+
+    q, qe = read_hdf5(SD, INPUT_DIR, inputs, npoin, nvar)
+    println_rank(string(" # Reading restart HDF5 file:", INPUT_DIR, "*.h5 ... DONE") ; msg_rank = rank)
+    return q, qe
+end
+
+function write_restart_coords(mesh, RESTART_DIR::String)
+    _ensure_hdf5_loaded!()
+    comm = get_mpi_comm()
+    rank = MPI.Comm_rank(comm)
+    Base.invokelatest(_write_coords_impl, mesh, RESTART_DIR, rank)
+    MPI.Barrier(comm)
+    rank == 0 && @info "write_restart_coords: wrote coords_<rank>.h5 into $RESTART_DIR"
+    return nothing
+end
+ 
+function _write_coords_impl(mesh, dir::String, rank)
+    n = mesh.npoin
+    h5open(string(dir, "/coords_", rank, ".h5"), "w") do fid
+        write(fid, "x", Float64.(mesh.coords[1, 1:n]))
+        write(fid, "y", Float64.(mesh.coords[2, 1:n]))
+        write(fid, "z", Float64.(mesh.coords[3, 1:n]))
+    end
+    return nothing
+end
+
+# ---------- 2. pure-Julia interpolation core (no MPI / HDF5; testable) ---------------------------
+function _lagrange_weights!(w::Vector{Float64}, xloc, x::Float64)
+    n = length(xloc)
+    @inbounds for j in 1:n
+        wj = 1.0
+        for m in 1:n
+            m == j && continue
+            wj *= (x - xloc[m]) / (xloc[j] - xloc[m])
+        end
+        w[j] = wj
+    end
+    return w
+end
+ 
+"""
+    interp_tensor(xs, ys, zs, F, p, X, Y, Z)
+ 
+xs,ys,zs: sorted unique node coordinates of the OLD mesh (element boundaries every p-th entry,
+length-1 divisible by p).  F[ix,iy,iz,v]: old values.  Returns out[n,v] at points (X[n],Y[n],Z[n]).
+"""
+function interp_tensor(xs::Vector{Float64}, ys::Vector{Float64}, zs::Vector{Float64},
+                       F::Array{Float64,4}, p::Int,
+                       X::AbstractVector, Y::AbstractVector, Z::AbstractVector)
+    for (nm, c) in (("x", xs), ("y", ys), ("z", zs))
+        (length(c) - 1) % p == 0 ||
+            error("old mesh: number of unique $nm nodes ($(length(c))) is not 1 + multiple of order $p")
+    end
+    bx = xs[1:p:end]; by = ys[1:p:end]; bz = zs[1:p:end]
+    nelx, nely, nelz = length(bx) - 1, length(by) - 1, length(bz) - 1
+    nv  = size(F, 4)
+    wx = zeros(p + 1); wy = zeros(p + 1); wz = zeros(p + 1)
+    out = zeros(length(X), nv)
+    @inbounds for n in eachindex(X)
+        x = clamp(Float64(X[n]), xs[1], xs[end])
+        y = clamp(Float64(Y[n]), ys[1], ys[end])
+        z = clamp(Float64(Z[n]), zs[1], zs[end])
+        ex = clamp(searchsortedlast(bx, x), 1, nelx); i0 = (ex - 1) * p
+        ey = clamp(searchsortedlast(by, y), 1, nely); j0 = (ey - 1) * p
+        ez = clamp(searchsortedlast(bz, z), 1, nelz); k0 = (ez - 1) * p
+        _lagrange_weights!(wx, view(xs, i0+1:i0+p+1), x)
+        _lagrange_weights!(wy, view(ys, j0+1:j0+p+1), y)
+        _lagrange_weights!(wz, view(zs, k0+1:k0+p+1), z)
+        for v in 1:nv
+            s = 0.0
+            for k in 1:p+1, j in 1:p+1
+                wyz = wy[j] * wz[k]
+                for i in 1:p+1
+                    s += wx[i] * wyz * F[i0+i, j0+j, k0+k, v]
+                end
+            end
+            out[n, v] = s
+        end
+    end
+    return out
+end
+
+function read_hdf5_interp(SD, OLD_DIR::String, inputs, mesh, npoin, nvar;
+                          old_nranks::Integer, order_old::Integer = 4,
+                          uniform::Bool = false, xc = nothing, yc = nothing)
+    # uniform = true: take the single old column nearest (xc, yc) (default: centre of the old domain)
+    # and copy it to EVERY (x,y) of the new mesh, interpolating in z only.  The result is a
+    # horizontally uniform perturbation field (used to test the sweep against the exact 1D answer).
+    _ensure_hdf5_loaded!()
+    comm = get_mpi_comm()
+    rank = MPI.Comm_rank(comm)
+ 
+    # rank 0 reads every old file once and builds the global tensor grid; then broadcast.
+    t_restart = 0.0
+    xs = ys = zs = Float64[]
+    F  = zeros(Float64, 0, 0, 0, 0)
+    dims = zeros(Int, 4)
+    if rank == 0
+        t_restart, xs, ys, zs, F = Base.invokelatest(_read_old_global_impl, OLD_DIR, nvar, old_nranks)
+        dims .= (length(xs), length(ys), length(zs), nvar)
+        @info "read_hdf5_interp: old mesh $(dims[1])x$(dims[2])x$(dims[3]) unique nodes; " *
+              "x∈[$(xs[1]),$(xs[end])] y∈[$(ys[1]),$(ys[end])] z∈[$(zs[1]),$(zs[end])]"
+    end
+    MPI.Bcast!(dims, comm; root=0)
+    if rank != 0
+        xs = zeros(dims[1]); ys = zeros(dims[2]); zs = zeros(dims[3])
+        F  = zeros(dims[1], dims[2], dims[3], dims[4])
+    end
+    MPI.Bcast!(xs, comm; root=0); MPI.Bcast!(ys, comm; root=0); MPI.Bcast!(zs, comm; root=0)
+    MPI.Bcast!(F, comm; root=0)
+    t_restart = MPI.bcast(t_restart, 0, comm)
+ 
+    X = @view mesh.coords[1:npoin, 1]
+    Y = @view mesh.coords[1:npoin, 2]
+    Z = @view mesh.coords[1:npoin, 3]
+    tol = 1e-3 * max(xs[end] - xs[1], ys[end] - ys[1], zs[end] - zs[1])
+    outside = count(i -> X[i] < xs[1]-tol || X[i] > xs[end]+tol ||
+                         Y[i] < ys[1]-tol || Y[i] > ys[end]+tol ||
+                         Z[i] < zs[1]-tol || Z[i] > zs[end]+tol, 1:npoin)
+    outside_all = MPI.Allreduce(outside, +, comm)
+    rank == 0 && outside_all > 0 &&
+        @warn "read_hdf5_interp: $outside_all new points lie outside the old domain (clamped)"
+ 
+    if uniform
+        xcol = xc === nothing ? 0.5 * (xs[1] + xs[end]) : Float64(xc)
+        ycol = yc === nothing ? 0.5 * (ys[1] + ys[end]) : Float64(yc)
+        ic = argmin(abs.(xs .- xcol)); jc = argmin(abs.(ys .- ycol))
+        if rank == 0
+            @info "read_hdf5_interp UNIFORM: copying old column at x=$(xs[ic]), y=$(ys[jc]) (requested $xcol, $ycol) to all (x,y)"
+            for ivar in 1:nvar
+                col = F[ic, jc, :, ivar]
+                @info "  var $ivar column range [$(minimum(col)), $(maximum(col))]  (check: nonzero where the cloud/bubble is)"
+            end
+        end
+        Xq = fill(xs[ic], npoin); Yq = fill(ys[jc], npoin)
+        vals = interp_tensor(xs, ys, zs, F, Int(order_old), Xq, Yq, Z)
+    else
+        vals = interp_tensor(xs, ys, zs, F, Int(order_old), X, Y, Z)
+    end
+    q = zeros(Float64, npoin, nvar + 1)
+    q[:, 1:nvar] .= vals
+ 
+    # simple diagnostic: min/max per variable, old vs new
+    for ivar in 1:nvar
+        nmin = MPI.Allreduce(minimum(vals[:, ivar]), min, comm)
+        nmax = MPI.Allreduce(maximum(vals[:, ivar]), max, comm)
+        if rank == 0
+            @info "read_hdf5_interp var $ivar: old [$(minimum(F[:,:,:,ivar])), $(maximum(F[:,:,:,ivar]))] -> new [$nmin, $nmax]"
+        end
+    end
+ 
+    if inputs isa AbstractDict
+        inputs[:tinit] = t_restart
+    else
+        @warn "read_hdf5_interp: cannot write :tinit into a NamedTuple; restart time = $t_restart"
+    end
+    return t_restart, q
+end
+ 
+# every line naming an HDF5 symbol lives here (world-age safe, called via invokelatest)
+function _read_old_global_impl(OLD_DIR::String, nvar, old_nranks)
+    tfile = string(OLD_DIR, "/t.h5")
+    isfile(tfile) || error("read_hdf5_interp: missing $tfile")
+    t_restart = convert(Float64, h5read(tfile, "time"))
+ 
+    Xall = Float64[]; Yall = Float64[]; Zall = Float64[]
+    Qall = [Float64[] for _ in 1:nvar]
+    for r in 0:old_nranks-1
+        cf = string(OLD_DIR, "/coords_", r, ".h5")
+        isfile(cf) || error("read_hdf5_interp: missing $cf -- run write_restart_coords on the old mesh first " *
+                            "(same rank count and partition that wrote the restart).")
+        append!(Xall, convert(Vector{Float64}, h5read(cf, "x")))
+        append!(Yall, convert(Vector{Float64}, h5read(cf, "y")))
+        append!(Zall, convert(Vector{Float64}, h5read(cf, "z")))
+        for ivar in 1:nvar
+            append!(Qall[ivar], convert(Vector{Float64}, h5read(string(OLD_DIR, "/var_", ivar, "_", r, ".h5"), "q")))
+        end
+    end
+    N = length(Xall)
+    all(length(Qall[v]) == N for v in 1:nvar) || error("read_hdf5_interp: coordinate/variable length mismatch")
+ 
+    # round to 0.1 mm so shared / duplicated points collapse to identical keys
+    rx = round.(Xall; digits=4) .+ 0.0
+    ry = round.(Yall; digits=4) .+ 0.0
+    rz = round.(Zall; digits=4) .+ 0.0
+    xs = sort(unique(rx)); ys = sort(unique(ry)); zs = sort(unique(rz))
+    F = fill(NaN, length(xs), length(ys), length(zs), nvar)
+    for n in 1:N
+        i = searchsortedfirst(xs, rx[n]); j = searchsortedfirst(ys, ry[n]); k = searchsortedfirst(zs, rz[n])
+        for v in 1:nvar
+            F[i, j, k, v] = Qall[v][n]
+        end
+    end
+    nmiss = count(isnan, F[:, :, :, 1])
+    nmiss == 0 || error("read_hdf5_interp: old points do not fill a tensor grid ($nmiss empty cells of " *
+                        "$(length(xs))x$(length(ys))x$(length(zs))). Is the old mesh a uniform box?")
+    return t_restart, xs, ys, zs, F
+end
+ 
+# ---------- 4. self-test (no MPI / HDF5): reproduces an order-4 polynomial exactly -------------------
+function test_restart_interp()
+    p = 4
+    g = [-1.0, -sqrt(3/7), 0.0, sqrt(3/7), 1.0]            # GLL nodes, order 4
+    function nodes(nel, L)
+        pts = Float64[]
+        for e in 0:nel-1, t in g
+            push!(pts, e * L / nel + (t + 1) / 2 * L / nel)
+        end
+        return sort(unique(round.(pts; digits=6)))
+    end
+    xs, ys, zs = nodes(4, 1e4), nodes(3, 1e4), nodes(6, 1.5e4)
+    f(x, y, z) = (x/1e4)^3 * (y/1e4)^2 + (z/1.5e4)^4
+    F = zeros(length(xs), length(ys), length(zs), 1)
+    for k in eachindex(zs), j in eachindex(ys), i in eachindex(xs)
+        F[i, j, k, 1] = f(xs[i], ys[j], zs[k])
+    end
+    for nel in ((8, 6, 12), (2, 1, 3))
+        xn, yn, zn = nodes(nel[1], 1e4), nodes(nel[2], 1e4), nodes(nel[3], 1.5e4)
+        X = Float64[]; Y = Float64[]; Z = Float64[]
+        for z in zn, y in yn, x in xn
+            push!(X, x); push!(Y, y); push!(Z, z)
+        end
+        got = interp_tensor(xs, ys, zs, F, p, X, Y, Z)[:, 1]
+        err = maximum(abs.(got .- f.(X, Y, Z)))
+        println("mesh $nel : max interpolation error = $err")
+        err < 1e-6 || error("interpolation self-test failed for $nel")
+    end
+    println("test_restart_interp: PASS")
 end
 
 
@@ -665,67 +910,78 @@ function write_hdf5(SD, mesh::St_mesh, q::AbstractArray, qe::AbstractArray, t, t
     # non-HDF5 run (city2d uses VTK output) tens of MB and seconds.
     _ensure_hdf5_loaded!()
 
+    return Base.invokelatest(_write_hdf5_impl, mesh, q, qe, t, OUTPUT_DIR, nvar)
+
+end
+
+function _write_hdf5_impl(mesh, q, qe, t, OUTPUT_DIR, nvar)
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
-    mpi_size = MPI.Comm_size(comm)
-    #Write one HDF5 file timestep
-    #
-    # PERF note above explains why HDF5 is loaded lazily via @eval; that
-    # `@eval` bumps the global world age, but this very function (write_hdf5)
-    # was already compiled/entered in the OLDER world before the bump, so a
-    # direct `h5open(...)` call here would raise a world-age MethodError
-    # ("running in world age N, while current world is N+1"). Base.invokelatest
-    # forces the call to resolve against the current (post-@eval) world.
     if rank == 0
-        fout_name = string(OUTPUT_DIR, "/t.h5")
-        Base.invokelatest(h5open, fid -> write(fid, "time", t), fout_name, "w")
-    end
-    #Write one HDF5 file per variable
-    for ivar = 1:nvar
-        fout_name = string(OUTPUT_DIR, "/var_", ivar,"_",rank, ".h5")
-        idx = (ivar - 1)*mesh.npoin
-
-        Base.invokelatest(h5open, fout_name, "w") do fid
-            write(fid, "q",  q[idx+1:ivar*mesh.npoin]);
-            write(fid, "qe", qe[1:mesh.npoin, ivar]);
+        h5open(string(OUTPUT_DIR, "/t.h5"), "w") do fid
+            write(fid, "time", t)
         end
-
     end
+    
+    h5open(string(OUTPUT_DIR, "/coords_", rank, ".h5"), "w") do fid
+           write(fid, "x", Float64.(mesh.coords[1:mesh.npoin, 1]))
+           write(fid, "y", Float64.(mesh.coords[1:mesh.npoin, 2]))
+           write(fid, "z", Float64.(mesh.coords[1:mesh.npoin, 3]))
+    end
+
+    for ivar = 1:nvar
+        fout_name = string(OUTPUT_DIR, "/var_", ivar, "_", rank, ".h5")
+        idx = (ivar - 1)*mesh.npoin
+        h5open(fout_name, "w") do fid
+            write(fid, "q",  q[idx+1:ivar*mesh.npoin])
+            write(fid, "qe", qe[1:mesh.npoin, ivar])
+        end
+    end
+    return nothing
 end
 
 function read_hdf5(SD, INPUT_DIR::String, inputs, npoin, nvar)
     _ensure_hdf5_loaded!()
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
-    mpi_size = MPI.Comm_size(comm)
 
-    q  = zeros(Float64, npoin, nvar+1)
-    qe = zeros(Float64, npoin, nvar+1)
-    
-    #read one HDF5 file time
-    #
-    # Base.invokelatest needed here too: _ensure_hdf5_loaded!() lazily
-    # @eval's `using HDF5` at runtime, which bumps the world age past the
-    # one this function was compiled/entered in (see write_hdf5 above).
-    fout_name = string(INPUT_DIR, "/t.h5")
-    time = rank == 0 ? convert(Float64, Base.invokelatest(h5read, fout_name, "time")) : 0.0
-    time = MPI.bcast(time, 0, comm)
+    # Every line that names an HDF5 symbol lives in _read_hdf5_impl and is called in the latest world.
+    # (See write_hdf5: Base.invokelatest(h5read, ...) is not enough, because the NAME h5read is resolved in
+    # this function's old world before invokelatest runs.)
+    t_restart, q, qe = Base.invokelatest(_read_hdf5_impl, INPUT_DIR, npoin, nvar, rank)
+
+    t_restart = MPI.bcast(t_restart, 0, comm)       # only rank 0 reads t.h5
     if inputs isa AbstractDict
-        inputs[:tinit] = time
+        inputs[:tinit] = t_restart
     else
         @warn "read_hdf5: cannot write :tinit into a NamedTuple inputs; " *
-              "restart time = $time will be ignored unless you rebind " *
+              "restart time = $t_restart will be ignored unless you rebind " *
               "inputs in the caller."
     end
-    #Write one HDF5 file per variable
-    for ivar = 1:nvar
-        fout_name   = string(INPUT_DIR, "/var_", ivar,"_",rank, ".h5")
-        idx         = (ivar - 1)*npoin
-        q[:, ivar]  = convert(Array{Float64, 1}, Base.invokelatest(h5read, fout_name, "q"))
-        qe[:, ivar] = convert(Array{Float64, 1}, Base.invokelatest(h5read, fout_name, "qe"))
-    end
-    
     return q, qe
+
+
+end
+
+function _read_hdf5_impl(INPUT_DIR::String, npoin, nvar, rank)
+    q  = zeros(Float64, npoin, nvar+1)
+    qe = zeros(Float64, npoin, nvar+1)
+
+    t_restart = 0.0
+    if rank == 0
+        fname = string(INPUT_DIR, "/t.h5")
+        isfile(fname) || error("read_hdf5: missing $fname")
+        t_restart = convert(Float64, h5read(fname, "time"))
+    end
+
+    for ivar = 1:nvar
+        fname = string(INPUT_DIR, "/var_", ivar, "_", rank, ".h5")
+        isfile(fname) || error("read_hdf5: missing $fname. A restart needs the same number of ranks and the same " *
+                               "partition that wrote the files.")
+        q[:, ivar]  = convert(Array{Float64,1}, h5read(fname, "q"))
+        qe[:, ivar] = convert(Array{Float64,1}, h5read(fname, "qe"))
+    end
+    return t_restart, q, qe
 end
 
 """

@@ -1,3 +1,17 @@
+const IAR_TAG_UP = 6
+const IAR_TAG_DOWN = 7
+
+mutable struct IAllreduce
+    comm::MPI.Comm; rank::Int; np::Int; n::Int
+    parent::Int; children::Vector{Int}
+    acc::Vector{Float64}                       # own contribution + children's sums
+    result::Vector{Float64}
+    cbuf::Vector{Vector{Float64}}; creq::Vector{MPI.Request}; cdone::Vector{Bool}
+    up_req::Union{MPI.Request,Nothing}; up_buf::Vector{Float64}
+    dn_req::Union{MPI.Request,Nothing}; dn_buf::Vector{Float64}
+    send_reqs::Vector{MPI.Request}; send_bufs::Vector{Vector{Float64}}
+    phase::Int                                 # 0 idle, 1 up, 2 wait result, 3 sending down, 4 done
+end
 
 mutable struct CyclingReverseDict
     mapping::Dict{Int, Vector{Int}}
@@ -70,6 +84,65 @@ mutable struct AssemblerCache
     # Preallocated requests
     requests::MPI.MultiRequest
     requests_back::MPI.MultiRequest
+end
+
+function IAllreduce(comm::MPI.Comm, n::Int)
+    r = MPI.Comm_rank(comm); np = MPI.Comm_size(comm)
+    parent = r == 0 ? -1 : (r - 1) ÷ 2
+    ch = [c for c in (2r + 1, 2r + 2) if c < np]
+    IAllreduce(comm, r, np, n, parent, ch, zeros(n), zeros(n),
+               [zeros(n) for _ in ch], MPI.Request[], fill(false, length(ch)),
+               nothing, zeros(n), nothing, zeros(n), MPI.Request[], Vector{Float64}[], 0)
+end
+
+function iar_start!(h::IAllreduce, v::AbstractVector{Float64})
+    h.phase == 0 || h.phase == 4 || error("IAllreduce: previous wave still in flight")
+    copyto!(h.acc, v)
+    empty!(h.creq); empty!(h.send_reqs); empty!(h.send_bufs)
+    for (i, c) in enumerate(h.children)
+        push!(h.creq, MPI.Irecv!(h.cbuf[i], c, IAR_TAG_UP, h.comm)); h.cdone[i] = false
+    end
+    h.up_req = nothing; h.dn_req = nothing
+    h.phase = 1
+    return h
+end
+
+function iar_send_down!(h::IAllreduce)
+    for c in h.children
+        b = copy(h.result)
+        push!(h.send_bufs, b); push!(h.send_reqs, MPI.Isend(b, c, IAR_TAG_DOWN, h.comm))
+    end
+    h.phase = 3
+end
+
+# Advance the state machine without blocking. Returns true once h.result is valid and all sends are done.
+function iar_progress!(h::IAllreduce)::Bool
+    h.phase == 4 && return true
+    h.phase == 0 && return false
+    if h.phase == 1
+        for i in eachindex(h.children)
+            if !h.cdone[i] && MPI.Test(h.creq[i]); h.cdone[i] = true; h.acc .+= h.cbuf[i]; end
+        end
+        all(h.cdone) || return false
+        if h.rank == 0
+            copyto!(h.result, h.acc); iar_send_down!(h)
+        else
+            copyto!(h.up_buf, h.acc)
+            h.up_req = MPI.Isend(h.up_buf, h.parent, IAR_TAG_UP, h.comm)
+            h.dn_req = MPI.Irecv!(h.dn_buf, h.parent, IAR_TAG_DOWN, h.comm)
+            h.phase = 2
+        end
+    end
+    if h.phase == 2
+        MPI.Test(h.dn_req) || return false
+        copyto!(h.result, h.dn_buf); iar_send_down!(h)
+    end
+    if h.phase == 3
+        all(r -> MPI.Test(r), h.send_reqs) || return false     # children's results sent
+        if h.up_req !== nothing && !MPI.Test(h.up_req); return false; end
+        h.phase = 4
+    end
+    return h.phase == 4
 end
 
 function setup_assembler(SD, a, index_a, owner_a)
@@ -782,4 +855,22 @@ function get_ghost_ips(gelm_ghost, gfacets_ghost, gfacets_owner, conn, pelm2elm,
     ips_recv, ips_owner  = send_and_receive(ips_send, ips_targets, comm)
 
     return ips_recv, ips_owner
+end
+
+function test_iallreduce(comm; waves::Int = 2000)
+    rank = MPI.Comm_rank(comm); np = MPI.Comm_size(comm)
+    h = IAllreduce(comm, 3); bad = 0
+    noise_s = rand(256); noise_r = zeros(256)
+    for w in 1:waves
+        v = Float64[rank + w, 2.0 * rank, w % 7]
+        ref = MPI.Allreduce(v, +, comm)
+        iar_start!(h, v)
+        rq = MPI.Irecv!(noise_r, mod(rank - 1, np), 9, comm); sq = MPI.Isend(noise_s, mod(rank + 1, np), 9, comm)
+        while !iar_progress!(h); end
+        MPI.Waitall([rq, sq])
+        h.result == ref || (bad += 1)
+    end
+    tot = MPI.Allreduce(bad, +, comm)
+    MPI.Comm_rank(comm) == 0 && println("IAllreduce self-test: $waves waves, $tot mismatches over all ranks (expected 0)")
+    return nothing
 end

@@ -53,6 +53,7 @@ Base.@kwdef mutable struct St_SamMicrophysics{T <:AbstractFloat, dims1, dims2, d
     drad_lw::VT2 = KernelAbstractions.zeros(backend,  T, dims3) #Storage shortwave flux contribution
     flux_lw::VT1 = KernelAbstractions.zeros(backend,  T, dims1) # storage for longwave flux
     flux_sw::VT1 = KernelAbstractions.zeros(backend,  T, dims1) # storage for shortwave flux
+    dTdt_lat::VT1 = KernelAbstractions.zeros(backend,  T, dims1)
     mumps_handle_ref   = Ref{Union{MUMPSHandle,Nothing}}(nothing)
     superlu_handle_ref = Ref{Union{SuperLUHandle,Nothing}}(nothing)
     prev_nnz_ref       = Ref(0)

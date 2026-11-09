@@ -68,12 +68,35 @@ function driver(nparts,
 
         sem, partitioned_model = sem_setup(inputs, nparts, distribute)
 	
-	#test_adaptive_angular_checks(inputs, nparts, distribute, sem, partitioned_model)
-	#test_stress_combined_ncf_unified_exponential(inputs, nparts, distribute, sem, partitioned_model)
-	profile_job(inputs, nparts, distribute, sem, partitioned_model)
-	#ncf_equivalence_job(inputs, nparts, distribute, sem, partitioned_model)	
 
+	#=env(k, d) = get(ENV, k, d)
+	frac     = parse(Float64, env("MANUF_FRAC", "0.01"))
+	solver   = Symbol(env("MANUF_SOLVER", "jacobi"))
+	max_iter = parse(Int, env("MANUF_MAX_ITER", "500"))
+	tol      = parse(Float64, env("MANUF_TOL", "1e-9"))
+	restart  = parse(Int, env("MANUF_RESTART", "40"))
+	ref      = env("MANUF_OPTS", "default") == "reference"
 
+	ro_mode = get(ENV, "MANUF_OPTS", "default")
+        cache_mb = parse(Float64, get(ENV, "MANUF_CACHE_MB", "-1"))
+        gcm = Symbol(get(ENV, "MANUF_GC", "sync"))
+	gce = parse(Int, get(ENV, "MANUF_GC_EVERY", "0"))
+	opts = ro_mode == "reference" ?
+    		SweepOptions(async=false, lu_cache_mb=0.0, gc_mode=:auto, upwind_order=false, incremental_pack=false) :
+    		SweepOptions(lu_cache_mb=cache_mb, gc_mode=gcm, gc_every=gce)
+
+	if env("MANUF_CLEAR", "true") == "true"
+    	   clear_face_plans!()
+	end
+
+	
+
+	err = test_unified_case_manufactured(inputs, nparts, distribute, sem, partitioned_model;
+            frac=frac, solver=solver, max_iter=max_iter, tol=tol, opts=opts,
+            gmres_restart=restart, gmres_max_restarts=10)
+	=#
+
+	
 	if rank == 0
             @printf("DONE (%.2f s)\n", (time_ns() - _t_sem) / 1e9)
             print(" # initialize() ......... ")

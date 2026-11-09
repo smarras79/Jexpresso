@@ -680,27 +680,45 @@ function test_stress_combined_ncf_unified_manufactured_variable(inputs, nparts, 
 end
 
 function test_unified_case_manufactured(inputs, nparts, distribute, sem, partitioned_model;
-                                         spatial_target_iel::Int=0, angular_target_iel::Int=0, angular_e_ext::Int=4,
+                                         frac::Float64=0.01, seed::Int=42, max_e_ext::Int=4,
                                          I0=4.2, A=1.0, b=0.1, c=0.1, d=0.1,
-                                         κ_val=0.001, σ_val=0.0005, g_val=0.0, max_iter=500, tol=1e-9)
-    rank = MPI.Comm_rank(get_mpi_comm()); comm = get_mpi_comm()
-    spatial_targets = spatial_target_iel == 0 ? Int[] : Int[spatial_target_iel]
-    angular_targets = angular_target_iel == 0 ? Tuple{Int,Int}[] : Tuple{Int,Int}[(angular_target_iel, angular_e_ext)]
+                                         κ_val=0.001, σ_val=0.0005, g_val=0.0,
+                                         max_iter::Int=500, tol::Float64=1e-9,
+                                         solver::Symbol=:jacobi, opts::SweepOptions=SweepOptions(),
+                                         gmres_restart::Int=40, gmres_max_restarts::Int=10,
+                                         debug::Bool=false)
+    comm = get_mpi_comm(); rank = MPI.Comm_rank(comm); np = MPI.Comm_size(comm)
 
+    # ---- refinement targets, identical on every rank ----
+    spatial_targets = Int[]; angular_targets = Tuple{Int,Int}[]
+    if frac > 0
+        sp, ang_g, ang_e = generate_stress_test_targets(sem.mesh.gnelem; seed=seed, frac=frac, max_e_ext=max_e_ext)
+        spatial_targets = collect(Int, sp)
+        angular_targets = Tuple{Int,Int}[(ang_g[i], ang_e[i]) for i = 1:length(ang_g)]
+    end
     setup = setup_unified_ncf_test(inputs, nparts, distribute, sem, partitioned_model;
                                     spatial_target_gels=spatial_targets, angular_targets=angular_targets)
     mesh = setup.mesh; metrics = setup.metrics
 
+    let
+        GC.gc(true)
+        em_gb  = Base.summarysize(mesh.extra_mesh) / 1e9
+        st_gb  = Base.summarysize(setup) / 1e9
+        mv = Float64[em_gb, st_gb, Sys.maxrss()/1e9, Base.gc_live_bytes()/1e9, mesh.nelem, sum(setup.n_dirs)]
+        mx = MPI.Allreduce(mv, MPI.MAX, comm)
+        if rank == 0
+            println("setup memory (max over ranks): extra_mesh $(round(mx[1]; digits=3)) GB, whole setup $(round(mx[2]; digits=3)) GB, " *
+                    "peak RSS $(round(mx[3]; digits=2)) GB, live heap $(round(mx[4]; digits=2)) GB, " *
+                    "elements $(Int(mx[5])), pairs $(Int(mx[6]))")
+        end
+    end
 
     Lx = mesh.xmax-mesh.xmin; Ly = mesh.ymax-mesh.ymin; Lz = mesh.zmax-mesh.zmin
     kx = 2π/Lx; ky = 2π/Ly; kz = 2π/Lz
     I_manuf(x,y,z,Ωx,Ωy,Ωz) = I0 + A*sin(kx*x+ky*y+kz*z)*(1+b*Ωx+c*Ωy+d*Ωz)
     dI_manuf(x,y,z,Ωx,Ωy,Ωz) = A*cos(kx*x+ky*y+kz*z)*(1+b*Ωx+c*Ωy+d*Ωz) .* (kx,ky,kz)
 
-    # ── RadiativeCase, built so its source_fn/phase_fn/kappa_fn/sigma_fn
-    # produce EXACTLY the same discrete equation the manufactured field
-    # solves — same principle as every prior manufactured test. ─────────────
-    npoin_cg = length(mesh.x)
+    # ---- per-element angular data (same weights as before) ----
     thetas_by_iel = Dict{Int,Vector{Float64}}(); phis_by_iel = Dict{Int,Vector{Float64}}()
     wext_by_iel = Dict{Int,Vector{Float64}}()
     for iel = 1:mesh.nelem
@@ -714,8 +732,29 @@ function test_unified_case_manufactured(inputs, nparts, distribute, sem, partiti
                 w[ip_ext] += em.extra_metrics.Je[e_ext,iθ,iϕ]*em.ωθ[iθ]*em.ωθ[iϕ]
             end
         end
-	@info sum(w)
         wext_by_iel[iel] = w
+    end
+
+    # ---- point -> first element containing it (same rule as the old linear search) ----
+    iel_of = zeros(Int, length(mesh.x))
+    for iel = 1:mesh.nelem, k=1:mesh.ngl, j=1:mesh.ngl, i=1:mesh.ngl
+        ip = mesh.connijk[iel,i,j,k]
+        iel_of[ip] == 0 && (iel_of[ip] = iel)
+    end
+
+    # ---- cached angular moments of the phase function: (Σ P w, Σ P w Ωx, Σ P w Ωy, Σ P w Ωz) ----
+    mom_cache = Dict{Tuple{Int,Float64,Float64},NTuple{4,Float64}}()
+    function moments(iel::Int, θ::Float64, ϕ::Float64)
+        get!(mom_cache, (iel, θ, ϕ)) do
+            th = thetas_by_iel[iel]; ph = phis_by_iel[iel]; w = wext_by_iel[iel]
+            s0 = 0.0; sx = 0.0; sy = 0.0; sz = 0.0
+            for m = 1:length(w)
+                Pw = phase_function_hg(θ, th[m], ϕ, ph[m], g_val) * w[m]
+                s0 += Pw
+                sx += Pw * sin(th[m])*cos(ph[m]); sy += Pw * sin(th[m])*sin(ph[m]); sz += Pw * cos(th[m])
+            end
+            (s0, sx, sy, sz)
+        end
     end
 
     source_fn = (x,y,z,ip,θ,ϕ) -> begin
@@ -723,17 +762,9 @@ function test_unified_case_manufactured(inputs, nparts, distribute, sem, partiti
         grad = dI_manuf(x,y,z,Ωx,Ωy,Ωz)
         Ω_dot_grad = Ωx*grad[1] + Ωy*grad[2] + Ωz*grad[3]
         I_true = I_manuf(x,y,z,Ωx,Ωy,Ωz)
-
-        iel_found = 0
-        for iel = 1:mesh.nelem, k=1:mesh.ngl,j=1:mesh.ngl,i=1:mesh.ngl
-            mesh.connijk[iel,i,j,k] == ip && (iel_found = iel; break)
-        end
-        thetas = thetas_by_iel[iel_found]; phis = phis_by_iel[iel_found]; w = wext_by_iel[iel_found]
-        scatter_true = 0.0
-        for m = 1:length(w)
-            Ωxm = sin(thetas[m])*cos(phis[m]); Ωym = sin(thetas[m])*sin(phis[m]); Ωzm = cos(thetas[m])
-            scatter_true += phase_function_hg(θ, thetas[m], ϕ, phis[m], g_val) * w[m] * σ_val * I_manuf(x,y,z,Ωxm,Ωym,Ωzm)
-        end
+        s0, sx, sy, sz = moments(iel_of[ip], Float64(θ), Float64(ϕ))
+        sφ = sin(kx*x + ky*y + kz*z)
+        scatter_true = σ_val * (I0*s0 + A*sφ*(s0 + b*sx + c*sy + d*sz))
         Ω_dot_grad + κ_val*I_true - scatter_true
     end
 
@@ -744,7 +775,15 @@ function test_unified_case_manufactured(inputs, nparts, distribute, sem, partiti
         bc_fn = (x,y,z,ip,nx,ny,nz,θ,ϕ) -> I_manuf(x,y,z,sin(θ)*cos(ϕ),sin(θ)*sin(ϕ),cos(θ)),
         source_fn = source_fn)
 
-    I_cg_all, κ, σ = run_unified_case_solve(setup, metrics, comm, case; max_iter=max_iter, tol=tol)
+    n_pairs = MPI.Allreduce(sum(setup.n_dirs), +, comm)
+    rank == 0 && println("manufactured case: frac=$frac seed=$seed targets(spatial=$(length(spatial_targets)), " *
+                         "angular=$(length(angular_targets))), $np ranks, $n_pairs (iel,d) pairs, solver=$solver")
+
+    t0 = time_ns()
+    I_cg_all, κ, σ = run_unified_case_solve(setup, metrics, comm, case; max_iter=max_iter, tol=tol,
+                                            solver=solver, opts=opts,
+                                            gmres_restart=gmres_restart, gmres_max_restarts=gmres_max_restarts)
+    t_run = MPI.Allreduce((time_ns() - t0)*1e-9, MPI.MAX, comm)
 
     max_err_local = 0.0
     for iel = 1:mesh.nelem
@@ -752,18 +791,23 @@ function test_unified_case_manufactured(inputs, nparts, distribute, sem, partiti
         for dd = 1:em.extra_npoin
             θ = em.extra_coords[1,dd]; ϕ = em.extra_coords[2,dd]
             Ωx = sin(θ)*cos(ϕ); Ωy = sin(θ)*sin(ϕ); Ωz = cos(θ)
+            v = I_cg_all[(iel,dd)]
             for k=1:mesh.ngl,j=1:mesh.ngl,i=1:mesh.ngl
                 gip = mesh.connijk[iel,i,j,k]
                 I_true = I_manuf(mesh.x[gip],mesh.y[gip],mesh.z[gip],Ωx,Ωy,Ωz)
-                max_err_local = max(max_err_local, abs(I_cg_all[(iel,dd)][lidx(i,j,k,mesh.ngl)] - I_true))
+                max_err_local = max(max_err_local, abs(v[lidx(i,j,k,mesh.ngl)] - I_true))
             end
         end
     end
-    
-    debug_find_worst_error(mesh, I_cg_all, I_manuf)
-
+    debug && debug_find_worst_error(mesh, I_cg_all, I_manuf)
     max_err_global = MPI.Allreduce(max_err_local, MPI.MAX, comm)
-    rank == 0 && println("CASE-FRAMEWORK manufactured (HG) — max abs error: $max_err_global")
+
+    fp = solution_fingerprint(mesh, I_cg_all, comm)               # collective
+    if rank == 0
+        foreach(println, fp)
+        println("CASE-FRAMEWORK manufactured (HG) — frac=$frac solver=$solver ranks=$np " *
+                "max abs error: $max_err_global (solve+setup wall $(round(t_run; digits=1)) s)")
+    end
     return max_err_global
 end
 
@@ -1325,77 +1369,118 @@ function levels_from_table(table, g_bucket, tol)
     return length(errs) - 1
 end
 
+# Full rewrite of test_adaptive_angular_checks and run_lobe_manufactured. NOT compiled or run.
+#
+# New in test_adaptive_angular_checks:
+#   only_scenario  0 = all, 1 = constant g=0.6, 2 = varying g 0.2->0.6, 3 = harsh (needs include_harsh)
+#   run_adaptive   false skips CHECK 1 and stage B
+#   half_level     >0 adds stage D: constant-criterion refinement of the lower half (z < zmid) only
+#   uniform_level  >0 adds stage C: every element refined to this level (no NCF faces)
+#   init_exact     true starts every stage from I_exact (use with max_iter=1: one matvec shows the interface error)
+#   an angular-element-count histogram is printed before every stage
+#   adaptive info printed from rank 0 only
+#
+# New in run_lobe_manufactured: ngl^3 source vectors, Imat*C' scattering update, cached C,
+#   timing prints, worst near-sun elements (err, x-center, nelem_ang), progress prints.
+
+# ----------------------------------------------------------------------------------------------
+function ang_count_histogram(mesh, comm, label)
+    rank = MPI.Comm_rank(comm)
+    nmax = MPI.Allreduce(maximum((mesh.extra_mesh[i].extra_nelem for i = 1:mesh.nelem); init=0), MPI.MAX, comm)
+    cnt = zeros(Float64, nmax)
+    for i = 1:mesh.nelem; cnt[mesh.extra_mesh[i].extra_nelem] += 1; end
+    cnt = MPI.Allreduce(cnt, MPI.SUM, comm)
+    rank == 0 && println("  [$label] spatial elements by number of angular elements: " *
+        join(["$n: $(Int(c))" for (n, c) in enumerate(cnt) if c > 0], ", "))
+end
+
+# ----------------------------------------------------------------------------------------------
 function run_lobe_manufactured(infra, metrics, comm, g_fn::Function;
                                 κ_val=1e-3, σ_val=5e-4, A=1.0, ρ=0.8, θs=2.4, ϕs=0.7,
                                 near_angle=0.25, normalize_rows::Bool=false,
-                                max_iter::Int=300, tol::Float64=1e-9, verbose_iter::Bool=false)
+                                max_iter::Int=300, tol::Float64=1e-9, verbose_iter::Bool=false, init_exact::Bool=false,
+                                slab::Bool=false, slab_width::Float64=0.15)
     rank = MPI.Comm_rank(comm)
     mesh = infra.mesh
     ψ, dψ, ω = infra.sem.basis.ψ, infra.sem.basis.dψ, infra.sem.ω
-    ngl = mesh.ngl; n_dirs = infra.n_dirs; npoin = mesh.npoin
+    ngl = mesh.ngl; n3 = ngl^3; n_dirs = infra.n_dirs; npoin = mesh.npoin
     Ωs = (sin(θs)*cos(ϕs), sin(θs)*sin(ϕs), cos(θs))
     Lx = mesh.xmax-mesh.xmin; Ly = mesh.ymax-mesh.ymin; Lz = mesh.zmax-mesh.zmin
     kx = 2π/Lx; ky = 2π/Ly; kz = 2π/Lz
+    t_setup0 = time_ns()
 
-    # lobe_r has mean 1 over the sphere. Convolving it with HG(g) gives lobe_{g·r} exactly.
-    lobe(θ, ϕ, r) = 4π * phase_function_hg(θ, θs, ϕ, ϕs, r)
-    I_exact(x,y,z,θ,ϕ) = A*sin(kx*x+ky*y+kz*z)*lobe(θ,ϕ,ρ)
+    # slab=true: the lobe exists only in a z-layer, amp(z) = exp(-((z-zc)/w)^2), w = slab_width*Lz (a graded-amplitude test)
+    zc0 = mesh.zmin + 0.5*Lz; wz = slab_width*Lz
+    amp(z)  = slab ? exp(-((z-zc0)/wz)^2) : 1.0
+    damp(z) = slab ? -2*(z-zc0)/wz^2*exp(-((z-zc0)/wz)^2) : 0.0
+    lobe(θ, ϕ, r) = 4π * phase_function_hg(θ, θs, ϕ, ϕs, r)       # mean 1 over the sphere
+    I_exact(x,y,z,θ,ϕ) = A*amp(z)*sin(kx*x+ky*y+kz*z)*lobe(θ,ϕ,ρ)
 
     κ = fill(κ_val, npoin)
     C_all = Dict{Int,Matrix{Float64}}()
+    C_cache = Dict{Tuple{UInt,Float64},Matrix{Float64}}()
     q_ext_all = Dict{Tuple{Int,Int},Vector{Float64}}()
     bc_fn_all = Dict{Tuple{Int,Int},Function}()
+    local_gips_all = Vector{Vector{Int}}(undef, mesh.nelem)
     for iel = 1:mesh.nelem
         em = mesh.extra_mesh[iel]; npd = em.extra_npoin
-        w = ang_quad_weights(em)
-        g_iel = 0.0                                              # element-averaged g, as in the production coupling
-        for k=1:ngl, j=1:ngl, i=1:ngl
-            gip = mesh.connijk[iel,i,j,k]
-            g_iel += g_fn(mesh.x[gip], mesh.y[gip], mesh.z[gip]) / ngl^3
-        end
+        lg = local_gips_lidx(mesh, iel); local_gips_all[iel] = lg          # lidx order, length ngl^3
+        g_iel = 0.0                                                         # element-averaged g (as in production)
+        for p = 1:n3; g_iel += g_fn(mesh.x[lg[p]], mesh.y[lg[p]], mesh.z[lg[p]]) / n3; end
         θ = em.extra_coords[1,1:npd]; ϕ = em.extra_coords[2,1:npd]
-        C = zeros(npd, npd)
-        for dk = 1:npd, m = 1:npd
-            C[dk,m] = phase_function_hg(θ[dk], θ[m], ϕ[dk], ϕ[m], g_iel) * w[m]
+
+        key = (hash((θ, ϕ)), round(g_iel; digits=12))
+        C = get!(C_cache, key) do
+            w = ang_quad_weights(em)
+            Cm = zeros(npd, npd)
+            for m = 1:npd, dk = 1:npd
+                Cm[dk,m] = phase_function_hg(θ[dk], θ[m], ϕ[dk], ϕ[m], g_iel) * w[m]
+            end
+            normalize_rows && (Cm ./= sum(Cm; dims=2))                      # every row sums to exactly 1
+            Cm
         end
-        normalize_rows && (C ./= sum(C; dims=2))                 # every row sums to exactly 1
         C_all[iel] = C
+
         for dk = 1:npd
             Ωx = sin(θ[dk])*cos(ϕ[dk]); Ωy = sin(θ[dk])*sin(ϕ[dk]); Ωz = cos(θ[dk])
             lob   = lobe(θ[dk], ϕ[dk], ρ)
-            lob_s = lobe(θ[dk], ϕ[dk], g_iel*ρ)                  # exact continuous scattering integral
-            q_vec = zeros(npoin)
-            for k=1:ngl, j=1:ngl, i=1:ngl
-                gip = mesh.connijk[iel,i,j,k]
+            lob_s = lobe(θ[dk], ϕ[dk], g_iel*ρ)                             # exact continuous scattering integral
+            q = Vector{Float64}(undef, n3)
+            for p = 1:n3
+                gip = lg[p]
                 arg = kx*mesh.x[gip] + ky*mesh.y[gip] + kz*mesh.z[gip]
-                q_vec[gip] = A*cos(arg)*(Ωx*kx+Ωy*ky+Ωz*kz)*lob + κ_val*A*sin(arg)*lob - σ_val*A*sin(arg)*lob_s
+                zq = mesh.z[gip]; a = amp(zq); da = damp(zq)
+                q[p] = A*lob*(a*cos(arg)*(Ωx*kx+Ωy*ky+Ωz*kz) + sin(arg)*Ωz*da) + κ_val*A*a*sin(arg)*lob - σ_val*A*a*sin(arg)*lob_s
             end
-            q_ext_all[(iel,dk)] = q_vec
+            q_ext_all[(iel,dk)] = q
             θk = θ[dk]; ϕk = ϕ[dk]
             bc_fn_all[(iel,dk)] = (x,y,z,ip,nx,ny,nz) -> I_exact(x,y,z,θk,ϕk)
         end
     end
-
     I_cg_all = Dict{Tuple{Int,Int},Vector{Float64}}()
-    for iel = 1:mesh.nelem, d = 1:n_dirs[iel]
-        I_cg_all[(iel,d)] = zeros(ngl^3)
+    for iel = 1:mesh.nelem, d = 1:n_dirs[iel]; I_cg_all[(iel,d)] = zeros(n3); end
+    if init_exact                                   # start from the exact solution: one matvec then shows the discretisation/interface error
+        for iel = 1:mesh.nelem
+            em = mesh.extra_mesh[iel]; lg = local_gips_all[iel]
+            for d = 1:n_dirs[iel], p = 1:n3
+                I_cg_all[(iel,d)][p] = I_exact(mesh.x[lg[p]], mesh.y[lg[p]], mesh.z[lg[p]], em.extra_coords[1,d], em.extra_coords[2,d])
+            end
+        end
     end
+    t_setup = MPI.Allreduce((time_ns() - t_setup0)*1e-9, MPI.MAX, comm)
+    rank == 0 && println("    [lobe] setup $(round(t_setup; digits=2)) s, $(length(C_cache)) distinct C matrices")
 
-    iters = 0; dg = Inf
+    iters = 0; dg = Inf; dg_first = Inf
     for it = 1:max_iter
-        iters = it
+        iters = it; t_it = time_ns()
         extra_source_all = Dict{Tuple{Int,Int},Vector{Float64}}()
         for iel = 1:mesh.nelem
-            em = mesh.extra_mesh[iel]; C = C_all[iel]
-            #local_gips = [mesh.connijk[iel,i,j,k] for k=1:ngl, j=1:ngl, i=1:ngl][:]
-            local_gips = local_gips_lidx(mesh, iel)
-	    for dk = 1:em.extra_npoin
-                q_k = copy(q_ext_all[(iel,dk)])
-                q_loc = @view q_k[local_gips]
-                for m = 1:em.extra_npoin
-                    q_loc .+= (σ_val*C[dk,m]) .* I_cg_all[(iel,m)]
-                end
-                extra_source_all[(iel,dk)] = q_k
+            npd = mesh.extra_mesh[iel].extra_npoin; C = C_all[iel]
+            Imat = Matrix{Float64}(undef, n3, npd)
+            for m = 1:npd; Imat[:,m] .= I_cg_all[(iel,m)]; end
+            S = Imat * transpose(C)
+            for dk = 1:npd
+                extra_source_all[(iel,dk)] = q_ext_all[(iel,dk)] .+ σ_val .* view(S,:,dk)
             end
         end
         x_dg, _ = run_dg_sweep_multirank_unified!(mesh, metrics, ψ, dψ, ω,
@@ -1413,35 +1498,69 @@ function run_lobe_manufactured(infra, metrics, comm, g_fn::Function;
             dl = max(dl, maximum(abs.(x_dg[(iel,dd)] .- I_cg_all[(iel,dd)])))
             I_cg_all[(iel,dd)] = copy(x_dg[(iel,dd)])
         end
-        dg = MPI.Allreduce(dl, MPI.MAX, comm)                    # collective, unconditional
-        verbose_iter && rank == 0 && println("    iter $it: max_delta=$dg")
+        dg = MPI.Allreduce(dl, MPI.MAX, comm)                               # collective, unconditional
+        t_it = MPI.Allreduce((time_ns() - t_it)*1e-9, MPI.MAX, comm)
+        (verbose_iter || it <= 3 || it % 5 == 0 || dg < tol) && rank == 0 &&
+            println("    iter $it: max_delta=$dg ($(round(t_it; digits=2)) s)")
         dg < tol && break
+        it == 1 && (dg_first = dg)
+        if !isfinite(dg) || (it > 3 && dg > 10*dg_first)
+            rank == 0 && println("    DIVERGING at iter $it: max_delta=$dg (first iteration $dg_first) -> stopping")
+            break
+        end
     end
 
     err_all = 0.0; err_near = 0.0; err_far = 0.0
-    for iel = 1:mesh.nelem, dd = 1:n_dirs[iel]
-        em = mesh.extra_mesh[iel]; θ = em.extra_coords[1,dd]; ϕ = em.extra_coords[2,dd]
-        near = ang_angle(Ωs, θ, ϕ) <= near_angle
-        for k=1:ngl, j=1:ngl, i=1:ngl
-            gip = mesh.connijk[iel,i,j,k]
-            e = abs(I_cg_all[(iel,dd)][lidx(i,j,k,ngl)] - I_exact(mesh.x[gip],mesh.y[gip],mesh.z[gip],θ,ϕ))
-            err_all = max(err_all, e)
-            near ? (err_near = max(err_near, e)) : (err_far = max(err_far, e))
+    zbin_err = zeros(2, 10)                                                 # near-sun error by z-layer (10 bins) and sign of Ωz (1: Ωz<0, 2: Ωz>=0)
+    worst = [0.0, 0.0, 0.0]                                                 # [err, x-center, nelem_ang] of this rank's worst near-sun element
+    for iel = 1:mesh.nelem
+        em = mesh.extra_mesh[iel]; en = 0.0
+        for dd = 1:n_dirs[iel]
+            θ = em.extra_coords[1,dd]; ϕ = em.extra_coords[2,dd]
+            near = ang_angle(Ωs, θ, ϕ) <= near_angle
+            for k=1:ngl, j=1:ngl, i=1:ngl
+                gip = mesh.connijk[iel,i,j,k]
+                e = abs(I_cg_all[(iel,dd)][lidx(i,j,k,ngl)] - I_exact(mesh.x[gip],mesh.y[gip],mesh.z[gip],θ,ϕ))
+                err_all = max(err_all, e)
+                if near
+                    err_near = max(err_near, e); en = max(en, e)
+                    zb = clamp(floor(Int, 10*(mesh.z[gip] - mesh.zmin)/Lz) + 1, 1, 10)
+                    sg = cos(θ) < 0 ? 1 : 2
+                    zbin_err[sg, zb] = max(zbin_err[sg, zb], e)
+                else
+                    err_far = max(err_far, e)
+                end
+            end
         end
+        en > worst[1] && (worst = [en, sum(mesh.x[local_gips_all[iel]])/n3, Float64(em.extra_nelem)])
+    end
+    all_w = MPI.Gather(worst, comm; root=0)
+    if rank == 0
+        W = sortslices(reshape(all_w, 3, :), dims=2, by=c->-c[1])
+        println("    worst near-sun elements (err, x-center, nelem_ang): ",
+                [round.(W[:,i]; sigdigits=3) for i = 1:min(4,size(W,2))])
+    end
+    zbin_err = MPI.Allreduce(zbin_err, MPI.MAX, comm)
+    if rank == 0
+        println("    near-sun max error by z-layer (bottom->top), directions with Ωz<0 : ", round.(zbin_err[1,:]; sigdigits=2))
+        println("    near-sun max error by z-layer (bottom->top), directions with Ωz>=0: ", round.(zbin_err[2,:]; sigdigits=2))
     end
     err_all  = MPI.Allreduce(err_all,  MPI.MAX, comm)
     err_near = MPI.Allreduce(err_near, MPI.MAX, comm)
     err_far  = MPI.Allreduce(err_far,  MPI.MAX, comm)
     ndirs    = MPI.Allreduce(sum(n_dirs), MPI.SUM, comm)
     return (err_all=err_all, err_near=err_near, err_far=err_far, ndirs=ndirs,
-            iters=iters, converged=(dg < tol), peak=A*(1+ρ)/(1-ρ)^2)
+            iters=iters, converged=(dg < tol), peak=A*(1+ρ)/(1-ρ)^2, I=I_cg_all)
 end
 
+# ----------------------------------------------------------------------------------------------
 function test_adaptive_angular_checks(inputs, nparts, distribute, sem, partitioned_model;
         κ_val=1e-3, σ_val=5e-4, ρ=0.5, θs=2.4, ϕs=0.7,
         tol_quad=1e-3, max_level=3, include_harsh::Bool=false, uniform_level::Int=0,
-        max_iter::Int=300, tol::Float64=1e-9)
-    rank = MPI.Comm_rank(get_mpi_comm()); comm = get_mpi_comm()
+        half_level::Int=0, only_scenario::Int=0, run_adaptive::Bool=true,
+        init_exact::Bool=false, half_upper::Bool=false, indicator_stage::Bool=false, ind_tol::Float64=1e-3,
+        ind_only::Bool=true, slab::Bool=false, slab_width::Float64=0.15, halo::Int=0, radius_mode::Symbol=:per_class, periodic_fatal::Bool=true, max_iter::Int=300, tol::Float64=1e-9)
+    comm = get_mpi_comm(); rank = MPI.Comm_rank(comm)
     setup = setup_unified_ncf_test(inputs, nparts, distribute, sem, partitioned_model)   # no refinement
     mesh = setup.mesh; metrics = setup.metrics
     builder = make_angular_mesh_builder(inputs, inputs[:backend])
@@ -1449,14 +1568,17 @@ function test_adaptive_angular_checks(inputs, nparts, distribute, sem, partition
     σ_node = fill(σ_val, npoin); F_node = ones(npoin)
     xmid = mesh.xmin + 0.5*(mesh.xmax-mesh.xmin); wtr = (mesh.xmax-mesh.xmin)/8
 
-    scenarios = Any[(label="constant g=0.6, ρ=$ρ",        g_lo=0.6, g_hi=0.6, ρ=ρ),
-                    (label="varying g 0.2->0.6, ρ=$ρ",    g_lo=0.2, g_hi=0.6, ρ=ρ)]
+    scenarios = Any[(label="constant g=0.6, ρ=$ρ",        g_lo=0.6, g_hi=0.6,  ρ=ρ),
+                    (label="varying g 0.2->0.6, ρ=$ρ",    g_lo=0.2, g_hi=0.6,  ρ=ρ)]
     include_harsh && push!(scenarios, (label="harsh: g 0.2->0.85, ρ=0.8", g_lo=0.2, g_hi=0.85, ρ=0.8))
+    only_scenario > 0 && (scenarios = Any[scenarios[only_scenario]])
 
     rows = NamedTuple[]
     function run_stage(infra, g_fn, sc, near_angle, stage, normalize)
+        ang_count_histogram(infra.mesh, comm, stage)
         r = run_lobe_manufactured(infra, metrics, comm, g_fn; κ_val=κ_val, σ_val=σ_val, ρ=sc.ρ, θs=θs, ϕs=ϕs,
-                                  near_angle=near_angle, normalize_rows=normalize, max_iter=max_iter, tol=tol)
+                                  near_angle=near_angle, normalize_rows=normalize, max_iter=max_iter, tol=tol, init_exact=init_exact,
+                                  slab=slab, slab_width=slab_width)
         push!(rows, (scenario=sc.label, stage=stage, normalize=normalize, r=r))
         rank == 0 && println("  [$stage, normalize=$normalize] dirs=$(r.ndirs) iters=$(r.iters) converged=$(r.converged)  " *
             "err_near=$(r.err_near) err_far=$(r.err_far) err_all=$(r.err_all)  (near/peak=$(r.err_near/r.peak))")
@@ -1483,26 +1605,55 @@ function test_adaptive_angular_checks(inputs, nparts, distribute, sem, partition
         resA = run_stage(infraA, g_fn, sc, near_angle, :A_base, false)
         run_stage(infraA, g_fn, sc, near_angle, :A_base, true)
 
-        if si == 1                                                        # CHECK 1: max_level=0 must reproduce A exactly
-            rank == 0 && println("--- CHECK 1: adaptive path with max_level=0 must reproduce A ---")
-            infra0, _, _ = adaptive_angular_regrid!(mesh, setup.sem, infraA, comm, phase_function_hg,
-                                                    g_node, σ_node, F_node, θs, ϕs, builder; tol_quad=tol_quad, max_level=0)
-            res0 = run_stage(infra0, g_fn, sc, near_angle, :B_level0, false)
-            same = res0.ndirs == resA.ndirs && isapprox(res0.err_all, resA.err_all; rtol=1e-10)
-            rank == 0 && println("  CHECK 1: " * (same ? "✓ PASS" : "✗ FAIL (dirs $(res0.ndirs) vs $(resA.ndirs), err $(res0.err_all) vs $(resA.err_all)) — bug in reset/rebuild path"))
+        if indicator_stage                                                # E: levels from the Legendre tail of A's solution (needs the base mesh, so before any regrid)
+            rank == 0 && println("--- E: indicator-driven regrid from A's solution (ind_tol=$ind_tol, a-priori criterion " * (ind_only ? "OFF" : "ON") * ") ---")
+            lv_floor, dgn = angular_tail_levels(mesh, resA.I, Dict{Int,Int}(), comm; tol_rel=ind_tol, max_level=max_level, sun=(θs, ϕs))
+            hist = zeros(Int, max_level+1)
+            for l in values(lv_floor); hist[l+1] += 1; end
+            hist = MPI.Allreduce(hist, +, comm)
+            eta_max = MPI.Allreduce(maximum(dgn.eta; init=0.0), MPI.MAX, comm)
+            eta_min = MPI.Allreduce(minimum(dgn.eta; init=Inf), MPI.MIN, comm)
+            Rmax = MPI.Allreduce(maximum(values(dgn.radius); init=0.0), MPI.MAX, comm)
+            Rmin = MPI.Allreduce(minimum((v for v in values(dgn.radius) if v > 0); init=Inf), MPI.MIN, comm)
+            rank == 0 && println("  per-element indicator radius: min $(round(Rmin; digits=3)) max $(round(Rmax; digits=3)) rad (a spread means neighbours would get different angular meshes)")
+            rank == 0 && println("  indicator radius reaches $(round(Rmax; digits=3)) rad from the sun (near_angle=$(round(near_angle; digits=3)))")
+            rank == 0 && println("  I_ref=$(dgn.I_ref)  eta range [$(eta_min), $(eta_max)]  indicator level histogram (L=0..$max_level): $hist")
+            infraE, _, infoE = adaptive_angular_regrid!(mesh, setup.sem, infraA, comm, phase_function_hg,
+                                   g_node, σ_node, F_node, θs, ϕs, builder; tol_quad=tol_quad, max_level=max_level,
+                                   strength_tol = ind_only ? 2.0 : 0.05, level_floor=lv_floor, radius_floor=dgn.radius, radius_mode=radius_mode, check_periodic=true, periodic_fatal=periodic_fatal, halo=halo)
+            histE = zeros(Int, max_level+1)                                   # infoE.levels is global on every rank: count local elements only
+            for iel = 1:mesh.nelem; histE[infoE.levels[Int(mesh.el2gel[iel])]+1] += 1; end
+            histE = MPI.Allreduce(histE, +, comm)
+            rank == 0 && println("  levels after balancing (L=0..$max_level): $histE   dirs $(infoE.n_dirs_before) -> $(infoE.n_dirs_after)")
+            phase_row_sum_report(mesh, phase_function_hg, unique([sc.g_lo, sc.g_hi]), comm)
+            run_stage(infraE, g_fn, sc, near_angle, :E_indicator, false)
+            run_stage(infraE, g_fn, sc, near_angle, :E_indicator, true)
         end
 
-        rank == 0 && println("--- B: adaptive (max_level=$max_level, tol_quad=$tol_quad) ---")
-        infraB, _, info = adaptive_angular_regrid!(mesh, setup.sem, infraA, comm, phase_function_hg,
-                                                   g_node, σ_node, F_node, θs, ϕs, builder; tol_quad=tol_quad, max_level=max_level)
-        println("  rank $rank: dirs $(info.n_dirs_before) -> $(info.n_dirs_after); sun-row quad error vs level: " *
-                join(["g=$g: $(round.(e; sigdigits=3))" for (g,e) in sort(collect(info.table))], "; "))
-        rank == 0 && println("  levels used: min=$(minimum(values(info.levels))) max=$(maximum(values(info.levels)))")
-        phase_row_sum_report(mesh, phase_function_hg, unique([sc.g_lo, sc.g_hi]), comm)
-        run_stage(infraB, g_fn, sc, near_angle, :B_adaptive, false)
-        run_stage(infraB, g_fn, sc, near_angle, :B_adaptive, true)
+        if run_adaptive
+            if si == 1                                                    # CHECK 1: max_level=0 must reproduce A exactly
+                rank == 0 && println("--- CHECK 1: adaptive path with max_level=0 must reproduce A ---")
+                infra0, _, _ = adaptive_angular_regrid!(mesh, setup.sem, infraA, comm, phase_function_hg,
+                                                        g_node, σ_node, F_node, θs, ϕs, builder; tol_quad=tol_quad, max_level=0)
+                res0 = run_stage(infra0, g_fn, sc, near_angle, :B_level0, false)
+                same = res0.ndirs == resA.ndirs && isapprox(res0.err_all, resA.err_all; rtol=1e-10)
+                rank == 0 && println("  CHECK 1: " * (same ? "✓ PASS" : "✗ FAIL (dirs $(res0.ndirs) vs $(resA.ndirs), err $(res0.err_all) vs $(resA.err_all)) — bug in reset/rebuild path"))
+            end
 
-        if uniform_level > 0                                              # optional; cost grows like 4^level
+            rank == 0 && println("--- B: adaptive (max_level=$max_level, tol_quad=$tol_quad) ---")
+            infraB, _, info = adaptive_angular_regrid!(mesh, setup.sem, infraA, comm, phase_function_hg,
+                                                       g_node, σ_node, F_node, θs, ϕs, builder; tol_quad=tol_quad, max_level=max_level, radius_mode=radius_mode, check_periodic=true, periodic_fatal=periodic_fatal)
+            if rank == 0
+                println("  dirs $(info.n_dirs_before) -> $(info.n_dirs_after); levels used: min=$(minimum(values(info.levels))) max=$(maximum(values(info.levels)))")
+                println("  rank 0 sun-row quad error vs level: " *
+                        join(["g=$g: $(round.(e; sigdigits=3))" for (g,e) in sort(collect(info.table))], "; "))
+            end
+            phase_row_sum_report(mesh, phase_function_hg, unique([sc.g_lo, sc.g_hi]), comm)
+            run_stage(infraB, g_fn, sc, near_angle, :B_adaptive, false)
+            run_stage(infraB, g_fn, sc, near_angle, :B_adaptive, true)
+        end
+
+        if uniform_level > 0                                              # every element refined identically: no NCF faces
             rank == 0 && println("--- C: uniform level $uniform_level ---")
             reset_angular_mesh!(mesh, builder)
             dθ0 = mesh.nelem > 0 ? base_theta_extent(mesh.extra_mesh[1]) : 0.0
@@ -1513,20 +1664,37 @@ function test_adaptive_angular_checks(inputs, nparts, distribute, sem, partition
             run_stage(infraC, g_fn, sc, near_angle, :C_uniform, false)
             run_stage(infraC, g_fn, sc, near_angle, :C_uniform, true)
         end
+
+        if half_level > 0                                                 # one NCF interface at z = zmid, no g-based criterion
+            rank == 0 && println("--- D: level $half_level on the lower half (z < zmid) only ---")
+            reset_angular_mesh!(mesh, builder)
+            dθ0 = mesh.nelem > 0 ? base_theta_extent(mesh.extra_mesh[1]) : 0.0
+            zmid = mesh.zmin + 0.5*(mesh.zmax - mesh.zmin); n3 = mesh.ngl^3
+            for iel = 1:mesh.nelem
+                zc = sum(mesh.z[mesh.connijk[iel,i,j,k]] for i=1:mesh.ngl, j=1:mesh.ngl, k=1:mesh.ngl) / n3
+                (half_upper ? zc >= zmid : zc < zmid) && refine_lobe_to_level!(mesh, iel, θs, ϕs, 4.0, half_level, dθ0)
+            end
+            infraD = build_unified_ncf_infrastructure(mesh, setup.sem, comm)
+            run_stage(infraD, g_fn, sc, near_angle, :D_halfz, false)
+            run_stage(infraD, g_fn, sc, near_angle, :D_halfz, true)
+        end
     end
 
     if rank == 0
-        println("\n================ SUMMARY (near-sun error, B vs A, ratio < 1 means refinement helped) ================")
+        println("\n================ SUMMARY (near/far error vs stage A; ratio < 1 means better) ================")
         for sc in scenarios, nrm in (false, true)
             a = first(r for r in rows if r.scenario == sc.label && r.stage == :A_base && r.normalize == nrm).r
-            b = first(r for r in rows if r.scenario == sc.label && r.stage == :B_adaptive && r.normalize == nrm).r
-            println("$(sc.label), normalize=$nrm: near $(b.err_near/a.err_near)  far $(b.err_far/a.err_far)  " *
-                    "dirs $(b.ndirs/a.ndirs)x  iters $(a.iters) -> $(b.iters)")
+            for st in (:B_adaptive, :C_uniform, :D_halfz, :E_indicator)
+                idx = findfirst(r -> r.scenario == sc.label && r.stage == st && r.normalize == nrm, rows)
+                idx === nothing && continue
+                b = rows[idx].r
+                println("$(sc.label), normalize=$nrm, $st vs A: near $(b.err_near/a.err_near)  far $(b.err_far/a.err_far)  " *
+                        "dirs $(b.ndirs/a.ndirs)x  iters $(a.iters) -> $(b.iters)")
+            end
         end
     end
     return rows
 end
-
 
 function phase_lobe_halfwidth(phase_fn::Function, g::Float64; nscan::Int=4000)
     f0 = phase_fn(π/2, π/2, 0.0, 0.0, g)               # θ=θ1=π/2, so cosΘ = cos(ϕ-ϕ1)
@@ -1632,59 +1800,6 @@ function sun_row_error_table!(mesh, builder, phase_fn, g_buckets, θsun, ϕsun, 
     return table
 end
 
-function adaptive_angular_regrid!(mesh, sem, infra, comm, phase_fn, g_node, σ_node, F_node,
-                                   θsun::Float64, ϕsun::Float64, builder::Function;
-                                   tol_quad::Float64=1e-3, max_level::Int=3,
-                                   strength_tol::Float64=0.05, lobe_k::Float64=2.0)
-    ngl = mesh.ngl
-    snapshots = Dict{Int,NamedTuple}()
-    for iel = 1:mesh.nelem
-        em = mesh.extra_mesh[iel]
-        snapshots[iel] = (coords = copy(em.extra_coords[:, 1:em.extra_npoin]), npoin = em.extra_npoin)
-    end
-    n_before = MPI.Allreduce(sum((s.npoin for s in values(snapshots)); init=0), +, comm)
-
-    s_el = zeros(mesh.nelem); g_el = zeros(mesh.nelem)
-    for iel = 1:mesh.nelem, k=1:ngl, j=1:ngl, i=1:ngl
-        gip = mesh.connijk[iel,i,j,k]
-        s_el[iel] += σ_node[gip]*F_node[gip]/ngl^3; g_el[iel] += g_node[gip]/ngl^3
-    end
-    s_ref = MPI.Allreduce(maximum(s_el; init=0.0), MPI.MAX, comm)
-    active = [s_ref > 0 && s_el[iel] > strength_tol*s_ref for iel = 1:mesh.nelem]
-    bucket(g) = round(g; digits=2)
-    g_buckets = sort(unique(Float64[bucket(g_el[iel]) for iel = 1:mesh.nelem if active[iel]]))
-    hw = Dict(g => phase_lobe_halfwidth(phase_fn, g) for g in g_buckets)
-
-    reset_angular_mesh!(mesh, builder)
-    dθ0 = mesh.nelem > 0 ? base_theta_extent(mesh.extra_mesh[1]) : 0.0
-    table = (mesh.nelem > 0 && !isempty(g_buckets)) ?
-            sun_row_error_table!(mesh, builder, phase_fn, g_buckets, θsun, ϕsun, lobe_k, max_level, dθ0) :
-            Dict{Float64,Vector{Float64}}()
-    reset_angular_mesh!(mesh, builder)
-
-    L_loc = Dict{Int,Int}()
-    for iel = 1:mesh.nelem
-        L_loc[Int(mesh.el2gel[iel])] = active[iel] ? levels_from_table(table, bucket(g_el[iel]), tol_quad) : 0
-    end
-    sp = Set{Int}()
-    for (iel,_) in keys(infra.ncf_as_child);  push!(sp, iel); end
-    for (iel,_) in keys(infra.ncf_as_parent); push!(sp, iel); end
-    gel_to_class = build_periodic_equivalence_classes(mesh, infra.same_rank_kind, infra.same_rank_partner,
-        infra.same_rank_is_periodic, infra.neighbor_kind, infra.neighbor_gel_group, infra.neighbor_is_periodic, comm)
-    global_adj, global_refined = build_global_element_adjacency_and_refined_set(mesh, infra.neighbor_elem, sp,
-        infra.neighbor_rank, infra.neighbor_gel_group, gel_to_class, comm)
-    forced_zero = Set{Int}(Int(g) for g in global_refined)
-    for g in global_refined, n in get(global_adj, g, ()); push!(forced_zero, Int(n)); end
-    L = balance_angular_levels(L_loc, global_adj, gel_to_class, forced_zero, comm)
-
-    for iel = 1:mesh.nelem
-        lvl = L[Int(mesh.el2gel[iel])]; lvl == 0 && continue
-        refine_lobe_to_level!(mesh, iel, θsun, ϕsun, lobe_k*hw[bucket(g_el[iel])], lvl, dθ0)
-    end
-    infra_new = build_unified_ncf_infrastructure(mesh, sem, comm)
-    n_after = MPI.Allreduce(sum((mesh.extra_mesh[i].extra_npoin for i = 1:mesh.nelem); init=0), +, comm)
-    return infra_new, snapshots, (levels=L, table=table, n_dirs_before=n_before, n_dirs_after=n_after)
-end
 
 function test_ncf_local_vs_remote(setup, comm; ε::Float64=1.0, n_dirs_sample::Int=3, top::Int=6)
     MPI.Comm_size(comm) == 1 || error("run on 1 rank, so every NCF interface is same-rank")
