@@ -1,0 +1,236 @@
+#---------------------------------------------------------------------------------
+# Initial state of the 3D flux-emergence simulations of
+#
+#   J. E. Leake, M. G. Linton & S. K. Antiochos, "Simulations of emerging magnetic
+#   flux. II. The formation of unstable coronal flux ropes and the initiation of
+#   coronal mass ejections", ApJ 787:46 (2014)                        (Paper II)
+#
+# whose equations, domain, boundaries and initial state are "exactly the same as
+# used in Paper I" (J. E. Leake, M. G. Linton & T. Török, ApJ 778:99, 2013,
+# Sec. 2.4), except that the dipole is reversed. Units of user_flux.jl (L₀, B₀,
+# g₀; p = ρT/m_f, g = 1, magnetic pressure ½|B|²).
+#
+# 1. Atmosphere (Paper I Eqs. 11-14, hydrostatic, ρ(0) = 1):
+#      T = 1 − a (γ−1)/γ · z        z ≤ 0     (convection zone, a = 1)
+#      T = 1                        0 < z < 10 (photosphere/chromosphere)
+#      T = 150^((z−10)/10)          10 ≤ z < 20 (transition region)
+#      T = 150                      z ≥ 20    (corona)
+#    dp/dz = −ρ = −m_f p/T integrates in closed form in every layer:
+#      z ≤ 0:  p = p₀ T^(m_f γ/(a(γ−1)))   (a polytrope), p₀ = 1/m_f
+#      then exponentials (lk_atmosphere below).
+#    Paper I writes the convection-zone gradient as −(γ−1)/γ · T₀/L₀ and calls it
+#    adiabatic. With its own normalization (T₀ = m_p L₀g₀/k_B, μ_m = m_f m_p) the
+#    adiabatic gradient is m_f times that; the printed value (a = 1) is used, which
+#    leaves the convection zone slightly stable. :lk_cz_gradient => 1.25 makes it
+#    exactly adiabatic.
+#
+# 2. Dipole (Paper I Eq. 15, invariant along y): B = ∇×(A_y e_y),
+#      A_y = B_d (z − z_d)/r₁³,  r₁² = x² + (z − z_d)²,  z_d = −100,
+#    i.e. B_x = B_d (3s² − r₁²)/r₁⁵, B_z = −3 B_d s x/r₁⁵ with s = z − z_d.
+#    Paper II reverses it (B_x < 0 above the tube, antiparallel to the tube's top
+#    field) and sets its strength by the azimuthal-flux ratio Φ_dip/Φ_tube =
+#    0.13, 0.1, 0.067 (SD, MD, WD; its Eqs. 9-10). B_d is solved for here from that
+#    ratio on the x = y = 0 line (lk_solve_dipole). Paper I's B_d = 10⁴, 7.5·10³,
+#    5·10³ give 0.166, 0.123, 0.081 with this tube.
+#
+# 3. Flux tube (Paper I Eqs. 16-18), along y at x = 0, z = z_t = −12:
+#      B_y = B_t e^(−r²/R²),  B_θ = q r B_y,  r² = x² + (z − z_t)²,
+#    B_t = 5, R = 2.5, q = 1/R (right-handed: B_θ along e_y × e_r), so
+#      B_x = q (z − z_t) B_y,  B_z = −q x B_y  (B_x > 0 at the top of the tube).
+#    Pressure balance ∇p₁ = j × B of the tube field:
+#      p₁ = ½ B_t² e^(−2r²/R²) [q²(R²/2 − r²) − 1].
+#    Buoyancy (Paper I Eqs. 19-20): p = p₀(z) + p₁,
+#      ρ = ρ₀(z) [1 + (p₁/p₀(z)) e^(−(y/λ)²)],  λ = 10,
+#    so the tube is buoyant at y = 0 (isothermal with its surroundings) and
+#    neutrally buoyant at the y boundaries (same density, lower temperature).
+#
+# The reference state qe (DynSGS departure, positivity floors, sponge) is the
+# atmosphere plus the dipole, without the tube.
+#
+# 4. Discrete equilibrium: the deck sets :lwell_balanced, so the kernel subtracts
+#    the element RHS of qe at every stage (src/kernel/operators/rhs.jl,
+#    _well_balanced_reference!). Neither the stratification nor the dipole is an
+#    exact equilibrium of the discrete operator; in the corona (β ~ 10⁻², ρ ~ 10⁻⁹)
+#    the interpolation error of either is a large acceleration.
+#---------------------------------------------------------------------------------
+
+if !@isdefined(LK_MF)
+    const LK_MF    = 1.25     # m_f, μ_m = m_f m_p
+    const LK_TCOR  = 150.0    # T_cor/T_ph
+    const LK_ZT    = -12.0    # tube axis height
+    const LK_RT    = 2.5      # tube radius R (Paper II: a)
+    const LK_BT    = 5.0      # tube axial field B_t
+    const LK_LAM   = 10.0     # buoyancy length λ along the tube
+    const LK_ZD    = -100.0   # dipole source height z_d
+    const LK_RATIO = Dict("SD" => 0.13, "MD" => 0.1, "WD" => 0.067, "ND" => 0.0)
+end
+if !@isdefined(lk_Bd)
+    const lk_Bd          = Ref{Float64}(0.0)     # signed B_d (set by initialize)
+    const lk_cz_a        = Ref{Float64}(1.0)     # a of Paper I Eq. 11
+    const lk_glm_alpha   = Ref{Float64}(1.0)     # Dedner damping α_p (rate α_p c_h/Δh)
+    const lk_glm_dh      = Ref{Float64}(1.0)
+    const lk_damp_xd     = Ref{Float64}(96.0)    # side damping starts at |x|, |y| = 96
+    const lk_damp_zd     = Ref{Float64}(180.0)   # top damping starts at z = 180 (Paper II; Paper I 170)
+    const lk_xmax        = Ref{Float64}(127.6)
+    const lk_zmax        = Ref{Float64}(209.8)
+end
+
+# Temperature and pressure of the background atmosphere at height z (Section 1 above).
+@inline function lk_temperature(z)
+    a = lk_cz_a[]
+    z <= 0.0  && return 1.0 - a*(γ_mhd - 1.0)/γ_mhd*z
+    z < 10.0  && return 1.0
+    z < 20.0  && return LK_TCOR^((z - 10.0)/10.0)
+    return LK_TCOR
+end
+
+@inline function lk_pressure(z)
+    a  = lk_cz_a[]
+    p0 = 1.0/LK_MF                                  # ρ(0) = 1, T(0) = 1
+    if z <= 0.0
+        return p0*lk_temperature(z)^(LK_MF*γ_mhd/(a*(γ_mhd - 1.0)))
+    end
+    p10 = p0*exp(-LK_MF*10.0)
+    z < 10.0 && return p0*exp(-LK_MF*z)
+    α = log(LK_TCOR)/10.0
+    z < 20.0 && return p10*exp(-LK_MF*(1.0 - exp(-α*(z - 10.0)))/α)
+    p20 = p10*exp(-LK_MF*(1.0 - exp(-α*10.0))/α)
+    return p20*exp(-LK_MF*(z - 20.0)/LK_TCOR)
+end
+
+@inline lk_density(z) = LK_MF*lk_pressure(z)/lk_temperature(z)
+
+# Dipole field (B_x, B_z) at (x, z) for the signed strength B_d.
+@inline function lk_dipole(x, z, Bd)
+    s  = z - LK_ZD
+    r2 = x*x + s*s
+    r5 = r2*r2*sqrt(r2)
+    return Bd*(3.0*s*s - r2)/r5, -3.0*Bd*s*x/r5
+end
+
+# Tube field (B_x, B_y, B_z) and its pressure deficit p₁ at (x, z).
+@inline function lk_tube(x, z)
+    ζ  = z - LK_ZT
+    r2 = x*x + ζ*ζ
+    q  = 1.0/LK_RT
+    By = LK_BT*exp(-r2/LK_RT^2)
+    p1 = 0.5*LK_BT^2*exp(-2.0*r2/LK_RT^2)*(q*q*(0.5*LK_RT^2 - r2) - 1.0)
+    return q*ζ*By, By, -q*x*By, p1
+end
+
+# Φ_dip/Φ_tube of Paper II (Eqs. 9-10) on x = y = 0 for a reversed dipole of
+# strength |B_d|: the total B_x changes sign at the separatrix z_sep above the axis.
+function lk_flux_ratio(Bdabs, ztop; n = 200001)
+    z  = range(LK_ZT, ztop, length = n)
+    Bx = [lk_tube(0.0, zz)[1] + lk_dipole(0.0, zz, -Bdabs)[1] for zz in z]
+    i0 = findfirst(>(0.0), Bx)
+    is = findnext(<(0.0), Bx, i0)
+    is === nothing && return 0.0, ztop, 0.0, 0.0
+    dz = step(z)
+    Φt = dz*(sum(Bx[1:is-1]) - 0.5*(Bx[1] + Bx[is-1]))
+    Φd = dz*(sum(Bx[is:end]) - 0.5*(Bx[is] + Bx[end]))
+    return abs(Φd)/Φt, z[is], Φt, Φd
+end
+
+# |B_d| giving the requested ratio (bisection; the ratio grows with |B_d|).
+function lk_solve_dipole(ratio, ztop)
+    ratio <= 0.0 && return 0.0
+    lo, hi = 0.0, 5.0e4
+    for _ = 1:60
+        mid = 0.5*(lo + hi)
+        lk_flux_ratio(mid, ztop; n = 20001)[1] < ratio ? (lo = mid) : (hi = mid)
+    end
+    return 0.5*(lo + hi)
+end
+
+function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
+
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    rank == 0 && println(" Initialize fields for 3D GLM-MHD flux emergence (Leake et al. 2013, 2014) ........... ")
+
+    qvars    = ["ρ", "ρu", "ρv", "ρE", "ρw", "Bx", "By", "Bz", "ψ"]
+    qoutvars = ["ρ", "u", "v", "w", "p", "Bx", "By", "Bz", "ψ", "T", "β", "Bmag", "log10ρ"]
+    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
+
+    inputs[:backend] != CPU()         && error(" problems/MHD/fluxEmergenceLeake2014: only the CPU backend is supported.")
+    inputs[:SOL_VARS_TYPE] != TOTAL() && error(" problems/MHD/fluxEmergenceLeake2014: only SOL_VARS_TYPE = TOTAL() is supported.")
+
+    lk_cz_a[]      = Float64(get(inputs, :lk_cz_gradient, 1.0))
+    lk_glm_alpha[] = Float64(get(inputs, :lk_glm_alpha, 1.0))
+    lk_damp_xd[]   = Float64(get(inputs, :lk_damp_xd, 96.0))
+    lk_damp_zd[]   = Float64(get(inputs, :lk_damp_zd, 180.0))
+    lk_xmax[]      = MPI.Allreduce(maximum(abs, @view(mesh.coords[1,1:mesh.npoin])), MPI.MAX, comm)
+    lk_zmax[]      = MPI.Allreduce(maximum(@view(mesh.coords[3,1:mesh.npoin])), MPI.MAX, comm)
+    ltube          = get(inputs, :lk_tube, true)
+
+    # Dipole: Paper II's flux ratio (default) or an explicit signed B_d.
+    dip = String(get(inputs, :lk_dipole, "MD"))
+    if haskey(inputs, :lk_Bd)
+        lk_Bd[] = Float64(inputs[:lk_Bd])
+    else
+        haskey(LK_RATIO, dip) || error(" problems/MHD/fluxEmergenceLeake2014: :lk_dipole = \"$(dip)\", expected SD, MD, WD or ND.")
+        lk_Bd[] = -lk_solve_dipole(LK_RATIO[dip], lk_zmax[])     # reversed: B_x < 0 above the tube
+    end
+    ratio, zsep, Φt, Φd = lk_Bd[] < 0.0 ? lk_flux_ratio(-lk_Bd[], lk_zmax[]) : (0.0, NaN, NaN, NaN)
+
+    γm1 = γ_mhd - 1.0
+    Bd  = lk_Bd[]
+    ch_local = 0.0
+    for ip = 1:mesh.npoin
+        x, y, z = mesh.coords[1,ip], mesh.coords[2,ip], mesh.coords[3,ip]
+        p0 = lk_pressure(z)
+        ρ0 = lk_density(z)
+        Bxd, Bzd = lk_dipole(x, z, Bd)
+
+        # reference state: atmosphere + dipole
+        q.qe[ip,1] = ρ0
+        q.qe[ip,2] = 0.0; q.qe[ip,3] = 0.0; q.qe[ip,5] = 0.0
+        q.qe[ip,4] = p0/γm1 + 0.5*(Bxd*Bxd + Bzd*Bzd)
+        q.qe[ip,6] = Bxd; q.qe[ip,7] = 0.0; q.qe[ip,8] = Bzd
+        q.qe[ip,9] = 0.0
+        q.qe[ip,end] = p0
+
+        Bxt, Byt, Bzt, p1 = ltube ? lk_tube(x, z) : (0.0, 0.0, 0.0, 0.0)
+        p  = p0 + p1
+        ρ  = ρ0*(1.0 + (p1/p0)*exp(-(y/LK_LAM)^2))
+        Bx = Bxd + Bxt; By = Byt; Bz = Bzd + Bzt
+        q.qn[ip,1] = ρ
+        q.qn[ip,2] = 0.0; q.qn[ip,3] = 0.0; q.qn[ip,5] = 0.0
+        q.qn[ip,4] = p/γm1 + 0.5*(Bx*Bx + By*By + Bz*Bz)
+        q.qn[ip,6] = Bx; q.qn[ip,7] = By; q.qn[ip,8] = Bz
+        q.qn[ip,9] = 0.0
+        q.qn[ip,end] = p
+
+        ch_local = max(ch_local, sqrt((γ_mhd*p + Bx*Bx + By*By + Bz*Bz)/ρ))   # fast-speed bound, at rest
+    end
+    # GLM cleaning speed: the fastest wave of the initial state (the Alfvén speed
+    # just above the transition region), held constant.
+    c_h_mhd[] = MPI.Allreduce(ch_local, MPI.MAX, comm)
+
+    # Smallest nodal spacing (Dedner's damping rate α_p c_h/Δh).
+    ngl = mesh.ngl
+    dh_local = Inf
+    for ie = 1:mesh.nelem
+        a = mesh.connijk[ie,1,1,1]
+        for b in (mesh.connijk[ie,2,1,1], mesh.connijk[ie,1,2,1], mesh.connijk[ie,1,1,2])
+            dh_local = min(dh_local, sqrt(sum(abs2, @view(mesh.coords[:,b]) .- @view(mesh.coords[:,a]))))
+        end
+    end
+    lk_glm_dh[] = MPI.Allreduce(dh_local, MPI.MIN, comm)
+
+    get(inputs, :lwell_balanced, false) || rank == 0 &&
+        println(" WARNING problems/MHD/fluxEmergenceLeake2014: :lwell_balanced is off; the discrete",
+                " imbalance of the atmosphere and the dipole will drive flows from t = 0.")
+
+    if rank == 0
+        println(" Dipole $(dip): B_d = $(Bd) B₀L₀² (reversed), Φ_dip/Φ_tube = $(ratio) (z_sep = $(zsep), Φ_tube = $(Φt), Φ_dip = $(Φd))")
+        println(" Atmosphere: p(-30) = $(lk_pressure(-30.0)), ρ(-30) = $(lk_density(-30.0)); ρ(20) = $(lk_density(20.0)), ρ(top) = $(lk_density(lk_zmax[])); convection-zone gradient a = $(lk_cz_a[])")
+        println(" Tube: B_t = $(LK_BT), R = $(LK_RT), q = 1/R, z_t = $(LK_ZT), λ = $(LK_LAM)$(ltube ? "" : " (OFF: :lk_tube => false)")")
+        println(" GLM c_h = $(c_h_mhd[]); smallest nodal spacing Δh = $(lk_glm_dh[]); ψ damping rate α_p c_h/Δh = $(lk_glm_alpha[]*c_h_mhd[]/lk_glm_dh[]) per t₀")
+        println(" Velocity damping: |x|, |y| > $(lk_damp_xd[]) (boundary at $(lk_xmax[])) and z > $(lk_damp_zd[]) (top at $(lk_zmax[]))")
+        println(" Initialize fields for 3D GLM-MHD flux emergence ........... DONE")
+        flush(stdout)
+    end
+    return q
+end
