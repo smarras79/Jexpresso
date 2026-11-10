@@ -62,6 +62,60 @@ function debug_bc_rhs(params, time)
     println(out, " [ldebug_bc] call $ncall  t = $time  (dup groups on rank $rank: $(length(C.dup)))")
     vm = MPI.Allreduce([maximum(abs.(@view params.uaux[:, k])) for k in 2:4], MPI.MAX, comm)
     println(out, "   max|ρu'|,|ρv'|,|ρw'| = $(round.(vm; sigdigits = 3))")
+    # horizontal-mean ρu, ρv at the lowest level and the level nearest 1500 m (serial-oriented)
+    let z = mesh.z
+        zl = sort(unique(round.(z; digits = 3)))
+        for zt in (zl[1], zl[argmin(abs.(zl .- 1500.0))])
+            idx = findall(abs.(z .- zt) .< 1e-2)
+            mu = sum(params.uaux[idx, 2]) / length(idx); mv = sum(params.uaux[idx, 3]) / length(idx)
+            println(out, "   z=$(zt): mean ρu' = $(round(mu; sigdigits=6))  mean ρv' = $(round(mv; sigdigits=6))")
+        end
+    end
+    # subsidence check: level means of ρhl', ρqt' and predicted rate -ρ w_s ∂φ_ref/∂z (serial-oriented)
+    if isdefined(@__MODULE__, :bomex_subsidence) && neqs >= 6
+        z = mesh.z; qe = params.qp.qe
+        zl = sort(unique(round.(z; digits = 3)))
+        lmean(k, zt) = (idx = findall(abs.(z .- zt) .< 1e-2); sum(params.uaux[idx, k]) / length(idx))
+        emean(f, zt) = (idx = findall(abs.(z .- zt) .< 1e-2); sum(f(i) for i in idx) / length(idx))
+        for zt0 in (300.0, 1000.0, 1800.0)
+            kk = argmin(abs.(zl .- zt0)); zt = zl[kk]; zm = zl[kk-1]; zp = zl[kk+1]
+            ws = Base.invokelatest(bomex_subsidence, zt)[1]
+            ρ  = emean(i -> qe[i,1], zt)
+            pr = Float64[]
+            for k in (5, 6)
+                dφ = (emean(i -> qe[i,k]/qe[i,1], zp) - emean(i -> qe[i,k]/qe[i,1], zm)) / (zp - zm)
+                push!(pr, -ρ * ws * dφ)
+            end
+            println(out, "   z=$(zt): mean ρhl' = $(round(lmean(5, zt); sigdigits=7))  mean ρqt' = $(round(lmean(6, zt); sigdigits=7))  predicted rates = $(round.(pr; sigdigits=5))")
+        end
+    end
+    # cloud water and column-mean vs deviation of ρw' (serial-oriented)
+    let z = mesh.z
+        size(params.mp.qn, 1) == mesh.npoin && println(out, "   max qn (cloud) = $(maximum(params.mp.qn))")
+        zl = sort(unique(round.(z; digits = 3)))
+        mm = 0.0; dm = 0.0; zmm = 0.0; zdm = 0.0
+        for zt in zl
+            idx = findall(abs.(z .- zt) .< 1e-2)
+            m = sum(params.uaux[idx, 4]) / length(idx)
+            d = maximum(abs.(params.uaux[idx, 4] .- m))
+            abs(m) > mm && (mm = abs(m); zmm = zt)
+            d > dm && (dm = d; zdm = zt)
+        end
+        println(out, "   ρw': max|level mean| = $mm (z=$zmm)   max|deviation from level mean| = $dm (z=$zdm)")
+        # level-mean profiles to a file (JEXPRESSO_DEBUG_PROFILE=<path>), rank 0 only
+        pf = get(ENV, "JEXPRESSO_DEBUG_PROFILE", "")
+        if !isempty(pf) && rank == 0 && ncall > 5
+            open(pf, "a") do io
+                println(io, "# t = $time")
+                for zt in zl
+                    idx = findall(abs.(z .- zt) .< 1e-2)
+                    lm(k) = sum(params.uaux[idx, k]) / length(idx)
+                    dw = maximum(abs.(params.uaux[idx, 4] .- lm(4)))
+                    println(io, zt, " ", lm(1), " ", lm(4), " ", lm(5), " ", lm(6), " ", dw)
+                end
+            end
+        end
+    end
     l2 = MPI.Allreduce([sum(abs2, @view params.uaux[:, k]) for k in 1:neqs], MPI.SUM, comm)
     println(out, "   sum(u^2) per var = $(round.(l2; sigdigits = 12))")
     # wall nodes: normal / tangential total momentum w.r.t. each wall face normal
@@ -146,6 +200,19 @@ function debug_bc_rhs(params, time)
     end
     mass = MPI.Allreduce(mass, MPI.SUM, comm)
     println(out, "   ∫ρ' dV = $mass")
+    # domain integrals of the perturbation of every variable (one contribution per global node)
+    let seen2 = Set{Int}(), I = zeros(neqs)
+        for ip = 1:mesh.npoin
+            g = Int(mesh.ip2gip[ip])
+            (mesh.gip2owner[ip] == rank && !(g in seen2)) || continue
+            push!(seen2, g)
+            for k = 1:neqs
+                I[k] += params.uaux[ip, k] / Minv[ip]
+            end
+        end
+        I = MPI.Allreduce(I, MPI.SUM, comm)
+        println(out, "   ∫q' dV per var = $(round.(I; sigdigits = 10))")
+    end
 
     # location of max |RHS u| and horizontal variation of p' and ρ' along z levels (first calls only)
     if ncall <= 1
