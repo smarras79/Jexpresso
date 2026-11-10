@@ -145,7 +145,7 @@ function lk_diag!(u, p, t)
         v > vmax && (vmax = v; xv = (X[1,ip], X[2,ip], X[3,ip]))
         v + cf > wmax && (wmax = v + cf; xw = (X[1,ip], X[2,ip], X[3,ip]))
         ρrmin = min(ρrmin, ρ/qe[ip,1]); prmax = max(prmax, pr/qe[ip,end]); prmin = min(prmin, pr/qe[ip,end])
-        ψmax = max(ψmax, abs(ψ)); Tmax = max(Tmax, LK_MF*pr/ρ)
+        ψmax = max(ψmax, abs(ψ)); Tmax = max(Tmax, lk_mf[]*pr/ρ)
         dBmax = max(dBmax, sqrt((Bx-qe[ip,6])^2 + By^2 + (Bz-qe[ip,8])^2))
     end
     comm = MPI.COMM_WORLD
