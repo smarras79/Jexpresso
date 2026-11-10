@@ -134,8 +134,8 @@ function lk_diag!(u, p, t)
     lk_diag_calls[] % n == 0 || return nothing
     npoin = p.mesh.npoin; qe = p.qp.qe; γm1 = γ_mhd - 1.0; X = p.mesh.coords
     vmax = 0.0; wmax = 0.0; ρrmin = Inf; prmax = 0.0; prmin = Inf; ψmax = 0.0; Tmax = 0.0; dBmax = 0.0
-    nρfl = 0; npfl = 0
-    xw = (0.0, 0.0, 0.0); xv = xw; xρ = xw; xp = xw
+    nρfl = 0; npfl = 0; zfl_lo = Inf; zfl_hi = -Inf
+    xw = (0.0, 0.0, 0.0); xv = xw; xρ = xw; xp = xw; xpm = xw
     @inbounds for ip = 1:npoin
         ρ = u[ip]; ru = u[npoin+ip]; rv = u[2npoin+ip]; E = u[3npoin+ip]; rw = u[4npoin+ip]
         Bx = u[5npoin+ip]; By = u[6npoin+ip]; Bz = u[7npoin+ip]; ψ = u[8npoin+ip]
@@ -148,9 +148,12 @@ function lk_diag!(u, p, t)
         rr = ρ/qe[ip,1]; pp = pr/qe[ip,end]
         rr < ρrmin && (ρrmin = rr; xρ = (X[1,ip], X[2,ip], X[3,ip]))
         pp > prmax && (prmax = pp; xp = (X[1,ip], X[2,ip], X[3,ip]))
-        prmin = min(prmin, pp)
+        pp < prmin && (prmin = pp; xpm = (X[1,ip], X[2,ip], X[3,ip]))
         rr <= 1.000001*lk_floor_frac[] && (nρfl += 1)
-        pp <= 1.000001*lk_floor_frac[] && (npfl += 1)
+        if rr <= 1.000001*lk_floor_frac[] || pp <= 1.000001*lk_floor_frac[]
+            pp <= 1.000001*lk_floor_frac[] && (npfl += 1)
+            zfl_lo = min(zfl_lo, X[3,ip]); zfl_hi = max(zfl_hi, X[3,ip])
+        end
         ψmax = max(ψmax, abs(ψ)); Tmax = max(Tmax, lk_mf[]*pr/ρ)
         dBmax = max(dBmax, sqrt((Bx-qe[ip,6])^2 + By^2 + (Bz-qe[ip,8])^2))
     end
@@ -169,7 +172,7 @@ function lk_diag!(u, p, t)
         end
     end
     comm = MPI.COMM_WORLD
-    loc = [vmax, wmax, -ρrmin, prmax, -prmin, ψmax, Tmax, dBmax, μρ, μm, μB, Dmax]
+    loc = [vmax, wmax, -ρrmin, prmax, -prmin, ψmax, Tmax, dBmax, μρ, μm, μB, Dmax, -zfl_lo, zfl_hi]
     glo = MPI.Allreduce(loc, MPI.MAX, comm)
     cnt = MPI.Allreduce([nρfl, npfl], +, comm)
     if MPI.Comm_rank(comm) == 0
@@ -179,11 +182,13 @@ function lk_diag!(u, p, t)
                 " |ψ|max=", round(glo[6], sigdigits=3), " Tmax=", round(glo[7], sigdigits=4),
                 " |δB|max=", round(glo[8], sigdigits=3), " nodes at ρ/p floor=", cnt[1], "/", cnt[2],
                 " μmax(ρ,m,B)=", round(glo[9], sigdigits=3), ",", round(glo[10], sigdigits=3), ",",
-                round(glo[11], sigdigits=3), " μΔt/Δh²max=", round(glo[12], sigdigits=3))
+                round(glo[11], sigdigits=3), " μΔt/Δh²max=", round(glo[12], sigdigits=3),
+                cnt[1] + cnt[2] > 0 ? string(" floors at z=", round(-glo[13], digits=1), "..", round(glo[14], digits=1)) : "")
     end
     # where: each extreme is printed by the rank that holds it
     for (val, g, x, name) in ((wmax, glo[2], xw, "(|v|+cf)max"), (vmax, glo[1], xv, "|v|max"),
                               (-ρrmin, glo[3], xρ, "ρ/ρe min"), (prmax, glo[4], xp, "p/pe max"),
+                              (-prmin, glo[5], xpm, "p/pe min"),
                               (Dmax, glo[12], xD, "μΔt/Δh² max"))
         val == g && println(" #DIAG   ", name, " at ", round.(x, digits=2), " (rank ", MPI.Comm_rank(comm), ")")
     end
