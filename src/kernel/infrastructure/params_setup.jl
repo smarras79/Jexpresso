@@ -281,6 +281,31 @@ function params_setup(sem,
                           cache_ghost_p, q_ghost_p,
                           cache_ghost_c, q_ghost_c,
                           sem.interp; ladapt=inputs[:ladapt], neqs=qp.neqs)
+        #
+        # Keep the reference pressure qe[:,end] consistent with the projected reference state.
+        # The projection above averages qe[:,1:neqs] over all copies of a node (periodic images,
+        # MPI copies, non-conforming faces); copies can carry slightly different coordinates
+        # (mesh-generator roundoff, ~1e-8 m), hence slightly different initial values. If the
+        # pressure column is left untouched, p' = P(q+qe) - qe[:,end] is nonzero at rest and its
+        # gradient forces the flow (seen as u on x-periodic faces in BOMEX).
+        #  1) project the pressure column with the same operator: consistent to second order in the
+        #     copy mismatch for EOS without explicit z dependence (dry P(ρ, ρθ) cases);
+        #  2) moist PERT: the EOS depends on z explicitly, so recompute qe[:,end] with the model's
+        #     own saturation adjustment at zero perturbation (exactly what the RHS evaluates).
+        #
+        conformity4ncf_q!(@view(qp.qe[:, end:end]), rhs_el_tmp, @view(utmp[:,:]), vaux,
+                          g_dss_cache_qp,
+                          sem.mesh.SD,
+                          sem.QT, sem.mesh.connijk,
+                          sem.mesh, sem.matrix.Minv,
+                          sem.metrics.Je, sem.ω, sem.AD,
+                          q_el, q_el_pro,
+                          cache_ghost_p, q_ghost_p,
+                          cache_ghost_c, q_ghost_c,
+                          sem.interp; ladapt=inputs[:ladapt], neqs=1)
+        if inputs[:lmoist] && sem.SOL_VARS_TYPE == PERT() && backend == CPU()
+            reference_pressure_from_model_eos!(qp.qe, @view(sem.mesh.coords[:,end]), sem.mesh.npoin, sem.mesh.SD)
+        end
         MPI.Barrier(comm)
         if rank == 0
             println(" # end conformity4ncf_q!")
