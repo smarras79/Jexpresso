@@ -284,14 +284,15 @@ function params_setup(sem,
         #
         # Keep the reference pressure qe[:,end] consistent with the projected reference state.
         # The projection above averages qe[:,1:neqs] over all copies of a node (periodic images,
-        # MPI copies, non-conforming faces); copies can carry slightly different coordinates
-        # (mesh-generator roundoff, ~1e-8 m), hence slightly different initial values. If the
+        # MPI copies, non-conforming faces). If copies carry different initial values and the
         # pressure column is left untouched, p' = P(q+qe) - qe[:,end] is nonzero at rest and its
-        # gradient forces the flow (seen as u on x-periodic faces in BOMEX).
-        #  1) project the pressure column with the same operator: consistent to second order in the
-        #     copy mismatch for EOS without explicit z dependence (dry P(ρ, ρθ) cases);
-        #  2) moist PERT: the EOS depends on z explicitly, so recompute qe[:,end] with the model's
-        #     own saturation adjustment at zero perturbation (exactly what the RHS evaluates).
+        # gradient forces the flow. For periodic copies the root cause (mesh-generator coordinate
+        # noise, ~1e-8 m) is removed by the coordinate unification in restructure4periodicity_*;
+        # this step remains as a safeguard for the other kinds of copies:
+        #  1) project the pressure column with the same operator (consistent to second order in
+        #     any copy mismatch for EOS without explicit z dependence, e.g. dry P(ρ, ρθ));
+        #  2) moist PERT: recompute qe[:,end] with the model's own saturation adjustment at zero
+        #     perturbation (exactly what the RHS evaluates), so p' = 0 exactly at rest from t = 0.
         #
         conformity4ncf_q!(@view(qp.qe[:, end:end]), rhs_el_tmp, @view(utmp[:,:]), vaux,
                           g_dss_cache_qp,
