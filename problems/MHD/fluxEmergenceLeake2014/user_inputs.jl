@@ -134,7 +134,8 @@ function lk_diag!(u, p, t)
     lk_diag_calls[] % n == 0 || return nothing
     npoin = p.mesh.npoin; qe = p.qp.qe; γm1 = γ_mhd - 1.0; X = p.mesh.coords
     vmax = 0.0; wmax = 0.0; ρrmin = Inf; prmax = 0.0; prmin = Inf; ψmax = 0.0; Tmax = 0.0; dBmax = 0.0
-    xw = (0.0, 0.0, 0.0); xv = xw
+    nρfl = 0; npfl = 0
+    xw = (0.0, 0.0, 0.0); xv = xw; xρ = xw; xp = xw
     @inbounds for ip = 1:npoin
         ρ = u[ip]; ru = u[npoin+ip]; rv = u[2npoin+ip]; E = u[3npoin+ip]; rw = u[4npoin+ip]
         Bx = u[5npoin+ip]; By = u[6npoin+ip]; Bz = u[7npoin+ip]; ψ = u[8npoin+ip]
@@ -144,23 +145,47 @@ function lk_diag!(u, p, t)
         cf = sqrt(max((γ_mhd*pr + B2)/ρ, 0.0))
         v > vmax && (vmax = v; xv = (X[1,ip], X[2,ip], X[3,ip]))
         v + cf > wmax && (wmax = v + cf; xw = (X[1,ip], X[2,ip], X[3,ip]))
-        ρrmin = min(ρrmin, ρ/qe[ip,1]); prmax = max(prmax, pr/qe[ip,end]); prmin = min(prmin, pr/qe[ip,end])
+        rr = ρ/qe[ip,1]; pp = pr/qe[ip,end]
+        rr < ρrmin && (ρrmin = rr; xρ = (X[1,ip], X[2,ip], X[3,ip]))
+        pp > prmax && (prmax = pp; xp = (X[1,ip], X[2,ip], X[3,ip]))
+        prmin = min(prmin, pp)
+        rr <= 1.000001*lk_floor_frac[] && (nρfl += 1)
+        pp <= 1.000001*lk_floor_frac[] && (npfl += 1)
         ψmax = max(ψmax, abs(ψ)); Tmax = max(Tmax, lk_mf[]*pr/ρ)
         dBmax = max(dBmax, sqrt((Bx-qe[ip,6])^2 + By^2 + (Bz-qe[ip,8])^2))
     end
+    # DynSGS + explicit coefficient (kinematic) of the momentum and field slots, and the
+    # explicit-diffusion number μ Δt/Δh² with Δh the element's smallest LGL gap (the
+    # Laplacian's largest eigenvalue is ≈ 5.5 μ/Δh² per direction at N = 4 and the
+    # real-axis limit of CarpenterKennedy2N54 is 4.66: trouble from D ≈ 0.3 on).
+    μd = p.μ_dsgs; Δt = Float64(p.Δt); dh = lk_cfl_dh[]
+    μρ = 0.0; μm = 0.0; μB = 0.0; Dmax = 0.0; xD = (0.0, 0.0, 0.0)
+    if size(μd, 1) == p.mesh.nelem && length(dh) == npoin
+        @inbounds for ie = 1:p.mesh.nelem
+            μρ = max(μρ, μd[ie,1]); μm = max(μm, μd[ie,2]); μB = max(μB, μd[ie,6])
+            ip = p.mesh.connijk[ie,2,2,2]
+            D = maximum(@view μd[ie,1:8])*Δt/dh[ip]^2
+            D > Dmax && (Dmax = D; xD = (X[1,ip], X[2,ip], X[3,ip]))
+        end
+    end
     comm = MPI.COMM_WORLD
-    loc = [vmax, wmax, -ρrmin, prmax, -prmin, ψmax, Tmax, dBmax]
+    loc = [vmax, wmax, -ρrmin, prmax, -prmin, ψmax, Tmax, dBmax, μρ, μm, μB, Dmax]
     glo = MPI.Allreduce(loc, MPI.MAX, comm)
-    ww = MPI.Allreduce(wmax, MPI.MAX, comm)
+    cnt = MPI.Allreduce([nρfl, npfl], +, comm)
     if MPI.Comm_rank(comm) == 0
         println(" #DIAG t=", round(t, digits=4), " |v|max=", round(glo[1], sigdigits=4),
                 " (|v|+cf)max=", round(glo[2], sigdigits=4), " ρ/ρe min=", round(-glo[3], sigdigits=3),
                 " p/pe max=", round(glo[4], sigdigits=4), " p/pe min=", round(-glo[5], sigdigits=3),
                 " |ψ|max=", round(glo[6], sigdigits=3), " Tmax=", round(glo[7], sigdigits=4),
-                " |δB|max=", round(glo[8], sigdigits=3))
+                " |δB|max=", round(glo[8], sigdigits=3), " nodes at ρ/p floor=", cnt[1], "/", cnt[2],
+                " μmax(ρ,m,B)=", round(glo[9], sigdigits=3), ",", round(glo[10], sigdigits=3), ",",
+                round(glo[11], sigdigits=3), " μΔt/Δh²max=", round(glo[12], sigdigits=3))
     end
-    if wmax == ww
-        println(" #DIAG   rank ", MPI.Comm_rank(comm), " wmax at ", round.(xw, digits=2), "  vmax(local) at ", round.(xv, digits=2))
+    # where: each extreme is printed by the rank that holds it
+    for (val, g, x, name) in ((wmax, glo[2], xw, "(|v|+cf)max"), (vmax, glo[1], xv, "|v|max"),
+                              (-ρrmin, glo[3], xρ, "ρ/ρe min"), (prmax, glo[4], xp, "p/pe max"),
+                              (Dmax, glo[12], xD, "μΔt/Δh² max"))
+        val == g && println(" #DIAG   ", name, " at ", round.(x, digits=2), " (rank ", MPI.Comm_rank(comm), ")")
     end
     flush(stdout)
     return nothing
