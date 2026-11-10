@@ -406,6 +406,14 @@ Short runs on 4 threads; the full runs are for a cluster.
   start at $t = 0.115t_0$ ($10^4$ hits by 0.15), and the CFL monitor stays at
   its initial 0.153.
 
+- **Restart** (`LK_REF = 1`, Restart). A run with snapshots at $t = 0.03$
+  and $0.06$ restarted from its $t = 0.03$ snapshot, on 1 rank and on 2 MPI
+  ranks: the restart state equals the snapshot to $5\times10^{-16}$ of each
+  field's maximum ($T$ $7\times10^{-15}$), piece by piece. Ten steps later
+  (1 rank) $\rho$, $p$ and $T$ agree with the uninterrupted run to
+  $2\times10^{-4}$ and $\mathbf v$, $\mathbf B$ to 0.7–5 % of their maxima
+  ($\psi$ 9 %): the DynSGS residual history restarts from zero.
+
 Nothing was run here at `LK_REF` = 2 or 3.
 
 **Cost.** `LK_REF = 1` takes about 6 s per time step on 4 threads
