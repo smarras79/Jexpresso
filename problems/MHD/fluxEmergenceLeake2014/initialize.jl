@@ -239,8 +239,78 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         println(" Tube: B_t = $(LK_BT), R = $(LK_RT), q = 1/R, z_t = $(LK_ZT), λ = $(LK_LAM)$(ltube ? "" : " (OFF: :lk_tube => false)")")
         println(" GLM c_h = $(c_h_mhd[]); smallest nodal spacing Δh = $(lk_glm_dh[]); ψ damping rate α_p c_h/Δh = $(lk_glm_alpha[]*c_h_mhd[]/lk_glm_dh[]) per t₀")
         println(" Velocity damping: |x|, |y| > $(lk_damp_xd[]) (boundary at $(lk_xmax[])) and z > $(lk_damp_zd[]) (top at $(lk_zmax[]))")
-        println(" Initialize fields for 3D GLM-MHD flux emergence ........... DONE")
         flush(stdout)
     end
+
+    # Restart from a snapshot of this case (README, "Restart"). After c_h and Δh, which keep
+    # the values of the t = 0 state, as in the run that wrote the snapshot.
+    rdir = String(get(inputs, :lk_restart_dir, ""))
+    isempty(rdir) || lk_restart_from_vtk!(q, mesh, inputs, rdir)
+
+    rank == 0 && (println(" Initialize fields for 3D GLM-MHD flux emergence ........... DONE"); flush(stdout))
     return q
+end
+
+# Restart from the VTK output of an earlier run of this case: the snapshot holds the nine
+# primitives (ρ, u, v, w, p, Bx, By, Bz, ψ) in Float64 at every mesh node, so the conserved
+# state is rebuilt exactly, E = p/(γ−1) + ½ρ|v|² + ½|B|² + ½ψ². qe (atmosphere + dipole)
+# and c_h are those of the analytic initial state. Each rank reads its own piece
+# iter_N/iter_N_<rank+1>.vtu, so the restart needs the rank count of the run that wrote it.
+# :lk_restart_time picks the snapshot nearest to it in <dir>/simulation.pvd (default: the
+# last one), and inputs[:tinit] is set to its time. The DynSGS residual history starts
+# afresh (its first residual is zero), so the continuation is not bitwise.
+function lk_restart_from_vtk!(q, mesh, inputs, rdir::String)
+    comm   = MPI.COMM_WORLD
+    rank   = MPI.Comm_rank(comm)
+    nparts = MPI.Comm_size(comm)
+    pvd    = joinpath(rdir, "simulation.pvd")
+    buf    = [NaN, -1.0]
+    if rank == 0
+        isfile(pvd) || error(" problems/MHD/fluxEmergenceLeake2014: restart: $(pvd) not found (:lk_restart_dir is the run's output directory).")
+        ent = Tuple{Float64,Int}[]
+        for line in readlines(pvd)
+            m = match(r"timestep=\"([^\"]+)\"[^>]*file=\"iter_(\d+)\.pvtu\"", line)
+            m === nothing || push!(ent, (parse(Float64, m[1]), parse(Int, m[2])))
+        end
+        isempty(ent) && error(" problems/MHD/fluxEmergenceLeake2014: restart: no snapshot listed in $(pvd).")
+        want = get(inputs, :lk_restart_time, nothing)
+        k    = want === nothing ? length(ent) : argmin([abs(e[1] - Float64(want)) for e in ent])
+        buf .= (ent[k][1], Float64(ent[k][2]))
+    end
+    MPI.Bcast!(buf, 0, comm)
+    tr, iout = buf[1], Int(buf[2])
+
+    fname = joinpath(rdir, "iter_$(iout)", "iter_$(iout)_$(lpad(rank + 1, ndigits(nparts), '0')).vtu")
+    isfile(fname) || error(" problems/MHD/fluxEmergenceLeake2014: restart: $(fname) not found; the restart needs the same number of MPI ranks as the run that wrote $(rdir).")
+    names = ["ρ", "u", "v", "w", "p", "Bx", "By", "Bz", "ψ"]
+    vars, np = read_vtu_point_data(fname, vcat(names, ["__coords__"]))
+    np == mesh.npoin || error(" problems/MHD/fluxEmergenceLeake2014: restart: $(fname) has $(np) points, this rank's mesh $(mesh.npoin): same mesh and rank count needed.")
+    for nm in names
+        haskey(vars, nm) || error(" problems/MHD/fluxEmergenceLeake2014: restart: field $(nm) missing in $(fname).")
+    end
+    ipmap = vtk_to_mesh_ipmap(vars["__coords__"], @view(mesh.coords[1,1:mesh.npoin]),
+                              @view(mesh.coords[2,1:mesh.npoin]), @view(mesh.coords[3,1:mesh.npoin]))
+    ρa = vars["ρ"]; ua = vars["u"]; va = vars["v"]; wa = vars["w"]; pa = vars["p"]
+    Bxa = vars["Bx"]; Bya = vars["By"]; Bza = vars["Bz"]; ψa = vars["ψ"]
+    γm1 = γ_mhd - 1.0
+    nbad = 0
+    for ip = 1:mesh.npoin
+        j = ipmap[ip]
+        ρ = ρa[j]; u = ua[j]; v = va[j]; w = wa[j]; p = pa[j]
+        Bx = Bxa[j]; By = Bya[j]; Bz = Bza[j]; ψ = ψa[j]
+        all(isfinite, (ρ, u, v, w, p, Bx, By, Bz, ψ)) || (nbad += 1)
+        q.qn[ip,1] = ρ
+        q.qn[ip,2] = ρ*u; q.qn[ip,3] = ρ*v; q.qn[ip,5] = ρ*w
+        q.qn[ip,4] = p/γm1 + 0.5*ρ*(u*u + v*v + w*w) + 0.5*(Bx*Bx + By*By + Bz*Bz) + 0.5*ψ*ψ
+        q.qn[ip,6] = Bx; q.qn[ip,7] = By; q.qn[ip,8] = Bz; q.qn[ip,9] = ψ
+        q.qn[ip,end] = p
+    end
+    nbad = MPI.Allreduce(nbad, +, comm)
+    nbad == 0 || error(" problems/MHD/fluxEmergenceLeake2014: restart: $(nbad) nodes of iter_$(iout) (t = $(tr)) are not finite.")
+    inputs[:tinit] = tr
+    if rank == 0
+        println(" Restart: t = $(tr) from $(joinpath(rdir, "iter_$(iout)")) ($(nparts) piece$(nparts > 1 ? "s" : ""))")
+        flush(stdout)
+    end
+    return nothing
 end

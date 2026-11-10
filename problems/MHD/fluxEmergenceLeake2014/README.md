@@ -47,7 +47,7 @@ The simulation is chosen in `user_inputs.jl`:
 | `:lk_mf` | `1.0` (default) / `1.25` | $p = \rho T/m_f$ (Deviations, item 4) |
 | `:lk_damp_xd`, `:lk_damp_zd` | 96, 180 | start of the side and top velocity-damping layers (Paper I used 170 at the top) |
 | `:lk_glm_alpha` | 1.0 | Dedner damping $\alpha_p$ of $\psi$, rate $\alpha_pc_h/\Delta h$ (Deviations, item 8) |
-| `LK_REF` (top of `user_inputs()`) | 1, 2 (default), 3 | mesh and time step (below) |
+| `LK_REF` (environment variable) | 1, 2 (default), 3 | mesh and time step (below); also `LK_TEND`, `LK_OUT_DT` and the restart (Restart) |
 
 ## Units
 
@@ -278,6 +278,38 @@ take 28 GB at `LK_REF = 2`. Paper II's rise speed (Fig. 12) and Fig. 9
 
 (any list of times works; 87 snapshots, 74 GB at `LK_REF = 2`).
 
+## Restart
+
+Any snapshot of this case restarts the run: it holds the nine primitives in
+Float64 at every node, and `initialize.jl` rebuilds the conserved state from
+them exactly ($E = p/(\gamma-1) + \tfrac12\rho|\mathbf v|^2 +
+\tfrac12|\mathbf B|^2 + \tfrac12\psi^2$), keeps the analytic reference state
+and the $c_h$ of $t = 0$, and starts the clock at the snapshot's time. Each
+rank reads its own piece, so **use the rank count of the run that wrote it**.
+The DynSGS residual history starts afresh, so the continuation is close to,
+not bitwise equal to, the uninterrupted run. Environment variables, so the
+deck need not be edited:
+
+| variable | meaning |
+|---|---|
+| `LK_RESTART_DIR` | output directory of the earlier run (`output/MHD/fluxEmergenceLeake2014/output-<date>`) |
+| `LK_RESTART_TIME` | snapshot to start from (nearest in its `simulation.pvd`; default the last) |
+| `LK_TEND` | `:tend` |
+| `LK_OUT_DT` | a snapshot every `LK_OUT_DT` (default 5) |
+| `LK_REF` | mesh (must be the one of the snapshot) |
+| `LK_DIAG` | the stage diagnostics (Notes) every `LK_DIAG` stages |
+
+For example, to rerun the last stretch before a blow-up at $t = 5.87$ with a
+snapshot every $0.05t_0$ and the diagnostics every 5 steps:
+
+```bash
+LK_REF=1 LK_RESTART_DIR=output/MHD/fluxEmergenceLeake2014/output-<date> LK_RESTART_TIME=5 \
+LK_TEND=6 LK_OUT_DT=0.05 LK_DIAG=25 mpiexec -n 14 julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2014
+```
+
+The new run writes to a new output directory, starting with the restart
+state itself.
+
 ## Figures
 
 `tools/plot_leake2014.py` draws Paper II's figures from the output
@@ -400,6 +432,16 @@ formation of the flux rope.
   ($t_n + c_i\Delta t$, in $t_0$), not an output time: snapshots are written at
   `:diagnostics_at_times` only. A node on a partition interface counts once
   per rank that holds it.
+- **Stage diagnostics** (`LK_DIAG=n` in the environment, off by default):
+  every `n`-th Runge–Kutta stage rank 0 prints `#DIAG t=…` with the largest
+  $|\mathbf v|$ and $|\mathbf v| + c_f$, the smallest $\rho/\rho_e$, the
+  largest and smallest $p/p_e$, $|\psi|$, $T$ and $|\delta\mathbf B|$, the
+  number of nodes at the density and pressure floors and the heights they span,
+  the largest DynSGS + explicit coefficient of the $\rho$, momentum and field
+  slots, and the largest explicit-diffusion number $\mu\Delta t/\Delta h^2$
+  (at $N = 4$ the explicit Laplacian goes unstable from $\approx 0.3$–$0.5$ at
+  this integrator), then a line per extreme saying where it is. `LK_DIAG=25`
+  is every 5 steps.
 - **CFL monitor.** `# CFL: max (|v| + c_f) Δt/Δh = …` is printed by rank 0
   every time the largest value over the nodes ($c_f = \sqrt{(\gamma p +
   |\mathbf B|^2)/\rho}$, $\Delta h$ the smallest LGL gap of the elements around

@@ -211,19 +211,25 @@ function user_inputs()
     # the fast speed just above the transition region is 92 (SD), 72 (MD), 50 (WD) at t = 0, and
     # Paper II's reconnection outflows reach 30 (README). The CFL monitor reports the actual value.
     Δt     = (3.0e-3, 1.2e-3, 6.0e-4)[LK_REF]
+    # Environment overrides (README, "Restart"): LK_TEND sets :tend, LK_OUT_DT a snapshot every
+    # LK_OUT_DT from 0 to :tend (only those after the start are written), LK_RESTART_DIR
+    # (+ LK_RESTART_TIME) restarts from a snapshot of an earlier run.
+    tend   = parse(Float64, get(ENV, "LK_TEND", "160.0"))
+    dtout  = parse(Float64, get(ENV, "LK_OUT_DT", "5.0"))
 
     inputs = Dict(
         :ode_solver           => CarpenterKennedy2N54(stage_limiter! = lk_positivity_limiter!,
                                                       williamson_condition = false),
         :Δt                   => Δt,
         :tinit                => 0.0,
-        :tend                 => parse(Float64, get(ENV, "LK_TEND", "160.0")),      # Paper II Figs. 10-11: MD erupts at 120-160 t₀
-        :diagnostics_at_times => (0.0:5.0:160.0),
+        :tend                 => tend,       # 160: Paper II Figs. 10-11, MD erupts at 120-160 t₀
+        :diagnostics_at_times => (0.0:dtout:tend),
         :conservation_every   => 10,
         :conservation_slots   => [1, 4],
         :lstep_heartbeat      => true,       # "#   step N   t = …" every 100 steps: snapshots are 1667 steps apart at LK_REF = 1
         :restart_time         => 0.0,
         :lrestart             => false,
+        :lk_restart_dir       => get(ENV, "LK_RESTART_DIR", ""),   # "" = start from the initial state
         :lsource              => true,       # gravity, ψ damping, velocity damping
         :lwell_balanced       => true,       # subtract the discrete RHS of qe (atmosphere + dipole)
         :SOL_VARS_TYPE        => TOTAL(),
@@ -279,6 +285,7 @@ function user_inputs()
         :linitial_refine      => false,
         :ladapt               => false,
     ) #Dict
+    haskey(ENV, "LK_RESTART_TIME") && (inputs[:lk_restart_time] = parse(Float64, ENV["LK_RESTART_TIME"]))
 
     return inputs
 end
