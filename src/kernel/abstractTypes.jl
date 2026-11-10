@@ -30,6 +30,8 @@ abstract type AbstractDiscretization end
 struct ContGal <: AbstractDiscretization end
 struct DiscGal <: AbstractDiscretization end
 struct FD <: AbstractDiscretization end
+# Finite volumes as order-zero DG (operators/fv.jl); mod_inputs maps it to DiscGal() + :lfv.
+struct FV <: AbstractDiscretization end
 
 abstract type AbstractPointsType end
 struct LG <: AbstractPointsType end
@@ -98,6 +100,34 @@ struct central_theta <: AbstractVolumeFlux end
 abstract type AbstractNumericalFlux end
 struct upwind_flux <: AbstractNumericalFlux end
 struct rusanov_flux <: AbstractNumericalFlux end
+
+# Approximate Riemann solvers (dg_fluxes.jl) for DG and FV.
+# ScalarLaw: scalar law, signal speeds from user_wave_speed_bounds (default ±λ).
+# EulerIdealGas(γ): 2D Euler, energy form (ρ, ρu, ρv, ρE).
+abstract type AbstractFluxPhysics end
+struct ScalarLaw <: AbstractFluxPhysics end
+struct EulerIdealGas <: AbstractFluxPhysics
+    γ :: Float64
+end
+EulerIdealGas() = EulerIdealGas(1.4)
+
+# HLL (Harten, Lax & van Leer 1983)
+struct hll_flux{P <: AbstractFluxPhysics} <: AbstractNumericalFlux
+    phys :: P
+end
+hll_flux() = hll_flux(ScalarLaw())
+
+# HLLC (Toro, Spruce & Speares 1994); HLL for a scalar law
+struct hllc_flux{P <: AbstractFluxPhysics} <: AbstractNumericalFlux
+    phys :: P
+end
+hllc_flux() = hllc_flux(ScalarLaw())
+
+# Roe (1981) with Harten's entropy fix; Murman–Roe for a scalar law
+struct roe_flux{P <: AbstractFluxPhysics} <: AbstractNumericalFlux
+    phys :: P
+end
+roe_flux() = roe_flux(ScalarLaw())
 
 #
 # Boundary flags/conditions

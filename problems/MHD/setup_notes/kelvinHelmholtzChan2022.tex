@@ -1,0 +1,76 @@
+\documentclass[10pt]{article}
+\input{preamble}
+\title{\code{problems/MHD/kelvinHelmholtzChan2022}\\[2pt]
+\large DynSGS and positivity setup, as coded on branch \branch{} (commit \commit)}
+\author{}\date{}
+\begin{document}
+\maketitle
+\commonlegend
+
+\noindent\textbf{Summary.} This case uses \textbf{neither DynSGS nor any positivity mechanism}. Its deck
+selects \code{:visc\_model => SMAG()} (Smagorinsky); \code{:lpositivity} is left at \code{false}, the
+solver carries no stage limiter and the flux has no floor. It is included in this set because it lives
+in \code{problems/MHD}; the stabilization it does use is described below so that the comparison with the
+eight \code{DSGS\_MHD} cases is complete.
+
+\section{The problem as set up}
+\begin{keytable}
+Equations & 2D ideal \cm{GLM-MHD}, \cm{state $(\rho,\rho u,\rho v,E,\rho w,B_x,B_y,B_z,\psi)$} & Chan et al.\ (2022) \S3.2.1\\
+EOS & \cm{$p=(\gamma-1)(E-\tfrac12|\bmom|^2/\rho-\tfrac12|\bB|^2-\tfrac12\psi^2)$}, $\gamma=5/3$ & \code{user\_flux.jl}\\
+Domain, mesh & \mj{doubly periodic} $32\times32$ quads, \code{./meshes/gmsh\_grids/hexa\_TFI\_32x32\_unitsquare.msh} & the file is not in this repository (JexpressoMeshes)\\
+Discretization & \cm{CG spectral elements, LGL nodes, lumped mass}; $N=7$ & \\
+Time integration & \cm{\code{CarpenterKennedy2N54}}, \cm{fixed $\Delta t$}, $\Delta t=2\times10^{-3}$, $t_{end}=15$ & \\
+Variables & \cm{\code{TOTAL()}, \code{"energy"}} & \\
+Initial data & $\tilde B=\tanh(15y+7.5)-\tanh(15y-7.5)$, $\rho=\tfrac12+\tfrac34\tilde B$, $p=1$, $u=\tfrac12(\tilde B-1)$, $v=\tfrac1{10}\sin2\pi x$, $\bB=(0,0.125,0)$ & \code{initialize.jl}\\
+GLM cleaning & \cm{$c_h=\max(|\bv|+c_f)$ of the initial data, constant}; \mj{$S_\psi=-(c_h/0.18)\,\psi$} & \\
+Sources & \mj{\code{:lsource => true}} ($\psi$ damping only) & \\
+Boundary conditions & periodic; free-slip fallback only for non-periodic tags & \code{user\_bc.jl}\\
+Other switches & \cm{\code{:lfilter}, \code{:lkep}, \code{:entropy\_variables}, \code{:lrichardson}, \code{:ladapt} false} & \\
+\end{keytable}
+
+\section{Stabilization actually used: Smagorinsky (not DynSGS)}
+\begin{keytable}
+\code{:visc\_model} & \code{SMAG()} & \textbf{not} \code{DSGS\_MHD()}; no \code{:dsgs\_*} key is read\\
+\code{:lvisc} & \cm{true} & \\
+\code{:}$\mu$ & $(0,1,1,1,1,1,1,1,1)$ & no mass diffusion (all \code{DSGS\_MHD} cases have $\mu[1]=1$)\\
+Smagorinsky constants & $C_s=0.21$, $\Pr_t=0.7$, $\mathrm{Sc}_t=0.7$, $\mu_{mol}=1.8\times10^{-5}$, $\kappa_{mol}=2.4\times10^{-5}$ & \code{PhysicalConst} (SI air values, used as is in this nondimensional case)\\
+Filter length & $\Delta=\Delta^{elem}_{\max}/N$ (\code{mesh.}$\Delta$\code{effective\_l}) & one value for the whole mesh\\
+\end{keytable}
+Per LGL node (\code{compute\_sgs\_cache!(::SGS\_SMAG)}, \code{SGS.jl:3343}; reader \code{SGS.jl:3590}):
+\[
+\mu_t=\rho\,C_s^2\Delta^2|S|,\qquad |S|=\sqrt{2S_{ij}S_{ij}},\ \ S_{ij}=\tfrac12(\partial_ju_i+\partial_iu_j),\ i,j\in\{x,y\},
+\]
+no Richardson factor (\code{:lrichardson => false}). Slot coefficients, with the primitives
+$(\rho,u,v,T,w,\bB,\psi)$ of \code{user\_primitives.jl}:
+\begin{center}\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+Equation & Flux & Coefficient\\
+\midrule
+$\rho$ & --- & $\mu[1]=0$\\
+$\rho u,\rho v$ & deviatoric stress $\boldsymbol\tau$ of $(u,v)$ & $\mu_{mol}+\mu_t$\\
+$E$ & $\kappa\nabla T+\boldsymbol\tau\cdot\bv$ & $\kappa=\kappa_{mol}+\mu_t/(\rho\Pr_t)$\\
+$\rho w$, $B_k$, $\psi$ & $\kappa_s\nabla(w,\ B_k,\ \psi)$ & $\kappa_s=\kappa_{mol}+\mu_t/(\rho\,\mathrm{Sc}_t)$\\
+\bottomrule
+\end{tabular}
+\end{center}
+No resistive work is added to $E$ on this path. The coefficient is blind to resolution: it is set by the
+strain rate, not by a residual.
+
+\section{Positivity}
+\begin{itemize}[leftmargin=*]
+\item \mj{\code{:lpositivity} false}; \mj{no stage limiter}; \mj{no state modification}.
+\item No flux-only floor (\code{pressure\_mhd} unguarded).
+\item No mass diffusion ($\mu[1]=0$).
+\end{itemize}
+
+\section{Observations}
+\begin{enumerate}[leftmargin=*]
+\item The mesh named in the deck is not shipped in \code{problems/MHD/kelvinHelmholtzChan2022} nor under
+\code{meshes/gmsh\_grids/} in this checkout; only \code{KHI\_32x32\_periodic.geo} is.
+\item $\mu_{mol}$ and $\kappa_{mol}$ are \code{PhysicalConst}'s SI values for air; in this nondimensional
+setup they act as small constant background coefficients.
+\end{enumerate}
+
+\input{codemap}
+\end{document}

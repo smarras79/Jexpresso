@@ -7,7 +7,16 @@ using Artifacts
 # _ensure_rt_loaded!() is guaranteed to have run before any RT entry
 # point fires (drivers.jl calls it under `if inputs[:lRT_problem]`).
 
-Base.@kwdef mutable struct phys_grid{T <: AbstractFloat, dims1, dims2, dims3, dims4, dims5, dims6, dims7, backend}
+Base.@kwdef mutable struct phys_grid{T <: AbstractFloat, backend}
+
+    # array shapes (fields, not type parameters: see the top of src/kernel/globalStructs.jl)
+    dims1
+    dims2
+    dims3
+    dims4
+    dims5
+    dims6
+    dims7
 
     x = KernelAbstractions.zeros(backend,T, dims1)
     y = KernelAbstractions.zeros(backend,T, dims2)
@@ -56,7 +65,7 @@ function init_phys_grid(mesh,inputs,nlay,nx,ny,xmin,xmax,ymin,ymax,zmin,zmax,bac
     dims5 = (Int64(nlay+1), Int64(ncol))
     dims6 = (Int64(nlay+2),Int64(ncol), 8)
     dims7 = (Int64(nlay+2), Int64(ncol), Int64(mesh.ngl), Int64(mesh.ngl), Int64(mesh.ngl))
-    Rad_grid = phys_grid{TFloat, dims1, dims2, dims3, dims4, dims5, dims6, dims7, backend}()
+    Rad_grid = phys_grid{TFloat, backend}(; dims1, dims2, dims3, dims4, dims5, dims6, dims7)
     dx = (xmax - xmin)/nx
     dy = (ymax - ymin)/ny
     dz = (zmax - zmin)/(nlay+1)

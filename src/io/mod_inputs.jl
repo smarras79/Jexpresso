@@ -31,7 +31,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #
     # Check that necessary inputs exist in the Dict inside .../IO/user_inputs.jl
     #
-    mod_inputs_check(inputs, :nop, Int8(4), "w")  #Polynomial order
+    get(inputs, :AD, nothing) == FV() || mod_inputs_check(inputs, :nop, Int8(4), "w")  #Polynomial order (none for FV)
     
     if(!haskey(inputs, :backend))
         inputs[:backend] = CPU()
@@ -634,6 +634,24 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :ndiagnostics_outputs))
         inputs[:ndiagnostics_outputs] = 0
     end
+    inputs[:lstep_heartbeat] = get(inputs, :lstep_heartbeat, false) == true   # per-step progress line
+    # Discrete totals of the :conservation_slots every :conservation_every steps (0: off) to
+    # <output_dir>/<:conservation_file>; plot with tools/plot_conservation.py. The file name is a
+    # String, or a Function of the completed inputs that returns one, evaluated when the file is
+    # opened: one name per run for cases whose runs share an output directory (MHD/smoothVortex,
+    # MHD/alfvenWaveBabbarRanocha2026).
+    inputs[:conservation_every] = Int(get(inputs, :conservation_every, 0))
+    inputs[:conservation_slots] = Int.(collect(get(inputs, :conservation_slots, [1])))
+    inputs[:conservation_file]  = get(inputs, :conservation_file, "conservation.dat")
+    # problems/MHD/blastBalsaraSpicer1999: ambient |B| along x (Heaviside-Lorentz); ambient β = 0.2/B0².
+    # 100/√(4π) is Balsara & Spicer's B = 100 (β = 2.51e-4). Change only this for a β sweep.
+    inputs[:blast_B0] = Float64(get(inputs, :blast_B0, 100.0/sqrt(4.0*π)))
+    # problems/MHD/shockCloudDaiWoodward1998 (and shockCloudMach15DaiWoodward1998): which test ("letters",
+    # Fig. 20, or "cloud", Fig. 23), the initial shock position, and the width over which the shock and the
+    # cloud edges are spread (0: DW's sharp data).
+    inputs[:sc_problem] = String(get(inputs, :sc_problem, "letters"))
+    inputs[:sc_shock_x] = Float64(get(inputs, :sc_shock_x, 0.2))
+    inputs[:sc_smooth]  = Float64(get(inputs, :sc_smooth, 0.0))
     if(!haskey(inputs, :Δt))
         inputs[:Δt] = 0.1  #Initial time is 0.0 by default
     end
@@ -653,6 +671,15 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
     if(!haskey(inputs, :tend))
         inputs[:tend] = 0.0  #end time is 0.0 by default
+    end
+    # Δt must be positive, finite and nonzero in Float32 (warm-up); checked on all ranks
+    if !inputs[:llinsolve] && Float64(inputs[:tend]) > Float64(inputs[:tinit])
+        Δt = inputs[:Δt]
+        ok = Δt isa Real && isfinite(Δt) && Δt > 0 && Float32(Δt) > 0
+        ok || error(" # :Δt => " * repr(Δt) * " (" * string(typeof(Δt)) * ") is not a usable time step for " *
+                    "tinit = " * string(inputs[:tinit]) * ", tend = " * string(inputs[:tend]) *
+                    ": it must be a positive, finite number, at least 1e-38. Check the :Δt line of the case's user_inputs.jl (an expression " *
+                    "or a pasted Unicode minus sign − instead of - can turn 5.0e-5 into something else).")
     end
 
     if( !haskey(inputs, :diagnostics_at_times) )
@@ -807,6 +834,17 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
     if(!haskey(inputs, :ode_adaptive_solver))
         inputs[:ode_adaptive_solver] = false
+    end
+    # :lpositivity method: "repair" (node floors inside rhs!) or "conservative" (element limiter
+    # run as the RK stage limiter, src/kernel/positivity/positivity_driver.jl).
+    if(!haskey(inputs, :positivity_method))
+        inputs[:positivity_method] = "repair"
+    end
+    inputs[:positivity_method] = lowercase(string(inputs[:positivity_method]))
+    inputs[:positivity_method] in ("repair", "conservative") ||
+        error(" # ERROR mod_inputs.jl: :positivity_method must be \"repair\" or \"conservative\"")
+    if inputs[:lpositivity] == true && inputs[:positivity_method] == "conservative"
+        inputs[:ode_solver] = positivity_conservative_alg(inputs[:ode_solver])
     end
     if(!haskey(inputs, :output_dir))
         inputs[:output_dir] = "none"
@@ -1157,6 +1195,23 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :dsgs_local_rel))
         inputs[:dsgs_local_rel] = 1.0
     end
+    #   :dsgs_fast_floors  DSGS_MHD (1D, 2D, 3D): the floors ρc, ρc², √ρ c of the normalization (domain and
+    #                      element) use the fast-speed bound √((γp + |B|²)/ρ) in place of the sound
+    #                      speed c; for low-β plasma, where c ≪ c_f
+    if(!haskey(inputs, :dsgs_fast_floors))
+        inputs[:dsgs_fast_floors] = false
+    end
+    #   :dsgs_thermal_residual  DSGS_MHD 2D, 3D: add the residual of ρe = E − ½|m|²/ρ − ½|B|² − ½ψ² (chain rule on the
+    #                      conserved residuals) over max(its element spread, local_rel·γp̄), per element for any :dsgs_norms
+    if(!haskey(inputs, :dsgs_thermal_residual))
+        inputs[:dsgs_thermal_residual] = false
+    end
+    #   DSGS_MHD in 3D (compute_dsgs_viscosity!(::DSGS_MHD, ::NSD_3D)): element form and conserved
+    #                      form only (:dsgs_conserved => true), domain or element norms.
+    #   :mhd_dissipation   optional function (x, y, z) -> (ν, η): explicit kinematic viscosity and
+    #                      magnetic diffusivity of a visco-resistive 3D MHD case, added per element (at
+    #                      its centroid) to the DynSGS coefficient of the momentum and B slots
+    #                      (problems/MHD/fluxEmergenceLeake2014). Unset: none.
     if(!haskey(inputs, :dsgs_nodal_rho))
         inputs[:dsgs_nodal_rho] = false
     end
@@ -1198,8 +1253,12 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
     #   :dsgs_freeze_stage  compute the coefficient ONCE PER TIME STEP, at the
     #                      stage that sits on tⁿ, and hold it for the rest of
-    #                      the step (default false: it is computed at every
-    #                      stage).
+    #                      the step instead of computing it at every stage.
+    #                      Default: true with the "residual" sensor for
+    #                      DSGS_MHD and for the CompEuler DSGS, false
+    #                      otherwise (ShallowWater DSGS, DSGS_SW); the
+    #                      "legacy" sensor ignores it (set below, after
+    #                      :dsgs_sensor).
     #
     #                      ν = C_R h² R̃, and R̃ is a three-point time
     #                      difference across the stages. At an intermediate
@@ -1219,10 +1278,15 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #                      At tⁿ the three values are step-level states, R̃ is
     #                      the BDF2 truncation error O(Δt²), and the floor
     #                      drops by a factor Δt. It also removes the stage
-    #                      cost of the sensor.
-    if(!haskey(inputs, :dsgs_freeze_stage))
-        inputs[:dsgs_freeze_stage] = false
-    end
+    #                      cost of the sensor. Measured on the MHD Alfvén
+    #                      wave (problems/MHD/alfvenWaveBabbarRanocha2026),
+    #                      N = 4, 16² -> 32²: order 3.2 per stage, 4.8 frozen,
+    #                      the same as Vern9 per stage.
+    #
+    #                      The "legacy" sensor must not be frozen: its BDF2 on
+    #                      (q_stage, qⁿ, qⁿ⁻¹) reads -½∂ₜq at τ = 0, which is
+    #                      the very stage the freeze keeps (the Alfvén wave,
+    #                      N = 4 on 16²: error 3.5e-3 per stage, 6.7e-3 frozen).
     #   :dsgs_cutoff       smoothness cutoff on the NORMALIZED residual:
     #                      ratio -> max(0, ratio - cutoff), so nu is exactly
     #                      zero below it, continuous across it, and unchanged
@@ -1329,12 +1393,37 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :dsgs_reference))
         inputs[:dsgs_reference] = false
     end
+    #   :lwell_balanced    TOTAL variables, CG: evaluate the inviscid element
+    #                      RHS of the reference state qe (fluxes and sources)
+    #                      once and subtract it at every stage, so that qe is an
+    #                      exact discrete steady state (rhs.jl,
+    #                      _well_balanced_reference!). For equilibria the
+    #                      discrete operator balances only to the interpolation
+    #                      error: a strongly stratified atmosphere, a low-β
+    #                      potential field (problems/MHD/fluxEmergenceLeake2014).
+    #                      Supersedes :dsgs_reference, which it implies.
+    if(!haskey(inputs, :lwell_balanced))
+        inputs[:lwell_balanced] = false
+    end
     if haskey(inputs, :dsgs_legacy_stencil)
         error(" user_inputs.jl: :dsgs_legacy_stencil has been replaced by :dsgs_sensor => \"legacy\" | \"residual\".")
     end
     inputs[:dsgs_sensor] = lowercase(string(inputs[:dsgs_sensor]))
     if !(inputs[:dsgs_sensor] in ("residual", "legacy"))
         error(" user_inputs.jl: :dsgs_sensor must be \"residual\" or \"legacy\" (got $(inputs[:dsgs_sensor])).")
+    end
+    # :dsgs_freeze_stage (documented above): on by default with the residual
+    # sensor for the MHD model and the CompEuler DSGS (the equation set
+    # tells the CompEuler DSGS() from the ShallowWater one); never with the
+    # legacy sensor.
+    if !haskey(inputs, :dsgs_freeze_stage)
+        vm = get(inputs, :visc_model, nothing)
+        inputs[:dsgs_freeze_stage] = inputs[:dsgs_sensor] == "residual" &&
+            (vm isa DSGS_MHD ||
+             (vm isa DSGS && string(get(inputs, :_parsed_equations, "")) == "CompEuler"))
+    elseif inputs[:dsgs_freeze_stage] == true && inputs[:dsgs_sensor] == "legacy"
+        rank == 0 && @warn " user_inputs.jl: :dsgs_freeze_stage is ignored with :dsgs_sensor => \"legacy\" (its stencil reads -∂ₜq/2 at the stage the freeze keeps); computing the coefficient at every stage."
+        inputs[:dsgs_freeze_stage] = false
     end
 
     #
@@ -1517,9 +1606,22 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :AD))
         inputs[:AD] = ContGal()
     else
-        if inputs[:AD] != ContGal() && inputs[:AD] != FD() && inputs[:AD] != DiscGal()
-            @mystop(" :AD can only be ContGal(), DiscGal(), or FD() at the moment.")
+        if inputs[:AD] != ContGal() && inputs[:AD] != FD() && inputs[:AD] != DiscGal() && inputs[:AD] != FV()
+            @mystop(" :AD can only be ContGal(), DiscGal(), FV() or FD() at the moment.")
         end
+    end
+    # :AD => FV(): order-zero DG on the :nop => 2 DG layout (lowest the mesh builder supports)
+    inputs[:lfv] = inputs[:AD] == FV()
+    if inputs[:lfv]
+        inputs[:AD]  = DiscGal()
+        inputs[:nop] = 2
+        inputs[:lexact_integration] = false
+        get(inputs, :lvisc, false) &&
+            @mystop(" :AD => FV() is inviscid for now: set :lvisc => false.")
+        get(inputs, :lsource, false) &&
+            @mystop(" :AD => FV() has no source term yet: set :lsource => false.")
+        get(inputs, :lkep, false) &&
+            @mystop(" :AD => FV() has no volume term: :lkep does not apply (set it false).")
     end
 
     if(!haskey(inputs, :numerical_flux))

@@ -3,7 +3,10 @@ abstract type AbstractSGSModel end
 #----------------------------------------------------------------------
 # Smagorinsky
 #----------------------------------------------------------------------
-Base.@kwdef mutable struct SGS_SMAG{T <: AbstractFloat, dims1, backend, VT} <: AbstractSGSModel
+Base.@kwdef mutable struct SGS_SMAG{T <: AbstractFloat, backend, VT} <: AbstractSGSModel
+
+    # array shapes (fields, not type parameters: see the top of src/kernel/globalStructs.jl)
+    dims1
 
     # physical constants — no defaults; set by allocator from PhysicalConst
     Pr_t::T
@@ -41,7 +44,10 @@ end
 #----------------------------------------------------------------------
 # Vreman
 #----------------------------------------------------------------------
-Base.@kwdef mutable struct SGS_VREM{T <: AbstractFloat, dims1, backend, VT} <: AbstractSGSModel
+Base.@kwdef mutable struct SGS_VREM{T <: AbstractFloat, backend, VT} <: AbstractSGSModel
+
+    # array shapes (fields, not type parameters: see the top of src/kernel/globalStructs.jl)
+    dims1
 
     # physical constants — no defaults; set by allocator from PhysicalConst
     Pr_t::T
@@ -77,7 +83,8 @@ end
 function allocate_SGS(npoin, T, backend, PhysConst, ::SMAG)
     dims1 = (Int64(npoin),)
     VT    = typeof(KernelAbstractions.zeros(backend, T, dims1))
-    return SGS_SMAG{T, dims1, backend, VT}(
+    return SGS_SMAG{T, backend, VT}(
+        dims1   = dims1,
         Pr_t    = T(PhysConst.Pr_t),
         Sc_t    = T(PhysConst.Sc_t),
         μ_mol   = T(PhysConst.μ_mol),
@@ -100,7 +107,8 @@ allocate_SGS(_, _, _, _, ::Any) = nothing
 function allocate_SGS(npoin, T, backend, PhysConst, ::VREM)
     dims1 = (Int64(npoin),)
     VT    = typeof(KernelAbstractions.zeros(backend, T, dims1))
-    return SGS_VREM{T, dims1, backend, VT}(
+    return SGS_VREM{T, backend, VT}(
+        dims1   = dims1,
         Pr_t    = T(PhysConst.Pr_t),
         Sc_t    = T(PhysConst.Sc_t),
         μ_mol   = T(PhysConst.μ_mol),

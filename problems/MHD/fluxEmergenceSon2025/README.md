@@ -46,8 +46,8 @@ Output goes to `./output/MHD/fluxEmergenceSon2025/<run>/`.
 | elements | $80\times35$, each $1H_0\times1H_0$ (`FE_80x35.geo/.msh`, shipped; `FE_80x70` also ships) |
 | polynomial order | 4 (LGL) → $320\times140$ unique points |
 | nodal spacing | 0.25 $H_0$ mean, 0.173 $H_0$ smallest |
-| time step | $2.5\times10^{-3}\tau_0$, Courant ≈ 0.07 initially, ≈ 0.15 at late times |
-| steps to $54\tau_0$ | 21,600 |
+| time step | $7.5\times10^{-3}\tau_0$, Courant ≈ 0.22 initially, ≈ 0.43 at late times ($|\mathbf v| + c_f \approx 10\,C_s$) |
+| steps to $54\tau_0$ | 7,200 |
 | output | every $\tau_0$ (55 snapshots) |
 
 The tanh transitions of the problem are $0.5H_0$ (flux-sheet edges) and
@@ -76,7 +76,13 @@ quadruples (twice the elements, twice the steps).
   the REPL.
 - **Boundaries** (`user_bc.jl`): periodic in $x$ (mesh tags), symmetric
   (free-slip, $B_z = 0$) bottom wall, free-slip top wall behind the
-  absorbing layer.
+  absorbing layer. The left edge of the `.geo` runs like the right one, so the
+  nodes paired across the periodic seam coincide to the last bit. Until
+  20 Oct 2026 it ran the other way, which mirrored gmsh's ~1e-12 node-placement
+  error across the seam: paired nodes were 1.5e-10 apart and the stratified
+  pressure pushed a spurious net x-momentum through the seam, 1e-12 by
+  $t = 0.15\tau_0$ and growing linearly. Both meshes are regenerated, and on
+  them it stays at round-off.
 - **Initial condition** (`initialize.jl`): the paper's Eqs. (1)–(5). The
   magnetostatic equilibrium is integrated numerically on a $10^{-4}H_0$
   table and interpolated at the nodes, and the residual of the *discrete*

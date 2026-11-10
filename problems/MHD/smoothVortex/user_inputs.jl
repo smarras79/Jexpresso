@@ -2,15 +2,16 @@
 # Smooth MHD vortex — the accuracy test of Dao & Nazarov,
 # J. Sci. Comput. 92:77 (2022), §5.1.1 (Balsara, ApJS 151:149 (2004)).
 #
-# A steady vortex on a uniform advection over the doubly periodic [-5,5]²,
-# so the exact solution is the initial condition translated by v₀t and the
-# error can be measured exactly. This is the case their Fig. 1 convergence
-# history is built on, and `user_plot.jl` here reproduces that figure:
-# the L¹, L² and L∞ error of the velocity against 1/sqrt(#DOFs) on log-log
-# axes, one line per polynomial order, with slope guides.
+# A steady vortex on a uniform advection over the doubly periodic
+# [-L/2, L/2]² (L = 20 by default, the paper's [-10,10]²), so the exact
+# solution is the initial condition translated by v₀t and the error can be
+# measured exactly. This is the case their Fig. 1 convergence history is built
+# on, and `user_plot.jl` here reproduces that figure: the L¹, L² and L∞ error
+# of the velocity against #DOFs on log-log axes, one line per polynomial order
+# and stabilization, with slope guides.
 #
-#     tools/smooth_vortex_mesh.sh          # the meshes, once
-#     tools/smooth_vortex_scan.sh          # the sweep: 4 orders x 4 meshes
+#     tools/smooth_vortex_mpi_scan.sh      # the sweep, DynSGS and Galerkin
+#                                          # (README.md: the options)
 #
 # or by hand,
 #
@@ -35,6 +36,12 @@
 #                       the two panels of the paper's Fig. 1
 #   JEXPRESSO_SV_SENSOR "residual" (default, the element's own residual) or
 #                       "legacy" (the assembled rate)
+#   JEXPRESSO_SV_CUTOFF :dsgs_cutoff, the smoothness cutoff      (default 1e-3;
+#                       0 runs DynSGS without it)
+#   JEXPRESSO_SV_HOLD   :dsgs_hold_steps                         (default 2)
+#   JEXPRESSO_SV_FREEZE 1 or 0 forces :dsgs_freeze_stage         (default: on,
+#                       mod_inputs.jl's, with the residual sensor)
+#   JEXPRESSO_SV_L      the box width L; picks vortex_L<L>_<n>x<n>.msh (default 20)
 #
 # The time step follows the resolution, Δt ∝ 1/(nelx·nop), so the Courant
 # number is the same at every point of a sweep and the comparison is not
@@ -124,8 +131,24 @@ end
 # meshes with SV_L=20 tools/smooth_vortex_mesh.sh.
 # The default is the box of the paper, [-10,10]^2, i.e. L = 20.
 _sv_hold() = something(tryparse(Int, get(ENV, "JEXPRESSO_SV_HOLD", "")), 2)
-_sv_cutoff() = something(tryparse(Float64, get(ENV, "JEXPRESSO_SV_CUTOFF", "")), 0.0)
-_sv_freeze() = get(ENV, "JEXPRESSO_SV_FREEZE", "0") in ("1", "true", "yes")
+# The DynSGS smoothness cutoff, :dsgs_cutoff (SGS.jl, _dsgs_cut): the normalized
+# residual enters ν as max(0, ratio − cutoff). With the coefficient frozen per
+# step, the residual sensor still reads the BDF2 truncation error of a moving
+# smooth solution, (Δt²/3)∂ₜ³q, and that floor alone gives ν ∝ Δ²Δt² ∝ h⁴:
+# without a cutoff DynSGS caps the measured order near 4 from N = 5 on
+# (problems/MHD/setup_notes/dsgsCutoff.pdf). A shock's ratio is O(10²), so
+# 1e-3 removes the floor and leaves a shock as it was; with it, DynSGS
+# reproduces Galerkin bit for bit on this vortex (N = 6, 32², t = 0.5) and on
+# the Alfvén wave, whose default it also is. This is the deck's default; its
+# records are "dsgs". JEXPRESSO_SV_CUTOFF=0 runs without it, stored as
+# "dsgs_nocut", and any other value as "dsgs_cut" (user_plot.jl,
+# SV_DSGS_CUTOFF: keep that equal to the value here).
+const SV_CUTOFF_DEFAULT = 1.0e-3
+_sv_cutoff() = something(tryparse(Float64, get(ENV, "JEXPRESSO_SV_CUTOFF", "")), SV_CUTOFF_DEFAULT)
+# JEXPRESSO_SV_FREEZE=1 or 0 forces :dsgs_freeze_stage; unset, the key is left
+# to mod_inputs.jl, whose default is on with the residual sensor.
+_sv_freeze() = (v = strip(get(ENV, "JEXPRESSO_SV_FREEZE", ""));
+                isempty(v) ? nothing : v in ("1", "true", "yes"))
 _sv_lbox() = something(tryparse(Float64, get(ENV, "JEXPRESSO_SV_L", "")), 20.0)
 # The box is ALWAYS in the mesh name (vortex_L20_32x32.msh): a mesh whose name
 # does not say which box it is cannot be told apart from one that is a
@@ -142,6 +165,15 @@ function user_inputs()
         :tinit                => 0.0,
         :tend                 => _sv_tend(),
         :diagnostics_at_times => (0.0, _sv_tend()),
+        # Mass and energy, the discrete totals Σ_K Σ_ij ω_iω_j J q of ρ and ρE,
+        # at every step, as for the rotor; tools/plot_conservation.py draws
+        # |Q(t) − Q(0)|/|Q(0)|. One file per run, named as its error record
+        # (user_plot.jl, _sv_tag), since the runs of a sweep share the output
+        # directory: conservation_nop<N>_nelx<M>_<tag>.dat.
+        :conservation_every   => 1,
+        :conservation_slots   => [1, 4],
+        :conservation_file    => inp -> string("conservation_nop", _sv_nop(), "_nelx", _sv_nelx(),
+                                               "_", _sv_tag(inp), ".dat"),
         :restart_time         => 0.0,
         :lrestart             => false,
         :lsource              => true,   # GLM ψ-damping source (Dedner mixed cleaning)
@@ -168,7 +200,14 @@ function user_inputs()
                                            # smooth solution (see the README)
         :dsgs_gamma       => 5.0/3.0,
         :dsgs_Prt         => 1.0,
-        :dsgs_conserved   => true,
+        # PHYSICAL form, the one user_primitives.jl is written for (ρ, u, v,
+        # T = p/ρ, w, B, ψ): ν on ρ, ρ̄ν in the deviatoric stress, κ = ρ̄ν/Pr
+        # on ∇T (Dao & Nazarov 2022 §4.4, as in orszagTangBormanis2024), η = ν
+        # on B, and the τ·u and η B·∇B work terms in the energy. With
+        # :dsgs_conserved => true these primitives got one kinematic ν each
+        # (ν∇u, ν∇T, no stress, no work terms) — neither form.
+        :dsgs_conserved      => false,
+        :dsgs_nazarov_energy => true,
         # THE NORMALIZATION SCOPE CHANGES THE ANSWER, and by a lot. "rank"
         # normalizes each rank's residual by ITS OWN subdomain's spread, so ν
         # — and therefore the solution — depends on how the domain was cut.
@@ -179,15 +218,16 @@ function user_inputs()
         # per RHS call (a few doubles) and is what Dao & Nazarov's eq. 4.8
         # means by the norm over Ω.
         :dsgs_norms       => _sv_norms(),
-        # Compute the coefficient once per step instead of once per stage:
-        # JEXPRESSO_SV_FREEZE=1 (see :dsgs_freeze_stage in mod_inputs.jl).
-        # It is what keeps the residual, and with it nu, from stalling at
-        # O(dt) and capping a high-order accuracy test at second order.
-        :dsgs_freeze_stage => _sv_freeze(),
+        # :dsgs_freeze_stage, the coefficient once per step instead of once
+        # per stage, is mod_inputs.jl's default with the residual sensor: it
+        # is what keeps the residual, and with it nu, from stalling at O(dt)
+        # and capping a high-order accuracy test. JEXPRESSO_SV_FREEZE=0 (or 1)
+        # forces it; see _sv_freeze and the end of this function.
         # Smoothness cutoff on the normalized residual (JEXPRESSO_SV_CUTOFF,
-        # :dsgs_cutoff in mod_inputs.jl): nu is zero where the sensor is only
-        # reading the element-local jump of a dt-proportional grid-scale
-        # residue, which is the floor that caps this very study's order.
+        # :dsgs_cutoff in mod_inputs.jl), 1e-3 by default (SV_CUTOFF_DEFAULT
+        # above): nu is zero where the sensor is only reading the
+        # Δt²-proportional truncation error of its own time difference, which
+        # is the floor that caps this very study's order without it.
         :dsgs_cutoff       => _sv_cutoff(),
         # Steps the coefficient is held at zero at the start of a run
         # (JEXPRESSO_SV_HOLD, :dsgs_hold_steps). 2 is the minimum the BDF2
@@ -214,5 +254,7 @@ function user_inputs()
         :linitial_refine     => false,
         :ladapt              => false,
     ) #Dict
+    f = _sv_freeze()
+    f === nothing || (inputs[:dsgs_freeze_stage] = f)
     return inputs
 end

@@ -26,6 +26,21 @@ uses, (2) making them match, (3) compiling Alya, and (4) launching the coupled
 run. For general (non-coupled) MPI setup of Jexpresso, see
 [INSTALL.md, Section 5 — "Running in parallel with MPI"](INSTALL.md#5-running-in-parallel-with-mpi).
 
+> **Shortcut: MPI.jl on its default binding, the MPICH bundled with Julia
+> (`MPICH_jll`).** Then there is nothing to reconcile and no system MPI to
+> install — only `gfortran`. `compilef90.sh` builds Alya against that very MPICH,
+> and `run_coupled.sh` launches with the `mpiexec` that ships with it:
+>
+> ```bash
+> cd AlyaProxy && bash compilef90.sh && cd ..
+> ./run_coupled.sh 2 2
+> ```
+>
+> Section 2 shows how to check the binding (`binary = MPICH_jll`), and Section 4
+> what the two scripts do. On macOS the
+> [hostname fix](INSTALL.md#55-macos-hostname-fix-mpich-and-mpich_jll-only) for
+> MPICH applies to it as well.
+
 ---
 
 ## 1. Identify the MPI used by the Fortran side (Alya)
@@ -69,12 +84,16 @@ julia --project=. -e '
 
 - `binary = "system"` means MPI.jl uses a system MPI; `identify_implementation()`
   then prints which one (e.g. `(OpenMPI, v"5.0.6")`).
-- `binary = "MPItrampoline_jll"` (or another `*_jll`) means MPI.jl uses the
-  **bundled native MPI** — this is **not** what you want for coupling unless you
-  also build Alya against that exact JLL (see the note in Section 4).
+- `binary = "MPICH_jll"` — MPI.jl's default — means MPI.jl uses the MPICH that
+  ships with Julia. That works for coupling as it is: `compilef90.sh` builds
+  Alya against that same MPICH and `run_coupled.sh` launches with its own
+  `mpiexec` (Section 4). Skip to Section 5.
+- `binary = "MPItrampoline_jll"` or `"OpenMPI_jll"` means another bundled MPI,
+  which the coupling scripts do not support. Bind MPI.jl to a system MPI
+  (Section 3, Option A) or back to `MPICH_jll`.
 
-**This must report the same implementation and version you wrote down in
-Section 1.** If it doesn't, fix it in the next step.
+**For a system MPI, this must report the same implementation and version you
+wrote down in Section 1.** If it doesn't, fix it in the next step.
 
 ---
 
@@ -140,10 +159,10 @@ MPIF90=/opt/homebrew/Cellar/open-mpi/5.0.8/bin/mpif90 bash compilef90.sh
 cd ..
 ```
 
-If that MPI provides no `mpif90` at all (for instance MPI.jl is on the bundled
-`MPItrampoline_jll`), you cannot easily build Alya against it — install a matching
-**system** MPI and use Option A instead. See the
-[note on the JLL route in Section 4](#4-choose-a-consistent-mpi-for-coupling).
+If MPI.jl is on the MPICH bundled with Julia (`MPICH_jll`), there is no system
+wrapper to find and none is needed: `compilef90.sh` builds against that MPICH
+directly (Section 4). For the other bundled MPIs (`MPItrampoline_jll`,
+`OpenMPI_jll`) install a matching **system** MPI and use Option A instead.
 
 ### Confirm the match
 
@@ -164,17 +183,24 @@ For a coupled run, pick **one** of the following — the same choice applies to
   `lib`. On macOS, also apply the
   [hostname `/etc/hosts` fix](INSTALL.md#55-macos-hostname-fix-mpich-and-mpich_jll-only)
   required for any MPICH-based MPI.
+- **The MPICH bundled with Julia (`MPICH_jll`) for both** *(MPI.jl's default;
+  no system MPI needed, only `gfortran`).* Leave MPI.jl as it is.
+  `compilef90.sh` sees the binding and builds `Alya.x` against that very MPICH;
+  `run_coupled.sh` launches with the `mpiexec` that ships with it, started with
+  the library path MPI.jl gives it. The macOS hostname fix above applies here
+  too.
 
-> **About the `MPICH_jll` *native* route.** The bundled-JLL route in
-> [INSTALL.md Section 5, Route C](INSTALL.md#5-running-in-parallel-with-mpi) is
-> for **standalone** Jexpresso. It is **not** appropriate for coupling in the
-> general case, because Alya is a separately compiled Fortran binary linked
-> against a *system* MPI — and that system MPI is almost never ABI-identical to
-> the JLL. Use a **system** OpenMPI or MPICH for coupled runs so both codes link
-> the very same library. (The only exception: if you deliberately build `Alya.x`
-> against the *same* MPICH that is ABI-compatible with `MPItrampoline_jll`, you
-> may launch with MPI.jl's bundled `mpiexec` as shown in Section 6 — advanced,
-> macOS-only.)
+> **Same installation, not just the same family.** Two builds of MPICH in one
+> job — a Homebrew MPICH for Alya and Julia's `MPICH_jll`, say — are two
+> installations, and they are not guaranteed to form a working world. So with
+> MPI.jl on `MPICH_jll`, Alya is built against `MPICH_jll` itself, and
+> `run_coupled.sh` refuses to launch an `Alya.x` that loads its `libmpi` from
+> anywhere else. The JLL's own `bin/mpifort` cannot do this build: it still
+> points at the directory the JLL was built in, `/workspace/destdir`. So
+> `compilef90.sh` gives `gfortran` the JLL's include and library directories
+> directly and sets rpaths, so that `Alya.x` runs with no environment set.
+> The JLL ships no `mpi_f08` module; the build uses `mpif.h`, which the proxy
+> supports.
 
 ---
 
@@ -200,7 +226,10 @@ implementation's `mpif90` **by prefix, not by `PATH`** (Homebrew can only *link*
 one MPI at a time, so `which mpif90` may well be the other one's), verifies the
 wrapper really is what it claims, picks the Fortran binding the MPI actually
 provides, and checks the finished binary against MPI.jl — exiting non-zero if
-they disagree.
+they disagree. When MPI.jl is on the MPICH bundled with Julia (`MPICH_jll`),
+there is no wrapper to find: it builds against that MPICH directly and checks
+that `Alya.x` loads that very `libmpi` (Section 4). If Julia cannot be asked,
+the script prints Julia's error rather than guessing.
 
 To build against a specific implementation instead, name it:
 
@@ -403,7 +432,16 @@ Julia ranks, separated by `:`, so they share `MPI_COMM_WORLD`. Use the launcher
 that belongs to the MPI both codes were built against.
 
 The `JEXPRESSO_COUPLED=1` environment variable tells Jexpresso it is running
-coupled. The example case is `CompEuler thetaAlya` (2D) or `CompEuler 3dAlya` (3D).
+coupled. The example case is `CompEuler 3dAlya` (3D), which matches the proxy as
+shipped: same domain (`hexa_TFI_10x1x10.msh` spans exactly the proxy's
+`rem_min`/`rem_max`) and the same 2000 steps.
+
+`CompEuler thetaAlya` (2D) needs a 2D proxy first. In
+`AlyaProxy/alya_all2all_time_loop.f90` set `ndime = 2`,
+`rem_min = [-5000.0, 0.0, 0.0]`, `rem_max = [5000.0, 10000.0, 0.0]` and
+`rem_nx = [10, 10, 1]` (the domain of its `hexa_TFI_10x10.msh`), then rebuild
+`Alya.x`. Against the 3D proxy Jexpresso stops at setup with `nfields mismatch`:
+it sends two velocity components and the proxy expects `ndime = 3`.
 
 > **Export it, don't pass it with `-x` after the `:`.** Not every launcher
 > honours `-x VAR=value` inside a *secondary* MPMD app context. When it is
@@ -419,16 +457,16 @@ coupled. The example case is `CompEuler thetaAlya` (2D) or `CompEuler 3dAlya` (3
 ```bash
 export JEXPRESSO_COUPLED=1
 
-# 2D: 2 Alya ranks + 2 Jexpresso ranks
+# 3D: 2 Alya ranks + 2 Jexpresso ranks
 mpirun -np 2 ./AlyaProxy/Alya.x : -np 2 \
-    julia --project=. ./src/Jexpresso.jl CompEuler thetaAlya
+    julia --project=. ./src/Jexpresso.jl CompEuler 3dAlya
 ```
 
 ```bash
-# 3D
+# 2D (only with the 2D proxy described above)
 export JEXPRESSO_COUPLED=1
 mpirun -np 2 ./AlyaProxy/Alya.x : -np 2 \
-    julia --project=. ./src/Jexpresso.jl CompEuler 3dAlya
+    julia --project=. ./src/Jexpresso.jl CompEuler thetaAlya
 ```
 
 > **`prterun` error (OpenMPI 5)?** OpenMPI's launcher sometimes cannot resolve
@@ -443,11 +481,12 @@ mpirun -np 2 ./AlyaProxy/Alya.x : -np 2 \
 >      : -np 2 "$JULIA_BIN" --project=. ./src/Jexpresso.jl CompEuler 3dAlya
 > ```
 
-### MPICH_jll bundled launcher (advanced, macOS)
+### The MPICH bundled with Julia (`MPICH_jll`)
 
-Only valid if `Alya.x` was built against an MPICH that is ABI-compatible with
-`MPItrampoline_jll` (see the note in Section 4). Here the launcher comes from
-MPI.jl, and the env var is passed with MPICH's `-env`:
+With MPI.jl on `MPICH_jll` and `Alya.x` built against it (Section 4),
+`run_coupled.sh` needs nothing more: it launches with MPI.jl's own `mpiexec`.
+By hand, the launcher comes from MPI.jl, and the env var is passed with MPICH's
+`-env`:
 
 ```bash
 julia --project=. -e '
@@ -457,17 +496,28 @@ julia --project=. -e '
 
 ### Convenience script
 
-[`run_coupled.sh`](run_coupled.sh) wraps the system-MPI launch above, and also
-builds a PackageCompiler sysimage to remove Julia's cold-start JIT cost:
+[`run_coupled.sh`](run_coupled.sh) wraps the launch above. Its Julia ranks
+load Jexpresso as a package (`using Jexpresso; Jexpresso.run_case(...)`), and
+it brings the package image up to date before it launches, so that the ranks
+never start compiling it all at once inside the job:
 
 ```bash
-./run_coupled.sh               # 2 Alya ranks + 2 Julia ranks (default)
-./run_coupled.sh 2 4           # 2 Alya ranks + 4 Julia ranks
-REBUILD_SYSIMAGE=1 ./run_coupled.sh   # force sysimage rebuild first
+./run_coupled.sh                        # 2 Alya ranks + 2 Julia ranks (default)
+./run_coupled.sh 2 4                    # 2 Alya ranks + 4 Julia ranks
+PRECOMPILE_COUPLED=1 ./run_coupled.sh   # bake this case into the package image first
+SCRIPT=1 ./run_coupled.sh               # run src/Jexpresso.jl as a script instead
 ```
 
+- `PRECOMPILE_COUPLED=1` is explained in
+  [Precompiling a coupled case](#precompiling-a-coupled-case).
+- `SCRIPT=1` compiles everything at every launch. It suits an edit-and-run
+  session, since nothing has to be precompiled after each edit.
+- `REBUILD_SYSIMAGE=1` builds a sysimage of the dependencies only (see the same
+  section).
+
 It also passes `--startup-file=no` and per-rank output tagging (`-prepend-rank`
-on MPICH, `--output tag` on OpenMPI; disable with `TAG_OUTPUT=0`). Without
+on MPICH, `--output tag` on OpenMPI 5, `--tag-output` on OpenMPI 4; disable
+with `TAG_OUTPUT=0`). Without
 tagging, a parallel run's stdout is block-buffered and interleaved, which is
 the main reason a working run can look like a hang.
 
@@ -484,16 +534,24 @@ Jexpresso's: a full SEM right-hand side plus one coupling exchange **per
 timestep**, for `(tend - tinit) / Δt` steps — 2000 of them with the `3dAlya`
 defaults.
 
+Alya receives exactly its own number of steps, and nothing in the protocol
+checks that the two agree
+([COUPLING-ALGORITHM.md §4.3](COUPLING-ALGORITHM.md#43-the-step-contract)).
+Check it in the log. Alya prints `Steps: 2000` at startup, and Jexpresso prints
+this at the end of its solve:
+
+```
+ # Coupling: 2000 exchanges sent to Alya
+```
+
+The two numbers must be equal.
+
 **Telling "slow" from "deadlocked".** The `t=` lines only appear at
 `:diagnostics_at_times`, which for `3dAlya` is every 100 time units — 200
 timesteps apart. A run that is merely slow looks exactly like one that is stuck.
 Turn on the per-step heartbeat, which prints the first five steps and then every
-hundredth:
-
-```bash
-export JEXPRESSO_STEP_HEARTBEAT=1
-./run_coupled.sh 2 2
-```
+hundredth, by adding `:lstep_heartbeat => true` to the Jexpresso deck
+(`user_inputs.jl`) and rerunning `./run_coupled.sh 2 2`.
 
 If the `#   step N   t = ...` lines keep coming, it is running and you are
 measuring throughput. If they stop, it is genuinely blocked — and the step
@@ -504,11 +562,14 @@ Alya grid point. Locating those points — bin lookup, bounding-box test, Newton
 solve for the reference coordinates — depends only on the two geometries, so on
 a static mesh Jexpresso now does it **once** and reuses the result, leaving one
 dot product per point per equation each step. You will see this line on the
-first exchange:
+first exchange, with totals over all Jexpresso ranks:
 
 ```
 [coupling] interpolation cache built: 1000/1000 points located in elements ...
 ```
+
+The two numbers should be equal. A point that is not located takes the value of
+its nearest mesh node instead of the interpolant.
 
 The cache is disabled automatically when the mesh can change under it
 (`:ladapt` or `:lamr`), and can be turned off with
@@ -517,8 +578,162 @@ The cache is disabled automatically when the mesh can change under it
 If it is still slower than you want, the exchange frequency is the next lever —
 but note that it currently happens on **every** step regardless of the
 `:Δt_couple` entry in the example `user_inputs.jl`, which nothing reads yet.
-Until that is implemented, use a larger `:Δt` or a shorter `:tend` while
-experimenting.
+
+For a shorter run while experimenting, change the number of steps on **both**
+sides: `:Δt`/`:tend` in the case's `user_inputs.jl` **and** `dt`/`tend` in
+`AlyaProxy/alya_all2all_time_loop.f90`, then rebuild `Alya.x`. Changing only
+Jexpresso's side breaks the one-exchange-per-Alya-step contract: with fewer
+steps Alya waits forever for the rest, and with more the extra messages have no
+receive.
+
+### Where the time goes, and running from the REPL
+
+These timings are for `3dAlya` (2000 steps) with 2 Jexpresso ranks, run back to
+back on one 4-core Linux machine. Your absolute times will differ; the
+proportions are what carry over.
+
+**The coupling itself costs about 5 %.** The same launch without Alya took
+421 s:
+
+```bash
+mpiexec -n 2 julia --project=. src/Jexpresso.jl CompEuler 3dAlya   # JEXPRESSO_COUPLED unset
+```
+
+The coupled launch, in the same form, took 442 s. The coupling adds one
+interpolation to Alya's
+1000 points and one small message per step. Alya's ranks also busy-wait
+inside MPI, so each keeps a core at 100 % for the whole run. That is harmless
+with a core per rank, and expensive if the ranks outnumber your cores.
+
+**What makes every launch slow is compilation.** Each rank is a new Julia
+process, and it compiles Jexpresso before its first step. A coupled launch
+(ranks started as in the REPL snippet below, caches in place) spent 60 % of its
+time before the first step:
+
+| phase | ends at |
+|---|---|
+| Julia started, packages loaded, `MPI_Init` | 26 s |
+| driver compiled (`Entering with_mpi block … DONE`) | 112 s |
+| mesh and SEM set up from `.jexpresso_cache` | 151 s |
+| parameters, `Precompile warm-up`, integrator warm-up | 239 s |
+| 2000 time steps, about 82 ms each | 403 s |
+
+In a REPL, a second `Jexpresso.run_case` in the same session reuses all of that
+compiled code, which is why a standalone case feels fast there. A coupled job
+cannot do the same. `mpiexec` starts the ranks, so the REPL process is never one
+of them, and `Alya.x` runs once per job.
+
+**Launching from the REPL** still works, but it starts new processes:
+
+```julia
+julia> using MPI    # the REPL started as `julia --project=.` in the repository root
+julia> ranks = `$(Base.julia_cmd()) --project=. --startup-file=no -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "3dAlya")'`
+julia> withenv("JEXPRESSO_COUPLED" => "1") do
+           run(`$(mpiexec()) -prepend-rank -n 2 ./AlyaProxy/Alya.x : -n 2 $ranks`)
+       end
+```
+
+- `-prepend-rank` is the MPICH flag. On Open MPI, use the tagging flag listed
+  under the convenience script above.
+- `withenv` keeps `JEXPRESSO_COUPLED` out of the REPL's own environment, so a
+  `run_case` typed there afterwards still runs standalone.
+
+These ranks load the precompiled package (`using Jexpresso`) instead of
+compiling the script `src/Jexpresso.jl`. On its own, that only gets each rank
+going about 25 s sooner (26 s instead of 51 s). The compilation itself goes
+away once the case is precompiled for coupled runs, as described next.
+
+### Precompiling a coupled case
+
+Jexpresso can compile a coupled case ahead of time, into its package image, so
+that a launch starts computing almost at once. Precompilation runs in a single
+process with no Alya, so it runs the case *dry*. Every coupling function runs as
+in a real coupled run, which gives the image the code and types it has to hold.
+Alya is simulated in the same process: a virtual world with Alya at ranks 0 and
+1, Alya's grid made of a few points inside Jexpresso's mesh, and no messages.
+The case runs twice, for three steps each time. The first run builds the
+case's mesh and SEM caches if they do not exist yet; the second loads them,
+which is the path every later launch takes.
+
+Turn it on once per checkout:
+
+```bash
+PRECOMPILE_COUPLED=1 ./run_coupled.sh 2 2
+```
+
+From Julia, `Jexpresso.set_coupled_precompile!("CompEuler", "3dAlya")` does the
+same, and `Jexpresso.set_coupled_precompile!(nothing)` turns it off. The choice
+is kept in `LocalPreferences.toml`, so every later precompile bakes in the same
+case, wherever it is triggered: `Pkg.precompile()`, a `using Jexpresso` in the
+REPL, or `run_coupled.sh`. It only helps launches whose ranks load the package:
+`run_coupled.sh` and the REPL recipe above do, while `SCRIPT=1` and
+`julia src/Jexpresso.jl` do not. A coupled launch that runs without it prints
+`Not precompiled for coupled runs`.
+
+On `3dAlya` with 2 + 2 ranks, on the same machine as above:
+
+| | case not precompiled | case precompiled |
+|---|---|---|
+| first time step starts at | 239 s | 73 s |
+| whole launch | 402 s | 232 s |
+
+The results are unchanged: Alya's output files were byte-identical.
+
+What it costs:
+
+- Precompiling Jexpresso takes several minutes instead of about one (6.5
+  minutes on the machine above). It happens again whenever Jexpresso's source
+  changes, before the next launch or at the next `using Jexpresso`.
+- The package image grows from 17 MB to 150–180 MB, and every
+  `using Jexpresso`, including those of standalone runs, loads it about 8 s
+  more slowly.
+- Editing the case's own files does not make the image stale. The edited file
+  is reloaded at launch instead. For `user_inputs.jl` that costs nothing, but
+  an edited hook that the right-hand side calls (`user_flux.jl`,
+  `user_source.jl`, …) is recompiled at every launch until you rebuild with
+  `PRECOMPILE_COUPLED=1 ./run_coupled.sh`. That flag always rebuilds.
+
+Other cases still run their own hooks with this image. The image holds the
+coupled case's hooks, and another case's files replace only those they define
+at exactly the same signature. A baked hook at a more specific signature
+would still be called: 3dAlya's `user_source!(…, ::CL, ::TOTAL)` outranks
+kopriva's `user_source!(…, ::CL, ::AbstractPert)`. So after loading any other
+case, Jexpresso redirects each such hook to the case's own method and prints
+`Redirected N hook methods of CompEuler/3dAlya`. A redirected call costs the
+same as a direct one.
+
+Jexpresso's structs used to carry their array sizes in their types, for
+example `St_metrics{Float64, (50, 5, 5, 5), …}`, so every partition size was a
+different type. A rank of a 2-rank launch holds 50 of the 100 elements, so it
+could not use the code the single-process precompile had compiled for all 100,
+and its warm-ups compiled for about 30 s. The sizes are now ordinary fields (see
+the top of `src/kernel/globalStructs.jl`), and a launch compiles for about a
+second. Measured back to back on another, slower machine, with the case
+precompiled:
+
+- The first time step starts at 25 s instead of 52 s, about 3 s after Julia has
+  loaded.
+- The whole launch takes 123 s instead of 154 s.
+- The time per step is unchanged (48–50 ms), and so is Alya's output.
+
+What remains is loading the package image, about 22 s.
+
+The sysimage (`REBUILD_SYSIMAGE=1`, `create_Jexpresso_sysimage.jl`) holds only
+the dependencies. Its trace script, `precompile_jexpresso.jl`, includes
+`src/Jexpresso.jl`, which starts a case only when it is the program being run.
+The sysimage makes packages load faster, but it contains none of Jexpresso's
+compiled code.
+
+To compare with a standalone run in the REPL:
+
+```julia
+julia> using Jexpresso
+julia> @time Jexpresso.run_case("CompEuler", "3dAlya")   # compiles, like every coupled launch
+julia> @time Jexpresso.run_case("CompEuler", "3dAlya")   # reuses the compiled code
+```
+
+Both calls run on a single process, so each time step takes longer than it does
+with two ranks.
 
 ---
 
@@ -613,6 +828,11 @@ only when coupled.
   `JEXPRESSO_COUPLED` did not reach the Julia ranks, so Jexpresso is running
   standalone on a `COMM_WORLD` that contains Alya. `export` it (Section 6)
   rather than passing `-x` after the `:`.
+- **Jexpresso finishes its solve but the job never exits**, and Alya never
+  prints `Alya: time loop complete`. The two time loops disagree on the number
+  of steps: compare `# Coupling: N exchanges sent to Alya` with Alya's
+  `Steps:` line, and make `:Δt`/`:tend` match the proxy's `dt`/`tend`
+  (Section 6, "What a coupled run actually costs").
 - **`prterun` / launcher cannot find Julia.** Use the explicit `$JULIA_BIN`
   form shown in Section 6.
 - **Stale or conflicting MPI binding on the Julia side.** Remove the recorded

@@ -1,4 +1,9 @@
-Base.@kwdef mutable struct St_Wall_model{T <: AbstractFloat, dims1, dims2, dims3, backend, VT}
+Base.@kwdef mutable struct St_Wall_model{T <: AbstractFloat, backend, VT}
+
+    # array shapes (fields, not type parameters: see the top of src/kernel/globalStructs.jl)
+    dims1
+    dims2
+    dims3
 
     τ_f::VT = KernelAbstractions.zeros(backend,  T, dims1)
     wθ::VT  = KernelAbstractions.zeros(backend,  T, dims2)
@@ -24,6 +29,6 @@ function allocate_Wall_model(nface, ngl, T, backend; lwall_model=false, lmoist=f
     end
 
     VT = typeof(KernelAbstractions.zeros(backend, T, dims1))
-    wm = St_Wall_model{T, dims1, dims2, dims3, backend, VT}()
+    wm = St_Wall_model{T, backend, VT}(; dims1, dims2, dims3)
     return wm
 end

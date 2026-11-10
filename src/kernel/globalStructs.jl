@@ -1,7 +1,29 @@
 #-------------------------------------------------------------------------------------------
+# ARRAY SHAPES ARE FIELDS, NOT TYPE PARAMETERS
+#
+# The structs below, and St_metrics, St_extra_mesh, St_visc, … elsewhere, are allocated by
+# their allocate_* functions from shapes that depend on the mesh: npoin, nelem, the number
+# of boundary faces. Those shapes are each struct's first fields, and the @kwdef defaults
+# of the arrays after them read them.
+#
+# They used to be type parameters. Nothing but those defaults ever read them, yet they
+# made every mesh size a different type. Each MPI rank's partition, each rank count and
+# each mesh therefore compiled everything that touches these structs (the RHS, the
+# integrator) again, and never reused code from an earlier run or from the package image.
+# The field types still come from the array-type parameters (Arr1, …), so the code that
+# is compiled is the same as before.
+#-------------------------------------------------------------------------------------------
+
+#-------------------------------------------------------------------------------------------
 # Solution variables
 #-------------------------------------------------------------------------------------------
-Base.@kwdef mutable struct St_uODE{T <: AbstractFloat, dims1, dims2, dims3, dims4, backend, Arr1, Arr2, Arr3, Arr4}
+Base.@kwdef mutable struct St_uODE{T <: AbstractFloat, backend, Arr1, Arr2, Arr3, Arr4}
+
+    # array shapes (fields, not type parameters: see the top of src/kernel/globalStructs.jl)
+    dims1
+    dims2
+    dims3
+    dims4
 
     u::Arr1       = KernelAbstractions.zeros(backend, T, dims1)
     uaux::Arr2    = KernelAbstractions.zeros(backend, T, dims2)
@@ -21,12 +43,16 @@ function allocate_uODE(SD, npoin, T, backend; neqs=1)
     Arr2 = typeof(KernelAbstractions.zeros(backend, T, dims2))
     Arr3 = typeof(KernelAbstractions.zeros(backend, T, dims3))
     Arr4 = typeof(KernelAbstractions.zeros(backend, T, dims4))
-    uODE = St_uODE{T, dims1, dims2, dims3, dims4, backend, Arr1, Arr2, Arr3, Arr4}()
+    uODE = St_uODE{T, backend, Arr1, Arr2, Arr3, Arr4}(; dims1, dims2, dims3, dims4)
 
     return uODE
 end
 
-Base.@kwdef mutable struct St_SolutionVars{T <: AbstractFloat, dims1, nvars, backend, Arr1}
+Base.@kwdef mutable struct St_SolutionVars{T <: AbstractFloat, backend, Arr1}
+
+    # array shapes (fields, not type parameters: see the top of src/kernel/globalStructs.jl)
+    dims1
+    nvars
 
     qnp1::Arr1  = KernelAbstractions.zeros(backend,  T, dims1) # qⁿ⁺¹
     qn::Arr1    = KernelAbstractions.zeros(backend,  T, dims1) # qⁿ
@@ -48,7 +74,7 @@ function define_q(SD, nelem, npoin, ngl, qvars, T, backend; neqs=1, qoutvars=qva
     dims1 = (Int64(npoin), Int64(neqs+1))
 
     Arr1 = typeof(KernelAbstractions.zeros(backend,  T, dims1))
-    q          = St_SolutionVars{T, dims1, neqs, backend, Arr1}()
+    q          = St_SolutionVars{T, backend, Arr1}(; dims1, nvars = neqs)
     q.qvars    = qvars
     q.qoutvars = qoutvars
 
@@ -59,7 +85,11 @@ end
 #-------------------------------------------------------------------------------------------
 # rhs
 #-------------------------------------------------------------------------------------------
-Base.@kwdef mutable struct St_rhs{T <: AbstractFloat, dims1, dims2, backend, Arr1, Arr2}
+Base.@kwdef mutable struct St_rhs{T <: AbstractFloat, backend, Arr1, Arr2}
+
+    # array shapes (fields, not type parameters: see the top of src/kernel/globalStructs.jl)
+    dims1
+    dims2
 
     RHS::Arr1          = KernelAbstractions.zeros(backend,  T, dims1)
     RHS_visc::Arr1     = KernelAbstractions.zeros(backend,  T, dims1)
@@ -86,7 +116,7 @@ function allocate_rhs(SD, nelem, npoin, ngl, T, backend; neqs=1)
     
     Arr1 = typeof(KernelAbstractions.zeros(backend,  T, dims1))
     Arr2 = typeof(KernelAbstractions.zeros(backend,  T, dims2))
-    rhs = St_rhs{T, dims1, dims2, backend, Arr1, Arr2}()
+    rhs = St_rhs{T, backend, Arr1, Arr2}(; dims1, dims2)
 
     return rhs
 end
@@ -95,7 +125,11 @@ end
 #-------------------------------------------------------------------------------------------
 # Fluxes
 #-------------------------------------------------------------------------------------------
-Base.@kwdef mutable struct St_fluxes{T <: AbstractFloat, dims1, dims2, backend, Arr1, Arr2}
+Base.@kwdef mutable struct St_fluxes{T <: AbstractFloat, backend, Arr1, Arr2}
+    # array shapes (fields, not type parameters: see the top of src/kernel/globalStructs.jl)
+    dims1
+    dims2
+
     F::Arr1 = KernelAbstractions.zeros(backend,  T, dims1)
     G::Arr1 = KernelAbstractions.zeros(backend,  T, dims1)
     H::Arr1 = KernelAbstractions.zeros(backend,  T, dims1)
@@ -120,14 +154,19 @@ function allocate_fluxes(SD, npoin, ngl, T, backend; neqs=1)
     
     Arr1 = typeof(KernelAbstractions.zeros(backend,  T, dims1))
     Arr2 = typeof(KernelAbstractions.zeros(backend,  T, dims2))
-    fluxes = St_fluxes{T, dims1, dims2, backend, Arr1, Arr2}()
+    fluxes = St_fluxes{T, backend, Arr1, Arr2}(; dims1, dims2)
 
     return fluxes
 end
 #-------------------------------------------------------------------------------------------
 # Boundary Fluxes
 #-------------------------------------------------------------------------------------------
-Base.@kwdef mutable struct St_bdy_fluxes{T <: AbstractFloat, dims1, dims2, dims3, backend, Arr1, Arr2, Arr3}
+Base.@kwdef mutable struct St_bdy_fluxes{T <: AbstractFloat, backend, Arr1, Arr2, Arr3}
+
+    # array shapes (fields, not type parameters: see the top of src/kernel/globalStructs.jl)
+    dims1
+    dims2
+    dims3
 
     F_surf::Arr1 = KernelAbstractions.zeros(backend,  T, dims1)
     S_face::Arr2 = KernelAbstractions.zeros(backend,  T, dims2)
@@ -154,7 +193,7 @@ function allocate_bdy_fluxes(SD, nfaces, nedges, npoin, ngl, T, backend; neqs=1)
     Arr1 = typeof(KernelAbstractions.zeros(backend,  T, dims1))
     Arr2 = typeof(KernelAbstractions.zeros(backend,  T, dims2))
     Arr3 = typeof(KernelAbstractions.zeros(backend,  T, dims3))
-    bdy_fluxes = St_bdy_fluxes{T, dims1, dims2, dims3, backend, Arr1, Arr2, Arr3}()
+    bdy_fluxes = St_bdy_fluxes{T, backend, Arr1, Arr2, Arr3}(; dims1, dims2, dims3)
 
     return bdy_fluxes
 
@@ -162,7 +201,10 @@ end
 #-------------------------------------------------------------------------------------------
 # Arbitrary ijk-defined quantity f:
 #-------------------------------------------------------------------------------------------
-Base.@kwdef mutable struct St_fijk{T <: AbstractFloat, dims1, backend, Arr1}
+Base.@kwdef mutable struct St_fijk{T <: AbstractFloat, backend, Arr1}
+    # array shapes (fields, not type parameters: see the top of src/kernel/globalStructs.jl)
+    dims1
+
     fijk::Arr1 = KernelAbstractions.zeros(backend,  T, dims1)
 end
 function allocate_fijk(SD, ngl, T, backend; neqs=1)
@@ -176,7 +218,7 @@ function allocate_fijk(SD, ngl, T, backend; neqs=1)
     end
     
     Arr1 = typeof(KernelAbstractions.zeros(backend,  T, dims1))
-    fijk = St_fijk{T, dims1, backend, Arr1}()
+    fijk = St_fijk{T, backend, Arr1}(; dims1)
 
     return fijk
 end
@@ -184,7 +226,10 @@ end
 #-------------------------------------------------------------------------------------------
 # Derivative operators: e.g. gradient(f): ∇f = [∂f∂x, ∂f/∂y, ∂f/∂z]
 #-------------------------------------------------------------------------------------------
-Base.@kwdef mutable struct St_∇f{T <: AbstractFloat, dims1, backend, Arr1}
+Base.@kwdef mutable struct St_∇f{T <: AbstractFloat, backend, Arr1}
+    # array shapes (fields, not type parameters: see the top of src/kernel/globalStructs.jl)
+    dims1
+
     ∇f_el::Arr1 = KernelAbstractions.zeros(backend,  T, dims1)
 end
 function allocate_∇f(SD, nelem, ngl, T, backend; neqs=1)
@@ -198,7 +243,7 @@ function allocate_∇f(SD, nelem, ngl, T, backend; neqs=1)
     end
     
     Arr1 = typeof(KernelAbstractions.zeros(backend,  T, dims1))
-    ∇f = St_∇f{T, dims1, backend, Arr1}()
+    ∇f = St_∇f{T, backend, Arr1}(; dims1)
 
     return ∇f
 end
@@ -206,7 +251,11 @@ end
 #-------------------------------------------------------------------------------------------
 # rhs Laguerre
 #-------------------------------------------------------------------------------------------
-Base.@kwdef mutable struct St_rhs_lag{T <: AbstractFloat, dims1, dims2, backend, Arr1, Arr2}
+Base.@kwdef mutable struct St_rhs_lag{T <: AbstractFloat, backend, Arr1, Arr2}
+
+    # array shapes (fields, not type parameters: see the top of src/kernel/globalStructs.jl)
+    dims1
+    dims2
 
     RHS_lag::Arr1          = KernelAbstractions.zeros(backend,  T, dims1)
     RHS_visc_lag::Arr1     = KernelAbstractions.zeros(backend,  T, dims1)
@@ -231,7 +280,7 @@ function allocate_rhs_lag(SD, nelem_semi_inf, npoin, ngl, ngr, T, backend; neqs=
     
     Arr1 = typeof(KernelAbstractions.zeros(backend,  T, dims1))
     Arr2 = typeof(KernelAbstractions.zeros(backend,  T, dims2))
-    rhs_lag = St_rhs_lag{T, dims1, dims2, backend, Arr1, Arr2}()
+    rhs_lag = St_rhs_lag{T, backend, Arr1, Arr2}(; dims1, dims2)
 
     return rhs_lag
 end
@@ -239,7 +288,11 @@ end
 #-------------------------------------------------------------------------------------------
 # Fluxes Laguerre
 #-------------------------------------------------------------------------------------------
-Base.@kwdef mutable struct St_fluxes_lag{T <: AbstractFloat, dims1, dims2, backend, Arr1, Arr2}
+Base.@kwdef mutable struct St_fluxes_lag{T <: AbstractFloat, backend, Arr1, Arr2}
+
+    # array shapes (fields, not type parameters: see the top of src/kernel/globalStructs.jl)
+    dims1
+    dims2
 
     F_lag::Arr1= KernelAbstractions.zeros(backend,  T, dims1)
     G_lag::Arr1= KernelAbstractions.zeros(backend,  T, dims1)
@@ -261,7 +314,7 @@ function allocate_fluxes_lag(SD, ngl, ngr, T, backend; neqs=1)
     
     Arr1 = typeof(KernelAbstractions.zeros(backend,  T, dims1))
     Arr2 = typeof(KernelAbstractions.zeros(backend,  T, dims2))
-    fluxes_lag = St_fluxes_lag{T, dims1, dims2, backend, Arr1, Arr2}()
+    fluxes_lag = St_fluxes_lag{T, backend, Arr1, Arr2}(; dims1, dims2)
 
     return fluxes_lag
 end
@@ -269,7 +322,13 @@ end
 #-------------------------------------------------------------------------------------------
 # Filter:
 #-------------------------------------------------------------------------------------------
-Base.@kwdef mutable struct St_filter{T <: AbstractFloat, dims1, dims2, dims3, dims4, backend, Arr1, Arr2, Arr3, Arr4}
+Base.@kwdef mutable struct St_filter{T <: AbstractFloat, backend, Arr1, Arr2, Arr3, Arr4}
+    # array shapes (fields, not type parameters: see the top of src/kernel/globalStructs.jl)
+    dims1
+    dims2
+    dims3
+    dims4
+
     q_t::Arr1   = KernelAbstractions.zeros(backend,  T, dims1)
     fqf::Arr1   = KernelAbstractions.zeros(backend,  T, dims1)
     q_ti::Arr2  = KernelAbstractions.zeros(backend,  T, dims2)
@@ -326,7 +385,7 @@ function allocate_filter(SD, nelem, npoin, ngl, T, backend; neqs=1, lfilter=fals
     Arr2 = typeof(KernelAbstractions.zeros(backend,  T, dims2))
     Arr3 = typeof(KernelAbstractions.zeros(backend,  T, dims3))
     Arr4 = typeof(KernelAbstractions.zeros(backend,  T, dims4))
-    filter = St_filter{T, dims1, dims2, dims3, dims4, backend, Arr1, Arr2, Arr3, Arr4}()
+    filter = St_filter{T, backend, Arr1, Arr2, Arr3, Arr4}(; dims1, dims2, dims3, dims4)
 
     return filter
 end
@@ -336,7 +395,13 @@ end
 #-------------------------------------------------------------------------------------------
 # Laguerre filter
 #-------------------------------------------------------------------------------------------
-Base.@kwdef mutable struct St_filter_lag{T <: AbstractFloat, dims1, dims2, dims3, dims4, backend, Arr1, Arr2, Arr3, Arr4}
+Base.@kwdef mutable struct St_filter_lag{T <: AbstractFloat, backend, Arr1, Arr2, Arr3, Arr4}
+
+    # array shapes (fields, not type parameters: see the top of src/kernel/globalStructs.jl)
+    dims1
+    dims2
+    dims3
+    dims4
 
     q_t_lag::Arr1  = KernelAbstractions.zeros(backend,  T, dims1)
     fqf_lag::Arr1  = KernelAbstractions.zeros(backend,  T, dims1)
@@ -394,7 +459,7 @@ function allocate_filter_lag(SD, nelem_semi_inf, npoin, ngl, ngr, T, backend; ne
     Arr2 = typeof(KernelAbstractions.zeros(backend,  T, dims2))
     Arr3 = typeof(KernelAbstractions.zeros(backend,  T, dims3))
     Arr4 = typeof(KernelAbstractions.zeros(backend,  T, dims4))
-    filter_lag = St_filter_lag{T, dims1, dims2, dims3, dims4, backend, Arr1, Arr2, Arr3, Arr4}()
+    filter_lag = St_filter_lag{T, backend, Arr1, Arr2, Arr3, Arr4}(; dims1, dims2, dims3, dims4)
 
     return filter_lag
 end
@@ -403,7 +468,12 @@ end
 #-------------------------------------------------------------------------------------------
 # GPU auxiliary arrays
 #-------------------------------------------------------------------------------------------
-Base.@kwdef mutable struct St_gpuAux{T <: AbstractFloat, dims1, dims2, dims3, backend, Arr1, Arr2, Arr3}
+Base.@kwdef mutable struct St_gpuAux{T <: AbstractFloat, backend, Arr1, Arr2, Arr3}
+
+    # array shapes (fields, not type parameters: see the top of src/kernel/globalStructs.jl)
+    dims1
+    dims2
+    dims3
 
     flux_gpu::Arr1   = KernelAbstractions.zeros(backend, T, dims1)
     source_gpu::Arr2 = KernelAbstractions.zeros(backend, T, dims2)
@@ -435,14 +505,19 @@ function allocate_gpuAux(SD, nelem, nedges_bdy, nfaces_bdy, ngl, T, backend; neq
     Arr1 = typeof(KernelAbstractions.zeros(backend, T, dims1))
     Arr2 = typeof(KernelAbstractions.zeros(backend, T, dims2))
     Arr3 = typeof(KernelAbstractions.zeros(backend, T, dims3))
-    gpuAux = St_gpuAux{T, dims1, dims2, dims3, backend, Arr1, Arr2, Arr3}()
+    gpuAux = St_gpuAux{T, backend, Arr1, Arr2, Arr3}(; dims1, dims2, dims3)
 
     return gpuAux
 end
 #
 # GPU Laguerre
 #
-Base.@kwdef mutable struct St_gpuAux_lag{T <: AbstractFloat, dims1, dims2, dims3, backend, Arr1, Arr2, Arr3}
+Base.@kwdef mutable struct St_gpuAux_lag{T <: AbstractFloat, backend, Arr1, Arr2, Arr3}
+
+    # array shapes (fields, not type parameters: see the top of src/kernel/globalStructs.jl)
+    dims1
+    dims2
+    dims3
 
     flux_lag_gpu::Arr1   = KernelAbstractions.zeros(backend, T, dims1)
     source_lag_gpu::Arr2 = KernelAbstractions.zeros(backend, T, dims2)
@@ -472,12 +547,18 @@ function allocate_gpuAux_lag(SD, nelem_semi_inf, nedges_bdy, nfaces_bdy, ngl, ng
     Arr1 = typeof(KernelAbstractions.zeros(backend, T, dims1))
     Arr2 = typeof(KernelAbstractions.zeros(backend, T, dims2))
     Arr3 = typeof(KernelAbstractions.zeros(backend, T, dims3))
-    gpuAux_lag = St_gpuAux_lag{T, dims1, dims2, dims3, backend, Arr1, Arr2, Arr3}()
+    gpuAux_lag = St_gpuAux_lag{T, backend, Arr1, Arr2, Arr3}(; dims1, dims2, dims3)
 
     return gpuAux_lag
 end
 
-Base.@kwdef mutable struct St_gpuMoist{T <: AbstractFloat, dims1, dims2, dims3, dims4, backend, Arr1, Arr2, Arr3, Arr4}
+Base.@kwdef mutable struct St_gpuMoist{T <: AbstractFloat, backend, Arr1, Arr2, Arr3, Arr4}
+
+    # array shapes (fields, not type parameters: see the top of src/kernel/globalStructs.jl)
+    dims1
+    dims2
+    dims3
+    dims4
 
     flux_micro::Arr1   = KernelAbstractions.zeros(backend, T, dims1)
     source_micro::Arr2 = KernelAbstractions.zeros(backend, T, dims2)
@@ -503,13 +584,18 @@ function allocate_gpuMoist(SD, npoin, nelem, ngl, T, backend, lmoist; neqs=1)
     Arr2 = typeof(KernelAbstractions.zeros(backend, T, dims2))
     Arr3 = typeof(KernelAbstractions.zeros(backend, T, dims3))
     Arr4 = typeof(KernelAbstractions.zeros(backend, T, dims4))
-    gpuMoist = St_gpuMoist{T, dims1, dims2, dims3, dims4, backend, Arr1, Arr2, Arr3, Arr4}()
+    gpuMoist = St_gpuMoist{T, backend, Arr1, Arr2, Arr3, Arr4}(; dims1, dims2, dims3, dims4)
 
     return gpuMoist
 end
 
 
-Base.@kwdef mutable struct St_ncfArrays{T <: AbstractFloat, dims1, dims2, dims3, backend, Arr1, Arr2, Arr3}
+Base.@kwdef mutable struct St_ncfArrays{T <: AbstractFloat, backend, Arr1, Arr2, Arr3}
+
+    # array shapes (fields, not type parameters: see the top of src/kernel/globalStructs.jl)
+    dims1
+    dims2
+    dims3
 
     q_el::Arr1      = KernelAbstractions.zeros(backend, T, dims1)
     q_el_pro::Arr1  = KernelAbstractions.zeros(backend, T, dims1)
@@ -532,7 +618,7 @@ function allocate_ncfArrays(SD, num_ncf_pg, num_ncf_cg, ngl, T, backend; neqs=1)
     Arr1 = typeof(KernelAbstractions.zeros(backend, T, dims1))
     Arr2 = typeof(KernelAbstractions.zeros(backend, T, dims2))
     Arr3 = typeof(KernelAbstractions.zeros(backend, T, dims3))
-    ncf_arrays = St_ncfArrays{T, dims1, dims2, dims3, backend, Arr1, Arr2, Arr3}()
+    ncf_arrays = St_ncfArrays{T, backend, Arr1, Arr2, Arr3}(; dims1, dims2, dims3)
 
     return ncf_arrays
 end

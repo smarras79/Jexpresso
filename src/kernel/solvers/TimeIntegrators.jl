@@ -87,6 +87,35 @@ function precompile_warmup_enabled(inputs)
     return get(inputs, :lprecompile_warmup, true) == true
 end
 
+# A warm-up `solve` that threw (err = (exception, backtrace), or nothing).
+# It is reported OUTSIDE the NullLogger the warm-up runs under (inside it the
+# warning was swallowed, so a failure left no trace at all), by every rank it
+# happened on.
+#
+# With more than one rank it must not be stepped over: the solve exchanges
+# halos and Allreduces in every RHS call, so a rank that throws leaves the
+# others waiting in a collective it never joins, and the MPI.Barrier after
+# the warm-up never completes: a hang with an empty error log (seen: a
+# 256-rank MHD run sat at "# Precompile warm-up" for an hour). The run is
+# aborted instead, with the error. A single rank continues uncompiled.
+function _warmup_failure!(err, label, rank, comm)
+    err === nothing && return nothing
+    e, bt = err
+    println(stderr, "\n # rank ", rank, ": ", label, " failed:\n",
+            sprint(showerror, e, bt; context = :limit => true))
+    flush(stderr)
+    if MPI.Comm_size(comm) > 1
+        println(stderr, " # rank ", rank, ": aborting all ranks (the others would wait forever in ",
+                "a collective of the solve). The same error would stop the run itself; to ",
+                "see it there, disable the warm-up: JEXPRESSO_PRECOMPILE_WARMUP=0 or ",
+                ":lprecompile_warmup => false.")
+        flush(stderr)
+        MPI.Abort(comm, 1)
+    end
+    rank == 0 && @warn string(label, " failed; continuing without it") exception = e
+    return nothing
+end
+
 """
     precompile_warmup_run!(inputs, params, u, partitioned_model, is_coupled, coupling)
 
@@ -164,6 +193,7 @@ function precompile_warmup_run!(inputs, params, u,
     # Silence all log output during the warm-up step. Also silences the
     # SciMLBase "Using arrays or dicts..." warning so it doesn't appear
     # twice (warm-up + real solve).
+    warmup_err = Ref{Any}(nothing)
     with_logger(NullLogger()) do
         try
             solve(warmup_prob,
@@ -174,12 +204,10 @@ function precompile_warmup_run!(inputs, params, u,
                   save_end = false,
                   adaptive = false)
         catch e
-            # Warm-up failure must not prevent the real run. Surface a
-            # one-line warning on rank 0 and continue uncompiled - the
-            # real solve will JIT on its first step as before.
-            rank == 0 && @warn "precompile warm-up failed; continuing without it" exception=e
+            warmup_err[] = (e, catch_backtrace())
         end
     end
+    _warmup_failure!(warmup_err[], "precompile warm-up", rank, comm)
 
     # Restore u and the qnm1/qnm2 history slots so the real solve sees
     # the same initial condition the caller passed in.
@@ -217,6 +245,41 @@ function precompile_warmup_run!(inputs, params, u,
         TimerOutputs.reset_timer!(JEXPRESSO_TIMER)
     end
     return nothing
+end
+
+# Discrete totals Σ_K Σ_ijk ω_i ω_j ω_k J q of the :conservation_slots over all elements and ranks.
+function conservation_totals!(tot::Vector{Float64}, u, params)
+    _conservation_sum!(tot, u, params.inputs[:conservation_slots], params.mesh.connijk, params.ω, params.metrics.Je,
+                       Int(params.mesh.npoin), Int(params.mesh.nelem), Int(params.mesh.ngl))
+    MPI.Allreduce!(tot, MPI.SUM, get_mpi_comm())
+    return tot
+end
+
+function _conservation_sum!(tot::Vector{Float64}, u::AbstractVector{T}, slots::Vector{Int},
+                            connijk::AbstractArray{<:Integer,4}, ω::AbstractVector{T}, Je::AbstractArray{T},
+                            np::Int, nelem::Int, ngl::Int) where {T<:AbstractFloat}
+    nj = min(size(connijk, 3), ngl); nk = min(size(connijk, 4), ngl)
+    @inbounds for n in eachindex(slots)
+        off = (slots[n] - 1)*np
+        s = 0.0; c = 0.0                     # Neumaier-compensated sum: round-off of the sum stays O(eps)
+        for ie = 1:nelem, k = 1:nk, j = 1:nj, i = 1:ngl
+            x = Float64(ω[i]*(nj > 1 ? ω[j] : one(T))*(nk > 1 ? ω[k] : one(T))*Je[ie,i,j,k]*u[off + connijk[ie,i,j,k]])
+            t = s + x
+            c += abs(s) >= abs(x) ? (s - t) + x : (x - t) + s
+            s = t
+        end
+        tot[n] = s + c
+    end
+    return tot
+end
+
+function _conservation_write(io::IOStream, t::Real, n::Integer, tot::Vector{Float64})
+    @printf(io, "%.17e %d", t, n)
+    for x in tot
+        @printf(io, " %.17e", x)
+    end
+    println(io)
+    flush(io)
 end
 
 function time_loop!(inputs, params, u, args...)
@@ -275,14 +338,13 @@ function time_loop!(inputs, params, u, args...)
     # IC write must never interact with that. It also doubles as the JIT
     # warm-up of the write_output/write_vtk path.
     #
-    # File number: the slot of tinit in dosetimes (1 for a t=0 start). The
-    # diagnostic callback never fires at the initial time, so this slot is
-    # otherwise unused and the sequence is contiguous: iter_1 (IC), iter_2
-    # (first diagnostic hit), ...
+    # File number: the slot of tinit in dosetimes (iter_k is always dosetimes[k],
+    # which VTK restart relies on). When tinit is not in dosetimes the IC is
+    # iter_0; it used to be iter_1, overwritten by the first diagnostic.
     #
     # When skipped, say so and why — never silently.
     #------------------------------------------------------------------------
-    idx = something(findfirst(x -> x == inputs[:tinit], dosetimes), 1)
+    idx = something(findfirst(x -> x == inputs[:tinit], dosetimes), 0)
     if !lwrite_init
         println_rank(" # Skipping initial-condition write (restart run)"; msg_rank = rank)
     elseif get(inputs, :lwrite_initial, true) != true
@@ -550,19 +612,8 @@ function time_loop!(inputs, params, u, args...)
         # Include cb_coupling in coupled mode so Julia's per-timestep
         # send to Alya actually fires; without it Alya's MPI.Waitall
         # blocks and its VTS output never gets written.
-        # DEBUG: per-step heartbeat so the user can tell whether solve()
-        # is making progress between diagnostic writes. Diagnostic
-        # writes only fire at dosetimes (e.g. every 10 time units for
-        # city2d), so for Δt=0.004 the integrator can be silently doing
-        # 2500 steps between two user-visible prints — looks identical
-        # to a hang.
-        #
-        # Throttled: every step for the first 5, then every 100. With
-        # 150 000-step runs that's ~1 500 lines of output instead of
-        # 150 000. DEFAULT IS OFF (debugging-only); opt in with
-        # `:lstep_heartbeat => true` in user_inputs.jl or via env
-        # `JEXPRESSO_STEP_HEARTBEAT=1`. The env var, if set, takes
-        # precedence over the user_inputs.jl flag.
+        # :lstep_heartbeat => true prints steps 1-5, then every 100th (rank 0).
+        # save_positions = (false, false): a firing must not store copies of u in sol.u.
         _step_count = Ref{Int}(0)
         function step_heartbeat_condition(u, t, integrator)
             _step_count[] += 1
@@ -572,17 +623,21 @@ function time_loop!(inputs, params, u, args...)
         function step_heartbeat_affect!(integrator)
             rank == 0 && (@printf(" #   step %d   t = %.6f\n", _step_count[], integrator.t); flush(stdout))
         end
-        # Default OFF. Env var, if set, wins over user_inputs.jl.
-        _env_hb = lowercase(strip(get(ENV, "JEXPRESSO_STEP_HEARTBEAT", "")))
-        _heartbeat_on = if _env_hb in ("1", "true", "yes", "on")
-            true
-        elseif _env_hb in ("0", "false", "no", "off")
-            false
-        else
-            get(inputs, :lstep_heartbeat, false) == true
+        cb_heartbeat = get(inputs, :lstep_heartbeat, false) == true ?
+            DiscreteCallback(step_heartbeat_condition, step_heartbeat_affect!; save_positions = (false, false)) :
+            nothing
+        # :conservation_every => n > 0: totals every n steps to <output_dir>/<:conservation_file>
+        # (rank 0; conservation.dat unless the case names it).
+        # The file is opened only after the warm-up step below, which calls this callback too.
+        ncons    = Int(inputs[:conservation_every])
+        cons_tot = zeros(Float64, length(inputs[:conservation_slots]))
+        cons_io  = Ref{Union{IOStream,Nothing}}(nothing)
+        function cons_affect!(integrator)
+            conservation_totals!(cons_tot, integrator.u, params)
+            (rank == 0 && cons_io[] !== nothing) && _conservation_write(cons_io[], integrator.t, integrator.iter, cons_tot)
         end
-        cb_heartbeat = _heartbeat_on ?
-            DiscreteCallback(step_heartbeat_condition, step_heartbeat_affect!) :
+        cb_cons = ncons > 0 ?
+            DiscreteCallback((u, t, integrator) -> integrator.iter % ncons == 0, cons_affect!; save_positions = (false, false)) :
             nothing
 
         _cbs = Any[cb, cb_restart, cb_les_stat, cb_les_online]
@@ -590,6 +645,7 @@ function time_loop!(inputs, params, u, args...)
         lrad                                  && push!(_cbs, cb_rad)
         is_coupled && cb_coupling !== nothing  && push!(_cbs, cb_coupling)
         cb_heartbeat !== nothing               && push!(_cbs, cb_heartbeat)
+        cb_cons !== nothing                    && push!(_cbs, cb_cons)
         callbacks_main = CallbackSet(_cbs...)
 
         # PERF: SciML integrator warmup with the REAL callback set.
@@ -618,111 +674,9 @@ function time_loop!(inputs, params, u, args...)
             Float64(inputs[:tend])
         end
 
-        if precompile_warmup_enabled(inputs)
-            rank == 0 && (print(YELLOW_FG(" # Integrator warm-up with real callbacks (PATIENCE: ONLY DONE ON 1st RUN!) ......... ")); flush(stdout))
-            _t_wm = time_ns()
-            u_snap    = copy(u)
-            qnm1_snap = copy(params.qp.qnm1)
-            qnm2_snap = copy(params.qp.qnm2)
-            dsgs_qn_snap   = copy(params.dsgs_qn)
-            dsgs_qnm1_snap = copy(params.dsgs_qnm1)
-            dsgs_qnm2_snap = copy(params.dsgs_qnm2)
-            dsgs_thist_snap = params.dsgs_thist[]
-            # If a callback ends up actually writing during the warmup
-            # (only possible for cases whose first dosetime falls inside
-            # [t0, t0+Δt]), redirect that output to a per-rank tempdir.
-            # When `inputs` is a NamedTuple (rare; user_inputs flag
-            # :use_named_tuples) we can't mutate it — that's fine, only
-            # a few cases hit the affect!() inside this single step,
-            # and the temp redirect is best-effort anyway.
-            warm_outdir  = mktempdir(; prefix = "jexpresso_intwarmup_")
-            saved_outdir = inputs isa Dict ? inputs[:output_dir] : nothing
-            inputs isa Dict && (inputs[:output_dir] = warm_outdir)
-            t0_w = params.tspan[1]
-            Δt_w = Float32(inputs[:Δt])
-            # PERF: build the warmup problem with `remake(prob, …)` so it
-            # has the IDENTICAL Julia type as `prob` — same `tspan`
-            # container type (Vector vs Tuple was the previous mismatch),
-            # same `u0` field type, same params type. SciML specialises
-            # the integrator on the prob type + kwarg types, so any
-            # type-level difference (even Vector vs Tuple for tspan) makes
-            # the real solve recompile from scratch despite the warmup.
-            warmup_prob = remake(prob; tspan = [t0_w, t0_w + Δt_w])
-            # PERF: kwargs also match the real `solve(...)` exactly. The
-            # only deviation is `tstops = [t0_w + Δt_w]` (just one point)
-            # to keep the warmup cheap.
-            warm_saveat = range(t0_w, t0_w + Δt_w, length = inputs[:ndiagnostics_outputs])
-            with_logger(NullLogger()) do
-                try
-                    solve(warmup_prob,
-                          inputs[:ode_solver], dt = dt,
-                          callback = callbacks_main,
-                          tstops = [t0_w + Δt_w],
-                          save_everystep = false,
-                          adaptive = inputs[:ode_adaptive_solver],
-                          saveat = warm_saveat)
-                catch e
-                    rank == 0 && @warn "integrator warm-up failed; continuing without it" exception=e
-                end
-            end
-            u .= u_snap
-            params.qp.qnm1 .= qnm1_snap
-            params.qp.qnm2 .= qnm2_snap
-            params.dsgs_qn   .= dsgs_qn_snap
-            params.dsgs_qnm1 .= dsgs_qnm1_snap
-            params.dsgs_qnm2 .= dsgs_qnm2_snap
-            params.dsgs_thist[] = dsgs_thist_snap
-            inputs isa Dict && saved_outdir !== nothing && (inputs[:output_dir] = saved_outdir)
-            try; rm(warm_outdir; recursive = true, force = true); catch; end
-            # Reset the heartbeat counter so the real solve gets its
-            # own first-5-steps detail (the warmup just consumed one).
-            _step_count[] = 0
-            MPI.Barrier(comm)
-            # Say when the warm-up is over. Without this the run prints
-            # nothing between the "PATIENCE" line above and the first
-            # diagnostic output — the step heartbeat is off by default — so
-            # a long first step, a many-rank JIT or simply a small Δt makes a
-            # perfectly healthy solve look hung.
-            if rank == 0
-                print(YELLOW_FG(@sprintf("DONE (%.2f s)\n", (time_ns() - _t_wm) / 1e9)))
-                @printf(" # Time loop running: next output at t = %.6g (%d steps of Δt = %g). Per-step progress: JEXPRESSO_STEP_HEARTBEAT=1\n",
-                        _next_out_t, max(1, ceil(Int, (_next_out_t - params.tspan[1])/Float64(inputs[:Δt]))), Float64(inputs[:Δt]))
-                flush(stdout)
-            end
-        end
-
-        #
-        # POD: the first snapshot, taken HERE rather than in the callback,
-        # because a callback only runs after a step and the initial condition is
-        # part of the sample. After the warm-up, and after a reset, because the
-        # warm-up above runs a throw-away step with the REAL callback set — so
-        # without the reset the first snapshot would be the warm-up's and the
-        # sampling clock would already have advanced an interval.
-        #
-        # `pod_due` is what decides whether the initial time is sampled at all:
-        # a deck whose POD window starts later than :tinit — to leave a transient
-        # out of the decomposition — is not due yet and records nothing.
-        #
-        if pod_rec !== nothing
-            pod_reset!(pod_rec)
-            pod_due(pod_rec, inputs[:tinit], inputs[:Δt]) &&
-                pod_record_flat!(pod_rec, u, inputs[:tinit], params)
-        end
-
-        if alloc_summary_enabled(inputs)
-            rank == 0 && println(" # Simulation timing and allocations (steady state; compile warm-up excluded):")
-        end
-
-        # Silence SciMLBase's per-call "Using arrays or dicts to store
-        # parameters of different types can hurt performance" warning on
-        # non-root ranks - the warning is identical from every rank so
-        # printing it nparts times is pure noise.  Root rank still sees
-        # the warning once, which is the right amount.
-        solve_logger = rank == 0 ? current_logger() : NullLogger()
-
         # Instability check that is COLLECTIVE. OrdinaryDiffEq's default
         # unstable_check is rank-local: a rank whose state goes non-finite
-        # aborts its own solve (its warning silenced by the NullLogger above)
+        # aborts its own solve (its warning silenced by the NullLogger below)
         # and proceeds to the barrier below, while every other rank keeps
         # integrating and blocks forever in the next halo exchange — the run
         # looks hung right after its last output. Every rank now reports its
@@ -770,6 +724,136 @@ function time_loop!(inputs, params, u, args...)
             return MPI.Allreduce(bad, MPI.LOR, comm)
         end
 
+        if precompile_warmup_enabled(inputs)
+            rank == 0 && (print(YELLOW_FG(" # Integrator warm-up with real callbacks (PATIENCE: ONLY DONE ON 1st RUN!) ......... ")); flush(stdout))
+            _t_wm = time_ns()
+            u_snap    = copy(u)
+            qnm1_snap = copy(params.qp.qnm1)
+            qnm2_snap = copy(params.qp.qnm2)
+            dsgs_qn_snap   = copy(params.dsgs_qn)
+            dsgs_qnm1_snap = copy(params.dsgs_qnm1)
+            dsgs_qnm2_snap = copy(params.dsgs_qnm2)
+            dsgs_thist_snap = params.dsgs_thist[]
+            dsgs_nhist_snap = params.dsgs_nhist[]
+            # If a callback ends up actually writing during the warmup
+            # (only possible for cases whose first dosetime falls inside
+            # [t0, t0+Δt]), redirect that output to a per-rank tempdir.
+            # When `inputs` is a NamedTuple (rare; user_inputs flag
+            # :use_named_tuples) we can't mutate it — that's fine, only
+            # a few cases hit the affect!() inside this single step,
+            # and the temp redirect is best-effort anyway.
+            warm_outdir  = mktempdir(; prefix = "jexpresso_intwarmup_")
+            saved_outdir = inputs isa Dict ? inputs[:output_dir] : nothing
+            inputs isa Dict && (inputs[:output_dir] = warm_outdir)
+            t0_w = params.tspan[1]
+            Δt_w = Float32(inputs[:Δt])
+            # PERF: build the warmup problem with `remake(prob, …)` so it
+            # has the IDENTICAL Julia type as `prob` — same `tspan`
+            # container type (Vector vs Tuple was the previous mismatch),
+            # same `u0` field type, same params type. SciML specialises
+            # the integrator on the prob type + kwarg types, so any
+            # type-level difference (even Vector vs Tuple for tspan) makes
+            # the real solve recompile from scratch despite the warmup.
+            warmup_prob = remake(prob; tspan = [t0_w, t0_w + Δt_w])
+            # PERF: kwargs also match the real `solve(...)` exactly. The
+            # only deviation is `tstops = [t0_w + Δt_w]` (just one point)
+            # to keep the warmup cheap.
+            warm_saveat = range(t0_w, t0_w + Δt_w, length = inputs[:ndiagnostics_outputs])
+            # COUPLED RUNS: the warm-up step must not talk to Alya. Alya posts
+            # exactly one receive per step of its own time loop, so an exchange
+            # fired here is one message more than it will ever receive: every
+            # later step then reaches Alya one step late, and the run's last
+            # send has no receive at all — dropped while it is small enough to
+            # go eagerly, a hang in Waitall (Alya already in its final barrier)
+            # once it is not. The callback stays in the set, so the integrator
+            # is still specialised on the real CallbackSet type.
+            is_coupled && coupling !== nothing && (coupling.exchange_enabled = false)
+            warm_err = Ref{Any}(nothing)
+            with_logger(NullLogger()) do
+                try
+                    solve(warmup_prob,
+                          inputs[:ode_solver], dt = dt,
+                          callback = callbacks_main,
+                          tstops = [t0_w + Δt_w],
+                          save_everystep = false,
+                          adaptive = inputs[:ode_adaptive_solver],
+                          unstable_check = mpi_unstable_check,   # same type as the real solve: no recompile
+                          saveat = warm_saveat)
+                catch e
+                    warm_err[] = (e, catch_backtrace())
+                end
+            end
+            _warmup_failure!(warm_err[], "integrator warm-up", rank, comm)
+            is_coupled && coupling !== nothing && (coupling.exchange_enabled = true)
+            u .= u_snap
+            params.qp.qnm1 .= qnm1_snap
+            params.qp.qnm2 .= qnm2_snap
+            params.dsgs_qn   .= dsgs_qn_snap
+            params.dsgs_qnm1 .= dsgs_qnm1_snap
+            params.dsgs_qnm2 .= dsgs_qnm2_snap
+            params.dsgs_thist[] = dsgs_thist_snap
+            params.dsgs_nhist[] = dsgs_nhist_snap
+            inputs isa Dict && saved_outdir !== nothing && (inputs[:output_dir] = saved_outdir)
+            try; rm(warm_outdir; recursive = true, force = true); catch; end
+            # Reset the heartbeat counter so the real solve gets its
+            # own first-5-steps detail (the warmup just consumed one).
+            _step_count[] = 0
+            MPI.Barrier(comm)
+            # Say when the warm-up is over. Without this the run prints
+            # nothing between the "PATIENCE" line above and the first
+            # diagnostic output — the step heartbeat is off by default — so
+            # a long first step, a many-rank JIT or simply a small Δt makes a
+            # perfectly healthy solve look hung.
+            if rank == 0
+                print(YELLOW_FG(@sprintf("DONE (%.2f s)\n", (time_ns() - _t_wm) / 1e9)))
+                @printf(" # Time loop running: next output at t = %.6g (%d steps of Δt = %g). Per-step progress: :lstep_heartbeat => true\n",
+                        _next_out_t, max(1, ceil(Int, (_next_out_t - params.tspan[1])/Float64(inputs[:Δt]))), Float64(inputs[:Δt]))
+                flush(stdout)
+            end
+        end
+
+        #
+        # POD: the first snapshot, taken HERE rather than in the callback,
+        # because a callback only runs after a step and the initial condition is
+        # part of the sample. After the warm-up, and after a reset, because the
+        # warm-up above runs a throw-away step with the REAL callback set — so
+        # without the reset the first snapshot would be the warm-up's and the
+        # sampling clock would already have advanced an interval.
+        #
+        # `pod_due` is what decides whether the initial time is sampled at all:
+        # a deck whose POD window starts later than :tinit — to leave a transient
+        # out of the decomposition — is not due yet and records nothing.
+        #
+        if pod_rec !== nothing
+            pod_reset!(pod_rec)
+            pod_due(pod_rec, inputs[:tinit], inputs[:Δt]) &&
+                pod_record_flat!(pod_rec, u, inputs[:tinit], params)
+        end
+
+        if ncons > 0
+            conservation_totals!(cons_tot, u, params)
+            if rank == 0
+                cname = inputs[:conservation_file] isa Function ? string(inputs[:conservation_file](inputs)) :
+                                                                   string(inputs[:conservation_file])
+                cons_io[] = open(joinpath(inputs[:output_dir], cname), "w")
+                println(cons_io[], "# t step ", join(string.(params.qp.qvars[inputs[:conservation_slots]]), " "))
+                println(cons_io[], "# totals sum_K sum_ij w_i w_j J_ij q_ij over all elements and ranks (= sum_I M_I q_I)")
+                _conservation_write(cons_io[], params.tspan[1], 0, cons_tot)
+            end
+        end
+
+        if alloc_summary_enabled(inputs)
+            rank == 0 && println(" # Simulation timing and allocations (steady state; compile warm-up excluded):")
+        end
+
+        # Silence SciMLBase's per-call "Using arrays or dicts to store
+        # parameters of different types can hurt performance" warning on
+        # non-root ranks - the warning is identical from every rank so
+        # printing it nparts times is pure noise.  Root rank still sees
+        # the warning once, which is the right amount.
+        solve_logger = rank == 0 ? current_logger() : NullLogger()
+
+
         solution = with_logger(solve_logger) do
             solve(prob,
                   inputs[:ode_solver], dt=dt,
@@ -781,6 +865,15 @@ function time_loop!(inputs, params, u, args...)
                   saveat = range(inputs[:tinit],
                                  inputs[:tend],
                                  length=inputs[:ndiagnostics_outputs]))
+        end
+        cons_io[] === nothing || close(cons_io[])
+
+        # One exchange per step is the whole contract with Alya, which receives
+        # exactly its own step count ("Steps:" in its startup output). A
+        # different number here means the two time loops disagree.
+        if is_coupled && coupling !== nothing && rank == 0
+            println(" # Coupling: ", coupling.nexchange, " exchanges sent to Alya")
+            flush(stdout)
         end
 
         # End-of-simulation per-function timing & allocation summary.

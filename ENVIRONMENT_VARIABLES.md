@@ -112,27 +112,6 @@ benefit by re-running inside the same session and don't need this.
   the post-JIT measurement window to be meaningful, so the warm-up
   must run.
 
-### `JEXPRESSO_STEP_HEARTBEAT`
-
-Enables the per-step heartbeat callback that prints
-`#   step N   t = X.X` lines at intervals during `solve(...)`.
-Useful when diagnostics are sparse (e.g. city2d's
-`:diagnostics_at_times => 0:10:600` with `Δt = 0.004` means 2500
-silent steps between user-visible writes — hard to tell from a hang).
-Throttled: prints every step for the first 5, then every 100.
-
-- **Type:** boolean
-- **Default:** `false` (off)
-- **Read in:** `src/kernel/solvers/TimeIntegrators.jl`
-- **Precedence (highest first):**
-  1. `JEXPRESSO_STEP_HEARTBEAT` env var
-  2. `:lstep_heartbeat => true/false` in `user_inputs.jl`
-  3. Default (`false`)
-- **Example — enable the heartbeat for a debugging run:**
-  ```bash
-  JEXPRESSO_STEP_HEARTBEAT=1 mpirun -np 4 julia --project=. src/Jexpresso.jl CompEuler theta
-  ```
-
 ### `JEXPRESSO_PRECOMPILE_WORKLOAD`
 
 Opts the `@compile_workload` block at the bottom of
@@ -389,7 +368,6 @@ the level of the usual round-off divergence. On one rank `"rank"` and
 | `JEXPRESSO_ALLOC_SUMMARY`         | bool   | `false`     | End-of-run timing/allocation table               |
 | `JEXPRESSO_PRECOMPILE_WARMUP`     | bool   | `true`      | One-step JIT warm-up before real solve           |
 | `JEXPRESSO_PRECOMPILE_WORKLOAD`   | bool   | `false`     | Run a 3-step solve during package precompilation |
-| `JEXPRESSO_STEP_HEARTBEAT`        | bool   | `false`     | Per-step progress prints during solve            |
 | `JEXPRESSO_CI_OUTPUT`             | bool   | `1`         | CI mode forces hdf5/none/overwrite output        |
 | `JEXPRESSO_CI_OUTFORMAT`          | string | `hdf5`      | Which format CI mode forces (`hdf5` \| `vtk`)    |
 | `FI_PROVIDER`                     | string | (unset)     | libfabric provider; set only for the precompile workload |

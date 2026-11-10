@@ -24,8 +24,7 @@
 # Note the rate here: c_h/c_r ≈ 812/0.18 ≈ 4.5e3 per unit time, i.e. an
 # e-folding in 2.2e-4 — about 1/10 of the run. That is stiff relative to
 # nothing else in the problem but is still 440 explicit steps at Δt = 5e-7, so
-# it integrates without any special treatment. JEXPRESSO_AJ_GLMCR raises c_r
-# (weaker damping) if the ψ field ever needs to be left alone to diagnose it.
+# it integrates without any special treatment.
 #
 # NOTE: the non-conservative Galilean GLM transport (v·∇ψ) is omitted; see the
 # header of user_flux.jl.
@@ -34,8 +33,7 @@
 # Dedner damping ratio c_r (a Ref so it can be tuned from the REPL without
 # re-including the case). Damping rate = c_h/c_r; larger c_r = weaker damping.
 if !@isdefined(glm_cr_mhd)
-    const glm_cr_mhd = Ref{Float64}(
-        something(tryparse(Float64, get(ENV, "JEXPRESSO_AJ_GLMCR", "")), 0.18))
+    const glm_cr_mhd = Ref{Float64}(0.18)
 end
 
 function user_source!(S,

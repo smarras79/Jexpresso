@@ -56,7 +56,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     #---------------------------------------------------------------------------------
     qvars    = ["ρ", "ρu", "ρv", "ρE", "ρw", "Bx", "By", "Bz", "ψ"]
     qoutvars = ["ρ", "u", "v", "w", "p", "Bx", "By", "Bz", "ψ", "T",
-                "log10rho", "log10p", "beta", "Mach"]
+                "log10rho", "log10p", "beta", "Mach", "Mach_f"]
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
     #---------------------------------------------------------------------------------
 
@@ -138,7 +138,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         if !(isfinite(h_elem) && h_elem > 0.0)
             error(string(" problems/MHD/astroJetWuShu2018: mesh.Δelem_s = ", mesh.Δelem_s,
                          " — cannot resolve the automatic nozzle-lip smoothing width. ",
-                         "Set JEXPRESSO_AJ_SMOOTH explicitly (half an element is the intent), ",
+                         "Set aj_smooth in user_flux.jl explicitly (one element is the intent), ",
                          "or 0 for the paper's exact top hat."))
         end
         aj_smooth[] = h_elem
@@ -181,13 +181,13 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     ymin, ymax = mesh.ymin, mesh.ymax
 
     if rank == 0
-        if (abs(xmin + 0.5) > 1.0e-8 || abs(xmax - 0.5) > 1.0e-8 ||
+        if ((abs(xmin + 0.5) > 1.0e-8 && abs(xmin) > 1.0e-8) || abs(xmax - 0.5) > 1.0e-8 ||
             abs(ymin)       > 1.0e-8 || abs(ymax - 1.5) > 1.0e-8)
             @warn string(" problems/MHD/astroJetWuShu2018: this case is defined on ",
-                         "[-0.5, 0.5] x [0, 1.5], but the mesh spans ",
+                         "[-0.5, 0.5] x [0, 1.5] or its right half [0, 0.5] x [0, 1.5], but the mesh spans ",
                          "[$(xmin), $(xmax)] x [$(ymin), $(ymax)]. ",
                          "Point :gmsh_filename at one of the meshes that ship with the case ",
-                         "(AJ_40x60.msh, AJ_100x150.msh) or regenerate one from AJ.geo.")
+                         "(AJ_half_20x60.msh, AJ_half_50x150.msh, AJ_40x60.msh, AJ_100x150.msh) or regenerate one from AJ.geo.")
         end
 
         Ba   = aj_Ba[]
@@ -210,22 +210,16 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         @info @sprintf(" beam ρE = %.8g, of which p/(γ-1) = %.4g (%.3e of the total): a relative error of that order in ρE gives p < 0",
                        ρE_j, AJ_P_JET/(γ_mhd - 1.0), (AJ_P_JET/(γ_mhd - 1.0))/ρE_j)
         if aj_tramp[] > 0.0
-            @info @sprintf(" inflow RAMPED ON over τ = %.4g (= %.0f steps of Δt = %.3g, %.2f %% of tend); the boundary datum equals the initial condition exactly at t = 0. JEXPRESSO_AJ_TRAMP=0 restores the impulsive start, which does not run.",
+            @info @sprintf(" inflow RAMPED ON over τ = %.4g (= %.0f steps of Δt = %.3g, %.2f %% of tend); the boundary datum equals the initial condition exactly at t = 0. aj_tramp = 0 (user_flux.jl) restores the impulsive start.",
                            aj_tramp[], aj_tramp[]/inputs[:Δt], inputs[:Δt], 100*aj_tramp[]/inputs[:tend])
         else
-            @warn string(" problems/MHD/astroJetWuShu2018: JEXPRESSO_AJ_TRAMP=0 — the beam is switched on IMPULSIVELY. ",
-                         "That is a 4400x jump in ρE across the first LGL gap in y at t = 0+, and it was measured to ",
-                         "put the first realizability repair at (-0.05, 0.025) on RHS call 3. Expect an abort. ",
-                         "See README.md §12.")
+            @warn " problems/MHD/astroJetWuShu2018: aj_tramp = 0, the beam is switched on impulsively (a 4400x jump in ρE across the first LGL gap in y)."
         end
         if aj_smooth[] > 0.0
-            @info @sprintf(" nozzle lip SMOOTHED: transition half-width s = %.4g, Dirichlet patch |x| <= %.4g (the paper's nozzle is %.4g). JEXPRESSO_AJ_SMOOTH=0 restores the exact top hat, which does not run.",
+            @info @sprintf(" nozzle lip SMOOTHED: transition half-width s = %.4g, Dirichlet patch |x| <= %.4g (the paper's nozzle is %.4g). aj_smooth = 0 (user_flux.jl) restores the exact top hat.",
                            aj_smooth[], AJ_XNOZZLE + aj_smooth[], AJ_XNOZZLE)
         else
-            @warn string(" problems/MHD/astroJetWuShu2018: JEXPRESSO_AJ_SMOOTH=0 — the paper's EXACT top-hat inflow. ",
-                         "This is the faithful condition and it has been measured NOT to run: the clamped/free ",
-                         "interface at the lip is a 4400x jump inside one spectral element, and it put the first ",
-                         "realizability repair at (-0.075, 0) on RHS call 3. Expect an abort. See README.md §10-11.")
+            @warn " problems/MHD/astroJetWuShu2018: aj_smooth = 0, the paper's exact top hat (a 4400x jump in ρE between clamped and free nodes inside one element)."
         end
         @info " Initialize fields for 2D ideal GLM-MHD (magnetized astrophysical jet) ........... DONE"
     end

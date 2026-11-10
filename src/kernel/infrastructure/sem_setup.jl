@@ -448,7 +448,7 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
                     phys_grid = init_phys_grid(mesh, inputs,inputs[:nlay_pg],inputs[:nx_pg],inputs[:ny_pg],mesh.xmin,mesh.xmax,mesh.ymin,mesh.ymax,mesh.zmin,mesh.zmax,inputs[:backend])
                 end
                 if (inputs[:RT_atmos_coupling])
-                    atmos_data = Atmosphere_State{TFloat, mesh.npoin}()
+                    atmos_data = Atmosphere_State{TFloat}(; dim = mesh.npoin)
                 end
             else
                 if (rank == 0) println(" # Build metrics ......") end
@@ -460,7 +460,7 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
                     phys_grid = init_phys_grid(mesh, inputs,inputs[:nlay_pg],inputs[:nx_pg],inputs[:ny_pg],mesh.xmin,mesh.xmax,mesh.ymin,mesh.ymax,mesh.zmin,mesh.zmax,inputs[:backend])
                 end
                 if (inputs[:RT_atmos_coupling])
-                    atmos_data = Atmosphere_State{TFloat, mesh.npoin}()
+                    atmos_data = Atmosphere_State{TFloat}(; dim = mesh.npoin)
                 end
                 if (rank == 0) println(" # Build periodicity infrastructure ......") end
 

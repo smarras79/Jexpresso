@@ -32,15 +32,6 @@
 #     analogue, which is why rhs.jl drops the separate τ·u viscous-work term in
 #     this mode (add_tau_u is false under :dsgs_conserved).
 #
-# ONE CAVEAT on the 2D kernel, for the record. _expansion_visc! always treats
-# slots 2 and 3 as momentum and builds a deviatoric stress from their
-# gradients, so those two slots get ∇·τ(ρv) rather than ν∇²(ρu), ν∇²(ρv) — for
-# a normal shock that is (4/3)ν instead of ν on the normal momentum component.
-# It is still a divergence-form, dissipative operator and it is the established
-# behaviour of the conserved-form MHD path here
-# (problems/MHD/fluxEmergenceSon2025DSGS); the 4/3 could be taken out of :μ[2],
-# :μ[3] if an exact Lax-Friedrichs form were ever wanted.
-#
 # :dsgs_nazarov_energy is deliberately left OFF. It would split the energy
 # primitive into a non-thermal part at ν and a thermal part at κ = ρν/Pr, which
 # is the right thing for a stratified atmosphere that has to conduct heat but
@@ -65,7 +56,7 @@ end
 # Output variables:
 #
 #   qoutvars = ["ρ", "u", "v", "w", "p", "Bx", "By", "Bz", "ψ", "T",
-#               "log10rho", "log10p", "beta", "Mach"]
+#               "log10rho", "log10p", "beta", "Mach", "Mach_f"]
 #
 # log10rho and log10p are what the papers plot for this problem (Wu & Shu show
 # schlieren images of log₁₀ρ and log₁₀p at t = 0.002, as do Balsara 2012 and the
@@ -80,6 +71,8 @@ end
 #   T    = p/ρ        the nondimensional temperature of this nondimensional setup
 #   beta = 2p/|B|²    plasma beta (10⁻² in the ambient medium at t = 0)
 #   Mach = |v|/c      sonic Mach number, c = sqrt(γp/ρ) (800 in the beam)
+#   Mach_f = |v|/c_f  fast magnetosonic Mach number, c_f = sqrt((γp + |B|²)/ρ) ≥ |B|/sqrt(ρ) (66.7 in the beam):
+#                     finite where the positivity limiter holds p at its floor, unlike Mach
 #---------------------------------------------------------------------------------
 function user_uout!(ip, ET, uout, u, qe; kwargs...)
 
@@ -103,4 +96,5 @@ function user_uout!(ip, ET, uout, u, qe; kwargs...)
     uout[12] = log10(max(p, 1.0e-300))               # log10 p
     uout[13] = min(2.0*p/max(B2, 1.0e-300), 1.0e6)   # plasma β
     uout[14] = sqrt(max(v2, 0.0))/sqrt(max(c2, 1.0e-300))   # sonic Mach number
+    uout[15] = sqrt(max(v2, 0.0))/sqrt(max(c2 + B2/ρ, 1.0e-300))   # fast magnetosonic Mach number
 end

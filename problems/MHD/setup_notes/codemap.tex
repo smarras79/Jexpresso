@@ -1,0 +1,40 @@
+% Shared appendix: where each mechanism lives in the source (branch sm/MHD, commit dcc3653).
+\section*{Appendix: code map (branch \branch, commit \commit)}
+\addcontentsline{toc}{section}{Appendix: code map}
+{\small
+\begin{longtable}{@{}L{0.47\textwidth}L{0.47\textwidth}@{}}
+\toprule
+\textbf{Mechanism} & \textbf{Where (file:line)}\\
+\midrule\endhead
+\bottomrule\endfoot
+Deck defaults of every \code{:dsgs\_*} key & \code{src/io/mod\_inputs.jl:1085--1376}\\
+Deck defaults of \code{:lpositivity}, floors, report & \code{src/io/mod\_inputs.jl:456--477}\\
+\code{:positivity\_method}; rebuild of the RK solver & \code{src/io/mod\_inputs.jl:828--838}\\
+\dsgs{} history rotation, stage weights, hold, freeze & \code{src/kernel/operators/rhs.jl:927--984}\\
+Stencil selection \code{\_dsgs\_stencil} & \code{rhs.jl:141}\\
+Hold length \code{\_dsgs\_hold\_steps} ($\max(2,H)+1$ rotations) & \code{rhs.jl:182}\\
+Residual right-hand side (element / legacy / Dirichlet) & \code{rhs.jl:188--280}; legacy fill \code{rhs.jl:282}; boundary zeroing \code{rhs.jl:313, 346}\\
+1D \code{DSGS\_MHD} dispatch & \code{rhs.jl:1398--1470}\\
+2D \code{DSGS\_MHD} dispatch (sets \code{dsgs\_ref\_weight}, \code{dsgs\_split\_energy}, \code{dsgs\_nodal\_rho}) & \code{rhs.jl:1517--1610}\\
+2D viscous assembly \code{\_viscous\_rhs\_el\_2d\_dsgs!} & \code{rhs.jl:1796}\\
+2D weak viscous flux \code{\_expansion\_visc!} (conserved flag, ref.\ weight, split energy, $\tau\cdot\bv$, resistive work) & \code{rhs.jl:2943--3210} (\code{lcons} 2959, weight 2978, split 3050, $\tau\cdot\bv$ 3076, $\eta\,\bB\cdot\nabla\bB$ 3091)\\
+1D weak viscous flux & \code{rhs.jl:2823}; element loop \code{rhs.jl:1321}\\
+2D \code{DSGS\_MHD} element kernel & \code{src/kernel/physics/SGS.jl:1598--1912}\\
+1D \code{DSGS\_MHD} element kernel & \code{SGS.jl:1929--2120}\\
+Nodal kernels (off in every MHD deck; BW can switch it on with \code{JEXPRESSO\_BW\_NODAL=1}) & \code{SGS.jl:2144} (1D), \code{SGS.jl:2515} (2D)\\
+Normalization floor \code{\_dsgs\_denom}, \code{:dsgs\_rel} multiplier & \code{SGS.jl:676--679}; set per call in \code{rhs.jl:192}\\
+Smoothness cutoff \code{\_dsgs\_cut} & \code{SGS.jl:703}\\
+\code{SGS\_diffusion(::DSGS\_MHD)} (nodal-$\rho$ switch) & \code{SGS.jl:547--569}\\
+Element length $\Delta^{elem}_K$ (2D: min of corner extents) & \code{src/kernel/mesh/mesh.jl:6430--6457}; 1D $\Delta x$: \code{mesh.jl:5863}\\
+\code{uprimitive} width ($n_{eqs}+2$ in 2D, $n_{eqs}+1$ in 1D) & \code{src/kernel/globalStructs.jl:139--153}\\
+Realizability repair (\code{"repair"}, unused by the MHD decks) & \code{src/kernel/positivity/Positivity.jl:294}; driver \code{positivity\_driver.jl:124}; called in \code{rhs.jl:821}\\
+Conservative element limiter (\code{"conservative"}) & \code{Positivity.jl:433--559}; driver \code{positivity\_driver.jl:245--337}\\
+Main \code{solve} call (\code{saveat} non-empty $\Rightarrow$ \code{calck = true}) & \code{src/kernel/solvers/TimeIntegrators.jl:855}\\
+\end{longtable}}
+\noindent\small Stage-limiter calls in \code{CarpenterKennedy2N54}: with \code{williamson\_condition = false}
+the limiter is called before the right-hand side of stages 2--5 and once after stage 5
+(OrdinaryDiffEq v6.90/v6.95, \code{low\_storage\_rk\_perform\_step.jl}). In OrdinaryDiffEq
+\code{calck = true} forces \code{williamson\_condition = false} in the 2N cache, and Jexpresso's
+\code{solve} passes a non-empty \code{saveat}, so this holds for every deck that hands the solver
+a stage limiter. (Jexpresso ships no \code{Manifest.toml}; the package version is whatever the
+environment resolves, and the check above was made against v6.90/v6.95.)

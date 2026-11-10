@@ -220,6 +220,9 @@ function _ev_save_error(e, inputs, t, tnum = t)
                         " Cmax=", Float64(get(inputs, :dsgs_Cmax, 0.0)),
                         " rel=", Float64(get(inputs, :dsgs_rel, 1.0)),
                         " hold=", Int(get(inputs, :dsgs_hold_steps, 2)),
+                        # the cutoff too: tools/smooth_vortex_mpi_scan.sh resumes
+                        # past a DynSGS record only if it was run with the same
+                        " cutoff=", Float64(get(inputs, :dsgs_cutoff, 0.0)),
                         " dt=", Float64(get(inputs, :Δt, 0.0)))
             println(io, "# relative, for reference: L1=", e.r1, " L2=", e.r2, " Linf=", e.rinf)
             println(io, "# L1 L2 Linf")

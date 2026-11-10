@@ -1,0 +1,130 @@
+# MHD rotor (Balsara & Spicer 1999; Dao & Nazarov 2022, §5.5)
+
+A dense disc spins in a light, magnetized gas at rest. The rotation twists the field lines and launches torsional Alfvén waves; near the disc the gas pressure drops close to zero, which is what makes the test hard (Tóth 2000 reports that many schemes fail on negative pressure).
+
+## Setup
+
+The "first rotor problem" of Tóth (2000, JCP 161:605, §6.6), as used by Dao & Nazarov (2022, J. Sci. Comput. 92:77, §5.5):
+
+| | |
+|---|---|
+| domain | (0, 1)², doubly periodic (the waves do not reach the boundary by t = 0.15) |
+| ambient | ρ = 1, **u** = 0, p = 1, **B** = (5/√(4π), 0) |
+| disc, r < r₀ = 0.1 | ρ = 10, **u** = (u₀/r₀)(0.5 − y, x − 0.5) |
+| taper, r₀ ≤ r < r₁ = 0.115 | ρ = 1 + 9f, **u** = (f u₀/r)(0.5 − y, x − 0.5), f = (r₁ − r)/(r₁ − r₀) |
+| u₀, γ, t_end | 2, 1.4, 0.15 |
+
+Magnetic pressure is ½|**B**|² (Tóth's units), so p_mag = 25/(8π) ≈ 0.995 initially. Dao & Nazarov do not print u₀; u₀ = 2 is Tóth's first rotor.
+
+The equations are the 9-field GLM-MHD system of `problems/MHD/orszagTangBormanis2024` (its `user_flux.jl`, `user_source.jl` and `user_bc.jl` are included, with γ = 1.4), on the same 32×32 periodic mesh refined twice by p4est: 128×128 elements at `:nop => 3`, 385×385 nodes (Dao & Nazarov: P3 on 300×300 nodes).
+
+## Stabilization
+
+DynSGS with no background viscosity (`:dsgs_Cmin = 0`) and the default residual coefficient `:dsgs_CR => 1`, plus a conservative positivity limiter. The exact algorithm, every constant and the proofs are in [algorithm.pdf](algorithm.pdf) (source `algorithm.tex`).
+
+- **conserved form** (`:dsgs_conserved => true`): one ν per element and ∇·(ν∇q) on every conserved variable (ρ, ρ**v**, E, **B**, ψ), so ρ and the internal energy obey a minimum principle at the PDE level. In the spinning ring ½ρ|**v**|² ≈ 20 against p/(γ−1) = 2.5; the physical form (diffusion of u, v and T with mass diffusion) drove p to −10 by t = 0.05.
+- **legacy sensor, element norms** (`:dsgs_sensor => "legacy"`, `:dsgs_norms => "element"`): the residual |BDF2(q) − M⁻¹RHS| (RHS assembled over all ranks and periodic copies) is normalized by each element's own spread and scales (floored at ρc, ρc², … with `:dsgs_local_rel = 1`). It measures ≈ 0.75 |∂ₜq|, so ν does not change with Δt. With domain norms the grid-scale pressure noise inside the disc grew to 4% of p and Mach spiked to 7.
+- **conservative positivity limiter** (`:lpositivity`, `:positivity_method => "conservative"`, ε = 1e-6 for ρ and p): an element that holds a node with ρ < ε or p < ε is scaled toward its lumped-mass mean (θ_ρ for ρ, then θ_p from the exact root of p = ε) and the increments are assembled like the RHS. Mass, momentum and energy are conserved, **B** and ψ are untouched. It runs as the stage limiter of CarpenterKennedy2N54, 5 times per step.
+
+## Run
+
+```bash
+julia --project=. src/Jexpresso.jl MHD rotorDaoNazarov2022
+mpiexec -n 8 julia --project=. src/Jexpresso.jl MHD rotorDaoNazarov2022
+```
+
+Outputs at t = 0, 0.05, 0.10, 0.15 (VTK): ρ, u, v, p, **B**, ψ, T = p/ρ, `pmag` = ½|**B**|², `Mach` = |**v**|/√(γp/ρ). For a figure:
+
+```bash
+python3 tools/plot_fluxemergence_vtu.py output/MHD/rotorDaoNazarov2022/output-<date> --steps 4 --var rho \
+        --xlabel '$x$' --ylabel '$y$' --time-unit ''      # also --var p, pmag, Mach; black lines = field lines
+python3 tools/plot_mhd_matrix.py output/MHD/rotorDaoNazarov2022/output-<date> --times 0.05 0.1 0.15 \
+        --vars rho p pmag Mach mu_dsgs                    # rows = times, columns = variables incl. the DynSGS ν
+```
+
+Mass and energy are tracked at every step (`:conservation_every => 1`, `:conservation_slots => [1, 4]`): `conservation.dat` in the output directory holds t, the step and the discrete totals Σ_K Σ_ij ω_iω_j J ρ and Σ_K Σ_ij ω_iω_j J E over all elements and ranks. For the figure (|Q(t) − Q(0)|/Q(0) on log axes, one curve per run):
+
+```bash
+python3 tools/plot_conservation.py output/MHD/rotorDaoNazarov2022/output-<date128> output/MHD/<run256>/output-<date> \
+        --labels '$128^2$' '$256^2$' --out rotor_conservation.pdf     # --layout column for one journal column
+```
+
+## Results at t = 0.15
+
+`:nop => 3`, 4 MPI ranks:
+
+| | ρ | p | ½\|**B**\|² | max Mach |
+|---|---|---|---|---|
+| this case, 128×128 elements (385² nodes), Δt = 2e-4 | 0.565 – 10.65 | 0.0295 – 1.969 | 0.0746 – 2.543 | 3.55 |
+| this case, 256×256 elements (769² nodes), Δt = 1e-4 | 0.502 – 12.25 | 0.0281 – 2.041 | 0.0505 – 2.601 | 3.90 |
+| Tóth (2000) Fig. 18, flux-CT, 400² | 0.483 – 12.95 | 0.0202 – 2.008 | 0.0177 – 2.642 | 8.18 (spurious, at p undershoots) |
+| Dao & Nazarov (2022) Fig. 7, P3, 300² nodes | 0.727 – 8.42 | 0.0386 – 1.93 | 0.0551 – 2.30 | 4.82 |
+
+128²: min p = 0.076 at t = 0.10 and 0.030 at t = 0.15, and the limiter never acts (no node falls below 10⁻⁶); the grid-scale pressure noise inside the ring is 0.05% (median) / 0.2% (95th percentile) of p;
+the solution is invariant under the 180° rotation about (0.5, 0.5) to 2e-10 (ρ, p, **B** even, **v** odd).
+256²: min p = 0.0144 at t = 0.10, at four interior nodes on the edge of the disc (r ≈ 0.108; Mach 9.9 there, the old operator had p = −0.0026 at the same nodes); between t ≈ 0.11 and 0.13 the limiter made 1,126 element limitings (θ_p ≥ 0.993, no element with an inadmissible mean, no node floor); the pressure noise is 0.008% / 0.04%, the symmetry error 2e-9.
+Mass and energy (`conservation.dat`, every step): |ΔM|/M ≤ 6.7e-16 (128²) and 1.7e-15 (256²), |ΔE|/E ≤ 1.2e-16 and 2.3e-16, i.e. a few ulps; see [conservation.pdf](conservation.pdf).
+
+**Why the energy stays at round-off here but not in the blast.**
+- **The rotor:** its initial state is far from the positivity floors. β = 1.0 everywhere, the thermal energy is at least 0.11 of E (at the edge of the spinning disc), the initial pressure is uniform and the disc is tapered. No element mean ever becomes inadmissible, so the non-conservative node floor never fires (above).
+- **The blast** (`problems/MHD/blastBalsaraSpicer1999`): the opposite on every count. Its gas starts at rest, and its ambient thermal energy is 6.3·10⁻⁴ of E, the rest being magnetic. That is the smallest thermal fraction of any initial state in the table below. Its pressure jump is also sampled at the nodes without smoothing. In the first step the node floor adds 1.7·10⁻⁶ of E (128², nop 3), and that offset then stays constant.
+
+The table gives the initial states of the MHD cases, sorted by β. Both value columns are the minimum over the domain, with e_th = p/(γ − 1) and E = e_th + ½ρ|**u**|² + ½|**B**|². Unlike β, e_th/E includes the kinetic energy, so it depends on the frame.
+
+| case | β | e_th/E | notes |
+|---|---|---|---|
+| MHD blast wave | 2.5·10⁻⁴ | 6.3·10⁻⁴ | ambient; inside the initial disc β = 2.5, e_th/E = 0.86 |
+| magnetized astrophysical jet | 10⁻² | 2.4·10⁻² | ambient; the beam entering through the nozzle has β = 10⁻², e_th/E = 5.6·10⁻⁶ |
+| Brio–Wu shock tube | 0.13 | 0.11 | right state; left state β = 1.28, e_th/E = 0.56 |
+| circularly polarized Alfvén wave | 0.20 | 0.23 | uniform |
+| **MHD rotor** | **1.0** | **0.11** | β uniform; e_th/E smallest at the edge of the spinning disc, 0.72 in the ambient |
+| flux emergence | 1 | 0.95 | at the centre of the field sheet (γ = 1.05); β → ∞ and e_th/E → 1 away from it |
+| Orszag–Tang vortex | 5/3 | 0.43 | domain totals β = 10/3, e_th/E = 0.57 |
+| shock–cloud, MHD letters | 2.1 | 0.50 | smallest β ahead of the shock and in the letters, where e_th/E = 0.76; smallest e_th/E behind the shock, where β = 50 |
+| shock–cloud, round cloud | 4.2 | 1.3·10⁻³ | in the cloud, which moves at u = −15.27; ahead of the shock outside the cloud e_th/E = 0.013; behind it β = 222, e_th/E = 0.997 |
+| smooth vortex | 78 | 0.54 | in the vortex; far field β → ∞, e_th/E = 0.60 |
+| Kelvin–Helmholtz instability | 128 | 0.85 | β uniform; e_th/E smallest in the dense layer |
+
+Notes on the values:
+
+- **Kinetic-dominated cases.** The round cloud and the jet's beam have small thermal fractions too, but from their kinetic energy.
+- **Flux-emergence β.** β = 1 at the sheet centre is the deck's inferred `fe_beta_star`.
+- **Jet cases.** The jet row is Wu & Shu's case (i). Cases (ii) and (iii) have β = 10⁻³ and 10⁻⁴.
+- **LaTeX.** The LaTeX version of the table is in the blast README, after "Why only the blast's floor adds energy".
+
+**Fast-speed floors (tested, not on).** `:dsgs_fast_floors => true` builds the normalization floors on c_f = √((γp + |**B**|²)/ρ) instead of the sound speed (DSGS.md §4.5). The blast and the jet use it. Here, at 128² and t = 0.15, it gives:
+
+| | ρ | p | ½\|**B**\|² | max Mach | mean ν | p noise in r < 0.08 (median / 95th pct. / max) |
+|---|---|---|---|---|---|---|
+| sound floors (this deck) | 0.565 – 10.65 | 0.0295 – 1.969 | 0.0746 – 2.543 | 3.55 | 1.8·10⁻⁴ | 0.05% / 0.19% / 1.3% |
+| fast floors | 0.533 – 10.93 | 0.022 – 2.007 | 0.0684 – 2.569 | 4.11 | 0.9·10⁻⁴ | 0.13% / 2.9% / 5.8% |
+
+- **Extrema:** they move toward Tóth's 400² values.
+- **The disc:** inside it (p ≈ 0.04, β ≈ 0.4) the floors rise 2 – 5×, the median ν falls 4.4×, and a node-to-node pressure ripple grows: its 95th percentile is 0.41% at t = 0.10 and 2.9% at t = 0.15. That mode is invisible to the residual, and the sound-speed floors damped it only through their higher sensitivity.
+- **Limiter:** it acts slightly (440 limitings, θ_p ≥ 0.993, no node floors).
+- **Unchanged:** conservation and symmetry (10⁻¹⁰).
+
+Fast floors with `:dsgs_CR => 4.0` match the sound-floor ν in the disc. They remove the ripple (0.05% / 0.22%), but the result moves away from Tóth's: ρ 0.606 – 9.30, p 0.041 – 1.908, max Mach 2.96, mean ν 2.4·10⁻⁴. The 180° symmetry error also grows to 1.4·10⁻³ (the earlier operator showed the same at C_R = 2).
+
+What each DSGS option did at 128² with the earlier operator (deviatoric stress on ρ**v**, rank-local legacy sensor, no limiter; t = 0.15 unless noted):
+
+| DynSGS setting | min p | max Mach | p noise (median) |
+|---|---|---|---|
+| physical form (u, v, T), domain norms | −9.9 at t = 0.05, blow-up at t = 0.084 | | |
+| conserved, domain norms, C_R = 1 | −0.105 | ∞ (p < 0) | |
+| conserved, domain norms, C_R = 1, residual sensor | −0.036 | ∞ | |
+| conserved, domain norms, C_R = 1, nodal ν | blow-up at t = 0.124 | | |
+| conserved, domain norms, C_R = 2 | 0.0058 | 7.3 | 3.8% |
+| conserved, domain norms, C_R = 4 | 0.029 | 3.8 | 0.46% |
+| conserved, element norms, C_R = 2 | 0.045 | 3.0 | 0.04% (symmetry error 2e-3) |
+| conserved, element norms, C_R = 1 | 0.035 | 3.5 | 0.03% (at 256²: p = −0.0026 at t = 0.10) |
+
+## Finer grids
+
+Scale Δt with the smallest LGL spacing, Δx_min ≈ (1 − ξ₁)/2 · 1/(32·2^lvl) with ξ₁ the first interior LGL node, to keep the acoustic CFL ≈ 0.25 (max wave speed ≈ 2.9): `:nop => 3`, level 3: Δt = 1e-4; `:nop => 4`, level 3: Δt = 6e-5.
+
+## References
+
+- D. S. Balsara, D. S. Spicer, J. Comput. Phys. 149 (1999) 270–292.
+- G. Tóth, J. Comput. Phys. 161 (2000) 605–652, §6.6 and Fig. 18.
+- T. A. Dao, M. Nazarov, J. Sci. Comput. 92 (2022) 77, §5.5 and Fig. 7.

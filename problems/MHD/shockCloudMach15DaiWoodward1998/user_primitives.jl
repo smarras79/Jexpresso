@@ -1,0 +1,50 @@
+# A copy of problems/MHD/shockCloudDaiWoodward1998/user_primitives.jl, not an include: the output hook user_uout!
+# is used only when defined by a file of the case being run (case_defines_user_uout, src/io/write_output.jl).
+#---------------------------------------------------------------------------------
+# Conserved-form DynSGS (:dsgs_conserved): the kernel diffuses (ρ, ρu, ρv, E, ρw, B, ψ) themselves.
+# With :dsgs_nazarov_energy the thermal part p/(γ−1) of E goes to slot neqs+2 (SGS.jl, dsgs_split_energy).
+#---------------------------------------------------------------------------------
+@inline sc_energy_split(u) = (eth = pressure_mhd(u[1], u[2], u[3], u[5], u[4], u[6], u[7], u[8], u[9])/(γ_mhd - 1.0); (u[4] - eth, eth))
+
+function user_primitives!(u, qe, uprimitive, ::TOTAL)
+    for ieq = 1:9
+        uprimitive[ieq] = u[ieq]
+    end
+    if dsgs_split_energy[]
+        uprimitive[4], uprimitive[11] = sc_energy_split(u)
+    end
+end
+
+function user_primitives(u, qe, uprimitive, ::TOTAL)
+    e4 = dsgs_split_energy[] ? sc_energy_split(u)[1] : u[4]
+    return SVector(u[1], u[2], u[3], e4, u[5], u[6], u[7], u[8], u[9])
+end
+
+function user_primitives!(u, qe, uprimitive, ::PERT)
+    error(" problems/MHD/shockCloudDaiWoodward1998: PERT() solution variables are not supported.")
+end
+
+# Output: ρ, u, v, w, p, Bx, By, Bz, ψ, T = p/ρ, pmag = ½|B|², Mach = |v|/√(γp/ρ), β = 2p/|B|²,
+# Mach_f = |v|/c_f with c_f = √((γp + |B|²)/ρ) ≥ |B|/√ρ: finite where the limiter holds p at its floor,
+# log10ρ (DW's Fig. 20 shows ρ from 1 to the shocked letters' ~200)
+function user_uout!(ip, ET, uout, u, qe; kwargs...)
+    ρ  = u[1]
+    p  = pressure_mhd(ρ, u[2], u[3], u[5], u[4], u[6], u[7], u[8], u[9])
+    vx, vy, vz = u[2]/ρ, u[3]/ρ, u[5]/ρ
+    pm = 0.5*(u[6]*u[6] + u[7]*u[7] + u[8]*u[8])
+    uout[1]  = ρ
+    uout[2]  = vx
+    uout[3]  = vy
+    uout[4]  = vz
+    uout[5]  = p
+    uout[6]  = u[6]
+    uout[7]  = u[7]
+    uout[8]  = u[8]
+    uout[9]  = u[9]
+    uout[10] = p/ρ
+    uout[11] = pm
+    uout[12] = sqrt(vx*vx + vy*vy + vz*vz)/sqrt(max(γ_mhd*p/ρ, 1e-300))
+    uout[13] = min(p/max(pm, 1e-300), 1.0e6)
+    uout[14] = sqrt(vx*vx + vy*vy + vz*vz)/sqrt(max((γ_mhd*p + 2.0*pm)/ρ, 1e-300))
+    uout[15] = log10(max(ρ, 1e-300))
+end

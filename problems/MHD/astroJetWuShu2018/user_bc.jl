@@ -8,9 +8,14 @@
 # the four names below are exactly the groups declared in AJ.geo:
 #
 #   "bottom"  y = 0      the nozzle for |x| <= 0.05, outflow outside it
-#   "right"   x = +0.5   outflow
-#   "top"     y = 1.5    outflow
-#   "left"    x = -0.5   outflow
+#   "right"   x = +0.5   ambient state (far field)
+#   "top"     y = 1.5    ambient state (far field)
+#   "left"    x = -0.5   ambient state (far field, full-width meshes)
+#   "axis"    x = 0      symmetry axis of the half-domain meshes AJ_half_*.msh
+#
+# FAR FIELD. Do-nothing there leaves the incoming fast, Alfvén and sound characteristics free, and the
+# corners grow a mode at ≈ 1.6 c_f/h (u, Bx, By). The bow shock stays inside the box to t = 0.002, so the
+# exact state on these sides is the ambient one, and it is imposed. Enlarge the box for longer runs.
 #
 # OUTFLOW. build_custom_bcs_dirichlet! (kernel/boundaryconditions/BCs.jl)
 # pre-fills qbdy with a sentinel and copies back only the slots this routine
@@ -26,6 +31,8 @@
 # v_h = v_j/(1 + √(ρ_a/ρ_j)) = 800/(1+√0.1) ≈ 608, so at the paper's final time
 # t = 2e-3 the head is near y ≈ 1.2 and has not reached the top of the 1.5-tall
 # box — nothing has had time to reflect off any boundary and come back.
+# The one exception is ψ = 0: with nothing imposed, the GLM pair (Bₙ, ψ) grew at ~c_h/Δx from the
+# first free node next to the nozzle patch and blew up at the bottom corners by t = 5e-4.
 #
 # INFLOW. The beam is injected at Mach 800, so EVERY characteristic of the MHD
 # system enters the domain through the nozzle and the whole nine-component
@@ -68,7 +75,7 @@
 # survive that, and no amount of viscosity fixes it: DynSGS was measured at
 # nu = 2.1013 = C_max*Delta*lambda, i.e. SATURATED AT ITS CAP, in the same run.
 #
-# THE FIX (JEXPRESSO_AJ_SMOOTH, on by default): blend the injected state into the
+# THE FIX (aj_smooth, on by default): blend the injected state into the
 # ambient one with a COMPACTLY SUPPORTED profile centred on the lip,
 #
 #     phi(x) = 1                        |x| <= x0 - s
@@ -103,7 +110,7 @@
 # boundary per side at the default s — and it is much smaller than the error of
 # imposing a datum the discretization cannot represent.
 #
-# THE SECOND STEP-1 DISCONTINUITY IS IN TIME (JEXPRESSO_AJ_TRAMP, on by default).
+# THE SECOND STEP-1 DISCONTINUITY IS IN TIME (aj_tramp, on by default).
 # Fixing the lip moved the global first repair from (-0.075, 0) to (-0.05, 0.025)
 # — off the boundary, one element up — but it stayed on RHS call 3, so it was
 # still not something that propagated. The reason: at t = 0 the WHOLE domain
@@ -123,7 +130,7 @@
 # lesson stated positively.) p stays 1 throughout, because both endpoints have
 # p = 1. tau defaults to 2h/u_jet = 125 steps on either shipped mesh.
 #
-# JEXPRESSO_AJ_TRAMP=0 restores the paper's impulsive start.
+# aj_tramp = 0 (user_flux.jl) restores the paper's impulsive start.
 #
 # s DEFAULTS TO ONE ELEMENT, resolved from the mesh by initialize.jl, so the
 # transition 2s spans two elements and each element's P4 polynomial sees half of
@@ -141,8 +148,8 @@
 # And the injected flux is unchanged: the integral of phi over the boundary is x0
 # to five digits for every s, because the profile is antisymmetric about the lip.
 # So s alters the beam's shoulder shape, not how much mass or momentum enters.
-# JEXPRESSO_AJ_SMOOTH=0 restores the paper's exact top hat — which is the faithful
-# condition and is measured NOT to run; see README.md 10-11.
+# aj_smooth = 0 (user_flux.jl) restores the paper's exact top hat — which is the faithful
+# condition and was measured not to run with the earlier node-wise repair.
 #---------------------------------------------------------------------------------
 
 if !@isdefined(AJ_LIP_TOL)
@@ -207,9 +214,20 @@ function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String,
         for ieq = 1:9
             qbdy[ieq] = s[ieq]
         end
+    elseif tag == "axis"
+        # Mirror symmetry about x = 0: ρu and Bx are odd, so they vanish; the even fields keep a zero normal flux.
+        qbdy[2] = 0.0
+        qbdy[6] = 0.0
+    elseif tag == "right" || tag == "top" || tag == "left"
+        # Far field: the ambient state (see the header).
+        s = aj_ambient_state()
+        for ieq = 1:9
+            qbdy[ieq] = s[ieq]
+        end
+    else
+        # Open boundaries: ψ = 0, the one incoming condition the GLM pair (Bₙ, ψ) needs; the rest is do-nothing.
+        qbdy[9] = 0.0
     end
-    # Everything else — "left", "right", "top", and the bottom boundary outside
-    # the nozzle — is outflow: impose nothing, leave qbdy at its sentinel.
 
     return nothing
 end

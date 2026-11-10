@@ -219,7 +219,7 @@ function user_inputs()
         # Wall-clock note, not a setting: 2.0e-3 s at 1e-9 is 2,000,000
         # steps on 16,140 elements, about 380 core-hours (see README).
         # A long silence between the CFL/VTK lines is the run working, not a
-        # hang; JEXPRESSO_STEP_HEARTBEAT=1 turns on a per-step trace.
+        # hang; :lstep_heartbeat => true turns on a per-step trace.
         :lsource              => false,
         :SOL_VARS_TYPE        => TOTAL(),
         #---------------------------------------------------------------------------

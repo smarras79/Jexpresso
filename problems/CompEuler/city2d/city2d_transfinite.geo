@@ -70,6 +70,13 @@ Point(11) = {bx0,  by1,  0};   // building top-left
 Point(12) = {bx1,  by1,  0};   // building top-right
 
 // -------- Outer boundary lines --------
+// THE LEFT WALL RUNS LIKE THE RIGHT ONE, bottom to top (Lines 11, 12 as 6, 7).
+// gmsh places the nodes of an edge with a small smooth error (~1e-12 of its
+// length) that follows the edge's direction; with the two periodic walls
+// running opposite ways the errors were mirrored, the nodes Jexpresso pairs
+// across the seam did not coincide, and the flux through the two sides of the
+// seam did not cancel. Run the same way, the paired nodes coincide to the last
+// bit (see problems/MHD/alfvenWaveBabbarRanocha2026).
 Line(1)  = {1,  2};   // bottom, A-strip
 Line(2)  = {2, 11};   // building, left wall
 Line(3)  = {11,12};   // building, top
@@ -80,8 +87,8 @@ Line(7)  = {5,  6};   // right wall, upper  (periodicx)
 Line(8)  = {6,  7};   // top, E-strip
 Line(9)  = {7,  8};   // top, C-strip
 Line(10) = {8,  9};   // top, B-strip
-Line(11) = {9, 10};   // left wall, upper   (periodicx)
-Line(12) = {10, 1};   // left wall, lower   (periodicx)
+Line(11) = {10, 9};   // left wall, upper   (periodicx)
+Line(12) = {1, 10};   // left wall, lower   (periodicx)
 
 // -------- Interior (block-interface) lines --------
 Line(13) = {10, 11};   // horizontal A | B interface
@@ -90,8 +97,8 @@ Line(15) = {12,  7};   // vertical   C  | DE interface
 Line(16) = {12,  5};   // horizontal D | E interface
 
 // -------- Curve loops (CCW) --------
-Curve Loop(1) = { 1,  2, -13,  12};  // A : lower-left
-Curve Loop(2) = {13, 14,  10,  11};  // B : upper-left
+Curve Loop(1) = { 1,  2, -13, -12};  // A : lower-left
+Curve Loop(2) = {13, 14,  10, -11};  // B : upper-left
 Curve Loop(3) = { 3, 15,   9, -14};  // C : above the building
 Curve Loop(4) = { 5,  6, -16,   4};  // D : lower-right
 Curve Loop(5) = {16,  7,   8, -15};  // E : upper-right

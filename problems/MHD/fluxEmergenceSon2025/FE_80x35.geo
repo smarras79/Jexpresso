@@ -40,12 +40,20 @@ Point(2) = {Xmax, 0,    0};
 Point(3) = {Xmax, Zmax, 0};
 Point(4) = {0,    Zmax, 0};
 
+// THE LEFT EDGE RUNS LIKE THE RIGHT ONE, bottom to top. gmsh places the
+// nodes of an edge with a small smooth error (~1e-12 of the edge length) that
+// follows the edge's direction; with the two periodic edges running opposite
+// ways the errors were mirrored, the nodes Jexpresso pairs across the seam
+// were 1.5e-10 apart, and the flux through the two sides of the seam did not
+// cancel (the stratified pressure alone pushed a spurious net x-momentum).
+// Run the same way, the paired nodes coincide to the last bit. The walls
+// (bottom, top) are not paired and keep their direction.
 Line(1) = {1, 2};  // bottom
 Line(2) = {2, 3};  // right
 Line(3) = {3, 4};  // top
-Line(4) = {4, 1};  // left
+Line(4) = {1, 4};  // left
 
-Curve Loop(1) = {1, 2, 3, 4};
+Curve Loop(1) = {1, 2, 3, -4};
 Plane Surface(1) = {1};
 
 Transfinite Curve{1, 3} = nx + 1;

@@ -52,7 +52,7 @@ end
 #------------------------------------------------------------------
 function call_user_uout(uout, u, qe, mp, ET, npoin, nvar, noutvar; μ_dsgs_pnode=nothing)
 
-    if function_exists(@__MODULE__, :user_uout!)
+    if case_defines_user_uout()
         for ip=1:npoin
             user_uout!(ip, ET, @view(uout[ip,1:noutvar]), @view(u[ip,:]), @view(qe[ip,:]);
                        mp=mp, μ_dsgs_pnode=μ_dsgs_pnode)
@@ -72,6 +72,22 @@ function function_exists(module_name::Module, function_name::Symbol)
     return isdefined(module_name, function_name) &&
            isa(getfield(module_name, function_name), Function) &&
            !isempty(methods(getfield(module_name, function_name)))
+end
+# A plain function_exists(:user_uout!) is not enough in a REPL session:
+# run_case never deletes the previous case's hook methods (see run.jl), so a
+# user_uout! left behind by e.g. CompEuler/theta would still be found — and
+# called — when a later case (e.g. AdvDiff/advection2d_dg) defines none,
+# writing past the end of its narrower uout row. Only use user_uout! if one of
+# its methods was defined by a file of the case currently loaded.
+function case_defines_user_uout()
+    function_exists(@__MODULE__, :user_uout!) || return false
+    case_dir = _LOADED_CASE_DIR[]
+    isempty(case_dir) && return true   # no case bookkeeping: keep old behavior
+    case_dir = joinpath(normpath(case_dir), "")   # trailing separator
+    for m in methods(getfield(@__MODULE__, :user_uout!))
+        startswith(normpath(string(m.file)), case_dir) && return true
+    end
+    return false
 end
 #------------------------------------------------------------------
 # END Callback for missing user_uout!()
@@ -238,8 +254,6 @@ function write_output(SD::NSD_2D, sol, uaux, t, iout,  mesh::St_mesh, mp,
         # DSGS runs render the per-equation eddy viscosity as extra panels
         # of the same output time (the per-node broadcast is μ_dsgs_pnode).
         μ_nodes = (μ_dsgs_pnode !== nothing && inputs[:backend] == CPU()) ? μ_dsgs_pnode : nothing
-        _dump_mu_nodes(OUTPUT_DIR, mesh, μ_nodes, iout)
-        _dump_rsplit(OUTPUT_DIR, mesh, iout)
         plot_triangulation(SD, mesh, qplot, title, OUTPUT_DIR, inputs;
                            iout=iout, nvar=nplot, varnames=plotnames,
                            μ_nodes=μ_nodes, μ_names=varnames, Minv=Minv, t=t)
@@ -363,65 +377,31 @@ end
 #------------
 # VTK writer
 #------------
-#
-# JEXPRESSO_DSGS_DUMP=1 writes the nodal DynSGS viscosity as plain numbers
-# beside the figures: x y mu_1 ... mu_neqs, one line per node, one file per
-# rank and output. A RENDERED field cannot separate an artefact of the data
-# from an artefact of the renderer (a raster that samples fewer pixels than
-# there are nodes, a ParaView interpolation of a per-element constant), and
-# a pattern that a picture suggests has to be measured in the numbers before
-# it is chased in the kernel.
-#
-# The companion of the nu dump: WHERE the residual that set nu came from.
-# One line per element — its centroid, the normalized ratio, and the two
-# halves of R at the node where that ratio peaked: the time difference and
-# this element's own weak RHS per unit mass.
-function _dump_rsplit(OUTPUT_DIR, mesh, iout)
-    (_DSGS_RSPLIT[] && length(_DSGS_RR) == mesh.nelem) || return nothing
-    try
-        mkpath(OUTPUT_DIR)
-        f = string(OUTPUT_DIR, "/rsplit-it", iout, "-rank",
-                   MPI.Comm_rank(get_mpi_comm()), ".txt")
-        ngl = mesh.ngl
-        open(f, "w") do io
-            println(io, "# xc yc ratio time_term space_term")
-            for ie = 1:mesh.nelem
-                xc = 0.0; yc = 0.0
-                for j = 1:ngl, i = 1:ngl
-                    ip = mesh.connijk[ie,i,j,1]
-                    xc += mesh.coords[1,ip]; yc += mesh.coords[2,ip]
-                end
-                xc /= ngl*ngl; yc /= ngl*ngl
-                println(io, xc, " ", yc, " ", _DSGS_RR[ie], " ", _DSGS_RT[ie], " ", _DSGS_RS[ie])
-            end
-        end
-        @info " wrote $f"
-    catch err
-        @warn "could not dump the DynSGS residual split" exception=err
-    end
-    return nothing
-end
 
-function _dump_mu_nodes(OUTPUT_DIR, mesh, μ_nodes, iout)
-    (μ_nodes !== nothing && get(ENV, "JEXPRESSO_DSGS_DUMP", "") == "1") || return nothing
-    try
-        mkpath(OUTPUT_DIR)
-        f = string(OUTPUT_DIR, "/mu_nodes-it", iout, "-rank",
-                   MPI.Comm_rank(get_mpi_comm()), ".txt")
-        npoin = min(mesh.npoin, size(μ_nodes, 1))
-        open(f, "w") do io
-            println(io, "# x y ", join(string.("mu_", 1:size(μ_nodes, 2)), " "))
-            for ip = 1:npoin
-                print(io, mesh.coords[1,ip], " ", mesh.coords[2,ip])
-                for ieq = 1:size(μ_nodes, 2); print(io, " ", μ_nodes[ip, ieq]); end
-                println(io)
-            end
+# DynSGS output fields: slots share one field only if their coefficients are equal on every rank and at every
+# output so far, so all pieces of a frame and all frames of a run carry the same names. Deciding per rank and
+# per frame wrote mu_dsgs on ranks where ν was still zero and mu_dsgs_<slots> elsewhere (and at later frames).
+const _MU_SPLIT = Ref{Tuple{String,BitMatrix}}(("", falses(0, 0)))
+function _dsgs_mu_groups(μ::AbstractMatrix, npoin::Integer, run_id::AbstractString)
+    nμ = size(μ, 2)
+    d  = zeros(Int, nμ*nμ)
+    @inbounds for j = 1:nμ, i = 1:j-1
+        if view(μ, 1:npoin, i) != view(μ, 1:npoin, j)
+            d[i + (j-1)*nμ] = 1
+            d[j + (i-1)*nμ] = 1
         end
-        @info " wrote $f"
-    catch err
-        @warn "could not dump the nodal DynSGS viscosity" exception=err
     end
-    return nothing
+    MPI.Allreduce!(d, MPI.MAX, get_mpi_comm())
+    split = reshape(d .> 0, nμ, nμ)
+    rid, prev = _MU_SPLIT[]
+    (rid == run_id && size(prev) == size(split)) && (split .|= prev)
+    _MU_SPLIT[] = (String(run_id), split)
+    groups = Vector{Int}[]
+    for i = 1:nμ
+        any(g -> !split[g[1], i], groups) && continue
+        push!(groups, [j for j = i:nμ if !split[i, j]])
+    end
+    return groups
 end
 
 function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
@@ -543,21 +523,12 @@ cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, Int64[ip1, ip2, ip3, ip4])
         # flux-emergence cases) gives every slot the same kinematic μ, so
         # when all columns are identical one field, mu_dsgs, is written
         # instead of nine copies of it.
-        _dump_mu_nodes(OUTPUT_DIR, mesh, μ_dsgs_pnode, iout)
-        _dump_rsplit(OUTPUT_DIR, mesh, iout)
         if μ_dsgs_pnode !== nothing && size(μ_dsgs_pnode, 1) == npoin
-            nμ = size(μ_dsgs_pnode, 2)
-            # one field per DISTINCT coefficient: a slot identical to an
-            # earlier one is not written again (its name lists the slots)
-            written = Int[]
-            for ieq = 1:nμ
-                dup = any(j -> view(μ_dsgs_pnode, 1:npoin, ieq) == view(μ_dsgs_pnode, 1:npoin, j), written)
-                dup && continue
-                push!(written, ieq)
-            end
-            for ieq in written
-                slots = [j for j = ieq:nμ if view(μ_dsgs_pnode, 1:npoin, j) == view(μ_dsgs_pnode, 1:npoin, ieq)]
-                mu_name = (length(written) == 1) ? "mu_dsgs" :
+            # one field per DISTINCT coefficient (its name lists the slots), decided on all ranks and kept for the run
+            groups = _dsgs_mu_groups(μ_dsgs_pnode, npoin, OUTPUT_DIR)
+            for slots in groups
+                ieq = slots[1]
+                mu_name = (length(groups) == 1) ? "mu_dsgs" :
                     string("mu_dsgs_", join([(j <= length(varnames)) ? string(varnames[j]) : string(j) for j in slots], "_"))
                 vtkf[mu_name, VTKPointData()] = @view(μ_dsgs_pnode[1:npoin, ieq])
                 # log₁₀ of the coefficient floored at :plot_dsgs_floor, the
@@ -704,21 +675,12 @@ cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, Int64[ip1, ip2, ip3, ip4, ip
         # flux-emergence cases) gives every slot the same kinematic μ, so
         # when all columns are identical one field, mu_dsgs, is written
         # instead of nine copies of it.
-        _dump_mu_nodes(OUTPUT_DIR, mesh, μ_dsgs_pnode, iout)
-        _dump_rsplit(OUTPUT_DIR, mesh, iout)
         if μ_dsgs_pnode !== nothing && size(μ_dsgs_pnode, 1) == npoin
-            nμ = size(μ_dsgs_pnode, 2)
-            # one field per DISTINCT coefficient: a slot identical to an
-            # earlier one is not written again (its name lists the slots)
-            written = Int[]
-            for ieq = 1:nμ
-                dup = any(j -> view(μ_dsgs_pnode, 1:npoin, ieq) == view(μ_dsgs_pnode, 1:npoin, j), written)
-                dup && continue
-                push!(written, ieq)
-            end
-            for ieq in written
-                slots = [j for j = ieq:nμ if view(μ_dsgs_pnode, 1:npoin, j) == view(μ_dsgs_pnode, 1:npoin, ieq)]
-                mu_name = (length(written) == 1) ? "mu_dsgs" :
+            # one field per DISTINCT coefficient (its name lists the slots), decided on all ranks and kept for the run
+            groups = _dsgs_mu_groups(μ_dsgs_pnode, npoin, OUTPUT_DIR)
+            for slots in groups
+                ieq = slots[1]
+                mu_name = (length(groups) == 1) ? "mu_dsgs" :
                     string("mu_dsgs_", join([(j <= length(varnames)) ? string(varnames[j]) : string(j) for j in slots], "_"))
                 vtkf[mu_name, VTKPointData()] = @view(μ_dsgs_pnode[1:npoin, ieq])
                 # log₁₀ of the coefficient floored at :plot_dsgs_floor, the

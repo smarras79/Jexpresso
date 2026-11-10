@@ -59,8 +59,7 @@ function user_inputs()
         # apart and the whole run is 64000 steps, order 12 h on one core.
         # A long silence after "Integrator warm-up with real callbacks" is
         # the run working, not a hang. If you ever want to watch it step,
-        # `JEXPRESSO_STEP_HEARTBEAT=1` turns on a per-step trace without
-        # editing this deck.
+        # `:lstep_heartbeat => true` turns on a per-step trace.
         :lsource              => false,
         :SOL_VARS_TYPE        => TOTAL(),
         #---------------------------------------------------------------------------

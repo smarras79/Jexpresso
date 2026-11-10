@@ -1,4 +1,9 @@
-Base.@kwdef mutable struct LESStatCache{T <: AbstractFloat, nz, dims_buf, dims_stress, backend, VT1, VT2}
+Base.@kwdef mutable struct LESStatCache{T <: AbstractFloat, backend, VT1, VT2}
+    # array shapes (fields, not type parameters: see the top of src/kernel/globalStructs.jl)
+    nz
+    dims_buf
+    dims_stress
+
     z_levels        ::Vector{Float64}       = zeros(Float64, nz)
     z_groups        ::Vector{Vector{Int64}} = [Int64[] for _ in 1:nz]
     npts_per_z      ::Vector{Int64}         = zeros(Int64,   nz)
@@ -226,7 +231,7 @@ function build_les_stat_cache(mesh, nprofiles::Int, nstress::Int, T, backend)
     dims_stress = (Int64(nz), Int64(nstress))
     VT1   = typeof(KernelAbstractions.zeros(backend, T, dims_buf[2]))
     VT2   = typeof(KernelAbstractions.zeros(backend, T, dims_buf...))
-    cache = LESStatCache{T, Int64(nz), dims_buf, dims_stress, backend, VT1, VT2}()
+    cache = LESStatCache{T, backend, VT1, VT2}(; nz = Int64(nz), dims_buf, dims_stress)
     copyto!(cache.z_levels,   z_levels)
     copyto!(cache.z_groups,   z_groups)
     copyto!(cache.npts_per_z, npts_per_z)

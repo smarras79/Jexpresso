@@ -50,6 +50,7 @@
 //   "right"   x = +0.5   outflow
 //   "top"     y = 1.5    outflow
 //   "left"    x = -0.5   outflow
+//   "axis"    x = 0      symmetry axis of the right half (half = 1, AJ_half_*.msh)
 // There is no periodic direction in this problem.
 //
 // Generate with:
@@ -72,11 +73,15 @@ Ymin =  0.0;
 Ymax =  1.5;
 
 ref = 1;                        // 1 -> 40x60, 2 -> 100x150
+half = 0;                       // 1 -> right half [0, 0.5] x [0, 1.5]: AJ_half_20x60, AJ_half_50x150
 If (ref == 1)
   nx = 40;  ny = 60;
 EndIf
 If (ref == 2)
   nx = 100; ny = 150;
+EndIf
+If (half == 1)
+  Xmin = 0.0; nx = nx/2;
 EndIf
 
 Point(1) = {Xmin, Ymin, 0};
@@ -101,7 +106,12 @@ Physical Surface("domain") = {1};
 Physical Curve("bottom")   = {1};
 Physical Curve("right")    = {2};
 Physical Curve("top")      = {3};
-Physical Curve("left")     = {4};
+If (half == 0)
+  Physical Curve("left")   = {4};
+EndIf
+If (half == 1)
+  Physical Curve("axis")   = {4};
+EndIf
 
 Mesh.ElementOrder = 1;
 Mesh.Algorithm = 8;

@@ -8,11 +8,16 @@
 #   julia --project=. tools/smooth_vortex_plot.jl              # every order
 #   julia --project=. tools/smooth_vortex_plot.jl 1,3          # P1 and P3 alone
 #   julia --project=. tools/smooth_vortex_plot.jl 1,3 --t=1.0 --out=figs
+#   julia --project=. tools/smooth_vortex_plot.jl 4,5,6,7 --visc=dsgs,galerkin
 #   julia --project=. tools/smooth_vortex_plot.jl --case=CompEuler/smoothVortex
 #
 # It reads problems/MHD/smoothVortex/errors/*.dat (what every run writes) and
 # uses the case's own plotting code, so the figures are identical to the ones
-# a run produces. Files are written as convergence_<visc>[_nop1-3]-it0.png.
+# a run produces. Files are written as convergence[_nop1-3][_L1|_L2|_Linf]-it0.png.
+#
+#   --visc=TAGS   only these records, by their tag: dsgs (the deck as
+#                 committed), dsgs_nocut, dsgs_cut, dsgs_hold, galerkin
+#                 (comma list), e.g. to leave the run without the cutoff out
 using Plots, LaTeXStrings, Printf
 
 # --case=MHD/smoothVortex (default) or CompEuler/smoothVortex, the
@@ -35,9 +40,10 @@ end
 include(joinpath(CASE, "user_plot.jl"))
 
 function main(args)
-    nops = Int[]
-    t    = nothing
-    out  = joinpath(@__DIR__, "..", "output", split(CASEREL, '/')..., "output")
+    nops  = Int[]
+    viscs = String[]
+    t     = nothing
+    out   = joinpath(@__DIR__, "..", "output", split(CASEREL, '/')..., "output")
     for a in args
         if startswith(a, "--t=")
             t = parse(Float64, split(a, '=')[2])
@@ -45,6 +51,8 @@ function main(args)
             continue                      # handled above, before the include
         elseif startswith(a, "--out=")
             out = split(a, '='; limit = 2)[2]
+        elseif startswith(a, "--visc=")
+            append!(viscs, filter(!isempty, split(split(a, '='; limit = 2)[2], r"[,\s]+")))
         elseif startswith(a, "--")
             error("unknown option $a")
         else
@@ -74,7 +82,8 @@ function main(args)
     load, report, plot = isdefined(@__MODULE__, :SV_ERR_DIR) ?
         (_sv_load_errors, _sv_report, _sv_plot) : (_ev_load_errors, _ev_report, _ev_plot)
     rows = load(t)
-    isempty(rows) && error("no stored errors at t = $t (present: $(sort(unique(times))))")
+    isempty(viscs) || filter!(r -> r.visc in viscs, rows)
+    isempty(rows) && error("no stored errors at t = $t for these tags (times present: $(sort(unique(times))))")
     report(rows)
     if isempty(nops)
         plot(rows, out, 0)

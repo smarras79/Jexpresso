@@ -71,17 +71,17 @@ end
 # =============================================================================
 #  St_elemLearning — struct holds ONLY per-element blocks and ML tensors.
 # =============================================================================
-Base.@kwdef mutable struct St_elemLearning{T <: AbstractFloat,
-                                           dims0,
-                                           dims_vovo,
-                                           dims_∂Ovo,
-                                           dims_vovb,
-                                           dims_T2,
-                                           dims_T1,
-                                           dimsML1,
-                                           dimsML2,
-                                           lELSample,
-                                           backend}
+Base.@kwdef mutable struct St_elemLearning{T <: AbstractFloat, lELSample, backend}
+
+    # array shapes (fields, not type parameters: see the top of src/kernel/globalStructs.jl)
+    dims0
+    dims_vovo
+    dims_∂Ovo
+    dims_vovb
+    dims_T2
+    dims_T1
+    dimsML1
+    dimsML2
 
     # ── Per-element: interior × interior  (nvo × nvo × nelem) ────────────────
     Avovo   = KernelAbstractions.zeros(backend, T, dims_vovo)
@@ -130,17 +130,8 @@ function allocate_elemLearning(nelem, ngl, length∂O, length∂τ, lengthΓ,
     dimsML2    = (4*k*(k-1)^2,    Nsamp)
     dims0      = (nelem, 2)
 
-    return St_elemLearning{T,
-                           dims0,
-                           dims_vovo,
-                           dims_∂Ovo,
-                           dims_vovb,
-                           dims_T2,
-                           dims_T1,
-                           dimsML1,
-                           dimsML2,
-                           lEL_Sample,
-                           backend}()
+    return St_elemLearning{T, lEL_Sample, backend}(; dims0, dims_vovo, dims_∂Ovo, dims_vovb,
+                                                     dims_T2, dims_T1, dimsML1, dimsML2)
 end
 
 

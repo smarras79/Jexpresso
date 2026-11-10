@@ -500,8 +500,33 @@ $$
 the second being the three-point derivative at $\tau$ through
 $(q(\tau), q^n, q^{n-1})$: second order at every stage, equal to BDF2 at
 $\tau = h$, weights summing to zero. Dao & Nazarov compute the coefficient once
-per step from $t^n$ and freeze it over the stages; here it is re-evaluated at
-every stage, consistently.
+per step from $t^n$ and freeze it over the stages; here it can be re-evaluated at
+every stage, consistently. Since October 2026, `DSGS_MHD` and the CompEuler `DSGS`
+with this sensor freeze it by default (`:dsgs_freeze_stage`, `src/io/mod_inputs.jl`;
+the ShallowWater `DSGS` and `DSGS_SW` keep the per-stage coefficient): at $\tau > 0$ one of
+the three values is an RK internal stage, whose own error is $O(\Delta t)$, so the
+residual never falls below $O(\Delta t)$ on a resolved smooth solution. At $\tau = 0$
+the three values are step-level states and the floor is the BDF2 truncation error,
+$O(\Delta t^2)$. On the MHD Alfvén wave at $N = 4$ that is the difference between
+order 3.2 and 4.8 (`problems/MHD/alfvenWaveBabbarRanocha2026`). That floor is also
+the limit of the frozen coefficient: $\nu \approx C_R\,\Delta^2\,O(\Delta t^2)$, so at a
+fixed Courant number DynSGS adds an error of order $h^4$, whatever $N$. On the same
+wave it shows from $N = 5$ on: the DynSGS error converges at about 4 while the Galerkin
+error converges at 6 to 8 ($N = 7$ on $16^2$: $4.2\cdot10^{-8}$ against
+$5.5\cdot10^{-12}$), and halving $\Delta t$ alone divides it by 3.9 and 4.0 ($N = 6$ and
+7 on $16^2$). The smoothness cutoff removes that floor: with `:dsgs_cutoff` $= 10^{-3}$
+(the floor is $4\cdot10^{-6}$ to $7\cdot10^{-4}$ there) the DynSGS runs of $N = 5, 6, 7$
+reproduce the Galerkin ones bit for bit on every mesh but the coarsest of $N = 5$; it is
+that deck's default. On
+Brio–Wu ($N = 4, 7$; 600 and 1200 DOFs) the frozen and per-stage density errors differ by
+under 1% over the tube and by under 5% in the rarefaction fan, either way, with the
+same total variation; without its background floor, where the residual alone sets
+$\nu$ at the jumps, by under 3%, with slightly less excess total variation frozen. On
+Sod (`sod1d`, its CI copy) the frozen density error against the exact solution is 2.3%
+larger in $L^1$ (0.8% in $L^2$), with a pressure dip of 0.8% of the ambient value just
+ahead of the shock that the per-stage run does not have. The
+legacy sensor below must not be frozen (its stencil reads $-\tfrac12\partial_t q$ at
+$\tau = 0$), and an explicit request for it is ignored.
 
 Every DynSGS result obtained before this change (September 2026) used the
 fixed BDF2 on $(q(\tau), q^n, q^{n-1})$ together with the assembled RHS
@@ -540,7 +565,31 @@ density spans eight decades between the photosphere and the corona:
   run a grid-scale sawtooth grew across the chromosphere–corona transition with
   $\mu = 10^{-11}$ there. The element spread of a smooth stratified field is
   $O(q_i)$ ($\rho$ changes by $e^{-1}$ across a $1H_0$ element), so the ratio
-  keeps the meaning of a relative under-resolution rate.
+  keeps the meaning of a relative under-resolution rate. The Mach 800 beam of
+  `astroJetWuShu2018` is blind to the domain norm in the same way: its $p/(\gamma-1)$ is
+  $5.6\times10^{-6}$ of $E$, so a noise that moves $p$ from 1 to 800 reads 1% of the cap
+  against the domain spread of $E$, and from the first refinement level on, elements above
+  the nozzle reach inadmissible means. The case uses element norms.
+- **`:dsgs_fast_floors => true`** (MHD, 1D and 2D, both norm scopes) builds those
+  floors with the fast-speed bound $\bar c_f = \sqrt{(\gamma\bar p + |\bar{\mathbf B}|^2)/\bar\rho}$
+  of the mean state instead of the sound speed: $\bar\rho\bar c_f$,
+  $\gamma\bar p + |\bar{\mathbf B}|^2$, $\sqrt{\gamma\bar p + |\bar{\mathbf B}|^2}$.
+  With $c_f/c = \sqrt{1 + 2/(\gamma\beta)}$, sound-speed floors read a resolved fast
+  wave $c_f/c$ ($\rho\mathbf v$, $\mathbf B$) to $(c_f/c)^2$ ($E$) times too strong
+  at low $\beta$: 12 and 144 in the ambient of `astroJetWuShu2018` ($\beta = 10^{-2}$),
+  75 and 5,700 in that of `blastBalsaraSpicer1999` ($\beta = 2.5\times10^{-4}$). Both use it;
+  the blast README records the trade-off (unsaturated $\mu$, a pressure undershoot at the fast front).
+- **`:dsgs_thermal_residual => true`** (MHD 2D, either norm scope; it is always normalized per element) adds the thermal energy
+  $\rho e = E - \tfrac12|\mathbf m|^2/\rho - \tfrac12|\mathbf B|^2 - \tfrac12\psi^2$ to the max, through the
+  chain rule on the signed conserved residuals,
+  $R_{\rho e} = R_E - \mathbf v\cdot R_{\mathbf m} + \tfrac12|\mathbf v|^2 R_\rho - \mathbf B\cdot R_{\mathbf B} - \psi R_\psi$,
+  over $\max(\|\rho e - \langle\rho e\rangle_K\|_{\infty,K},\ \gamma\bar p_K)$. In a resolved fast wave $R_E$ and
+  $\mathbf B\cdot R_{\mathbf B}$ cancel down to the thermal part; a ripple in $\mathbf B$ does not, and at low $\beta$
+  one of relative size $\beta/(2(\gamma-1))$ costs all of $p$. On the blast at 128² it removes the fast-front
+  undershoot (blast README), and the blast deck uses it. It is not for a hypersonic beam: in the Mach-800 jet,
+  where $\frac12\rho|\mathbf v|^2$ is all of $E$, it puts $\nu$ at its cap along the beam and heats it (median $p$ 206
+  against 9 at $y$ = 0.01–0.1, lvl 0). With domain norms it does not keep the full-width jet symmetric either
+  (asymmetry $10^{-2}$ by $t = 10^{-4}$, as with element norms), so `astroJetWuShu2018` does not use it.
 - **`:dsgs_conserved => true`** hands every slot the same kinematic $\mu$ and
   drops the $\tau\cdot u$ term; with a `user_primitives!` that returns the
   conserved variables the operator becomes a Laplacian on
@@ -674,8 +723,9 @@ the $C_{min}$ floor both forms give the same profile). The 3D kernel
 (§3.1) is element-form only, so the switch has no 3D counterpart yet. Measured on the Brio–Wu tube: both forms give the same
 solution, and the element-scale ripples the compound wave radiates into
 the plateau behind it are damped by neither — the residual viscosity
-scales with their amplitude — and need the $C_{min}$ floor (3 % there, see the
-case README).
+scales with their amplitude — and need the $C_{min}$ floor: $C_{min} = 0.06$,
+the deck's default (6 % of $\Delta(|u|+c_f)$, 12 % of the cap; 0.03 leaves the
+ripples, see the case README).
 
 ### 4.8 MPI
 

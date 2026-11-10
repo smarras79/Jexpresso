@@ -2,8 +2,11 @@
 #
 # Convergence history of the smooth MHD vortex (Dao & Nazarov 2022, §5.1.1
 # and Fig. 1): every polynomial order on every mesh, which
-# problems/MHD/smoothVortex/user_plot.jl turns into
-# convergence_dsgs-it<n>.png and convergence_galerkin-it<n>.png.
+# problems/MHD/smoothVortex/user_plot.jl turns into convergence-it<n>.png
+# (DynSGS and Galerkin on the same axes, one panel per norm) and
+# convergence_L1/_L2/_Linf-it<n>.png. Every case runs at the deck's own step,
+# Δt ∝ h; tools/smooth_vortex_mpi_scan.sh, the sweep README.md describes, runs
+# them all at one Δt and several at a time.
 #
 #   tools/smooth_vortex_scan.sh                    # orders 4-7, meshes 4-32
 #   SV_NOPS="3 4" SV_NELX="8 16 32" tools/smooth_vortex_scan.sh
