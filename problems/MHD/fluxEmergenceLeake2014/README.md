@@ -40,9 +40,11 @@ The simulation is chosen in `user_inputs.jl`:
 | key | values | meaning |
 |---|---|---|
 | `:lk_dipole` | `"SD"`, `"MD"` (default), `"WD"`, `"ND"` | Paper II's dipoles, $\Phi_{dip}/\Phi_{tube} = 0.13,\ 0.1,\ 0.067,\ 0$ |
+| `:lk_flux_def` | `"whole"` (default) / `"top"` | $\Phi_{tube}$ of the whole tube or of its top half (Deviations, item 3) |
 | `:lk_Bd` | a number | overrides `:lk_dipole` with an explicit signed $B_d$ (negative = Paper II's orientation, positive = Paper I's) |
 | `:lk_tube` | `true` / `false` | `false` runs the background alone (atmosphere + dipole), which must stay at rest |
-| `:lk_cz_gradient` | `1.0` (default) / `1.25` | $a$ of the convection-zone temperature gradient (below) |
+| `:lk_cz_gradient` | `1.0` (default) | $a$ of the convection-zone temperature gradient (below) |
+| `:lk_mf` | `1.0` (default) / `1.25` | $p = \rho T/m_f$ (Deviations, item 4) |
 | `:lk_damp_xd`, `:lk_damp_zd` | 96, 180 | start of the side and top velocity-damping layers (Paper I used 170 at the top) |
 | `:lk_glm_alpha` | 1.0 | Dedner damping $\alpha_p$ of $\psi$, rate $\alpha_pc_h/\Delta h$ (Deviations, item 8) |
 | `LK_REF` (top of `user_inputs()`) | 1, 2 (default), 3 | mesh and time step (below) |
@@ -54,7 +56,7 @@ m s$^{-2}$, hence $P_0 = B_0^2/\mu_0$, $\rho_0 = P_0/(L_0g_0)$,
 $v_0 = \sqrt{L_0g_0} = 6.82$ km s$^{-1}$, $t_0 = \sqrt{L_0/g_0} = 24.9$ s and
 $T_0 = m_pL_0g_0/k_B = 5640$ K. In these units $g = 1$, the magnetic pressure
 is $\tfrac12|\mathbf B|^2$ (Heaviside–Lorentz form, as in every MHD case of
-this tree) and the gas law is $p = \rho T/m_f$ with $m_f = 1.25$; $\gamma = 5/3$.
+this tree) and the gas law is $p = \rho T$; $\gamma = 5/3$ (Deviations, item 4).
 (Paper I prints $B_0 = 0.12$ T; Paper II, and Paper I's own dimensional
 $B_d$, give 0.13 T. The case is dimensionless and does not depend on it.)
 
@@ -73,10 +75,12 @@ T(z) = \begin{cases}
 \end{cases}
 $$
 
-$dp/dz = -\rho = -m_f p/T$ integrates in closed form in every layer
-(`lk_pressure`): a polytrope $p = p_0T^{m_f\gamma/(a(\gamma-1))}$ below
-$z = 0$, exponentials above. The density falls by twelve decades, from
-$\rho(-30) = 233$ to $\rho(209.8) = 4.3\times10^{-10}$.
+$dp/dz = -\rho = -p/T$ integrates in closed form in every layer
+(`lk_pressure`): a polytrope $p = T^{\gamma/(a(\gamma-1))}$ below
+$z = 0$ (exactly adiabatic for $a = 1$), exponentials above. The density
+falls by nine and a half decades, from $\rho(-30) = 46.9$ to
+$\rho(209.8) = 1.2\times10^{-8}$, and the pressure from 609 to
+$6.3\times10^{-6}$ in the corona, as the papers' Fig. 1(a).
 
 **Dipole** (Paper I Eq. 15), invariant along $y$:
 $\mathbf B = \nabla\times(A_y\mathbf e_y)$,
@@ -143,9 +147,9 @@ the paper's stretching:
 
 | `LK_REF` | elements | file | nodes ($N = 4$) | `:Δt` | |
 |---|---|---|---|---|---|
-| 1 | $16^3$ | `LK_16x16x16.msh` (shipped) | $65^3$ | $2\times10^{-3}$ | smoke test |
-| 2 | $38^3$ | `LK_38x38x38.msh` (shipped) | $153^3$ | $8\times10^{-4}$ | half the paper's resolution (default) |
-| 3 | $76^3$ | `LK_76x76x76.msh` (generate) | $305^3$ | $4\times10^{-4}$ | the paper's $304^3$ |
+| 1 | $16^3$ | `LK_16x16x16.msh` (shipped) | $65^3$ | $3\times10^{-3}$ | smoke test |
+| 2 | $38^3$ | `LK_38x38x38.msh` (shipped) | $153^3$ | $1.2\times10^{-3}$ | half the paper's resolution (default) |
+| 3 | $76^3$ | `LK_76x76x76.msh` (generate) | $305^3$ | $6\times10^{-4}$ | the paper's $304^3$ |
 
 The $76^3$ mesh is not shipped (about 50 MB); generate it with
 
@@ -156,29 +160,31 @@ gmsh -3 LK.geo -setnumber ref 3 -o LK_76x76x76.msh
 
 The time step is set by the fastest wave on the smallest LGL gap. The fast
 speed of the initial state peaks just above the transition region, where the
-dipole is still strong and the density has dropped by $10^{9}$:
+dipole is still strong and the density has dropped by $10^{7.4}$:
 $c_h = \max\sqrt{(\gamma p + |\mathbf B|^2)/\rho}$ (printed at start-up,
 held constant as the GLM cleaning speed). It grows with the dipole:
 
 | | $B_d$ (solved) | $z_{sep}$ | $c_h$ |
 |---|---|---|---|
-| SD | $-7887$ | $-5.61$ | 200 |
-| MD | $-6115$ | $-5.48$ | 155 |
-| WD | $-4138$ | $-5.28$ | 106 |
-| ND | 0 | – | ≈ 14 |
+| SD | $-16006$ | $-6.01$ | 92 |
+| MD | $-12351$ | $-5.86$ | 72 |
+| WD | $-8314$ | $-5.64$ | 50 |
+| ND | 0 | – | 16 |
 
 The smallest LGL gap at $N = 4$ is $0.173$ of the element height at the
 bottom, where the elements are $130/n_v$ tall: $\Delta h = 1.40,\ 0.591,\ 0.295$
-for `LK_REF` = 1, 2, 3. The `:Δt` of the mesh table give
-$c_h\Delta t/\Delta h \approx 0.28$ for SD and 0.21 for MD; for WD and ND
-`:Δt` can be raised in proportion to $c_h$.
+for `LK_REF` = 1, 2, 3. The step is fixed while the speeds grow (Paper II's
+reconnection outflows reach $30v_0$, its Fig. 8), so the `:Δt` of the mesh
+table give $(|\mathbf v| + c_f)\Delta t/\Delta h \approx 0.25$ at
+$|\mathbf v| + c_f = 120$, the initial fast speed of SD plus the outflows; the
+CFL monitor (Notes) prints the actual value as it grows.
 
 ## Deviations from the papers, and why
 
 1. **Kinematic viscosity.** Paper I's $\nu = 3.35\times10^3$ kg m$^{-1}$
    s$^{-1}$ is dynamic ($0.01\nu_0$, $\nu_0 = \rho_0L_0v_0$): in the corona,
-   where $\rho \sim 10^{-9}$, it would be a kinematic viscosity of $10^7$
-   (Re $\sim 10^{-7}$, and an explicit viscous time step $10^9$ times smaller
+   where $\rho \sim 10^{-8}$, it would be a kinematic viscosity of $10^6$
+   (Re $\sim 10^{-6}$, and an explicit viscous time step $10^7$ times smaller
    than the wave one). The papers' "Re = 100" is evaluated with the
    normalizing density. This case uses the kinematic $\nu = 0.01$
    everywhere, i.e. Re = 100 at every height.
@@ -188,16 +194,30 @@ $c_h\Delta t/\Delta h \approx 0.28$ for SD and 0.21 for MD; for WD and ND
    the top of the tube. With $B_y > 0$ only the right-handed tube has
    $B_x > 0$ at its top, so $q = -1/a$ is read as a different sign
    convention for $\theta$ and the case keeps $q = 1/R$.
-3. **Dipole strength from Paper II's flux ratios.** Paper I lists
-   $B_d = [10, 7.5, 5]\times10^3$; with $B_t = 5$ those give
-   $\Phi_{dip}/\Phi_{tube} = 0.166,\ 0.123,\ 0.081$, not Paper II's 0.13, 0.1,
-   0.067. Paper II defines its simulations by the ratios, so $B_d$ is solved
-   from them. `:lk_Bd` sets it directly.
-4. **Convection-zone gradient.** Paper I writes
-   $T = 1 - (\gamma - 1)/\gamma\cdot z$ and calls it adiabatic; in its own
-   normalization ($\mu_m = m_fm_p$) the adiabatic gradient is $m_f$ times that.
-   The printed formula ($a = 1$, slightly sub-adiabatic, i.e. stable) is
-   used; `:lk_cz_gradient => 1.25` makes it exactly adiabatic.
+3. **Dipole strength from Paper II's flux ratios.** Paper II defines its
+   simulations by $\Phi_{dip}/\Phi_{tube} = 0.13, 0.1, 0.067$, so $B_d$ is solved
+   from them (Paper I's $B_d = [10, 7.5, 5]\times10^3$ belong to its parallel
+   dipole). Its Eq. (10) integrates $\Phi_{tube}$ over the top half of the tube,
+   which gives $B_d = 7887, 6115, 4138$; but the $\beta(0, 0, z)$ curves of its
+   Fig. 1(a), read off the figure at $z = 20$–$64$, need $B_d$ larger by
+   2.08, 2.01 and 1.96 at every height (the profiles' shape is matched
+   exactly: the atmosphere and the field form are right, only the amplitude
+   differs). With $\Phi_{tube}$ the azimuthal flux of the whole tube,
+   $\int|B_{x,\rm tube}|\,dz = B_tR$, the same ratios give $B_d = 16006, 12351,
+   8314$, within 3 % of the figure. The case uses that (`:lk_flux_def =>
+   "whole"`; `"top"` gives the printed one) and prints both ratios at
+   start-up. `:lk_Bd` sets $B_d$ directly.
+4. **Gas law in normalized units.** Both papers give $\mu_m = 1.25m_p$ and
+   $T_0 = m_pL_0g_0/k_B$, i.e. $p = \rho T/1.25$. Their own Fig. 1(a) does not
+   follow that: the pressure is $\approx 5\times10^2$ at $z = -30$ and
+   $\approx 5\times10^{-6}$ in the corona, the values of $p = \rho T$ (609 and
+   $6.3\times10^{-6}$; $p = \rho T/1.25$ gives 2422 and $2.5\times10^{-7}$), and
+   Paper I's statement that $T = 1 - (\gamma - 1)/\gamma\cdot z$ is exactly
+   adiabatic holds only for $p = \rho T$. Leake et al. (2022)'s Fig. 1 shows
+   the same atmosphere in kg m$^{-3}$. The reduced mass sits in the code's
+   temperature unit, so `:lk_mf => 1.0` (`initialize.jl`); 1.25 gives the
+   literal-text atmosphere, whose corona is 20 times less dense, with Alfvén
+   speeds 4.5 times higher and time steps 4.5 times smaller.
 5. **Numerics.** The papers use Lare3d (staggered Lagrangian-remap, shock
    viscosity, constrained transport). Here: continuous spectral elements at
    $N = 4$ with GLM divergence cleaning ($c_h$ above, Dedner damping
@@ -209,11 +229,11 @@ $c_h\Delta t/\Delta h \approx 0.28$ for SD and 0.21 for MD; for WD and ND
    Runge–Kutta stage limiter (every hit is counted and printed).
 6. **Discrete equilibrium (`:lwell_balanced`).** Neither the stratification
    nor the dipole is an exact equilibrium of the discrete operator, and in the
-   corona ($\rho \sim 10^{-9}$, $\beta \sim 10^{-2}$) their interpolation errors
+   corona ($\rho \sim 10^{-8}$, $\beta \sim 10^{-1}$) their interpolation errors
    are large accelerations. Without correction the background alone (no tube,
-   $16^3$) reaches $|\mathbf v| = 54v_0$ at the transition region by
-   $t = 0.05t_0$ and $130v_0$ by $0.1t_0$, and the positivity floors fire
-   from the first step. The deck sets `:lwell_balanced => true`: the kernel
+   $16^3$, measured with the earlier $m_f = 1.25$ atmosphere) reaches
+   $|\mathbf v| = 54v_0$ at the transition region by $t = 0.05t_0$ and
+   $130v_0$ by $0.1t_0$, and the positivity floors fire from the first step. The deck sets `:lwell_balanced => true`: the kernel
    evaluates the element RHS of the reference state (atmosphere + dipole,
    fluxes and sources) once and subtracts it at every stage, so the background
    is an exact discrete steady state (unchanged to the last bit at
@@ -225,13 +245,14 @@ $c_h\Delta t/\Delta h \approx 0.28$ for SD and 0.21 for MD; for WD and ND
    the papers' zero-gradient conditions, not a ghost-cell copy.
 8. **GLM transient and $\alpha_p$.** Constrained transport keeps Lare3d's
    $\nabla\cdot\mathbf B$ at round-off. Here the tube's nodal field has a
-   discrete divergence that GLM carries away at $c_h$ (155 for MD), i.e. from
-   the tube to the transition region in $0.15t_0$. There $\beta \approx 0.007$,
-   and in total-energy form the gas pressure is the small remainder
+   discrete divergence that GLM carries away at $c_h$ (72 for MD), i.e. from
+   the tube to the transition region in $0.4t_0$. There $\beta$ is low
+   (0.06 for MD), and in total-energy form the gas
+   pressure is the small remainder
    $E - \tfrac12\rho|\mathbf v|^2 - \tfrac12|\mathbf B|^2 - \tfrac12\psi^2$:
-   a field error $\delta B$ changes it by about $B\,\delta B$, ten times
-   the local $p$ for $\delta B/B \sim 10^{-1}$, and drives Alfvénic flows
-   $\sim v_A\,\delta B/B$. The damping rate $\alpha_pc_h/\Delta h$ attenuates a
+   a field error $\delta B$ changes it by about $B\,\delta B$, a sizeable
+   fraction of the local $p$ for $\delta B/B \sim 10^{-1}$, and drives
+   Alfvénic flows $\sim v_A\,\delta B/B$. The damping rate $\alpha_pc_h/\Delta h$ attenuates a
    $\psi$ front by $e^{-\alpha_p L/\Delta h}$ over a distance $L$; this case
    uses $\alpha_p = 1$, the top of the range of Dedner et al. (2002) and
    Mignone & Tzeferacos (2010), rather than the 0.2 of
@@ -326,12 +347,14 @@ How the quantities are computed:
 
 Short runs on 4 threads; the full runs are for a cluster.
 
-- **Dipole strength.** MD solves to $B_d = -6114.7$,
-  $\Phi_{dip}/\Phi_{tube} = 0.1000$, $z_{sep} = -5.48$ (printed at start-up);
-  SD and WD as in the table above. Paper I's $B_d$ give 0.166, 0.123, 0.081.
-- **Atmosphere.** The nodal $\rho$, $p$ span 233 to $4.28\times10^{-10}$ and
-  2422 to $5.14\times10^{-8}$ from $z = -30$ to the top, the closed-form
-  values.
+- **Dipole strength.** MD solves to $B_d = -12351$, $z_{sep} = -5.86$ ($\Phi_{dip}/\Phi_{tube} =
+  0.1000$ with the whole tube, 0.207 with its top half, both printed at
+  start-up); SD and WD as in the table above. With them the $\beta$ curves
+  of `tools/plot_leake2014.py ic` have the minima 0.032, 0.054, 0.12 above
+  $z = 0$, those of the paper's Fig. 1(a).
+- **Atmosphere.** The nodal $\rho$, $p$ take the closed-form values
+  (checked with $m_f = 1.25$: 233 to $4.28\times10^{-10}$ and 2422 to
+  $5.14\times10^{-8}$; with $m_f = 1$: 46.9 to $1.18\times10^{-8}$ and 609 to $1.76\times10^{-6}$).
 - **Background at rest** (`:lk_tube => false`, `LK_REF = 1`): with
   `:lwell_balanced` every field at $t = 0.1t_0$ equals the initial one to the
   last bit, and no floor fires. Without it, see Deviations, item 6.
@@ -340,20 +363,23 @@ Short runs on 4 threads; the full runs are for a cluster.
   so this is a test of the pipeline, not of the physics. The GLM transient of
   item 8 at $t = 0.2t_0$:
 
-  | $\alpha_p$ | max $\lvert\mathbf v\rvert$ (at $z \approx 19$) | max $p/p(t=0)$ | max $\lvert\psi\rvert$ at $z = 12$–$19$ |
-  |---|---|---|---|
-  | 0.2 | 18.3 | 66 | $1.8\times10^{-3}$ |
-  | 1 (default) | 6.1 | 6.2 | $6.1\times10^{-5}$ |
+  | setup | $\alpha_p$ | max $\lvert\mathbf v\rvert$ | max $p/p(t=0)$ | max $\lvert\psi\rvert$ at $z = 12$–$19$ |
+  |---|---|---|---|---|
+  | $m_f = 1.25$, top-half $B_d$, $2\times10^{-3}$ | 0.2 | 18.3 | 66 | $1.8\times10^{-3}$ |
+  | $m_f = 1.25$, top-half $B_d$, $2\times10^{-3}$ | 1 | 6.1 | 6.2 | $6.1\times10^{-5}$ |
+  | $m_f = 1$, whole-tube $B_d$, $3\times10^{-3}$ (default; $t = 0.21$) | 1 | 0.83 | 1.10 | $1.5\times10^{-4}$ |
 
-  With either value the positivity floors hit $\sim10^2$ nodes per stage
-  from $t \approx 0.02t_0$ ($10^5$ hits by $0.1t_0$).
+  With $m_f = 1.25$ the positivity floors hit $\sim10^2$ nodes per stage
+  from $t \approx 0.02t_0$ ($10^5$ hits by $0.1t_0$); with the defaults they
+  start at $t = 0.115t_0$ ($10^4$ hits by 0.15), and the CFL monitor stays at
+  its initial 0.153.
 
 Nothing was run here at `LK_REF` = 2 or 3.
 
 **Cost.** `LK_REF = 1` takes about 6 s per time step on 4 threads
 ($65^3$ nodes). Scaling by nodes and steps, `LK_REF = 2` ($153^3$ nodes,
-$2\times10^5$ steps to $160t_0$) is $\approx 2\times10^4$ core-hours and
-`LK_REF = 3` ($305^3$, $4\times10^5$ steps) $\approx 3\times10^5$, before
+$1.3\times10^5$ steps to $160t_0$) is $\approx 1.2\times10^4$ core-hours and
+`LK_REF = 3` ($305^3$, $2.7\times10^5$ steps) $\approx 1.8\times10^5$, before
 parallel losses. In Paper II the O-point of MD jumps at $t \approx 115t_0$
 and reaches the damping layer before $160t_0$; a shorter `:tend` covers the
 formation of the flux rope.
@@ -366,11 +392,16 @@ formation of the flux rope.
   ($t_n + c_i\Delta t$, in $t_0$), not an output time: snapshots are written at
   `:diagnostics_at_times` only. A node on a partition interface counts once
   per rank that holds it.
-- **The CFL printout.** The advective and acoustic lines of the shared
-  diagnostic (`src/kernel/physics/soundSpeed.jl`) assume the CompEuler layout
-  and report nonsense for this case (max|u| $\sim 10^4$, $c = 0$). The time
-  step is set by $c_h$ (Meshes and time step). The viscous line is the
-  DynSGS coefficient actually applied.
+- **CFL monitor.** `# CFL: max (|v| + c_f) Δt/Δh = …` is printed by rank 0
+  every time the largest value over the nodes ($c_f = \sqrt{(\gamma p +
+  |\mathbf B|^2)/\rho}$, $\Delta h$ the smallest LGL gap of the elements around
+  the node, checked every 100 Runge–Kutta stages) has grown by 20 %, as a
+  `WARNING` above 0.5: halve `:Δt` and restart from the last snapshot if it
+  keeps growing.
+- **The shared CFL printout.** Its advective and acoustic lines
+  (`src/kernel/physics/soundSpeed.jl`) assume the CompEuler layout and report
+  nonsense for this case (max|u| $\sim 10^4$, $c = 0$). The viscous line is
+  the DynSGS coefficient actually applied.
 - **Constants shared by name** (`γ_mhd`, `c_h_mhd`, `pressure_mhd`) with the
   other MHD cases: `user_flux.jl` refuses to run if a case with another
   $\gamma$ was loaded earlier in the same Julia session. Restart Julia.
@@ -379,7 +410,7 @@ formation of the flux rope.
 
 | file | content |
 |---|---|
-| `user_inputs.jl` | `LK_REF`, Δt, the problem keys, DynSGS, positivity floors, $\nu$/$\eta$ |
+| `user_inputs.jl` | `LK_REF`, Δt, the problem keys, DynSGS, positivity floors and CFL monitor, $\nu$/$\eta$ |
 | `initialize.jl` | atmosphere, dipole ($B_d$ from the flux ratio), tube, $c_h$, Δh |
 | `user_flux.jl` | 3D ideal GLM-MHD fluxes, $\gamma = 5/3$ |
 | `user_source.jl` | gravity, GLM damping, velocity damping |

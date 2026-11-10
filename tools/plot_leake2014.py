@@ -35,7 +35,7 @@ PAPER_STYLE = {"SD": ("tab:red", "-"), "MD": ("tab:green", "--"), "WD": ("tab:bl
 MONO_LS = ["-", "--", "-.", ":", (0, (5, 1, 1, 1, 1, 1))]
 
 # the case's constants (initialize.jl)
-GAMMA, MF, TCOR = 5.0 / 3.0, 1.25, 150.0
+GAMMA, TCOR = 5.0 / 3.0, 150.0
 ZT, RT, BT, ZD, LAM = -12.0, 2.5, 5.0, -100.0, 10.0
 RATIO = {"SD": 0.13, "MD": 0.1, "WD": 0.067, "ND": 0.0}
 ZTOP = 209.84530500030144
@@ -278,7 +278,8 @@ def savefig(fig, out, dpi):
 # ---------------------------------------------------------------------------------------------------------
 # ic: Fig. 1(a)
 # ---------------------------------------------------------------------------------------------------------
-def atmosphere(z, a=1.0):
+def atmosphere(z, a=1.0, MF=1.0):
+    """(T, p) of the cases' hydrostatic atmosphere (p = rho T/MF, rho(0) = T(0) = 1)."""
     al = np.log(TCOR) / 10.0
     p0, p10 = 1.0 / MF, np.exp(-10.0 * MF) / MF
     p20 = p10 * np.exp(-MF * (1.0 - np.exp(-10.0 * al)) / al)
@@ -304,7 +305,8 @@ def dipole_axis(z, Bd):
     return 2.0 * Bd / (z - ZD) ** 3            # B_x of the dipole on x = 0 (B_z = 0 there)
 
 
-def flux_ratio(Bdabs, ztop, n=20001):
+def flux_ratio(Bdabs, ztop, n=20001, defn="whole"):
+    """Phi_dip/Phi_tube on x = y = 0 (initialize.jl): Phi_tube of the whole tube (B_t R) or its top half."""
     z = np.linspace(ZT, ztop, n)
     Bx = tube_axis(z)[0] + dipole_axis(z, -Bdabs)
     i0 = int(np.argmax(Bx > 0))
@@ -312,29 +314,29 @@ def flux_ratio(Bdabs, ztop, n=20001):
     if len(neg) == 0:
         return 0.0
     i = i0 + neg[0]
-    Pt, Pd = trapz(Bx[:i], z[:i]), trapz(Bx[i:], z[i:])
-    return abs(Pd) / Pt
+    Pt = trapz(Bx[:i], z[:i]) if defn == "top" else BT * RT
+    return abs(trapz(Bx[i:], z[i:])) / Pt
 
 
-def solve_dipole(ratio, ztop):
+def solve_dipole(ratio, ztop, defn="whole"):
     if ratio <= 0:
         return 0.0
-    lo, hi = 0.0, 5.0e4
+    lo, hi = 0.0, 1.0e5
     for _ in range(60):
         mid = 0.5 * (lo + hi)
-        lo, hi = (mid, hi) if flux_ratio(mid, ztop) < ratio else (lo, mid)
+        lo, hi = (mid, hi) if flux_ratio(mid, ztop, defn=defn) < ratio else (lo, mid)
     return -0.5 * (lo + hi)
 
 
 def cmd_ic(a):
     z = np.linspace(-30.0, a.ztop, 4001)
-    T, p0 = atmosphere(z, a.cz_gradient)
+    T, p0 = atmosphere(z, a.cz_gradient, a.mf)
     Bxt, Byt, p1 = tube_axis(z)
     fig, ax = plt.subplots(figsize=(a.width, 0.75 * a.width))
     ax.semilogy(z, T, "k-", lw=1.5, label=r"$T/T_0$")
     ax.semilogy(z, p0, "k--", lw=1.5, label=r"$p/P_0$")
     for lab in ("SD", "MD", "WD"):
-        Bd = solve_dipole(RATIO[lab], a.ztop)
+        Bd = solve_dipole(RATIO[lab], a.ztop, a.flux_def)
         beta = 2.0 * (p0 + p1) / np.maximum((Bxt + dipole_axis(z, Bd)) ** 2 + Byt**2, 1e-300)
         ax.semilogy(z, beta, color=PAPER_STYLE[lab][0], lw=1.2, label=rf"$\beta$ {lab} ($B_d = {Bd:.0f}$)")
         print(f"   {lab}: B_d = {Bd:.1f}, min beta on the axis above z = 0: {beta[z > 0].min():.3g}")
@@ -758,6 +760,8 @@ def main():
     s.add_argument("runs", nargs="*", help="LABEL=RUN: overlay the nodal T, p, beta on x = y = 0 at t = 0")
     s.add_argument("--ztop", type=float, default=ZTOP)
     s.add_argument("--cz-gradient", type=float, default=1.0, help=":lk_cz_gradient of the deck")
+    s.add_argument("--mf", type=float, default=1.0, help=":lk_mf of the deck (p = rho T/m_f)")
+    s.add_argument("--flux-def", choices=("whole", "top"), default="whole", help=":lk_flux_def of the deck")
     common(s)
     s.set_defaults(func=cmd_ic)
 

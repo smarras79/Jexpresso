@@ -22,6 +22,34 @@ if !@isdefined(lk_floor_frac)
     const lk_floor_hits = Ref{Int}(0)
     const lk_floor_next = Ref{Int}(1)
 end
+# CFL monitor (the time step is fixed, the wave speeds are not): every 100 stages the largest
+# (|v| + c_f) Δt/Δh over the nodes, with c_f = √((γp + |B|²)/ρ) and Δh the smallest LGL gap of
+# the elements around the node, is reported by rank 0 when it has grown by 20 %, as a
+# WARNING above 0.5 (the step is set for ≈ 0.25 initially: README).
+if !@isdefined(lk_cfl_dh)
+    const lk_cfl_dh    = Ref{Vector{Float64}}(Float64[])
+    const lk_cfl_count = Ref{Int}(0)
+    const lk_cfl_shown = Ref{Float64}(0.0)
+end
+
+function lk_node_spacing(mesh)
+    ngl = Int(mesh.ngl)
+    h   = fill(Inf, Int(mesh.npoin))
+    for ie = 1:Int(mesh.nelem)
+        he = Inf
+        for m = 1:ngl-1, (a, b) in ((mesh.connijk[ie,m,1,1], mesh.connijk[ie,m+1,1,1]),
+                                    (mesh.connijk[ie,1,m,1], mesh.connijk[ie,1,m+1,1]),
+                                    (mesh.connijk[ie,1,1,m], mesh.connijk[ie,1,1,m+1]))
+            he = min(he, sqrt((mesh.coords[1,b] - mesh.coords[1,a])^2 + (mesh.coords[2,b] - mesh.coords[2,a])^2 +
+                              (mesh.coords[3,b] - mesh.coords[3,a])^2))
+        end
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            ip = mesh.connijk[ie,i,j,k]
+            h[ip] = min(h[ip], he)
+        end
+    end
+    return h
+end
 
 function lk_positivity_limiter!(u, integrator, p, t)
     npoin = p.mesh.npoin
@@ -29,6 +57,14 @@ function lk_positivity_limiter!(u, integrator, p, t)
     frac  = lk_floor_frac[]
     γm1   = γ_mhd - 1.0
     nhit  = 0
+    lk_cfl_count[] += 1
+    docfl = lk_cfl_count[] % 100 == 1
+    if docfl && length(lk_cfl_dh[]) != npoin
+        lk_cfl_dh[] = lk_node_spacing(p.mesh)
+    end
+    dh    = lk_cfl_dh[]
+    Δt    = Float64(p.Δt)
+    cfl = 0.0; vmx = 0.0; cmx = 0.0
     @inbounds for ip = 1:npoin
         iρ = ip; iρu = npoin + ip; iρv = 2npoin + ip; iE = 3npoin + ip; iρw = 4npoin + ip
         iBx = 5npoin + ip; iBy = 6npoin + ip; iBz = 7npoin + ip; iψ = 8npoin + ip
@@ -42,6 +78,28 @@ function lk_positivity_limiter!(u, integrator, p, t)
         me = 0.5*(u[iBx]^2 + u[iBy]^2 + u[iBz]^2) + 0.5*u[iψ]^2
         if γm1*(u[iE] - ke - me) < pmin
             u[iE] = pmin/γm1 + ke + me; nhit += 1
+        end
+        if docfl
+            B2 = u[iBx]^2 + u[iBy]^2 + u[iBz]^2
+            v  = sqrt(u[iρu]^2 + u[iρv]^2 + u[iρw]^2)/ρ
+            cf = sqrt(max(γ_mhd*γm1*(u[iE] - ke - me) + B2, 0.0)/ρ)
+            c  = (v + cf)*Δt/dh[ip]
+            if c > cfl
+                cfl = c; vmx = v; cmx = cf
+            end
+        end
+    end
+    if docfl
+        comm = MPI.COMM_WORLD
+        g = MPI.Comm_size(comm) > 1 ? MPI.Allreduce(cfl, MPI.MAX, comm) : cfl
+        if g > 1.2*lk_cfl_shown[]
+            if MPI.Comm_rank(comm) == 0       # the |v|, c_f printed are those of rank 0's largest
+                print(string(g > 0.5 ? " # WARNING CFL: " : " # CFL: ", "max (|v| + c_f) Δt/Δh = ", round(g, sigdigits = 3),
+                             " at t = ", round(t, digits = 3), " (rank 0: |v| = ", round(vmx, sigdigits = 3), ", c_f = ",
+                             round(cmx, sigdigits = 3), ")", g > 0.5 ? "; reduce :Δt" : "", "\n"))
+                flush(stdout)
+            end
+            lk_cfl_shown[] = g
         end
     end
     # One report for all ranks, from rank 0, when the total passes 1, 10, 100, ...: every rank
@@ -75,9 +133,10 @@ function user_inputs()
 
     LK_REF = 2
     mesh   = ("LK_16x16x16.msh", "LK_38x38x38.msh", "LK_76x76x76.msh")[LK_REF]
-    # Δt for c_h Δt/Δh ≈ 0.28 at c_h ≈ 200 (the fast speed just above the transition
-    # region for SD; 155 for MD, 106 for WD) on the smallest LGL gap Δh of each mesh (README).
-    Δt     = (2.0e-3, 8.0e-4, 4.0e-4)[LK_REF]
+    # Δt for (|v| + c_f) Δt/Δh ≈ 0.25 at |v| + c_f ≈ 120 on the smallest LGL gap Δh of each mesh:
+    # the fast speed just above the transition region is 92 (SD), 72 (MD), 50 (WD) at t = 0, and
+    # Paper II's reconnection outflows reach 30 (README). The CFL monitor reports the actual value.
+    Δt     = (3.0e-3, 1.2e-3, 6.0e-4)[LK_REF]
 
     inputs = Dict(
         :ode_solver           => CarpenterKennedy2N54(stage_limiter! = lk_positivity_limiter!,
@@ -100,8 +159,10 @@ function user_inputs()
         # The papers' problem (README):
         #---------------------------------------------------------------------------
         :lk_dipole            => "MD",       # SD, MD, WD (Φ_dip/Φ_tube = 0.13, 0.1, 0.067) or ND
+        :lk_flux_def          => "whole",    # Φ_tube of the whole tube (Paper II's Fig. 1; README) or "top" (its Eq. 10)
         :lk_tube              => true,
-        :lk_cz_gradient       => 1.0,        # a of Paper I Eq. 11 (1.25 = exactly adiabatic)
+        :lk_cz_gradient       => 1.0,        # a of Paper I Eq. 11 (1 = exactly adiabatic with m_f = 1)
+        :lk_mf                => 1.0,        # p = ρT/m_f: 1 reproduces the papers' Fig. 1 (README); 1.25 = literal text
         :lk_glm_alpha         => 1.0,        # ψ damping rate α_p c_h/Δh (README: GLM transient)
         :lk_damp_xd           => 96.0,
         :lk_damp_zd           => 180.0,      # Paper II (Paper I: 170)

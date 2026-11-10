@@ -19,7 +19,7 @@ function user_primitives!(u, qe, uprimitive, ::PERT)
     error(" problems/MHD/fluxEmergenceLeake2014: PERT() solution variables are not supported.")
 end
 
-# Output: ρ, u, v, w, p, Bx, By, Bz, ψ, T = m_f p/ρ (in T₀), plasma β = 2p/|B|²,
+# Output: ρ, u, v, w, p, Bx, By, Bz, ψ, T = m_f p/ρ (in T₀; m_f = :lk_mf), plasma β = 2p/|B|²,
 # |B|, log10 ρ (the atmosphere spans twelve decades).
 function user_uout!(ip, ET, uout, u, qe; kwargs...)
     ρ  = u[1]
@@ -34,7 +34,7 @@ function user_uout!(ip, ET, uout, u, qe; kwargs...)
     uout[7]  = u[7]
     uout[8]  = u[8]
     uout[9]  = u[9]
-    uout[10] = LK_MF*p/ρ
+    uout[10] = lk_mf[]*p/ρ
     uout[11] = min(2.0*p/max(B2, 1e-300), 1.0e12)
     uout[12] = sqrt(B2)
     uout[13] = log10(max(ρ, 1e-300))

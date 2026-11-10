@@ -7,7 +7,8 @@
 # hence P₀ = B₀²/μ₀, ρ₀ = P₀/(L₀g₀), v₀ = √(L₀g₀) = 6.82 km s⁻¹, t₀ = 24.9 s,
 # T₀ = m_p L₀ g₀/k_B = 5640 K. In these units g = 1, the magnetic pressure is
 # ½|B|² (μ₀ is absorbed, as in Heaviside-Lorentz units), and the ideal gas law
-# P = ρ k_B T/(m_f m_p) reads p = ρT/m_f with m_f = 1.25.
+# P = ρ k_B T/(m_f m_p) reads p = ρT/m_f; the papers' atmosphere has m_f = 1 in these
+# units (initialize.jl, README).
 #
 # State (ρ, ρu, ρv, E, ρw, Bx, By, Bz, ψ): slot 4 is the total energy and slot 5
 # the vertical momentum (z is up), the layout of every MHD case of this tree.

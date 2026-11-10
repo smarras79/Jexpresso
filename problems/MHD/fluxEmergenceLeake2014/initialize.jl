@@ -8,7 +8,7 @@
 # whose equations, domain, boundaries and initial state are "exactly the same as
 # used in Paper I" (J. E. Leake, M. G. Linton & T. Török, ApJ 778:99, 2013,
 # Sec. 2.4), except that the dipole is reversed. Units of user_flux.jl (L₀, B₀,
-# g₀; p = ρT/m_f, g = 1, magnetic pressure ½|B|²).
+# g₀; p = ρT/m_f with m_f = 1 (below), g = 1, magnetic pressure ½|B|²).
 #
 # 1. Atmosphere (Paper I Eqs. 11-14, hydrostatic, ρ(0) = 1):
 #      T = 1 − a (γ−1)/γ · z        z ≤ 0     (convection zone, a = 1)
@@ -18,11 +18,11 @@
 #    dp/dz = −ρ = −m_f p/T integrates in closed form in every layer:
 #      z ≤ 0:  p = p₀ T^(m_f γ/(a(γ−1)))   (a polytrope), p₀ = 1/m_f
 #      then exponentials (lk_atmosphere below).
-#    Paper I writes the convection-zone gradient as −(γ−1)/γ · T₀/L₀ and calls it
-#    adiabatic. With its own normalization (T₀ = m_p L₀g₀/k_B, μ_m = m_f m_p) the
-#    adiabatic gradient is m_f times that; the printed value (a = 1) is used, which
-#    leaves the convection zone slightly stable. :lk_cz_gradient => 1.25 makes it
-#    exactly adiabatic.
+#    m_f (:lk_mf) is 1: the papers' text gives μ_m = 1.25 m_p with T₀ = m_p L₀g₀/k_B,
+#    i.e. p = ρT/1.25, but their Fig. 1 (pressure 609 at z = −30 and 6e-6 in the
+#    corona) and Paper I's statement that a = 1 is exactly adiabatic both need
+#    p = ρT: the reduced mass sits in their temperature unit (README).
+#    :lk_mf => 1.25 gives the literal-text atmosphere (20 times less dense corona).
 #
 # 2. Dipole (Paper I Eq. 15, invariant along y): B = ∇×(A_y e_y),
 #      A_y = B_d (z − z_d)/r₁³,  r₁² = x² + (z − z_d)²,  z_d = −100,
@@ -30,8 +30,11 @@
 #    Paper II reverses it (B_x < 0 above the tube, antiparallel to the tube's top
 #    field) and sets its strength by the azimuthal-flux ratio Φ_dip/Φ_tube =
 #    0.13, 0.1, 0.067 (SD, MD, WD; its Eqs. 9-10). B_d is solved for here from that
-#    ratio on the x = y = 0 line (lk_solve_dipole). Paper I's B_d = 10⁴, 7.5·10³,
-#    5·10³ give 0.166, 0.123, 0.081 with this tube.
+#    ratio on the x = y = 0 line (lk_solve_dipole), with Φ_tube the azimuthal flux of
+#    the whole tube, ∫|B_x,tube| dz = B_t R (:lk_flux_def => "whole"): the B_d this
+#    gives (16006, 12351, 8314) reproduce the β profiles of Paper II's Fig. 1(a) to
+#    3 % at every height, while the printed top-half integral (:lk_flux_def => "top")
+#    gives half of them, with β four times the figure's (README).
 #
 # 3. Flux tube (Paper I Eqs. 16-18), along y at x = 0, z = z_t = −12:
 #      B_y = B_t e^(−r²/R²),  B_θ = q r B_y,  r² = x² + (z − z_t)²,
@@ -54,8 +57,7 @@
 #    the interpolation error of either is a large acceleration.
 #---------------------------------------------------------------------------------
 
-if !@isdefined(LK_MF)
-    const LK_MF    = 1.25     # m_f, μ_m = m_f m_p
+if !@isdefined(LK_TCOR)
     const LK_TCOR  = 150.0    # T_cor/T_ph
     const LK_ZT    = -12.0    # tube axis height
     const LK_RT    = 2.5      # tube radius R (Paper II: a)
@@ -67,6 +69,7 @@ end
 if !@isdefined(lk_Bd)
     const lk_Bd          = Ref{Float64}(0.0)     # signed B_d (set by initialize)
     const lk_cz_a        = Ref{Float64}(1.0)     # a of Paper I Eq. 11
+    const lk_mf          = Ref{Float64}(1.0)     # m_f of p = ρT/m_f (README)
     const lk_glm_alpha   = Ref{Float64}(1.0)     # Dedner damping α_p (rate α_p c_h/Δh)
     const lk_glm_dh      = Ref{Float64}(1.0)
     const lk_damp_xd     = Ref{Float64}(96.0)    # side damping starts at |x|, |y| = 96
@@ -86,19 +89,19 @@ end
 
 @inline function lk_pressure(z)
     a  = lk_cz_a[]
-    p0 = 1.0/LK_MF                                  # ρ(0) = 1, T(0) = 1
+    p0 = 1.0/lk_mf[]                                  # ρ(0) = 1, T(0) = 1
     if z <= 0.0
-        return p0*lk_temperature(z)^(LK_MF*γ_mhd/(a*(γ_mhd - 1.0)))
+        return p0*lk_temperature(z)^(lk_mf[]*γ_mhd/(a*(γ_mhd - 1.0)))
     end
-    p10 = p0*exp(-LK_MF*10.0)
-    z < 10.0 && return p0*exp(-LK_MF*z)
+    p10 = p0*exp(-lk_mf[]*10.0)
+    z < 10.0 && return p0*exp(-lk_mf[]*z)
     α = log(LK_TCOR)/10.0
-    z < 20.0 && return p10*exp(-LK_MF*(1.0 - exp(-α*(z - 10.0)))/α)
-    p20 = p10*exp(-LK_MF*(1.0 - exp(-α*10.0))/α)
-    return p20*exp(-LK_MF*(z - 20.0)/LK_TCOR)
+    z < 20.0 && return p10*exp(-lk_mf[]*(1.0 - exp(-α*(z - 10.0)))/α)
+    p20 = p10*exp(-lk_mf[]*(1.0 - exp(-α*10.0))/α)
+    return p20*exp(-lk_mf[]*(z - 20.0)/LK_TCOR)
 end
 
-@inline lk_density(z) = LK_MF*lk_pressure(z)/lk_temperature(z)
+@inline lk_density(z) = lk_mf[]*lk_pressure(z)/lk_temperature(z)
 
 # Dipole field (B_x, B_z) at (x, z) for the signed strength B_d.
 @inline function lk_dipole(x, z, Bd)
@@ -120,25 +123,28 @@ end
 
 # Φ_dip/Φ_tube of Paper II (Eqs. 9-10) on x = y = 0 for a reversed dipole of
 # strength |B_d|: the total B_x changes sign at the separatrix z_sep above the axis.
-function lk_flux_ratio(Bdabs, ztop; n = 200001)
+# Φ_dip is the dipole flux above z_sep; Φ_tube the tube's from its axis to z_sep
+# (def = "top", the printed Eq. 10) or the whole tube's azimuthal flux B_t R
+# (def = "whole", the one Paper II's Fig. 1 follows). Returns (ratio, z_sep, Φ_tube, Φ_dip).
+function lk_flux_ratio(Bdabs, ztop; n = 200001, def = "whole")
     z  = range(LK_ZT, ztop, length = n)
     Bx = [lk_tube(0.0, zz)[1] + lk_dipole(0.0, zz, -Bdabs)[1] for zz in z]
     i0 = findfirst(>(0.0), Bx)
     is = findnext(<(0.0), Bx, i0)
     is === nothing && return 0.0, ztop, 0.0, 0.0
     dz = step(z)
-    Φt = dz*(sum(Bx[1:is-1]) - 0.5*(Bx[1] + Bx[is-1]))
+    Φt = def == "top" ? dz*(sum(Bx[1:is-1]) - 0.5*(Bx[1] + Bx[is-1])) : LK_BT*LK_RT
     Φd = dz*(sum(Bx[is:end]) - 0.5*(Bx[is] + Bx[end]))
     return abs(Φd)/Φt, z[is], Φt, Φd
 end
 
 # |B_d| giving the requested ratio (bisection; the ratio grows with |B_d|).
-function lk_solve_dipole(ratio, ztop)
+function lk_solve_dipole(ratio, ztop; def = "whole")
     ratio <= 0.0 && return 0.0
-    lo, hi = 0.0, 5.0e4
+    lo, hi = 0.0, 1.0e5
     for _ = 1:60
         mid = 0.5*(lo + hi)
-        lk_flux_ratio(mid, ztop; n = 20001)[1] < ratio ? (lo = mid) : (hi = mid)
+        lk_flux_ratio(mid, ztop; n = 20001, def = def)[1] < ratio ? (lo = mid) : (hi = mid)
     end
     return 0.5*(lo + hi)
 end
@@ -157,6 +163,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     inputs[:SOL_VARS_TYPE] != TOTAL() && error(" problems/MHD/fluxEmergenceLeake2014: only SOL_VARS_TYPE = TOTAL() is supported.")
 
     lk_cz_a[]      = Float64(get(inputs, :lk_cz_gradient, 1.0))
+    lk_mf[]        = Float64(get(inputs, :lk_mf, 1.0))
     lk_glm_alpha[] = Float64(get(inputs, :lk_glm_alpha, 1.0))
     lk_damp_xd[]   = Float64(get(inputs, :lk_damp_xd, 96.0))
     lk_damp_zd[]   = Float64(get(inputs, :lk_damp_zd, 180.0))
@@ -170,9 +177,12 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         lk_Bd[] = Float64(inputs[:lk_Bd])
     else
         haskey(LK_RATIO, dip) || error(" problems/MHD/fluxEmergenceLeake2014: :lk_dipole = \"$(dip)\", expected SD, MD, WD or ND.")
-        lk_Bd[] = -lk_solve_dipole(LK_RATIO[dip], lk_zmax[])     # reversed: B_x < 0 above the tube
+        fdef = String(get(inputs, :lk_flux_def, "whole"))
+        fdef in ("whole", "top") || error(" problems/MHD/fluxEmergenceLeake2014: :lk_flux_def = \"$(fdef)\", expected whole or top.")
+        lk_Bd[] = -lk_solve_dipole(LK_RATIO[dip], lk_zmax[]; def = fdef)     # reversed: B_x < 0 above the tube
     end
     ratio, zsep, Φt, Φd = lk_Bd[] < 0.0 ? lk_flux_ratio(-lk_Bd[], lk_zmax[]) : (0.0, NaN, NaN, NaN)
+    rtop = lk_Bd[] < 0.0 ? lk_flux_ratio(-lk_Bd[], lk_zmax[]; def = "top")[1] : 0.0
 
     γm1 = γ_mhd - 1.0
     Bd  = lk_Bd[]
@@ -224,8 +234,8 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
                 " imbalance of the atmosphere and the dipole will drive flows from t = 0.")
 
     if rank == 0
-        println(" Dipole $(dip): B_d = $(Bd) B₀L₀² (reversed), Φ_dip/Φ_tube = $(ratio) (z_sep = $(zsep), Φ_tube = $(Φt), Φ_dip = $(Φd))")
-        println(" Atmosphere: p(-30) = $(lk_pressure(-30.0)), ρ(-30) = $(lk_density(-30.0)); ρ(20) = $(lk_density(20.0)), ρ(top) = $(lk_density(lk_zmax[])); convection-zone gradient a = $(lk_cz_a[])")
+        println(" Dipole $(dip): B_d = $(Bd) B₀L₀² (reversed), Φ_dip/Φ_tube = $(ratio) with the whole tube's flux $(Φt) ($(rtop) with its top half); z_sep = $(zsep), Φ_dip = $(Φd)")
+        println(" Atmosphere (m_f = $(lk_mf[])): p(-30) = $(lk_pressure(-30.0)), ρ(-30) = $(lk_density(-30.0)); ρ(20) = $(lk_density(20.0)), ρ(top) = $(lk_density(lk_zmax[])); convection-zone gradient a = $(lk_cz_a[])")
         println(" Tube: B_t = $(LK_BT), R = $(LK_RT), q = 1/R, z_t = $(LK_ZT), λ = $(LK_LAM)$(ltube ? "" : " (OFF: :lk_tube => false)")")
         println(" GLM c_h = $(c_h_mhd[]); smallest nodal spacing Δh = $(lk_glm_dh[]); ψ damping rate α_p c_h/Δh = $(lk_glm_alpha[]*c_h_mhd[]/lk_glm_dh[]) per t₀")
         println(" Velocity damping: |x|, |y| > $(lk_damp_xd[]) (boundary at $(lk_xmax[])) and z > $(lk_damp_zd[]) (top at $(lk_zmax[]))")
