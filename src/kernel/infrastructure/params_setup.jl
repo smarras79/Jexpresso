@@ -387,7 +387,8 @@ function params_setup(sem,
     # Other configurations keep the legacy path (bc_cons = nothing).
     #------------------------------------------------------------------------------------
     bc_cons = nothing
-    if sem.mesh.SD == NSD_3D() && backend == CPU() && !(sem.mesh.lLaguerre ||
+    if sem.mesh.SD == NSD_3D() && backend == CPU() && get(ENV, "JEXPRESSO_BC_LEGACY", "0") != "1" && # TEMPORARY env switch for A/B tests
+        !(sem.mesh.lLaguerre ||
         inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
         bc_cons = build_bc_constraints(sem.mesh, sem.metrics, qp.qn, qp.qe, inputs, qp.neqs,
                                        xmin, xmax, ymin, ymax, zmin, zmax; t = tspan[1])

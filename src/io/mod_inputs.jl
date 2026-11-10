@@ -368,6 +368,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
       inputs[:plot_overlap] = false
     end
 
+    if(!haskey(inputs, :ldebug_bc)) # TEMPORARY (bc_diagnostics.jl)
+      inputs[:ldebug_bc] = false
+    end
+
     if(!haskey(inputs, :lperiodic_1d))
       inputs[:lperiodic_1d] = false
     end

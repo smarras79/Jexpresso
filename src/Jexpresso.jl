@@ -213,6 +213,7 @@ include(joinpath( "kernel", "boundaryconditions", "surface_integral.jl"))
 
 include(joinpath( "kernel", "boundaryconditions", "BCs.jl"))
 include(joinpath( "kernel", "boundaryconditions", "bc_constraints.jl"))
+include(joinpath( "kernel", "boundaryconditions", "bc_diagnostics.jl")) # TEMPORARY (ldebug_bc)
 
 include(joinpath( "kernel", "operators", "operators.jl"))
 

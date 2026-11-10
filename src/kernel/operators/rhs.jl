@@ -701,6 +701,7 @@ function _build_rhs!(RHS, u, params, time)
                                 params.mesh.gip2ip, params.mesh.cgip_local, ngl-1, params.interp)
         end
     end
+    debug_bc_rhs(params, time) # TEMPORARY (bc_diagnostics.jl)
 end
 # end
 
