@@ -360,6 +360,12 @@ formation of the flux rope.
 
 ## Notes
 
+- **The positivity-floor line.** `# positivity floors: N node hits so far on
+  all ranks (n in this stage) at t = T` is printed by rank 0 each time the
+  total N passes a power of ten. T is the Runge–Kutta stage time
+  ($t_n + c_i\Delta t$, in $t_0$), not an output time: snapshots are written at
+  `:diagnostics_at_times` only. A node on a partition interface counts once
+  per rank that holds it.
 - **The CFL printout.** The advective and acoustic lines of the shared
   diagnostic (`src/kernel/physics/soundSpeed.jl`) assume the CompEuler layout
   and report nonsense for this case (max|u| $\sim 10^4$, $c = 0$). The time

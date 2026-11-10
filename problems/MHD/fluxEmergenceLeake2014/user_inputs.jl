@@ -15,7 +15,8 @@
 
 # Positivity floors as the Runge-Kutta stage limiter (as problems/MHD/fluxEmergenceSon2025):
 # ρ ≥ f ρ_e(z) and p ≥ f p_e(z) of the reference atmosphere, p raised through E at fixed
-# velocity and field. Not conservative where it fires; every hit is counted and reported.
+# velocity and field. Not conservative where it fires; the hits are counted over all ranks and
+# reported by rank 0 each time the total passes a power of ten.
 if !@isdefined(lk_floor_frac)
     const lk_floor_frac = Ref{Float64}(0.2)
     const lk_floor_hits = Ref{Int}(0)
@@ -43,11 +44,22 @@ function lk_positivity_limiter!(u, integrator, p, t)
             u[iE] = pmin/γm1 + ke + me; nhit += 1
         end
     end
-    lk_floor_hits[] += nhit
-    if nhit > 0 && lk_floor_hits[] >= lk_floor_next[]
-        println(" # positivity floors, rank ", MPI.Comm_rank(MPI.COMM_WORLD), ": ", lk_floor_hits[],
-                " stage-node hits so far (", nhit, " this stage) at t = ", round(t, digits = 3))
-        lk_floor_next[] = 10*lk_floor_next[]
+    # One report for all ranks, from rank 0, when the total passes 1, 10, 100, ...: every rank
+    # calls the stage limiter at every Runge-Kutta stage, so the sum is a safe collective. t is
+    # the stage time t_n + c_i Δt (in t₀), not an output time. Nodes on a partition interface
+    # are counted once per rank that holds them.
+    comm = MPI.COMM_WORLD
+    nall = MPI.Comm_size(comm) > 1 ? MPI.Allreduce(nhit, +, comm) : nhit
+    lk_floor_hits[] += nall
+    if nall > 0 && lk_floor_hits[] >= lk_floor_next[]
+        if MPI.Comm_rank(comm) == 0
+            print(string(" # positivity floors: ", lk_floor_hits[], " node hits so far on all ranks (",
+                         nall, " in this stage) at t = ", round(t, digits = 3), "\n"))
+            flush(stdout)
+        end
+        while lk_floor_next[] <= lk_floor_hits[]
+            lk_floor_next[] *= 10
+        end
     end
     return nothing
 end
