@@ -38,6 +38,12 @@ function bomex_profiles(z::Float64)
     return θl, qt / 1000.0
 end
 
+# initial wind [m/s] (Siebesma et al. 2003): u = -8.75 below 700 m, linear to -4.61 at 3000 m; v = 0
+function bomex_wind(z::Float64)
+    u = z <= 700.0 ? -8.75 : -8.75 + (z - 700.0) * (-4.61 + 8.75) / (3000.0 - 700.0)
+    return u, 0.0
+end
+
 @inline function bomex_thermo(param_set, P, θl, qt)
     TS  = TD.PhaseEquil_pθq(param_set, P, θl, qt)
     T   = TD.air_temperature(param_set, TS)
@@ -88,6 +94,8 @@ struct BomexRef
     h::Float64
     P::Vector{Float64}
     dP::Vector{Float64}
+    HL::Vector{Float64}     # reference hl at the table points (same function that builds qe)
+    QT::Vector{Float64}     # reference qt at the table points
 end
 
 function build_bomex_reference(param_set, MicroConst, PhysConst, zmax; h = 0.5, P_sfc = 1.015e5)
@@ -109,8 +117,35 @@ function build_bomex_reference(param_set, MicroConst, PhysConst, zmax; h = 0.5, 
         dP[k]  = k1
     end
     dP[n] = f((n - 1) * h, P[n])
-    return BomexRef(h, P, dP)
+    HL = zeros(n); QT = zeros(n)
+    for k in 1:n
+        HL[k], QT[k] = bomex_target(param_set, PhysConst, (k - 1) * h, P[k], 0.0, 0.0)
+    end
+    return BomexRef(h, P, dP, HL, QT)
 end
+
+# reference density and its vertical derivative from the table (dP = -ρ g at the table points)
+const BOMEX_REF = Ref{Union{Nothing,BomexRef}}(nothing)     # set in initialize(); read by the forcing
+
+function ref_density(R::BomexRef, z)
+    s = max(z, 0.0) / R.h
+    k = min(floor(Int, s) + 1, length(R.P) - 1)
+    t = s - (k - 1)
+    return -((1 - t) * R.dP[k] + t * R.dP[k+1]) / BOMEX_G[]
+end
+
+function ref_drho_dz(R::BomexRef, z)
+    s = max(z, 0.0) / R.h
+    k = min(floor(Int, s) + 1, length(R.P) - 1)
+    return -(R.dP[k+1] - R.dP[k]) / (R.h * BOMEX_G[])
+end
+# vertical derivatives of the reference hl and qt (piecewise-linear table slope)
+function ref_dphi_dz(R::BomexRef, z)
+    s = max(z, 0.0) / R.h
+    k = min(floor(Int, s) + 1, length(R.P) - 1)
+    return (R.HL[k+1] - R.HL[k]) / R.h, (R.QT[k+1] - R.QT[k]) / R.h
+end
+const BOMEX_G = Ref(9.81)                                   # set from PhysConst.g in initialize()
 
 function ref_pressure(R::BomexRef, z)
     z = max(z, 0.0)
@@ -169,6 +204,11 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat,
                  inputs[:backend]; neqs = length(qvars), qoutvars = qoutvars)
 
+    bomex_set_forcing!(inputs)     # forcing switches used by user_source! (also on restart)
+    if rank == 0
+        @info " BOMEX forcing switches: $(BOMEX_FORCING)"
+    end
+
     if inputs[:backend] == CPU()
         PhysConst = PhysicalConst{Float64}()
         new_param_set = create_updated_TD_Parameters(PhysConst.potential_temperature_reference_pressure)
@@ -178,6 +218,12 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         if MicroConst.Lc != PhysConst.Lc
             @warn "MicroConst.Lc != PhysConst.Lc: hl built with PhysConst.Lc, model inverts with MicroConst.Lc"
         end
+
+        # hydrostatic reference table (also needed on restart: the forcing reads it)
+        BOMEX_G[] = PhysConst.g
+        zmax_g = MPI.Allreduce(maximum(mesh.z), MPI.MAX, comm)
+        R = build_bomex_reference(new_param_set, MicroConst, PhysConst, max(zmax_g, 3000.0) + 10.0)
+        BOMEX_REF[] = R
 
         if inputs[:lrestart] == true
             q.qn, q.qe = read_output(mesh.SD, inputs[:restart_input_file_path],
@@ -193,12 +239,14 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             zmax = MPI.Allreduce(maximum(mesh.z), MPI.MAX, comm)
             Lx, Ly = xmax - xmin, ymax - ymin
 
-            R = build_bomex_reference(new_param_set, MicroConst, PhysConst, max(zmax, 3000.0) + 10.0)
 
-            u = 0.0; v = 0.0; w = 0.0     # rest state; reinstate the wind profile here when needed
+            # The reference (qe) is the hydrostatic state AT REST; the wind lives in the perturbation,
+            # so the viscous operator (which acts on perturbations) sees the full wind shear.
+            w = 0.0
 
             for ip = 1:mesh.npoin
                 x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
+                u, v = BOMEX_FORCING.wind ? bomex_wind(z) : (0.0, 0.0)
                 Δθ, Δqt = use_noise ? bomex_noise(x, y, z, xmin, ymin, Lx, Ly) : (0.0, 0.0)
 
                 ρref, hl_ref, qt_ref, ql_ref, P, ρ, hl, qt =
@@ -206,9 +254,9 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
 
                 if inputs[:SOL_VARS_TYPE] == PERT()
                     q.qn[ip, 1] = ρ - ρref
-                    q.qn[ip, 2] = (ρ - ρref) * u
-                    q.qn[ip, 3] = (ρ - ρref) * v
-                    q.qn[ip, 4] = (ρ - ρref) * w
+                    q.qn[ip, 2] = ρ * u            # reference momentum is zero
+                    q.qn[ip, 3] = ρ * v
+                    q.qn[ip, 4] = ρ * w
                     q.qn[ip, 5] = ρ * hl - ρref * hl_ref
                     q.qn[ip, 6] = ρ * qt - ρref * qt_ref
                 else
@@ -223,9 +271,9 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
                 q.qn[ip, end] = P
 
                 q.qe[ip, 1]   = ρref
-                q.qe[ip, 2]   = ρref * u
-                q.qe[ip, 3]   = ρref * v
-                q.qe[ip, 4]   = ρref * w
+                q.qe[ip, 2]   = 0.0
+                q.qe[ip, 3]   = 0.0
+                q.qe[ip, 4]   = 0.0
                 q.qe[ip, 5]   = ρref * hl_ref
                 q.qe[ip, 6]   = ρref * qt_ref
                 q.qe[ip, 7]   = 0.0

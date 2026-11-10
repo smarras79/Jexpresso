@@ -71,3 +71,35 @@ function user_bc_dirichlet_gpu(q, qe, coords, t, nx, ny, nz, qbdy, lpert)
     end
     return T(qbdy[1]), T(u), T(v), T(w), T(ρe), T(ρqt), T(qbdy[7])
 end
+
+#----------------------------------------------------------------------------------------------
+# BOMEX prescribed surface fluxes (Siebesma et al. 2003), applied on the "bottom" tag through the
+# kernel Neumann path. Active when user_inputs sets :bdy_fluxes => true (and :lwall_model => true,
+# which only allocates the per-face τ_f / wθ arrays this call is handed).
+# F is the flux INTO the domain per unit area; the kernel adds ∫ F ψ dS to the RHS.
+#   hl  (ρ hl, hl = cp T + g z - Lc q_l): sensible heat only, ρ cp w'θl'  (hl carries no vapour latent heat)
+#   ρqt: ρ w'qt'
+#   momentum: τ = -ρ u*² U_h/|U_h|  (wind at the wall node)
+#----------------------------------------------------------------------------------------------
+const BOMEX_WTHL  = 8.0e-3     # w'θl' [K m/s]
+const BOMEX_WQT   = 5.2e-5     # w'qt' [kg/kg m/s]
+const BOMEX_USTAR = 0.28       # u* [m/s]
+
+function user_bc_neumann!(F, q, q1, qe, qe1, tag, coords, τ_f, wθ, SOL_VARS_TYPE, PhysConst; kwargs...)
+    tag == "bottom" || return nothing
+    lpert = (SOL_VARS_TYPE == PERT())
+    ρ  = lpert ? q[1] + qe[1] : q[1]
+    ρu = lpert ? q[2] + qe[2] : q[2]
+    ρv = lpert ? q[3] + qe[3] : q[3]
+    U  = max(sqrt(ρu^2 + ρv^2) / ρ, 0.1)          # floor avoids division by ~0
+    τ  = ρ * BOMEX_USTAR^2
+    F[2] = -τ * (ρu / ρ) / U
+    F[3] = -τ * (ρv / ρ) / U
+    F[5] = ρ * PhysConst.cp * BOMEX_WTHL
+    F[6] = ρ * BOMEX_WQT
+    if length(τ_f) >= 2                            # keep for output/diagnostics
+        τ_f[1] = F[2]; τ_f[2] = F[3]
+    end
+    length(wθ) >= 1 && (wθ[1] = BOMEX_WTHL)
+    return nothing
+end

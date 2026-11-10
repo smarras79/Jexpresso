@@ -96,7 +96,16 @@ function user_flux!(F, G, H,
     H[5] = ρhl*w
     H[6] = ρqt*w
     H[7] = ρqp*w
-    
+
+    # Subsidence, deviation part in flux form (see user_source! for the full split):
+    #   flux w_s ρ_ref φ'  with φ' = φ - φ_ref
+    if BOMEX_FORCING.subsidence
+        ws = bomex_subsidence(bomex_zlevel(mesh.z[ip]))[1]
+        if ws != 0.0
+            H[5] += ws * qe[1] * (ρhl/ρ - qe[5]/qe[1])
+            H[6] += ws * qe[1] * (ρqt/ρ - qe[6]/qe[1])
+        end
+    end
 end
 
 function user_flux_gpu(q,qe,PhysConst,lpert)

@@ -11,6 +11,17 @@ function user_inputs()
         :lsource              => true,
         :SOL_VARS_TYPE        => PERT(),
         #---------------------------------------------------------------------------
+        # BOMEX forcing (Siebesma et al. 2003); each term can be switched off for tests
+        #---------------------------------------------------------------------------
+        :bomex_wind           => true,   # initial wind + Coriolis/geostrophic forcing
+        :bomex_subsidence     => true,   # large-scale subsidence on hl, qt
+        :bomex_radiation      => true,   # prescribed cooling (turn off when RT is coupled)
+        :bomex_qt_ls          => true,   # large-scale drying
+        :bomex_sponge         => true,   # top buffer layer, z >= 2250 m
+        :bomex_noise          => true,   # initial θl/qt noise below 1600 m
+        :bdy_fluxes           => true,   # surface fluxes (user_bc_neumann!)
+        :lwall_model          => true,   # allocates the wall-flux arrays used by the surface fluxes
+        #---------------------------------------------------------------------------
         # Restart options
         #---------------------------------------------------------------------------
         :lrestart             => false,
@@ -55,11 +66,15 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
-        #:lfilter             => true,
-        #:mu_x                => 0.1,
-        #:mu_y                => 0.1,
-	#:mu_z                => 0.1,
-        #:filter_type         => "erf",
+        # Needed: the non-dissipative CG scheme has a grid-scale instability in the
+        # inversion that Smagorinsky does not control at small amplitude. Applied once
+        # per time step in the orthogonal Legendre basis (see docs/modal_filter.md).
+        :lfilter             => true,
+        :mu_x                => 0.05,
+        :mu_y                => 0.05,
+        :mu_z                => 0.05,
+        :filter_type         => "erf",
+        :filter_basis        => "legendre",
         #---------------------------------------------------------------------------
         # Output parameters
         #---------------------------------------------------------------------------
