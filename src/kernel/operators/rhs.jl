@@ -844,7 +844,7 @@ function _build_rhs!(RHS, u, params, time)
                                          params.mesh.connijk, params.metrics.Jef, params.S_face, 
                                          params.S_flux, params.F_surf, params.M_surf_inv, params.M_edge_inv, params.Minv,
                                          params.mp.Tabs, params.mp.qn,
-                                         params.ω, neqs, params.inputs, AD, SD)
+                                         params.ω, neqs, params.inputs, AD, SD; bc_cons = params.bc_cons)
 
     if (params.inputs[:lmoist])
         
@@ -1013,6 +1013,7 @@ function _build_rhs!(RHS, u, params, time)
                                        params.ω, neqs, params.inputs, AD, SD) 
 
     @timeit_debug JEXPRESSO_TIMER "DSS_global_RHS" DSS_global_RHS!(@view(params.RHS[:,:]), params.g_dss_cache, params.neqs)
+    params.bc_cons === nothing || apply_bc_constraints_rhs!(params.RHS, params.bc_cons)
     
     #if (rem(time, Δt) == 0 && time > 0.0)
     if (time > 0.0)

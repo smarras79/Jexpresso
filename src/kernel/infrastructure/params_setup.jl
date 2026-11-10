@@ -478,6 +478,20 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     # Populate params tuple to carry global arrays and constants around
     #------------------------------------------------------------------------------------
+    #------------------------------------------------------------------------------------
+    # Dirichlet constraints inferred from user_bc_dirichlet! (3D, CPU; see bc_constraints.jl).
+    # Other configurations keep the legacy path (bc_cons = nothing).
+    #------------------------------------------------------------------------------------
+    bc_cons = nothing
+    if sem.mesh.SD == NSD_3D() && backend == CPU() && !(sem.mesh.lLaguerre ||
+        inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
+        bc_cons = build_bc_constraints(sem.mesh, sem.metrics, qp.qn, qp.qe, inputs, qp.neqs,
+                                       xmin, xmax, ymin, ymax, zmin, zmax; t = tspan[1])
+        nfix = MPI.Allreduce(length(bc_cons.fix_ip), MPI.SUM, comm)
+        nnp  = MPI.Allreduce(length(bc_cons.np_ip), MPI.SUM, comm)
+        println_rank(" # Dirichlet constraints: $(nfix) (node, component) value constraints, $(nnp) no-penetration nodes (incl. copies)"; msg_rank = rank, suppress = sem.mesh.msg_suppress)
+    end
+
     if (sem.mesh.lLaguerre ||
         inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
         g_dss_cache = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
@@ -520,6 +534,7 @@ function params_setup(sem,
                   sgs,
                   sgs_stress,
                   timers,
+                  bc_cons = bc_cons,
                   coupling = coupling)
 
     else
@@ -563,6 +578,7 @@ function params_setup(sem,
                   OUTPUT_DIR,
                   timers,
                   sem.interp, sem.project, sem.nparts, sem.distribute,
+                  bc_cons = bc_cons,
                   coupling = coupling)
     end
 
