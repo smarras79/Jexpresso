@@ -119,6 +119,50 @@ function lk_positivity_limiter!(u, integrator, p, t)
             lk_floor_next[] *= 10
         end
     end
+    lk_diag!(u, p, t)
+    return nothing
+end
+
+# TEMP DIAGNOSTIC (LK_DIAG=n env var: every n-th stage): global maxima of the state.
+if !@isdefined(lk_diag_calls)
+    const lk_diag_calls = Ref{Int}(0)
+end
+function lk_diag!(u, p, t)
+    n = parse(Int, get(ENV, "LK_DIAG", "0"))
+    n <= 0 && return nothing
+    lk_diag_calls[] += 1
+    lk_diag_calls[] % n == 0 || return nothing
+    npoin = p.mesh.npoin; qe = p.qp.qe; γm1 = γ_mhd - 1.0; X = p.mesh.coords
+    vmax = 0.0; wmax = 0.0; ρrmin = Inf; prmax = 0.0; prmin = Inf; ψmax = 0.0; Tmax = 0.0; dBmax = 0.0
+    xw = (0.0, 0.0, 0.0); xv = xw
+    @inbounds for ip = 1:npoin
+        ρ = u[ip]; ru = u[npoin+ip]; rv = u[2npoin+ip]; E = u[3npoin+ip]; rw = u[4npoin+ip]
+        Bx = u[5npoin+ip]; By = u[6npoin+ip]; Bz = u[7npoin+ip]; ψ = u[8npoin+ip]
+        B2 = Bx*Bx + By*By + Bz*Bz
+        v = sqrt(ru*ru + rv*rv + rw*rw)/ρ
+        pr = γm1*(E - 0.5*(ru*ru + rv*rv + rw*rw)/ρ - 0.5*B2 - 0.5*ψ*ψ)
+        cf = sqrt(max((γ_mhd*pr + B2)/ρ, 0.0))
+        v > vmax && (vmax = v; xv = (X[1,ip], X[2,ip], X[3,ip]))
+        v + cf > wmax && (wmax = v + cf; xw = (X[1,ip], X[2,ip], X[3,ip]))
+        ρrmin = min(ρrmin, ρ/qe[ip,1]); prmax = max(prmax, pr/qe[ip,end]); prmin = min(prmin, pr/qe[ip,end])
+        ψmax = max(ψmax, abs(ψ)); Tmax = max(Tmax, LK_MF*pr/ρ)
+        dBmax = max(dBmax, sqrt((Bx-qe[ip,6])^2 + By^2 + (Bz-qe[ip,8])^2))
+    end
+    comm = MPI.COMM_WORLD
+    loc = [vmax, wmax, -ρrmin, prmax, -prmin, ψmax, Tmax, dBmax]
+    glo = MPI.Allreduce(loc, MPI.MAX, comm)
+    ww = MPI.Allreduce(wmax, MPI.MAX, comm)
+    if MPI.Comm_rank(comm) == 0
+        println(" #DIAG t=", round(t, digits=4), " |v|max=", round(glo[1], sigdigits=4),
+                " (|v|+cf)max=", round(glo[2], sigdigits=4), " ρ/ρe min=", round(-glo[3], sigdigits=3),
+                " p/pe max=", round(glo[4], sigdigits=4), " p/pe min=", round(-glo[5], sigdigits=3),
+                " |ψ|max=", round(glo[6], sigdigits=3), " Tmax=", round(glo[7], sigdigits=4),
+                " |δB|max=", round(glo[8], sigdigits=3))
+    end
+    if wmax == ww
+        println(" #DIAG   rank ", MPI.Comm_rank(comm), " wmax at ", round.(xw, digits=2), "  vmax(local) at ", round.(xv, digits=2))
+    end
+    flush(stdout)
     return nothing
 end
 
@@ -131,7 +175,7 @@ lk_dissipation(x, y, z) = (0.01, 0.01*0.5*(tanh(-(sqrt(x*x + y*y) - 100.0)/5.0) 
 
 function user_inputs()
 
-    LK_REF = 2
+    LK_REF = parse(Int, get(ENV, "LK_REF", "2"))
     mesh   = ("LK_16x16x16.msh", "LK_38x38x38.msh", "LK_76x76x76.msh")[LK_REF]
     # Δt for (|v| + c_f) Δt/Δh ≈ 0.25 at |v| + c_f ≈ 120 on the smallest LGL gap Δh of each mesh:
     # the fast speed just above the transition region is 92 (SD), 72 (MD), 50 (WD) at t = 0, and
@@ -143,7 +187,7 @@ function user_inputs()
                                                       williamson_condition = false),
         :Δt                   => Δt,
         :tinit                => 0.0,
-        :tend                 => 160.0,      # Paper II Figs. 10-11: MD erupts at 120-160 t₀
+        :tend                 => parse(Float64, get(ENV, "LK_TEND", "160.0")),      # Paper II Figs. 10-11: MD erupts at 120-160 t₀
         :diagnostics_at_times => (0.0:5.0:160.0),
         :conservation_every   => 10,
         :conservation_slots   => [1, 4],
