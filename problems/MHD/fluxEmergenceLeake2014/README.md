@@ -386,6 +386,14 @@ formation of the flux rope.
 
 ## Notes
 
+- **Progress.** Snapshots are $5t_0$ apart (1667 steps at `LK_REF = 1`), and
+  the floor and CFL lines below are printed only when their totals pass a
+  power of ten or grow by 20 %, so a healthy run can print nothing for tens of
+  minutes. The deck sets `:lstep_heartbeat => true` (`#   step N   t = …`
+  every 100 steps), and `conservation.dat` in the run's output directory gets
+  $t$, the step, the total mass and energy every 10 steps
+  (`tail -f output/MHD/fluxEmergenceLeake2014/<run>/conservation.dat`).
+  `LK_REF = 1` takes about 9 s per step on 4 threads.
 - **The positivity-floor line.** `# positivity floors: N node hits so far on
   all ranks (n in this stage) at t = T` is printed by rank 0 each time the
   total N passes a power of ten. T is the Runge–Kutta stage time
