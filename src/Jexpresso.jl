@@ -255,9 +255,15 @@ include(joinpath( "kernel", "solvers", "TimeIntegrators.jl"))
 
 include(joinpath("kernel", "operators", "Axb_rad_mpi.jl"))
 
-Libdl.dlopen("/home/tissaoui/local/lib/libHYPRE.so", Libdl.RTLD_GLOBAL)
-include(joinpath("kernel", "operators", "hypre_boomeramg.jl"))
-HypreAMG.set_library!("/home/tissaoui/local/lib/libHYPRE.so")
+# HYPRE/BoomerAMG is optional: loaded only when both the wrapper and the library exist
+# (default is the cluster path; override with ENV["HYPRE_LIB"]). asm_preconditioner.jl
+# already checks @isdefined(HypreAMG) before use.
+const _HYPRE_LIB = get(ENV, "HYPRE_LIB", "/home/tissaoui/local/lib/libHYPRE.so")
+if isfile(joinpath(@__DIR__, "kernel", "operators", "hypre_boomeramg.jl")) && isfile(_HYPRE_LIB)
+    Libdl.dlopen(_HYPRE_LIB, Libdl.RTLD_GLOBAL)
+    include(joinpath("kernel", "operators", "hypre_boomeramg.jl"))
+    HypreAMG.set_library!(_HYPRE_LIB)
+end
 
 include(joinpath("kernel", "operators", "asm_preconditioner.jl"))
 
