@@ -1476,6 +1476,9 @@ function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
 
         changes_ip    = Dict{Int, Int}()
         changes_owner = Dict{Int, Int}()
+        # master coordinates for each slave instance, keyed by (slave gip, rounded slave position):
+        # a gip merged in an earlier periodic pass can sit at two positions, so gip alone is ambiguous
+        slave_to_master_xyz = Dict{Tuple{Int,Float64,Float64,Float64}, NTuple{3,Float64}}()
         sz = length(uniq_idx)
         if sz > 0
             # Choose periodic axis and transverse axes.
@@ -1556,6 +1559,7 @@ function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
                     if comp1 || comp2 || comp3
                         # j is the slave, i is the master
                         changes_ip[gip_j] = gip_i
+                        slave_to_master_xyz[(gip_j, round(xt; digits=5), round(yt; digits=5), round(zt; digits=5))] = (xi, yi, zi)
                         if un_updated_global_owner[idx_j] != un_updated_global_owner[idx_i]
                             changes_owner[gip_j] = un_updated_global_owner[idx_i]
                             changes_owner[gip_i] = un_updated_global_owner[idx_i]
@@ -1563,6 +1567,7 @@ function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
                     else
                         # i is the slave, j is the master
                         changes_ip[gip_i] = gip_j
+                        slave_to_master_xyz[(gip_i, round(xi; digits=5), round(yi; digits=5), round(zi; digits=5))] = (xt, yt, zt)
                         if un_updated_global_owner[idx_j] != un_updated_global_owner[idx_i]
                             changes_owner[gip_i] = un_updated_global_owner[idx_j]
                             changes_owner[gip_j] = un_updated_global_owner[idx_j]
@@ -1577,9 +1582,36 @@ function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
         updated_owner = [get(changes_owner, x, owner[i])  for (i, x) in enumerate(global_per_gip)]
         s_gip_vbuf   = VBuffer(updated_global_per_gip, recv_counts)
         s_owner_vbuf = VBuffer(updated_owner, recv_counts)
+
+        # Unify the coordinates of periodic copies (see the note below the scatter).
+        # Each slave copy takes its master's coordinates in the two directions
+        # transverse to the periodic axis; its coordinate along the axis is kept.
+        x_new = copy(x); y_new = copy(y); z_new = copy(z)
+        for i in eachindex(global_per_gip)
+            key = (Int(global_per_gip[i]), round(x[i]; digits=5), round(y[i]; digits=5), round(z[i]; digits=5))
+            mxyz = get(slave_to_master_xyz, key, nothing)
+            mxyz === nothing && continue
+            mx, my, mz = mxyz
+            if periodic_direction == "periodicx"
+                tx, ty, tz = x[i], my, mz
+            elseif periodic_direction == "periodicy"
+                tx, ty, tz = mx, y[i], mz
+            else
+                tx, ty, tz = mx, my, z[i]
+            end
+            # safety: only ever a sub-tolerance correction
+            max(abs(tx - x[i]), abs(ty - y[i]), abs(tz - z[i])) < 1e-4 || continue
+            x_new[i] = tx; y_new[i] = ty; z_new[i] = tz
+        end
+        s_x_vbuf = VBuffer(x_new, recv_counts)
+        s_y_vbuf = VBuffer(y_new, recv_counts)
+        s_z_vbuf = VBuffer(z_new, recv_counts)
     else
         s_gip_vbuf   = VBuffer(nothing)
         s_owner_vbuf = VBuffer(nothing)
+        s_x_vbuf     = VBuffer(nothing)
+        s_y_vbuf     = VBuffer(nothing)
+        s_z_vbuf     = VBuffer(nothing)
     end
     MPI.Barrier(comm)
     per_ip_updated = MPI.Scatterv!(s_gip_vbuf,zeros(eltype(per_gip), buffer_sz), 0, comm)
@@ -1587,6 +1619,28 @@ function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
 
     mesh.ip2gip[per_ip]    .= per_ip_updated
     mesh.gip2owner[per_ip] .= owner_updated
+
+    # Periodic copies share one global id, so they must be the same point up to the
+    # periodic translation. Mesh generators (e.g. gmsh transfinite meshing) can place
+    # the two sides independently, leaving ~1e-8 m differences in the transverse
+    # coordinates. That breaks exact periodicity: the copies get slightly different
+    # metric terms, and any profile evaluated at a node (forcing, reference state,
+    # boundary data) can differ between copies -- by a lot where the profile has a
+    # breakpoint exactly at that node (e.g. BOMEX subsidence at z = 1500 m), giving a
+    # persistent source mismatch at the seam. Snapping each slave copy to its master's
+    # transverse coordinates (a move of at most the 1e-5 m matching tolerance) removes
+    # the mismatch for any case, before metrics are computed.
+    x_updated = MPI.Scatterv!(s_x_vbuf, zeros(eltype(x_local), buffer_sz), 0, comm)
+    y_updated = MPI.Scatterv!(s_y_vbuf, zeros(eltype(y_local), buffer_sz), 0, comm)
+    z_updated = MPI.Scatterv!(s_z_vbuf, zeros(eltype(z_local), buffer_sz), 0, comm)
+    mesh.x[per_ip] .= x_updated
+    mesh.y[per_ip] .= y_updated
+    mesh.z[per_ip] .= z_updated
+    if size(mesh.coords, 1) == mesh.npoin && size(mesh.coords, 2) >= 3
+        mesh.coords[per_ip, 1] .= x_updated
+        mesh.coords[per_ip, 2] .= y_updated
+        mesh.coords[per_ip, 3] .= z_updated
+    end
 end
 
 

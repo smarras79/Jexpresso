@@ -113,6 +113,24 @@ The variant used by elliptic problems is `apply_boundary_conditions_lin_solve!`,
 
 - **`build_custom_bcs_lin_solve_sparse!`** does the same on a `SparseMatrixCSC`, calling `apply_dirichlet_bc_inplace!` which collects the unique boundary nodes from `poin_in_bdy_edge` and rewrites `L[ip,:] = 0; L[ip,ip] = 1`.
 
+### 2.4 Periodic boundaries (3D)
+
+Periodic faces carry the tags `periodicx`, `periodicy`, `periodicz`. At mesh setup, `restructure4periodicity_3D_sorted!` (`src/kernel/mesh/restructure_for_periodicity.jl`) matches each node on the min face to its partner on the max face. Matching uses the transverse coordinates rounded to 1e-5 m. The two then share one global id (`ip2gip`). They stay separate local nodes ("copies"), and `assemble_mpi!` / `DSS_global_RHS!` sum their contributions. Removing the tag (renaming `periodicx` in a copy of the `.msh`) turns the face into an ordinary boundary.
+
+**Coordinates of periodic copies are unified.** A mesh generator can place the two faces independently. Gmsh transfinite meshing, for example, leaves differences of about 1e-8 m in the transverse coordinates. The copies are then not exactly the same point, which breaks exact periodicity:
+- they get slightly different metric terms;
+- anything evaluated pointwise at a node (reference state, forcing profiles, boundary data) can differ between copies. Where a piecewise profile has its breakpoint exactly on a node level, the two copies can even fall on different branches. In BOMEX, the subsidence profile w_s(z) has its kink at z = 1500 m, on a node level, and this gave a persistent source mismatch at the seam.
+
+The restructure therefore moves each slave copy onto its master's transverse coordinates. The coordinate along the periodic axis is unchanged. The move is at most the 1e-5 m matching tolerance, in practice about 1e-8 m. It happens before metric terms are computed, so all metrics, normals and profiles are evaluated on exactly periodic geometry. No user action is needed, and a correctly built mesh is unaffected.
+
+In a BOMEX rest-state test (2x2x19 gmsh mesh), the mismatched copies produced spurious lateral momentum: max|ρu′| reached 1.2e-8 after 100 s on the x-periodic faces. With the coordinates unified, it stays at round-off (about 1e-13).
+
+**Reference state** (`params_setup.jl`). In perturbation form (`PERT()`), after `initialize` fills `qe`, the reference is projected to be identical on all copies of a node (`conformity4ncf_q!`). This includes the reference pressure column `qe[:, end]`. For periodic copies this is now a no-op, but it also covers MPI copies and non-conforming (AMR) faces. For moist runs, the reference pressure is then recomputed from the model's own equation of state (`reference_pressure_from_model_eos!`), so that p′ = 0 exactly in the rest state from the first step.
+
+**Forcing profiles are a separate matter.** Mesh-generator noise affects every node height, not only periodic copies. A user profile that is discontinuous, or has a discontinuous slope, exactly at a node level is evaluated on different branches in different columns. BOMEX therefore evaluates its forcing at z rounded to 0.1 mm (`bomex_zlevel` in its `user_source.jl`). Without that, the subsidence kink at 1500 m produced a horizontally non-uniform forcing there.
+
+Mesh and metric terms are cached in the case's `.jexpresso_cache/`, keyed on mesh name and order, not on the code. After updating to a version with these corrections, clear the cache once (`clean_cache.sh` in the case directory).
+
 ---
 
 ## 3. Driver-side dispatch
@@ -335,6 +353,8 @@ Because the sponge is simply one block inside `user_source!`, it coexists natura
 - `src/kernel/boundaryconditions/bc_constraints.jl` (3D constraint detection and application)
 - `src/kernel/boundaryconditions/custom_bcs.jl`
 - `src/kernel/boundaryconditions/surface_integral.jl`
+- `src/kernel/mesh/restructure_for_periodicity.jl` (periodic matching and coordinate unification, §2.4)
+- `src/kernel/infrastructure/params_setup.jl` (periodic projection of the reference state, §2.4)
 - `problems/drivers.jl`
 - `problems/CompEuler/theta/user_bc.jl`, `user_inputs.jl`
 - `problems/Elliptic/case1/user_bc.jl`, `user_inputs.jl`
