@@ -33,12 +33,12 @@ function user_bc_dirichlet!(q,
                             zmin, zmax,
                             qe, ::PERT)
 
+    # Free-slip wall: remove the normal component of the total momentum. The kernel recognises
+    # this projection and constrains only the normal momentum (tangential momentum stays free).
     qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3]) + nz*(q[4]+qe[4])
-    #qbdy[2] = (q[2]+qe[2] - qnl*nx) - qe[2]
-    #qbdy[3] = (q[3]+qe[3] - qnl*ny) - qe[3]
-    if (coords[3] < 0.01 || coords[3] > 2999.9)
-        qbdy[4] = (q[4]+qe[4] - qnl*nz) - qe[4]
-    end
+    qbdy[2] = (q[2]+qe[2] - qnl*nx) - qe[2]
+    qbdy[3] = (q[3]+qe[3] - qnl*ny) - qe[3]
+    qbdy[4] = (q[4]+qe[4] - qnl*nz) - qe[4]
 end
 
 function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, coords, t::AbstractFloat, tag::String, inputs)

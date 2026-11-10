@@ -568,7 +568,7 @@ function _build_rhs!(RHS, u, params, time)
                                          params.mesh.connijk, params.metrics.Jef, params.S_face, 
                                          params.S_flux, params.F_surf, params.M_surf_inv, params.M_edge_inv, params.Minv,
                                          params.mp.Tabs, params.mp.qn,
-                                         params.ω, neqs, params.inputs, AD, SD)
+                                         params.ω, neqs, params.inputs, AD, SD; bc_cons = params.bc_cons)
 
     if (params.inputs[:lmoist])
         params.mp.dTdt_lat .= params.mp.Tabs 
@@ -662,22 +662,25 @@ function _build_rhs!(RHS, u, params, time)
                                        params.mp.Tabs, params.mp.qn,
                                        params.ω, neqs, params.inputs, AD, SD) 
 
-    @timeit_debug JEXPRESSO_TIMER "BC_dirichlet" apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
-                                         params.mesh.coords,
-                                         params.metrics.nx, params.metrics.ny, params.metrics.nz,
-                                         params.mesh.npoin, params.mesh.npoin_linear,
-                                         params.mesh.poin_in_bdy_edge, params.mesh.poin_in_bdy_face,
-                                         params.mesh.nedges_bdy, params.mesh.nfaces_bdy, params.mesh.ngl,
-                                         params.mesh.ngr, params.mesh.nelem_semi_inf, params.basis.ψ, params.basis.dψ,
-                                         xmax, ymax, zmax, xmin, ymin, zmin, params.RHS, params.rhs_el, params.ubdy,
-                                         params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem,
-                                         params.mesh.bdy_edge_type, params.mesh.bdy_face_in_elem, params.mesh.bdy_face_type,
-                                         params.mesh.connijk, params.metrics.Jef, params.S_face,
-                                         params.S_flux, params.F_surf, params.M_surf_inv, params.M_edge_inv, params.Minv,
-                                         params.mp.Tabs, params.mp.qn,
-                                         params.ω, neqs, params.inputs, AD, SD)
+    if params.bc_cons === nothing   # legacy path; with bc_cons the tendency is constrained after DSS_global_RHS!
+        @timeit_debug JEXPRESSO_TIMER "BC_dirichlet" apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
+                                             params.mesh.coords,
+                                             params.metrics.nx, params.metrics.ny, params.metrics.nz,
+                                             params.mesh.npoin, params.mesh.npoin_linear,
+                                             params.mesh.poin_in_bdy_edge, params.mesh.poin_in_bdy_face,
+                                             params.mesh.nedges_bdy, params.mesh.nfaces_bdy, params.mesh.ngl,
+                                             params.mesh.ngr, params.mesh.nelem_semi_inf, params.basis.ψ, params.basis.dψ,
+                                             xmax, ymax, zmax, xmin, ymin, zmin, params.RHS, params.rhs_el, params.ubdy,
+                                             params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem,
+                                             params.mesh.bdy_edge_type, params.mesh.bdy_face_in_elem, params.mesh.bdy_face_type,
+                                             params.mesh.connijk, params.metrics.Jef, params.S_face,
+                                             params.S_flux, params.F_surf, params.M_surf_inv, params.M_edge_inv, params.Minv,
+                                             params.mp.Tabs, params.mp.qn,
+                                             params.ω, neqs, params.inputs, AD, SD)
+    end
 
     @timeit_debug JEXPRESSO_TIMER "DSS_global_RHS" DSS_global_RHS!(@view(params.RHS[:,:]), params.g_dss_cache, params.neqs)
+    params.bc_cons === nothing || apply_bc_constraints_rhs!(params.RHS, params.bc_cons)
     
     #if (rem(time, Δt) == 0 && time > 0.0)
     if (time > 0.0)

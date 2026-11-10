@@ -11,14 +11,20 @@ function apply_boundary_conditions_dirichlet!(u, uaux, t,qe,
                                               bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type,
                                               connijk, Jef, S_face, S_flux, F_surf, M_surf_inv, M_edge_inv, M_inv,
                                               Tabs, qn,
-                                              ω, neqs, inputs, AD, SD)
-    
+                                              ω, neqs, inputs, AD, SD; bc_cons = nothing)
+
     if inputs[:lperiodic_1d] && typeof(SD) == NSD_1D
-        
+
         apply_periodicity!(u, uaux, t,qe,
                            npoin_linear, ψ, dψ,
                            RHS, rhs_el, ubdy,
                            ω, neqs, inputs, AD, SD)
+    elseif bc_cons !== nothing
+        # constraints inferred at setup (bc_constraints.jl): impose values on the state only;
+        # the tendency is constrained after the global assembly (apply_bc_constraints_rhs!).
+        apply_bc_constraints_state!(bc_cons, u, uaux, qe, t, coords,
+                                    nx, ny, nz, bdy_face_type, poin_in_bdy_face, ngl,
+                                    xmin, xmax, ymin, ymax, zmin, zmax, ubdy, neqs, npoin, inputs)
     else
         build_custom_bcs_dirichlet!(SD, t,
                                     coords,
