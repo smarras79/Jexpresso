@@ -673,6 +673,28 @@ function init_filter(nop,xgl,mu_x,mesh,inputs, rank)
         end
         
     end
+    # Modal basis of the filter (:filter_basis), LGL elements only:
+    #   "legendre"     (default) orthogonal Legendre modes. With GLL quadrature the filter is
+    #                  then exactly non-increasing in the mass-weighted L2 norm, also after
+    #                  DSS; it changes element-end values and the DSS averaging restores
+    #                  continuity. Element integrals are preserved.
+    #   "hierarchical" vertex modes + bubbles L_j - L_{j-2}. Keeps element-end values fixed,
+    #                  but the basis is not orthogonal, so one application can INCREASE the
+    #                  solution's energy (about +0.9% at mu = 0.05, nop = 4) and, applied
+    #                  every step, can feed a growing mode on element-interface nodes
+    #                  (seen in forced 3D BOMEX columns). No element filter can keep end
+    #                  values, keep all degree < N polynomials, and be non-increasing at once.
+    if nop+1 == mesh.ngl
+        basis = lowercase(string(get(inputs, :filter_basis, "legendre")))
+        if basis == "legendre"
+            leg2 .= leg
+        elseif basis == "hierarchical"
+            rank == 0 && @warn "filter_basis = \"hierarchical\": this filter is not energy-non-increasing and can destabilise forced flows; \"legendre\" is recommended."
+        else
+            error("Unknown :filter_basis = \"$basis\" (use \"legendre\" or \"hierarchical\")")
+        end
+        rank == 0 && println(" # filter basis: ", basis)
+    end
     #### Compute Inverse Matrix
     leg_inv = zeros(Float128,nop+1,nop+1)
     leg_inv .= leg2
@@ -873,4 +895,113 @@ function vandeven_modal(kk,ngl,p)
         println(" # problem in Vandeven_modal")
         exit
     end
+end
+
+
+"""
+    filter_step!(u, params, t)
+
+Apply the modal filter (`:lfilter`) to the state `u` once. Called by the
+filter DiscreteCallback in `time_loop!` (TimeIntegrators.jl) after every
+completed time step, on `integrator.u`.
+
+The filter used to run at the start of every right-hand-side evaluation and
+overwrite the stage input in place, i.e. once per Runge-Kutta stage. That
+alters the stage states the RK scheme combines (including the step's base
+state, reused by later stages), so the step is no longer the scheme's update;
+in forced 3D flows (e.g. BOMEX radiative cooling or subsidence) it produced a
+growing horizontally uniform column mode. Filtering once per completed step
+keeps every RK step consistent. The effective damping per unit time is
+smaller for the same `mu_x`/`mu_y`/`mu_z` than with the old per-stage
+placement (one application per step instead of one per stage).
+"""
+function filter_step!(u, params, t)
+    backend = params.inputs[:backend]
+    if backend == CPU()
+        reset_filters!(params)
+        if params.laguerre
+            reset_laguerre_filters!(params)
+            filter!(u, params, t, params.uaux, params.mesh.connijk, params.metrics.Je,
+                    params.SD, params.SOL_VARS_TYPE;
+                    connijk_lag = params.mesh.connijk_lag, Je_lag = params.metrics_lag.Je,
+                    ladapt = params.inputs[:ladapt])
+        else
+            filter!(u, params, t, params.uaux, params.mesh.connijk, params.metrics.Je,
+                    params.SD, params.SOL_VARS_TYPE; ladapt = params.inputs[:ladapt])
+        end
+    else
+        filter_step_gpu!(u, params, params.SD)
+    end
+    return nothing
+end
+
+filter_step_gpu!(u, params, ::NSD_1D) = nothing  # no 1D filter (as before)
+
+function filter_step_gpu!(u, params, ::NSD_3D)
+    backend = params.inputs[:backend]
+    lpert   = params.SOL_VARS_TYPE == PERT()
+    k1 = utouaux_gpu!(backend)
+    k1(u,params.uaux,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs),
+       workgroupsize = (params.neqs))
+    params.B .= TFloat(0.0)
+    kf = filter_gpu_3d!(backend,(Int64(params.mesh.ngl), Int64(params.mesh.ngl), Int64(params.mesh.ngl)))
+    kf(@view(params.uaux[:,:]), params.qp.qe, params.B, params.fx, params.fy_t, params.fz_t,
+       params.metrics.Je, params.ω, params.ω, params.ω, params.mesh.connijk, params.Minv,
+       params.mesh.ngl, params.mesh.ngl, params.mesh.ngl, params.neqs, lpert;
+       ndrange = (params.mesh.nelem * params.mesh.ngl, params.mesh.ngl, params.mesh.ngl),
+       workgroupsize = (params.mesh.ngl, params.mesh.ngl, params.mesh.ngl))
+
+    KernelAbstractions.synchronize(backend)
+    if (lpert)
+        params.uaux[:,1:params.neqs] .= params.B
+    else
+        params.uaux .= params.B .+ params.qp.qe
+    end
+    kf = uauxtou_gpu!(backend)
+    kf(u,params.uaux,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs),
+       workgroupsize = (params.mesh.ngl,params.neqs))
+
+    KernelAbstractions.synchronize(backend)
+    return nothing
+end
+
+function filter_step_gpu!(u, params, ::NSD_2D)
+    backend = params.inputs[:backend]
+    lpert   = params.SOL_VARS_TYPE == PERT()
+    k1 = utouaux_gpu!(backend)
+    k1(u,params.uaux,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs),
+       workgroupsize = (params.mesh.ngl, params.neqs))
+    params.B .= TFloat(0.0)
+    kf = filter_gpu_2d!(backend,(Int64(params.mesh.ngl), Int64(params.mesh.ngl)))
+    kf(params.uaux, params.qp.qe, params.B, params.fx, params.fy_t, params.metrics.Je,
+       params.ω, params.ω,
+       params.mesh.connijk, params.Minv, 
+       params.mesh.ngl, params.mesh.ngl, params.neqs, lpert;
+       ndrange = (params.mesh.nelem * params.mesh.ngl, params.mesh.ngl),
+       workgroupsize = (params.mesh.ngl, params.mesh.ngl))
+    KernelAbstractions.synchronize(backend)
+    if (params.laguerre)
+        params.B_lag .= TFloat(0.0)
+        kf = filter_gpu_2d!(backend,(Int64(params.mesh.ngl), Int64(params.mesh.ngr)))
+        kf(params.uaux, params.qp.qe, params.B_lag, params.fx, params.fy_t_lag, params.metrics_lag.Je, 
+           params.ω, params.ω_lag,
+           params.mesh.connijk_lag, params.Minv,
+           params.mesh.ngl, params.mesh.ngr, params.neqs, lpert;
+           ndrange = (params.mesh.nelem_semi_inf * params.mesh.ngl, params.mesh.ngr),
+           workgroupsize = (params.mesh.ngl, params.mesh.ngr))
+
+        KernelAbstractions.synchronize(backend)
+
+        params.B .+= params.B_lag
+    end
+    if (lpert)
+        params.uaux .= params.B
+    else
+        params.uaux .= params.B .+ params.qp.qe
+    end
+    kf = uauxtou_gpu!(backend)
+    kf(u,params.uaux,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs),
+       workgroupsize = (params.mesh.ngl,params.neqs))
+    KernelAbstractions.synchronize(backend)
+    return nothing
 end

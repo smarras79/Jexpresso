@@ -516,6 +516,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :filter_type))
         inputs[:filter_type] = "erf"
     end
+    # modal basis of the filter: "legendre" (orthogonal, default) or "hierarchical"
+    if(!haskey(inputs, :filter_basis))
+        inputs[:filter_basis] = "legendre"
+    end
     #
     # Plotting parameters:
     #

@@ -178,27 +178,8 @@ function rhs!(du, u, params, time)
             k1(u,params.uaux,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs),
                workgroupsize = (params.neqs))
             
-            if (params.inputs[:lfilter])
-                params.B .= TFloat(0.0)
-                kf = filter_gpu_3d!(backend,(Int64(params.mesh.ngl), Int64(params.mesh.ngl), Int64(params.mesh.ngl)))
-                kf(@view(params.uaux[:,:]), params.qp.qe, params.B, params.fx, params.fy_t, params.fz_t,
-                   params.metrics.Je, params.ω, params.ω, params.ω, params.mesh.connijk, params.Minv,
-                   params.mesh.ngl, params.mesh.ngl, params.mesh.ngl, params.neqs, lpert;
-                   ndrange = (params.mesh.nelem * params.mesh.ngl, params.mesh.ngl, params.mesh.ngl),
-                   workgroupsize = (params.mesh.ngl, params.mesh.ngl, params.mesh.ngl))
-                
-                KernelAbstractions.synchronize(backend)
-                if (lpert)
-                    params.uaux[:,1:params.neqs] .= params.B
-                else
-                    params.uaux .= params.B .+ params.qp.qe
-                end
-                kf = uauxtou_gpu!(backend)
-                kf(u,params.uaux,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs),
-                   workgroupsize = (params.mesh.ngl,params.neqs))
-                
-                KernelAbstractions.synchronize(backend)
-            end
+            # Modal filter: applied once per completed time step by the
+            # filter callback (filter_step!), not here at every RK stage.
 
             k = apply_boundary_conditions_gpu_3D!(backend)
             k(@view(params.uaux[:,:]), @view(u[:]), params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.z,
@@ -342,40 +323,8 @@ function rhs!(du, u, params, time)
             k1(u,params.uaux,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs),
                workgroupsize = (params.mesh.ngl, params.neqs))
 
-            if (params.inputs[:lfilter])
-                params.B .= TFloat(0.0)
-                kf = filter_gpu_2d!(backend,(Int64(params.mesh.ngl), Int64(params.mesh.ngl)))
-                kf(params.uaux, params.qp.qe, params.B, params.fx, params.fy_t, params.metrics.Je,
-                   params.ω, params.ω,
-                   params.mesh.connijk, params.Minv, 
-                   params.mesh.ngl, params.mesh.ngl, params.neqs, lpert;
-                   ndrange = (params.mesh.nelem * params.mesh.ngl, params.mesh.ngl),
-                   workgroupsize = (params.mesh.ngl, params.mesh.ngl))
-                KernelAbstractions.synchronize(backend)
-                if (params.laguerre)
-                    params.B_lag .= TFloat(0.0)
-                    kf = filter_gpu_2d!(backend,(Int64(params.mesh.ngl), Int64(params.mesh.ngr)))
-                    kf(params.uaux, params.qp.qe, params.B_lag, params.fx, params.fy_t_lag, params.metrics_lag.Je, 
-                       params.ω, params.ω_lag,
-                       params.mesh.connijk_lag, params.Minv,
-                       params.mesh.ngl, params.mesh.ngr, params.neqs, lpert;
-                       ndrange = (params.mesh.nelem_semi_inf * params.mesh.ngl, params.mesh.ngr),
-                       workgroupsize = (params.mesh.ngl, params.mesh.ngr))
-
-                    KernelAbstractions.synchronize(backend)
-
-                    params.B .+= params.B_lag
-                end
-                if (lpert)
-                    params.uaux .= params.B
-                else
-                    params.uaux .= params.B .+ params.qp.qe
-                end
-                kf = uauxtou_gpu!(backend)
-                kf(u,params.uaux,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs),
-                   workgroupsize = (params.mesh.ngl,params.neqs))
-                KernelAbstractions.synchronize(backend)
-            end
+            # Modal filter: applied once per completed time step by the
+            # filter callback (filter_step!), not here at every RK stage.
             k = apply_boundary_conditions_gpu!(backend)
             k(@view(params.uaux[:,:]), @view(u[:]), params.qp.qe,
               params.mesh.x, params.mesh.y, TFloat(time),
@@ -528,20 +477,14 @@ function _build_rhs!(RHS, u, params, time)
     # Inviscid rhs:
     #-----------------------------------------------------------------------------------    
     @timeit_debug JEXPRESSO_TIMER "resetRHS_inv" resetRHSToZero_inviscid!(params)
-    if (params.inputs[:lfilter])
-        reset_filters!(params)
-        if (params.laguerre)
-            reset_laguerre_filters!(params)
-            @timeit_debug JEXPRESSO_TIMER "filter" filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE;
-                    connijk_lag = params.mesh.connijk_lag, Je_lag = params.metrics_lag.Je, ladapt = inputs[:ladapt])
-        else
-            @timeit_debug JEXPRESSO_TIMER "filter" filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE; ladapt = inputs[:ladapt])
-        end
-    end
+    # Modal filter (:lfilter): applied once per completed time step by
+    # filter_step! (DiscreteCallback in TimeIntegrators.jl), NOT here.
+    # Filtering the stage input in place at every RK stage breaks the
+    # Runge-Kutta update and can destabilise forced flows.
 
     @timeit_debug JEXPRESSO_TIMER "u2uaux" u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
 
-    if (inputs[:ladapt] == true) && (params.inputs[:lfilter] == false)
+    if (inputs[:ladapt] == true)
         @timeit_debug JEXPRESSO_TIMER "conformity4ncf_q" conformity4ncf_q!(params.uaux, params.rhs_el_tmp, @view(params.utmp[:,1:neqs]), params.vaux,
                           params.g_dss_cache,
                           params.mesh.SD,
