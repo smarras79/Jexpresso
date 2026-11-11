@@ -330,6 +330,15 @@ Short runs on 4 threads at `LK22_REF = 1`; the full runs are for a cluster.
   centre for a rope of width 2.5, so this tests the pipeline, not the physics.
 - **Figures.** Every command above ran on these outputs.
 
+- **Restart** (Restart). A run with snapshots at $t = 0.02$ and $0.04$
+  restarted from its $t = 0.02$ snapshot: the restart state equals the
+  snapshot to $4\times10^{-16}$ of each field's maximum ($T$
+  $2\times10^{-15}$); five steps later $\rho$, $p$ and $T$ agree with the
+  uninterrupted run to $2\times10^{-4}$, $\mathbf v$ to 2–3.5 % and
+  $\mathbf B$, $\psi$ to 0.8–1.8 % of their maxima (the DynSGS residual
+  history restarts from zero). The same code was checked on 2 MPI ranks in the
+  2014 case.
+
 Nothing was run here at `LK22_REF` ≥ 2.
 
 ## Notes
