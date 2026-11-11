@@ -4,7 +4,7 @@
 #
 #   F. Artioli, L. Beirão da Veiga, C. Lovadina, E. Sacco, "Arbitrary order 2D
 #   virtual elements for polygonal meshes: part II, inelastic problem",
-#   Comput. Mech. 60 (2017), arXiv:1701.06676 — Sec. 4.2 and 4.3,
+#   Comput. Mech. 60 (2017), arXiv:1701.06676 — Sec. 4.2, 4.3 and 4.4,
 #
 # redrawn from Jexpresso's VTK output (the iter_<k>.pvtu files a run writes,
 # read with tools/vtu_reader.jl) and laid over the paper's own curves
@@ -12,7 +12,7 @@
 #
 #   julia --project=. tools/artioli2017_figures.jl                 run the cases, then plot
 #   julia --project=. tools/artioli2017_figures.jl --no-run        plot the runs of an earlier call
-#   julia --project=. tools/artioli2017_figures.jl --only=plate    (or --only=cylinder)
+#   julia --project=. tools/artioli2017_figures.jl --only=plate    (or cylinder, sma)
 #   julia --project=. tools/artioli2017_figures.jl --no-run \
 #         --plate-dir=output/Elasticity/perforated_plate2d/output  plot a run of your own
 #
@@ -21,12 +21,13 @@
 #                       directory given with --<label>-dir (a case with neither
 #                       is skipped)
 #   --only=WHAT         all (default) | cylinder (Fig. 5.2) | plate (Fig. 5.4, Table 1)
+#                       | sma (Figs. 5.5b, 5.6)
 #   --outdir=DIR        where the figures go [output/artioli2017]
-#   --ve1-dir=DIR, --ve2-dir=DIR, --plate-dir=DIR
+#   --ve1-dir=DIR, --ve2-dir=DIR, --plate-dir=DIR, --sma-dir=DIR
 #                       read that run's output directory (the one holding
 #                       simulation.pvd) instead of running the case
 #   --scale=S           displacement magnification of the deformed plate [5]
-#   --no-anim           skip the animated gif of the plate
+#   --no-anim           skip the animated gifs
 #
 # The runs (each case at the paper's settings, through the ENV overrides its
 # user_inputs.jl documents; the output is copied to <outdir>/runs/<label>):
@@ -36,6 +37,9 @@
 #             About a minute each.
 #   plate     problems/Elasticity/perforated_plate2d, nop = 4, 400 increments of
 #             the top displacement, VTK every 4 increments. Several minutes.
+#   sma       problems/Elasticity/sma_arch2d, nop = 4, plane stress, the 170
+#             increments of Table 3 (load cycle at T = Mf, then heating), VTK
+#             at every increment. A few minutes.
 #
 # What comes out, in <outdir>:
 #   fig5_2a_ve1.png, fig5_2b_ve2.png   radial displacement of A (r = a) and B (r = b)
@@ -45,12 +49,14 @@
 #   plate_deforming.gif                the plate deforming, beside its reaction curve
 #   table1.md                          u_A, v_B at the end of the loading (Table 1) and
 #                                      the Newton iterations per increment (Table 2)
-#   fig5_2_sem.csv, fig5_4_sem.csv     the Jexpresso data plotted
-# The plate run also leaves the solver's own deformed-*.png and deformed.gif in
-# <outdir>/runs/plate.
-#
-# Not reproducible here: Figs. 5.5–5.6 (the shape-memory-alloy device, Sec. 4.4)
-# — that constitutive model is not implemented.
+#   fig5_6_sma.png                     applied load against the displacement of A, the
+#                                      shape-memory cycle (load from the clamp reaction)
+#   fig5_5b_sma.png                    the arch at t = 1 and t = 3 over its reference shape
+#   sma_cycle.gif                      the arch through the cycle, beside its load curve
+#   sma_summary.md                     the displacement of A at the ends of the branches
+#   fig5_2_sem.csv, fig5_4_sem.csv, fig5_6_sem.csv     the Jexpresso data plotted
+# The plate and SMA runs also leave the solver's own deformed-*.png and
+# deformed.gif in <outdir>/runs/<label>.
 #---------------------------------------------------------------------------------
 
 get!(ENV, "GKSwstype", "100")                   # GR without a display
@@ -91,12 +97,18 @@ const CASES = Dict(
     "plate" => (case = "perforated_plate2d",
                 env = ["JEXPRESSO_PP_STEPS" => "400", "JEXPRESSO_PP_NOP" => "4",
                        "JEXPRESSO_PP_OUTFORMAT" => "vtk", "JEXPRESSO_PP_PLOT" => "true"]),
+    "sma"   => (case = "sma_arch2d",
+                env = ["JEXPRESSO_SMA_STEPS" => "40", "JEXPRESSO_SMA_HEAT_STEPS" => "10",
+                       "JEXPRESSO_SMA_NOP" => "4", "JEXPRESSO_SMA_HYPOTHESIS" => "plane_stress",
+                       "JEXPRESSO_SMA_OUTFORMAT" => "vtk", "JEXPRESSO_SMA_PLOT" => "true",
+                       "JEXPRESSO_SMA_VERIFY" => nothing]),
 )
 
 function parse_options(args)
     o = Dict{String,Any}("run" => true, "only" => "all", "anim" => true, "scale" => 5.0,
                          "outdir" => joinpath(ROOT, "output", "artioli2017"),
-                         "ve1-dir" => nothing, "ve2-dir" => nothing, "plate-dir" => nothing)
+                         "ve1-dir" => nothing, "ve2-dir" => nothing, "plate-dir" => nothing,
+                         "sma-dir" => nothing)
     for a in args
         if a in ("-h", "--help")
             for l in eachline(@__FILE__)
@@ -116,11 +128,12 @@ function parse_options(args)
             error("unknown argument \"$a\" (see --help)")
         end
     end
-    o["only"] in ("all", "cylinder", "plate") || error("--only=all|cylinder|plate")
+    o["only"] in ("all", "cylinder", "plate", "sma") || error("--only=all|cylinder|plate|sma")
     return o
 end
 
-labels_for(only) = only == "cylinder" ? ["ve1", "ve2"] : only == "plate" ? ["plate"] : ["ve1", "ve2", "plate"]
+labels_for(only) = only == "cylinder" ? ["ve1", "ve2"] : only == "plate" ? ["plate"] :
+                   only == "sma" ? ["sma"] : ["ve1", "ve2", "plate", "sma"]
 
 #
 # Run one case with its settings and copy what THIS run wrote (files newer
@@ -508,6 +521,169 @@ function table_1(series, curve, ref, rundir, outdir)
 end
 
 #---------------------------------------------------------------------------------
+# Sec. 4.4: the shape-memory-alloy arch
+#---------------------------------------------------------------------------------
+# the arch: radii from the grid, A = (b, 0) the outer corner of the loaded end,
+# the clamp the end at x < 0
+function arch_geometry(g)
+    r = hypot.(g.x, g.y)
+    a, b = minimum(r), maximum(r)
+    clamp = findall(i -> abs(g.y[i]) <= 1e-9*b && g.x[i] < 0, eachindex(g.x))
+    return (; a, b, clamp, iA = nearest(g, b, 0.0))
+end
+
+# load q from the clamp reaction (its x resultant balances q times the end width)
+# and the horizontal displacement of A, at every output time
+function sma_curve(series)
+    geo = arch_geometry(series[1][2])
+    t   = first.(series)
+    q   = [-sum(field(g, "rx")[geo.clamp])/(geo.b - geo.a) for (_, g) in series]
+    uA  = [field(g, "ux")[geo.iA] for (_, g) in series]
+    return (; geo, t, q, uA)
+end
+
+# Table 3, for the annotations only (the plotted load is the reaction's)
+sma_branch(t) = t <= 1 ? "loading, T = Mf" : t <= 2 ? "unloading" : t <= 3 ? "reverse loading" :
+                t <= 4 ? "unloading" : "heating at q = 0"
+
+function figure_5_6(series, ref, outdir)
+    c = sma_curve(series)
+    xl = 1.08*max(maximum(abs, c.uA), maximum(abs, ref["uA"]))
+    plt = plot(; xlabel = "horizontal displacement of A  [mm]", ylabel = "applied load q  [N/mm]",
+               title = "Fig. 5.6  SMA arch: load against the displacement of A",
+               legend = :topleft, xlims = (-xl, xl), ylims = (-66, 66), STYLE...)
+    hline!(plt, [0.0]; color = :gray80, lw = 0.8, label = "")
+    vline!(plt, [0.0]; color = :gray80, lw = 0.8, label = "")
+    scatter!(plt, ref["uA"], ref["q"]; marker = :circle, ms = 2.5, mc = :white, msc = C_REF, msw = 0.8,
+             label = "paper, quadratic VEM (one point per increment)")
+    plot!(plt, c.uA, c.q; color = C_A, lw = 2, label = "Jexpresso SEM, nop = 4, plane stress")
+    # the ends of the branches
+    for (tb, lab, al) in ((1.0, "t = 1", :left), (2.0, "t = 2", :left), (3.0, "t = 3", :right), (4.0, "t = 4", :right),
+                          (5.0, "t = 5 (heated)", :left))
+        k = findfirst(tt -> abs(tt - tb) < 1e-9, c.t)
+        k === nothing && continue
+        scatter!(plt, [c.uA[k]], [c.q[k]]; color = C_A, ms = 4, msw = 0, label = "")
+        annotate!(plt, c.uA[k] + (al === :left ? 0.08 : -0.08), c.q[k] + 3.5, text(lab, 8, C_A, al))
+    end
+    f = joinpath(outdir, "fig5_6_sma.png")
+    savefig(plt, f)
+    @printf("  Fig. 5.6: u_A at t = 1, 2, 3, 4, 5: %s mm (paper: %s)   -> %s\n",
+            join((@sprintf("%.3f", c.uA[findfirst(tt -> abs(tt - tb) < 1e-9, c.t)]) for tb in 1:5), ", "),
+            join((@sprintf("%.3f", ref["uA"][findfirst(tt -> abs(tt - tb) < 1e-9, ref["t"])]) for tb in 1:5), ", "), f)
+    return c
+end
+
+# a closed outline from the boundary segments (one loop: the arch is simply connected)
+function outline_loop(segs)
+    nb = Dict{Int,Vector{Int}}()
+    for (p, q) in segs
+        push!(get!(nb, p, Int[]), q); push!(get!(nb, q, Int[]), p)
+    end
+    start = first(first(segs)); loop = [start]; prev = 0; cur = start
+    for _ = 1:length(segs)
+        nxt = first(filter(!=(prev), nb[cur]))
+        nxt == start && break
+        push!(loop, nxt); prev, cur = cur, nxt
+    end
+    return loop
+end
+
+function arch_shape!(plt, g, ux, uy, loop, cells; color, label, grid = true)
+    xd = g.x .+ ux; yd = g.y .+ uy
+    plot!(plt, Shape(xd[loop], yd[loop]); fillcolor = color, fillalpha = 0.30, linecolor = color,
+          linewidth = 1.6, label = label)
+    if grid                                     # the LGL sub-cells, thin
+        X = Float64[]; Y = Float64[]
+        for cc in cells
+            append!(X, (xd[cc[1]], xd[cc[2]], xd[cc[3]], xd[cc[4]], xd[cc[1]], NaN))
+            append!(Y, (yd[cc[1]], yd[cc[2]], yd[cc[3]], yd[cc[4]], yd[cc[1]], NaN))
+        end
+        plot!(plt, X, Y; color = color, lw = 0.25, alpha = 0.5, label = "")
+    end
+    return plt
+end
+
+function figure_5_5b(series, outdir)
+    g0   = series[1][2]
+    loop = outline_loop(boundary_segments(g0.cells))
+    plt  = plot(; aspect_ratio = :equal, xlabel = "x  [mm]", ylabel = "y  [mm]",
+                title = "Fig. 5.5(b)  the arch at t = 1 and t = 3 (true scale)", legend = :bottomleft,
+                STYLE..., size = (720, 520))
+    arch_shape!(plt, g0, zero(g0.x), zero(g0.y), loop, g0.cells; color = "#8a8985", label = "reference")
+    for (tb, col, lab) in ((1.0, C_A, "t = 1: q = +60 N/mm"), (3.0, C_B, "t = 3: q = −60 N/mm"))
+        k = findfirst(s -> abs(s[1] - tb) < 1e-9, series)
+        k === nothing && continue
+        g = series[k][2]
+        arch_shape!(plt, g, field(g, "ux"), field(g, "uy"), loop, g.cells; color = col, label = lab)
+    end
+    f = joinpath(outdir, "fig5_5b_sma.png")
+    savefig(plt, f)
+    println("  Fig. 5.5(b): the deformed arch   -> ", f)
+    return nothing
+end
+
+function sma_summary(c, ref, rundir, outdir)
+    io = IOBuffer()
+    println(io, "# SMA arch — Artioli et al. (2017), Sec. 4.4, Fig. 5.6\n")
+    println(io, "Horizontal displacement of A = (4.5, 0) [mm] at the ends of the branches of Table 3.\n")
+    println(io, "| t | branch ending | q [N/mm] | T [K] | Jexpresso | paper |")
+    println(io, "|---|---|---:|---:|---:|---:|")
+    for (tb, nm, qq, TT) in ((1, "loading", 60, 223), (2, "unloading", 0, 223), (3, "reverse loading", -60, 223),
+                             (4, "unloading", 0, 223), (5, "heating", 0, 303))
+        k = findfirst(tt -> abs(tt - tb) < 1e-9, c.t); j = findfirst(tt -> abs(tt - tb) < 1e-9, ref["t"])
+        (k === nothing || j === nothing) && continue
+        @printf(io, "| %d | %s | %d | %d | %.4f | %.4f |\n", tb, nm, qq, TT, c.uA[k], ref["uA"][j])
+    end
+    csv = joinpath(rundir, "solid_history.csv")
+    if isfile(csv)
+        lines = readlines(csv); hdr = split(lines[1], ",")
+        ji = findfirst(==("newton_iters"), hdr); jc = findfirst(==("newton_cuts"), hdr)
+        its  = [parse(Float64, split(l, ",")[ji]) for l in lines[3:end]]
+        cuts = [parse(Float64, split(l, ",")[jc]) for l in lines[3:end]]
+        @printf(io, "\nNewton: %.2f iterations per increment on average, at most %d; %d increment(s) cut in halves.\n",
+                sum(its)/length(its), maximum(its), count(>(0), cuts))
+    end
+    s = String(take!(io))
+    write(joinpath(outdir, "sma_summary.md"), s)
+    return s
+end
+
+function animate_sma(series, c, ref, outdir)
+    g0   = series[1][2]
+    loop = outline_loop(boundary_segments(g0.cells))
+    # one box for every frame: the extent of all deformed states
+    xs = Float64[]; ys = Float64[]
+    for (_, g) in series
+        append!(xs, g.x .+ field(g, "ux")); append!(ys, g.y .+ field(g, "uy"))
+    end
+    box = (minimum(xs) - 0.3, maximum(xs) + 0.3, minimum(ys) - 0.3, maximum(ys) + 0.3)
+    anim = Animation()
+    for (k, (t, g)) in enumerate(series)
+        xd = g.x .+ field(g, "ux"); yd = g.y .+ field(g, "uy")
+        gx, gy, img = rasterize(xd, yd, field(g, "etr_sat"), g.cells; npix = 420, box = box)
+        p1 = heatmap(gx, gy, img; c = SEQ, clims = (0, 1), aspect_ratio = :equal, colorbar = :right,
+                     colorbar_title = "‖eᵗʳ‖/εL", xlims = box[1:2], ylims = box[3:4], xlabel = "x  [mm]",
+                     ylabel = "y  [mm]", legend = false, STYLE..., size = (560, 520),
+                     title = @sprintf("t = %.3f  %s\nq = %.1f N/mm, T = %.0f K", t, sma_branch(t), c.q[k],
+                                      t <= 4 ? 223.0 : 223.0 + 80.0*(t - 4)))
+        plot!(p1, Shape(g0.x[loop], g0.y[loop]); fillalpha = 0, linecolor = C_REF, linestyle = :dash, lw = 1, label = "")
+        plot!(p1, xd[loop], yd[loop]; color = "#0b0b0b", lw = 1, label = "")
+        xl = 1.08*max(maximum(abs, c.uA), maximum(abs, ref["uA"]))
+        p2 = plot(; xlabel = "horizontal displacement of A  [mm]", ylabel = "applied load q  [N/mm]",
+                  xlims = (-xl, xl), ylims = (-66, 66), legend = :topleft, STYLE..., size = (520, 520))
+        scatter!(p2, ref["uA"], ref["q"]; marker = :circle, ms = 2, mc = :white, msc = C_BAND, msw = 0.8,
+                 label = "paper (VEM)")
+        plot!(p2, c.uA[1:k], c.q[1:k]; color = C_A, lw = 2, label = "Jexpresso SEM")
+        scatter!(p2, [c.uA[k]], [c.q[k]]; color = C_A, ms = 5, msw = 0, label = "")
+        frame(anim, plot(p1, p2; layout = (1, 2), size = (1080, 520), dpi = 100))
+    end
+    f = joinpath(outdir, "sma_cycle.gif")
+    gif(anim, f; fps = 15, show_msg = false)
+    println("  animation                                 -> ", f)
+    return nothing
+end
+
+#---------------------------------------------------------------------------------
 function main(args)
     o = parse_options(args)
     outdir = mkpath(o["outdir"])
@@ -530,7 +706,7 @@ function main(args)
             filter!(!=(l), labels)
         end
     end
-    isempty(labels) && error("--no-run, and no output to read: drop --no-run, or give --ve1-dir=, --ve2-dir=, --plate-dir=.")
+    isempty(labels) && error("--no-run, and no output to read: drop --no-run, or give --ve1-dir=, --ve2-dir=, --plate-dir=, --sma-dir=.")
     if !isempty(torun)
         @eval Main using Jexpresso
         for l in torun
@@ -578,6 +754,22 @@ function main(args)
         table_1(series, curve, ref, dirs["plate"], outdir)
         figure_plate_field(series, outdir, o["scale"])
         o["anim"] && animate_plate(series, curve, ref, outdir, o["scale"])
+    end
+    if "sma" in labels
+        series = read_series(dirs["sma"])
+        ref    = read_reference(joinpath(DATA, "fig5_6.csv"))
+        c      = figure_5_6(series, ref, outdir)
+        figure_5_5b(series, outdir)
+        open(joinpath(outdir, "fig5_6_sem.csv"), "w") do io
+            println(io, "# Jexpresso SEM (nop = 4, plane stress): the SMA arch, load q [N/mm] (from the clamp ",
+                    "reaction) and horizontal displacement of A [mm] at every increment of Table 3")
+            println(io, "t,q,uA")
+            for k in eachindex(c.t)
+                @printf(io, "%.6g,%.10g,%.10g\n", c.t[k], c.q[k], c.uA[k])
+            end
+        end
+        print(sma_summary(c, ref, dirs["sma"], outdir))
+        o["anim"] && animate_sma(series, c, ref, outdir)
     end
     return nothing
 end

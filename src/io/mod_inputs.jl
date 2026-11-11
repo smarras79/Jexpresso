@@ -343,6 +343,9 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #                            let the loads enter during the first step.
     #   :solid_probes            [("A", x, y), ...]: nodes whose displacement is
     #                            logged every step in solid_history.csv.
+    #   :solid_step_times        explicit step times, increasing from :tinit to
+    #                            :tend (increments of different sizes); else
+    #                            uniform :Δt.
     #   :solid_history           where the material history lives: "nodal"
     #                            (linear viscoelasticity only; the default
     #                            there) or "quadrature" (any model; Newton).

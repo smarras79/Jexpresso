@@ -42,11 +42,12 @@
 #
 #     (εⁿ⁺¹, Hⁿ, Δt)  ↦  (σⁿ⁺¹, D = ∂σⁿ⁺¹/∂εⁿ⁺¹, Hⁿ⁺¹)      solid_constitutive_update!
 #
-# Plane strain throughout: ε_zz = 0, the material point is three-dimensional,
-# so deviatoric tensors carry four components (xx, yy, zz, xy) and σ_zz is
-# computed and output. D is the in-plane tangent in Voigt form with
-# ENGINEERING shear: rows/columns (xx, yy, xy), γxy = 2εxy. The case picks the
-# model in user_solid_material() (user_flux.jl):
+# Plane strain unless the model says otherwise (ε_zz = 0; the SMA model can
+# also run in plane stress, σ_zz = 0 at every point): the material point is
+# three-dimensional, so deviatoric tensors carry four components (xx, yy, zz,
+# xy) and σ_zz is computed and output. D is the in-plane tangent in Voigt form
+# with ENGINEERING shear: rows/columns (xx, yy, xy), γxy = 2εxy. The case picks
+# the model in user_solid_material() (user_flux.jl):
 #
 #   model = :viscoelastic (default)   (; E, ν, g0, g, τ)
 #       Generalized Maxwell in the deviator, elastic in volume (paper Sec. 3.1):
@@ -62,10 +63,18 @@
 #       Radial return; the consistent tangent of S&H (3.3.x). History per
 #       point: eᵖ (4 components) and ēᵖ.
 #
+#   model = :sma                      (; E, ν, h, β, Mf, εL, σy0, temperature, hypothesis)
+#       Shape-memory alloy, the Souza–Auricchio–Petrini model (paper Sec. 3.3),
+#       quasistatic_solid_sma.jl: transformation strain eᵗʳ, ‖eᵗʳ‖ ≤ εL,
+#       chemical term τ‖eᵗʳ‖ with τ = β⟨T − Mf⟩, T = temperature(t) from the
+#       case. The step is the exact minimiser of the incremental energy;
+#       hypothesis = :plane_stress (default; σzz = 0 by Newton on εzz at every
+#       point) or :plane_strain. History per point: eᵗʳ (4) and εzz.
+#
 # A further model is one more `struct <: AbstractSolidModel` with methods
-# nhistory, islinear, solid_history_fields and solid_constitutive_update!.
-# A shape-memory alloy (paper Sec. 3.3) keeps the transformation strain eᵗʳ
-# where J2 keeps eᵖ: the storage, the Newton loop and the output are the same.
+# nhistory, islinear, solid_history_fields and solid_constitutive_update!
+# (and, if it depends on time other than through δt — a temperature —
+# solid_set_time!, called before the increment that ends at t is solved).
 #
 # TIME INTEGRATION OF THE VISCOELASTIC MODEL — the exponential recursion
 #
@@ -84,7 +93,9 @@
 #                      K_T Δu = f_ext − f_int(u),   K_T = Σ_e ∫ Bᵀ D B,
 #                  refactorised every iteration for a nonlinear model.
 #                  The only path for plasticity. Converged when ‖r‖ ≤
-#                  :newton_rtol · max(‖f_ext‖, ‖f_int‖) on the free DOFs; an
+#                  :newton_rtol · max(‖f_ext‖, ‖f_int‖) on the free DOFs (the
+#                  max not below 1 % of the largest force of the run: an
+#                  unloaded, stress-free state converges too); an
 #                  increment that has not converged after :newton_maxit
 #                  iterations is halved and retried, up to :newton_max_cuts
 #                  times in a row (solid_history.csv logs the iterations and
@@ -208,6 +219,10 @@ nhistory(m::SolidViscoelastic) = 4*(length(m.g) + 1)       # [eⁿ ; q₁ ; … 
 nhistory(m::SolidJ2Plasticity) = 5                         # [eᵖ (xx, yy, zz, xy) ; ēᵖ]
 islinear(::SolidViscoelastic)  = true
 islinear(::SolidJ2Plasticity)  = false
+# The 2D hypothesis (a model may offer plane stress: SolidSMA) and the hook the
+# solver calls before solving the increment that ends at t (temperature, …).
+solid_hypothesis(::AbstractSolidModel) = "plane strain"
+solid_set_time!(::AbstractSolidModel, t) = nothing
 
 """
     solid_history_fields(model) -> Vector{Pair{String,Function}}
@@ -267,6 +282,9 @@ function solid_model_from_case(inputs)
                   "\" is not one of ", join(string.(SOLID_INTEGRATORS), ", "), ".")
         return SolidViscoelastic(E, ν, K, G, g0, g, τ, integrator)
 
+    elseif kind === :sma
+        return solid_sma_from_case(m, E, ν, K, G)              # quasistatic_solid_sma.jl
+
     elseif kind === :j2_plasticity
         σy0  = Float64(m.σy0)
         Hiso = Float64(get(m, :Hiso, 0.0))
@@ -278,7 +296,7 @@ function solid_model_from_case(inputs)
     end
 
     error(" # ERROR quasistatic_solid.jl: user_solid_material() asks for model = :", kind,
-          " — use :viscoelastic or :j2_plasticity.")
+          " — use :viscoelastic, :j2_plasticity or :sma.")
 end
 
 """
@@ -705,12 +723,23 @@ function quasistatic_solid_solve!(sem, qp, inputs, OUTPUT_DIR::String, TFloat)
     end
     nvar = length(qvars)
 
-    # The run's step times: uniform Δt, the last step shortened to land on tend.
-    tsteps = Float64[tinit]
-    while tsteps[end] < tend - 1.0e-10*max(1.0, abs(tend))
-        push!(tsteps, min(tinit + length(tsteps)*Δt, tend))     # tinit + nΔt: no drift
+    # The run's step times: :solid_step_times if the deck lists them (increasing,
+    # from tinit to tend: increments of different sizes), else uniform Δt, the
+    # last step shortened to land on tend.
+    if haskey(inputs, :solid_step_times)
+        tsteps = Float64[x for x in inputs[:solid_step_times]]
+        (length(tsteps) >= 2 && all(diff(tsteps) .> 0) &&
+         abs(tsteps[1] - tinit) <= 1.0e-12*max(1.0, abs(tinit)) &&
+         abs(tsteps[end] - tend) <= 1.0e-9*max(1.0, abs(tend))) ||
+            error(" # ERROR quasistatic_solid.jl: :solid_step_times must increase from :tinit = $tinit to :tend = $tend.")
+        tsteps[1] = tinit; tsteps[end] = tend
+    else
+        tsteps = Float64[tinit]
+        while tsteps[end] < tend - 1.0e-10*max(1.0, abs(tend))
+            push!(tsteps, min(tinit + length(tsteps)*Δt, tend))     # tinit + nΔt: no drift
+        end
+        abs(tsteps[end] - tend) < 1.0e-9*max(1.0, abs(tend)) && (tsteps[end] = tend)
     end
-    abs(tsteps[end] - tend) < 1.0e-9*max(1.0, abs(tend)) && (tsteps[end] = tend)
     nsteps = length(tsteps) - 1
 
     # Output times: the deck's :diagnostics_at_times (a number or a list).
@@ -731,7 +760,7 @@ function quasistatic_solid_solve!(sem, qp, inputs, OUTPUT_DIR::String, TFloat)
     #-----------------------------------------------------------------------
     # Report the set-up.
     #-----------------------------------------------------------------------
-    println(" # Quasi-static solid (plane strain) .................................")
+    println(" # Quasi-static solid (", solid_hypothesis(model), ") .................................")
     @printf("   SEM: nop = %d, %d elements, %d nodes, %d displacement DOFs\n", mesh.nop, nelem, npoin, ndof)
     @printf("   material: E = %g, ν = %g  →  K = %.6g, G = %.6g\n", model.E, model.ν, model.K, model.G)
     if model isa SolidViscoelastic
@@ -748,13 +777,23 @@ function quasistatic_solid_solve!(sem, qp, inputs, OUTPUT_DIR::String, TFloat)
                         model.g0 + sum(model.g), model.g0 + sum(model.g))
         end
         @printf("   integrator \"%s\"\n", model.integrator)
+    elseif model isa SolidSMA
+        @printf("   shape-memory alloy (Souza–Auricchio–Petrini): h = %g, β = %g, Mf = %g, εL = %g, σy0 = %g\n",
+                model.h, model.β, model.Mf, model.εL, model.σy0)
+        @printf("   temperature at t = %g: %g (τ = β⟨T − Mf⟩ = %g)\n", tinit, model.temperature(tinit),
+                sma_tau(model, model.temperature(tinit)))
     else
         @printf("   J2 plasticity: σy0 = %g, Hiso = %g, Hkin = %g%s\n", model.σy0, model.Hiso, model.Hkin,
                 model.Hiso == 0 && model.Hkin == 0 ? "   (perfectly plastic)" : "")
     end
     @printf("   history at the %s, %d values per point\n",
             hpath === :nodal ? "NODES (linear viscoelastic shortcut)" : "QUADRATURE POINTS", nhistory(model))
-    @printf("   time: [%g, %g], Δt = %g, %d steps\n", tinit, tend, Δt, nsteps)
+    if haskey(inputs, :solid_step_times)
+        @printf("   time: [%g, %g], %d steps from :solid_step_times (Δt from %g to %g)\n", tinit, tend, nsteps,
+                minimum(diff(tsteps)), maximum(diff(tsteps)))
+    else
+        @printf("   time: [%g, %g], Δt = %g, %d steps\n", tinit, tend, Δt, nsteps)
+    end
     println(linitial ?
             "   loads ON at t = tinit: instantaneous elastic solve first (Heaviside load)" :
             "   loads enter during the FIRST increment (FEAP convention: a ramp over [tinit, tinit+Δt])")
@@ -812,6 +851,7 @@ function quasistatic_solid_solve!(sem, qp, inputs, OUTPUT_DIR::String, TFloat)
     newton_iters = Ref(0)            # Newton iterations of the step (all its sub-increments)
     newton_cuts  = Ref(0)            # times the step's increment was halved
     last_rel     = Ref(NaN)
+    fscale       = Ref(0.0)          # largest ‖f_ext‖, ‖f_int‖ of the converged increments so far
 
     #-----------------------------------------------------------------------
     # PATH 1 — linear viscoelasticity with nodal history (see the header).
@@ -915,6 +955,7 @@ function quasistatic_solid_solve!(sem, qp, inputs, OUTPUT_DIR::String, TFloat)
         # One Newton solve of the increment ending at t. Returns whether it
         # converged; the history H is accepted only if it did.
         newton! = function (t, δt)
+            solid_set_time!(model, t)                # e.g. the temperature of the increment
             loads!(t)
             for dof in cdofs                         # the prescribed values at t
                 u[dof] = dirichlet[dof]
@@ -924,9 +965,13 @@ function quasistatic_solid_solve!(sem, qp, inputs, OUTPUT_DIR::String, TFloat)
                 evaluate!(δt)
                 r     = fext[fdofs] .- fint[fdofs]
                 rnorm = norm(r)
-                ref   = max(norm(fext), norm(fint), floatmin(Float64))
+                # relative to the forces of the increment — or, when the body
+                # is unloaded and nearly stress-free (an SMA recovering its
+                # shape on heating), to 1 % of the largest seen in the run
+                ref   = max(norm(fext), norm(fint), 0.01*fscale[], floatmin(Float64))
                 if rnorm <= newton_rtol*ref
                     H .= Htr                          # accept the increment
+                    fscale[] = max(fscale[], norm(fext), norm(fint))
                     return true
                 end
                 (it > newton_maxit || !isfinite(rnorm)) && break

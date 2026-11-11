@@ -132,6 +132,68 @@ def structured_quarter_annulus(a, b, nr, nt, path, name):
     print(f"  {os.path.relpath(path, HERE)}: {nr}x{nt} quads, {nnode} vertices")
 
 
+def structured_half_annulus(a, b, nr, ntq, path, name):
+    """The half annulus a <= r <= b, 0 <= theta <= pi (an arch), as two
+    structured quarters (a gmsh arc must be shorter than pi): nr quads across
+    the wall, ntq along each quarter. The arcs are curved back onto their
+    circles by the case's :exact_geometry.
+
+    Boundary groups:
+
+      "load"    theta = 0:  y = 0,  a <= x <= b      the free end, loaded
+      "clamp"   theta = pi: y = 0, -b <= x <= -a     clamped
+      "inner"   r = a                                traction-free
+      "outer"   r = b                                traction-free
+    """
+    gmsh.initialize()
+    gmsh.option.setNumber("General.Terminal", 0)
+    gmsh.model.add(name)
+
+    geo = gmsh.model.geo
+    o   = geo.addPoint(0.0, 0.0, 0.0)
+    pa0 = geo.addPoint(a, 0.0, 0.0)
+    pb0 = geo.addPoint(b, 0.0, 0.0)
+    pb1 = geo.addPoint(0.0, b, 0.0)
+    pa1 = geo.addPoint(0.0, a, 0.0)
+    pb2 = geo.addPoint(-b, 0.0, 0.0)
+    pa2 = geo.addPoint(-a, 0.0, 0.0)
+
+    load  = geo.addLine(pa0, pb0)
+    mid   = geo.addLine(pb1, pa1)
+    clamp = geo.addLine(pb2, pa2)
+    o1 = geo.addCircleArc(pb0, o, pb1); o2 = geo.addCircleArc(pb1, o, pb2)
+    i1 = geo.addCircleArc(pa1, o, pa0); i2 = geo.addCircleArc(pa2, o, pa1)
+
+    s1 = geo.addPlaneSurface([geo.addCurveLoop([load, o1, mid, i1])])
+    s2 = geo.addPlaneSurface([geo.addCurveLoop([-mid, o2, clamp, i2])])
+
+    for c in (load, mid, clamp):
+        geo.mesh.setTransfiniteCurve(c, nr + 1)
+    for c in (o1, o2, i1, i2):
+        geo.mesh.setTransfiniteCurve(c, ntq + 1)
+    for srf in (s1, s2):
+        geo.mesh.setTransfiniteSurface(srf)
+        geo.mesh.setRecombine(2, srf)
+
+    geo.synchronize()
+
+    for gname, curves in (("load", [load]), ("clamp", [clamp]),
+                          ("inner", [i1, i2]), ("outer", [o1, o2])):
+        tag = gmsh.model.addPhysicalGroup(1, curves)
+        gmsh.model.setPhysicalName(1, tag, gname)
+    tag = gmsh.model.addPhysicalGroup(2, [s1, s2])
+    gmsh.model.setPhysicalName(2, tag, "domain")
+
+    gmsh.model.mesh.generate(2)
+    gmsh.option.setNumber("Mesh.MshFileVersion", 4.1)
+    gmsh.option.setNumber("Mesh.Binary", 0)
+    gmsh.write(path)
+
+    nnode = len(gmsh.model.mesh.getNodes()[0])
+    gmsh.finalize()
+    print(f"  {os.path.relpath(path, HERE)}: {nr}x{2*ntq} quads, {nnode} vertices")
+
+
 def structured_perforated_plate(L, H, R, nt, nr, ny, grading, path, name):
     """A quarter of a strip 2L x 2H with a central hole of radius R, as three
     structured blocks: two fans around the hole, split by the 45-degree
@@ -263,3 +325,10 @@ if __name__ == "__main__":
         100.0, 180.0, 50.0, 6, 8, 6, 1.12,
         os.path.join(HERE, "perforated_plate2d", "quarter_plate_hole_132.msh"),
         "quarter_plate_hole")
+
+    # sma_arch2d: Artioli et al. (2017) Sec. 4.4, the semicircular SMA arch,
+    # 3.5 <= r <= 4.5 mm: 2 elements across the wall, 24 along the arch.
+    structured_half_annulus(
+        3.5, 4.5, 2, 12,
+        os.path.join(HERE, "sma_arch2d", "half_annulus_2x24.msh"),
+        "half_annulus")
