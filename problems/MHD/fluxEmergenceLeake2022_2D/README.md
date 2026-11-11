@@ -135,18 +135,20 @@ dissipative terms is a zero normal gradient).
 
 `LK22_2D.geo` is the $x$–$z$ plane of the 3D `LK22.geo` (the paper's
 stretched cells, $x \in [-277.2, 277.2]$, $h \in [-30, 530.5]$), with the
-element boundaries every $k$-th cell:
+element boundaries every $k$-th cell ($k_x$ in $x$, $k_z$ in $z$ for 4):
 
 | `LK2D_REF` | elements | $k$ | file | nodes ($N = 4$) | `:Δt` |
 |---|---|---|---|---|---|
 | 1 (default) | $32\times48$ | 16 | `LK22_2D_32x48.msh` | 24,897 | $2\times10^{-3}$ |
 | 2 | $64\times96$ | 8 | `LK22_2D_64x96.msh` | 98,945 | $10^{-3}$ |
 | 3 | $128\times192$ | 4 | `LK22_2D_128x192.msh` | 394,497 | $5\times10^{-4}$ |
+| 4 | $32\times96$ | 16, 8 | `LK22_2D_32x96.msh` | 49,665 | $10^{-3}$ |
 
 `LK2D_REF = 1` is the cross-section of the 3D `LK22_REF = 2` mesh, 3 the
-paper's resolution. All three ship (0.1, 0.4, 1.8 MB); regenerate with
+paper's resolution, 4 the `LK2D_REF = 1` columns with the elements of 2 in
+the vertical. All four ship (0.1, 0.4, 1.8, 0.2 MB); regenerate with
 `gmsh -2 LK22_2D.geo -setnumber ref N -o <file>`. The smallest LGL gap is
-0.173 of the bottom elements' height (4, 2, 1 $L_0$), and `:Δt` gives
+0.173 of the bottom elements' height (4, 2, 1, 2 $L_0$), and `:Δt` gives
 $(|\mathbf v| + c_f)\Delta t/\Delta h \approx 0.25$ at $|\mathbf v| + c_f = 80$,
 as the 3D deck.
 

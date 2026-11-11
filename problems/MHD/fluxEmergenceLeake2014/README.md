@@ -458,13 +458,14 @@ formation of the flux rope.
   the velocity of its bottom node, and the next element does the same. The
   chromosphere ($T = 1$, scale height 1) and the transition region (density
   scale height $1/(1/T + \alpha)$, 0.67 at its base) need elements no taller
-  than about 2 for $C/10 \lesssim 1$:
+  than about 2 for $C/10 \lesssim 1$ (an estimate for tall elements: the
+  growth measured at height 2 is larger, below):
 
   | `LK_REF` | element height, $z = 0$–20 | largest $C$ per element | $C/10$ along $z = 0$–15 |
   |---|---|---|---|
   | 1 ($16^3$) | 8.1 | 4230 ($z = 2.5$–10.6), 246 (10.6–18.75) | 423, 25 |
   | 2 ($38^3$) | 3.4 | 31, 31, 41, 15 | 3.1, 3.1, 4.1, 1.5: about 60 in all |
-  | 5 ($16^2\times64$) | 2.0 | 9.5 | $\le 1$ |
+  | 5 ($16^2\times64$) | 2.0 | 9.5 | $\le 1$ (measured: about 4) |
   | 3, 4 ($76$ in $z$) | 1.7 | 7.4 | $\le 0.7$ |
 
   Measured at `LK_REF = 1` with `LK_DIAG_TR=1`: the tube's
@@ -488,12 +489,29 @@ formation of the flux rope.
   | 0.03 | $1.7\times10^{-2}$ / $4\times10^{-8}$ | $2.7\times10^{-3}$ / $3\times10^{-9}$ | $7.8\times10^{-3}$ / $7\times10^{-6}$ | 0.9 / 0.01 |
   | 0.06 | 0.40 / $1.6\times10^{-5}$ | 0.11 / $4\times10^{-7}$ | 0.12 / $1.1\times10^{-4}$ | 15.7 / 0.01 |
   | 0.075 | 0.56 / $7.7\times10^{-5}$ | 0.25 / $1.2\times10^{-6}$ | 0.19 / $2.5\times10^{-4}$ | 40.6 / 0.01 |
+  | 0.15 | floors (from 0.115) / $6.2\times10^{-3}$ | / $2.1\times10^{-4}$ | / $9.8\times10^{-4}$ | / 0.0104 |
 
   ($\mu = 0.01$ is the physical viscosity of `:mhd_dissipation`: DynSGS stays
-  idle.) The tube itself moves at the same speed on both meshes
-  ($\lvert\mathbf v\rvert_{\max} = 2.6$ and $3.3\times10^{-3}$ at $t \approx 0.015$),
-  so the five orders of magnitude are the transmission through the
-  chromosphere, not the source.
+  idle, and no floor fires to $t = 0.15$.) The tube itself moves at the same
+  speed on both meshes ($\lvert\mathbf v\rvert_{\max} = 2.6$ and
+  $3.3\times10^{-3}$ at $t \approx 0.015$), so the orders of magnitude are the
+  transmission, not the source.
+
+  The refined mesh delays the transmission; it does not stop it. At
+  $t = 0.15$ the transition-region maximum is the same at every $y$ (the
+  whole tube, which runs along $y$, drives it, not its buoyant middle) and
+  still grows about as $t^5$. Along $x = 0$ it is a node-to-node oscillation
+  ($w$ changes sign from node to node, largest at the element faces) that
+  falls about tenfold per element through the convection zone above the tube
+  ($\lvert\mathbf v\rvert = 3\times10^{-5}$ at $z = -6$, $10^{-8}$ at $z = 0$)
+  and grows about fourfold per element through the chromosphere, where
+  $C = 7.6$: a wave that keeps its energy flux grows by $\sqrt{C} = 2.8$, and
+  the one-node estimate, $C/10 = 0.8$, is too low for elements this short.
+  Sound from the tube reaches the photosphere only at $t \approx 5$, so all of
+  it is numerical; what the refinement buys is mainly the six convection-zone
+  elements it has to cross. Whether `LK_REF = 3`, 4 carry the tube's physical
+  start-up transient (from $t \approx 5$) through the transition region
+  without the floors is not tested here.
 - **Partition.** The deck sets `:lxy_partition => false`: a balanced 3D
   partition (METIS, through GridapGmsh's distributed reader, which reads the
   mesh file on every rank). Jexpresso's default (`true`) bins the $x$–$y$

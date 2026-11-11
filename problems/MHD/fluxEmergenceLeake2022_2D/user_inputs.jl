@@ -11,6 +11,7 @@
 #   LK2D_REF 1:  32 x 48 elements   (the 3D LK22_REF = 2 cross-section; default)
 #            2:  64 x 96 elements   (1/2 of the paper's resolution at :nop => 4)
 #            3: 128 x 192 elements  (the paper's 512 x 768 cells at :nop => 4)
+#            4:  32 x 96 elements   (1 in x, 2 in z: elements 2 tall at the bottom; README)
 #---------------------------------------------------------------------------------
 
 # Positivity floors as the Runge-Kutta stage limiter (as the 3D Leake cases): ρ ≥ f ρ_e(h)
@@ -195,10 +196,10 @@ lk2d_dissipation(x, y) = (0.01, 0.01)
 function user_inputs()
 
     LK2D_REF = parse(Int, get(ENV, "LK2D_REF", "1"))
-    mesh     = ("LK22_2D_32x48.msh", "LK22_2D_64x96.msh", "LK22_2D_128x192.msh")[LK2D_REF]
+    mesh     = ("LK22_2D_32x48.msh", "LK22_2D_64x96.msh", "LK22_2D_128x192.msh", "LK22_2D_32x96.msh")[LK2D_REF]
     # Δt for (|v| + c_f) Δt/Δh ≈ 0.25 at |v| + c_f ≈ 80 on the smallest LGL gap Δh of each mesh
-    # (0.173 of the 4, 2, 1 L₀ tall bottom elements), as the 3D deck at the same element size.
-    Δt       = (2.0e-3, 1.0e-3, 5.0e-4)[LK2D_REF]
+    # (0.173 of the 4, 2, 1, 2 L₀ tall bottom elements), as the 3D deck at the same element size.
+    Δt       = (2.0e-3, 1.0e-3, 5.0e-4, 1.0e-3)[LK2D_REF]
     tend     = parse(Float64, get(ENV, "LK2D_TEND", "400.0"))
     dtout    = parse(Float64, get(ENV, "LK2D_OUT_DT", "5.0"))
 
