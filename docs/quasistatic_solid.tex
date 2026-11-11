@@ -26,7 +26,7 @@
 \makeatother
 
 % Permalinks into the Jexpresso source at the commit this document describes.
-\newcommand{\jxrepo}{https://github.com/smarras79/Jexpresso/blob/ff10c6c6568294d4cd65d5494269e096ab1da335}
+\newcommand{\jxrepo}{https://github.com/smarras79/Jexpresso/blob/2ab96bf169f1eb9e5702936f4ef7b55b710ddc3d}
 \newcommand{\jx}[3]{\href{\jxrepo/#1\#L#2}{\code{#3}}}
 \newcommand{\jxfile}[2]{\href{\jxrepo/#1}{\code{#2}}}
 \newcommand{\coderef}[1]{\par\smallskip\noindent{\small\textcolor{black!65}{\textsf{Code:}}~#1}\par\smallskip}
@@ -47,8 +47,8 @@
 \newcommand{\dd}{\,\mathrm{d}}
 
 \title{Quasi-static viscoelastic and elasto-plastic solids\\ on Jexpresso's spectral elements\\[4pt]
-\large The thick-walled cylinder of Artioli, Beir\~ao da Veiga, Lovadina \& Sacco (2017), \S4.2}
-\author{Jexpresso, branch \texttt{sm/solid}, commit \href{https://github.com/smarras79/Jexpresso/commit/ff10c6c6568294d4cd65d5494269e096ab1da335}{\texttt{ff10c6c}}}
+\large The thick-walled cylinder and the perforated plate of\\ Artioli, Beir\~ao da Veiga, Lovadina \& Sacco (2017), \S\S4.2--4.3}
+\author{Jexpresso, branch \texttt{sm/solid}, commit \href{https://github.com/smarras79/Jexpresso/commit/2ab96bf169f1eb9e5702936f4ef7b55b710ddc3d}{\texttt{2ab96bf}}}
 \date{}
 
 \begin{document}
@@ -63,7 +63,10 @@ states the governing equations, the constitutive laws (the viscoelastic one of
 the benchmark and the $J_2$ plasticity that uses the same quadrature-point
 history), every step of the spectral-element discretisation, and the
 initialisation, and links each to the line of the Jexpresso source where it is
-done. Every link is a permalink to commit \texttt{ff10c6c}.
+done. Section~\ref{sec:plate} adds the paper's second inelastic benchmark, a
+perforated elastic--perfectly plastic plate (\S4.3), and the script that redraws
+the paper's figures from Jexpresso's VTK output. Every link is a permalink to
+commit \texttt{2ab96bf}.
 \end{abstract}
 
 \tableofcontents
@@ -254,8 +257,8 @@ each step is a linear elastic problem with the \emph{algorithmic} shear modulus
 $\tilde G$ and a known initial stress $\bsig^*$. For $\Delta t=0$,
 $d_m=\gamma_m=1$: the instantaneous (glassy) response.
 
-\coderef{coefficients $(d_m,\gamma_m)$ \jx{src/kernel/solvers/quasistatic_solid.jl}{168}{maxwell\_step\_coefficients};
-the material point \jx{src/kernel/solvers/quasistatic_solid.jl}{284}{solid\_constitutive\_update!};
+\coderef{coefficients $(d_m,\gamma_m)$ \jx{src/kernel/solvers/quasistatic_solid.jl}{177}{maxwell\_step\_coefficients};
+the material point \jx{src/kernel/solvers/quasistatic_solid.jl}{293}{solid\_constitutive\_update!};
 the case's material \jx{problems/Elasticity/viscoelastic_cylinder2d/user_flux.jl}{71}{user\_solid\_material}.}
 
 \paragraph{Closed-form solution.} By the correspondence principle (load $p/s$,
@@ -303,8 +306,8 @@ and the consistent tangent is
 A shape-memory alloy (Artioli et al.\ \S3.3) keeps the transformation strain
 $\be^{tr}$ where $J_2$ keeps $\be^p$: the storage, the Newton loop of
 Step~7 (\S\ref{sec:sem}) and the output are the same.
-\coderef{\jx{src/kernel/solvers/quasistatic_solid.jl}{308}{solid\_constitutive\_update!} ($J_2$);
-history layout and plottable fields \jx{src/kernel/solvers/quasistatic_solid.jl}{209}{solid\_history\_fields};
+\coderef{\jx{src/kernel/solvers/quasistatic_solid.jl}{317}{solid\_constitutive\_update!} ($J_2$);
+history layout and plottable fields \jx{src/kernel/solvers/quasistatic_solid.jl}{218}{solid\_history\_fields};
 the plasticity case \jxfile{problems/Elasticity/plastic_cylinder2d}{problems/Elasticity/plastic\_cylinder2d}.}
 
 %==============================================================================
@@ -380,12 +383,19 @@ so in the flat layout $\mathbf u=[\mathbf u_x;\mathbf u_y]$
 $S_{yx}=S_{xy}^{\mathsf T}$, assembled once. When the tangent varies from point
 to point (plasticity) the four displacement blocks are built with
 $\mathbf D_{kl}$ inside the quadrature sum and assembled the same way.
+With LGL collocation the quadrature points are the nodes, so
+$\nabla\psi_a$ vanishes at the point $(k,l)$ unless node $a$ shares its row or
+its column: $2N+1$ of the $(N+1)^2$ basis functions. Both element routines loop
+over those pairs only --- $(2N+1)^2=81$ products per point at $N=4$ instead of
+$(N+1)^4=625$ --- accumulating each element in a dense buffer that is scattered
+once into the element-matrix layout \code{DSS\_laplace\_sparse} reads.
 \coderef{\jx{src/kernel/infrastructure/element_matrices.jl}{375}{build\_laplace\_matrix} and its components
-\jx{src/kernel/infrastructure/element_matrices.jl}{426}{build\_gradient\_product\_matrices};
-variable tangent \jx{src/kernel/infrastructure/element_matrices.jl}{473}{build\_tangent\_stiffness\_matrices};
-DSS \jx{src/kernel/infrastructure/element_matrices.jl}{793}{DSS\_laplace\_sparse};
-assembly of \eqref{eq:operators} \jx{src/kernel/solvers/quasistatic_solid.jl}{370}{solid\_sem\_operators},
-\jx{src/kernel/solvers/quasistatic_solid.jl}{395}{solid\_tangent\_matrix}.}
+\jx{src/kernel/infrastructure/element_matrices.jl}{453}{build\_gradient\_product\_matrices};
+variable tangent \jx{src/kernel/infrastructure/element_matrices.jl}{511}{build\_tangent\_stiffness\_matrices};
+the non-zero gradients \jx{src/kernel/infrastructure/element_matrices.jl}{435}{\_element\_basis\_gradients!};
+DSS \jx{src/kernel/infrastructure/element_matrices.jl}{839}{DSS\_laplace\_sparse};
+assembly of \eqref{eq:operators} \jx{src/kernel/solvers/quasistatic_solid.jl}{379}{solid\_sem\_operators},
+\jx{src/kernel/solvers/quasistatic_solid.jl}{404}{solid\_tangent\_matrix}.}
 
 \subsection*{Step 4 --- the load vector}
 The pressure \eqref{eq:pressure} is integrated on every boundary edge of
@@ -396,10 +406,10 @@ summed onto the nodes:
 \end{equation}
 A body force would enter through the lumped (diagonal) LGL mass matrix,
 $\mathbf f_a\mathrel{+}=M_a\bm b(\bx_a)$.
-\coderef{\jx{src/kernel/solvers/quasistatic_solid.jl}{528}{solid\_boundary\_conditions!} with Jexpresso's
+\coderef{\jx{src/kernel/solvers/quasistatic_solid.jl}{545}{solid\_boundary\_conditions!} with Jexpresso's
 \jx{src/kernel/boundaryconditions/surface_integral.jl}{45}{compute\_segment\_integral!} and
 \jx{src/kernel/boundaryconditions/surface_integral.jl}{54}{DSS\_segment\_integral!};
-body force \jx{src/kernel/solvers/quasistatic_solid.jl}{577}{solid\_add\_body\_force!}.}
+body force \jx{src/kernel/solvers/quasistatic_solid.jl}{594}{solid\_add\_body\_force!}.}
 
 \subsection*{Step 5 --- the symmetry conditions}
 Each roller fixes one Cartesian component ($u_y=0$ on $\Gamma_x$, $u_x=0$ on
@@ -440,8 +450,8 @@ which reproduces the quadrature-point recursion to round-off.
 \EndFor
 \end{algorithmic}
 \end{algorithm}
-\coderef{the march \jx{src/kernel/solvers/quasistatic_solid.jl}{797}{nodal path};
-driver \jx{src/kernel/solvers/quasistatic_solid.jl}{635}{quasistatic\_solid\_solve!}.}
+\coderef{the march \jx{src/kernel/solvers/quasistatic_solid.jl}{817}{nodal path};
+driver \jx{src/kernel/solvers/quasistatic_solid.jl}{652}{quasistatic\_solid\_solve!}.}
 
 \subsection*{Step 7 --- the general path: quadrature-point history and Newton}
 For a nonlinear material (or with \code{:solid\_history => "quadrature"}) the
@@ -462,15 +472,21 @@ method with the consistent tangent:
 \State $H^{n+1}\gets H^{\mathrm{tr}}$ \Comment{accept the history}
 \end{algorithmic}
 \end{algorithm}
-With the viscoelastic model this path reproduces \eqref{eq:nodalstep} to
-$10^{-10}$; with $J_2$ plasticity it converges in two to three iterations per
-increment.
-\coderef{\jx{src/kernel/solvers/quasistatic_solid.jl}{871}{quadrature path};
-strain \jx{src/kernel/solvers/quasistatic_solid.jl}{412}{solid\_qp\_strains!} (with
+An increment that has not converged after \code{:newton\_maxit} iterations is
+halved and the two halves are solved in turn, recursively, up to
+\code{:newton\_max\_cuts} times; \code{solid\_history.csv} logs the iterations
+and cuts of every step. With the viscoelastic model this path reproduces
+\eqref{eq:nodalstep} to round-off; with $J_2$ plasticity it takes about four
+iterations per increment on the cylinder and about six on the perforated plate
+(\S\ref{sec:plate}).
+\coderef{\jx{src/kernel/solvers/quasistatic_solid.jl}{891}{quadrature path};
+Newton \jx{src/kernel/solvers/quasistatic_solid.jl}{917}{newton!} and the halving
+\jx{src/kernel/solvers/quasistatic_solid.jl}{950}{advance!};
+strain \jx{src/kernel/solvers/quasistatic_solid.jl}{421}{solid\_qp\_strains!} (with
 \jx{src/kernel/operators/operators.jl}{287}{\_\ensuremath{\nabla}f!});
-internal force \jx{src/kernel/solvers/quasistatic_solid.jl}{446}{solid\_internal\_force!} (the contraction of
+internal force \jx{src/kernel/solvers/quasistatic_solid.jl}{457}{solid\_internal\_force!} (the contraction of
 \jx{src/kernel/operators/rhs.jl}{2854}{\_expansion\_visc!}, then
-\jx{src/kernel/infrastructure/element_matrices.jl}{1007}{DSS\_rhs!}).}
+\jx{src/kernel/infrastructure/element_matrices.jl}{1053}{DSS\_rhs!}).}
 
 \subsection*{Step 8 --- post-processing and output}
 Nodal stresses (and history fields) are the mass-weighted averages of the
@@ -481,8 +497,8 @@ Fields go to VTK through Jexpresso's \code{write\_output} (with the displacement
 also as a vector, \code{:vtk\_vectors}, for ParaView's \emph{Warp By Vector});
 \code{solid\_history.csv} logs every step; \code{:lplot\_deformed} draws the
 deformed grid.
-\coderef{\jx{src/kernel/solvers/quasistatic_solid.jl}{504}{solid\_nodal\_gradient!},
-\jx{src/kernel/solvers/quasistatic_solid.jl}{484}{solid\_qp\_to\_nodes!};
+\coderef{\jx{src/kernel/solvers/quasistatic_solid.jl}{521}{solid\_nodal\_gradient!},
+\jx{src/kernel/solvers/quasistatic_solid.jl}{498}{solid\_qp\_to\_nodes!};
 \jx{src/io/write_output.jl}{427}{write\_vtk} (its \code{:vtk\_vectors} option);
 \jx{src/io/plotting/jeplots.jl}{931}{plot\_deformed\_mesh}.}
 
@@ -510,7 +526,7 @@ Two load conventions, chosen by \code{:linitial\_elastic\_solve}:
   $0.073$.
 \end{itemize}
 \coderef{\jx{problems/Elasticity/viscoelastic_cylinder2d/initialize.jl}{1}{initialize};
-the zero-state check and the instantaneous step \jx{src/kernel/solvers/quasistatic_solid.jl}{1102}{quasistatic\_solid.jl};
+the zero-state check and the instantaneous step \jx{src/kernel/solvers/quasistatic_solid.jl}{1148}{quasistatic\_solid.jl};
 the switch \jx{problems/Elasticity/viscoelastic_cylinder2d/user_inputs.jl}{70}{:linitial\_elastic\_solve}.}
 
 %==============================================================================
@@ -542,7 +558,7 @@ spatial error alone, $N=2,3,4,5,6$ & $2.3\!\times\!10^{-3}$, $2.5\!\times\!10^{-
  & $4.1\!\times\!10^{-9}$, $1.0\!\times\!10^{-9}$ & reference\\
 time error, $\Delta t=1\to\tfrac18$, exponential (ve1/ve2) & rates $1.98$--$2.04$ / $1.97$--$2.00$ & closed form\\
 time error, midpoint (ve1) / backward Euler (ve2) & rates $2.00$--$2.01$ / $0.91$--$0.98$ & closed form\\
-quadrature-point path vs nodal path & $5\!\times\!10^{-13}$ (relative) & round-off\\
+quadrature-point path vs nodal path & $7\!\times\!10^{-13}$ (relative) & round-off\\
 paper Fig.~5.2, $\max|u-u_{\mathrm{paper}}|$ (ve1 / ve2) & $1.1\!\times\!10^{-4}$ / $2.4\!\times\!10^{-5}$ & figure resolution\\
 \bottomrule
 \end{tabularx}
@@ -614,6 +630,216 @@ cylinder, $\sim$10 for the plastic one), colour by any field (\code{szz},
 
 \coderef{\jxfile{test/test_viscoelastic_cylinder.jl}{test/test\_viscoelastic\_cylinder.jl},
 \jxfile{test/test_plastic_cylinder.jl}{test/test\_plastic\_cylinder.jl}.}
+
+
+%==============================================================================
+\section{The perforated plastic plate (\S4.3 of the paper)}\label{sec:plate}
+%==============================================================================
+
+The paper's second inelastic benchmark puts the quadrature-point path of
+Step~7 through a genuinely two-dimensional plastic flow. A strip
+$2L\times2H=200\times360$~mm with a central hole of diameter $2R=100$~mm, in
+plane strain, made of the elastic--perfectly plastic $J_2$ material of
+\S\ref{sec:constitutive} with $E=7000$~kg/mm$^2$, $\nu=0.3$,
+$\sigma_{y0}=24.3$~kg/mm$^2$ and no hardening, is stretched along its length:
+the normal displacement is prescribed on the symmetry lines, on the lateral
+edges and on the ends, which are pulled apart by $\delta=2$~mm in 400 equal
+increments. A quarter is modelled (Fig.~\ref{fig:platesetup}).
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[x=0.04cm,y=0.04cm,>=Stealth,
+                    meshline/.style={gray!55,very thin}]
+  \def\L{100}\def\H{180}\def\R{50}
+  % body and its grid
+  \fill[gray!12] (\R,0) -- (\L,0) -- (\L,\H) -- (0,\H) -- (0,\R) arc[start angle=90,end angle=0,radius=\R] -- cycle;
+  \input{figures_quasistatic_solid/plate_mesh.tikz}
+  % boundaries
+  \draw[very thick] (\R,0) -- (\L,0) -- (\L,\H) -- (0,\H) -- (0,\R);
+  \draw[very thick,red!70!black] (0,\R) arc[start angle=90,end angle=0,radius=\R];
+  % imposed displacement on the top edge
+  \foreach \x in {8,25,...,93}{ \draw[->,blue!70!black,thick] (\x,\H+3) -- (\x,\H+17); }
+  \node[blue!70!black,anchor=south] at (50,\H+17) {$u_y=\delta(t)$};
+  % rollers: x = 0 above the hole and x = L (u_x = 0)
+  \foreach \y in {65,90,...,165}{
+     \draw (0,\y) -- (-5,\y-3) -- (-5,\y+3) -- cycle; \draw (-7,\y-2) circle (1.3); \draw (-7,\y+2) circle (1.3);
+     \draw (\L,\y-50) -- (\L+5,\y-53) -- (\L+5,\y-47) -- cycle; \draw (\L+7,\y-52) circle (1.3); \draw (\L+7,\y-48) circle (1.3);}
+  \draw (-9,\R) -- (-9,\H);
+  \draw (\L+9,0) -- (\L+9,\H);
+  % rollers: y = 0 right of the hole (u_y = 0)
+  \foreach \x in {58,72,86}{ \draw (\x,0) -- (\x-3,-5) -- (\x+3,-5) -- cycle; \draw (\x-2,-7) circle (1.3); \draw (\x+2,-7) circle (1.3);}
+  \draw (\R,-9) -- (\L,-9);
+  % axes and points
+  \draw[->] (-18,0) -- (\L+25,0) node[below] {$x$};
+  \draw[->] (0,-18) -- (0,\H+30) node[left] {$y$};
+  \fill (\R,0) circle (1.6) node[above right=1pt] {$A$};
+  \fill (0,\R) circle (1.6) node[above right=1pt] {$B$};
+  % dimensions
+  \draw[|<->|,thin] (0,-22) -- node[below] {$L=100$} (\L,-22);
+  \draw[|<->|,thin] (\L+45,0) -- node[right] {$H=180$} (\L+45,\H);
+  \draw[thin] (0,0) -- node[pos=0.6,left=-1pt] {$R$} ({\R*cos(62)},{\R*sin(62)});
+  % labels
+  \node[font=\small,red!70!black,align=right,anchor=east] (hole) at (-12,22) {hole:\\ traction-free};
+  \draw[->,thin,red!70!black] (hole.east) to[out=0,in=215] (35:\R);
+  \node[font=\small,anchor=east,align=right] at (-12,120) {$u_x=0$};
+  \node[font=\small,anchor=west,align=left] at (\L+11,150) {$u_x=0$};
+  \node[font=\small,anchor=north] at (72,-11) {$u_y=0$};
+  % the whole strip, the modelled quarter shaded
+  \begin{scope}[shift={(240,105)},x=0.016cm,y=0.016cm]
+    \draw[thick] (-100,-180) rectangle (100,180);
+    \draw[thick] (0,0) circle (50);
+    \fill[gray!25] (50,0) -- (100,0) -- (100,180) -- (0,180) -- (0,50) arc[start angle=90,end angle=0,radius=50] -- cycle;
+    \draw[thick] (50,0) -- (100,0) -- (100,180) -- (0,180) -- (0,50) arc[start angle=90,end angle=0,radius=50];
+    \draw[dashed,gray] (-100,0) -- (100,0); \draw[dashed,gray] (0,-180) -- (0,180);
+    \foreach \x in {-80,-40,...,80}{ \draw[->,blue!70!black] (\x,185) -- (\x,215); \draw[->,blue!70!black] (\x,-185) -- (\x,-215);}
+    \node[font=\scriptsize,align=center,anchor=north] at (0,-225) {the whole strip, $2L\times2H$,\\ hole $2R=100$ mm};
+  \end{scope}
+  % load history
+  \begin{scope}[shift={(205,-50)}]
+    \draw[->] (0,0) -- (66,0) node[below] {$t$};
+    \draw[->] (0,0) -- (0,30) node[left] {$\delta$};
+    \draw[very thick,blue!70!black] (0,0) -- (55,22);
+    \foreach \k in {0,...,10}{ \fill[blue!70!black] (5.5*\k,2.2*\k) circle (0.6); }
+    \node[font=\scriptsize] at (55,-4) {$1$};
+    \node[font=\scriptsize,anchor=east] at (-1,22) {2 mm};
+    \draw[dotted] (0,22) -- (55,22) -- (55,0);
+    \node[font=\scriptsize,anchor=west,align=left] at (3,30) {$\delta=2t$ mm, 400 equal increments};
+  \end{scope}
+\end{tikzpicture}
+\caption{The perforated plate. Left: the modelled quarter, plane strain, with its
+spectral-element grid --- 132 quadrilaterals in three structured blocks graded
+towards the hole, the hole curved onto its circle --- and the boundary conditions:
+the top edge pulled up by $\delta(t)$ (tangentially free), the lateral edge and
+the two symmetry lines on rollers, the hole traction-free. $A=(R,0)$ and $B=(0,R)$
+are the points of Table~1 of the paper. Right: the whole strip, the quarter shaded;
+the imposed displacement, $\delta=2t$ mm in 400 equal increments.}
+\label{fig:platesetup}
+\end{figure}
+
+\begin{table}[ht]
+\centering
+\small
+\begin{tabularx}{\textwidth}{@{}lXl@{}}
+\toprule
+tag & where & condition (\code{user\_solid\_bc})\\
+\midrule
+\code{top} & $y=H$ & $u_y=\delta(t)=2t$~mm, $u_x$ free (the load)\\
+\code{right} & $x=L$ & $u_x=0$, $u_y$ free (the lateral restraint)\\
+\code{left} & $x=0$, $y\ge R$ & $u_x=0$ (symmetry)\\
+\code{bottom} & $y=0$, $x\ge R$ & $u_y=0$ (symmetry)\\
+\code{hole} & $r=R$ & traction-free\\
+\midrule
+\multicolumn{3}{@{}l}{grid: $132$ quadrilaterals, $N=4$: $2217$ nodes, $4434$ DOFs ($164$ constrained); $t\in[0,1]$, $\Delta t=1/400$}\\
+\bottomrule
+\end{tabularx}
+\caption{Boundary conditions and discretisation of the perforated plate. The
+material is rate independent, so $t$ is a load parameter. The corners join a
+$u_x$ and a $u_y$ condition, so every constrained component belongs to one tag
+and the reaction on \code{top} is the force the top edge carries.}
+\label{tab:platebc}
+\end{table}
+
+\coderef{the case \jxfile{problems/Elasticity/perforated_plate2d}{problems/Elasticity/perforated\_plate2d}:
+deck \jx{problems/Elasticity/perforated_plate2d/user_inputs.jl}{13}{user\_inputs},
+material and geometry \jx{problems/Elasticity/perforated_plate2d/user_flux.jl}{27}{perforated\_plate\_properties},
+boundary conditions \jx{problems/Elasticity/perforated_plate2d/user_bc.jl}{19}{user\_solid\_bc},
+the paper's numbers \jx{problems/Elasticity/perforated_plate2d/user_analytic.jl}{15}{perforated\_plate\_paper\_reference};
+grid \jx{problems/Elasticity/make_meshes.py}{135}{structured\_perforated\_plate}
+(three transfinite blocks graded towards the hole, the hole curved back onto its
+circle by \code{:exact\_geometry}).}
+
+\paragraph{Discretisation and solution.} Nothing is specific to the plate: the
+grid, basis and metric terms of Steps~1--2, the tangent of Step~3 rebuilt and
+refactorised at every Newton iteration, the prescribed top displacement as a
+time-dependent Dirichlet value of Step~5, the history $\{\be^p,\bar e^p\}$ at
+each of the $132\times25$ quadrature points, and Algorithm~\ref{alg:newton} at
+every increment. The reactions are the residual on the constrained components,
+$\mathbf R_c=\mathbf f^{\mathrm{int}}_c-\mathbf f^{\mathrm{ext}}_c$, written as
+the nodal fields \code{rx}, \code{ry} (zero elsewhere) and summed per tag into
+\code{solid\_history.csv}. Starting from the unloaded state
+(\code{:linitial\_elastic\_solve => false}) the whole run takes
+about three minutes, VTK output every four increments included, on one core.
+\coderef{reaction fields \jx{src/kernel/solvers/quasistatic_solid.jl}{1001}{rx, ry};
+per tag \jx{src/kernel/solvers/quasistatic_solid.jl}{1049}{reactions}.}
+
+\paragraph{Results.} Table~\ref{tab:plate} compares the displacements of $A$
+and $B$ at the end of the loading with the paper's Table~1: Jexpresso's
+order-4 elements land on the paper's reference solution (an overkill mixed
+$u$--$p$--$\varepsilon^v$ finite-element computation) to $0.07\,\%$ and
+$0.27\,\%$, closer than any of the paper's quadratic VEM or FEM. The reaction on
+the top edge (Fig.~\ref{fig:platereaction}) rises elastically, bends as the
+plastic zone spreads from the hole (Fig.~\ref{fig:platezone}) across the
+ligament to the lateral edge, and levels off at the limit load. Over the
+elastic steps the paper's reaction sums are exactly ten times Jexpresso's
+($9.990\text{--}10.010$ across its five methods) while the displacements agree: the
+paper's force is that of a plate 10~mm thick, a thickness it does not state,
+and Jexpresso's force per unit thickness is multiplied by 10 to be drawn on the
+paper's axes. At the end of the loading it is $19\,507$~kg against the paper's
+$19\,557$--$19\,755$~kg, $0.25$--$1.25\,\%$ below its quadratic methods ---
+displacement-based elements approach a limit load from above --- and nearly
+flat: it rises by $0.05\,\%$ from step 200 to step 400, the paper's curves by
+$0.16$--$0.70\,\%$.
+
+\begin{table}[ht]
+\centering
+\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+ & $u_A$ [mm] & $v_B$ [mm] & Newton iterations\\
+ & (Table 1) & (Table 1) & per increment (Table 2)\\
+\midrule
+\textbf{Jexpresso SEM, $N=4$, 132 elements} & \textbf{2.7390} & \textbf{1.8539} & \textbf{5.76}\\
+paper, reference (mixed FEM, overkill) & 2.741 & 1.859 & ---\\
+paper, VEM $k=2$, Quad & 2.720 & 1.851 & 6.43\\
+paper, VEM $k=2$, Tri & 2.719 & 1.852 & 6.11\\
+paper, VEM $k=2$, Voronoi & 2.714 & 1.852 & 6.21\\
+paper, FEM Q9 & 2.733 & 1.853 & 6.70\\
+paper, FEM T6 & 2.719 & 1.853 & 6.11\\
+\bottomrule
+\end{tabular}
+\caption{The perforated plate at the end of the loading ($\delta=2$~mm):
+horizontal displacement of $A=(R,0)$, vertical displacement of $B=(0,R)$, and
+the average number of Newton iterations per load increment (Jexpresso: tolerance
+$\|\mathbf r\|\le10^{-10}\|\mathbf f\|$, 9 at most, no increment cut).}
+\label{tab:plate}
+\end{table}
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=\textwidth]{figures_quasistatic_solid/plate_reaction.png}
+\caption{The paper's Fig.~5.4 redrawn by \code{tools/artioli2017\_figures.jl}: the
+reaction sum on the top edge against the load step. Grey: the paper's five
+quadratic methods, read from the vector graphics of the arXiv PDF. Blue:
+Jexpresso, summed from the nodal reaction field \code{ry} of the VTK files,
+$\times10$ (the paper's plate is 10~mm thick). Right: the plateau, magnified.}
+\label{fig:platereaction}
+\end{figure}
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.48\textwidth]{figures_quasistatic_solid/plate_plastic_strain.png}
+\caption{The quarter plate at the end of the loading, displacement $\times5$,
+coloured by the accumulated plastic strain $\bar e^p$ (a quadrature-point
+history value projected onto the nodes), over the undeformed outline (dashed):
+the ligament between the hole and the lateral edge has yielded through, and $A$
+has moved towards the lateral edge as the ligament thins.}
+\label{fig:platezone}
+\end{figure}
+
+\paragraph{Redrawing the paper's figures.} \code{tools/artioli2017\_figures.jl}
+runs the three computations at the paper's settings (the viscoelastic cylinder
+with both Prony sets and FEAP's load convention, and the plate), reads every
+\code{iter\_<k>.pvtu} listed in \code{simulation.pvd} with
+\code{tools/vtu\_reader.jl} --- points, fields and cells --- and writes
+Fig.~5.2(a,b), Fig.~5.4, Table~1 with Table~2, the plastic zone, and an
+animation of the plate deforming beside its reaction curve:
+\begin{verbatim}
+julia --project=. tools/artioli2017_figures.jl            # run, then plot
+julia --project=. tools/artioli2017_figures.jl --no-run   # replot earlier runs
+\end{verbatim}
+\coderef{\jx{tools/artioli2017_figures.jl}{272}{figure\_5\_4},
+the force scale \jx{tools/artioli2017_figures.jl}{245}{PAPER\_FORCE\_SCALE};
+the reader \jx{tools/vtu_reader.jl}{203}{read\_vtu};
+the test \jxfile{test/test_perforated_plate.jl}{test/test\_perforated\_plate.jl}.}
 
 \section*{References}
 \begin{itemize}[nosep,leftmargin=*]
