@@ -785,12 +785,13 @@ function _build_rhs!(RHS, u, params, time)
                                          params.ω, neqs, params.inputs, AD, SD; bc_cons = params.bc_cons)
 
     if (params.inputs[:lmoist])
-        
+        params.mp.dTdt_lat .= params.mp.Tabs
         @timeit_debug JEXPRESSO_TIMER "do_micro_physics" do_micro_physics!(params.mp.Tabs, params.mp.qn, params.mp.qc, params.mp.qi, params.mp.qr,
                           params.mp.qs, params.mp.qg, params.mp.Pr, params.mp.Ps, params.mp.Pg,
                           params.mp.S_micro, params.mp.qsatt, params.mesh.npoin,
                           params.uaux, @view(params.mesh.coords[end, :]),
                           params.qp.qe, SD, params.SOL_VARS_TYPE)
+        params.mp.dTdt_lat .= (params.mp.Tabs .- params.mp.dTdt_lat) ./ params.inputs[:Δt]
 
         # if inputs[:ladapt] == true
         #     conformity4ncf_mp!(params.mp.Tabs, params.mp.qn, params.mp.qc, params.mp.qi, params.mp.qr,
