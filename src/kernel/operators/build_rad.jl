@@ -1732,7 +1732,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         nx, ny, nz, elem_to_face,
         extra_mesh, κ, σ, atmos_data, z_prof, τ_from_TOA, QT::Inexact, SD::NSD_3D, AD::ContGal;
         rt_sol_lw = Float64[], rt_sol_sw = Float64[], rt_sol_lw_available = false, rt_sol_sw_available = false,
-	lw_cache = nothing, sw_cache,
+	lw_cache = nothing, sw_cache = nothing,
 	mumps_handle_ref = nothing, superlu_handle_ref = nothing, prev_nnz_ref =nothing)
 
     bdy = make_boundary_predicates(mesh)
