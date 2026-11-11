@@ -2146,10 +2146,17 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
     # kinematic viscosity and magnetic diffusivity (:mhd_dissipation, a
     # function (x, y, z) -> (ν, η) evaluated once at the element centroids).
     # Assembled through the same Laplacian-per-slot barrier as the θ kernel.
+    #
+    # Reference-weighted operator (:dsgs_ref_weight, SGS.jl; conserved form only): slots
+    # 1-5 diffused as ∇·(μ ρ_e ∇((q − q_e)/ρ_e)), the weight ρ_e read by the 3D
+    # _expansion_visc! from the spare slot neqs+1 of uprimitive, where the case's
+    # user_primitives! puts it. Set on every call, for every 3D viscous path: a 2D case
+    # run earlier in the same session may have left the Ref on.
+    dsgs_ref_weight[] = params.VT == DSGS_MHD() && get(params.inputs, :dsgs_ref_weight, false) &&
+                        get(params.inputs, :dsgs_conserved, false)
     if params.VT == DSGS_MHD()
         TT = eltype(params.μ_dsgs)
         # the 2D-only switches read by the MHD user_primitives! must stay off
-        dsgs_ref_weight[]   = false
         dsgs_nodal_rho[]    = false
         dsgs_split_energy[] = false
         dsgs_qA, dsgs_qB, dsgs_wt = _dsgs_stencil(params, TT)
@@ -3956,14 +3963,20 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                     dζdy_klm = dζdy[iel,k,l,m]
                     dζdz_klm = dζdz[iel,k,l,m]
 
+                    # DynSGS-MHD reference weight (SGS.jl, dsgs_ref_weight; set by the 3D
+                    # viscous_rhs_el!): the case stores ρ_e in the spare slot neqs+1 of
+                    # uprimitive and slots 1-5 hold (q − q_e)/ρ_e, so the flux is μρ_e∇(…).
+                    μw = (dsgs_ref_weight[] && ieq <= 5) ? visc_coeffieq[ieq]*uprimitiveieq[k,l,m,end] :
+                                                           visc_coeffieq[ieq]
+
                     auxi = dqdξ*dξdx_klm + dqdη*dηdx_klm + dqdζ*dζdx_klm
-                    dqdx = visc_coeffieq[ieq]*auxi
+                    dqdx = μw*auxi
 
                     auxi = dqdξ*dξdy_klm + dqdη*dηdy_klm + dqdζ*dζdy_klm
-                    dqdy = visc_coeffieq[ieq]*auxi
+                    dqdy = μw*auxi
 
                     auxi = dqdξ*dξdz_klm + dqdη*dηdz_klm + dqdζ*dζdz_klm
-                    dqdz = visc_coeffieq[ieq]*auxi
+                    dqdz = μw*auxi
 
                     ∇ξ∇u_klm = (dξdx_klm*dqdx + dξdy_klm*dqdy + dξdz_klm*dqdz)*ωJac
                     ∇η∇u_klm = (dηdx_klm*dqdx + dηdy_klm*dqdy + dηdz_klm*dqdz)*ωJac

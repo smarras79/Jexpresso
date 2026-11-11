@@ -4,14 +4,33 @@
 # so the stratification and the potential dipole are not diffused, as in
 # problems/MHD/fluxEmergenceSon2025.
 #---------------------------------------------------------------------------------
+#
+# With :dsgs_ref_weight (kernel/physics/SGS.jl, rhs.jl) the slots ρ, ρu, ρv, E, ρw are
+# diffused as the RELATIVE departure (q − q_e)/ρ_e with the coefficient μ ρ_e (the weight
+# goes in the spare slot 10): ∇·(μ ρ_e ∇((q − q_e)/ρ_e)) instead of ∇·(μ ∇(q − q_e)). Both
+# vanish at rest; only the relative form obeys a maximum principle across the 10³-10⁷ density
+# drop of the chromosphere and transition region, where a departure of the dense side,
+# diffused upward, can exceed the whole local state (README). B and ψ keep the absolute form.
 function user_primitives!(u, qe, uprimitive, ::TOTAL)
-    for ieq = 1:9
-        uprimitive[ieq] = u[ieq] - qe[ieq]
+    if dsgs_ref_weight[]
+        iρe = 1.0/qe[1]
+        for ieq = 1:5
+            uprimitive[ieq] = (u[ieq] - qe[ieq])*iρe
+        end
+        for ieq = 6:9
+            uprimitive[ieq] = u[ieq] - qe[ieq]
+        end
+        uprimitive[10] = qe[1]            # the weight, read by _expansion_visc!
+    else
+        for ieq = 1:9
+            uprimitive[ieq] = u[ieq] - qe[ieq]
+        end
     end
 end
 
 function user_primitives(u, qe, uprimitive, ::TOTAL)
-    return SVector(u[1] - qe[1], u[2] - qe[2], u[3] - qe[3], u[4] - qe[4], u[5] - qe[5],
+    w = dsgs_ref_weight[] ? 1.0/qe[1] : 1.0
+    return SVector((u[1] - qe[1])*w, (u[2] - qe[2])*w, (u[3] - qe[3])*w, (u[4] - qe[4])*w, (u[5] - qe[5])*w,
                    u[6] - qe[6], u[7] - qe[7], u[8] - qe[8], u[9] - qe[9])
 end
 
