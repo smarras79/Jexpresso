@@ -26,7 +26,7 @@
 \makeatother
 
 % Permalinks into the Jexpresso source at the commit this document describes.
-\newcommand{\jxrepo}{https://github.com/smarras79/Jexpresso/blob/2ab96bf169f1eb9e5702936f4ef7b55b710ddc3d}
+\newcommand{\jxrepo}{https://github.com/smarras79/Jexpresso/blob/509e290a07dc68f3c5000f91f5c599d208a9cf8c}
 \newcommand{\jx}[3]{\href{\jxrepo/#1\#L#2}{\code{#3}}}
 \newcommand{\jxfile}[2]{\href{\jxrepo/#1}{\code{#2}}}
 \newcommand{\coderef}[1]{\par\smallskip\noindent{\small\textcolor{black!65}{\textsf{Code:}}~#1}\par\smallskip}
@@ -47,8 +47,8 @@
 \newcommand{\dd}{\,\mathrm{d}}
 
 \title{Quasi-static viscoelastic and elasto-plastic solids\\ on Jexpresso's spectral elements\\[4pt]
-\large The thick-walled cylinder and the perforated plate of\\ Artioli, Beir\~ao da Veiga, Lovadina \& Sacco (2017), \S\S4.2--4.3}
-\author{Jexpresso, branch \texttt{sm/solid}, commit \href{https://github.com/smarras79/Jexpresso/commit/2ab96bf169f1eb9e5702936f4ef7b55b710ddc3d}{\texttt{2ab96bf}}}
+\large The thick-walled cylinder, the perforated plate and the shape-memory arch of\\ Artioli, Beir\~ao da Veiga, Lovadina \& Sacco (2017), \S\S4.2--4.4}
+\author{Jexpresso, branch \texttt{sm/solid}, commit \href{https://github.com/smarras79/Jexpresso/commit/509e290a07dc68f3c5000f91f5c599d208a9cf8c}{\texttt{509e290}}}
 \date{}
 
 \begin{document}
@@ -65,8 +65,10 @@ history), every step of the spectral-element discretisation, and the
 initialisation, and links each to the line of the Jexpresso source where it is
 done. Section~\ref{sec:plate} adds the paper's second inelastic benchmark, a
 perforated elastic--perfectly plastic plate (\S4.3), and the script that redraws
-the paper's figures from Jexpresso's VTK output. Every link is a permalink to
-commit \texttt{2ab96bf}.
+the paper's figures from Jexpresso's VTK output; Section~\ref{sec:sma} the third,
+a shape-memory-alloy arch in plane stress (\S4.4), with the material's
+incremental minimisation and an exact elastic solution of the arch. Every link
+is a permalink to commit \texttt{509e290}.
 \end{abstract}
 
 \tableofcontents
@@ -257,8 +259,8 @@ each step is a linear elastic problem with the \emph{algorithmic} shear modulus
 $\tilde G$ and a known initial stress $\bsig^*$. For $\Delta t=0$,
 $d_m=\gamma_m=1$: the instantaneous (glassy) response.
 
-\coderef{coefficients $(d_m,\gamma_m)$ \jx{src/kernel/solvers/quasistatic_solid.jl}{177}{maxwell\_step\_coefficients};
-the material point \jx{src/kernel/solvers/quasistatic_solid.jl}{293}{solid\_constitutive\_update!};
+\coderef{coefficients $(d_m,\gamma_m)$ \jx{src/kernel/solvers/quasistatic_solid.jl}{188}{maxwell\_step\_coefficients};
+the material point \jx{src/kernel/solvers/quasistatic_solid.jl}{311}{solid\_constitutive\_update!};
 the case's material \jx{problems/Elasticity/viscoelastic_cylinder2d/user_flux.jl}{71}{user\_solid\_material}.}
 
 \paragraph{Closed-form solution.} By the correspondence principle (load $p/s$,
@@ -303,12 +305,77 @@ and the consistent tangent is
   \theta = 1-\frac{2G\Delta\zeta}{\|\bm X^{\mathrm{tr}}\|},\quad
   \bar\theta=\frac{2G}{2G+H_{\mathrm{kin}}+\frac23H_{\mathrm{iso}}}-(1-\theta).
 \end{equation}
-A shape-memory alloy (Artioli et al.\ \S3.3) keeps the transformation strain
-$\be^{tr}$ where $J_2$ keeps $\be^p$: the storage, the Newton loop of
-Step~7 (\S\ref{sec:sem}) and the output are the same.
-\coderef{\jx{src/kernel/solvers/quasistatic_solid.jl}{317}{solid\_constitutive\_update!} ($J_2$);
-history layout and plottable fields \jx{src/kernel/solvers/quasistatic_solid.jl}{218}{solid\_history\_fields};
+A shape-memory alloy keeps the transformation strain where $J_2$ keeps $\be^p$
+(\S\ref{sec:smalaw}): the storage, the Newton loop of Step~7 (\S\ref{sec:sem})
+and the output are the same.
+\coderef{\jx{src/kernel/solvers/quasistatic_solid.jl}{335}{solid\_constitutive\_update!} ($J_2$);
+history layout and plottable fields \jx{src/kernel/solvers/quasistatic_solid.jl}{233}{solid\_history\_fields};
 the plasticity case \jxfile{problems/Elasticity/plastic_cylinder2d}{problems/Elasticity/plastic\_cylinder2d}.}
+
+\subsection{Shape-memory alloy: the Souza--Auricchio--Petrini model}\label{sec:smalaw}
+
+Artioli et al.\ \S3.3: infinitesimal strain, the temperature $T(t)$ given, and
+a deviatoric (isochoric) transformation strain $\be^{tr}$, bounded by
+saturation:
+\begin{gather}
+  \beps = \beps^e + \be^{tr},\qquad \|\be^{tr}\|\le\varepsilon_L,\\
+  \psi = \tfrac12K(\tr\beps)^2 + G\|\dev\beps-\be^{tr}\|^2 + \tau(T)\|\be^{tr}\| + \tfrac12h\|\be^{tr}\|^2,
+  \qquad \tau = \beta\langle T-M_f\rangle,\\
+  \bm X = \bs - \bm\alpha,\quad \bm\alpha\in\tau\,\partial\|\be^{tr}\| + h\,\be^{tr} + \partial I_S(\be^{tr}),\quad
+  f(\bm X) = \|\bm X\| - R \le 0,\quad R=\sqrt{\tfrac23}\,\sigma_{y0},\\
+  \dot\be^{tr} = \dot\zeta\,\bm X/\|\bm X\|,\qquad \dot\zeta\ge0,\ \dot\zeta f = 0 .
+\end{gather}
+At $T\le M_f$ ($\tau=0$) a load leaves $\be^{tr}$ behind after unloading as
+long as $h\varepsilon_L<R$ --- the shape-memory effect; heating raises $\tau$,
+and once $\tau\ge R$ no transformation strain survives at zero load --- the
+shape recovery. Above $M_f$ the transformation starts at $\|\bs\|=R+\tau$ and
+reverses on unloading (superelasticity).
+
+\paragraph{The step.} The dissipation is $R\|\dot\be^{tr}\|$, the support
+function of the elastic domain, so backward Euler of the flow rule is the
+incremental minimisation
+\begin{equation}
+  \be^{tr}_{n+1} = \operatorname*{argmin}_{\|\bm x\|\le\varepsilon_L}\
+  \Phi(\bm x) = G\|\be-\bm x\|^2 + \tfrac12h\|\bm x\|^2 + \tau\|\bm x\| + R\|\bm x-\be^{tr}_n\|,
+  \qquad \be=\dev\beps_{n+1},
+  \label{eq:smamin}
+\end{equation}
+strictly convex, with one minimiser --- the state update the paper uses
+(Artioli \& Bisegna 2016), solved here exactly. Every term depends on $\bm x$
+through $\|\bm x\|$, $\bm x\cdot\be$ and $\bm x\cdot\be^{tr}_n$, so the minimiser lies
+in the plane of $\be$ and $\be^{tr}_n$; with $\bm a=2G\be$ and $c_0=2G+h$ the
+optimality conditions give four cases:
+\begin{itemize}[nosep]
+\item \emph{elastic}, $\bm x=\be^{tr}_n$, when
+  $\bm a-c_0\be^{tr}_n\in\tau\partial\|\be^{tr}_n\|+R\,\mathbb B+N_S(\be^{tr}_n)$ --- closed-form tests;
+\item \emph{full reverse transformation}, $\bm x=\bm0\ne\be^{tr}_n$, when
+  $\|\bm a+R\,\be^{tr}_n/\|\be^{tr}_n\|\|\le\tau$;
+\item \emph{flow}, $0<\|\bm x\|<\varepsilon_L$: $\bm X=R(\bm x-\be^{tr}_n)/\|\bm x-\be^{tr}_n\|$ and
+  \begin{equation}
+    \bm x(c) = \Big(1-\frac RD\Big)\frac{\bm a}{c} + \frac RD\,\be^{tr}_n,\qquad
+    D=\|\bm a-c\,\be^{tr}_n\|,\qquad c = c_0 + \tau/\|\bm x\|,
+  \end{equation}
+  in closed form for $\tau=0$ (the radial return of linear kinematic hardening),
+  else one scalar root in $\|\bm x\|$;
+\item \emph{saturated}, $\|\bm x\|=\varepsilon_L$: the same $\bm x(c)$ with
+  $c=c_0+\tau/\varepsilon_L+\gamma$, $\gamma\ge0$ the multiplier of the
+  constraint: one scalar root ($\|\bm x(c)\|$ decreases with $c$).
+\end{itemize}
+The tangent is analytic for the elastic and reverse cases and for flow at
+$\tau=0$ (the form of the $J_2$ one with $c_0$ in place of
+$2G+H_{\mathrm{kin}}$), a central difference of the update otherwise.
+
+\paragraph{Plane stress.} The paper's device is in plane stress. At every
+quadrature point $\varepsilon_{zz}$ is found by Newton so that $\sigma_{zz}=0$,
+with the 3D update as a black box (the ``nested iterations'' of the paper), and
+the in-plane tangent is the 3D one with $zz$ condensed out,
+$\mathbf D-\mathbf D_{:z}\mathbf D_{z:}/D_{zz}$; $\varepsilon_{zz}$ is kept with the
+history. Plane strain: $\varepsilon_{zz}=0$.
+\coderef{the model \jx{src/kernel/solvers/quasistatic_solid_sma.jl}{65}{SolidSMA};
+the step \eqref{eq:smamin} \jx{src/kernel/solvers/quasistatic_solid_sma.jl}{127}{sma\_return\_map};
+tangent \jx{src/kernel/solvers/quasistatic_solid_sma.jl}{219}{sma\_tangent3d!};
+plane stress \jx{src/kernel/solvers/quasistatic_solid_sma.jl}{266}{sma\_point!};
+the temperature of the increment \jx{src/kernel/solvers/quasistatic_solid_sma.jl}{83}{solid\_set\_time!}.}
 
 %==============================================================================
 \section{Spectral-element discretisation, step by step}\label{sec:sem}
@@ -394,8 +461,8 @@ once into the element-matrix layout \code{DSS\_laplace\_sparse} reads.
 variable tangent \jx{src/kernel/infrastructure/element_matrices.jl}{511}{build\_tangent\_stiffness\_matrices};
 the non-zero gradients \jx{src/kernel/infrastructure/element_matrices.jl}{435}{\_element\_basis\_gradients!};
 DSS \jx{src/kernel/infrastructure/element_matrices.jl}{839}{DSS\_laplace\_sparse};
-assembly of \eqref{eq:operators} \jx{src/kernel/solvers/quasistatic_solid.jl}{379}{solid\_sem\_operators},
-\jx{src/kernel/solvers/quasistatic_solid.jl}{404}{solid\_tangent\_matrix}.}
+assembly of \eqref{eq:operators} \jx{src/kernel/solvers/quasistatic_solid.jl}{397}{solid\_sem\_operators},
+\jx{src/kernel/solvers/quasistatic_solid.jl}{422}{solid\_tangent\_matrix}.}
 
 \subsection*{Step 4 --- the load vector}
 The pressure \eqref{eq:pressure} is integrated on every boundary edge of
@@ -406,10 +473,10 @@ summed onto the nodes:
 \end{equation}
 A body force would enter through the lumped (diagonal) LGL mass matrix,
 $\mathbf f_a\mathrel{+}=M_a\bm b(\bx_a)$.
-\coderef{\jx{src/kernel/solvers/quasistatic_solid.jl}{545}{solid\_boundary\_conditions!} with Jexpresso's
+\coderef{\jx{src/kernel/solvers/quasistatic_solid.jl}{563}{solid\_boundary\_conditions!} with Jexpresso's
 \jx{src/kernel/boundaryconditions/surface_integral.jl}{45}{compute\_segment\_integral!} and
 \jx{src/kernel/boundaryconditions/surface_integral.jl}{54}{DSS\_segment\_integral!};
-body force \jx{src/kernel/solvers/quasistatic_solid.jl}{594}{solid\_add\_body\_force!}.}
+body force \jx{src/kernel/solvers/quasistatic_solid.jl}{612}{solid\_add\_body\_force!}.}
 
 \subsection*{Step 5 --- the symmetry conditions}
 Each roller fixes one Cartesian component ($u_y=0$ on $\Gamma_x$, $u_x=0$ on
@@ -450,8 +517,8 @@ which reproduces the quadrature-point recursion to round-off.
 \EndFor
 \end{algorithmic}
 \end{algorithm}
-\coderef{the march \jx{src/kernel/solvers/quasistatic_solid.jl}{817}{nodal path};
-driver \jx{src/kernel/solvers/quasistatic_solid.jl}{652}{quasistatic\_solid\_solve!}.}
+\coderef{the march \jx{src/kernel/solvers/quasistatic_solid.jl}{857}{nodal path};
+driver \jx{src/kernel/solvers/quasistatic_solid.jl}{670}{quasistatic\_solid\_solve!}.}
 
 \subsection*{Step 7 --- the general path: quadrature-point history and Newton}
 For a nonlinear material (or with \code{:solid\_history => "quadrature"}) the
@@ -479,12 +546,12 @@ and cuts of every step. With the viscoelastic model this path reproduces
 \eqref{eq:nodalstep} to round-off; with $J_2$ plasticity it takes about four
 iterations per increment on the cylinder and about six on the perforated plate
 (\S\ref{sec:plate}).
-\coderef{\jx{src/kernel/solvers/quasistatic_solid.jl}{891}{quadrature path};
-Newton \jx{src/kernel/solvers/quasistatic_solid.jl}{917}{newton!} and the halving
-\jx{src/kernel/solvers/quasistatic_solid.jl}{950}{advance!};
-strain \jx{src/kernel/solvers/quasistatic_solid.jl}{421}{solid\_qp\_strains!} (with
+\coderef{\jx{src/kernel/solvers/quasistatic_solid.jl}{931}{quadrature path};
+Newton \jx{src/kernel/solvers/quasistatic_solid.jl}{957}{newton!} and the halving
+\jx{src/kernel/solvers/quasistatic_solid.jl}{995}{advance!};
+strain \jx{src/kernel/solvers/quasistatic_solid.jl}{439}{solid\_qp\_strains!} (with
 \jx{src/kernel/operators/operators.jl}{287}{\_\ensuremath{\nabla}f!});
-internal force \jx{src/kernel/solvers/quasistatic_solid.jl}{457}{solid\_internal\_force!} (the contraction of
+internal force \jx{src/kernel/solvers/quasistatic_solid.jl}{475}{solid\_internal\_force!} (the contraction of
 \jx{src/kernel/operators/rhs.jl}{2854}{\_expansion\_visc!}, then
 \jx{src/kernel/infrastructure/element_matrices.jl}{1053}{DSS\_rhs!}).}
 
@@ -497,8 +564,8 @@ Fields go to VTK through Jexpresso's \code{write\_output} (with the displacement
 also as a vector, \code{:vtk\_vectors}, for ParaView's \emph{Warp By Vector});
 \code{solid\_history.csv} logs every step; \code{:lplot\_deformed} draws the
 deformed grid.
-\coderef{\jx{src/kernel/solvers/quasistatic_solid.jl}{521}{solid\_nodal\_gradient!},
-\jx{src/kernel/solvers/quasistatic_solid.jl}{498}{solid\_qp\_to\_nodes!};
+\coderef{\jx{src/kernel/solvers/quasistatic_solid.jl}{539}{solid\_nodal\_gradient!},
+\jx{src/kernel/solvers/quasistatic_solid.jl}{516}{solid\_qp\_to\_nodes!};
 \jx{src/io/write_output.jl}{427}{write\_vtk} (its \code{:vtk\_vectors} option);
 \jx{src/io/plotting/jeplots.jl}{931}{plot\_deformed\_mesh}.}
 
@@ -526,7 +593,7 @@ Two load conventions, chosen by \code{:linitial\_elastic\_solve}:
   $0.073$.
 \end{itemize}
 \coderef{\jx{problems/Elasticity/viscoelastic_cylinder2d/initialize.jl}{1}{initialize};
-the zero-state check and the instantaneous step \jx{src/kernel/solvers/quasistatic_solid.jl}{1148}{quasistatic\_solid.jl};
+the zero-state check and the instantaneous step \jx{src/kernel/solvers/quasistatic_solid.jl}{1193}{quasistatic\_solid.jl};
 the switch \jx{problems/Elasticity/viscoelastic_cylinder2d/user_inputs.jl}{70}{:linitial\_elastic\_solve}.}
 
 %==============================================================================
@@ -743,7 +810,7 @@ deck \jx{problems/Elasticity/perforated_plate2d/user_inputs.jl}{13}{user\_inputs
 material and geometry \jx{problems/Elasticity/perforated_plate2d/user_flux.jl}{27}{perforated\_plate\_properties},
 boundary conditions \jx{problems/Elasticity/perforated_plate2d/user_bc.jl}{19}{user\_solid\_bc},
 the paper's numbers \jx{problems/Elasticity/perforated_plate2d/user_analytic.jl}{15}{perforated\_plate\_paper\_reference};
-grid \jx{problems/Elasticity/make_meshes.py}{135}{structured\_perforated\_plate}
+grid \jx{problems/Elasticity/make_meshes.py}{197}{structured\_perforated\_plate}
 (three transfinite blocks graded towards the hole, the hole curved back onto its
 circle by \code{:exact\_geometry}).}
 
@@ -758,8 +825,8 @@ the nodal fields \code{rx}, \code{ry} (zero elsewhere) and summed per tag into
 \code{solid\_history.csv}. Starting from the unloaded state
 (\code{:linitial\_elastic\_solve => false}) the whole run takes
 about three minutes, VTK output every four increments included, on one core.
-\coderef{reaction fields \jx{src/kernel/solvers/quasistatic_solid.jl}{1001}{rx, ry};
-per tag \jx{src/kernel/solvers/quasistatic_solid.jl}{1049}{reactions}.}
+\coderef{reaction fields \jx{src/kernel/solvers/quasistatic_solid.jl}{1046}{rx, ry};
+per tag \jx{src/kernel/solvers/quasistatic_solid.jl}{1094}{reactions}.}
 
 \paragraph{Results.} Table~\ref{tab:plate} compares the displacements of $A$
 and $B$ at the end of the loading with the paper's Table~1: Jexpresso's
@@ -836,10 +903,161 @@ animation of the plate deforming beside its reaction curve:
 julia --project=. tools/artioli2017_figures.jl            # run, then plot
 julia --project=. tools/artioli2017_figures.jl --no-run   # replot earlier runs
 \end{verbatim}
-\coderef{\jx{tools/artioli2017_figures.jl}{272}{figure\_5\_4},
-the force scale \jx{tools/artioli2017_figures.jl}{245}{PAPER\_FORCE\_SCALE};
+\coderef{\jx{tools/artioli2017_figures.jl}{286}{figure\_5\_4},
+the force scale \jx{tools/artioli2017_figures.jl}{259}{PAPER\_FORCE\_SCALE};
 the reader \jx{tools/vtu_reader.jl}{203}{read\_vtu};
 the test \jxfile{test/test_perforated_plate.jl}{test/test\_perforated\_plate.jl}.}
+
+
+%==============================================================================
+\section{The shape-memory-alloy arch (\S4.4 of the paper)}\label{sec:sma}
+%==============================================================================
+
+The paper's third benchmark puts the material of \S\ref{sec:smalaw} into a
+device: a semicircular arch $3.5\le r\le4.5$~mm, clamped at one end and loaded
+at the other by a traction $q$ along $+x$, in plane stress, with
+$E=53000$~MPa, $\nu=0.36$, $\varepsilon_L=0.04$, $M_f=223$~K, $h=1000$~MPa,
+$\beta=2.1$~MPa/K, $\sigma_{y0}=50$~MPa. Table~3 of the paper drives it through
+five branches of the load parameter: $q$ to $+60$~N/mm and back, to $-60$ and
+back, all at $T=M_f$, then heating by 80~K at $q=0$
+(Fig.~\ref{fig:archsetup}). At $T=M_f$, $h\varepsilon_L=40<R=40.8$~MPa: the
+transformation strain stays after unloading; heating makes $\tau$ exceed $R$ at
+242.4~K and the arch must recover its shape.
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[x=0.78cm,y=0.78cm,>=Stealth,meshline/.style={gray!55,very thin}]
+  \def\a{3.5}\def\b{4.5}
+  \fill[gray!12] (\a,0) -- (\b,0) arc[start angle=0,end angle=180,radius=\b] -- (-\a,0) arc[start angle=180,end angle=0,radius=\a] -- cycle;
+  \input{figures_quasistatic_solid/arch_mesh.tikz}
+  \draw[thick] (\b,0) arc[start angle=0,end angle=180,radius=\b];
+  \draw[thick] (\a,0) arc[start angle=0,end angle=180,radius=\a];
+  % clamp
+  \draw[very thick] (-\b,0) -- (-\a,0);
+  \fill[pattern=north east lines] (-\b-0.15,-0.28) rectangle (-\a+0.15,0);
+  \draw (-\b-0.15,0) -- (-\a+0.15,0);
+  % loaded end: traction q along +x
+  \draw[very thick,blue!70!black] (\a,0) -- (\b,0);
+  \foreach \x in {3.55,3.8,...,4.45}{ \draw[->,blue!70!black,thick] (\x-0.18,-0.22) -- (\x+0.18,-0.22); }
+  \node[blue!70!black,anchor=north] at (4.0,-0.3) {$q(t)$};
+  % A
+  \fill (\b,0) circle (0.06) node[above right=1pt] {$A$};
+  % axes
+  \draw[->] (-5.4,0) -- (5.6,0) node[below] {$x$};
+  \draw[->] (0,-0.7) -- (0,5.4) node[left] {$y$};
+  % radii
+  \draw[|<->|,thin] (0,-1.15) -- node[below] {$R_i=3.5$} (\a,-1.15);
+  \draw[|<->|,thin] (-\b,-1.15) -- node[below] {$R_o=4.5$ mm} (0,-1.15);
+  \node[font=\small,align=center] at (-4.0,-0.62) {clamped};
+  \node[font=\small,align=center] at (-1.65,1.5) {arcs $r=R_i$, $r=R_o$:\\ traction-free};
+  % Table 3 inset: q(t) and T(t)
+  \begin{scope}[shift={(7.2,3.0)},x=0.55cm,y=0.022cm]
+    \draw[->] (0,0) -- (5.6,0) node[below] {$t$};
+    \draw[->] (0,-75) -- (0,80) node[left] {$q$};
+    \draw[very thick,blue!70!black] (0,0) -- (1,60) -- (2,0) -- (3,-60) -- (4,0) -- (5,0);
+    \foreach \t in {1,...,5}{ \draw (\t,2) -- (\t,-2); \node[font=\scriptsize,below] at (\t,-3) {\t}; }
+    \node[font=\scriptsize,anchor=east] at (0,60) {$60$};
+    \node[font=\scriptsize,anchor=east] at (0,-60) {$-60$};
+    \node[font=\scriptsize,blue!70!black,anchor=west] at (1.1,62) {N/mm};
+  \end{scope}
+  \begin{scope}[shift={(7.2,-1.9)},x=0.55cm,y=0.012cm]
+    \draw[->] (0,0) -- (5.6,0) node[below] {$t$};
+    \draw[->] (0,0) -- (0,110) node[left] {$T$};
+    \draw[very thick,red!70!black] (0,10) -- (4,10) -- (5,90);
+    \node[font=\scriptsize,anchor=east] at (0,10) {223};
+    \node[font=\scriptsize,anchor=west] at (5.1,90) {303 K};
+    \draw[dotted] (0,90) -- (5,90);
+  \end{scope}
+\end{tikzpicture}
+\caption{The SMA arch, plane stress: $2\times24$ spectral elements, both arcs curved
+onto their circles. One end is clamped, the other carries the traction $q(t)$ along $+x$;
+$A=(R_o,0)$. Right: the load and the temperature of Table~3 against the load parameter $t$
+(40 increments per load branch, 10 in the heating one).}
+\label{fig:archsetup}
+\end{figure}
+
+\coderef{the case \jxfile{problems/Elasticity/sma_arch2d}{problems/Elasticity/sma\_arch2d}:
+material, load and temperature \jx{problems/Elasticity/sma_arch2d/user_flux.jl}{37}{sma\_arch\_properties},
+\jx{problems/Elasticity/sma_arch2d/user_flux.jl}{60}{sma\_arch\_load},
+\jx{problems/Elasticity/sma_arch2d/user_flux.jl}{69}{sma\_arch\_temperature};
+boundary conditions \jx{problems/Elasticity/sma_arch2d/user_bc.jl}{17}{user\_solid\_bc};
+the increments of Table~3 \jx{problems/Elasticity/sma_arch2d/user_inputs.jl}{18}{sma\_step\_times} (\code{:solid\_step\_times});
+grid \jx{problems/Elasticity/make_meshes.py}{135}{structured\_half\_annulus}.}
+
+\paragraph{Discretisation and solution.} The quadrature-point path of Step~7
+with the plane-stress material: history $\{\be^{tr},\varepsilon_{zz}\}$ at each of
+the $48\times25$ points, the temperature of the increment set before its Newton
+solve, Newton to $10^{-8}$ (near zero load the residual of points that sit on a
+transformation kink cycles at $\sim10^{-10}$~N/mm). While the transformation
+front sweeps through the wall on the first loading, 20 increments are halved
+automatically. The run takes about three minutes.
+
+\paragraph{Verification.} The material point is checked against independent
+references (\code{test/test\_sma\_arch.jl}): over 4000 random states covering the
+four cases, no feasible perturbation lowers $\Phi$; the uniaxial shape-memory
+loop at $M_f$ and the superelastic loop at $M_f+80$~K match the exact
+one-dimensional minimisation to $7\times10^{-6}$ and $2\times10^{-5}$~MPa;
+heating at zero stress gives $\|\be^{tr}\|=\min(\varepsilon_L,\max(0,(R-\tau)/h))$
+to $10^{-15}$; the plane-stress tangent matches central differences to
+$1.4\times10^{-7}$. The structural side has an exact elastic solution: the arch
+bent by a force $P$ at its free end is Timoshenko \& Goodier's curved bar,
+exact for any opening angle,
+\begin{gather}
+  \sigma_r = \Big(2Ar-\frac{2B}{r^3}+\frac Dr\Big)\sin\theta,\quad
+  \sigma_\theta = \Big(6Ar+\frac{2B}{r^3}+\frac Dr\Big)\sin\theta,\quad
+  \tau_{r\theta} = -\Big(2Ar-\frac{2B}{r^3}+\frac Dr\Big)\cos\theta,\\
+  u_r = \frac{\sin\theta}{E}\Big[A(1-3\nu)r^2+\frac{B(1+\nu)}{r^2}+D(1-\nu)\ln r\Big]-\frac{2D}{E}(\sin\theta+\theta\cos\theta),\\
+  u_\theta = -\frac{\cos\theta}{E}\Big[A(5+\nu)r^2+\frac{B(1+\nu)}{r^2}+D(1-\nu)(1-\ln r)\Big]+\frac{2D}{E}\,\theta\sin\theta,
+\end{gather}
+with $A=P/2N$, $B=-Pa^2b^2/2N$, $D=-P(a^2+b^2)/N$, $N=b^2-a^2-(a^2+b^2)\ln(b/a)$,
+plus a rigid motion that fixes the centroid of the clamped end (the
+displacements integrated here for plane stress and checked against Hooke's law
+by finite differences). With that displacement on the clamp and its shear
+traction on the free end (\code{JEXPRESSO\_SMA\_VERIFY=elastic}) the SEM solution
+must reproduce it: the error is $1.6\times10^{-7}$, $1.0\times10^{-9}$,
+$3.0\times10^{-11}$, $1.4\times10^{-12}$~mm for $N=3,\dots,6$ --- spectral.
+\coderef{the exact arch \jx{problems/Elasticity/sma_arch2d/user_analytic.jl}{66}{curved\_bar\_exact};
+the test \jxfile{test/test_sma_arch.jl}{test/test\_sma\_arch.jl}.}
+
+\paragraph{Results.} The device behaves as the model says it must
+(Figs.~\ref{fig:smacurve} and~\ref{fig:smadef}): the transformation spreads
+from the crown, unloading leaves the arch open ($u_A=2.48$~mm at $t=2$), the
+reversed load closes it to the mirror image ($u_A(3)=-u_A(1)$ to $10^{-3}$), and
+heating returns it to its initial shape between $T=239$ and 247~K, the reaction
+balancing $q$ at every increment. But the cycle is \emph{2.6 times wider} than
+the paper's Fig.~5.6: $u_A(t=1)=4.49$~mm against 1.70. The difference is in the
+paper's data, not in the discretisation. Up to $q=1.5$~N/mm the arch is elastic
+with the exact compliance above, a stiffness of 43.5~N/mm per mm; the paper's
+first branch is a straight line of slope 75.4 up to $q\approx23$~N/mm. For a
+curved beam, elasticity alone ties the crown stress to the end displacement,
+$\sigma\approx Eh\,\delta/\pi R^2\approx1050$~MPa per mm with the stated $E$ ---
+whatever the thickness or the load convention --- so at the 0.3~mm where the
+paper's line ends the crown would carry $\sim300$~MPa, six times
+$\sigma_{y0}$: the paper's line cannot be elastic and its transformation start
+at 50~MPa together. Fitting that line with two free numbers, a 10~mm thickness
+and $E\approx9.2$~GPa, matches its first 17 points and still misses the rest
+($u_A(1)=2.32$ against 1.70). The paper's computation therefore differs from
+the stated model by more than one number; Jexpresso solves the model as stated.
+
+\begin{figure}[!ht]
+\centering
+\includegraphics[width=0.82\textwidth]{figures_quasistatic_solid/sma_fig5_6.png}
+\caption{The paper's Fig.~5.6 redrawn by \code{tools/artioli2017\_figures.jl}:
+the load (from the clamp reaction in the VTK files) against the horizontal
+displacement of $A$. Grey circles: the paper's quadratic VEM, one per increment,
+read from the vector graphics of the arXiv PDF. Blue: Jexpresso, $N=4$, plane
+stress, with the parameters as stated.}
+\label{fig:smacurve}
+\end{figure}
+
+\begin{figure}[!ht]
+\centering
+\includegraphics[width=0.72\textwidth]{figures_quasistatic_solid/sma_fig5_5b.png}
+\caption{The paper's Fig.~5.5(b): the arch at $t=1$ ($q=+60$) and $t=3$ ($q=-60$)
+over its reference shape, true scale, with the LGL sub-cells of the grid ---
+small-strain kinematics, as in the paper.}
+\label{fig:smadef}
+\end{figure}
+\FloatBarrier
 
 \section*{References}
 \begin{itemize}[nosep,leftmargin=*]
@@ -850,6 +1068,15 @@ the test \jxfile{test/test_perforated_plate.jl}{test/test\_perforated\_plate.jl}
 \item O.~C.~Zienkiewicz, R.~L.~Taylor, D.~D.~Fox, \emph{The Finite Element Method for Solid and
   Structural Mechanics}, 7th ed., Butterworth--Heinemann (2014).
 \item R.~Hill, \emph{The Mathematical Theory of Plasticity}, Oxford (1950).
+\item A.~C.~Souza, E.~N.~Mamiya, N.~Zouain, \emph{Three-dimensional model for solids undergoing
+  stress-induced phase transformations}, Eur.\ J.\ Mech.\ A/Solids 17 (1998) 789--806.
+\item F.~Auricchio, L.~Petrini, \emph{Improvements and algorithmical considerations on a recent
+  three-dimensional model describing stress-induced solid phase transformations}, Int.\ J.\
+  Numer.\ Meth.\ Engng 55 (2002) 1255--1284.
+\item E.~Artioli, P.~Bisegna, \emph{An incremental energy minimization state update algorithm for 3D
+  phenomenological internal-variable SMA constitutive models based on isotropic flow potentials},
+  Int.\ J.\ Numer.\ Meth.\ Engng 105 (2016) 197--220.
+\item S.~P.~Timoshenko, J.~N.~Goodier, \emph{Theory of Elasticity}, 3rd ed., McGraw--Hill (1970), \S31.
 \item D.~A.~Kopriva, \emph{Metric identities and the discontinuous spectral element method on
   curvilinear meshes}, J.\ Sci.\ Comput.\ 26 (2006) 301--327.
 \end{itemize}
