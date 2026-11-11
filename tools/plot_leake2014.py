@@ -584,8 +584,10 @@ def cmd_axflux(a):
 # Camera: "yz" looks along -x with the tube (along y) left to right (Fig. 2); "xz" looks along +y across the tube
 # (Figs. 1b, 10). dseeds = nx,ny,x0,x1,ymax: bottom-boundary seeds at x in [x0, x1], |y| <= ymax (a dipole line
 # from (x, z = -30) peaks at z = -5 for x = 50, 30 for 80, 109 for 127). bz = color range of Bz at z = 0.
+# dseeds: the bottom-boundary seeds of the gray lines on y = 0, ±10, ±20, the five lines of Paper II's
+# Fig. 2(d) (a pure dipole line keeps its y, so its top view is a straight line along x)
 _EMERGE = dict(base="yz", azimuth=30.0, elevation=8.0, zoom=1.4, box=(-45, 45, -45, 45, -25, 55),
-               dseeds=(3, 5, 70, 95, 40), bz=0.5)
+               dseeds=(3, 5, 70, 95, 20), bz=0.5)
 PRESETS = {
     # Fig. 1(b): green dipole lines from the bottom, multicolored tube lines from the side boundaries,
     # transparent Bz plane (the paper's +-7.5 G)
