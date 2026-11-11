@@ -1633,14 +1633,12 @@ function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
     x_updated = MPI.Scatterv!(s_x_vbuf, zeros(eltype(x_local), buffer_sz), 0, comm)
     y_updated = MPI.Scatterv!(s_y_vbuf, zeros(eltype(y_local), buffer_sz), 0, comm)
     z_updated = MPI.Scatterv!(s_z_vbuf, zeros(eltype(z_local), buffer_sz), 0, comm)
+    # Only x/y/z: mesh.coords is rebuilt from them at the end of mod_mesh_mesh_driver,
+    # and writing it here (before that rebuild) would leave a partly filled coords array
+    # visible to anything that runs in between, e.g. the pre-adaptation criteria.
     mesh.x[per_ip] .= x_updated
     mesh.y[per_ip] .= y_updated
     mesh.z[per_ip] .= z_updated
-    if size(mesh.coords, 1) >= 3 && size(mesh.coords, 2) == mesh.npoin     # coords is (3, npoin)
-        mesh.coords[1, per_ip] .= x_updated
-        mesh.coords[2, per_ip] .= y_updated
-        mesh.coords[3, per_ip] .= z_updated
-    end
 end
 
 
