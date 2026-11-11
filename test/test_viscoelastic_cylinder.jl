@@ -6,9 +6,9 @@
 #
 #   julia --project=. test/test_viscoelastic_cylinder.jl
 #
-# Needs the package (`using Jexpresso`): it runs the real case 24 times, with
+# Needs the package (`using Jexpresso`): it runs the real case 28 times, with
 # the JEXPRESSO_VE_* overrides of its deck, and reads back solid_history.csv.
-# About six minutes on four cores; the first run also pays the compilation.
+# About four minutes; the first run also pays the compilation.
 #
 # Two references, which is what lets the errors be TOLD APART:
 #
@@ -76,12 +76,15 @@ case_fn(f::Symbol, args...; kw...) = Base.invokelatest(getfield(Jexpresso, f), a
 """
 Run the case once and compare its probe history with both references.
 """
-function run_ve(; set = "ve1", dt = 1.0, load = "step", integrator = "exponential", nop = 4)
+function run_ve(; set = "ve1", dt = 1.0, load = "step", integrator = "exponential", nop = 4,
+                  history = "nodal")
     withenv("JEXPRESSO_VE_SET"        => set,
             "JEXPRESSO_VE_DT"         => string(dt),
             "JEXPRESSO_VE_LOAD"       => load,
             "JEXPRESSO_VE_INTEGRATOR" => integrator,
             "JEXPRESSO_VE_NOP"        => string(nop),
+            "JEXPRESSO_VE_HISTORY"    => history,
+            "JEXPRESSO_VE_PLOT"       => "false",
             "JEXPRESSO_VE_OUTFORMAT"  => "none") do
 
         rm(CSV_PATH; force = true)
@@ -160,6 +163,24 @@ rate(e1, e2, r = 2.0) = log(e1/e2)/log(r)
                     join((@sprintf("%.3f", x) for x in rates), "  "))
             @test all(r -> r.e_space < 1.0e-6, runs)    # space never pollutes the rate
             @test all(x -> abs(x - order) < 0.1, rates)
+        end
+    end
+
+    #---------------------------------------------------------------------------
+    @testset "quadrature-point history (the general path) = nodal history, to round-off" begin
+        # The general path stores the Maxwell variables at every quadrature point
+        # and solves each step by Newton with the assembled tangent; the nodal
+        # path is the linear-viscoelastic shortcut. Same discretisation, so they
+        # must agree to round-off — which checks the per-point storage, the
+        # tangent assembly and the internal force on a problem with an answer.
+        for (set, load, integrator) in (("ve1", "step", "exponential"),
+                                        ("ve2", "first_increment", "midpoint"))
+            rn = run_ve(set = set, load = load, integrator = integrator, history = "nodal")
+            rq = run_ve(set = set, load = load, integrator = integrator, history = "quadrature")
+            d  = max(maximum(abs, rn.uA .- rq.uA), maximum(abs, rn.uB .- rq.uB))/maximum(abs, rn.uA)
+            @printf("   %s, %-15s %-12s max |u_nodal − u_quadrature| / max u_A = %.1e\n",
+                    set, load, integrator, d)
+            @test d < 1.0e-10
         end
     end
 

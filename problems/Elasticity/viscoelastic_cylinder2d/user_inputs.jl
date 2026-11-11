@@ -9,6 +9,8 @@
 #   JEXPRESSO_VE_INTEGRATOR  exponential | midpoint | backward_euler                [exponential]
 #   JEXPRESSO_VE_NOP         polynomial order                                        [4]
 #   JEXPRESSO_VE_OUTFORMAT   vtk | none   (none: solid_history.csv only)             [vtk]
+#   JEXPRESSO_VE_PLOT        true | false (deformed-shape PNGs + deformed.gif)       [true]
+#   JEXPRESSO_VE_HISTORY     nodal | quadrature (where the Maxwell history lives)    [nodal]
 #---------------------------------------------------------------------------------
 _ve_env(key, default) = String(strip(get(ENV, key, default)))
 _ve_dt()   = something(tryparse(Float64, _ve_env("JEXPRESSO_VE_DT", "")), 1.0)
@@ -95,6 +97,24 @@ function user_inputs()
         :outformat               => _ve_env("JEXPRESSO_VE_OUTFORMAT", "vtk"),
         :loverwrite_output       => true,
         :output_dir              => "./output",
+        #
+        # SEEING IT DEFORM. In ParaView: open simulation.pvd, apply Warp By
+        # Vector (vector "u", written by :vtk_vectors), colour by any field,
+        # press Play. Without ParaView: deformed-umag-it<k>.png and
+        # deformed.gif, the deformed SEM grid at true scale (ve1 creeps by
+        # 16% of the bore radius) over the dashed undeformed outline.
+        #
+        :vtk_vectors             => [("u", "ux", "uy")],
+        :lplot_deformed          => lowercase(_ve_env("JEXPRESSO_VE_PLOT", "true")) == "true",
+        :plot_deformed_field     => "umag",
+        :plot_deformed_scale     => 1.0,
+        :plot_deformed_clims     => (0.0, 0.7),
+        #
+        # Where the Maxwell history lives: "nodal" (the linear-viscoelastic
+        # shortcut, default) or "quadrature" (the general per-point storage
+        # plasticity needs; the two agree to round-off).
+        #
+        :solid_history           => _ve_env("JEXPRESSO_VE_HISTORY", "nodal"),
     ) #Dict
 
     return inputs

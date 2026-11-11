@@ -912,3 +912,108 @@ function plot_surf3d(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_
     end
 
 end
+
+"""
+    plot_deformed_mesh(mesh, ux, uy, field, fieldname, t, OUTPUT_DIR, iout;
+                       scale = 1.0, clims = nothing, colormap = :viridis, npix = 500)
+
+The 2D grid in its DEFORMED configuration x + scale·u, coloured by a nodal
+`field`: each LGL sub-cell of every spectral element is split into two
+triangles and filled by linear interpolation of the nodal values, on a raster
+over the deformed bounding box (pixels outside the body stay empty, so holes
+and re-entrant corners are drawn as such). The deformed spectral-element edges
+are drawn on top and the undeformed boundary, dashed, underneath — the shape
+change is the gap between the two. `scale` magnifies the displacement.
+
+Written to `deformed-<fieldname>-it<iout>.png` in OUTPUT_DIR; returns the plot
+(the quasi-static solid solver also strings the frames into deformed.gif).
+"""
+function plot_deformed_mesh(mesh::St_mesh, ux, uy, field, fieldname, t, OUTPUT_DIR, iout;
+                            scale = 1.0, clims = nothing, colormap = :viridis, npix = 500)
+
+    haskey(ENV, "GKSwstype") || (ENV["GKSwstype"] = "100")    # no window: file output only
+
+    ngl   = mesh.ngl
+    npoin = Int(mesh.npoin)
+    X  = [mesh.coords[1, ip] + scale*ux[ip] for ip = 1:npoin]
+    Y  = [mesh.coords[2, ip] + scale*uy[ip] for ip = 1:npoin]
+    x0 = mesh.coords[1, 1:npoin]
+    y0 = mesh.coords[2, 1:npoin]
+
+    xmin = min(minimum(X), minimum(x0)); xmax = max(maximum(X), maximum(x0))
+    ymin = min(minimum(Y), minimum(y0)); ymax = max(maximum(Y), maximum(y0))
+    pad  = 0.03*max(xmax - xmin, ymax - ymin)
+    xmin -= pad; xmax += pad; ymin -= pad; ymax += pad
+    Lx = xmax - xmin; Ly = ymax - ymin
+    nx = Lx >= Ly ? npix : max(64, round(Int, npix*Lx/Ly))
+    ny = Ly >= Lx ? npix : max(64, round(Int, npix*Ly/Lx))
+    xg = range(xmin, xmax, length = nx)
+    yg = range(ymin, ymax, length = ny)
+    dx = step(xg); dy = step(yg)
+
+    # Fill the raster triangle by triangle (two per LGL sub-cell).
+    Z = fill(NaN, nx, ny)
+    for iel = 1:mesh.nelem, j = 1:ngl-1, i = 1:ngl-1
+        a = mesh.connijk[iel, i, j];   b = mesh.connijk[iel, i+1, j]
+        c = mesh.connijk[iel, i+1, j+1]; d = mesh.connijk[iel, i, j+1]
+        for (p, q, r) in ((a, b, c), (a, c, d))
+            x1, x2, x3 = X[p], X[q], X[r]
+            y1, y2, y3 = Y[p], Y[q], Y[r]
+            det = (y2 - y3)*(x1 - x3) + (x3 - x2)*(y1 - y3)
+            abs(det) <= eps(Float64)*max(1.0, Lx*Ly) && continue
+            i0 = clamp(floor(Int, (min(x1, x2, x3) - xmin)/dx) + 1, 1, nx)
+            i1 = clamp(ceil(Int,  (max(x1, x2, x3) - xmin)/dx) + 1, 1, nx)
+            j0 = clamp(floor(Int, (min(y1, y2, y3) - ymin)/dy) + 1, 1, ny)
+            j1 = clamp(ceil(Int,  (max(y1, y2, y3) - ymin)/dy) + 1, 1, ny)
+            for jj = j0:j1, ii = i0:i1
+                px = xg[ii]; py = yg[jj]
+                l1 = ((y2 - y3)*(px - x3) + (x3 - x2)*(py - y3))/det
+                l2 = ((y3 - y1)*(px - x3) + (x1 - x3)*(py - y3))/det
+                l3 = 1.0 - l1 - l2
+                (l1 >= -1.0e-9 && l2 >= -1.0e-9 && l3 >= -1.0e-9) || continue
+                Z[ii, jj] = l1*field[p] + l2*field[q] + l3*field[r]
+            end
+        end
+    end
+
+    # Deformed spectral-element edges, and the undeformed boundary.
+    ex = Float64[]; ey = Float64[]
+    for iel = 1:mesh.nelem
+        for side in ((1:ngl, fill(1, ngl)), (fill(ngl, ngl), 1:ngl),
+                     (ngl:-1:1, fill(ngl, ngl)), (fill(1, ngl), ngl:-1:1))
+            for (ii, jj) in zip(side...)
+                ip = mesh.connijk[iel, ii, jj]
+                push!(ex, X[ip]); push!(ey, Y[ip])
+            end
+            push!(ex, NaN); push!(ey, NaN)
+        end
+    end
+    bx = Float64[]; by = Float64[]
+    for iedge = 1:size(mesh.poin_in_bdy_edge, 1)
+        for k = 1:ngl
+            ip = mesh.poin_in_bdy_edge[iedge, k]
+            push!(bx, x0[ip]); push!(by, y0[ip])
+        end
+        push!(bx, NaN); push!(by, NaN)
+    end
+
+    if clims === nothing
+        finite = filter(isfinite, field)
+        lo, hi = isempty(finite) ? (0.0, 1.0) : extrema(finite)
+        hi > lo || (hi = lo + max(abs(lo), 1.0)*1.0e-12)
+        clims = (lo, hi)
+    end
+    hfig = 560
+    wfig = clamp(round(Int, hfig*Lx/Ly) + 160, 420, 1300)
+    title = @sprintf("%s   t = %.4g   (displacement x%g)", fieldname, t, scale)
+
+    plt = Plots.heatmap(collect(xg), collect(yg), permutedims(Z);
+                        c = Symbol(colormap), clims = clims, aspect_ratio = :equal,
+                        xlims = (xmin, xmax), ylims = (ymin, ymax), size = (wfig, hfig),
+                        colorbar_title = string(fieldname), title = title,
+                        xlabel = "x", ylabel = "y", framestyle = :box, titlefontsize = 10)
+    Plots.plot!(plt, bx, by; color = :gray45, linestyle = :dash, linewidth = 1.0, label = "")
+    Plots.plot!(plt, ex, ey; color = :black, linewidth = 0.6, label = "")
+    Plots.savefig(plt, joinpath(OUTPUT_DIR, string("deformed-", fieldname, "-it", iout, ".png")))
+    return plt
+end

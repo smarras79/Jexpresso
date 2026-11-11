@@ -516,6 +516,20 @@ cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, Int64[ip1, ip2, ip3, ip4])
             idx = (ivar - 1)*npoin
             vtkf[string(outvarnames[ivar]), VTKPointData()] = @view(qout[1:npoin,ivar])
         end
+        # Vector fields assembled from scalar outputs, e.g.
+        # :vtk_vectors => [("u", "ux", "uy")] (2D) or [("u", "ux", "uy", "uz")]:
+        # ParaView's Warp By Vector and Glyph filters want ONE vector array, not
+        # separate scalars. A missing z component is written as zero.
+        for vecspec in get(inputs, :vtk_vectors, ())
+            vnames = string.(outvarnames)
+            icomp  = [findfirst(==(string(c)), vnames) for c in vecspec[2:end]]
+            any(isnothing, icomp) && continue
+            vfield = zeros(Float64, 3, npoin)
+            for (c, iv) in enumerate(icomp[1:min(3, length(icomp))])
+                vfield[c, :] .= @view(qout[1:npoin, iv])
+            end
+            vtkf[string(vecspec[1]), VTKPointData()] = vfield
+        end
         # log10 fields, as the PNG writer renders them (:plot_log10, floored
         # at 1e-300): one extra field log10_<var> per listed variable, next
         # to the linear one, so ParaView shows the decades the literature
@@ -676,6 +690,20 @@ cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, Int64[ip1, ip2, ip3, ip4, ip
         for ivar = 1:noutvar
             idx = (ivar - 1)*npoin
             vtkf[string(outvarnames[ivar]), VTKPointData()] = @view(qout[1:npoin,ivar])
+        end
+        # Vector fields assembled from scalar outputs, e.g.
+        # :vtk_vectors => [("u", "ux", "uy")] (2D) or [("u", "ux", "uy", "uz")]:
+        # ParaView's Warp By Vector and Glyph filters want ONE vector array, not
+        # separate scalars. A missing z component is written as zero.
+        for vecspec in get(inputs, :vtk_vectors, ())
+            vnames = string.(outvarnames)
+            icomp  = [findfirst(==(string(c)), vnames) for c in vecspec[2:end]]
+            any(isnothing, icomp) && continue
+            vfield = zeros(Float64, 3, npoin)
+            for (c, iv) in enumerate(icomp[1:min(3, length(icomp))])
+                vfield[c, :] .= @view(qout[1:npoin, iv])
+            end
+            vtkf[string(vecspec[1]), VTKPointData()] = vfield
         end
         # log10 fields, as the PNG writer renders them (:plot_log10, floored
         # at 1e-300): one extra field log10_<var> per listed variable, next

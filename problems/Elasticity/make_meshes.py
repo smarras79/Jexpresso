@@ -165,3 +165,10 @@ if __name__ == "__main__":
         2.0, 4.0, 4, 8,
         os.path.join(HERE, "viscoelastic_cylinder2d", "quarter_annulus_4x8.msh"),
         "quarter_annulus")
+
+    # plastic_cylinder2d: the same quarter cylinder, 8 radial elements so the
+    # elastic-plastic front crossing the wall is resolved.
+    structured_quarter_annulus(
+        2.0, 4.0, 8, 8,
+        os.path.join(HERE, "plastic_cylinder2d", "quarter_annulus_8x8.msh"),
+        "quarter_annulus")

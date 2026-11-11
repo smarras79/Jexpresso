@@ -423,7 +423,7 @@ end
 #
 # (src/kernel/solvers/quasistatic_solid.jl). Assemble each with DSS_laplace_sparse.
 #
-function build_gradient_product_matrices(SD::NSD_2D, ψ, dψ, ω, nelem, mesh, metrics, N, Q, T)
+function build_gradient_product_matrices(SD::NSD_2D, ψ, dψ, ω, nelem, mesh, metrics, N, Q, ::Type{T}) where {T}
 
     Lxx = zeros(T, nelem, N+1, N+1, N+1, N+1)
     Lxy = zeros(T, nelem, N+1, N+1, N+1, N+1)
@@ -456,6 +456,61 @@ function build_gradient_product_matrices(SD::NSD_2D, ψ, dψ, ω, nelem, mesh, m
     end
 
     return Lxx, Lxy, Lyy
+end
+
+#
+# The same, for a material tangent that changes from one quadrature point to
+# the next — a plastic zone, say. D[1:3,1:3,k,l,iel] is the tangent in Voigt
+# form, rows and columns (xx, yy, xy) with ENGINEERING shear γxy = 2εxy. With
+# B = [∂x 0; 0 ∂y; ∂y ∂x], the element matrices of the four displacement blocks
+#
+#     Kαβ[iel,m,n,i,j] = ∫ (B ψ_mn)[:,α]ᵀ D (B ψ_ij)[:,β] dΩ,     α, β ∈ {x, y},
+#
+# in the layout and with the quadrature of build_laplace_matrix. Assemble each
+# with DSS_laplace_sparse. For a constant isotropic D this is K·A_vol + G·A_dev
+# of build_gradient_product_matrices.
+#
+function build_tangent_stiffness_matrices(SD::NSD_2D, ψ, dψ, ω, nelem, mesh, metrics, N, Q, D, ::Type{T}) where {T}
+
+    Kxx = zeros(T, nelem, N+1, N+1, N+1, N+1)
+    Kxy = zeros(T, nelem, N+1, N+1, N+1, N+1)
+    Kyx = zeros(T, nelem, N+1, N+1, N+1, N+1)
+    Kyy = zeros(T, nelem, N+1, N+1, N+1, N+1)
+
+    @inbounds for iel = 1:nelem
+        for l = 1:Q+1, k = 1:Q+1
+
+            ωJ      = ω[k]*ω[l]*metrics.Je[iel,k,l]
+            dξdx_kl = metrics.dξdx[iel,k,l]
+            dξdy_kl = metrics.dξdy[iel,k,l]
+            dηdx_kl = metrics.dηdx[iel,k,l]
+            dηdy_kl = metrics.dηdy[iel,k,l]
+            D11 = D[1,1,k,l,iel]; D12 = D[1,2,k,l,iel]; D13 = D[1,3,k,l,iel]
+            D21 = D[2,1,k,l,iel]; D22 = D[2,2,k,l,iel]; D23 = D[2,3,k,l,iel]
+            D31 = D[3,1,k,l,iel]; D32 = D[3,2,k,l,iel]; D33 = D[3,3,k,l,iel]
+            for j = 1:N+1, i = 1:N+1
+
+                bx = dψ[i,k]*ψ[j,l]*dξdx_kl + ψ[i,k]*dψ[j,l]*dηdx_kl
+                by = dψ[i,k]*ψ[j,l]*dξdy_kl + ψ[i,k]*dψ[j,l]*dηdy_kl
+                # D times the two columns of the trial B: (bx, 0, by) and (0, by, bx)
+                cx1 = D11*bx + D13*by; cx2 = D21*bx + D23*by; cx3 = D31*bx + D33*by
+                cy1 = D12*by + D13*bx; cy2 = D22*by + D23*bx; cy3 = D32*by + D33*bx
+
+                for n = 1:N+1, m = 1:N+1
+
+                    ax = dψ[m,k]*ψ[n,l]*dξdx_kl + ψ[m,k]*dψ[n,l]*dηdx_kl
+                    ay = dψ[m,k]*ψ[n,l]*dξdy_kl + ψ[m,k]*dψ[n,l]*dηdy_kl
+
+                    Kxx[iel,m,n,i,j] += ωJ*(ax*cx1 + ay*cx3)
+                    Kxy[iel,m,n,i,j] += ωJ*(ax*cy1 + ay*cy3)
+                    Kyx[iel,m,n,i,j] += ωJ*(ay*cx2 + ax*cx3)
+                    Kyy[iel,m,n,i,j] += ωJ*(ay*cy2 + ax*cy3)
+                end
+            end
+        end
+    end
+
+    return Kxx, Kxy, Kyx, Kyy
 end
 
 function build_laplace_matrix_lag(SD::NSD_2D, ψ, dψ, ω, mesh, metrics, N, Q, T)
