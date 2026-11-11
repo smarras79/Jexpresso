@@ -1623,7 +1623,9 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  cutoff::TT=zero(TT),
                                  lnazarov_energy::Bool=false,
                                  lfast_floors::Bool=false,
-                                 lthermal::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
+                                 lthermal::Bool=false,
+                                 νphys::Union{Nothing,AbstractVector{TT}}=nothing,
+                                 ηphys::Union{Nothing,AbstractVector{TT}}=nothing) where {TT<:AbstractFloat, TI<:Integer}
     _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
     neqs = size(μ_dsgs, 2)
@@ -1902,6 +1904,22 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         end
         if neqs >= 9
             μ_dsgs[ie,9] = visc_coeff[9]*μ                         # ψ
+        end
+
+        # Explicit physical dissipation of a visco-resistive case (:mhd_dissipation, as the 3D
+        # kernel below): kinematic ν on the momentum slots (ρu, ρv, ρw; the dynamic ρ̄ν in the
+        # non-conserved form without the nodal-ρ scaling) and η on the B slots, on top of the
+        # DynSGS coefficient. Not on ρ, E or ψ.
+        if νphys !== nothing
+            νp = (lconserved || lnodal_rho) ? νphys[ie] : ρ_el*νphys[ie]
+            μ_dsgs[ie,2] += νp
+            μ_dsgs[ie,3] += νp
+            neqs >= 5 && (μ_dsgs[ie,5] += νp)
+        end
+        if ηphys !== nothing
+            for ieq = 6:min(neqs,8)
+                μ_dsgs[ie,ieq] += ηphys[ie]
+            end
         end
     end
 

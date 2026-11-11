@@ -1,0 +1,211 @@
+# 2.5D visco-resistive GLM-MHD: flux emergence into a line dipole (the cross-section of Leake et al. 2022)
+
+This case is the plane perpendicular to the flux rope of
+[`fluxEmergenceLeake2022`](../fluxEmergenceLeake2022/README.md),
+
+> J. E. Leake, M. G. Linton, S. K. Antiochos, *The role of reconnection in the
+> onset of solar eruptions*, ApJ **934**:10 (2022),
+
+with everything invariant along the rope: the same atmosphere, the same rope
+cross-section, the same explicit viscosity and resistivity, the same numerics
+(DynSGS, positivity floors, GLM cleaning, well balance, velocity damping), on
+the paper's stretched grid in the plane. It costs a few percent of the 3D run
+at the same resolution, so it is a testbed for what the 3D case does in the
+transition region, at the floors and in the damping layers, and a 2.5D study
+of a twisted rope emerging into an overlying field. It is not a reproduction
+of the paper, whose results are 3D (Deviations).
+
+## Run
+
+```bash
+julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2022_2D
+mpiexec -n 14 julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2022_2D
+```
+
+Output goes to `./output/MHD/fluxEmergenceLeake2022_2D/<run>/`, a snapshot
+every $5t_0$ to $t = 400t_0$ (plus 142 and 184, the times of the 3D paper's
+Figs. 3–4). The keys of `user_inputs.jl`:
+
+| key | values | meaning |
+|---|---|---|
+| `:lk2d_orientation` | `"antiparallel"` (default), `"parallel"` | the rope's twist above its axis against the dipole field: the 3D paper's θ = π (simulation 4, which erupts in 3D) or θ = 0 (stable in 3D) |
+| `:lk2d_D`, `:lk2d_hd` | 150, −100 | line-dipole strength and depth (below) |
+| `:lk2d_buoyancy` | 1.0 | $b$ of the rope's density deficit (below) |
+| `:lk2d_dipole`, `:lk2d_rope` | `true` | `false` removes the coronal field or the rope (the background alone must stay at rest) |
+| `:mhd_dissipation` | `lk2d_dissipation` | the paper's $\nu = \eta = 0.01$; delete the line for ideal MHD + DynSGS |
+| `:lk2d_damp_x_frac`, `:lk2d_damp_z_frac` | 0.75, 0.875 | start of the side and top velocity damping (the paper's Eqs. 21–22) |
+| `:lk2d_mf`, `:lk2d_cz_gradient`, `:lk2d_glm_alpha` | 1, 1, 1 | as the 3D case |
+
+and the environment variables `LK2D_REF` (mesh, below), `LK2D_TEND`,
+`LK2D_OUT_DT` (snapshot interval), `LK2D_DIAG` (Notes) and the restart's
+(Restart).
+
+## Coordinates
+
+The code's 2D plane is $(x, y)$ with $y$ **up**: it is the paper's $(x, z)$.
+The rope axis, the paper's $y$, is the invariant direction, the code's third
+component. In the output, `u`, `Bx` are horizontal, `v`, `By` vertical and
+`w`, `Bz` along the rope, so `Bz` is the rope's axial field.
+
+## The problem
+
+Units of the 3D case: $L_0 = 170$ km, $B_0 = 0.13$ T, $g_0 = 274$ m s$^{-2}$,
+$v_0 = 6.82$ km s$^{-1}$, $t_0 = 24.9$ s; $g = 1$, magnetic pressure
+$\tfrac12|\mathbf B|^2$, $p = \rho T$ ($m_f = 1$, the 3D case's README),
+$\gamma = 5/3$. With $h$ the height (the code's $y$):
+
+**Atmosphere** (the paper's Eqs. 23–25), hydrostatic with $\rho(0) = 1$:
+$T = 1 - \tfrac{\gamma-1}{\gamma}h$ below $h = 0$, 1 to $h = 10$,
+$150^{(h-10)/10}$ to $h = 20$, 150 above; closed-form $p$ in every layer.
+
+**Coronal field.** A line dipole at $(0, h_d)$ below the domain, the 2D
+potential field
+
+$$
+A = -D\,\frac{s}{r^2},\qquad \mathbf B = \left(\frac{\partial A}{\partial y}, -\frac{\partial A}{\partial x}\right) = D\left(\frac{s^2 - x^2}{r^4},\ -\frac{2sx}{r^4}\right),\qquad s = h - h_d,\ r^2 = x^2 + s^2,
+$$
+
+pointing along $+x$ above the dipole, as the paper's point dipole (moment
+$-\hat{\mathbf x}$) does above the rope. $h_d = -100$ and $D = 150$ give
+$|\mathbf B| = D/h_d^2 = 0.015B_0 = 19.5$ G at $(0, 0)$, the 3D dipole's value
+there.
+
+**Flux rope** (the paper's Eqs. 28–34) along the invariant direction at
+$(0, -12)$, width $w = 2.5$, strength $B_t = 5$, right-handed twist:
+
+$$
+B_z = \sigma B_te^{-r^2/w^2},\qquad (B_x, B_y) = \frac{\sigma B_te^{-r^2/w^2}}{w}\,(\zeta, -x),\qquad r^2 = x^2 + \zeta^2,\ \zeta = h + 12,
+$$
+
+with $\sigma = +1$ for `"parallel"` and $-1$ for `"antiparallel"`. The
+pressure deficit $p_1 = \tfrac12B_t^2e^{-2r^2/w^2}\left[(w^2/2 - r^2)/w^2 - 1\right]$
+balances the rope's Lorentz force, and $p = p_0(h) + p_1$,
+$\rho = \rho_0(h)\left[1 + b\,p_1/p_0(h)\right]$: $b = 1$ is the middle of the
+3D rope (isothermal with its surroundings, $y_r = 0$), $b = 0$ its neutrally
+buoyant ends.
+
+**Dissipation.** $\nu = \eta = 0.01$ (Re = Rm = 100), kinematic, added to the
+DynSGS coefficient of the momentum and field (`:mhd_dissipation`). This is
+the paper's physics, not a stabilization: the eruption is reconnection between
+the rope and the overlying field, whose rate depends on $\eta$. DynSGS keeps
+the discretization stable, as in every MHD case; without
+`:mhd_dissipation` the case is ideal MHD + DynSGS.
+
+**Velocity damping** (the paper's Eqs. 21–22): $-N\mathbf v$ for
+$|x| > 3L_x/8$ and $h > \tfrac78h_{\rm max}$, $N$ rising linearly to 1 at the
+boundary.
+
+**Boundaries:** all three velocity components and $\psi$ are zero on the four
+sides; $\rho$, $E$, $\mathbf B$ are free (the natural condition of the
+dissipative terms is a zero normal gradient).
+
+## Deviations from the 3D case, and why
+
+1. **Line dipole.** The paper's point dipole falls off as $1/r^3$ in every
+   direction and has no counterpart invariant along the rope. The line dipole
+   is the potential field that has; it falls off as $1/s^2$, so above the
+   photosphere it is stronger than the 3D field with the same value at
+   $(0, 0)$ (on the axis $x = 0$): 0.0104 against 0.0087 at $h = 20$, 0.0067
+   against 0.0044 at $h = 50$, 0.0038 against 0.0019 at $h = 100$. (The 2014 papers' 2D formula $A \propto s/r^3$ is not potential
+   in 2D: it carries a current $|\mathbf j| \approx 1.5|\mathbf B|/r$, see the
+   2014 case's README.)
+2. **Two orientations.** Only the twist above the axis parallel or
+   antiparallel to the dipole field, the paper's θ = 0 and π, exist in 2.5D;
+   its intermediate angles need the third dimension.
+3. **Buoyant along the whole rope.** In 3D only the middle of the rope
+   ($|y_r| \lesssim \lambda = 10$) is buoyant, its ends anchor it, and it
+   emerges as an Ω loop that drains mass down its legs. The 2.5D rope is the
+   3D one's middle cross-section everywhere, with no legs to drain into; $b$
+   lowers its buoyancy uniformly.
+4. **Reconnection in the plane.** The rope's axial field is a guide field:
+   2.5D reconnection only involves the twist field and the dipole.
+
+## Meshes and time step
+
+`LK22_2D.geo` is the $x$–$z$ plane of the 3D `LK22.geo` (the paper's
+stretched cells, $x \in [-277.2, 277.2]$, $h \in [-30, 530.5]$), with the
+element boundaries every $k$-th cell:
+
+| `LK2D_REF` | elements | $k$ | file | nodes ($N = 4$) | `:Δt` |
+|---|---|---|---|---|---|
+| 1 (default) | $32\times48$ | 16 | `LK22_2D_32x48.msh` | 24,897 | $2\times10^{-3}$ |
+| 2 | $64\times96$ | 8 | `LK22_2D_64x96.msh` | 98,945 | $10^{-3}$ |
+| 3 | $128\times192$ | 4 | `LK22_2D_128x192.msh` | 394,497 | $5\times10^{-4}$ |
+
+`LK2D_REF = 1` is the cross-section of the 3D `LK22_REF = 2` mesh, 3 the
+paper's resolution. All three ship (0.1, 0.4, 1.8 MB); regenerate with
+`gmsh -2 LK22_2D.geo -setnumber ref N -o <file>`. The smallest LGL gap is
+0.173 of the bottom elements' height (4, 2, 1 $L_0$), and `:Δt` gives
+$(|\mathbf v| + c_f)\Delta t/\Delta h \approx 0.25$ at $|\mathbf v| + c_f = 80$,
+as the 3D deck.
+
+## Restart
+
+As the 3D Leake cases: any snapshot restarts the run (same mesh and rank
+count; `initialize.jl` rebuilds the conserved state exactly from the nine
+primitives and keeps the $c_h$ of $t = 0$; the DynSGS history restarts, so the
+continuation is close to, not bitwise equal to, an uninterrupted run).
+
+```bash
+LK2D_RESTART_DIR=output/MHD/fluxEmergenceLeake2022_2D/output-<date> LK2D_RESTART_TIME=100 LK2D_TEND=200 \
+    mpiexec -n 14 julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2022_2D
+```
+
+`LK2D_RESTART_TIME` picks the nearest snapshot (default the last); the new run
+writes to a new output directory, starting with that snapshot.
+
+## Output and figures
+
+`ρ, u, v, w, p, Bx, By, Bz, ψ, T, β, Bmag` and `log10_ρ`, `log10_p`,
+`log10_β` per snapshot (`.pvtu`), and the DynSGS coefficients actually applied
+(`mu_dsgs_*`); mass and total energy in `conservation.dat` every 10 steps.
+ParaView reads `simulation.pvd`. `tools/plot_fluxemergence_vtu.py` draws a
+field with the field lines in the plane (isolines of the flux function of
+$(B_x, B_y)$) and, with `--vectors`, the velocity; `--xlim`/`--ylim` zoom on
+the emergence region:
+
+```bash
+RUN=output/MHD/fluxEmergenceLeake2022_2D/output-<date>
+P="tools/plot_fluxemergence_vtu.py --xlim -60 60 --ylim -30 90 --xlabel x/L0 --ylabel z/L0 --time-unit t0 --outdir figs2d"
+python3 $P $RUN                                   # log10 rho and field lines, every snapshot
+python3 $P $RUN --var Bz --symmetric --steps 1,11,21    # the axial field (iter_N numbers)
+python3 $P $RUN --var T --cmap inferno --vectors --vec-ref 10
+```
+
+## Notes
+
+- **Progress.** The deck sets `:lstep_heartbeat => true` (`#   step N   t = …`
+  every 100 steps); `conservation.dat` in the output directory gets $t$, the
+  step, mass and energy every 10 steps.
+- **Positivity floors and CFL monitor**: as the 3D case, `# positivity
+  floors: N node hits …` each time the total passes a power of ten, `# CFL: max
+  (|v| + c_f) Δt/Δh = …` each time the largest value has grown by 20 % (a
+  `WARNING` above 0.5).
+- **Stage diagnostics** (`LK2D_DIAG=n`, off by default): every `n`-th
+  Runge–Kutta stage, `#DIAG t=…` with the largest $|\mathbf v|$ and
+  $|\mathbf v| + c_f$, the smallest $\rho/\rho_e$, the largest and smallest
+  $p/p_e$, $T$, the nodes at the floors and the heights they span, the largest
+  DynSGS + explicit coefficient of the $\rho$, momentum and field slots and the
+  largest explicit-diffusion number $\mu\Delta t/\Delta h^2$, then where each
+  extreme is. `LK2D_DIAG=25` is every 5 steps.
+- **Partition.** `:lxy_partition => false` (balanced METIS partition), as the
+  3D Leake cases.
+- **The shared CFL printout** (`Advective CFL`, `max|u|`) assumes the
+  CompEuler layout and is wrong for MHD; the CFL monitor above is the one to
+  read.
+
+## Verification here
+
+(see below)
+
+## Files
+
+| file | content |
+|---|---|
+| `user_inputs.jl` | mesh and Δt, the problem keys, DynSGS, positivity floors, CFL monitor, stage diagnostics, $\nu$/$\eta$ |
+| `initialize.jl` | atmosphere, line dipole, rope, $c_h$, Δh, the restart |
+| `user_flux.jl` | 2D ideal GLM-MHD fluxes (three components of $\mathbf v$, $\mathbf B$), $\gamma = 5/3$ |
+| `user_source.jl` | gravity, GLM damping, velocity damping |
+| `user_bc.jl` | $\rho\mathbf v = 0$, $\psi = 0$ on all sides |
+| `user_primitives.jl` | DynSGS acts on $q - q_e$; output fields |
+| `LK22_2D.geo` | the stretched quadrilateral mesh (`ref` = 1, 2, 3) |

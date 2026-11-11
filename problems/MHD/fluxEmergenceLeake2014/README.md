@@ -260,6 +260,25 @@ CFL monitor (Notes) prints the actual value as it grows.
    at $t = 0$, estimated elementwise on the three meshes, is 0.82, 0.082 and
    0.018 for `LK_REF` = 1, 2, 3 (the tube has $R = 2.5$, and the $16^3$
    elements are 12.5 wide), so the transient falls fast with resolution.
+9. **The papers' dipole is not current-free.** Paper II's Eq. 8 (Paper I's
+   Eq. 15) prints the dipole as "translationally invariant along y",
+   $A_y = B_d(z - z_d)/r_1^3$ with $r_1^2 = x^2 + (z - z_d)^2$, and this case
+   uses it as printed. A field invariant along $y$ is potential only if $A_y$
+   is harmonic in $(x, z)$, and $s/r_1^3$ ($s = z - z_d$) is not:
+   $\nabla\times\mathbf B = -\nabla^2A_y\,\hat{\mathbf y} = -3B_ds/r_1^5\,\hat{\mathbf y}$,
+   i.e. $|\mathbf j| = 1.5|\mathbf B|/r_1$ on the axis (checked by finite
+   differences of the coded field). For MD at the base of the corona
+   $(0, 0, 20)$ the Lorentz force $|\mathbf j\times\mathbf B| = 2.6\times10^{-6}$
+   is 60 times the gravity $\rho g = 4.2\times10^{-8}$: the background is not
+   an equilibrium of the continuous equations either, and only
+   `:lwell_balanced` (item 6) holds it at rest, by subtracting that force with
+   the rest of the background's discrete RHS at every stage; a departure from
+   the background (the emerging tube, the GLM transient) does not feel the
+   subtraction and moves in a corona that, physically, would not be at rest.
+   The potential field invariant along $y$ is the line dipole
+   $A_y \propto s/r_1^2$ (used by `fluxEmergenceLeake2022_2D`); it falls off
+   as $1/s^2$ rather than $1/s^3$, so it does not reproduce the shape of the
+   $\beta(0, 0, z)$ curves of Paper II's Fig. 1, which this field matches.
 
 ## Output
 

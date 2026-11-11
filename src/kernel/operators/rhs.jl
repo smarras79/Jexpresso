@@ -1590,6 +1590,8 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
             (get(params.inputs, :dsgs_nazarov_energy, false) || get(params.inputs, :dsgs_conserved_prandtl, false))
 
         lnodal_mhd2d = get(params.inputs, :ldsgs_nodal, false)
+        lnodal_mhd2d && get(params.inputs, :mhd_dissipation, nothing) !== nothing &&
+            error(" :mhd_dissipation is implemented for the element form of DSGS_MHD only (not :ldsgs_nodal).")
         dsgs_qA, dsgs_qB, dsgs_wt = _dsgs_stencil(params, TT)
         dsgs_rhs = _dsgs_residual_rhs!(u, params, SD)
         if lnodal_mhd2d
@@ -1618,6 +1620,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                           lnazarov_energy = get(params.inputs, :dsgs_nazarov_energy, false) ||
                                                             get(params.inputs, :dsgs_conserved_prandtl, false))
         else
+            νphys2d, ηphys2d = _mhd_dissipation_2d(params, TT)
             compute_dsgs_viscosity!(params.μ_dsgs, DSGS_MHD(), SD,
                                     params.uaux, dsgs_qA, dsgs_qB,
                                     dsgs_rhs, params.ω, params.metrics.Je, params.visc_coeff,
@@ -1641,7 +1644,8 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                     lnazarov_energy = get(params.inputs, :dsgs_nazarov_energy, false) ||
                                                       get(params.inputs, :dsgs_conserved_prandtl, false),
                                     lfast_floors    = get(params.inputs, :dsgs_fast_floors, false)::Bool,
-                                    lthermal        = get(params.inputs, :dsgs_thermal_residual, false)::Bool)
+                                    lthermal        = get(params.inputs, :dsgs_thermal_residual, false)::Bool,
+                                    νphys = νphys2d, ηphys = ηphys2d)
             broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
                                      params.mesh.connijk,
                                      Int(params.mesh.nelem),
@@ -2284,6 +2288,33 @@ function _mhd_dissipation_3d(params, ::Type{TT}) where {TT}
         _mhd_fill_dissipation!(νe, ηe, f, params.mesh.connijk, params.mesh.coords, nelem, ngl)
         c = (params.mesh, νe, ηe)
         _MHD_DISS_CACHE[] = c
+    end
+    return c[2], c[3]
+end
+
+# 2D: the deck's :mhd_dissipation is called as f(x, y) (y the vertical coordinate of the 2D
+# MHD cases) at the element centroids, cached per mesh as the 3D one.
+const _MHD_DISS_CACHE_2D = Ref{Any}(nothing)
+function _mhd_dissipation_2d(params, ::Type{TT}) where {TT}
+    f = get(params.inputs, :mhd_dissipation, nothing)
+    f === nothing && return nothing, nothing
+    c = _MHD_DISS_CACHE_2D[]
+    nelem = Int(params.mesh.nelem)
+    if c === nothing || c[1] !== params.mesh || length(c[2]) != nelem
+        ngl = Int(params.mesh.ngl)
+        νe = zeros(TT, nelem); ηe = zeros(TT, nelem)
+        conn = params.mesh.connijk; X = params.mesh.coords
+        for ie = 1:nelem
+            xc = 0.0; yc = 0.0
+            for (i, j) in ((1,1), (ngl,1), (1,ngl), (ngl,ngl))
+                ip = conn[ie,i,j,1]
+                xc += X[1,ip]; yc += X[2,ip]
+            end
+            ν, η = f(xc/4, yc/4)
+            νe[ie] = ν; ηe[ie] = η
+        end
+        c = (params.mesh, νe, ηe)
+        _MHD_DISS_CACHE_2D[] = c
     end
     return c[2], c[3]
 end
