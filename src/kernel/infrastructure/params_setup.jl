@@ -480,12 +480,14 @@ function params_setup(sem,
     # Populate params tuple to carry global arrays and constants around
     #------------------------------------------------------------------------------------
     #------------------------------------------------------------------------------------
-    # Dirichlet constraints inferred from user_bc_dirichlet! (3D, CPU; see bc_constraints.jl).
-    # Other configurations keep the legacy path (bc_cons = nothing).
+    # Dirichlet constraints inferred from user_bc_dirichlet! (1D/2D/3D, CPU, continuous
+    # Galerkin; see bc_constraints.jl). Laguerre (semi-infinite) meshes, DG, GPU runs and
+    # periodic 1D keep the legacy path (bc_cons = nothing).
     #------------------------------------------------------------------------------------
     bc_cons = nothing
-    if sem.mesh.SD == NSD_3D() && backend == CPU() && !(sem.mesh.lLaguerre ||
-        inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
+    if backend == CPU() && sem.AD isa ContGal &&
+        !(sem.mesh.lLaguerre || inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left]) &&
+        !(sem.mesh.SD == NSD_1D() && inputs[:lperiodic_1d])
         bc_cons = build_bc_constraints(sem.mesh, sem.metrics, qp.qn, qp.qe, inputs, qp.neqs,
                                        xmin, xmax, ymin, ymax, zmin, zmax; t = tspan[1])
         nfix = MPI.Allreduce(length(bc_cons.fix_ip), MPI.SUM, comm)

@@ -46,7 +46,6 @@ function apply_boundary_conditions_dirichlet!(u, uaux, t,qe,
         # constraints inferred at setup (bc_constraints.jl): impose values on the state only;
         # the tendency is constrained after the global assembly (apply_bc_constraints_rhs!).
         apply_bc_constraints_state!(bc_cons, u, uaux, qe, t, coords,
-                                    nx, ny, nz, bdy_face_type, poin_in_bdy_face, ngl,
                                     xmin, xmax, ymin, ymax, zmin, zmax, ubdy, neqs, npoin, inputs)
     else
         build_custom_bcs_dirichlet!(SD, t,
