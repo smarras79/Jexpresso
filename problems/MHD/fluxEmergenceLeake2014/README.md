@@ -150,12 +150,15 @@ the paper's stretching:
 | 1 | $16^3$ | `LK_16x16x16.msh` (shipped) | $65^3$ | $3\times10^{-3}$ | smoke test |
 | 2 | $38^3$ | `LK_38x38x38.msh` (shipped) | $153^3$ | $1.2\times10^{-3}$ | half the paper's resolution (default) |
 | 3 | $76^3$ | `LK_76x76x76.msh` (generate) | $305^3$ | $6\times10^{-4}$ | the paper's $304^3$ |
+| 4 | $38^2\times76$ | `LK_38x38x76.msh` (generate) | $153^2\times305$ | $6\times10^{-4}$ | the paper's vertical spacing (Notes, "Vertical resolution") |
+| 5 | $16^2\times64$ | `LK_16x16x64.msh` (shipped) | $65^2\times257$ | $7.5\times10^{-4}$ | smoke test with the elements 2 tall |
 
-The $76^3$ mesh is not shipped (about 50 MB); generate it with
+The $76^3$ mesh is not shipped (about 50 MB), nor the $38^2\times76$ one (14 MB); generate them with
 
 ```bash
 cd problems/MHD/fluxEmergenceLeake2014
 gmsh -3 LK.geo -setnumber ref 3 -o LK_76x76x76.msh
+gmsh -3 LK.geo -setnumber ref 4 -o LK_38x38x76.msh
 ```
 
 The time step is set by the fastest wave on the smallest LGL gap. The fast
