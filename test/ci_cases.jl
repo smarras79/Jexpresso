@@ -79,6 +79,11 @@ const CI_CASES = CICase[
     CICase(eqs = "ShallowWater", case = "SoliWaveIsland", timeout = 11),
     CICase(eqs = "AdvDiff", case = "advection1d_dg", timeout = 10),
     CICase(eqs = "AdvDiff", case = "advection2d_dg", timeout = 10),
+    CICase(eqs = "Elliptic", case = "case1", timeout = 10),
+    CICase(eqs = "AdvDiff", case = "Wave_Train", timeout = 10),
+    CICase(eqs = "CompEuler", case = "city2d", timeout = 10),
+    CICase(eqs = "CompEuler", case = "theta_amr", timeout = 11),
+    CICase(eqs = "CompEuler", case = "3d_amr", timeout = 10),
     #<< test/generate_ci_ref.jl inserts new cases above this line >>
 
     #--------------------------------------------------------------------------
@@ -94,8 +99,8 @@ const CI_CASES = CICase[
     #
     CICase(eqs = "CompEuler",    case = "thetaTracers",   timeout = 40),
     CICase(eqs = "CompEuler",    case = "theta_laguerre", timeout = 40),
-    # CICase(eqs = "CompEuler",    case = "3d",             timeout = 40),
-    # CICase(eqs = "CompEuler",    case = "wave1d",         timeout = 20),
+    CICase(eqs = "CompEuler",    case = "3d",             timeout = 40),
+    CICase(eqs = "CompEuler",    case = "wave1d",         timeout = 20),
     CICase(eqs = "CompEuler",    case = "wave1d_lag",     timeout = 20),
     # CICase(eqs = "Burgers",      case = "case1",          timeout = 20),
     # CICase(eqs = "Burgers",      case = "case2d",         timeout = 30),
