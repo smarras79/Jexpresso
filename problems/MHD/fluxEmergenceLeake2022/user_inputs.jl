@@ -134,27 +134,33 @@ lk22_dissipation(x, y, z) = (0.01, 0.01)
 
 function user_inputs()
 
-    LK22_REF = 2
+    LK22_REF = parse(Int, get(ENV, "LK22_REF", "2"))
     mesh     = ("LK22_16x16x24.msh", "LK22_32x32x48.msh", "LK22_64x64x96.msh", "LK22_128x128x192.msh")[LK22_REF]
     # Δt for (|v| + c_f) Δt/Δh ≈ 0.25 at |v| + c_f ≈ 80 on the smallest LGL gap Δh of each mesh
     # (0.173 of the 8, 4, 2, 1 L₀ tall bottom elements): the fast speed just above the transition
     # region is 45 at t = 0 and reconnection outflows reach tens of v₀ (README). The CFL monitor
     # reports the actual value.
     Δt       = (4.0e-3, 2.0e-3, 1.0e-3, 5.0e-4)[LK22_REF]
+    # Environment overrides (README, "Restart"): LK22_REF the mesh, LK22_TEND :tend,
+    # LK22_OUT_DT a snapshot every LK22_OUT_DT (default 10, plus 142 and 184; only those after
+    # the start are written), LK22_RESTART_DIR (+ LK22_RESTART_TIME) restarts from a snapshot.
+    tend     = parse(Float64, get(ENV, "LK22_TEND", "400.0"))
+    dtout    = parse(Float64, get(ENV, "LK22_OUT_DT", "10.0"))
 
     inputs = Dict(
         :ode_solver           => CarpenterKennedy2N54(stage_limiter! = lk22_positivity_limiter!,
                                                       williamson_condition = false),
         :Δt                   => Δt,
         :tinit                => 0.0,
-        :tend                 => 400.0,      # Fig. 8: simulation 4 erupts at 150-200 t₀, confined by 400
+        :tend                 => tend,       # 400: Fig. 8, simulation 4 erupts at 150-200 t₀, confined by 400
         # every 10 t₀, plus the times of the paper's Figs. 3-4 (142, 184); README for denser output
-        :diagnostics_at_times => sort(vcat(collect(0.0:10.0:400.0), [142.0, 184.0])),
+        :diagnostics_at_times => filter(<=(tend), sort(unique(vcat(collect(0.0:dtout:tend), [142.0, 184.0])))),
         :conservation_every   => 10,
         :conservation_slots   => [1, 4],
         :lstep_heartbeat      => true,       # "#   step N   t = …" every 100 steps: snapshots are 5000 steps apart at LK22_REF = 2
         :restart_time         => 0.0,
         :lrestart             => false,
+        :lk22_restart_dir     => get(ENV, "LK22_RESTART_DIR", ""),   # "" = start from the initial state
         :lsource              => true,       # gravity, ψ damping, velocity damping
         :lwell_balanced       => true,       # subtract the discrete RHS of qe (atmosphere + dipole)
         :SOL_VARS_TYPE        => TOTAL(),
@@ -211,6 +217,7 @@ function user_inputs()
         :linitial_refine      => false,
         :ladapt               => false,
     ) #Dict
+    haskey(ENV, "LK22_RESTART_TIME") && (inputs[:lk22_restart_time] = parse(Float64, ENV["LK22_RESTART_TIME"]))
 
     return inputs
 end

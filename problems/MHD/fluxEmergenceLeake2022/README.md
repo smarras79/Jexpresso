@@ -50,7 +50,7 @@ The simulation is chosen in `user_inputs.jl`:
 | `:lk22_cz_gradient` | 1.0 | convection-zone temperature gradient factor (Eq. 23 as printed) |
 | `:lk22_glm_alpha` | 1.0 | Dedner damping $\alpha_p$ of $\psi$ |
 | `:lk22_damp_x_frac`, `:lk22_damp_z_frac` | 0.75, 0.875 | the damping layers start at $|x|, |y| = 3L_x/8$ and $z = 7\max(z)/8$ |
-| `LK22_REF` (top of `user_inputs()`) | 1, 2 (default), 3, 4 | mesh and time step (below) |
+| `LK22_REF` (environment variable) | 1, 2 (default), 3, 4 | mesh and time step (below); also `LK22_TEND`, `LK22_OUT_DT` and the restart (Restart) |
 
 ## Units
 
@@ -199,6 +199,43 @@ mass and total energy every 10 steps.
 `LK22_REF = 2`. The paper's figures use $t = 70, 100, 120, 130, 142, 160, 170,
 184, 190, 240, 260, 380, 400t_0$; all but 142 and 184 are on the default
 10 $t_0$ cadence.
+
+## Restart
+
+Any snapshot of this case restarts the run, so a long run can be split into
+jobs that each fit a cluster's wall-time limit. A snapshot holds the nine
+primitives in Float64 at every node, and `initialize.jl` rebuilds the
+conserved state from them exactly ($E = p/(\gamma-1) + \tfrac12\rho|\mathbf
+v|^2 + \tfrac12|\mathbf B|^2 + \tfrac12\psi^2$), keeps the analytic reference
+state and the $c_h$ of $t = 0$, and starts the clock at the snapshot's time.
+Each rank reads its own piece, so **every job must use the rank count and the
+mesh of the run that wrote the snapshot**. The DynSGS residual history starts
+afresh, so the continuation is close to, not bitwise equal to, an
+uninterrupted run (checked on the 2014 case, which has the same restart:
+its README, Verification). Environment variables, so the deck need not be
+edited:
+
+| variable | meaning |
+|---|---|
+| `LK22_RESTART_DIR` | output directory of the earlier job (`output/MHD/fluxEmergenceLeake2022/output-<date>`) |
+| `LK22_RESTART_TIME` | snapshot to start from (nearest in its `simulation.pvd`; default the last) |
+| `LK22_TEND` | `:tend` (default 400) |
+| `LK22_OUT_DT` | a snapshot every `LK22_OUT_DT` (default 10), plus 142 and 184 |
+| `LK22_REF` | mesh (default 2; must be the one of the snapshot) |
+
+For example, simulation 4 to $t = 250t_0$ in three jobs of the same size:
+
+```bash
+LK22_TEND=90  mpiexec -n 512 julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2022
+LK22_TEND=170 LK22_RESTART_DIR=output/MHD/fluxEmergenceLeake2022/output-<job 1> mpiexec -n 512 julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2022
+LK22_TEND=250 LK22_RESTART_DIR=output/MHD/fluxEmergenceLeake2022/output-<job 2> mpiexec -n 512 julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2022
+```
+
+End each job on a snapshot time (a multiple of `LK22_OUT_DT`), or the next
+one restarts from the last snapshot before it and repeats the stretch in
+between. Each job writes to a new output directory, starting with the
+snapshot it restarted from; `tools/plot_leake2022.py` takes the pieces as
+`DIR1,DIR2,DIR3`.
 
 ## Figures
 
