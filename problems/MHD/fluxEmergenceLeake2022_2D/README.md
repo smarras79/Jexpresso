@@ -196,7 +196,33 @@ python3 $P $RUN --var T --cmap inferno --vectors --vec-ref 10
 
 ## Verification here
 
-(see below)
+On 4 threads at `LK2D_REF = 1`; nothing was run here at 2 or 3.
+
+- **Background at rest** (`:lk2d_rope => false`): with `:lwell_balanced`
+  every field at $t = 0.1t_0$ (50 steps) is bitwise equal to the initial
+  one, and no floor fires.
+- **Explicit dissipation.** The coefficient of the momentum and field slots
+  is $0.01$ from the first step, the $\rho$ slot's 0 (the DynSGS residual is
+  zero there): the 2D `:mhd_dissipation` hook adds $\nu$, $\eta$ as in 3D.
+- **Startup.** $c_h = 53.4$, CFL monitor 0.155; mass constant to the printed
+  digits over the first 10 steps.
+- **Restart** from the $t = 5$ snapshot: the restart state equals the
+  snapshot to $4\times10^{-16}$ of each field's maximum ($T$
+  $4\times10^{-15}$).
+- **The full problem (antiparallel) to $t = 10t_0$** shows the same
+  transition-region failure as the 3D runs, at 1/30 of their cost:
+  - from $t = 2.3$ the pressure floor holds one to three nodes of the
+    photosphere above the rope, $(0, 2)$, where the 1 $L_0$ scale height
+    has node gaps of 0.69 and 1.31 at this resolution;
+  - from $t \approx 5.2$ the chromosphere and transition region above the
+    rope are evacuated: 50–75 nodes at the density floor at $h = 8$–20,
+    $T$ up to $7\times10^3$ (150 in the corona), $|\mathbf v|$ up to 38,
+    the DynSGS coefficient up to 69 and the explicit-diffusion number to
+    0.29, the CFL monitor to 0.69 at $t = 8.75$ (`WARNING`);
+  - by $t = 10.4$ it relaxes (CFL 0.4, diffusion number 0.04), with the
+    density floor still holding 74 nodes at $h = 15$–20.
+
+  The run is about 0.3 s per step ($10^4$ steps to $t = 20$ in 50 minutes).
 
 ## Files
 
