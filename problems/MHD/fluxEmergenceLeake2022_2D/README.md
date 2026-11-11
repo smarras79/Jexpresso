@@ -119,6 +119,17 @@ dissipative terms is a zero normal gradient).
    lowers its buoyancy uniformly.
 4. **Reconnection in the plane.** The rope's axial field is a guide field:
    2.5D reconnection only involves the twist field and the dipole.
+5. **Reference-weighted DynSGS** (`:dsgs_ref_weight`, default on;
+   `LK2D_REF_WEIGHT=0` for the 3D decks' default). The conserved-form operator
+   diffuses $\rho$, $\rho\mathbf v$, $E$ as the relative departure,
+   $\nabla\cdot(\mu\rho_e\nabla((q - q_e)/\rho_e))$, instead of
+   $\nabla\cdot(\mu\nabla(q - q_e))$ (the fields keep the absolute form), as
+   `fluxEmergenceSon2025DSGS`. Both vanish at rest, but across the
+   $10^3$–$10^7$ density drop of the chromosphere and transition region only
+   the relative form obeys a maximum principle: with the absolute one a
+   departure of the dense side, diffused upward, exceeds the whole state of
+   the light side, and the transition region above the rope is evacuated and
+   heated to $10^3$–$10^4$ within $10t_0$ (Verification).
 
 ## Meshes and time step
 
@@ -209,8 +220,9 @@ On 4 threads at `LK2D_REF = 1`; nothing was run here at 2 or 3.
 - **Restart** from the $t = 5$ snapshot: the restart state equals the
   snapshot to $4\times10^{-16}$ of each field's maximum ($T$
   $4\times10^{-15}$).
-- **The full problem (antiparallel) to $t = 10t_0$** shows the same
-  transition-region failure as the 3D runs, at 1/30 of their cost:
+- **The full problem (antiparallel), with the absolute DynSGS form
+  (`LK2D_REF_WEIGHT=0`), to $t = 20t_0$** shows the same transition-region
+  failure as the 3D runs, at 1/30 of their cost:
   - from $t = 2.3$ the pressure floor holds one to three nodes of the
     photosphere above the rope, $(0, 2)$, where the 1 $L_0$ scale height
     has node gaps of 0.69 and 1.31 at this resolution;
@@ -220,9 +232,22 @@ On 4 threads at `LK2D_REF = 1`; nothing was run here at 2 or 3.
     the DynSGS coefficient up to 69 and the explicit-diffusion number to
     0.29, the CFL monitor to 0.69 at $t = 8.75$ (`WARNING`);
   - by $t = 10.4$ it relaxes (CFL 0.4, diffusion number 0.04), with the
-    density floor still holding 74 nodes at $h = 15$–20.
+    density floor still holding 74 nodes at $h = 15$–20;
+  - a second burst at $t = 13$–17 ($|\mathbf v|$ to 290, $T$ to $10^4$,
+    CFL to 1.28) leaves a hot dome ($T = 10^3$–$2\times10^3$ for a coronal
+    150) over $|x| < 70$, $h = 25$–100 at $t = 20$, with 205 and 193 nodes at
+    the density and pressure floors.
 
   The run is about 0.3 s per step ($10^4$ steps to $t = 20$ in 50 minutes).
+- **The same with the reference-weighted operator** (`:dsgs_ref_weight`, the
+  default) **to $t = 10t_0$**: no transition-region evacuation. The one
+  photospheric node above the rope touches the pressure floor at
+  $t = 2.4$–2.8 and 5.2–5.4 only; at $t = 6$ (8, 10) $\rho/\rho_e \ge 0.81$
+  (0.66, 0.78), $T \le 166$ (166, 167), $|\mathbf v| \le 1.7$ (1.5, 1.1), the
+  DynSGS coefficient $\le 1$ (1.3, 2.1), the explicit-diffusion number
+  0.004, and the CFL monitor never passes its initial 0.155 (the absolute
+  form at $t = 6$: 43 nodes at the density floor, $T$ 665, $|\mathbf v|$ 6.3,
+  coefficient 46).
 
 ## Files
 
