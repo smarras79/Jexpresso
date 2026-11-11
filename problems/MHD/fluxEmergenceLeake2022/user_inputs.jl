@@ -201,6 +201,9 @@ function user_inputs()
         # (q - q_e)/rho_e with mu rho_e, which keeps the transition region from being evacuated and
         # heated by the diffused departure of the dense side (LK22_REF_WEIGHT=0: the absolute form).
         :dsgs_ref_weight      => get(ENV, "LK22_REF_WEIGHT", "0") == "1", # being tested in 3D: LK22_REF_WEIGHT=1
+        # Split energy flux (user_primitives.jl): the non-thermal part of E diffused with the
+        # momentum coefficient, the thermal part with slot 4's (LK22_ENERGY_SPLIT=1: being tested)
+        :dsgs_nazarov_energy  => get(ENV, "LK22_ENERGY_SPLIT", "0") == "1",
         :dsgs_fast_floors     => true,
         :dsgs_thermal_residual => true,
         :lrichardson          => false,

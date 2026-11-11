@@ -1983,6 +1983,8 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  cutoff::TT=zero(TT),
                                  lfast_floors::Bool=false,
                                  lthermal::Bool=false,
+                                 lnazarov_energy::Bool=false,
+                                 Pr_t::TT=TT(0.7),
                                  νphys::Union{Nothing,AbstractVector{TT}}=nothing,
                                  ηphys::Union{Nothing,AbstractVector{TT}}=nothing) where {TT<:AbstractFloat, TI<:Integer}
     lconserved || error(" compute_dsgs_viscosity!(::DSGS_MHD, ::NSD_3D): only the conserved form is implemented in 3D (:dsgs_conserved => true).")
@@ -2145,7 +2147,12 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         μ_dsgs[ie,1] = visc_coeff[1]*μ                       # ρ
         μ_dsgs[ie,2] = visc_coeff[2]*μ + νp                  # ρu
         μ_dsgs[ie,3] = visc_coeff[3]*μ + νp                  # ρv
-        μ_dsgs[ie,4] = visc_coeff[4]*μ                       # E
+        # E: with the split energy flux (lnazarov_energy, as 2D) this coefficient acts on
+        # the THERMAL part p/(γ−1) only, Dao & Nazarov's κ = ρν/Pr on the residual viscosity
+        # with the full background floor; the non-thermal part is diffused with the ρu
+        # slot's coefficient by the 3D _expansion_visc!.
+        μ_dsgs[ie,4] = lnazarov_energy ? visc_coeff[4]*max(γ*γm1/Pr_t*μ_c, μ_floor) :
+                                         visc_coeff[4]*μ     # E
         μ_dsgs[ie,5] = visc_coeff[5]*μ + νp                  # ρw
         for ieq = 6:8
             μ_dsgs[ie,ieq] = visc_coeff[ieq]*μ + ηp          # B

@@ -2154,11 +2154,19 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
     # run earlier in the same session may have left the Ref on.
     dsgs_ref_weight[] = params.VT == DSGS_MHD() && get(params.inputs, :dsgs_ref_weight, false) &&
                         get(params.inputs, :dsgs_conserved, false)
+    # Split energy flux (:dsgs_nazarov_energy, SGS.jl dsgs_split_energy; conserved form only),
+    # as 2D: the case's user_primitives! puts the non-thermal energy departure in slot 4 and
+    # the thermal one in the spare slot neqs+2; the 3D _expansion_visc! diffuses the first
+    # with the ρu slot's coefficient (so that the kinetic and magnetic energy fluxes of E are
+    # those of the ρv and B Laplacians) and the second with slot 4's (γ(γ−1)/Pr_t on the
+    # residual viscosity, compute_dsgs_viscosity!(::DSGS_MHD, ::NSD_3D)).
+    lsplit3d = params.VT == DSGS_MHD() && get(params.inputs, :dsgs_conserved, false) &&
+               (get(params.inputs, :dsgs_nazarov_energy, false) || get(params.inputs, :dsgs_conserved_prandtl, false))
+    dsgs_split_energy[] = lsplit3d
     if params.VT == DSGS_MHD()
         TT = eltype(params.μ_dsgs)
-        # the 2D-only switches read by the MHD user_primitives! must stay off
+        # the 2D-only nodal-ρ switch read by the MHD user_primitives! must stay off
         dsgs_nodal_rho[]    = false
-        dsgs_split_energy[] = false
         dsgs_qA, dsgs_qB, dsgs_wt = _dsgs_stencil(params, TT)
         dsgs_rhs = _dsgs_residual_rhs!(u, params, SD)
         νphys, ηphys = _mhd_dissipation_3d(params, TT)
@@ -2182,6 +2190,8 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                 cutoff        = TT(get(params.inputs, :dsgs_cutoff, 0.0)),
                                 lfast_floors  = get(params.inputs, :dsgs_fast_floors, false)::Bool,
                                 lthermal      = get(params.inputs, :dsgs_thermal_residual, false)::Bool,
+                                lnazarov_energy = lsplit3d,
+                                Pr_t          = TT(get(params.inputs, :dsgs_Prt, 0.7)),
                                 νphys = νphys, ηphys = ηphys)
         broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
                                  params.mesh.connijk,
@@ -3951,6 +3961,22 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                         dqdη += dψ[ii,l]*uprimitiveieq[k,ii,m,ieq]
                         dqdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,ieq]
                     end
+                    # Split energy (dsgs_split_energy, set by the 3D viscous_rhs_el!): slot 4
+                    # holds the non-thermal energy departure, diffused with the ρu slot's
+                    # coefficient; the spare slot neqs+2 (the last) the thermal one, diffused
+                    # with slot 4's. Both carry the reference weight when it is on.
+                    lsplit = dsgs_split_energy[] && ieq == 4
+                    nth = size(uprimitiveieq, 4)            # neqs+2 (@turbo cannot index with `end`)
+                    dtdξ = 0.0
+                    dtdη = 0.0
+                    dtdζ = 0.0
+                    if lsplit
+                        @turbo for ii = 1:ngl
+                            dtdξ += dψ[ii,k]*uprimitiveieq[ii,l,m,nth]
+                            dtdη += dψ[ii,l]*uprimitiveieq[k,ii,m,nth]
+                            dtdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,nth]
+                        end
+                    end
                     dξdx_klm = dξdx[iel,k,l,m]
                     dξdy_klm = dξdy[iel,k,l,m]
                     dξdz_klm = dξdz[iel,k,l,m]
@@ -3966,17 +3992,18 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                     # DynSGS-MHD reference weight (SGS.jl, dsgs_ref_weight; set by the 3D
                     # viscous_rhs_el!): the case stores ρ_e in the spare slot neqs+1 of
                     # uprimitive and slots 1-5 hold (q − q_e)/ρ_e, so the flux is μρ_e∇(…).
-                    μw = (dsgs_ref_weight[] && ieq <= 5) ? visc_coeffieq[ieq]*uprimitiveieq[k,l,m,end] :
-                                                           visc_coeffieq[ieq]
+                    wgt = (dsgs_ref_weight[] && ieq <= 5) ? uprimitiveieq[k,l,m,nth-1] : 1.0   # slot neqs+1
+                    μw  = lsplit ? visc_coeffieq[2]*wgt : visc_coeffieq[ieq]*wgt
+                    μt  = lsplit ? visc_coeffieq[4]*wgt : 0.0
 
                     auxi = dqdξ*dξdx_klm + dqdη*dηdx_klm + dqdζ*dζdx_klm
-                    dqdx = μw*auxi
+                    dqdx = μw*auxi + μt*(dtdξ*dξdx_klm + dtdη*dηdx_klm + dtdζ*dζdx_klm)
 
                     auxi = dqdξ*dξdy_klm + dqdη*dηdy_klm + dqdζ*dζdy_klm
-                    dqdy = μw*auxi
+                    dqdy = μw*auxi + μt*(dtdξ*dξdy_klm + dtdη*dηdy_klm + dtdζ*dζdy_klm)
 
                     auxi = dqdξ*dξdz_klm + dqdη*dηdz_klm + dqdζ*dζdz_klm
-                    dqdz = μw*auxi
+                    dqdz = μw*auxi + μt*(dtdξ*dξdz_klm + dtdη*dηdz_klm + dtdζ*dζdz_klm)
 
                     ∇ξ∇u_klm = (dξdx_klm*dqdx + dξdy_klm*dqdy + dξdz_klm*dqdz)*ωJac
                     ∇η∇u_klm = (dηdx_klm*dqdx + dηdy_klm*dqdy + dηdz_klm*dqdz)*ωJac
