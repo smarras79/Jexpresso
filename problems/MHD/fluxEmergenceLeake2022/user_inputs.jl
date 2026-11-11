@@ -207,6 +207,10 @@ function user_inputs()
         # Mesh: LK22.geo (the paper's stretching, element boundaries every 32, 16, 8, 4 cells)
         #---------------------------------------------------------------------------
         :lread_gmsh           => true,
+        # Balanced 3D (METIS) partition. The default column partition bins the x-y bounding box
+        # uniformly, which on this horizontally stretched mesh leaves ranks without elements from
+        # a few hundred ranks on and overloads the centre at any count (README, Notes).
+        :lxy_partition        => false,
         :gmsh_filename        => "./problems/MHD/fluxEmergenceLeake2022/" * mesh,
         :lfilter              => false,
         :outformat            => "vtk",

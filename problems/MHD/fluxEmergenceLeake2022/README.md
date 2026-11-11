@@ -343,6 +343,17 @@ Nothing was run here at `LK22_REF` ≥ 2.
 
 ## Notes
 
+- **Partition.** The deck sets `:lxy_partition => false`: a balanced 3D
+  partition (METIS, through GridapGmsh's distributed reader, which reads the
+  mesh file on every rank). Jexpresso's default (`true`) bins the $x$–$y$
+  bounding box into a uniform $n_x\times n_y$ grid of columns, one per rank;
+  on this horizontally stretched mesh the outer elements are several bins
+  wide, so from a few hundred ranks on some ranks get no element and the run
+  stops in `mod_mesh_read_gmsh!` with `reducing over an empty collection`
+  (at `LK22_REF = 2`: 96 of 448 and 412 of 896 ranks empty), and at any
+  count the central ranks carry more than the average (1.75 times at 14
+  ranks, 5.2 at 896). With METIS the useful rank count is limited by the
+  elements per rank (49 152 elements at `LK22_REF = 2`).
 - **Progress.** Snapshots are $10t_0$ apart (5000 steps at `LK22_REF = 2`,
   3.2 M nodes; the 2014 case's similar $38^3$ mesh takes about 8 s per step
   on 14 cores), and the floor and CFL lines below are

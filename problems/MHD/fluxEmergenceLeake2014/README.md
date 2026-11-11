@@ -426,6 +426,15 @@ formation of the flux rope.
 
 ## Notes
 
+- **Partition.** The deck sets `:lxy_partition => false`: a balanced 3D
+  partition (METIS, through GridapGmsh's distributed reader, which reads the
+  mesh file on every rank). Jexpresso's default (`true`) bins the $x$–$y$
+  bounding box into a uniform $n_x\times n_y$ grid of columns, one per rank;
+  on these horizontally stretched meshes the outer elements are several bins
+  wide, so from a few hundred ranks on some ranks get no element and the run
+  stops in `mod_mesh_read_gmsh!` with `reducing over an empty collection`
+  (at $38^3$: 32 of 448 and 116 of 896 ranks empty), and at any count the
+  central ranks carry 1.3–1.9 times the average load.
 - **Progress.** Snapshots are $5t_0$ apart (1667 steps at `LK_REF = 1`), and
   the floor and CFL lines below are printed only when their totals pass a
   power of ten or grow by 20 %, so a healthy run can print nothing for tens of
