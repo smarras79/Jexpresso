@@ -252,8 +252,10 @@ function user_inputs()
         :dsgs_norms           => "element",
         :dsgs_local_rel       => 1.0,
         :dsgs_conserved       => true,
-        # reference-weighted operator (user_primitives.jl): LK2D_REF_WEIGHT=1 to test it
-        :dsgs_ref_weight      => get(ENV, "LK2D_REF_WEIGHT", "0") == "1",
+        # Reference-weighted operator (user_primitives.jl, README): rho, rho v, E diffused as
+        # (q - q_e)/rho_e with mu rho_e, which keeps the transition region from being evacuated and
+        # heated by the diffused departure of the dense side (LK2D_REF_WEIGHT=0: the absolute form).
+        :dsgs_ref_weight      => get(ENV, "LK2D_REF_WEIGHT", "1") == "1",
         :dsgs_fast_floors     => true,
         :dsgs_thermal_residual => true,
         :lrichardson          => false,
