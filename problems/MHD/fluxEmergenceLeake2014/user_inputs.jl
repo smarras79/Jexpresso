@@ -11,6 +11,9 @@
 #   2: 38³ elements  (half the paper's resolution at :nop => 4)
 #   3: 76³ elements  (the paper's 304³ cells at :nop => 4; generate it first:
 #                     gmsh -3 LK.geo -setnumber ref 3 -o LK_76x76x76.msh)
+#   4: 38 x 38 x 76  (the paper's vertical spacing, 38³ horizontally; generate it first:
+#                     gmsh -3 LK.geo -setnumber ref 4 -o LK_38x38x76.msh)
+#   5: 16 x 16 x 64  (smoke test with element height 2 in z: gmsh ... ref 5 -o LK_16x16x64.msh)
 #---------------------------------------------------------------------------------
 
 # Positivity floors as the Runge-Kutta stage limiter (as problems/MHD/fluxEmergenceSon2025):
@@ -192,7 +195,52 @@ function lk_diag!(u, p, t)
                               (Dmax, glo[12], xD, "μΔt/Δh² max"))
         val == g && println(" #DIAG   ", name, " at ", round.(x, digits=2), " (rank ", MPI.Comm_rank(comm), ")")
     end
+    get(ENV, "LK_DIAG_TR", "0") == "1" && lk_diag_tr!(u, p, t)
     flush(stdout)
+    return nothing
+end
+
+# LK_DIAG_TR=1 (with LK_DIAG): the same departures restricted to the chromosphere-transition
+# region band 5 ≤ z ≤ 25 — |v|, |p/p_e − 1|, |ρ/ρ_e − 1|, |B − B_e|/|B_e|, |ψ|, and the DynSGS
+# coefficient of the elements whose centre is in the band — each with where it is.
+function lk_diag_tr!(u, p, t)
+    npoin = p.mesh.npoin; qe = p.qp.qe; γm1 = γ_mhd - 1.0; X = p.mesh.coords
+    vals = zeros(6); locs = [(0.0, 0.0, 0.0) for _ = 1:6]; sgn = 0.0
+    @inbounds for ip = 1:npoin
+        5.0 <= X[3,ip] <= 25.0 || continue
+        ρ = u[ip]; ru = u[npoin+ip]; rv = u[2npoin+ip]; E = u[3npoin+ip]; rw = u[4npoin+ip]
+        Bx = u[5npoin+ip]; By = u[6npoin+ip]; Bz = u[7npoin+ip]; ψ = u[8npoin+ip]
+        pr = γm1*(E - 0.5*(ru*ru + rv*rv + rw*rw)/ρ - 0.5*(Bx*Bx + By*By + Bz*Bz) - 0.5*ψ*ψ)
+        Be = sqrt(qe[ip,6]^2 + qe[ip,7]^2 + qe[ip,8]^2)
+        d = (sqrt(ru*ru + rv*rv + rw*rw)/ρ, abs(pr/qe[ip,end] - 1.0), abs(ρ/qe[ip,1] - 1.0),
+             sqrt((Bx - qe[ip,6])^2 + (By - qe[ip,7])^2 + (Bz - qe[ip,8])^2)/max(Be, 1e-30), abs(ψ))
+        for k = 1:5
+            if d[k] > vals[k]
+                vals[k] = d[k]; locs[k] = (X[1,ip], X[2,ip], X[3,ip])
+                k == 2 && (sgn = pr/qe[ip,end] - 1.0)
+            end
+        end
+    end
+    μd = p.μ_dsgs
+    if size(μd, 1) == p.mesh.nelem
+        @inbounds for ie = 1:p.mesh.nelem
+            ip = p.mesh.connijk[ie,3,3,3]
+            5.0 <= X[3,ip] <= 25.0 || continue
+            m = maximum(@view μd[ie,1:8])
+            m > vals[6] && (vals[6] = m; locs[6] = (X[1,ip], X[2,ip], X[3,ip]))
+        end
+    end
+    comm = MPI.COMM_WORLD
+    glo = MPI.Allreduce(vals, MPI.MAX, comm)
+    MPI.Comm_rank(comm) == 0 && println(" #DIAG TR t=", round(t, digits=4), " |v|=", round(glo[1], sigdigits=3),
+        " |δp/pe|=", round(glo[2], sigdigits=3), " |δρ/ρe|=", round(glo[3], sigdigits=3),
+        " |δB|/|Be|=", round(glo[4], sigdigits=3), " |ψ|=", round(glo[5], sigdigits=3),
+        " μ=", round(glo[6], sigdigits=3))
+    names = ("|v|", "|δp/pe|", "|δρ/ρe|", "|δB|/|Be|", "|ψ|", "μ")
+    for k = 1:6
+        vals[k] == glo[k] && glo[k] > 0 && println(" #DIAG TR   ", names[k], " at ", round.(locs[k], digits=2),
+                                                   k == 2 ? string(" (δp/pe = ", round(sgn, sigdigits=3), ")") : "")
+    end
     return nothing
 end
 
@@ -206,11 +254,12 @@ lk_dissipation(x, y, z) = (0.01, 0.01*0.5*(tanh(-(sqrt(x*x + y*y) - 100.0)/5.0) 
 function user_inputs()
 
     LK_REF = parse(Int, get(ENV, "LK_REF", "2"))
-    mesh   = ("LK_16x16x16.msh", "LK_38x38x38.msh", "LK_76x76x76.msh")[LK_REF]
+    mesh   = ("LK_16x16x16.msh", "LK_38x38x38.msh", "LK_76x76x76.msh", "LK_38x38x76.msh", "LK_16x16x64.msh")[LK_REF]
     # Δt for (|v| + c_f) Δt/Δh ≈ 0.25 at |v| + c_f ≈ 120 on the smallest LGL gap Δh of each mesh:
     # the fast speed just above the transition region is 92 (SD), 72 (MD), 50 (WD) at t = 0, and
     # Paper II's reconnection outflows reach 30 (README). The CFL monitor reports the actual value.
-    Δt     = (3.0e-3, 1.2e-3, 6.0e-4)[LK_REF]
+    Δt     = (3.0e-3, 1.2e-3, 6.0e-4, 6.0e-4, 7.5e-4)[LK_REF]   # 4, 5: set by the vertical LGL gap
+    haskey(ENV, "LK_DT") && (Δt = parse(Float64, ENV["LK_DT"]))   # diagnostics: another Δt
     # Environment overrides (README, "Restart"): LK_TEND sets :tend, LK_OUT_DT a snapshot every
     # LK_OUT_DT from 0 to :tend (only those after the start are written), LK_RESTART_DIR
     # (+ LK_RESTART_TIME) restarts from a snapshot of an earlier run.
@@ -241,7 +290,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lk_dipole            => "MD",       # SD, MD, WD (Φ_dip/Φ_tube = 0.13, 0.1, 0.067) or ND
         :lk_flux_def          => "whole",    # Φ_tube of the whole tube (Paper II's Fig. 1; README) or "top" (its Eq. 10)
-        :lk_tube              => true,
+        :lk_tube              => get(ENV, "LK_TUBE", "1") == "1",   # LK_TUBE=0: the atmosphere and dipole alone
         :lk_cz_gradient       => 1.0,        # a of Paper I Eq. 11 (1 = exactly adiabatic with m_f = 1)
         :lk_mf                => 1.0,        # p = ρT/m_f: 1 reproduces the papers' Fig. 1 (README); 1.25 = literal text
         :lk_glm_alpha         => 1.0,        # ψ damping rate α_p c_h/Δh (README: GLM transient)
