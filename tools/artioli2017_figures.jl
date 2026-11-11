@@ -18,7 +18,8 @@
 #
 # Options
 #   --no-run            do not run anything: read <outdir>/runs/<label>, or the
-#                       directory given with --<label>-dir
+#                       directory given with --<label>-dir (a case with neither
+#                       is skipped)
 #   --only=WHAT         all (default) | cylinder (Fig. 5.2) | plate (Fig. 5.4, Table 1)
 #   --outdir=DIR        where the figures go [output/artioli2017]
 #   --ve1-dir=DIR, --ve2-dir=DIR, --plate-dir=DIR
@@ -513,20 +514,23 @@ function main(args)
     labels = labels_for(o["only"])
 
     # where each run's output is: given, run now, or from an earlier call
+    # (with --no-run, a case that has neither is skipped)
     dirs = Dict{String,String}()
     torun = String[]
-    for l in labels
+    for l in copy(labels)
         if o["$l-dir"] !== nothing
             dirs[l] = o["$l-dir"]
         elseif o["run"]
             push!(torun, l)
             dirs[l] = joinpath(outdir, "runs", l)
-        else
+        elseif isfile(joinpath(outdir, "runs", l, "simulation.pvd"))
             dirs[l] = joinpath(outdir, "runs", l)
-            isfile(joinpath(dirs[l], "simulation.pvd")) ||
-                error("--no-run, but there is no earlier run of $l in $(dirs[l]); drop --no-run or give --$l-dir=DIR.")
+        else
+            println("  (no run of $l in $(joinpath(outdir, "runs", l)) and no --$l-dir: skipped)")
+            filter!(!=(l), labels)
         end
     end
+    isempty(labels) && error("--no-run, and no output to read: drop --no-run, or give --ve1-dir=, --ve2-dir=, --plate-dir=.")
     if !isempty(torun)
         @eval Main using Jexpresso
         for l in torun
