@@ -344,6 +344,7 @@ python3 $T ic MD=$MD                                              # Fig. 1(a), w
 python3 $T render $MD --preset ic        --times 0                # Fig. 1(b)
 python3 $T render $MD --preset emergence --times 5,40,60          # Fig. 2(a-c)
 python3 $T render $MD --preset emergence --times 5,40,60 --view top   # Fig. 2(d-f)
+python3 $T fig2   $MD --times 5,40,60 --grid                      # Fig. 2(a-f) with the paper's camera, colors and ticks
 python3 $T render $MD --preset arcade    --times 100,110,120      # Fig. 3
 python3 $T render $SD --preset dipoles   --times 100              # Fig. 4 (and $MD, $WD)
 python3 $T render $MD --preset rotation  --times 70,85,100        # Fig. 5(a-c)
@@ -390,7 +391,7 @@ How the quantities are computed:
   10 around it (blue, Fig. 10). The $B_z$ plane at $z = 0$ uses the papers'
   rainbow and range (±0.5 Fig. 2, ±0.2 Figs. 5–7 and 10, ±7.5 G in Fig. 1b);
   `--box`, `--azimuth`, `--elevation`, `--zoom`, `--dipole-seeds`,
-  `--tube-radii`, `--bz-clim` override a preset. Paper II's seed points and
+  `--tube-radii`, `--bz-clim`, `--bz-ticks` override a preset. Paper II's seed points and
   camera are not published, so the presets match its figures by eye. Fig. 9
   (hand-picked seeds) has no preset.
 

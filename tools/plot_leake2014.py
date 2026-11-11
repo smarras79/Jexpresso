@@ -12,9 +12,12 @@ SD, MD, WD, ND get the papers' colors and line styles.
   height  LABEL=RUN ...                            Fig. 11 (O-point height in y = 0), Fig. 12 (its speed), Fig. 13 (--mono)
   axflux  LABEL=RUN ...                            Fig. 14(b): axial flux above z = 0 and 10 over the total, in y = 0
   render  RUN --preset NAME --times ...            3D field lines, Figs. 1(b), 2-7, 10 (needs pyvista)
+  fig2    RUN --times 5,40,60                      Fig. 2: side view (a-c) and top view (d-f) at each time, one file
+                                                   each, Bz at z = 0 on the paper's rainbow and ticks; --grid: all in
+                                                   one figure (needs pyvista)
 
 Units are the papers' (L0, t0, B0, v0, j0 = B0/(mu0 L0)): the case writes its output in them.
-Needs numpy and matplotlib; render also pyvista (pip install pyvista). Run any command with -h for its options.
+Needs numpy and matplotlib; render and fig2 also pyvista (pip install pyvista). Run any command with -h for its options.
 """
 import argparse, glob, os, sys
 import xml.etree.ElementTree as ET
@@ -579,23 +582,51 @@ def cmd_axflux(a):
 
 
 # ---------------------------------------------------------------------------------------------------------
-# render: 3D field lines (pyvista)
+# render, fig2: 3D field lines (pyvista)
 # ---------------------------------------------------------------------------------------------------------
-# Camera: "yz" looks along -x with the tube (along y) left to right (Fig. 2); "xz" looks along +y across the tube
-# (Figs. 1b, 10). dseeds = nx,ny,x0,x1,ymax: bottom-boundary seeds at x in [x0, x1], |y| <= ymax (a dipole line
-# from (x, z = -30) peaks at z = -5 for x = 50, 30 for 80, 109 for 127). bz = color range of Bz at z = 0.
-# dseeds: the bottom-boundary seeds of the gray lines on y = 0, ±10, ±20, the five lines of Paper II's
-# Fig. 2(d) (a pure dipole line keeps its y, so its top view is a straight line along x)
+# The papers' color scale (Tecplot's rainbow): blue - cyan - green (B_z = 0) - yellow - red. In Fig. 2 the
+# colorbar ticks -0.5, -0.2, 0.0, 0.2, 0.5 are equally spaced: the map is piecewise linear in B_z between them.
+RAINBOW = ("#0000ff", "#00ffff", "#00ff00", "#ffff00", "#ff0000")
+FIG2_TICKS = (-0.5, -0.2, 0.0, 0.2, 0.5)
+
+
+def colormap(name):
+    if name in (None, "paper", "rainbow"):
+        return matplotlib.colors.LinearSegmentedColormap.from_list("leake_rainbow", RAINBOW)
+    return plt.get_cmap(name)
+
+
+def bz_map(v, ticks):
+    """B_z on the colorbar coordinate [-1, 1]: ticks equally spaced, linear in between, clamped outside."""
+    return np.interp(v, ticks, np.linspace(-1.0, 1.0, len(ticks)))
+
+
+def tick_text(ticks):
+    tenths = all(abs(v * 10 - round(v * 10)) < 1e-9 for v in ticks)
+    return [f"{v:.1f}" if tenths else f"{v:.3g}" for v in ticks]
+
+
+# Camera ("render"): "yz" looks along -x with the tube (along y) left to right (Fig. 2); "xz" looks along +y
+# across the tube (Figs. 1b, 10). dseeds = nx,ny,x0,x1,ymax: bottom-boundary seeds at x in [x0, x1], |y| <= ymax
+# (a dipole line from (x, z = -30) peaks at z = -5 for x = 50, 30 for 80, 109 for 127). bz = color range of Bz
+# at z = 0; bzticks = colorbar ticks, equally spaced on the bar (piecewise-linear map).
+# fig2 only: sidebox / topbox = display boxes of the side (a-c) and top (d-f) views, sideplane = extent of the Bz
+# plane in the side views; side = (azimuth, elevation, visible width in L0 at x = 0, z of the view center).
 _EMERGE = dict(base="yz", azimuth=30.0, elevation=8.0, zoom=1.4, box=(-45, 45, -45, 45, -25, 55),
-               dseeds=(3, 5, 70, 95, 20), bz=0.5)
+               dseeds=(3, 5, 70, 95, 40), bz=0.5)
 PRESETS = {
     # Fig. 1(b): green dipole lines from the bottom, multicolored tube lines from the side boundaries,
     # transparent Bz plane (the paper's +-7.5 G)
     "ic":        dict(dipole="green", tube="multi", axis=False, surface=0.6, iso=None, base="xz", azimuth=35.0,
                       elevation=12.0, zoom=1.3, box=(-100, 100, -128, 128, -30, 200), dseeds=(5, 3, 30, 120, 60),
                       bz=0.006),
-    # Fig. 2(a-c) (--view top: d-f): gray dipole lines, multicolored tube lines, black tube-axis line, Bz at z = 0
-    "emergence": dict(dipole="gray", tube="multi", axis=True, surface=1.0, iso=None, **_EMERGE),
+    # Fig. 2(a-c) (--view top, or the fig2 command: d-f): one gray dipole line from the bottom boundary at each
+    # y = -20, -10, 0, 10, 20, multicolored tube lines and the black tube-axis line from the side boundaries,
+    # Bz at z = 0 on the paper's rainbow with ticks -0.5, -0.2, 0, 0.2, 0.5
+    "emergence": dict(dipole="#707070", tube="multi", axis=True, surface=1.0, iso=None,
+                      **{**_EMERGE, "dseeds": (1, 5, 70, 70, 20), "bzticks": FIG2_TICKS,
+                         "sidebox": (-100, 100, -50, 50, -30, 150), "sideplane": (-40, 40, -50, 50, -1, 1),
+                         "topbox": (-40, 40, -40, 40, -30, 200), "side": (15.0, 6.0, 90.0, 0.0)}),
     # Fig. 3: gray dipole lines, multicolored tube lines, red isosurface |j| = 0.004 above z = 50
     "arcade":    dict(dipole="gray", tube="multi", axis=False, surface=None, iso=(0.004, 50.0),
                       **{**_EMERGE, "box": (-100, 100, -100, 100, -25, 150), "dseeds": (4, 5, 60, 120, 60),
@@ -619,12 +650,17 @@ PRESETS = {
 }
 
 
-def cmd_render(a):
+def need_pyvista():
     try:
         import pyvista as pv
     except ImportError:
-        raise SystemExit("render needs pyvista: pip install pyvista")
+        raise SystemExit("render and fig2 need pyvista: pip install pyvista")
     pv.OFF_SCREEN = True
+    return pv
+
+
+def preset_params(a):
+    """The preset of a, with the command-line overrides."""
     P = dict(PRESETS[a.preset])
     for k in ("dipole", "tube", "axis", "surface"):
         v = getattr(a, k)
@@ -636,100 +672,144 @@ def cmd_render(a):
     if a.no_iso:
         P["iso"] = None
     for k, d in (("azimuth", "azimuth"), ("elevation", "elevation"), ("zoom", "zoom"), ("bz_clim", "bz")):
-        if getattr(a, k) is not None:
+        if getattr(a, k, None) is not None:
             P[d] = getattr(a, k)
+    return P
+
+
+def bz_ticks(P, a):
+    """Colorbar ticks of Bz: --bz-ticks, else the preset's (unless --bz-clim), else None (+-bz, linear)."""
+    if a.bz_ticks:
+        return lim(a.bz_ticks)
+    if a.bz_clim is None and P.get("bzticks"):
+        return tuple(P["bzticks"])
+    return None
+
+
+def scene(pv, f, P, a, dseeds):
+    """The grid (B, Bz and |j| if needed) of snapshot f and its field lines over the whole domain:
+    (grid, [(lines, color or 'multi', name, number of seeds)]). The same seeds at every time."""
+    (x, y, z), F = read_lattice(f, ["Bx", "By", "Bz"])
+    grid = pv.RectilinearGrid(x, y, z)
+    grid.point_data["B"] = np.stack([F["Bx"].ravel(), F["By"].ravel(), F["Bz"].ravel()], axis=1)
+    grid.point_data["Bz"] = F["Bz"].ravel()
+    if P.get("iso"):
+        jx, jy, jz = current((x, y, z), F)
+        J = np.sqrt(jx**2 + jy**2 + jz**2)
+        J[z < P["iso"][1], :, :] = 0.0
+        grid.point_data["J"] = J.ravel()
+        del jx, jy, jz, J
+    eps = 1e-3 * (z[-1] - z[0])
+    ymax, ymin = y[-1] - eps, y[0] + eps
+    seeds = []                                                 # (seeds, color or 'multi', name)
+    if P.get("dipole"):
+        nx_, ny_, x0_, x1_, ys = dseeds
+        S = np.array([(xx, yy, z[0] + eps) for yy in np.linspace(-ys, ys, int(ny_))
+                      for xx in np.linspace(x0_, x1_, int(nx_))])
+        seeds.append((S, P["dipole"], "dipole"))
+    sides = [ymax, ymin] if a.sides == "both" else ([ymax] if a.sides == "max" else [ymin])
+    if P.get("tube") == "multi":                               # colored by the angle of the seed around the axis
+        S = np.array([(r * np.cos(th), ys, ZT + r * np.sin(th)) for ys in sides for r in lim(a.tube_radii)
+                      for th in np.linspace(0, 2 * np.pi, a.tube_n, endpoint=False)])
+        seeds.append((S, "multi", "tube"))
+    elif P.get("tube") == "rings":
+        for r, col in zip((0.5, 1.0, 2.0), ("orange", "royalblue", "k")):
+            S = np.array([(r * np.cos(th), ys, ZT + r * np.sin(th)) for ys in sides
+                          for th in np.linspace(0, 2 * np.pi, a.tube_n, endpoint=False)])
+            seeds.append((S, col, f"ring{r:g}"))
+    if P.get("axis") is True:
+        seeds.append((np.array([(0.0, s, ZT) for s in sides]), "k", "axis"))
+    elif P.get("axis") == "pair":
+        seeds.append((np.array([(0.0, ymax, ZT)]), "k", "axis+"))
+        seeds.append((np.array([(0.0, ymin, ZT)]), "purple", "axis-"))
+    if P.get("opoint"):
+        iy0 = int(np.argmin(np.abs(y)))
+        xo, zo, _ = opoint(x, z, F["Bx"][:, iy0, :], F["Bz"][:, iy0, :], a.xwin, (a.zmin, a.zmax), a.pair_dist)
+        if np.isfinite(zo):
+            print(f"   O-point in y = {y[iy0]:g}: (x, z) = ({xo:.3f}, {zo:.3f})")
+            seeds.append((np.array([(xo, y[iy0], zo)]), "orange", "opoint"))
+            if P["opoint"] == "disk":
+                S = np.array([(xo + r * np.cos(th), y[iy0], zo + r * np.sin(th)) for r in (2.5, 5.0, 7.5, 10.0)
+                              for th in np.linspace(0, 2 * np.pi, 8, endpoint=False)])
+                seeds.append((S, "royalblue", "disk"))
+        else:
+            print("   no O-point in the window (--xwin, --zmin, --zmax)")
+    traced = []
+    for S, col, name in seeds:
+        sl = grid.streamlines_from_source(pv.PolyData(S), vectors="B", integration_direction="both",
+                                          initial_step_length=0.5, max_step_length=2.0, max_steps=a.max_steps,
+                                          max_length=a.max_length, terminal_speed=1e-12)
+        if sl.n_points == 0:
+            print(f"   {name}: no line from {len(S)} seeds")
+            continue
+        if col == "multi":
+            for data in (sl.point_data, sl.cell_data):
+                if "SeedIds" in data:
+                    data["hue"] = (np.asarray(data["SeedIds"]) % a.tube_n) / max(a.tube_n - 1, 1)
+        traced.append((sl, col, name, len(S)))
+    return grid, traced
+
+
+def draw(pv, pl, grid, traced, P, a, box, cmap, ticks, scalar_bar=True, plane_box=None):
+    """Add the field lines, the Bz plane (clipped to plane_box, default box) and the |j| isosurface, clipped to box,
+    to the plotter pl. Returns the Bz colorbar ticks used."""
+    def clip(m, b=None):
+        b = b or box
+        if not b:
+            return m
+        m = m.clip_box(list(b), invert=False)
+        if m.n_points and not isinstance(m, pv.PolyData):      # older pyvista: clip_box gives a grid
+            m = m.extract_surface()
+        return m
+    fg = "k" if getattr(a, "background", "white") == "white" else "w"
+    for sl, col, name, ns in traced:
+        s = clip(sl)
+        if s.n_points == 0:
+            continue
+        geo = s.tube(radius=a.tube_width) if a.tube_width > 0 else s
+        if col == "multi":
+            pl.add_mesh(geo, scalars="hue", cmap=cmap, clim=(0.0, 1.0), show_scalar_bar=False, smooth_shading=True)
+        else:
+            pl.add_mesh(geo, color=col, smooth_shading=True)
+        print(f"   {name}: {ns} seeds, {s.n_cells} line pieces in the box")
+    if P.get("surface"):
+        sf = clip(grid.slice(normal="z", origin=(0.0, 0.0, a.surface_z)), plane_box)
+        if ticks is None:
+            c = P["bz"] or float(np.abs(sf["Bz"]).max()) or 1.0
+            ticks = (-c, 0.0, c)
+        sf["Bz_bar"] = bz_map(np.asarray(sf["Bz"]), ticks)
+        pos = np.linspace(-1.0, 1.0, len(ticks))
+        pl.add_mesh(sf, scalars="Bz_bar", cmap=cmap, clim=(-1.0, 1.0), opacity=float(P["surface"]), lighting=False,
+                    show_scalar_bar=scalar_bar,
+                    annotations={float(m): s for m, s in zip(pos, tick_text(ticks))},
+                    scalar_bar_args=dict(title=f"Bz/B0 at z = {a.surface_z:g}", vertical=True, n_labels=0, color=fg))
+    if P.get("iso"):
+        iso = grid.contour([P["iso"][0]], scalars="J")
+        if box and iso.n_points:
+            iso = clip(iso)
+        if iso.n_points:
+            pl.add_mesh(iso, color="red", opacity=0.6, smooth_shading=True)
+            print(f"   |j| = {P['iso'][0]:g} above z = {P['iso'][1]:g}: {iso.n_cells} triangles")
+        else:
+            print(f"   |j| never reaches {P['iso'][0]:g} above z = {P['iso'][1]:g}")
+    if a.outline and box:
+        pl.add_mesh(pv.Box(box).outline(), color="gray")
+    return ticks
+
+
+def cmd_render(a):
+    pv = need_pyvista()
+    P = preset_params(a)
     box = lim(a.box) if a.box else P["box"]
     dseeds = lim(a.dipole_seeds) if a.dipole_seeds else P["dseeds"]
+    cmap, ticks = colormap(a.bz_cmap), bz_ticks(P, a)
     os.makedirs(a.outdir, exist_ok=True)
     for t, f in pick_times(snapshots(a.run), a.times):
-        keep = ["Bx", "By", "Bz"]
-        (x, y, z), F = read_lattice(f, keep)
-        grid = pv.RectilinearGrid(x, y, z)
-        B = np.stack([F["Bx"].ravel(), F["By"].ravel(), F["Bz"].ravel()], axis=1)
-        grid.point_data["B"] = B
-        grid.point_data["Bz"] = F["Bz"].ravel()
-        if P.get("iso"):
-            jx, jy, jz = current((x, y, z), F)
-            J = np.sqrt(jx**2 + jy**2 + jz**2)
-            J[z < P["iso"][1], :, :] = 0.0
-            grid.point_data["J"] = J.ravel()
-            del jx, jy, jz, J
-        X, Y = x[-1], y[-1]
-        eps = 1e-3 * (z[-1] - z[0])
-        lines = []                                                 # (seeds, color or 'multi', name)
-
-        if P.get("dipole"):
-            nx_, ny_, x0_, x1_, ys = dseeds
-            S = np.array([(xx, yy, z[0] + eps) for yy in np.linspace(-ys, ys, int(ny_))
-                          for xx in np.linspace(x0_, x1_, int(nx_))])
-            lines.append((S, P["dipole"], "dipole"))
-        sides = [Y - eps, -Y + eps] if a.sides == "both" else ([Y - eps] if a.sides == "max" else [-Y + eps])
-        if P.get("tube") == "multi":
-            S = np.array([(r * np.cos(th), ys, ZT + r * np.sin(th)) for ys in sides for r in lim(a.tube_radii)
-                          for th in np.linspace(0, 2 * np.pi, a.tube_n, endpoint=False)])
-            lines.append((S, "multi", "tube"))
-        elif P.get("tube") == "rings":
-            for r, col in zip((0.5, 1.0, 2.0), ("orange", "royalblue", "k")):
-                S = np.array([(r * np.cos(th), ys, ZT + r * np.sin(th)) for ys in sides
-                              for th in np.linspace(0, 2 * np.pi, a.tube_n, endpoint=False)])
-                lines.append((S, col, f"ring{r:g}"))
-        if P.get("axis") is True:
-            lines.append((np.array([(0.0, s, ZT) for s in sides]), "k", "axis"))
-        elif P.get("axis") == "pair":
-            lines.append((np.array([(0.0, Y - eps, ZT)]), "k", "axis+"))
-            lines.append((np.array([(0.0, -Y + eps, ZT)]), "purple", "axis-"))
-        if P.get("opoint"):
-            iy0 = int(np.argmin(np.abs(y)))
-            xo, zo, _ = opoint(x, z, F["Bx"][:, iy0, :], F["Bz"][:, iy0, :], a.xwin, (a.zmin, a.zmax), a.pair_dist)
-            if np.isfinite(zo):
-                print(f"   O-point in y = {y[iy0]:g}: (x, z) = ({xo:.3f}, {zo:.3f})")
-                lines.append((np.array([(xo, y[iy0], zo)]), "orange", "opoint"))
-                if P["opoint"] == "disk":
-                    S = np.array([(xo + r * np.cos(th), y[iy0], zo + r * np.sin(th)) for r in (2.5, 5.0, 7.5, 10.0)
-                                  for th in np.linspace(0, 2 * np.pi, 8, endpoint=False)])
-                    lines.append((S, "royalblue", "disk"))
-            else:
-                print("   no O-point in the window (--xwin, --zmin, --zmax)")
-
+        print(f"   {f}: t = {t:g}")
+        grid, traced = scene(pv, f, P, a, dseeds)
         pl = pv.Plotter(off_screen=True, window_size=(a.size[0], a.size[1]))
         pl.set_background(a.background)
-        clip = (lambda m: m.clip_box(box, invert=False)) if box else (lambda m: m)
-        for S, col, name in lines:
-            sl = grid.streamlines_from_source(pv.PolyData(S), vectors="B", integration_direction="both",
-                                              initial_step_length=0.5, max_step_length=2.0, max_steps=a.max_steps,
-                                              max_length=a.max_length, terminal_speed=1e-12)
-            if sl.n_points == 0:
-                continue
-            sl = clip(sl)
-            if sl.n_points == 0:
-                continue
-            if not isinstance(sl, pv.PolyData):                   # older pyvista: clip_box gives a grid
-                sl = sl.extract_surface()
-            geo = sl.tube(radius=a.tube_width) if a.tube_width > 0 else sl
-            if col == "multi":
-                pl.add_mesh(geo, scalars="SeedIds", cmap="hsv", show_scalar_bar=False, smooth_shading=True)
-            else:
-                pl.add_mesh(geo, color=col, smooth_shading=True)
-            print(f"   {name}: {len(S)} seeds, {sl.n_cells} lines")
-        if P.get("surface"):
-            sf = grid.slice(normal="z", origin=(0.0, 0.0, a.surface_z))
-            if box:
-                sf = sf.clip_box(box, invert=False)
-            c = P["bz"] or float(np.abs(sf["Bz"]).max()) or 1.0
-            pl.add_mesh(sf, scalars="Bz", cmap=a.bz_cmap, clim=(-c, c), opacity=float(P["surface"]),
-                        scalar_bar_args=dict(title=f"Bz/B0 at z = {a.surface_z:g}", vertical=True,
-                                             color="k" if a.background == "white" else "w"))
-        if P.get("iso"):
-            iso = grid.contour([P["iso"][0]], scalars="J")
-            if box and iso.n_points:
-                iso = iso.clip_box(box, invert=False)
-            if iso.n_points:
-                pl.add_mesh(iso, color="red", opacity=0.6, smooth_shading=True)
-                print(f"   |j| = {P['iso'][0]:g} above z = {P['iso'][1]:g}: {iso.n_cells} triangles")
-            else:
-                print(f"   |j| never reaches {P['iso'][0]:g} above z = {P['iso'][1]:g}")
-        if a.outline:
-            pl.add_mesh(pv.Box(box or (x[0], X, y[0], Y, z[0], z[-1])).outline(), color="gray")
+        draw(pv, pl, grid, traced, P, a, box, cmap, ticks)
         if a.view == "top":
             pl.view_xy()
             P["zoom"] = a.zoom if a.zoom is not None else 1.0
@@ -744,6 +824,129 @@ def cmd_render(a):
         pl.screenshot(out)
         pl.close()
         print(f" -> {out}")
+
+
+def side_camera(pl, azimuth, elevation, width, zc, aspect, flip=False, view_angle=12.0):
+    """Perspective camera on the -x side (+x with flip) looking at (0, 0, zc), the tube (along y) across the
+    image, turned by azimuth about z and raised by elevation (degrees); width L0 visible across at x = 0."""
+    az, el = np.radians(azimuth), np.radians(elevation)
+    d = width / (2.0 * np.tan(np.radians(view_angle) / 2.0) * aspect)
+    u = np.array([(1.0 if flip else -1.0) * np.cos(el) * np.cos(az), np.cos(el) * np.sin(az), np.sin(el)])
+    fp = np.array([0.0, 0.0, zc])
+    pl.camera_position = [tuple(fp + d * u), tuple(fp), (0.0, 0.0, 1.0)]
+    pl.camera.view_angle = view_angle
+    pl.reset_camera_clipping_range()
+
+
+def top_camera(pl, box, zabove):
+    """Orthographic view from above framing exactly [x0, x1] x [y0, y1] (the window must have their aspect)."""
+    x0, x1, y0, y1 = box[:4]
+    c = (0.5 * (x0 + x1), 0.5 * (y0 + y1))
+    pl.camera_position = [(c[0], c[1], zabove), (c[0], c[1], 0.0), (0.0, 1.0, 0.0)]
+    pl.enable_parallel_projection()
+    pl.camera.parallel_scale = 0.5 * (y1 - y0)
+    pl.reset_camera_clipping_range()
+
+
+def cmd_fig2(a):
+    """Fig. 2 of the paper: for each time, the field lines seen from the side (a-c) and from above (d-f) with Bz
+    at z = 0, each view its own figure; the same seeds at every time. --grid also puts them in one 2 x N figure."""
+    pv = need_pyvista()
+    P = preset_params(a)
+    dseeds = lim(a.dipole_seeds) if a.dipole_seeds else P["dseeds"]
+    sbox = lim(a.box) if a.box else P.get("sidebox", P["box"])
+    splane = lim(a.side_plane) if a.side_plane else P.get("sideplane", sbox)
+    tbox = lim(a.top_box) if a.top_box else P.get("topbox", P["box"])
+    saz, sel, swid, szc = P.get("side", (P["azimuth"], P["elevation"], float(np.ptp(sbox[2:4])), 0.0))
+    saz = saz if a.side_azimuth is None else a.side_azimuth
+    sel = sel if a.side_elevation is None else a.side_elevation
+    swid = swid if a.side_width is None else a.side_width
+    szc = szc if a.side_zc is None else a.side_zc
+    cmap, ticks0 = colormap(a.bz_cmap), bz_ticks(P, a)
+    W, H = a.size
+    x0, x1, y0, y1 = tbox[:4]
+    Wt = int(round(H * (x1 - x0) / (y1 - y0)))
+    views = ("side", "top") if a.view == "both" else (a.view,)
+    os.makedirs(a.outdir, exist_ok=True)
+    tag = a.name or "leake_fig2"
+    letters = "abcdefghijklmnopqrstuvwxyz"
+
+    def side_panel(ax, t, img, ticks, letter):
+        ax.imshow(img)
+        ax.set_xticks([]); ax.set_yticks([])
+        ax.text(0.03, 0.975, (f"({letter})  " if letter else "") + rf"$t = {t:g}\,t_0$", transform=ax.transAxes,
+                va="top", ha="left", fontsize=10)
+        if P.get("surface"):
+            cax = ax.inset_axes([0.25, 0.80, 0.55, 0.035])
+            cb = ax.figure.colorbar(matplotlib.cm.ScalarMappable(matplotlib.colors.Normalize(-1.0, 1.0), cmap),
+                                    cax=cax, orientation="horizontal", ticks=np.linspace(-1.0, 1.0, len(ticks)))
+            cb.ax.set_xticklabels(tick_text(ticks))
+            cb.ax.xaxis.set_ticks_position("top")
+            cb.ax.tick_params(labelsize=7, length=2, pad=1)
+
+    def top_panel(ax, t, img, letter, ylabel=True):
+        ax.imshow(img, extent=(x0, x1, y0, y1), origin="upper")
+        for axis in (ax.xaxis, ax.yaxis):
+            axis.set_major_locator(matplotlib.ticker.MultipleLocator(10))
+            axis.set_minor_locator(matplotlib.ticker.MultipleLocator(2))
+        ax.tick_params(which="both", direction="in", top=True, right=True, labelsize=7)
+        ax.set_xlabel(r"$x/L_0$", fontsize=9)
+        if ylabel:
+            ax.set_ylabel(r"$y/L_0$", fontsize=9)
+        else:
+            ax.tick_params(labelleft=False)
+        ax.text(0.03, 0.975, (f"({letter})  " if letter else "") + rf"$t = {t:g}\,t_0$", transform=ax.transAxes,
+                va="top", ha="left", fontsize=10)
+
+    panels = []
+    for t, f in pick_times(snapshots(a.run), a.times):
+        print(f"   {f}: t = {t:g}")
+        grid, traced = scene(pv, f, P, a, dseeds)
+        side = top = None
+        ticks = ticks0
+        if "side" in views:
+            pl = pv.Plotter(off_screen=True, window_size=(W, H))
+            pl.set_background("white")
+            ticks = draw(pv, pl, grid, traced, P, a, sbox, cmap, ticks0, scalar_bar=False, plane_box=splane)
+            side_camera(pl, saz, sel, swid, szc, W / H, a.side_flip, a.view_angle)
+            side = pl.screenshot(return_img=True)
+            pl.close()
+            fig, ax = plt.subplots(figsize=(a.width, a.width * H / W))
+            side_panel(ax, t, side, ticks, None)
+            savefig(fig, os.path.join(a.outdir, f"{tag}_side_t{t:g}.{a.format}"), a.dpi)
+        if "top" in views:
+            pl = pv.Plotter(off_screen=True, window_size=(Wt, H))
+            pl.set_background("white")
+            ticks = draw(pv, pl, grid, traced, P, a, tbox, cmap, ticks0, scalar_bar=False)
+            top_camera(pl, tbox, float(grid.bounds[5]) + 50.0)
+            top = pl.screenshot(return_img=True)
+            pl.close()
+            fig, ax = plt.subplots(figsize=(a.width, a.width * (y1 - y0) / (x1 - x0)))
+            top_panel(ax, t, top, None)
+            if P.get("surface"):                                 # colorbar under the axes
+                cb = fig.colorbar(matplotlib.cm.ScalarMappable(matplotlib.colors.Normalize(-1.0, 1.0), cmap),
+                                  ax=ax, orientation="vertical", shrink=0.8, pad=0.02,
+                                  ticks=np.linspace(-1.0, 1.0, len(ticks)))
+                cb.ax.set_yticklabels(tick_text(ticks))
+                cb.ax.tick_params(labelsize=7)
+                cb.set_label(rf"$B_z/B_0$ at $z = {a.surface_z:g}$", fontsize=9)
+            savefig(fig, os.path.join(a.outdir, f"{tag}_top_t{t:g}.{a.format}"), a.dpi)
+        panels.append((t, side, top, ticks))
+
+    if not a.grid:
+        return
+    n = len(panels)
+    rows = [v for v in ("side", "top") if v in views]
+    ratio = {"side": H / W, "top": (y1 - y0) / (x1 - x0)}
+    cw = a.width                                                   # each column as wide as a single view
+    fig = plt.figure(figsize=(cw * n, cw * sum(ratio[r] for r in rows) * 1.06 + 0.4))
+    gs = fig.add_gridspec(len(rows), n, height_ratios=[ratio[r] for r in rows], wspace=0.06, hspace=0.03)
+    for i, (t, side, top, ticks) in enumerate(panels):
+        for k, r in enumerate(rows):
+            ax = fig.add_subplot(gs[k, i])
+            letter = letters[(k * n + i) % 26]
+            side_panel(ax, t, side, ticks, letter) if r == "side" else top_panel(ax, t, top, letter, i == 0)
+    savefig(fig, os.path.join(a.outdir, f"{tag}.{a.format}"), a.dpi)
 
 
 # ---------------------------------------------------------------------------------------------------------
@@ -832,40 +1035,70 @@ def main():
     common(s)
     s.set_defaults(func=cmd_axflux)
 
-    s = sub.add_parser("render", help="3D field lines (pyvista): Figs. 1b, 2-7, 10")
-    s.add_argument("run")
-    s.add_argument("--preset", choices=sorted(PRESETS), default="emergence")
+    def scene_args(s):
+        """Options shared by render and fig2: what is drawn (seeds, plane, isosurface) and how."""
+        s.add_argument("run")
+        s.add_argument("--preset", choices=sorted(PRESETS), default="emergence")
+        s.add_argument("--dipole", help="override: color of the bottom-boundary lines, or none")
+        s.add_argument("--dipole-seeds", help="nx,ny,x0,x1,ymax: bottom seeds at x in [x0, x1], |y| <= ymax "
+                       "(default: the preset's; emergence: 1,5,70,70,20 = one line at each y = -20..20 step 10)")
+        s.add_argument("--tube", help="override: multi, rings or none")
+        s.add_argument("--tube-radii", default="1,2", help="seed circles around the tube axis on the side boundaries")
+        s.add_argument("--tube-n", type=int, default=8, help="seeds per circle (multi: colored by their angle)")
+        s.add_argument("--sides", choices=("both", "max", "min"), default="both")
+        s.add_argument("--axis", help="override: true, pair or none")
+        s.add_argument("--surface", help="override: opacity of the Bz plane, or none")
+        s.add_argument("--surface-z", type=float, default=0.0)
+        s.add_argument("--bz-clim", type=float, help="color range +-c of Bz at z = 0, linear (default: the preset's)")
+        s.add_argument("--bz-ticks", help="colorbar ticks of Bz, equally spaced on the bar, the map piecewise "
+                       "linear between them (emergence: -0.5,-0.2,0,0.2,0.5 as in Fig. 2)")
+        s.add_argument("--bz-cmap", default="paper",
+                       help="paper: the papers' rainbow blue-cyan-green(0)-yellow-red (also the tube lines); "
+                            "or any matplotlib name (jet, RdBu_r, ...)")
+        s.add_argument("--iso", help="override: LEVEL,ZMIN of the |j| isosurface")
+        s.add_argument("--no-iso", action="store_true")
+        s.add_argument("--xwin", type=float, default=30.0); s.add_argument("--zmin", type=float, default=-30.0)
+        s.add_argument("--zmax", type=float, default=180.0)
+        s.add_argument("--pair-dist", type=float, default=3.0)
+        s.add_argument("--tube-width", type=float, default=0.3, help="field-line tube radius in L0 (0: lines)")
+        s.add_argument("--max-steps", type=int, default=20000); s.add_argument("--max-length", type=float, default=3000.0)
+        s.add_argument("--outline", action="store_true", help="outline the display box")
+        s.add_argument("--name")
+
+    s = sub.add_parser("render", help="3D field lines (pyvista): Figs. 1b, 2-7, 10, one image per time")
+    scene_args(s)
     s.add_argument("--times", default=None)
     s.add_argument("--view", choices=("side", "top"), default="side")
     s.add_argument("--azimuth", type=float); s.add_argument("--elevation", type=float)
     s.add_argument("--zoom", type=float)
     s.add_argument("--box", help="display box x0,x1,y0,y1,z0,z1 (default: the preset's)")
-    s.add_argument("--dipole", help="override: color of the bottom-boundary lines, or none")
-    s.add_argument("--dipole-seeds", help="nx,ny,x0,x1,ymax: bottom seeds at x in [x0, x1], |y| <= ymax "
-                   "(default: the preset's)")
-    s.add_argument("--tube", help="override: multi, rings or none")
-    s.add_argument("--tube-radii", default="1,2", help="seed circles around the tube axis on the side boundaries")
-    s.add_argument("--tube-n", type=int, default=8, help="seeds per circle")
-    s.add_argument("--sides", choices=("both", "max", "min"), default="both")
-    s.add_argument("--axis", help="override: true, pair or none")
-    s.add_argument("--surface", help="override: opacity of the Bz plane, or none")
-    s.add_argument("--surface-z", type=float, default=0.0)
-    s.add_argument("--bz-clim", type=float, help="color range +-c of Bz at z = 0 (default: the preset's)")
-    s.add_argument("--bz-cmap", default="jet", help="the papers' rainbow (0 = green); RdBu_r for red/blue")
-    s.add_argument("--iso", help="override: LEVEL,ZMIN of the |j| isosurface")
-    s.add_argument("--no-iso", action="store_true")
-    s.add_argument("--xwin", type=float, default=30.0); s.add_argument("--zmin", type=float, default=-30.0)
-    s.add_argument("--zmax", type=float, default=180.0)
-    s.add_argument("--pair-dist", type=float, default=3.0)
-    s.add_argument("--tube-width", type=float, default=0.25, help="field-line tube radius in L0 (0: lines)")
-    s.add_argument("--max-steps", type=int, default=20000); s.add_argument("--max-length", type=float, default=3000.0)
     s.add_argument("--size", type=lambda t: tuple(int(v) for v in t.split(",")), default=(1600, 1100))
     s.add_argument("--background", default="white")
-    s.add_argument("--outline", action="store_true")
     s.add_argument("--title", action="store_true")
-    s.add_argument("--name")
     s.add_argument("--outdir", default="figs_leake2014")
     s.set_defaults(func=cmd_render)
+
+    s = sub.add_parser("fig2", help="Fig. 2: side view (a-c) and top view (d-f) at each time, one file each")
+    scene_args(s)
+    s.add_argument("--times", default="5,40,60", help="comma-separated times (nearest snapshots), or all")
+    s.add_argument("--view", choices=("both", "side", "top"), default="both")
+    s.add_argument("--grid", action="store_true", help="also all views in one figure, a column per time (Fig. 2)")
+    s.add_argument("--box", help="display box of the side views x0,x1,y0,y1,z0,z1 (default: the preset's sidebox)")
+    s.add_argument("--top-box", help="display box of the top views; its x, y range is the axes (default: "
+                   "-40,40,-40,40,-30,200)")
+    s.add_argument("--side-azimuth", type=float, help="turn of the side camera about z, degrees (default 15)")
+    s.add_argument("--side-elevation", type=float, help="height of the side camera above z = zc, degrees (default 6)")
+    s.add_argument("--side-width", type=float, help="L0 visible across the side view at x = 0 (default 90)")
+    s.add_argument("--side-zc", type=float, help="z of the side-view center (default 0)")
+    s.add_argument("--side-flip", action="store_true", help="side camera on the +x side (mirrors y)")
+    s.add_argument("--side-plane", help="extent x0,x1,y0,y1,z0,z1 of the Bz plane in the side views "
+                   "(default: -40,40,-50,50,-1,1)")
+    s.add_argument("--view-angle", type=float, default=12.0, help="side camera view angle, degrees (small: "
+                   "nearly orthographic, as in the paper)")
+    s.add_argument("--size", type=lambda t: tuple(int(v) for v in t.split(",")), default=(1000, 1000),
+                   help="pixels of each side view W,H; the top views are H high")
+    common(s)
+    s.set_defaults(func=cmd_fig2, width=5.0)
 
     # let comma lists start with a minus sign: --xlim -30,30 -> --xlim=-30,30
     argv = sys.argv[1:]
