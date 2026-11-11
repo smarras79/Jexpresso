@@ -1636,10 +1636,10 @@ function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
     mesh.x[per_ip] .= x_updated
     mesh.y[per_ip] .= y_updated
     mesh.z[per_ip] .= z_updated
-    if size(mesh.coords, 1) == mesh.npoin && size(mesh.coords, 2) >= 3
-        mesh.coords[per_ip, 1] .= x_updated
-        mesh.coords[per_ip, 2] .= y_updated
-        mesh.coords[per_ip, 3] .= z_updated
+    if size(mesh.coords, 1) >= 3 && size(mesh.coords, 2) == mesh.npoin     # coords is (3, npoin)
+        mesh.coords[1, per_ip] .= x_updated
+        mesh.coords[2, per_ip] .= y_updated
+        mesh.coords[3, per_ip] .= z_updated
     end
 end
 

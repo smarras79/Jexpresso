@@ -85,7 +85,7 @@ function build_bc_constraints(mesh, metrics, qn, qe, inputs, neqs,
             ip = mesh.poin_in_bdy_face[iface, i, j]
             n1 = metrics.nx[iface, i, j]; n2 = metrics.ny[iface, i, j]; n3 = metrics.nz[iface, i, j]
             qe_ip = @view(qe[ip, :])
-            c_ip  = @view(mesh.coords[ip, :])
+            c_ip  = @view(mesh.coords[:, ip])
 
             changed  = falses(neqs)
             np_ok    = lmom
@@ -216,7 +216,7 @@ function apply_bc_constraints_state!(bc::St_bc_constraints, u, uaux, qe, t, coor
         for i = 1:ngl, j = 1:ngl
             ip = poin_in_bdy_face[iface, i, j]
             fill!(qbdy, _BC_SENTINEL)
-            user_bc_dirichlet!(@view(uaux[ip, :]), @view(coords[ip, :]), t, tag, qbdy,
+            user_bc_dirichlet!(@view(uaux[ip, :]), @view(coords[:, ip]), t, tag, qbdy,
                                nx[iface, i, j], ny[iface, i, j], nz[iface, i, j],
                                xmin, xmax, ymin, ymax, zmin, zmax, @view(qe[ip, :]), SOL)
             for k = 1:neqs

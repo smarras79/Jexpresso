@@ -305,7 +305,7 @@ function params_setup(sem,
                           cache_ghost_c, q_ghost_c,
                           sem.interp; ladapt=inputs[:ladapt], neqs=1)
         if inputs[:lmoist] && sem.SOL_VARS_TYPE == PERT() && backend == CPU()
-            reference_pressure_from_model_eos!(qp.qe, @view(sem.mesh.coords[:,end]), sem.mesh.npoin, sem.mesh.SD)
+            reference_pressure_from_model_eos!(qp.qe, @view(sem.mesh.coords[end, :]), sem.mesh.npoin, sem.mesh.SD)  # same height as do_micro_physics!
         end
         MPI.Barrier(comm)
         if rank == 0
