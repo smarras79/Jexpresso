@@ -25,6 +25,9 @@
 #     grid.x, grid.y          # nodal coordinates, one entry per point
 #     grid.data["rho"]        # a point-data field
 #     grid.time               # simulation time, or `nothing` if not recorded
+#     grid.cells              # cell connectivity, 1-based point indices (for
+#                             # Jexpresso's 2D files: the 4 corners of every
+#                             # sub-quad between neighbouring LGL nodes)
 #---------------------------------------------------------------------------------
 
 module VTUReader
@@ -37,9 +40,11 @@ export read_vtk_grid, VTKGrid
     VTKGrid
 
 Nodal data of one output time: coordinates `x`, `y`, `z` (one entry per point),
-the point-data fields in `data`, and the simulation `time` if the writer
-recorded it as `TimeValue` field data (`nothing` for files written before that
-was added).
+the point-data fields in `data`, the simulation `time` if the writer recorded
+it as `TimeValue` field data (`nothing` for files written before that was
+added), and the `cells`, each a vector of 1-based point indices (empty when the
+file has no `<Cells>` section). A multi-component point array (a vector field)
+is stored flat, component fastest.
 """
 struct VTKGrid
     x::Vector{Float64}
@@ -47,7 +52,9 @@ struct VTKGrid
     z::Vector{Float64}
     data::Dict{String,Vector{Float64}}
     time::Union{Nothing,Float64}
+    cells::Vector{Vector{Int}}
 end
+VTKGrid(x, y, z, data, time) = VTKGrid(x, y, z, data, time, Vector{Int}[])
 
 #---------------------------------------------------------------------------------
 # XML scanning
@@ -211,6 +218,7 @@ function read_vtu(path::AbstractString)
     x = Float64[]; y = Float64[]; z = Float64[]
     data = Dict{String,Vector{Float64}}()
     time = nothing
+    conn = Int[]; offs = Int[]
 
     for a in arrays
         if a.section == "Points"
@@ -229,10 +237,22 @@ function read_vtu(path::AbstractString)
                 v = _values(a, raw, blob, HT)
                 isempty(v) || (time = v[1])
             end
+        elseif a.section == "Cells"
+            name = get(a.attrs, "Name", "")
+            name == "connectivity" && (conn = round.(Int, _values(a, raw, blob, HT)))
+            name == "offsets"      && (offs = round.(Int, _values(a, raw, blob, HT)))
         end
     end
 
-    return VTKGrid(x, y, z, data, time)
+    # VTK: 0-based point indices; offsets[c] is the END of cell c in connectivity
+    cells = Vector{Int}[]
+    first_ = 1
+    for o in offs
+        push!(cells, conn[first_:o] .+ 1)
+        first_ = o + 1
+    end
+
+    return VTKGrid(x, y, z, data, time, cells)
 end
 
 """
@@ -266,7 +286,14 @@ function read_pvtu(path::AbstractString)
         end
     end
 
-    return VTKGrid(x, y, z, data, time)
+    cells = Vector{Int}[]
+    shift = 0
+    for p in pieces
+        append!(cells, (c .+ shift for c in p.cells))
+        shift += length(p.x)
+    end
+
+    return VTKGrid(x, y, z, data, time, cells)
 end
 
 """

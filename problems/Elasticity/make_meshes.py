@@ -132,6 +132,89 @@ def structured_quarter_annulus(a, b, nr, nt, path, name):
     print(f"  {os.path.relpath(path, HERE)}: {nr}x{nt} quads, {nnode} vertices")
 
 
+def structured_perforated_plate(L, H, R, nt, nr, ny, grading, path, name):
+    """A quarter of a strip 2L x 2H with a central hole of radius R, as three
+    structured blocks: two fans around the hole, split by the 45-degree
+    diagonal, and the rectangle above them,
+
+        block I    A=(R,0) -> P1=(L,0) -> Q=(L,L) -> M (hole at 45 deg)
+        block II   M -> Q -> D=(0,L) -> B=(0,R)
+        block III  D -> Q -> P2=(L,H) -> P3=(0,H)          (needs H > L)
+
+    nt elements along each 45-degree arc (and across the strip), nr along the
+    radial lines — graded towards the hole by `grading` (> 1), where the
+    plastic zone starts — and ny up the rectangle.
+
+    Boundary groups:
+
+      "hole"     the quarter circle r = R              traction-free
+      "bottom"   y = 0, R <= x <= L                    symmetry: u_y = 0
+      "left"     x = 0, R <= y <= H                    symmetry: u_x = 0
+      "right"    x = L                                 lateral restraint
+      "top"      y = H                                 the prescribed displacement
+    """
+    gmsh.initialize()
+    gmsh.option.setNumber("General.Terminal", 0)
+    gmsh.model.add(name)
+
+    geo = gmsh.model.geo
+    c45 = R/2**0.5
+    o  = geo.addPoint(0.0, 0.0, 0.0)
+    pa = geo.addPoint(R, 0.0, 0.0)          # A
+    p1 = geo.addPoint(L, 0.0, 0.0)
+    q  = geo.addPoint(L, L, 0.0)
+    m  = geo.addPoint(c45, c45, 0.0)
+    d  = geo.addPoint(0.0, L, 0.0)
+    pb = geo.addPoint(0.0, R, 0.0)          # B
+    p2 = geo.addPoint(L, H, 0.0)
+    p3 = geo.addPoint(0.0, H, 0.0)
+
+    # radial lines run from the hole outwards, so the grading is consistent
+    c_bot  = geo.addLine(pa, p1)
+    c_diag = geo.addLine(m, q)
+    c_left = geo.addLine(pb, d)
+    arc1   = geo.addCircleArc(pa, o, m)
+    arc2   = geo.addCircleArc(m, o, pb)
+    c_r1   = geo.addLine(p1, q)
+    c_t1   = geo.addLine(q, d)
+    c_r2   = geo.addLine(q, p2)
+    c_top  = geo.addLine(p2, p3)
+    c_l2   = geo.addLine(d, p3)
+
+    s1 = geo.addPlaneSurface([geo.addCurveLoop([c_bot, c_r1, -c_diag, -arc1])])
+    s2 = geo.addPlaneSurface([geo.addCurveLoop([c_diag, c_t1, -c_left, -arc2])])
+    s3 = geo.addPlaneSurface([geo.addCurveLoop([-c_t1, c_r2, c_top, -c_l2])])
+
+    for c in (c_bot, c_diag, c_left):
+        geo.mesh.setTransfiniteCurve(c, nr + 1, "Progression", grading)
+    for c in (arc1, arc2, c_r1, c_t1, c_top):
+        geo.mesh.setTransfiniteCurve(c, nt + 1)
+    for c in (c_r2, c_l2):
+        geo.mesh.setTransfiniteCurve(c, ny + 1)
+    for s in (s1, s2, s3):
+        geo.mesh.setTransfiniteSurface(s)
+        geo.mesh.setRecombine(2, s)
+
+    geo.synchronize()
+
+    for gname, curves in (("hole", [arc1, arc2]), ("bottom", [c_bot]), ("left", [c_left, c_l2]),
+                          ("right", [c_r1, c_r2]), ("top", [c_top])):
+        tag = gmsh.model.addPhysicalGroup(1, curves)
+        gmsh.model.setPhysicalName(1, tag, gname)
+    tag = gmsh.model.addPhysicalGroup(2, [s1, s2, s3])
+    gmsh.model.setPhysicalName(2, tag, "domain")
+
+    gmsh.model.mesh.generate(2)
+    gmsh.option.setNumber("Mesh.MshFileVersion", 4.1)
+    gmsh.option.setNumber("Mesh.Binary", 0)
+    gmsh.write(path)
+
+    nquad = 2*nt*nr + nt*ny
+    nnode = len(gmsh.model.mesh.getNodes()[0])
+    gmsh.finalize()
+    print(f"  {os.path.relpath(path, HERE)}: {nquad} quads, {nnode} vertices")
+
+
 if __name__ == "__main__":
     print("Elasticity meshes:")
 
@@ -172,3 +255,11 @@ if __name__ == "__main__":
         2.0, 4.0, 8, 8,
         os.path.join(HERE, "plastic_cylinder2d", "quarter_annulus_8x8.msh"),
         "quarter_annulus")
+
+    # perforated_plate2d: Artioli et al. (2017) Sec. 4.3, a quarter of the
+    # 200 x 360 mm strip with its 100 mm hole. 132 quads, graded towards the
+    # hole, where the plastic zone starts.
+    structured_perforated_plate(
+        100.0, 180.0, 50.0, 6, 8, 6, 1.12,
+        os.path.join(HERE, "perforated_plate2d", "quarter_plate_hole_132.msh"),
+        "quarter_plate_hole")

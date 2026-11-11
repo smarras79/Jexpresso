@@ -343,6 +343,22 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #                            let the loads enter during the first step.
     #   :solid_probes            [("A", x, y), ...]: nodes whose displacement is
     #                            logged every step in solid_history.csv.
+    #   :solid_history           where the material history lives: "nodal"
+    #                            (linear viscoelasticity only; the default
+    #                            there) or "quadrature" (any model; Newton).
+    #   :newton_rtol             Newton tolerance, ‖r‖ ≤ rtol·max(‖f_ext‖, ‖f_int‖)
+    #                            on the free DOFs (default 1e-10).
+    #   :newton_maxit            iterations before an increment counts as not
+    #                            converged (default 25) ...
+    #   :newton_max_cuts         ... and is halved, at most this many times in
+    #                            a row (default 8).
+    #   :vtk_vectors             [("u", "ux", "uy")]: vector fields assembled
+    #                            from written scalars (ParaView's Warp By Vector).
+    #   :lplot_deformed          true: PNG of the deformed grid at every output
+    #                            time, and deformed.gif. :plot_deformed_field
+    #                            ("umag" or any written field), :plot_deformed_scale
+    #                            (displacement magnification), :plot_deformed_clims.
+    #   Read where they are used; see the header of quasistatic_solid.jl.
     #
     if(!haskey(inputs, :lquasistatic_solid))
         inputs[:lquasistatic_solid] = false

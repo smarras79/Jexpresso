@@ -83,7 +83,12 @@
 #                  step is a Newton iteration with the consistent tangent,
 #                      K_T Δu = f_ext − f_int(u),   K_T = Σ_e ∫ Bᵀ D B,
 #                  refactorised every iteration for a nonlinear model.
-#                  The only path for plasticity.
+#                  The only path for plasticity. Converged when ‖r‖ ≤
+#                  :newton_rtol · max(‖f_ext‖, ‖f_int‖) on the free DOFs; an
+#                  increment that has not converged after :newton_maxit
+#                  iterations is halved and retried, up to :newton_max_cuts
+#                  times in a row (solid_history.csv logs the iterations and
+#                  the cuts of every step).
 #   "nodal"        linear viscoelasticity only, and its default. Because (*) is
 #                  linear and the discrete strain is linear in the nodal
 #                  displacement, qₘ at every quadrature point is exactly
@@ -129,6 +134,10 @@
 #     case's qvars: SOLID_FIELDS (ux, uy, sxx, syy, sxy, szz) and any of
 #       "svm"    von Mises equivalent stress √(3/2 s:s)
 #       "umag"   |u|
+#       "rx", "ry"  nodal reaction forces: f_int − f_ext on the constrained
+#                components, 0 on the free ones. Summed over the nodes of an
+#                edge they give that edge's R_<tag> of solid_history.csv (a
+#                corner node shared by two constrained edges counts once).
 #       the model's history fields (quadrature path), projected onto the nodes:
 #       J2: ep_bar, ep_xx, ep_yy, ep_zz, ep_xy, alpha_xx, alpha_yy, alpha_zz,
 #       alpha_xy;  viscoelastic: q<m>_xx, …
@@ -410,24 +419,26 @@ from Jexpresso's element gradient _∇f! (which returns ωJ ∇f at the LGL poin
 with collocation the quadrature point (k,l) is the node (k,l)).
 """
 function solid_qp_strains!(εq, u, sem, f_el, ∇ux_el, ∇uy_el)
-    mesh    = sem.mesh
-    metrics = sem.metrics
-    ngl     = mesh.ngl
-    npoin   = Int(mesh.npoin)
-    ω       = sem.ω
-    for iel = 1:mesh.nelem
+    # St_mesh and St_metrics have untyped fields: read them here, loop behind a
+    # function barrier (this runs at every Newton iteration).
+    mesh = sem.mesh; m = sem.metrics
+    _solid_qp_strains!(εq, u, mesh.connijk, sem.basis.dψ, sem.ω, m.Je, m.dξdx, m.dξdy, m.dηdx, m.dηdy,
+                       sem.QT, mesh.SD, Int(mesh.nelem), Int(mesh.ngl), Int(mesh.npoin), f_el, ∇ux_el, ∇uy_el)
+end
+
+function _solid_qp_strains!(εq, u, connijk, dψ, ω, Je, dξdx, dξdy, dηdx, dηdy, QT, SD,
+                            nelem, ngl, npoin, f_el, ∇ux_el, ∇uy_el)
+    for iel = 1:nelem
         for j = 1:ngl, i = 1:ngl
-            f_el[i, j] = u[mesh.connijk[iel, i, j]]
+            f_el[i, j] = u[connijk[iel, i, j]]
         end
-        _∇f!(∇ux_el, f_el, ngl, sem.basis.dψ, ω, metrics.Je,
-             metrics.dξdx, metrics.dξdy, metrics.dηdx, metrics.dηdy, iel, CL(), sem.QT, mesh.SD, ContGal())
+        _∇f!(∇ux_el, f_el, ngl, dψ, ω, Je, dξdx, dξdy, dηdx, dηdy, iel, CL(), QT, SD, ContGal())
         for j = 1:ngl, i = 1:ngl
-            f_el[i, j] = u[npoin + mesh.connijk[iel, i, j]]
+            f_el[i, j] = u[npoin + connijk[iel, i, j]]
         end
-        _∇f!(∇uy_el, f_el, ngl, sem.basis.dψ, ω, metrics.Je,
-             metrics.dξdx, metrics.dξdy, metrics.dηdx, metrics.dηdy, iel, CL(), sem.QT, mesh.SD, ContGal())
+        _∇f!(∇uy_el, f_el, ngl, dψ, ω, Je, dξdx, dξdy, dηdx, dηdy, iel, CL(), QT, SD, ContGal())
         for j = 1:ngl, i = 1:ngl
-            ωJ = ω[i]*ω[j]*metrics.Je[iel, i, j]
+            ωJ = ω[i]*ω[j]*Je[iel, i, j]
             εq[1, i, j, iel] = ∇ux_el[iel, i, j, 1]/ωJ
             εq[2, i, j, iel] = ∇uy_el[iel, i, j, 2]/ωJ
             εq[3, i, j, iel] = 0.5*(∇ux_el[iel, i, j, 2] + ∇uy_el[iel, i, j, 1])/ωJ
@@ -444,18 +455,25 @@ the weak divergence of the two rows of σ, contracted with dψ exactly as the
 viscous operator _expansion_visc! (rhs.jl) does, then DSS_rhs!.
 """
 function solid_internal_force!(fint, σq, sem, rhs_el, tmp)
-    mesh    = sem.mesh
-    metrics = sem.metrics
-    ngl     = mesh.ngl
-    npoin   = Int(mesh.npoin)
-    ω       = sem.ω
-    dψ      = sem.basis.dψ
+    mesh  = sem.mesh; m = sem.metrics
+    ngl   = Int(mesh.ngl)
+    npoin = Int(mesh.npoin)
+    _solid_weak_divergence!(rhs_el, σq, sem.basis.dψ, sem.ω, m.Je, m.dξdx, m.dξdy, m.dηdx, m.dηdy,
+                            Int(mesh.nelem), ngl)
+    fill!(tmp, 0.0)
+    DSS_rhs!(tmp, rhs_el, mesh.connijk, mesh.nelem, ngl, 2, mesh.SD, ContGal())
+    @views fint[1:npoin]         .= tmp[:, 1]
+    @views fint[npoin+1:2*npoin] .= tmp[:, 2]
+    return fint
+end
+
+function _solid_weak_divergence!(rhs_el, σq, dψ, ω, Je, dξdx, dξdy, dηdx, dηdy, nelem, ngl)
     fill!(rhs_el, 0.0)
-    @inbounds for iel = 1:mesh.nelem
+    @inbounds for iel = 1:nelem
         for l = 1:ngl, k = 1:ngl
-            ωJ  = ω[k]*ω[l]*metrics.Je[iel, k, l]
-            ξx  = metrics.dξdx[iel, k, l]; ξy = metrics.dξdy[iel, k, l]
-            ηx  = metrics.dηdx[iel, k, l]; ηy = metrics.dηdy[iel, k, l]
+            ωJ  = ω[k]*ω[l]*Je[iel, k, l]
+            ξx  = dξdx[iel, k, l]; ξy = dξdy[iel, k, l]
+            ηx  = dηdx[iel, k, l]; ηy = dηdy[iel, k, l]
             sxx = σq[1, k, l, iel]; syy = σq[2, k, l, iel]; sxy = σq[4, k, l, iel]
             # contravariant fluxes of the x row (σxx, σxy) and of the y row (σxy, σyy)
             Fξx = ωJ*(ξx*sxx + ξy*sxy); Fηx = ωJ*(ηx*sxx + ηy*sxy)
@@ -468,11 +486,7 @@ function solid_internal_force!(fint, σq, sem, rhs_el, tmp)
             end
         end
     end
-    fill!(tmp, 0.0)
-    DSS_rhs!(tmp, rhs_el, mesh.connijk, mesh.nelem, ngl, 2, mesh.SD, ContGal())
-    @views fint[1:npoin]         .= tmp[:, 1]
-    @views fint[npoin+1:2*npoin] .= tmp[:, 2]
-    return fint
+    return nothing
 end
 
 """
@@ -482,17 +496,20 @@ Nodal values of a quadrature-point quantity `value(k, l, iel)`: Σ_e ωJ value /
 over the elements sharing a node (DSS_rhs! and the lumped mass matrix).
 """
 function solid_qp_to_nodes!(out, value, sem, rhs_el1, tmp1)
-    mesh    = sem.mesh
-    metrics = sem.metrics
-    ngl     = mesh.ngl
-    ω       = sem.ω
-    @inbounds for iel = 1:mesh.nelem, l = 1:ngl, k = 1:ngl
-        rhs_el1[iel, k, l, 1] = ω[k]*ω[l]*metrics.Je[iel, k, l]*value(k, l, iel)
-    end
+    mesh = sem.mesh
+    ngl  = Int(mesh.ngl)
+    _solid_weighted_qp!(rhs_el1, value, sem.ω, sem.metrics.Je, Int(mesh.nelem), ngl)
     fill!(tmp1, 0.0)
     DSS_rhs!(tmp1, rhs_el1, mesh.connijk, mesh.nelem, ngl, 1, mesh.SD, ContGal())
     out .= @view(tmp1[:, 1]) ./ sem.matrix.M
     return out
+end
+
+function _solid_weighted_qp!(rhs_el1, value, ω, Je, nelem, ngl)
+    @inbounds for iel = 1:nelem, l = 1:ngl, k = 1:ngl
+        rhs_el1[iel, k, l, 1] = ω[k]*ω[l]*Je[iel, k, l]*value(k, l, iel)
+    end
+    return nothing
 end
 
 """
@@ -662,6 +679,7 @@ function quasistatic_solid_solve!(sem, qp, inputs, OUTPUT_DIR::String, TFloat)
               typeof(model), " keeps its history at the quadrature points.")
     newton_maxit = Int(get(inputs, :newton_maxit, 25))
     newton_rtol  = Float64(get(inputs, :newton_rtol, 1.0e-10))
+    newton_max_cuts = Int(get(inputs, :newton_max_cuts, 8))
 
     # user_solid_exact returning `nothing` means "no closed form" (the hook is a
     # module method, so another case's may still be defined in this session).
@@ -677,9 +695,9 @@ function quasistatic_solid_solve!(sem, qp, inputs, OUTPUT_DIR::String, TFloat)
               SOLID_FIELDS, ", got ", qvars, ".")
     extras = qvars[length(SOLID_FIELDS)+1:end]
     for name in extras
-        name in ("svm", "umag") && continue
+        name in ("svm", "umag", "rx", "ry") && continue
         any(p -> first(p) == name, hfields) ||
-            error(" # ERROR quasistatic_solid.jl: no field \"", name, "\" to write. Available: svm, umag, ",
+            error(" # ERROR quasistatic_solid.jl: no field \"", name, "\" to write. Available: svm, umag, rx, ry, ",
                   join(first.(hfields), ", "), ".")
         hpath === :quadrature ||
             error(" # ERROR quasistatic_solid.jl: the history field \"", name, "\" needs ",
@@ -791,7 +809,9 @@ function quasistatic_solid_solve!(sem, qp, inputs, OUTPUT_DIR::String, TFloat)
     tmp2   = zeros(npoin, 2)
     rhs1   = zeros(nelem, ngl, ngl, 1)
     tmp1   = zeros(npoin, 1)
-    newton_iters = Ref(0)
+    newton_iters = Ref(0)            # Newton iterations of the step (all its sub-increments)
+    newton_cuts  = Ref(0)            # times the step's increment was halved
+    last_rel     = Ref(NaN)
 
     #-----------------------------------------------------------------------
     # PATH 1 — linear viscoelasticity with nodal history (see the header).
@@ -892,13 +912,13 @@ function quasistatic_solid_solve!(sem, qp, inputs, OUTPUT_DIR::String, TFloat)
             return nothing
         end
 
-        advance! = function (t, δt)
+        # One Newton solve of the increment ending at t. Returns whether it
+        # converged; the history H is accepted only if it did.
+        newton! = function (t, δt)
             loads!(t)
             for dof in cdofs                         # the prescribed values at t
                 u[dof] = dirichlet[dof]
             end
-            converged = false
-            iters = 0
             rnorm = Inf; ref = 0.0
             for it = 1:newton_maxit + 1
                 evaluate!(δt)
@@ -906,11 +926,11 @@ function quasistatic_solid_solve!(sem, qp, inputs, OUTPUT_DIR::String, TFloat)
                 rnorm = norm(r)
                 ref   = max(norm(fext), norm(fint), floatmin(Float64))
                 if rnorm <= newton_rtol*ref
-                    converged = true
-                    break
+                    H .= Htr                          # accept the increment
+                    return true
                 end
-                it > newton_maxit && break
-                iters += 1
+                (it > newton_maxit || !isfinite(rnorm)) && break
+                newton_iters[] += 1
                 F = if islinear(model)
                     get!(() -> _solid_factorize(solid_tangent_matrix(Dq, sem)[fdofs, fdofs]), lin_cache, δt)
                 else
@@ -918,13 +938,28 @@ function quasistatic_solid_solve!(sem, qp, inputs, OUTPUT_DIR::String, TFloat)
                 end
                 u[fdofs] .+= F \ r
             end
-            converged ||
-                error(@sprintf(" # ERROR quasistatic_solid.jl: Newton did not converge at t = %g in %d iterations (|r|/|f| = %.3e). ",
-                               t, newton_maxit, rnorm/ref),
-                      "Reduce :Δt, or raise :newton_maxit. A perfectly plastic body past its limit load ",
-                      "cannot carry a prescribed load: use displacement control there.")
-            H .= Htr                                  # accept the step
-            newton_iters[] = iters
+            last_rel[] = rnorm/ref
+            return false
+        end
+
+        # The step [t − δt, t]. If Newton fails, the increment is CUT: back to
+        # the last converged state and two half increments, recursively, up to
+        # :newton_max_cuts times (2^cuts sub-increments). A large increment of a
+        # perfectly plastic body can flip so much of the plastic zone between
+        # iterations that full Newton oscillates; a smaller one converges.
+        advance! = function (t, δt, depth = 0)
+            depth == 0 && (newton_iters[] = 0; newton_cuts[] = 0)
+            usave = copy(u)
+            newton!(t, δt) && return nothing
+            depth < newton_max_cuts ||
+                error(@sprintf(" # ERROR quasistatic_solid.jl: Newton did not converge at t = %g even after %d cuts of the increment (|r|/|f| = %.3e). ",
+                               t, newton_max_cuts, last_rel[]),
+                      "Reduce :Δt, or raise :newton_maxit / :newton_max_cuts. Under a prescribed load, a ",
+                      "perfectly plastic body cannot go past its limit load: use displacement control there.")
+            u .= usave
+            newton_cuts[] += 1
+            advance!(t - 0.5*δt, 0.5*δt, depth + 1)
+            advance!(t,          0.5*δt, depth + 1)
             return nothing
         end
         nodal_stress! = function (S)
@@ -962,6 +997,12 @@ function quasistatic_solid_solve!(sem, qp, inputs, OUTPUT_DIR::String, TFloat)
             elseif name == "umag"
                 for ip = 1:npoin
                     dst[ip] = hypot(u[ip], u[npoin + ip])
+                end
+            elseif name == "rx" || name == "ry"
+                off = name == "rx" ? 0 : npoin
+                for ip = 1:npoin
+                    dof = off + ip
+                    dst[ip] = isfree[dof] ? 0.0 : fint[dof] - fext[dof]
                 end
             else
                 getter = last(hfields[findfirst(p -> first(p) == name, hfields)])
@@ -1027,7 +1068,7 @@ function quasistatic_solid_solve!(sem, qp, inputs, OUTPUT_DIR::String, TFloat)
     for tag in dtags
         push!(header, string("R_", tag, "_x"), string("R_", tag, "_y"))
     end
-    push!(header, "newton_iters")
+    push!(header, "newton_iters", "newton_cuts")
     compare && append!(header, ["err_u_max", "err_u_L2", "err_u_L2_rel", "err_sigma_L2_rel"])
     println(hio, join(header, ","))
 
@@ -1058,7 +1099,7 @@ function quasistatic_solid_solve!(sem, qp, inputs, OUTPUT_DIR::String, TFloat)
         for tag in dtags
             append!(row, R[tag])
         end
-        push!(row, newton_iters[])
+        push!(row, newton_iters[], newton_cuts[])
         compare && append!(row, collect(errs))
         println(hio, join((@sprintf("%.15e", v) for v in row), ","))
         flush(hio)
@@ -1067,10 +1108,15 @@ function quasistatic_solid_solve!(sem, qp, inputs, OUTPUT_DIR::String, TFloat)
 
         s = @sprintf("   t = %-9.5g", t)
         for (name, ip) in probes
-            s *= @sprintf("  %s: ux = %.8f", name, u[ip])
-            compare && (s *= @sprintf(" (exact %.8f)", qexact[ip, 1]))
+            if compare
+                s *= @sprintf("  %s: ux = %.8f (exact %.8f)", name, u[ip], qexact[ip, 1])
+            else
+                s *= @sprintf("  %s: (ux, uy) = (%.6f, %.6f)", name, u[ip], u[npoin + ip])
+            end
         end
-        hpath === :quadrature && !islinear(model) && (s *= @sprintf("  [%d Newton]", newton_iters[]))
+        hpath === :quadrature && !islinear(model) &&
+            (s *= newton_cuts[] == 0 ? @sprintf("  [%d Newton]", newton_iters[]) :
+                                       @sprintf("  [%d Newton, increment cut %d x]", newton_iters[], newton_cuts[]))
         compare && (s *= @sprintf("  |e|max = %.3e  e_L2,rel = %.3e", errs[1], errs[3]))
         println(s)
 

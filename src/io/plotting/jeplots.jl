@@ -1003,8 +1003,13 @@ function plot_deformed_mesh(mesh::St_mesh, ux, uy, field, fieldname, t, OUTPUT_D
         hi > lo || (hi = lo + max(abs(lo), 1.0)*1.0e-12)
         clims = (lo, hi)
     end
+    # The picture's pixel size follows the UNDEFORMED body, so that every frame
+    # of a run has the same size (ffmpeg's palette pass, which strings them
+    # into a gif, fails on frames of different sizes); the axes follow the
+    # deformed body.
+    Lx0  = maximum(x0) - minimum(x0); Ly0 = maximum(y0) - minimum(y0)
     hfig = 560
-    wfig = clamp(round(Int, hfig*Lx/Ly) + 160, 420, 1300)
+    wfig = clamp(round(Int, hfig*Lx0/max(Ly0, eps())) + 160, 420, 1300)
     title = @sprintf("%s   t = %.4g   (displacement x%g)", fieldname, t, scale)
 
     plt = Plots.heatmap(collect(xg), collect(yg), permutedims(Z);

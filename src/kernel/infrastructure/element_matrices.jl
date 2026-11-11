@@ -423,39 +423,76 @@ end
 #
 # (src/kernel/solvers/quasistatic_solid.jl). Assemble each with DSS_laplace_sparse.
 #
+#
+# Gradients of the (N+1)² nodal basis functions of element iel at quadrature
+# point (k, l), local index a = i + (j-1)(N+1), and the list `nz` of those that
+# are not zero: with LGL collocation only the 2N+1 functions sharing a row or a
+# column with the point are, so an element matrix needs (2N+1)² products per
+# point instead of (N+1)⁴. Returns how many there are. The metric terms come in
+# as arrays: St_metrics' fields are untyped, so the two routines below read
+# them once and hand them to their loops behind a function barrier.
+#
+@inline function _element_basis_gradients!(gx, gy, nz, ψ, dψ, dξdx, dξdy, dηdx, dηdy, iel, k, l, ngl)
+    ξx = dξdx[iel,k,l]; ξy = dξdy[iel,k,l]
+    ηx = dηdx[iel,k,l]; ηy = dηdy[iel,k,l]
+    nnz = 0
+    @inbounds for j = 1:ngl, i = 1:ngl
+        a  = i + (j - 1)*ngl
+        dξ = dψ[i,k]*ψ[j,l]
+        dη = ψ[i,k]*dψ[j,l]
+        gx[a] = dξ*ξx + dη*ηx
+        gy[a] = dξ*ξy + dη*ηy
+        if gx[a] != 0 || gy[a] != 0
+            nnz += 1
+            nz[nnz] = a
+        end
+    end
+    return nnz
+end
+
 function build_gradient_product_matrices(SD::NSD_2D, ψ, dψ, ω, nelem, mesh, metrics, N, Q, ::Type{T}) where {T}
 
-    Lxx = zeros(T, nelem, N+1, N+1, N+1, N+1)
-    Lxy = zeros(T, nelem, N+1, N+1, N+1, N+1)
-    Lyy = zeros(T, nelem, N+1, N+1, N+1, N+1)
+    ngl = N + 1
+    Lxx = zeros(T, nelem, ngl, ngl, ngl, ngl)
+    Lxy = zeros(T, nelem, ngl, ngl, ngl, ngl)
+    Lyy = zeros(T, nelem, ngl, ngl, ngl, ngl)
+    _gradient_products!(Lxx, Lxy, Lyy, ψ, dψ, ω, metrics.Je, metrics.dξdx, metrics.dξdy,
+                        metrics.dηdx, metrics.dηdy, nelem, ngl, Q)
+    return Lxx, Lxy, Lyy
+end
 
-    for iel = 1:nelem
+function _gradient_products!(Lxx, Lxy, Lyy, ψ, dψ, ω, Je, dξdx, dξdy, dηdx, dηdy, nelem, ngl, Q)
+
+    T  = eltype(Lxx)
+    nn = ngl*ngl
+    # One element at a time in a dense buffer [test a, trial b], over the
+    # non-zero gradients only, then one scatter into the Le layout (whose
+    # first index is the element: accumulating in it directly strides by nelem).
+    gx = zeros(T, nn); gy = zeros(T, nn); nz = zeros(Int, nn)
+    lxx = zeros(T, nn, nn); lxy = zeros(T, nn, nn); lyy = zeros(T, nn, nn)
+    @inbounds for iel = 1:nelem
+        fill!(lxx, zero(T)); fill!(lxy, zero(T)); fill!(lyy, zero(T))
         for l = 1:Q+1, k = 1:Q+1
-
-            ωJ      = ω[k]*ω[l]*metrics.Je[iel,k,l]
-            dξdx_kl = metrics.dξdx[iel,k,l]
-            dξdy_kl = metrics.dξdy[iel,k,l]
-            dηdx_kl = metrics.dηdx[iel,k,l]
-            dηdy_kl = metrics.dηdy[iel,k,l]
-            for j = 1:N+1, i = 1:N+1
-
-                dΨJKdx = dψ[i,k]*ψ[j,l]*dξdx_kl + ψ[i,k]*dψ[j,l]*dηdx_kl
-                dΨJKdy = dψ[i,k]*ψ[j,l]*dξdy_kl + ψ[i,k]*dψ[j,l]*dηdy_kl
-
-                for n = 1:N+1, m = 1:N+1
-
-                    dΨIKdx = dψ[m,k]*ψ[n,l]*dξdx_kl + ψ[m,k]*dψ[n,l]*dηdx_kl
-                    dΨIKdy = dψ[m,k]*ψ[n,l]*dξdy_kl + ψ[m,k]*dψ[n,l]*dηdy_kl
-
-                    Lxx[iel,m,n,i,j] += ωJ*dΨIKdx*dΨJKdx
-                    Lxy[iel,m,n,i,j] += ωJ*dΨIKdx*dΨJKdy
-                    Lyy[iel,m,n,i,j] += ωJ*dΨIKdy*dΨJKdy
+            ωJ  = ω[k]*ω[l]*Je[iel,k,l]
+            nnz = _element_basis_gradients!(gx, gy, nz, ψ, dψ, dξdx, dξdy, dηdx, dηdy, iel, k, l, ngl)
+            for ib = 1:nnz
+                b = nz[ib]; wbx = ωJ*gx[b]; wby = ωJ*gy[b]
+                for ia = 1:nnz
+                    a = nz[ia]
+                    lxx[a,b] += gx[a]*wbx
+                    lxy[a,b] += gx[a]*wby
+                    lyy[a,b] += gy[a]*wby
                 end
             end
         end
+        for j = 1:ngl, i = 1:ngl, n = 1:ngl, m = 1:ngl
+            a = m + (n - 1)*ngl; b = i + (j - 1)*ngl
+            Lxx[iel,m,n,i,j] = lxx[a,b]
+            Lxy[iel,m,n,i,j] = lxy[a,b]
+            Lyy[iel,m,n,i,j] = lyy[a,b]
+        end
     end
-
-    return Lxx, Lxy, Lyy
+    return nothing
 end
 
 #
@@ -468,49 +505,58 @@ end
 #
 # in the layout and with the quadrature of build_laplace_matrix. Assemble each
 # with DSS_laplace_sparse. For a constant isotropic D this is K·A_vol + G·A_dev
-# of build_gradient_product_matrices.
+# of build_gradient_product_matrices. It runs at every Newton iteration of a
+# plastic computation, hence the element buffers and the non-zero gradients.
 #
 function build_tangent_stiffness_matrices(SD::NSD_2D, ψ, dψ, ω, nelem, mesh, metrics, N, Q, D, ::Type{T}) where {T}
 
-    Kxx = zeros(T, nelem, N+1, N+1, N+1, N+1)
-    Kxy = zeros(T, nelem, N+1, N+1, N+1, N+1)
-    Kyx = zeros(T, nelem, N+1, N+1, N+1, N+1)
-    Kyy = zeros(T, nelem, N+1, N+1, N+1, N+1)
+    ngl = N + 1
+    Kxx = zeros(T, nelem, ngl, ngl, ngl, ngl)
+    Kxy = zeros(T, nelem, ngl, ngl, ngl, ngl)
+    Kyx = zeros(T, nelem, ngl, ngl, ngl, ngl)
+    Kyy = zeros(T, nelem, ngl, ngl, ngl, ngl)
+    _tangent_stiffness!(Kxx, Kxy, Kyx, Kyy, D, ψ, dψ, ω, metrics.Je, metrics.dξdx, metrics.dξdy,
+                        metrics.dηdx, metrics.dηdy, nelem, ngl, Q)
+    return Kxx, Kxy, Kyx, Kyy
+end
 
+function _tangent_stiffness!(Kxx, Kxy, Kyx, Kyy, D, ψ, dψ, ω, Je, dξdx, dξdy, dηdx, dηdy, nelem, ngl, Q)
+
+    T  = eltype(Kxx)
+    nn = ngl*ngl
+    gx = zeros(T, nn); gy = zeros(T, nn); nz = zeros(Int, nn)
+    kxx = zeros(T, nn, nn); kxy = zeros(T, nn, nn); kyx = zeros(T, nn, nn); kyy = zeros(T, nn, nn)
     @inbounds for iel = 1:nelem
+        fill!(kxx, zero(T)); fill!(kxy, zero(T)); fill!(kyx, zero(T)); fill!(kyy, zero(T))
         for l = 1:Q+1, k = 1:Q+1
-
-            ωJ      = ω[k]*ω[l]*metrics.Je[iel,k,l]
-            dξdx_kl = metrics.dξdx[iel,k,l]
-            dξdy_kl = metrics.dξdy[iel,k,l]
-            dηdx_kl = metrics.dηdx[iel,k,l]
-            dηdy_kl = metrics.dηdy[iel,k,l]
+            ωJ  = ω[k]*ω[l]*Je[iel,k,l]
             D11 = D[1,1,k,l,iel]; D12 = D[1,2,k,l,iel]; D13 = D[1,3,k,l,iel]
             D21 = D[2,1,k,l,iel]; D22 = D[2,2,k,l,iel]; D23 = D[2,3,k,l,iel]
             D31 = D[3,1,k,l,iel]; D32 = D[3,2,k,l,iel]; D33 = D[3,3,k,l,iel]
-            for j = 1:N+1, i = 1:N+1
-
-                bx = dψ[i,k]*ψ[j,l]*dξdx_kl + ψ[i,k]*dψ[j,l]*dηdx_kl
-                by = dψ[i,k]*ψ[j,l]*dξdy_kl + ψ[i,k]*dψ[j,l]*dηdy_kl
-                # D times the two columns of the trial B: (bx, 0, by) and (0, by, bx)
-                cx1 = D11*bx + D13*by; cx2 = D21*bx + D23*by; cx3 = D31*bx + D33*by
-                cy1 = D12*by + D13*bx; cy2 = D22*by + D23*bx; cy3 = D32*by + D33*bx
-
-                for n = 1:N+1, m = 1:N+1
-
-                    ax = dψ[m,k]*ψ[n,l]*dξdx_kl + ψ[m,k]*dψ[n,l]*dηdx_kl
-                    ay = dψ[m,k]*ψ[n,l]*dξdy_kl + ψ[m,k]*dψ[n,l]*dηdy_kl
-
-                    Kxx[iel,m,n,i,j] += ωJ*(ax*cx1 + ay*cx3)
-                    Kxy[iel,m,n,i,j] += ωJ*(ax*cy1 + ay*cy3)
-                    Kyx[iel,m,n,i,j] += ωJ*(ay*cx2 + ax*cx3)
-                    Kyy[iel,m,n,i,j] += ωJ*(ay*cy2 + ax*cy3)
+            nnz = _element_basis_gradients!(gx, gy, nz, ψ, dψ, dξdx, dξdy, dηdx, dηdy, iel, k, l, ngl)
+            for ib = 1:nnz
+                b = nz[ib]; bx = gx[b]; by = gy[b]
+                # ωJ D times the two columns of the trial B: (bx, 0, by) and (0, by, bx)
+                cx1 = ωJ*(D11*bx + D13*by); cx2 = ωJ*(D21*bx + D23*by); cx3 = ωJ*(D31*bx + D33*by)
+                cy1 = ωJ*(D12*by + D13*bx); cy2 = ωJ*(D22*by + D23*bx); cy3 = ωJ*(D32*by + D33*bx)
+                for ia = 1:nnz
+                    a = nz[ia]; ax = gx[a]; ay = gy[a]
+                    kxx[a,b] += ax*cx1 + ay*cx3
+                    kxy[a,b] += ax*cy1 + ay*cy3
+                    kyx[a,b] += ay*cx2 + ax*cx3
+                    kyy[a,b] += ay*cy2 + ax*cy3
                 end
             end
         end
+        for j = 1:ngl, i = 1:ngl, n = 1:ngl, m = 1:ngl
+            a = m + (n - 1)*ngl; b = i + (j - 1)*ngl
+            Kxx[iel,m,n,i,j] = kxx[a,b]
+            Kxy[iel,m,n,i,j] = kxy[a,b]
+            Kyx[iel,m,n,i,j] = kyx[a,b]
+            Kyy[iel,m,n,i,j] = kyy[a,b]
+        end
     end
-
-    return Kxx, Kxy, Kyx, Kyy
+    return nothing
 end
 
 function build_laplace_matrix_lag(SD::NSD_2D, ψ, dψ, ω, mesh, metrics, N, Q, T)
