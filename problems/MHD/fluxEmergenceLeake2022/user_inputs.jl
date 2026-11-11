@@ -152,6 +152,7 @@ function user_inputs()
         :diagnostics_at_times => sort(vcat(collect(0.0:10.0:400.0), [142.0, 184.0])),
         :conservation_every   => 10,
         :conservation_slots   => [1, 4],
+        :lstep_heartbeat      => true,       # "#   step N   t = …" every 100 steps: snapshots are 5000 steps apart at LK22_REF = 2
         :restart_time         => 0.0,
         :lrestart             => false,
         :lsource              => true,       # gravity, ψ damping, velocity damping

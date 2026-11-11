@@ -297,6 +297,15 @@ Nothing was run here at `LK22_REF` ≥ 2.
 
 ## Notes
 
+- **Progress.** Snapshots are $10t_0$ apart (5000 steps at `LK22_REF = 2`,
+  3.2 M nodes; the 2014 case's similar $38^3$ mesh takes about 8 s per step
+  on 14 cores), and the floor and CFL lines below are
+  printed only when their totals pass a power of ten or grow by 20 %, so a
+  healthy run can print nothing for hours. The deck sets
+  `:lstep_heartbeat => true` (`#   step N   t = …` every 100 steps), and
+  `conservation.dat` in the run's output directory gets $t$, the step, the
+  total mass and energy every 10 steps
+  (`tail -f output/MHD/fluxEmergenceLeake2022/<run>/conservation.dat`).
 - **CFL monitor.** `# CFL: max (|v| + c_f) Δt/Δh = …` is printed by rank 0
   every time the largest value over the nodes has grown by 20 % (checked
   every 100 Runge–Kutta stages), as a `WARNING` above 0.5: halve `:Δt` and

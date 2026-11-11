@@ -806,8 +806,13 @@ function time_loop!(inputs, params, u, args...)
             # perfectly healthy solve look hung.
             if rank == 0
                 print(YELLOW_FG(@sprintf("DONE (%.2f s)\n", (time_ns() - _t_wm) / 1e9)))
-                @printf(" # Time loop running: next output at t = %.6g (%d steps of Δt = %g). Per-step progress: :lstep_heartbeat => true\n",
-                        _next_out_t, max(1, ceil(Int, (_next_out_t - params.tspan[1])/Float64(inputs[:Δt]))), Float64(inputs[:Δt]))
+                # State the heartbeat as it IS: the old fixed text ":lstep_heartbeat => true"
+                # was read as "the heartbeat is on" by decks that had it off.
+                @printf(" # Time loop running: next output at t = %.6g (%d steps of Δt = %g). %s\n",
+                        _next_out_t, max(1, ceil(Int, (_next_out_t - params.tspan[1])/Float64(inputs[:Δt]))), Float64(inputs[:Δt]),
+                        cb_heartbeat === nothing ?
+                            "Step heartbeat OFF: nothing is printed until then (set :lstep_heartbeat => true for a line every 100 steps)" :
+                            "Step heartbeat ON: a line at steps 1-5, then every 100 steps")
                 flush(stdout)
             end
         end
