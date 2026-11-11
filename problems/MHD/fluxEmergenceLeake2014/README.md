@@ -479,6 +479,21 @@ formation of the flux rope.
   operator and the split energy flux (`LK_REF_WEIGHT`, `LK_ENERGY_SPLIT`) bring
   the floors earlier ($t = 0.084$, 0.087). Without the tube the reference stays
   exact, and a $10^{-8}$ random velocity in $0 \le z \le 30$ does not grow.
+
+  The same run at `LK_REF = 5` (same horizontal mesh and tube, elements 2 tall,
+  $\Delta t = 7.5\times10^{-4}$), with transition-region maxima over $5 \le z \le 25$:
+
+  | $t$ | $\lvert\mathbf v\rvert$, `LK_REF` 1 / 5 | $\lvert\delta p\rvert/p_e$, 1 / 5 | $\lvert\delta\mathbf B\rvert/\lvert\mathbf B_e\rvert$, 1 / 5 | DynSGS $\mu$, 1 / 5 |
+  |---|---|---|---|---|
+  | 0.03 | $1.7\times10^{-2}$ / $4\times10^{-8}$ | $2.7\times10^{-3}$ / $3\times10^{-9}$ | $7.8\times10^{-3}$ / $7\times10^{-6}$ | 0.9 / 0.01 |
+  | 0.06 | 0.40 / $1.6\times10^{-5}$ | 0.11 / $4\times10^{-7}$ | 0.12 / $1.1\times10^{-4}$ | 15.7 / 0.01 |
+  | 0.075 | 0.56 / $7.7\times10^{-5}$ | 0.25 / $1.2\times10^{-6}$ | 0.19 / $2.5\times10^{-4}$ | 40.6 / 0.01 |
+
+  ($\mu = 0.01$ is the physical viscosity of `:mhd_dissipation`: DynSGS stays
+  idle.) The tube itself moves at the same speed on both meshes
+  ($\lvert\mathbf v\rvert_{\max} = 2.6$ and $3.3\times10^{-3}$ at $t \approx 0.015$),
+  so the five orders of magnitude are the transmission through the
+  chromosphere, not the source.
 - **Partition.** The deck sets `:lxy_partition => false`: a balanced 3D
   partition (METIS, through GridapGmsh's distributed reader, which reads the
   mesh file on every rank). Jexpresso's default (`true`) bins the $x$–$y$
