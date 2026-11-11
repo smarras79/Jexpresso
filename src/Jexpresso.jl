@@ -271,6 +271,10 @@ include(joinpath("kernel", "operators", "asm_preconditioner.jl"))
 
 include(joinpath( "kernel", "solvers", "Axb.jl"))
 
+# Quasi-static solid mechanics (:lquasistatic_solid): one linear solve per
+# load/time step, linear viscoelastic (generalized Maxwell) material.
+include(joinpath( "kernel", "solvers", "quasistatic_solid.jl"))
+
 include(joinpath("kernel", "operators", "build_rad.jl"))
 
 include(joinpath( "kernel", "operators", "angular_comms.jl"))

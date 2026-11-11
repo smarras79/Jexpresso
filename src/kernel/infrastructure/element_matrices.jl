@@ -401,8 +401,61 @@ function build_laplace_matrix(SD::NSD_2D, ψ, dψ, ω, nelem, mesh, metrics, N, 
     
     #@info size(L)
     #show(stdout, "text/plain", L)
-    
+
     return Le
+end
+
+#
+# The directional pieces of build_laplace_matrix: the element matrices of
+#
+#     Lαβ[iel,m,n,i,j] = ∫ ∂α ψ_mn ∂β ψ_ij dΩ,        α, β ∈ {x, y},
+#
+# with the same layout, quadrature and metric terms as the Laplacian above, of
+# which they are the components: Lxx + Lyy == build_laplace_matrix(...). Lyx is
+# the transpose of Lxy (swap (m,n) and (i,j)) and is not built.
+#
+# They are what a VECTOR second-order operator with element-wise constant
+# coefficients is made of. Plane-strain linear elasticity, with Sαβ the global
+# matrices DSS_laplace_sparse assembles from these, is
+#
+#     K = [ (λ+2μ)Sxx + μSyy      λSxy + μSyx     ]
+#         [ λSyx + μSxy           μSxx + (λ+2μ)Syy ]
+#
+# (src/kernel/solvers/quasistatic_solid.jl). Assemble each with DSS_laplace_sparse.
+#
+function build_gradient_product_matrices(SD::NSD_2D, ψ, dψ, ω, nelem, mesh, metrics, N, Q, T)
+
+    Lxx = zeros(T, nelem, N+1, N+1, N+1, N+1)
+    Lxy = zeros(T, nelem, N+1, N+1, N+1, N+1)
+    Lyy = zeros(T, nelem, N+1, N+1, N+1, N+1)
+
+    for iel = 1:nelem
+        for l = 1:Q+1, k = 1:Q+1
+
+            ωJ      = ω[k]*ω[l]*metrics.Je[iel,k,l]
+            dξdx_kl = metrics.dξdx[iel,k,l]
+            dξdy_kl = metrics.dξdy[iel,k,l]
+            dηdx_kl = metrics.dηdx[iel,k,l]
+            dηdy_kl = metrics.dηdy[iel,k,l]
+            for j = 1:N+1, i = 1:N+1
+
+                dΨJKdx = dψ[i,k]*ψ[j,l]*dξdx_kl + ψ[i,k]*dψ[j,l]*dηdx_kl
+                dΨJKdy = dψ[i,k]*ψ[j,l]*dξdy_kl + ψ[i,k]*dψ[j,l]*dηdy_kl
+
+                for n = 1:N+1, m = 1:N+1
+
+                    dΨIKdx = dψ[m,k]*ψ[n,l]*dξdx_kl + ψ[m,k]*dψ[n,l]*dηdx_kl
+                    dΨIKdy = dψ[m,k]*ψ[n,l]*dξdy_kl + ψ[m,k]*dψ[n,l]*dηdy_kl
+
+                    Lxx[iel,m,n,i,j] += ωJ*dΨIKdx*dΨJKdx
+                    Lxy[iel,m,n,i,j] += ωJ*dΨIKdx*dΨJKdy
+                    Lyy[iel,m,n,i,j] += ωJ*dΨIKdy*dΨJKdy
+                end
+            end
+        end
+    end
+
+    return Lxx, Lxy, Lyy
 end
 
 function build_laplace_matrix_lag(SD::NSD_2D, ψ, dψ, ω, mesh, metrics, N, Q, T)

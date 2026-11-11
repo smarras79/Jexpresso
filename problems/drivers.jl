@@ -253,6 +253,17 @@ function driver(nparts,
             flush(stdout)
         end
     end
+
+    #---------------------------------------------------------
+    # Quasi-static solid mechanics: no inertia, so no M dq/dt = RHS and none of
+    # the time-integration set-up below. Every load/time step is one linear
+    # solve. See src/kernel/solvers/quasistatic_solid.jl.
+    #---------------------------------------------------------
+    if inputs[:lquasistatic_solid]
+        is_coupled && error(" # ERROR drivers.jl: :lquasistatic_solid does not support coupled runs.")
+        quasistatic_solid_solve!(sem, qp, inputs, OUTPUT_DIR, TFloat)
+        return nothing
+    end
     #---------------------------------------------------------
     # Time span (shared by both standalone and coupled paths).
     #---------------------------------------------------------

@@ -326,6 +326,39 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
       inputs[:llinsolve] = false
     end
 
+    #
+    # Quasi-static solid mechanics (src/kernel/solvers/quasistatic_solid.jl):
+    #
+    #   :lquasistatic_solid      true: one linear solve per load/time step
+    #                            instead of the M dq/dt = RHS integrator. 2D
+    #                            plane strain, serial, CPU, LGL collocation.
+    #   :viscoelastic_integrator recursion for the Maxwell internal variables:
+    #                            "exponential" (default; exact for a strain
+    #                            linear in time, the ZTF/FEAP update),
+    #                            "midpoint" (Simo & Hughes Box 10.1),
+    #                            "backward_euler" (first order, a control).
+    #   :linitial_elastic_solve  true (default): the loads are on at :tinit — an
+    #                            instantaneous elastic solve precedes the steps
+    #                            (a Heaviside load). false: start unloaded and
+    #                            let the loads enter during the first step.
+    #   :solid_probes            [("A", x, y), ...]: nodes whose displacement is
+    #                            logged every step in solid_history.csv.
+    #
+    if(!haskey(inputs, :lquasistatic_solid))
+        inputs[:lquasistatic_solid] = false
+    end
+    if inputs[:lquasistatic_solid]
+        if(!haskey(inputs, :viscoelastic_integrator))
+            inputs[:viscoelastic_integrator] = "exponential"
+        end
+        if(!haskey(inputs, :linitial_elastic_solve))
+            inputs[:linitial_elastic_solve] = true
+        end
+        if(!haskey(inputs, :solid_probes))
+            inputs[:solid_probes] = Tuple{String,Float64,Float64}[]
+        end
+    end
+
     if(!haskey(inputs, :lsparse))
         inputs[:lsparse] = true
 
@@ -802,8 +835,9 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
                         SSPRK53 will be used by default.
                             """            
             inputs[:ode_solver] = SSPRK54()
-        
-            @warn s
+
+            # A quasi-static solid case never reaches the ODE integrator.
+            inputs[:lquasistatic_solid] || @warn s
     end
     if(!haskey(inputs, :ode_adaptive_solver))
         inputs[:ode_adaptive_solver] = false
