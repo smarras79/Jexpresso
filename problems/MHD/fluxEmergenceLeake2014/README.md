@@ -449,6 +449,36 @@ formation of the flux rope.
 
 ## Notes
 
+- **Vertical resolution.** At $N = 4$ an element couples all its nodes: a
+  pressure or mass-flux disturbance at its bottom node also forces its top
+  node, by the derivative of the bottom node's Lagrange polynomial there,
+  $\ell_0'(1) = \tfrac{1}{10}\lvert\ell_0'(-1)\rvert$, and the top node's
+  acceleration is that force over its own density. An element across which
+  $\rho$ falls by a factor $C$ therefore hands its top node about $C/10$ times
+  the velocity of its bottom node, and the next element does the same. The
+  chromosphere ($T = 1$, scale height 1) and the transition region (density
+  scale height $1/(1/T + \alpha)$, 0.67 at its base) need elements no taller
+  than about 2 for $C/10 \lesssim 1$:
+
+  | `LK_REF` | element height, $z = 0$–20 | largest $C$ per element | $C/10$ along $z = 0$–15 |
+  |---|---|---|---|
+  | 1 ($16^3$) | 8.1 | 4230 ($z = 2.5$–10.6), 246 (10.6–18.75) | 423, 25 |
+  | 2 ($38^3$) | 3.4 | 31, 31, 41, 15 | 3.1, 3.1, 4.1, 1.5: about 60 in all |
+  | 5 ($16^2\times64$) | 2.0 | 9.5 | $\le 1$ |
+  | 3, 4 ($76$ in $z$) | 1.7 | 7.4 | $\le 0.7$ |
+
+  Measured at `LK_REF = 1` with `LK_DIAG_TR=1`: the tube's
+  start-up transient reaches $z = 2.5$ with $\lvert\mathbf v\rvert = 4\times10^{-6}$
+  at $t = 0.006$, and $\lvert\mathbf v\rvert$ then grows upward through the
+  chromosphere element ($4.5\times10^{-8}$ at $z = 3.9$, $1.6\times10^{-6}$ at
+  9.2, $7.5\times10^{-6}$ at 10.6) and again through the transition-region
+  element ($2.5\times10^{-5}$ at 18.75), independently of the time step and of
+  $y$. By $t = 0.06$ the transition region has $\lvert\delta\mathbf B\rvert/\lvert\mathbf B_e\rvert$
+  and $\lvert\delta p\rvert/p_e$ of 0.1, DynSGS is at its cap there, and the
+  pressure floors fire at $z = 10.6$ from $t = 0.115$; the reference-weighted
+  operator and the split energy flux (`LK_REF_WEIGHT`, `LK_ENERGY_SPLIT`) bring
+  the floors earlier ($t = 0.084$, 0.087). Without the tube the reference stays
+  exact, and a $10^{-8}$ random velocity in $0 \le z \le 30$ does not grow.
 - **Partition.** The deck sets `:lxy_partition => false`: a balanced 3D
   partition (METIS, through GridapGmsh's distributed reader, which reads the
   mesh file on every rank). Jexpresso's default (`true`) bins the $x$–$y$
