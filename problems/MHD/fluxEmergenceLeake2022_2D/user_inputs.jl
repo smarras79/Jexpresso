@@ -252,6 +252,8 @@ function user_inputs()
         :dsgs_norms           => "element",
         :dsgs_local_rel       => 1.0,
         :dsgs_conserved       => true,
+        # reference-weighted operator (user_primitives.jl): LK2D_REF_WEIGHT=1 to test it
+        :dsgs_ref_weight      => get(ENV, "LK2D_REF_WEIGHT", "0") == "1",
         :dsgs_fast_floors     => true,
         :dsgs_thermal_residual => true,
         :lrichardson          => false,
