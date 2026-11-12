@@ -146,7 +146,7 @@ element boundaries every $k$-th cell ($k_x$ in $x$, $k_z$ in $z$ for 4):
 
 `LK2D_REF = 1` is the cross-section of the 3D `LK22_REF = 2` mesh, 3 the
 paper's resolution, 4 the `LK2D_REF = 1` columns with the elements of 2 in
-the vertical. All four ship (0.1, 0.4, 1.8, 0.2 MB); regenerate with
+the vertical (Notes, "Vertical resolution"). All four ship (0.1, 0.4, 1.8, 0.2 MB); regenerate with
 `gmsh -2 LK22_2D.geo -setnumber ref N -o <file>`. The smallest LGL gap is
 0.173 of the bottom elements' height (4, 2, 1, 2 $L_0$), and `:Δt` gives
 $(|\mathbf v| + c_f)\Delta t/\Delta h \approx 0.25$ at $|\mathbf v| + c_f = 80$,
@@ -201,6 +201,16 @@ python3 $P $RUN --var T --cmap inferno --vectors --vec-ref 10
   DynSGS + explicit coefficient of the $\rho$, momentum and field slots and the
   largest explicit-diffusion number $\mu\Delta t/\Delta h^2$, then where each
   extreme is. `LK2D_DIAG=25` is every 5 steps.
+- **Vertical resolution.** At $N = 4$ an element couples all its nodes: a
+  disturbance at its bottom node also forces its top node, which, with $\rho$
+  falling by a factor $C$ across the element, gets of order $C/10$ times the
+  bottom node's velocity, and the next element does the same (the 2014 case's
+  README, "Vertical resolution", where it is measured in 3D). Through the
+  chromosphere ($T = 1$, scale height 1) the 4 $L_0$ elements of
+  `LK2D_REF = 1` have $C = 55$ (42 at the base of the transition region), the
+  2 $L_0$ elements of `LK2D_REF = 4` $C = 7.4$ (9.6): about the 3D 2014
+  case's `LK_REF = 2` (3.4 $L_0$, $C$ up to 41) and `LK_REF = 5` (2 $L_0$,
+  9.5) meshes. The two runs share the horizontal mesh (Verification).
 - **Partition.** `:lxy_partition => false` (balanced METIS partition), as the
   3D Leake cases.
 - **The shared CFL printout** (`Advective CFL`, `max|u|`) assumes the
@@ -209,7 +219,8 @@ python3 $P $RUN --var T --cmap inferno --vectors --vec-ref 10
 
 ## Verification here
 
-On 4 threads at `LK2D_REF = 1`; nothing was run here at 2 or 3.
+On 4 threads at `LK2D_REF = 1`, and 4 for the last item; nothing was run
+here at 2 or 3.
 
 - **Background at rest** (`:lk2d_rope => false`): with `:lwell_balanced`
   every field at $t = 0.1t_0$ (50 steps) is bitwise equal to the initial
@@ -250,6 +261,26 @@ On 4 threads at `LK2D_REF = 1`; nothing was run here at 2 or 3.
   0.004, and the CFL monitor never passes its initial 0.155 (the absolute
   form at $t = 6$: 43 nodes at the density floor, $T$ 665, $|\mathbf v|$ 6.3,
   coefficient 46).
+- **The absolute form at `LK2D_REF = 4`** (the same columns, elements 2 tall
+  instead of 4; Notes, "Vertical resolution") **to $t = 10t_0$**: no floor
+  fires. Over $0 \le t \le 10$, $\rho/\rho_e \ge 0.58$, $p/p_e \ge 0.74$,
+  $T \le 183$, $|\mathbf v| \le 1.4$, the DynSGS coefficient $\le 1.6$, the
+  explicit-diffusion number $\le 0.004$, and the CFL monitor never passes its
+  initial 0.155. At $t = 10$ the coarse mesh had $T$ to $6.6\times10^3$ (434
+  nodes above 300), 9 nodes at the density floor and the coefficient at 5.9.
+  The largest $p/p_e$, 2.8 at $(0, 9)$ at $t = 10$, is the chromosphere above
+  the rope lifted by about one scale height, as the rope's top
+  ($|B_z| = 0.1$ on $x = 0$) rose from $h = -7.0$ to $-6.0$. It rises at the
+  same rate in all three runs ($-6.1$ at $t = 10$ on the coarse mesh, with
+  either operator); the refined one keeps more of its axial field (largest
+  $|B_z|$ 3.8 at $t = 10$, against 3.2; 5 at $t = 0$).
+
+  None of the three runs has emerged any flux by $t = 10$ (no $B_z$ above
+  $h = 0$; on the coarse mesh the rope's top is at $h = -2.9$ at $t = 20$), and
+  sound from the rope reaches the photosphere at $t \approx 5$: the coarse
+  run's floors from $t = 2.3$ are numerical, and these runs test the start-up
+  transient and the early rise, not the emergence. 0.54 s per step
+  ($10^4$ steps in 90 minutes).
 
 ## Files
 
@@ -261,4 +292,4 @@ On 4 threads at `LK2D_REF = 1`; nothing was run here at 2 or 3.
 | `user_source.jl` | gravity, GLM damping, velocity damping |
 | `user_bc.jl` | $\rho\mathbf v = 0$, $\psi = 0$ on all sides |
 | `user_primitives.jl` | DynSGS acts on $q - q_e$; output fields |
-| `LK22_2D.geo` | the stretched quadrilateral mesh (`ref` = 1, 2, 3) |
+| `LK22_2D.geo` | the stretched quadrilateral mesh (`ref` = 1–4) |

@@ -511,7 +511,14 @@ formation of the flux rope.
   it is numerical; what the refinement buys is mainly the six convection-zone
   elements it has to cross. Whether `LK_REF = 3`, 4 carry the tube's physical
   start-up transient (from $t \approx 5$) through the transition region
-  without the floors is not tested here.
+  without the floors is not tested here in 3D. In 2.5D it is
+  (`fluxEmergenceLeake2022_2D`, the 2022 rope's cross-section in the same
+  atmosphere, absolute DynSGS form): with elements 4 tall ($C = 55$) the
+  pressure floors fire from $t = 2.3$ and the transition region above the
+  rope is evacuated and heated to $T \sim 7\times10^3$ from $t \approx 5$;
+  with elements 2 tall ($C = 7.4$–9.6, the same horizontal mesh) no floor
+  fires to $t = 10$ and $T \le 183$, while the rope rises at the same rate
+  in both (its README, Verification). Neither has emerged flux by $t = 10$.
 - **Partition.** The deck sets `:lxy_partition => false`: a balanced 3D
   partition (METIS, through GridapGmsh's distributed reader, which reads the
   mesh file on every rank). Jexpresso's default (`true`) bins the $x$–$y$

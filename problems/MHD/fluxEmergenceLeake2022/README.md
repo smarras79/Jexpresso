@@ -129,6 +129,16 @@ $v_0$; `:Δt` gives $(|\mathbf v| + c_f)\Delta t/\Delta h \approx 0.25$ at
 $|\mathbf v| + c_f = 80$. The step is fixed (Lare3D's is not): the CFL
 monitor (Notes) prints the actual value as it grows.
 
+**Vertical resolution.** The bottom elements of `LK22_REF = 2` are 4 $L_0$
+tall. In the 2.5D cross-section of this case (`fluxEmergenceLeake2022_2D`,
+its README's Verification) that mesh, with the absolute DynSGS form of this
+deck, hits the pressure floors at $t = 2.3$ and evacuates and heats the
+transition region above the rope from $t \approx 5$, before any flux has
+emerged; the same columns with elements 2 tall run to $t = 10$ without a
+floor, the rope rising at the same rate. The 2014 case's README ("Vertical
+resolution") has the mechanism. `LK22_REF = 3` has elements 2 tall, and eight
+times the elements of 2.
+
 **Cost.** `LK22_REF = 1` takes about 10 s per time step on 4 threads
 (0.41 M nodes; 13 s measured with other jobs on the machine). Scaling by
 nodes and steps to $t = 400t_0$: $\approx 1.1\times10^3$ core-hours at
