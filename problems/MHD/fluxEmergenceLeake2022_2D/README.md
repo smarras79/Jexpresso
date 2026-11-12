@@ -238,10 +238,11 @@ python3 $P $RUN --var Bz --symmetric --steps 1,11,21    # iter_N numbers
   or `LK2D_RHO_FLOOR`, `LK2D_P_FLOOR` (read at each start, printed with the
   inputs, so a restart can change them). The density floor also bounds the
   fast speed, $\propto 1/\sqrt\rho$, that the fixed `:Δt` has to resolve;
-  the pressure floor only heats. Both are relative to the reference at the
-  node's height, so plasma lifted from below meets them: the emerging rope's
-  cold lifted gas sits at the pressure floor from $t \approx 26$ at
-  `LK2D_REF = 4` (Verification).
+  the pressure floor only heats. In the emergence at `LK2D_REF = 4` the
+  pressure floor holds up to 56 nodes from $t \approx 26$, mostly isolated
+  nodes in the weak ambient field whose pressure collapses numerically: at
+  0.01 they fall to the new floor, and the rope evolves the same
+  (Verification).
 - **Stage diagnostics** (`LK2D_DIAG=n`, off by default): every `n`-th
   Runge–Kutta stage, `#DIAG t=…` with the largest $|\mathbf v|$ and
   $|\mathbf v| + c_f$, the smallest $\rho/\rho_e$, the largest and smallest
@@ -380,6 +381,38 @@ On 4 threads at `LK2D_REF = 1`, and 4 where stated; nothing was run here at
   rope, against 3–4 in the chromosphere), and the rope is more diffused, as
   in the absolute run on this mesh: at $t = 20$ its largest $|B_z|$ is 2.1
   against 2.5, and its top is at $h = -2.9$ against $-3.9$.
+- **The emergence at `LK2D_REF = 4`, $t = 20$–40** (the reference-weighted
+  operator, restarted from the $t = 20$ snapshot above). The rope's top
+  ($|B_z| = 0.1$ on $x = 0$) crosses $h = 0$ at $t \approx 28$ (+3.3 at
+  $t = 30$, +6.7 at 40) and stalls there. Its axis (the O-point on $x = 0$)
+  rises from $h = -8.6$ to $-2.0$ while it flattens to about 40 $L_0$
+  across. The plasma it lifts, 10–100 times the reference density, reaches
+  $h \approx 10$–25 and pushes $T = 12.25$ on $x = 0$ from $h = 17$ to 25.
+  The magnetic energy above $h = 0$ grows by 23 from $t = 25$. None of the
+  rope's axial flux is above $h = 0$ by $t = 40$; a thin layer of the
+  opposite sign on its top holds 10 % of it, net. From $t = 25.7$ the
+  pressure floor holds up to 56 nodes, at $h = 1$–81 ($10^6$ hits by
+  $t = 36.7$). The corona above grows node-to-node stripes (jumps of 44 in
+  $T$ between neighbouring nodes at $h = 40$) and hot spots ($T$ to 539 at
+  $t = 36$, 279 at 40), with the DynSGS coefficient $\le 1.8$. $|\mathbf v| + c_f$
+  peaks at 128 ($t = 37$), the CFL monitor at 0.34. 0.45 s per step.
+- **The pressure floor at 0.01** (`LK2D_P_FLOOR=0.01`, the density floor
+  still 0.2), restarted from the $t = 25$ snapshot of that run, to $t = 35$:
+  - **the rope evolves the same:** its axis, top, emerged flux and the
+    kinetic and magnetic energy above $h = 0$ agree within 3 % at $t = 30$
+    and 35;
+  - **the nodes the 0.2 floor held fall to the new floor, mostly at once:**
+    two at $(\pm 8, 1.7)$ about $0.3t_0$ after first reaching 0.2. At
+    $t = 30$ the 34 below $0.2p_e$ are isolated nodes at $x = \pm4$, $\pm8$,
+    $h = 0$–11, mostly in the weak ambient field ($|\mathbf B| \approx 0.01$),
+    at 0.005–0.05 of the reference temperature: a deficit that their
+    neighbours' pressure could not leave standing, so a numerical collapse
+    that the floor props up, not cooling that it overrides. At $t = 35$, 26
+    of the 30 are in the weak field (32 of the 34 at the 0.2 floor);
+  - **above the rope the floor's heat shows:** at $t = 35$ the dense cap has
+    687 nodes above $5\rho_e$ (822 at 0.2), $T = 12.25$ on $x = 0$ is at
+    $h = 21.1$ (24.0), and the corona has 40 nodes above $T = 200$ (64),
+    $T \le 273$ (291), jumps of 33 (44).
 
 ## Files
 

@@ -571,9 +571,10 @@ formation of the flux rope.
   environment (read at each start and printed with the inputs, so a restart
   can change them). The density floor also bounds the fast speed,
   $\propto 1/\sqrt\rho$, that the fixed `:Δt` has to resolve; the pressure
-  floor only heats. Both are relative to the reference at the node's height,
-  so the tube's cold lifted gas meets the pressure floor once it emerges (in
-  2.5D: `fluxEmergenceLeake2022_2D`, its README, Notes).
+  floor only heats. In the 2.5D emergence (`fluxEmergenceLeake2022_2D`, its
+  README, Verification) the pressure floor holds isolated nodes in the weak
+  ambient field whose pressure collapses numerically; at 0.01 instead of 0.2
+  they fall to the new floor and the rope evolves the same.
 - **Stage diagnostics** (`LK_DIAG=n` in the environment, off by default):
   every `n`-th Runge–Kutta stage rank 0 prints `#DIAG t=…` with the largest
   $|\mathbf v|$ and $|\mathbf v| + c_f$, the smallest $\rho/\rho_e$, the

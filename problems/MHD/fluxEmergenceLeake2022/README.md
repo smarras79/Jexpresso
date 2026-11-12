@@ -411,9 +411,10 @@ Nothing else was run here at `LK22_REF` ≥ 2.
   environment (read at each start and printed with the inputs, so a restart
   can change them). The density floor also bounds the fast speed,
   $\propto 1/\sqrt\rho$, that the fixed `:Δt` has to resolve; the pressure
-  floor only heats. Both are relative to the reference at the node's height,
-  so the rope's cold lifted gas meets the pressure floor once it emerges (in
-  2.5D: `fluxEmergenceLeake2022_2D`, its README, Notes).
+  floor only heats. In the 2.5D emergence (`fluxEmergenceLeake2022_2D`, its
+  README, Verification) the pressure floor holds isolated nodes in the weak
+  ambient field whose pressure collapses numerically; at 0.01 instead of 0.2
+  they fall to the new floor and the rope evolves the same.
 - **Constants shared by name** (`γ_mhd`, `c_h_mhd`, `pressure_mhd`) with the
   other MHD cases: restart Julia between cases with a different $\gamma$.
 
