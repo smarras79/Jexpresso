@@ -129,7 +129,11 @@ dissipative terms is a zero normal gradient).
    the relative form obeys a maximum principle: with the absolute one a
    departure of the dense side, diffused upward, exceeds the whole state of
    the light side, and the transition region above the rope is evacuated and
-   heated to $10^3$–$10^4$ within $10t_0$ (Verification).
+   heated to $10^3$–$10^4$ within $10t_0$ at `LK2D_REF = 1`. With the
+   elements half as tall (`LK2D_REF = 4`) the absolute form lasts to
+   $t \approx 13$, then evacuates the chromosphere above the rope; the
+   relative form, from the same state, touches the floors at up to 20 nodes
+   and recovers (Verification).
 
 ## Meshes and time step
 
@@ -315,6 +319,22 @@ On 4 threads at `LK2D_REF = 1`, and 4 where stated; nothing was run here at
   at $t = 20$ (the coarse absolute run's: $-4.7$, $-2.9$). No flux has
   emerged by $t = 20$; at the rope's 0.2 per $t_0$ it would reach $h = 0$ at
   $t \approx 40$.
+- **The reference-weighted operator at `LK2D_REF = 1` from $t = 10$ to 20**,
+  restarted from the $t = 10$ snapshot of its run above: no evacuation above
+  the rope and no heating. $T \le 178$, $|\mathbf v| \le 1.2$, the
+  coefficient $\le 5$, the explicit-diffusion number $\le 0.011$, and the CFL
+  monitor never passes its initial 0.161. Two nodes touch the pressure floor
+  at $t = 13.1$–13.3, at $(\pm171, 6)$, and at $t = 19.6$–19.7, at
+  $(\pm144, 6)$, far from the rope. From $t \approx 12$ the chromosphere at
+  $|x| > 100$ has node-to-node cold spots on the element face $h = 6$:
+  $p/p_e$ down to 0.29 and $T/T_e$ to 0.35 at $t = 20$, 72 nodes off $p_e$
+  by more than 10 %. At `LK2D_REF = 4` there are 6, with $p/p_e \ge 0.86$;
+  the absolute form on this mesh has them at the floors from $t \approx 15$,
+  $T/T_e$ to 0.05. The dome above the rope is weaker than at
+  `LK2D_REF = 4` (the largest $p/p_e$ is 1.7, at the photosphere above the
+  rope, against 3–4 in the chromosphere), and the rope is more diffused, as
+  in the absolute run on this mesh: at $t = 20$ its largest $|B_z|$ is 2.1
+  against 2.5, and its top is at $h = -2.9$ against $-3.9$.
 
 ## Files
 

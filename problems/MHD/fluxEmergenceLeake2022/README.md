@@ -51,6 +51,7 @@ The simulation is chosen in `user_inputs.jl`:
 | `:lk22_glm_alpha` | 1.0 | Dedner damping $\alpha_p$ of $\psi$ |
 | `:lk22_damp_x_frac`, `:lk22_damp_z_frac` | 0.75, 0.875 | the damping layers start at $|x|, |y| = 3L_x/8$ and $z = 7\max(z)/8$ |
 | `LK22_REF` (environment variable) | 1, 2 (default), 3, 4 | mesh and time step (below); also `LK22_TEND`, `LK22_OUT_DT` and the restart (Restart) |
+| `LK22_REF_WEIGHT`, `LK22_ENERGY_SPLIT` (environment variables) | 0 (default), 1 | the reference-weighted DynSGS operator of `fluxEmergenceLeake2022_2D` (its Deviations, item 5) and the split energy flux (`src/kernel/physics/SGS.jl`); `LK22_REF_WEIGHT=1` on any mesh (Meshes and time step, "Vertical resolution") |
 
 ## Units
 
@@ -135,9 +136,14 @@ its README's Verification) that mesh, with the absolute DynSGS form of this
 deck, hits the pressure floors at $t = 2.3$ and evacuates and heats the
 transition region above the rope from $t \approx 5$, before any flux has
 emerged; the same columns with elements 2 tall run to $t = 10$ without a
-floor, the rope rising at the same rate. The 2014 case's README ("Vertical
-resolution") has the mechanism. `LK22_REF = 3` has elements 2 tall, and eight
-times the elements of 2.
+floor, the rope rising at the same rate, and evacuate the chromosphere above
+the rope from $t = 12.7$. With the reference-weighted operator
+(`LK22_REF_WEIGHT=1`) neither mesh is evacuated by $t = 20$. The elements 2
+tall touch the floors at up to 20 nodes over $t = 14$–17. Those 4 tall touch
+them at 2 nodes, but grow node-to-node cold spots in the chromosphere far from
+the rope ($T$ down to $0.35T_e$ at $t = 20$) and diffuse the rope more. The
+2014 case's README ("Vertical resolution") has the mechanism. `LK22_REF = 3`
+has elements 2 tall, and eight times the elements of 2.
 
 **Cost.** `LK22_REF = 1` takes about 10 s per time step on 4 threads
 (0.41 M nodes; 13 s measured with other jobs on the machine). Scaling by
