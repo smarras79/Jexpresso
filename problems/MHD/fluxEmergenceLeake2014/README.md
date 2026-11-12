@@ -437,8 +437,18 @@ Short runs on 4 threads; the full runs are for a cluster.
   (1 rank) $\rho$, $p$ and $T$ agree with the uninterrupted run to
   $2\times10^{-4}$ and $\mathbf v$, $\mathbf B$ to 0.7–5 % of their maxima
   ($\psi$ 9 %): the DynSGS residual history restarts from zero.
+- **`LK_REF = 4`** (load test; 15 GB of memory here, so at `:nop => 2`
+  with the mesh cache off). In one process (4 threads) the mesh reads, the
+  initial state solves to the MD values above ($B_d = -12351$,
+  $z_{sep} = -5.86$) and three steps run, with no floor and
+  $|\mathbf v| \le 6\times10^{-4}$; the peak memory is 9.4 GB, the whole run
+  8 minutes. On 4 MPI ranks the balanced partition, the metric terms and the
+  initial state complete, and each rank holds about 3 GB once the mesh is
+  read (every rank reads the whole file, Notes, "Partition"); the 4 ranks
+  pass 13 GB while allocating the solver arrays, and the test was stopped
+  there.
 
-Nothing was run here at `LK_REF` = 2 or 3.
+Nothing was run here at `LK_REF` = 2 or 3, nor at 4 with `:nop => 4`.
 
 **Cost.** `LK_REF = 1` takes about 6 s per time step on 4 threads
 ($65^3$ nodes). Scaling by nodes and steps, `LK_REF = 2` ($153^3$ nodes,
