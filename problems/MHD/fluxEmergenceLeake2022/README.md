@@ -51,6 +51,7 @@ The simulation is chosen in `user_inputs.jl`:
 | `:lk22_glm_alpha` | 1.0 | Dedner damping $\alpha_p$ of $\psi$ |
 | `:lk22_damp_x_frac`, `:lk22_damp_z_frac` | 0.75, 0.875 | the damping layers start at $|x|, |y| = 3L_x/8$ and $z = 7\max(z)/8$ |
 | `LK22_REF` (environment variable) | 1, 2 (default), 3, 4, 5 | mesh and time step (below); also `LK22_TEND`, `LK22_OUT_DT` and the restart (Restart) |
+| `LK22_RHO_FLOOR`, `LK22_P_FLOOR` (environment variables) | 0.2 (default) | the density and pressure floors as fractions of the reference atmosphere (Notes, "The floor fractions") |
 | `LK22_REF_WEIGHT`, `LK22_ENERGY_SPLIT` (environment variables) | 0 (default), 1 | the reference-weighted DynSGS operator of `fluxEmergenceLeake2022_2D` (its Deviations, item 5) and the split energy flux (`src/kernel/physics/SGS.jl`); `LK22_REF_WEIGHT=1` on any mesh (Meshes and time step, "Vertical resolution") |
 
 ## Units
@@ -204,7 +205,8 @@ that.
    initial fast-speed maximum, Dedner damping $\alpha_p = 1$), DynSGS in
    conserved form on the departure from the reference state (legacy sensor,
    fast-speed floors, thermal residual) with the explicit $\nu$, $\eta$ added,
-   positivity floors $\rho \ge 0.2\rho_e$, $p \ge 0.2p_e$, and the discrete
+   positivity floors $\rho \ge 0.2\rho_e$, $p \ge 0.2p_e$ (`LK22_RHO_FLOOR`,
+   `LK22_P_FLOOR`, Notes), and the discrete
    reference RHS subtracted (`:lwell_balanced`), as in the 2014 case (its
    README, items 6 and 8).
 8. **Boundaries.** CG imposes the velocity and $\psi = 0$ strongly; $\rho$,
@@ -402,6 +404,16 @@ Nothing else was run here at `LK22_REF` ≥ 2.
 - **The positivity-floor line**, `# positivity floors: N node hits so far on
   all ranks …`, is printed each time the total passes a power of ten; its
   `t` is the Runge–Kutta stage time.
+- **The floor fractions.** A node with $\rho < f_\rho\rho_e(z)$ gets
+  $\rho = f_\rho\rho_e$ at fixed momentum, one with $p < f_pp_e(z)$ its
+  energy raised to $p = f_pp_e$ at fixed velocity and field (mass and heat
+  added). $f_\rho = f_p = 0.2$, or `LK22_RHO_FLOOR`, `LK22_P_FLOOR` in the
+  environment (read at each start and printed with the inputs, so a restart
+  can change them). The density floor also bounds the fast speed,
+  $\propto 1/\sqrt\rho$, that the fixed `:Δt` has to resolve; the pressure
+  floor only heats. Both are relative to the reference at the node's height,
+  so the rope's cold lifted gas meets the pressure floor once it emerges (in
+  2.5D: `fluxEmergenceLeake2022_2D`, its README, Notes).
 - **Constants shared by name** (`γ_mhd`, `c_h_mhd`, `pressure_mhd`) with the
   other MHD cases: restart Julia between cases with a different $\gamma$.
 

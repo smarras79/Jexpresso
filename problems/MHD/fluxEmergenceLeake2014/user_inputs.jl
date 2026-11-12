@@ -17,11 +17,13 @@
 #---------------------------------------------------------------------------------
 
 # Positivity floors as the Runge-Kutta stage limiter (as problems/MHD/fluxEmergenceSon2025):
-# ρ ≥ f ρ_e(z) and p ≥ f p_e(z) of the reference atmosphere, p raised through E at fixed
-# velocity and field. Not conservative where it fires; the hits are counted over all ranks and
-# reported by rank 0 each time the total passes a power of ten.
-if !@isdefined(lk_floor_frac)
-    const lk_floor_frac = Ref{Float64}(0.2)
+# ρ ≥ f_ρ ρ_e(z) and p ≥ f_p p_e(z) of the reference atmosphere, ρ raised at fixed momentum, p
+# raised through E at fixed velocity and field. Not conservative where it fires; the hits are
+# counted over all ranks and reported by rank 0 each time the total passes a power of ten.
+# f_ρ = f_p = 0.2, or LK_RHO_FLOOR, LK_P_FLOOR (read by user_inputs at each start; README).
+if !@isdefined(lk_rho_floor)
+    const lk_rho_floor  = Ref{Float64}(0.2)
+    const lk_p_floor    = Ref{Float64}(0.2)
     const lk_floor_hits = Ref{Int}(0)
     const lk_floor_next = Ref{Int}(1)
 end
@@ -57,7 +59,8 @@ end
 function lk_positivity_limiter!(u, integrator, p, t)
     npoin = p.mesh.npoin
     qe    = p.qp.qe
-    frac  = lk_floor_frac[]
+    fρ    = lk_rho_floor[]
+    fp    = lk_p_floor[]
     γm1   = γ_mhd - 1.0
     nhit  = 0
     lk_cfl_count[] += 1
@@ -71,8 +74,8 @@ function lk_positivity_limiter!(u, integrator, p, t)
     @inbounds for ip = 1:npoin
         iρ = ip; iρu = npoin + ip; iρv = 2npoin + ip; iE = 3npoin + ip; iρw = 4npoin + ip
         iBx = 5npoin + ip; iBy = 6npoin + ip; iBz = 7npoin + ip; iψ = 8npoin + ip
-        ρmin = frac*qe[ip,1]
-        pmin = frac*qe[ip,end]
+        ρmin = fρ*qe[ip,1]
+        pmin = fp*qe[ip,end]
         ρ = u[iρ]
         if ρ < ρmin
             u[iρ] = ρmin; ρ = ρmin; nhit += 1
@@ -152,9 +155,9 @@ function lk_diag!(u, p, t)
         rr < ρrmin && (ρrmin = rr; xρ = (X[1,ip], X[2,ip], X[3,ip]))
         pp > prmax && (prmax = pp; xp = (X[1,ip], X[2,ip], X[3,ip]))
         pp < prmin && (prmin = pp; xpm = (X[1,ip], X[2,ip], X[3,ip]))
-        rr <= 1.000001*lk_floor_frac[] && (nρfl += 1)
-        if rr <= 1.000001*lk_floor_frac[] || pp <= 1.000001*lk_floor_frac[]
-            pp <= 1.000001*lk_floor_frac[] && (npfl += 1)
+        rr <= 1.000001*lk_rho_floor[] && (nρfl += 1)
+        if rr <= 1.000001*lk_rho_floor[] || pp <= 1.000001*lk_p_floor[]
+            pp <= 1.000001*lk_p_floor[] && (npfl += 1)
             zfl_lo = min(zfl_lo, X[3,ip]); zfl_hi = max(zfl_hi, X[3,ip])
         end
         ψmax = max(ψmax, abs(ψ)); Tmax = max(Tmax, lk_mf[]*pr/ρ)
@@ -265,6 +268,11 @@ function user_inputs()
     # (+ LK_RESTART_TIME) restarts from a snapshot of an earlier run.
     tend   = parse(Float64, get(ENV, "LK_TEND", "160.0"))
     dtout  = parse(Float64, get(ENV, "LK_OUT_DT", "5.0"))
+    # Positivity floors (top of this file): the fractions of ρ_e(z), p_e(z) below which the stage
+    # limiter raises ρ, p. The density floor also bounds the fast speed (∝ 1/√ρ) that the fixed
+    # Δt has to resolve; the pressure floor only adds heat (README, Notes).
+    lk_rho_floor[] = parse(Float64, get(ENV, "LK_RHO_FLOOR", "0.2"))
+    lk_p_floor[]   = parse(Float64, get(ENV, "LK_P_FLOOR", "0.2"))
 
     inputs = Dict(
         :ode_solver           => CarpenterKennedy2N54(stage_limiter! = lk_positivity_limiter!,
@@ -279,6 +287,8 @@ function user_inputs()
         :restart_time         => 0.0,
         :lrestart             => false,
         :lk_restart_dir       => get(ENV, "LK_RESTART_DIR", ""),   # "" = start from the initial state
+        :lk_rho_floor         => lk_rho_floor[],     # printed with the inputs; set from LK_RHO_FLOOR above
+        :lk_p_floor           => lk_p_floor[],       # ... and LK_P_FLOOR
         :lsource              => true,       # gravity, ψ damping, velocity damping
         :lwell_balanced       => true,       # subtract the discrete RHS of qe (atmosphere + dipole)
         :SOL_VARS_TYPE        => TOTAL(),

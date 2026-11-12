@@ -48,6 +48,7 @@ The simulation is chosen in `user_inputs.jl`:
 | `:lk_damp_xd`, `:lk_damp_zd` | 96, 180 | start of the side and top velocity-damping layers (Paper I used 170 at the top) |
 | `:lk_glm_alpha` | 1.0 | Dedner damping $\alpha_p$ of $\psi$, rate $\alpha_pc_h/\Delta h$ (Deviations, item 8) |
 | `LK_REF` (environment variable) | 1, 2 (default), 3, 4, 5 | mesh and time step (below); also `LK_TEND`, `LK_OUT_DT` and the restart (Restart) |
+| `LK_RHO_FLOOR`, `LK_P_FLOOR` (environment variables) | 0.2 (default) | the density and pressure floors as fractions of the reference atmosphere (Notes, "The floor fractions") |
 | `LK_REF_WEIGHT`, `LK_ENERGY_SPLIT` (environment variables) | 0 (default), 1 | the reference-weighted DynSGS operator of `fluxEmergenceLeake2022_2D` (its Deviations, item 5) and the split energy flux (`src/kernel/physics/SGS.jl`); `LK_REF_WEIGHT=1` for `LK_REF = 3`, 4 (Notes, "Vertical resolution") |
 
 ## Units
@@ -230,7 +231,8 @@ CFL monitor (Notes) prints the actual value as it grows.
    floors, thermal-energy residual), the explicit $\nu$ and $\eta$ added to
    the DynSGS coefficient element by element (`:mhd_dissipation`), and
    positivity floors $\rho \ge 0.2\rho_e(z)$, $p \ge 0.2p_e(z)$ as the
-   Runge–Kutta stage limiter (every hit is counted and printed).
+   Runge–Kutta stage limiter (every hit is counted and printed; the fractions
+   are `LK_RHO_FLOOR`, `LK_P_FLOOR`, Notes).
 6. **Discrete equilibrium (`:lwell_balanced`).** Neither the stratification
    nor the dipole is an exact equilibrium of the discrete operator, and in the
    corona ($\rho \sim 10^{-8}$, $\beta \sim 10^{-1}$) their interpolation errors
@@ -562,6 +564,16 @@ formation of the flux rope.
   ($t_n + c_i\Delta t$, in $t_0$), not an output time: snapshots are written at
   `:diagnostics_at_times` only. A node on a partition interface counts once
   per rank that holds it.
+- **The floor fractions.** A node with $\rho < f_\rho\rho_e(z)$ gets
+  $\rho = f_\rho\rho_e$ at fixed momentum, one with $p < f_pp_e(z)$ its
+  energy raised to $p = f_pp_e$ at fixed velocity and field (mass and heat
+  added). $f_\rho = f_p = 0.2$, or `LK_RHO_FLOOR`, `LK_P_FLOOR` in the
+  environment (read at each start and printed with the inputs, so a restart
+  can change them). The density floor also bounds the fast speed,
+  $\propto 1/\sqrt\rho$, that the fixed `:Δt` has to resolve; the pressure
+  floor only heats. Both are relative to the reference at the node's height,
+  so the tube's cold lifted gas meets the pressure floor once it emerges (in
+  2.5D: `fluxEmergenceLeake2022_2D`, its README, Notes).
 - **Stage diagnostics** (`LK_DIAG=n` in the environment, off by default):
   every `n`-th Runge–Kutta stage rank 0 prints `#DIAG t=…` with the largest
   $|\mathbf v|$ and $|\mathbf v| + c_f$, the smallest $\rho/\rho_e$, the

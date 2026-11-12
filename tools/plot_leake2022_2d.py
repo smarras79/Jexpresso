@@ -20,7 +20,8 @@ field is the code's Bz; its twist and the dipole are the in-plane (Bx, By), draw
 snap variables: log10_rho (default), rho, T, log10_T, p, log10_p, beta, log10_beta, Bx, By, Bz, B, vA, u, v, w,
 speed, mu (the largest DynSGS coefficient), and rho_rel, p_rel, T_rel: log10 of rho, p, T over the reference
 atmosphere (the case's closed form, without the rope; --mf and --cz-gradient if the run changed :lk2d_mf or
-:lk2d_cz_gradient).
+:lk2d_cz_gradient). --rho-floor and --p-floor are the run's LK2D_RHO_FLOOR and LK2D_P_FLOOR (default 0.2), for the
+floor-node counts of `evol` and the floor lines of `column`.
 
 Every iter_N.pvtu of a directory counts, at the time written in it, whether simulation.pvd lists it or not.
 Needs numpy and matplotlib (it uses the reader and the flux function of tools/plot_fluxemergence_vtu.py).
@@ -38,7 +39,6 @@ from matplotlib.colors import Normalize                                  # noqa:
 GAMMA = 5.0 / 3.0
 TCOR = 150.0                  # T_cor / T_ph
 T_TR = np.sqrt(TCOR)          # 12.25: the middle of the transition region, at h = 15 in the reference
-FLOOR = 0.2                   # the deck's positivity floors: rho >= 0.2 rho_e, p >= 0.2 p_e
 FIELDS = ("ρ", "p", "T", "u", "v", "w", "Bx", "By", "Bz")
 
 
@@ -374,8 +374,8 @@ def cmd_column(a):
         ax.set_title(name, fontsize=11); ax.grid(alpha=0.3)
         if logy:
             ax.set_yscale("log")
-    for ax in (axs[0, 0], axs[0, 2]):
-        ax.axhline(FLOOR, color="r", lw=0.8, ls="--")
+    axs[0, 0].axhline(a.rho_floor, color="r", lw=0.8, ls="--")
+    axs[0, 2].axhline(a.p_floor, color="r", lw=0.8, ls="--")
     for ax in axs[1]:
         ax.set_xlabel("h / L0")
     axs[0, 1].legend(fontsize=8)
@@ -428,7 +428,7 @@ def metrics(s, a):
     Ek = s.integral(0.5 * f["ρ"] * (f["u"] ** 2 + f["v"] ** 2 + f["w"] ** 2), above)
     Em = s.integral(0.5 * (f["Bx"] ** 2 + f["By"] ** 2 + f["Bz"] ** 2), above)
     rr, pr = f["ρ"] / s.rhoe, f["p"] / s.pe
-    floors = int(np.count_nonzero((rr <= FLOOR * 1.001) | (pr <= FLOOR * 1.001)))
+    floors = int(np.count_nonzero((rr <= a.rho_floor * 1.001) | (pr <= a.p_floor * 1.001)))
     return dict(t=s.t, axis=axis, top=top, flux0=flux0, flux10=flux10, h_tr=h_tr, Ek=Ek, Em=Em,
                 Tmax=float(np.max(f["T"])), rho_min=float(np.min(rr)),
                 vmax=float(np.sqrt(np.max(f["u"] ** 2 + f["v"] ** 2 + f["w"] ** 2))), floors=floors,
@@ -485,7 +485,7 @@ def cmd_evol(a):
         ax.set_title(title, fontsize=10); ax.grid(alpha=0.3)
     axs[0, 0].axhline(0.0, color="k", lw=0.6)
     axs[1, 0].set_yscale("log")
-    axs[2, 0].axhline(FLOOR, color="r", lw=0.8, ls="--")
+    axs[2, 0].axhline(a.rho_floor, color="r", lw=0.8, ls="--")
     for ax in axs[2]:
         ax.set_xlabel("t / t0")
     axs[0, 0].legend(fontsize=8)
@@ -511,6 +511,8 @@ def main():
         s.add_argument("--dpi", type=int, default=150)
         s.add_argument("--mf", type=float, default=1.0, help="the run's :lk2d_mf (default 1)")
         s.add_argument("--cz-gradient", type=float, default=1.0, help="the run's :lk2d_cz_gradient (default 1)")
+        s.add_argument("--rho-floor", type=float, default=0.2, help="the run's LK2D_RHO_FLOOR (default 0.2)")
+        s.add_argument("--p-floor", type=float, default=0.2, help="the run's LK2D_P_FLOOR (default 0.2)")
 
     s = sub.add_parser("ic", help="the t = 0 atmosphere against the reference")
     s.add_argument("run"); s.add_argument("--xside", type=float, default=-200.0, help="the side column (default -200)")

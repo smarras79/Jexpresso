@@ -37,8 +37,8 @@ Figs. 3–4). The keys of `user_inputs.jl`:
 | `:lk2d_mf`, `:lk2d_cz_gradient`, `:lk2d_glm_alpha` | 1, 1, 1 | as the 3D case |
 
 and the environment variables `LK2D_REF` (mesh, below), `LK2D_TEND`,
-`LK2D_OUT_DT` (snapshot interval), `LK2D_DIAG` (Notes) and the restart's
-(Restart).
+`LK2D_OUT_DT` (snapshot interval), `LK2D_DIAG` (Notes), `LK2D_RHO_FLOOR`,
+`LK2D_P_FLOOR` (Notes, "Positivity floors") and the restart's (Restart).
 
 ## Coordinates
 
@@ -231,6 +231,17 @@ python3 $P $RUN --var Bz --symmetric --steps 1,11,21    # iter_N numbers
   floors: N node hits …` each time the total passes a power of ten, `# CFL: max
   (|v| + c_f) Δt/Δh = …` each time the largest value has grown by 20 % (a
   `WARNING` above 0.5).
+- **Positivity floors.** At every Runge–Kutta stage, a node with
+  $\rho < f_\rho\rho_e(h)$ gets $\rho = f_\rho\rho_e$ at fixed momentum, and one
+  with $p < f_pp_e(h)$ gets its energy raised to $p = f_pp_e$ at fixed
+  velocity and field: mass and heat added, not conserved. $f_\rho = f_p = 0.2$,
+  or `LK2D_RHO_FLOOR`, `LK2D_P_FLOOR` (read at each start, printed with the
+  inputs, so a restart can change them). The density floor also bounds the
+  fast speed, $\propto 1/\sqrt\rho$, that the fixed `:Δt` has to resolve;
+  the pressure floor only heats. Both are relative to the reference at the
+  node's height, so plasma lifted from below meets them: the emerging rope's
+  cold lifted gas sits at the pressure floor from $t \approx 26$ at
+  `LK2D_REF = 4` (Verification).
 - **Stage diagnostics** (`LK2D_DIAG=n`, off by default): every `n`-th
   Runge–Kutta stage, `#DIAG t=…` with the largest $|\mathbf v|$ and
   $|\mathbf v| + c_f$, the smallest $\rho/\rho_e$, the largest and smallest

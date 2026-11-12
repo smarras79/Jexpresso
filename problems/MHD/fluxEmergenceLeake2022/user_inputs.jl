@@ -21,11 +21,13 @@
 #---------------------------------------------------------------------------------
 
 # Positivity floors as the Runge-Kutta stage limiter (as problems/MHD/fluxEmergenceLeake2014):
-# ρ ≥ f ρ_e(z) and p ≥ f p_e(z) of the reference atmosphere, p raised through E at fixed
-# velocity and field. Not conservative where it fires; the hits are counted over all ranks and
-# reported by rank 0 each time the total passes a power of ten.
-if !@isdefined(lk22_floor_frac)
-    const lk22_floor_frac = Ref{Float64}(0.2)
+# ρ ≥ f_ρ ρ_e(z) and p ≥ f_p p_e(z) of the reference atmosphere, ρ raised at fixed momentum, p
+# raised through E at fixed velocity and field. Not conservative where it fires; the hits are
+# counted over all ranks and reported by rank 0 each time the total passes a power of ten.
+# f_ρ = f_p = 0.2, or LK22_RHO_FLOOR, LK22_P_FLOOR (read by user_inputs at each start; README).
+if !@isdefined(lk22_rho_floor)
+    const lk22_rho_floor  = Ref{Float64}(0.2)
+    const lk22_p_floor    = Ref{Float64}(0.2)
     const lk22_floor_hits = Ref{Int}(0)
     const lk22_floor_next = Ref{Int}(1)
 end
@@ -62,7 +64,8 @@ end
 function lk22_positivity_limiter!(u, integrator, p, t)
     npoin = p.mesh.npoin
     qe    = p.qp.qe
-    frac  = lk22_floor_frac[]
+    fρ    = lk22_rho_floor[]
+    fp    = lk22_p_floor[]
     γm1   = γ_mhd - 1.0
     nhit  = 0
     lk22_cfl_count[] += 1
@@ -76,8 +79,8 @@ function lk22_positivity_limiter!(u, integrator, p, t)
     @inbounds for ip = 1:npoin
         iρ = ip; iρu = npoin + ip; iρv = 2npoin + ip; iE = 3npoin + ip; iρw = 4npoin + ip
         iBx = 5npoin + ip; iBy = 6npoin + ip; iBz = 7npoin + ip; iψ = 8npoin + ip
-        ρmin = frac*qe[ip,1]
-        pmin = frac*qe[ip,end]
+        ρmin = fρ*qe[ip,1]
+        pmin = fp*qe[ip,end]
         ρ = u[iρ]
         if ρ < ρmin
             u[iρ] = ρmin; ρ = ρmin; nhit += 1
@@ -149,6 +152,11 @@ function user_inputs()
     # the start are written), LK22_RESTART_DIR (+ LK22_RESTART_TIME) restarts from a snapshot.
     tend     = parse(Float64, get(ENV, "LK22_TEND", "400.0"))
     dtout    = parse(Float64, get(ENV, "LK22_OUT_DT", "10.0"))
+    # Positivity floors (top of this file): the fractions of ρ_e(z), p_e(z) below which the stage
+    # limiter raises ρ, p. The density floor also bounds the fast speed (∝ 1/√ρ) that the fixed
+    # Δt has to resolve; the pressure floor only adds heat (README).
+    lk22_rho_floor[] = parse(Float64, get(ENV, "LK22_RHO_FLOOR", "0.2"))
+    lk22_p_floor[]   = parse(Float64, get(ENV, "LK22_P_FLOOR", "0.2"))
 
     inputs = Dict(
         :ode_solver           => CarpenterKennedy2N54(stage_limiter! = lk22_positivity_limiter!,
@@ -164,6 +172,8 @@ function user_inputs()
         :restart_time         => 0.0,
         :lrestart             => false,
         :lk22_restart_dir     => get(ENV, "LK22_RESTART_DIR", ""),   # "" = start from the initial state
+        :lk22_rho_floor       => lk22_rho_floor[],   # printed with the inputs; set from LK22_RHO_FLOOR above
+        :lk22_p_floor         => lk22_p_floor[],     # ... and LK22_P_FLOOR
         :lsource              => true,       # gravity, ψ damping, velocity damping
         :lwell_balanced       => true,       # subtract the discrete RHS of qe (atmosphere + dipole)
         :SOL_VARS_TYPE        => TOTAL(),
