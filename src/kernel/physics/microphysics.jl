@@ -1,4 +1,4 @@
-@kernel function do_micro_physics_gpu_3D!(uaux, qe, Tabs, qn, qi, qc, qr, qs, qg, Pr, Ps, Pg, S_micro, PhysConst, MicroConst, lpert, neq, npoin, z, adjusted, Pm)
+@kernel function do_micro_physics_gpu_3D!(uaux, qe, Tabs, qn, qi, qc, qr, qs, qg, Pr, Ps, Pg, S_micro, PhysConst, MicroConst, lpert, neq, npoin, z, adjusted, Pm, lprecip)
     ip = @index(Global, Linear)
 
     T = eltype(uaux)
@@ -23,16 +23,26 @@
     @inbounds qg[ip] = adjusted[ip,8]
     @inbounds qsatt = adjusted[ip,9]
 
-    @inbounds Pm[ip,:] .= compute_Pm_gpu(uip, qeip, qr[ip], qs[ip], qg[ip], MicroConst,lpert)
+    # :lprecip => false: saturation adjustment only. No precipitation forms (S_micro = 0) and none falls
+    # (Pr = Ps = Pg = 0, which zeroes the sedimentation fluxes in _build_precipitation_rhs_gpu_3D_v0!;
+    # that kernel still applies the condensate buoyancy).
+    if lprecip
+        @inbounds Pm[ip,:] .= compute_Pm_gpu(uip, qeip, qr[ip], qs[ip], qg[ip], MicroConst,lpert)
 
-    @inbounds Pr[ip] = Pm[ip,1]
-    @inbounds Ps[ip] = Pm[ip,2]
-    @inbounds Pg[ip] = Pm[ip,3]
-    S = compute_dqpdt_sam_micro_gpu(uip, qeip, Tabs[ip], qn[ip], qc[ip], qi[ip], qr[ip], qs[ip], qg[ip], qsatt, MicroConst, PhysConst, lpert) 
-    @inbounds S_micro[ip] = S
+        @inbounds Pr[ip] = Pm[ip,1]
+        @inbounds Ps[ip] = Pm[ip,2]
+        @inbounds Pg[ip] = Pm[ip,3]
+        S = compute_dqpdt_sam_micro_gpu(uip, qeip, Tabs[ip], qn[ip], qc[ip], qi[ip], qr[ip], qs[ip], qg[ip], qsatt, MicroConst, PhysConst, lpert) 
+        @inbounds S_micro[ip] = S
+    else
+        @inbounds Pr[ip] = zero(T)
+        @inbounds Ps[ip] = zero(T)
+        @inbounds Pg[ip] = zero(T)
+        @inbounds S_micro[ip] = zero(T)
+    end
 end
 
-function do_micro_physics!(Tabs, qn, qc, qi, qr, qs, qg, Pr, Ps, Pg, S_micro, qsatt, npoin, uaux, z, qe, NSD, ::PERT)
+function do_micro_physics!(Tabs, qn, qc, qi, qr, qs, qg, Pr, Ps, Pg, S_micro, qsatt, npoin, uaux, z, qe, NSD, ::PERT; lprecip=true)
 
      PhysConst = PhysicalConst{Float64}()
      MicroConst = MicrophysicalConst{Float64}()
@@ -40,6 +50,14 @@ function do_micro_physics!(Tabs, qn, qc, qi, qr, qs, qg, Pr, Ps, Pg, S_micro, qs
     #get pressure and perform saturation adjustment
     saturation_adjustment_sam_microphysics!(uaux, qe, Tabs, qn, qi, qc, qr, qs, qg, qsatt, z, npoin, MicroConst, PhysConst, NSD, true)
     
+    # :lprecip => false: saturation adjustment only. No precipitation forms (S_micro = 0); the
+    # sedimentation step in rhs.jl is gated on :lprecip separately.
+    if !lprecip
+        S_micro .= 0.0
+        Pr .= 0.0; Ps .= 0.0; Pg .= 0.0
+        return nothing
+    end
+
     compute_Pm!(uaux, qe, qr, qs, qg, Pr, Ps, Pg, npoin, MicroConst, true)
 
     ### compute dqp/dt from microphysical processes
@@ -75,13 +93,21 @@ function reference_pressure_from_model_eos!(qe, z, npoin, NSD)
     return nothing
 end
 
-function do_micro_physics!(Tabs, qn, qc, qi, qr, qs, qg, Pr, Ps, Pg, S_micro, qsatt, npoin, uaux, z, qe, NSD, ::TOTAL)
+function do_micro_physics!(Tabs, qn, qc, qi, qr, qs, qg, Pr, Ps, Pg, S_micro, qsatt, npoin, uaux, z, qe, NSD, ::TOTAL; lprecip=true)
 
      PhysConst = PhysicalConst{Float64}()
      MicroConst = MicrophysicalConst{Float64}()
 
     #get pressure and perform saturation adjustment
     saturation_adjustment_sam_microphysics!(uaux, qe, Tabs, qn, qi, qc, qr, qs, qg, qsatt, z, npoin, MicroConst,PhysConst, NSD, false)
+
+    # :lprecip => false: saturation adjustment only. No precipitation forms (S_micro = 0); the
+    # sedimentation step in rhs.jl is gated on :lprecip separately.
+    if !lprecip
+        S_micro .= 0.0
+        Pr .= 0.0; Ps .= 0.0; Pg .= 0.0
+        return nothing
+    end
 
     compute_Pm!(uaux, qe, qr, qs, qg, Pr, Ps, Pg, npoin, MicroConst, false)
 
