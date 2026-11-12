@@ -47,7 +47,8 @@ The simulation is chosen in `user_inputs.jl`:
 | `:lk_mf` | `1.0` (default) / `1.25` | $p = \rho T/m_f$ (Deviations, item 4) |
 | `:lk_damp_xd`, `:lk_damp_zd` | 96, 180 | start of the side and top velocity-damping layers (Paper I used 170 at the top) |
 | `:lk_glm_alpha` | 1.0 | Dedner damping $\alpha_p$ of $\psi$, rate $\alpha_pc_h/\Delta h$ (Deviations, item 8) |
-| `LK_REF` (environment variable) | 1, 2 (default), 3 | mesh and time step (below); also `LK_TEND`, `LK_OUT_DT` and the restart (Restart) |
+| `LK_REF` (environment variable) | 1, 2 (default), 3, 4, 5 | mesh and time step (below); also `LK_TEND`, `LK_OUT_DT` and the restart (Restart) |
+| `LK_REF_WEIGHT`, `LK_ENERGY_SPLIT` (environment variables) | 0 (default), 1 | the reference-weighted DynSGS operator of `fluxEmergenceLeake2022_2D` (its Deviations, item 5) and the split energy flux (`src/kernel/physics/SGS.jl`); `LK_REF_WEIGHT=1` for `LK_REF = 3`, 4 (Notes, "Vertical resolution") |
 
 ## Units
 
@@ -518,7 +519,16 @@ formation of the flux rope.
   rope is evacuated and heated to $T \sim 7\times10^3$ from $t \approx 5$;
   with elements 2 tall ($C = 7.4$–9.6, the same horizontal mesh) no floor
   fires to $t = 10$ and $T \le 183$, while the rope rises at the same rate
-  in both (its README, Verification). Neither has emerged flux by $t = 10$.
+  in both. Continued from $t = 10$, that run drains the chromosphere above
+  the rope sideways and evacuates it to the floors from $t = 12.7$ (93 nodes
+  at $h = 7.7$–16.3 and $|\mathbf v|$ to 13.5 by $t = 15.1$); with the
+  reference-weighted operator instead (`LK_REF_WEIGHT=1` here), the same
+  continuation has at most 20 nodes at the floors, over $t = 14.1$–17.3, and
+  none from then to $t = 20$ (its README, Verification). No flux has emerged
+  by $t = 20$ in any of these runs. For `LK_REF = 3`, 4 this points to
+  `LK_REF_WEIGHT=1`. The one 3D comparison of the two forms, at `LK_REF = 1`
+  above, is the numerical transmission through 8-tall elements, which both
+  fail.
 - **Partition.** The deck sets `:lxy_partition => false`: a balanced 3D
   partition (METIS, through GridapGmsh's distributed reader, which reads the
   mesh file on every rank). Jexpresso's default (`true`) bins the $x$–$y$

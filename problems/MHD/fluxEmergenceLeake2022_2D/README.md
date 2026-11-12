@@ -219,8 +219,8 @@ python3 $P $RUN --var T --cmap inferno --vectors --vec-ref 10
 
 ## Verification here
 
-On 4 threads at `LK2D_REF = 1`, and 4 for the last item; nothing was run
-here at 2 or 3.
+On 4 threads at `LK2D_REF = 1`, and 4 where stated; nothing was run here at
+2 or 3.
 
 - **Background at rest** (`:lk2d_rope => false`): with `:lwell_balanced`
   every field at $t = 0.1t_0$ (50 steps) is bitwise equal to the initial
@@ -281,6 +281,40 @@ here at 2 or 3.
   run's floors from $t = 2.3$ are numerical, and these runs test the start-up
   transient and the early rise, not the emergence. 0.54 s per step
   ($10^4$ steps in 90 minutes).
+- **From $t = 10$ to 20 at `LK2D_REF = 4`, both forms**, each restarted
+  from the $t = 10$ snapshot of the run above (Restart):
+  - **absolute form:** the pressure floor fires at $(0, 7)$, in the
+    chromosphere above the rope, from $t = 12.74$; the nodes at the floors
+    grow to 28 at $t = 14.2$, at $h = 7.7$–9.7, and 93 at $t = 15.1$, at
+    $h = 7.7$–16.3, over $|x| \lesssim 8$: the chromosphere and the base of
+    the transition region above the rope, with the corona falling into them at
+    up to 13.5. The DynSGS coefficient reaches 8.9, the explicit-diffusion
+    number 0.074 and $T$ 225; the run was stopped at $t = 15.2$;
+  - **reference-weighted operator** (`LK2D_REF_WEIGHT=1`): the pressure
+    floor fires at $(0, 7.7)$ from $t = 14.06$. At most 20 nodes, all at
+    $h = 7.7$–10.3, are at the floors until $t = 17.3$, and none after.
+    Over $10 \le t \le 20$, $|\mathbf v| \le 3.4$, the coefficient $\le 3.1$,
+    the explicit-diffusion number $\le 0.008$, $T \le 182$, and the CFL
+    monitor never passes its initial 0.159. At $t = 20$, $\rho/\rho_e \ge 0.76$
+    and $p/p_e \ge 0.70$.
+
+  Both start the same way. At $t = 10$ the rope has lifted the chromosphere
+  over $|x| \lesssim 10$ into a dome: $\rho/\rho_e = 2.5$ at $(0, 9)$, rising
+  at 0.75. From $t \approx 11.5$ the dome's material drains sideways into
+  ridges at $|x| \approx 15$–18, where $\rho/\rho_e$ at $h = 11$ is 4.9
+  (absolute) or 3.2 (weighted) at $t = 15$. Its middle thins and the corona
+  falls into it, at up to 13.5 with the absolute form and 3.4 with the
+  weighted one. With the weighted operator the infall refills the middle: at $t = 20$
+  the column over $x = 0$ falls at up to 0.75, with $\rho/\rho_e$ up to 4.7
+  at $T \approx 1.7$ around $h = 12$, and $T = 12.25$ (at $h = 15$ in the
+  reference) is at $h = 16.8$. The drainage is smooth over several elements
+  and appears with both operators, so it may be the chromosphere's own
+  response to the rope's rise. How deep the cavity gets depends on the
+  operator, and where the floors hold nodes they, not the equations, set the
+  state. The rope's top is at $h = -4.8$ at $t = 15$ in both runs and $-3.9$
+  at $t = 20$ (the coarse absolute run's: $-4.7$, $-2.9$). No flux has
+  emerged by $t = 20$; at the rope's 0.2 per $t_0$ it would reach $h = 0$ at
+  $t \approx 40$.
 
 ## Files
 
