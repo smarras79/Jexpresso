@@ -49,7 +49,7 @@ The simulation is chosen in `user_inputs.jl`:
 | `:lk_glm_alpha` | 1.0 | Dedner damping $\alpha_p$ of $\psi$, rate $\alpha_pc_h/\Delta h$ (Deviations, item 8) |
 | `LK_REF` (environment variable) | 1, 2 (default), 3, 4, 5 | mesh and time step (below); also `LK_TEND`, `LK_OUT_DT` and the restart (Restart) |
 | `LK_RHO_FLOOR`, `LK_P_FLOOR` (environment variables) | 0.2 (default) | the density and pressure floors as fractions of the reference atmosphere (Notes, "The floor fractions") |
-| `LK_REF_WEIGHT`, `LK_ENERGY_SPLIT` (environment variables) | 0 (default), 1 | the reference-weighted DynSGS operator of `fluxEmergenceLeake2022_2D` (its Deviations, item 5) and the split energy flux (`src/kernel/physics/SGS.jl`); `LK_REF_WEIGHT=1` for `LK_REF = 3`, 4 (Notes, "Vertical resolution") |
+| `LK_REF_WEIGHT`, `LK_ENERGY_SPLIT` (environment variables) | 0 (default), 1 | the reference-weighted DynSGS operator of `fluxEmergenceLeake2022_2D` (its Deviations, item 5) and the split energy flux (`src/kernel/physics/SGS.jl`; in the 2.5D emergence it changed nothing, that README's Verification); `LK_REF_WEIGHT=1` for `LK_REF = 3`, 4 (Notes, "Vertical resolution") |
 
 ## Units
 

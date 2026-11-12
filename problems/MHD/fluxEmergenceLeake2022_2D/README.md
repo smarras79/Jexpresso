@@ -413,6 +413,20 @@ On 4 threads at `LK2D_REF = 1`, and 4 where stated; nothing was run here at
     687 nodes above $5\rho_e$ (822 at 0.2), $T = 12.25$ on $x = 0$ is at
     $h = 21.1$ (24.0), and the corona has 40 nodes above $T = 200$ (64),
     $T \le 273$ (291), jumps of 33 (44).
+- **The split energy flux** (`LK2D_ENERGY_SPLIT=1`, floors at 0.2),
+  restarted from the same $t = 25$ snapshot to $t = 35$, to test whether the
+  collapsing nodes come from the energy equation being diffused
+  inconsistently with the momentum and field equations: they do not. The run
+  tracks the one without the split throughout: the same nodes reach the
+  pressure floor at the same places and times from $t = 25.7$ (up to 38 at
+  once, against 36), the floors reach $h \approx 65$ from $t = 33.4$ in both,
+  and at $t = 35$ the rope's axis, top, emerged flux and the energies above
+  $h = 0$ agree within 3 %, 24 nodes are below $0.2p_e$ (34; 20 and 32 of
+  them in the weak field), the dense cap has 802 nodes above $5\rho_e$ (822)
+  and the corona 38 nodes above $T = 200$ (64), $T \le 243$ (291; the run's
+  largest 281 against 291), node-to-node jumps of 40 (44). The split takes
+  the edge off the coronal heating and nothing else; the collapse is in the
+  weak-field nodes' pressure itself, not in how it is diffused.
 
 ## Files
 

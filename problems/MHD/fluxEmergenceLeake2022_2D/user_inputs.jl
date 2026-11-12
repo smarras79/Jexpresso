@@ -268,7 +268,8 @@ function user_inputs()
         # heated by the diffused departure of the dense side (LK2D_REF_WEIGHT=0: the absolute form).
         :dsgs_ref_weight      => get(ENV, "LK2D_REF_WEIGHT", "1") == "1",
         # Split energy flux (user_primitives.jl): the non-thermal part of E diffused with the
-        # momentum coefficient, the thermal part with slot 4's (LK2D_ENERGY_SPLIT=1: being tested)
+        # momentum coefficient, the thermal part with slot 4's (LK2D_ENERGY_SPLIT=1; in the emergence
+        # it changed neither the floor activity nor the rope: README, Verification)
         :dsgs_nazarov_energy  => get(ENV, "LK2D_ENERGY_SPLIT", "0") == "1",
         :dsgs_fast_floors     => true,
         :dsgs_thermal_residual => true,
