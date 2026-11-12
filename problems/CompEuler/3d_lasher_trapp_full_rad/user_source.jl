@@ -1,8 +1,11 @@
 # Top buffer layer (no lateral sponges: the domain is periodic and the case does not need them).
 #   From z = 5.5 km (above the ~5 km maximum cloud top) to the lid at 8.1 km, rate ramping as
 #   sin^2 to LT_SPONGE_TOP at the lid (timescale 1/LT_SPONGE_TOP = 20 s).
-#   It relaxes ρu, ρv, ρw, ρhl, ρqt and ρqp toward the reference state (zero perturbation), in the
-#   spirit of the BOMEX/MicroHH buffer. Damping momentum only (0.01 1/s) let moisture lifted to
+#   It relaxes u, v, w, hl, qt and ρqp toward the reference state. hl and qt are relaxed as SPECIFIC
+#   quantities: the target for ρhl is hl_ref·ρ, not the reference ρhl. Relaxing the conserved ρhl
+#   itself pins ρhl (hence p ≈ (R/cp)·ρhl) regardless of ρ, so the buffer removes the pressure
+#   response to density changes; the air above 7 km then evacuated (ρ 0.55 → 0.13, T → 1200 K) and
+#   the run blew up at t ≈ 1260 s. Damping momentum only (0.01 1/s) let moisture lifted to
 #   7–8 km accumulate as ice/snow/graupel at the lid until the run blew up at t ≈ 4080 s.
 #   At rest the perturbation is zero, so the buffer does nothing.
 const LT_SPONGE_TOP = 0.05    # 1/s
@@ -28,14 +31,14 @@ function user_source!(S,
     PhysConst = PhysicalConst{Float64}()
     β = lt_sponge_rate(z, LT_DOMAIN[][5])   # lid height set in initialize()
 
-    # q is the total state here: relax toward the reference qe (reference momentum is zero).
+    # q is the total state here. Reference momentum and ρqp are zero; hl, qt relaxed per unit mass.
     S[1] = 0.0
     S[2] = -β * q[2]
     S[3] = -β * q[3]
     S[4] = -q[1] * PhysConst.g - β * q[4]
-    S[5] = -β * (q[5] - qe[5])
-    S[6] = -β * (q[6] - qe[6])
-    S[7] = -β * (q[7] - qe[7])
+    S[5] = -β * (q[5] - q[1] * qe[5] / qe[1])
+    S[6] = -β * (q[6] - q[1] * qe[6] / qe[1])
+    S[7] = -β * q[7]
 end
 
 function user_source!(S,
@@ -52,13 +55,13 @@ function user_source!(S,
     PhysConst = PhysicalConst{Float64}()
     β = lt_sponge_rate(z, LT_DOMAIN[][5])   # lid height set in initialize()
 
-    # q is the perturbation: relax it toward zero.
+    # q is the perturbation: ρ(hl - hl_ref) = ρhl' - hl_ref ρ', likewise for qt; ρqp_ref = 0.
     S[1] = 0.0
     S[2] = -β * q[2]
     S[3] = -β * q[3]
     S[4] = -q[1] * PhysConst.g - β * q[4]
-    S[5] = -β * q[5]
-    S[6] = -β * q[6]
+    S[5] = -β * (q[5] - q[1] * qe[5] / qe[1])
+    S[6] = -β * (q[6] - q[1] * qe[6] / qe[1])
     S[7] = -β * q[7]
 end
 
@@ -72,10 +75,10 @@ function user_source_gpu(q, qe, x, y, z, PhysConst, xmax, xmin, ymax, ymin, zmax
         β = T(LT_SPONGE_TOP) * sinpi(r / T(2))^T(2)
     end
 
-    # Perturbation form relaxes toward zero; total form toward the reference.
-    d5 = lpert ? q[5] : q[5] - qe[5]
-    d6 = lpert ? q[6] : q[6] - qe[6]
-    d7 = lpert ? q[7] : q[7] - qe[7]
+    # ρ(hl - hl_ref) and ρ(qt - qt_ref): same expression in both forms; ρqp_ref = 0.
+    d5 = q[5] - q[1] * qe[5] / qe[1]
+    d6 = q[6] - q[1] * qe[6] / qe[1]
+    d7 = q[7]
 
     return T(0.0), T(-β*q[2]), T(-β*q[3]),
            T(-q[1]*PhysConst.g - β*q[4]), T(-β*d5), T(-β*d6), T(-β*d7)
