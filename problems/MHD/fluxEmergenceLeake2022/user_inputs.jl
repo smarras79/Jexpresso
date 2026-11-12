@@ -16,6 +16,8 @@
 #   2:  32 x 32 x 48 elements  (1/4 of the paper's resolution at :nop => 4)
 #   3:  64 x 64 x 96 elements  (1/2; generate it first: gmsh -3 LK22.geo -setnumber ref 3 -o LK22_64x64x96.msh)
 #   4: 128 x 128 x 192 elements (the paper's 512 x 512 x 768 cells; ref 4, LK22_128x128x192.msh)
+#   5:  32 x 32 x 96 elements  (the columns of 2, elements 2 tall at the bottom as 3: README,
+#       "Vertical resolution"; generate it first: gmsh -3 LK22.geo -setnumber ref 5 -o LK22_32x32x96.msh)
 #---------------------------------------------------------------------------------
 
 # Positivity floors as the Runge-Kutta stage limiter (as problems/MHD/fluxEmergenceLeake2014):
@@ -135,12 +137,13 @@ lk22_dissipation(x, y, z) = (0.01, 0.01)
 function user_inputs()
 
     LK22_REF = parse(Int, get(ENV, "LK22_REF", "2"))
-    mesh     = ("LK22_16x16x24.msh", "LK22_32x32x48.msh", "LK22_64x64x96.msh", "LK22_128x128x192.msh")[LK22_REF]
+    mesh     = ("LK22_16x16x24.msh", "LK22_32x32x48.msh", "LK22_64x64x96.msh", "LK22_128x128x192.msh",
+                "LK22_32x32x96.msh")[LK22_REF]
     # Δt for (|v| + c_f) Δt/Δh ≈ 0.25 at |v| + c_f ≈ 80 on the smallest LGL gap Δh of each mesh
-    # (0.173 of the 8, 4, 2, 1 L₀ tall bottom elements): the fast speed just above the transition
+    # (0.173 of the 8, 4, 2, 1, 2 L₀ tall bottom elements): the fast speed just above the transition
     # region is 45 at t = 0 and reconnection outflows reach tens of v₀ (README). The CFL monitor
     # reports the actual value.
-    Δt       = (4.0e-3, 2.0e-3, 1.0e-3, 5.0e-4)[LK22_REF]
+    Δt       = (4.0e-3, 2.0e-3, 1.0e-3, 5.0e-4, 1.0e-3)[LK22_REF]
     # Environment overrides (README, "Restart"): LK22_REF the mesh, LK22_TEND :tend,
     # LK22_OUT_DT a snapshot every LK22_OUT_DT (default 10, plus 142 and 184; only those after
     # the start are written), LK22_RESTART_DIR (+ LK22_RESTART_TIME) restarts from a snapshot.

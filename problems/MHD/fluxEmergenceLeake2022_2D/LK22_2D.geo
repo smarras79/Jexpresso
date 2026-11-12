@@ -19,7 +19,8 @@
 //   ref = 2  ->  64 x 96 elements   (k = 8)   LK22_2D_64x96.msh     (1/2 of the paper's resolution)
 //   ref = 3  -> 128 x 192 elements  (k = 4)   LK22_2D_128x192.msh   (the paper's 512 x 768 cells at nop 4)
 //   ref = 4  ->  32 x 96 elements   (kx = 16, kz = 8)  LK22_2D_32x96.msh  (ref 1 in x, ref 2 in z:
-//                                    elements 2 tall at the bottom; README, "Vertical resolution")
+//                                    elements 2 tall at the bottom; README, "Vertical resolution";
+//                                    the 3D LK22_REF = 5 cross-section)
 //
 // Boundary tags (the strings user_bc_dirichlet! receives):
 //   "bottom" y = -30,  "top" y = Z,  "left" x = -X,  "right" x = X.

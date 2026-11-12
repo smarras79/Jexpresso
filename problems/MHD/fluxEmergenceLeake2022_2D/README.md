@@ -150,7 +150,8 @@ element boundaries every $k$-th cell ($k_x$ in $x$, $k_z$ in $z$ for 4):
 
 `LK2D_REF = 1` is the cross-section of the 3D `LK22_REF = 2` mesh, 3 the
 paper's resolution, 4 the `LK2D_REF = 1` columns with the elements of 2 in
-the vertical (Notes, "Vertical resolution"). All four ship (0.1, 0.4, 1.8, 0.2 MB); regenerate with
+the vertical (Notes, "Vertical resolution"), the cross-section of the 3D
+`LK22_REF = 5`. All four ship (0.1, 0.4, 1.8, 0.2 MB); regenerate with
 `gmsh -2 LK22_2D.geo -setnumber ref N -o <file>`. The smallest LGL gap is
 0.173 of the bottom elements' height (4, 2, 1, 2 $L_0$), and `:Δt` gives
 $(|\mathbf v| + c_f)\Delta t/\Delta h \approx 0.25$ at $|\mathbf v| + c_f = 80$,

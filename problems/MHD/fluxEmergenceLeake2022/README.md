@@ -50,7 +50,7 @@ The simulation is chosen in `user_inputs.jl`:
 | `:lk22_cz_gradient` | 1.0 | convection-zone temperature gradient factor (Eq. 23 as printed) |
 | `:lk22_glm_alpha` | 1.0 | Dedner damping $\alpha_p$ of $\psi$ |
 | `:lk22_damp_x_frac`, `:lk22_damp_z_frac` | 0.75, 0.875 | the damping layers start at $|x|, |y| = 3L_x/8$ and $z = 7\max(z)/8$ |
-| `LK22_REF` (environment variable) | 1, 2 (default), 3, 4 | mesh and time step (below); also `LK22_TEND`, `LK22_OUT_DT` and the restart (Restart) |
+| `LK22_REF` (environment variable) | 1, 2 (default), 3, 4, 5 | mesh and time step (below); also `LK22_TEND`, `LK22_OUT_DT` and the restart (Restart) |
 | `LK22_REF_WEIGHT`, `LK22_ENERGY_SPLIT` (environment variables) | 0 (default), 1 | the reference-weighted DynSGS operator of `fluxEmergenceLeake2022_2D` (its Deviations, item 5) and the split energy flux (`src/kernel/physics/SGS.jl`); `LK22_REF_WEIGHT=1` on any mesh (Meshes and time step, "Vertical resolution") |
 
 ## Units
@@ -113,17 +113,20 @@ grid, so with `:nop => 4` the nodes follow its stretching:
 |---|---|---|---|---|---|
 | 1 | $16\times16\times24$ | 32 | `LK22_16x16x24.msh` (shipped) | 0.41 M | $4\times10^{-3}$ |
 | 2 | $32\times32\times48$ | 16 | `LK22_32x32x48.msh` (shipped) | 3.2 M | $2\times10^{-3}$ |
-| 3 | $64\times64\times96$ | 8 | generate | 25 M | $10^{-3}$ |
-| 4 | $128\times128\times192$ | 4 | generate | 202 M | $5\times10^{-4}$ |
+| 3 | $64\times64\times96$ | 8 | `LK22_64x64x96.msh` (generate) | 25 M | $10^{-3}$ |
+| 4 | $128\times128\times192$ | 4 | `LK22_128x128x192.msh` (generate) | 202 M | $5\times10^{-4}$ |
+| 5 | $32\times32\times96$ | 16 in $x$, $y$; 8 in $z$ | `LK22_32x32x96.msh` (generate, 12 MB) | 6.4 M | $10^{-3}$ |
 
 ```bash
 cd problems/MHD/fluxEmergenceLeake2022
 gmsh -3 LK22.geo -setnumber ref 3 -o LK22_64x64x96.msh
 gmsh -3 LK22.geo -setnumber ref 4 -o LK22_128x128x192.msh
+gmsh -3 LK22.geo -setnumber ref 5 -o LK22_32x32x96.msh
 ```
 
-`LK22_REF = 4` is the paper's resolution. The smallest LGL gap is 0.173 of
-the bottom elements' height ($8, 4, 2, 1\,L_0$). The fast speed of the initial
+`LK22_REF = 4` is the paper's resolution; 5 is the columns of 2 with the
+elements of 3 in the vertical (below, "Vertical resolution"). The smallest
+LGL gap is 0.173 of the bottom elements' height ($8, 4, 2, 1, 2\,L_0$). The fast speed of the initial
 state peaks at 45 just above the transition region (the GLM speed $c_h$,
 printed at start-up), and the paper's reconnection outflows reach tens of
 $v_0$; `:Δt` gives $(|\mathbf v| + c_f)\Delta t/\Delta h \approx 0.25$ at
@@ -143,13 +146,16 @@ tall touch the floors at up to 20 nodes over $t = 14$–17. Those 4 tall touch
 them at 2 nodes, but grow node-to-node cold spots in the chromosphere far from
 the rope ($T$ down to $0.35T_e$ at $t = 20$) and diffuse the rope more. The
 2014 case's README ("Vertical resolution") has the mechanism. `LK22_REF = 3`
-has elements 2 tall, and eight times the elements of 2.
+has elements 2 tall, and eight times the elements of 2. `LK22_REF = 5` is the
+3D counterpart of the 2.5D test's refined mesh (`LK2D_REF = 4`): the columns
+of 2 with elements 2 tall up to $z \approx 30$, twice the elements of 2.
 
 **Cost.** `LK22_REF = 1` takes about 10 s per time step on 4 threads
 (0.41 M nodes; 13 s measured with other jobs on the machine). Scaling by
 nodes and steps to $t = 400t_0$: $\approx 1.1\times10^3$ core-hours at
-`LK22_REF = 1` ($10^5$ steps), $1.7\times10^4$ at 2, $2.7\times10^5$ at 3 and
-$4\times10^6$ at 4 (the paper's resolution), before parallel losses.
+`LK22_REF = 1` ($10^5$ steps), $1.7\times10^4$ at 2, $2.7\times10^5$ at 3,
+$4\times10^6$ at 4 (the paper's resolution) and $6.8\times10^4$ at 5 (twice
+the nodes and steps of 2), before parallel losses.
 Simulation 4 erupts by $200t_0$: `:tend => 250.0` covers it for 60 % of
 that.
 
@@ -211,8 +217,8 @@ that.
 mass and total energy every 10 steps.
 
 **Disk.** About 240 bytes per node: 0.1 GB per snapshot at `LK22_REF = 1`,
-0.77 GB at 2, 6 GB at 3, 48 GB at 4. The default 43 snapshots take 33 GB at
-`LK22_REF = 2`. The paper's figures use $t = 70, 100, 120, 130, 142, 160, 170,
+0.77 GB at 2, 6 GB at 3, 48 GB at 4, 1.5 GB at 5. The default 43 snapshots
+take 33 GB at `LK22_REF = 2`, 66 GB at 5. The paper's figures use $t = 70, 100, 120, 130, 142, 160, 170,
 184, 190, 240, 260, 380, 400t_0$; all but 142 and 184 are on the default
 10 $t_0$ cadence.
 
@@ -354,8 +360,16 @@ Short runs on 4 threads at `LK22_REF = 1`; the full runs are for a cluster.
   $\mathbf B$, $\psi$ to 0.8–1.8 % of their maxima (the DynSGS residual
   history restarts from zero). The same code was checked on 2 MPI ranks in the
   2014 case.
+- **`LK22_REF = 5`** (load test; 15 GB of memory here, so at `:nop => 2`
+  with the mesh cache off). `LK22.geo` at `ref 2` reproduces the shipped
+  `LK22_32x32x48.msh` byte for byte; at `ref 5` it gives 98 304 positively
+  oriented hexahedra in 96 layers, 2.000 tall from $z = -30$ to 30, with the
+  boundary groups of the shipped meshes. In one process (4 threads) the mesh
+  reads, the initial state has the values above (19.5 G at the origin,
+  $c_h = 45.4$) and three steps run with no floor; the peak memory is
+  8.8 GB, the whole run 8 minutes.
 
-Nothing was run here at `LK22_REF` ≥ 2.
+Nothing else was run here at `LK22_REF` ≥ 2.
 
 ## Notes
 
@@ -401,4 +415,4 @@ Nothing was run here at `LK22_REF` ≥ 2.
 | `user_source.jl` | gravity, GLM damping, velocity damping |
 | `user_bc.jl` | $\rho\mathbf v = 0$, $\psi = 0$ on all faces |
 | `user_primitives.jl` | DynSGS acts on $q - q_e$; derived output fields |
-| `LK22.geo` | the stretched hexahedral mesh (`ref` = 1–4) |
+| `LK22.geo` | the stretched hexahedral mesh (`ref` = 1–5) |
