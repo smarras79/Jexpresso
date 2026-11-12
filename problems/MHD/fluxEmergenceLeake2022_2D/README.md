@@ -177,17 +177,49 @@ writes to a new output directory, starting with that snapshot.
 `ρ, u, v, w, p, Bx, By, Bz, ψ, T, β, Bmag` and `log10_ρ`, `log10_p`,
 `log10_β` per snapshot (`.pvtu`), and the DynSGS coefficients actually applied
 (`mu_dsgs_*`); mass and total energy in `conservation.dat` every 10 steps.
-ParaView reads `simulation.pvd`. `tools/plot_fluxemergence_vtu.py` draws a
-field with the field lines in the plane (isolines of the flux function of
-$(B_x, B_y)$) and, with `--vectors`, the velocity; `--xlim`/`--ylim` zoom on
-the emergence region:
+ParaView reads `simulation.pvd`.
+
+`tools/plot_leake2022_2d.py` makes this case's figures (numpy and
+matplotlib; `-h` on any command):
 
 ```bash
 RUN=output/MHD/fluxEmergenceLeake2022_2D/output-<date>
+P=tools/plot_leake2022_2d.py
+python3 $P ic $RUN                                         # the t = 0 atmosphere against the reference
+python3 $P snap $RUN --var rho_rel --times 0,20,40,60 --grid --vectors
+python3 $P snap $RUN --var Bz --times 40 --xlim -30,30 --ylim -20,40
+python3 $P column $RUN --times 0,10,20,30                  # profiles on x = 0
+python3 $P evol coarse=$RUN refined=$RUN2 --csv evol.csv   # the emergence, runs overlaid
+```
+
+- **`snap`**: a field on the window (default $x \in [-60, 60]$,
+  $h \in [-30, 90]$) with the in-plane field lines, and `--vectors` the
+  in-plane velocity. `rho_rel`, `p_rel`, `T_rel` are $\log_{10}$ of $\rho$,
+  $p$, $T$ over the reference atmosphere (no rope); `-h` lists the other
+  variables. The field lines are contours of the flux function at fixed
+  values, so a line follows the same flux surface through the times: 20 of
+  the dipole's field and 8 in the rope at the first time (`--nlines`,
+  `--nrope`), or one per `--dA` of flux. The flux function is the
+  least-squares fit of $\partial A/\partial h = B_x$,
+  $\partial A/\partial x = -B_y$ over the node grid; integrating up the node
+  columns, as `plot_fluxemergence_vtu.py` does, carries the rope's discrete
+  $\nabla\cdot\mathbf B$ into the corona above it as vertical lines.
+- **`evol`**, per snapshot: the rope's axis (the O-point of the in-plane
+  field on $x = 0$) and top ($|B_z| = 0.1$ on $x = 0$), the fraction of its
+  axial flux above $h = 0$ and 10, the height of $T = 12.25$ on $x = 0$ (15
+  in the reference), the kinetic and magnetic energy above $h = 0$, the
+  largest $T$ and $|\mathbf v|$, the smallest $\rho/\rho_e$ and the nodes at
+  the floors; a figure, a table, and with `--csv` a file.
+- A restarted run is `RUN1,RUN2,…` (snapshots merged by time, the later
+  directory winning a repeated one). Every `iter_N.pvtu` of a directory
+  counts, at the time written in it, whether `simulation.pvd` lists it or not.
+
+`tools/plot_fluxemergence_vtu.py` (any 2D flux-emergence case) draws one
+field per snapshot, the field lines spaced afresh in each:
+
+```bash
 P="tools/plot_fluxemergence_vtu.py --xlim -60 60 --ylim -30 90 --xlabel x/L0 --ylabel z/L0 --time-unit t0 --outdir figs2d"
-python3 $P $RUN                                   # log10 rho and field lines, every snapshot
-python3 $P $RUN --var Bz --symmetric --steps 1,11,21    # the axial field (iter_N numbers)
-python3 $P $RUN --var T --cmap inferno --vectors --vec-ref 10
+python3 $P $RUN --var Bz --symmetric --steps 1,11,21    # iter_N numbers
 ```
 
 ## Notes

@@ -48,22 +48,33 @@ ZTOP = 209.84530500030144
 # Output: snapshots, lattice reader, planes, derivatives
 # ---------------------------------------------------------------------------------------------------------
 def snapshots(run):
-    """[(t, iter_N.pvtu)] of RUN (DIR or DIR1,DIR2,...), by time; a later directory wins a repeated time."""
+    """[(t, iter_N.pvtu)] of RUN (DIR or DIR1,DIR2,...), by time; a later directory wins a repeated time.
+    Every iter_N.pvtu of a directory counts, at the time written in it (simulation.pvd only for a file without
+    one): files copied in from a restart, or written after the .pvd was copied, were missed when the .pvd alone
+    listed the snapshots."""
     found = {}
-    for d in run.split(","):
-        pvd, items = os.path.join(d, "simulation.pvd"), []
+    for d in [s for s in run.split(",") if s]:
+        listed = {}
+        pvd = os.path.join(d, "simulation.pvd")
         if os.path.isfile(pvd):
-            for ds in ET.parse(pvd).getroot().iter("DataSet"):
-                f = os.path.join(d, ds.get("file"))
-                if os.path.isfile(f):
-                    items.append((float(ds.get("timestep")), f))
-        if not items:
-            items = [(pvtu_time(f), f) for f in glob.glob(os.path.join(d, "iter_*.pvtu"))]
-        if not items:
+            try:
+                for ds in ET.parse(pvd).getroot().iter("DataSet"):
+                    listed[os.path.basename(ds.get("file"))] = float(ds.get("timestep"))
+            except (ET.ParseError, TypeError, ValueError):
+                pass
+        files = glob.glob(os.path.join(d, "iter_*.pvtu"))
+        if not files:
             raise SystemExit(f"{d}: no iter_N.pvtu (give the output-<date> directory of a run)")
-        for t, f in items:
-            if t is not None:
-                found[round(t, 9)] = (t, f)
+        for f in files:
+            try:
+                t = pvtu_time(f)
+            except (ET.ParseError, OSError, ValueError):
+                t = None                      # still being written
+            t = listed.get(os.path.basename(f)) if t is None else t
+            if t is None:
+                print(f"   {f}: no time in it or in simulation.pvd, skipped")
+                continue
+            found[round(t, 9)] = (t, f)
     return [found[k] for k in sorted(found)]
 
 
