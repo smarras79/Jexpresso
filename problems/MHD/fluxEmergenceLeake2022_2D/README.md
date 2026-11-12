@@ -329,8 +329,9 @@ On 4 threads at `LK2D_REF = 1`, and 4 where stated; nothing was run here at
   $|x| > 100$ has node-to-node cold spots on the element face $h = 6$:
   $p/p_e$ down to 0.29 and $T/T_e$ to 0.35 at $t = 20$, 72 nodes off $p_e$
   by more than 10 %. At `LK2D_REF = 4` there are 6, with $p/p_e \ge 0.86$;
-  the absolute form on this mesh has them at the floors from $t \approx 15$,
-  $T/T_e$ to 0.05. The dome above the rope is weaker than at
+  the absolute form on this mesh, with the bursts above the rope, is at the
+  floors there from $t \approx 15$, $T/T_e$ to 0.05. The dome above the rope
+  is weaker than at
   `LK2D_REF = 4` (the largest $p/p_e$ is 1.7, at the photosphere above the
   rope, against 3–4 in the chromosphere), and the rope is more diffused, as
   in the absolute run on this mesh: at $t = 20$ its largest $|B_z|$ is 2.1
