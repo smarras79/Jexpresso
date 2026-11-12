@@ -517,6 +517,41 @@ function time_loop!(inputs, params, u, args...)
         lrad                                  && push!(_cbs, cb_rad)
         is_coupled && cb_coupling !== nothing  && push!(_cbs, cb_coupling)
         cb_heartbeat !== nothing               && push!(_cbs, cb_heartbeat)
+
+        # Per-rank step profile (opt-in, debugging): JEXPRESSO_STEP_TIMES=1 or :lstep_times => true.
+        # Every rank records, per step: wall time since the previous step end, GC time and bytes
+        # allocated in that interval, and appends them to <output_dir>/profile/steptimes_rank<N>.csv
+        # every 1000 steps (so a job killed at its time limit keeps its data) and at the end.
+        # The interval includes this step's callbacks (output and restart writes).
+        _env_st = lowercase(strip(get(ENV, "JEXPRESSO_STEP_TIMES", "")))
+        _steptimes_on = _env_st in ("1", "true", "yes", "on") ||
+                        (!(_env_st in ("0", "false", "no", "off")) && get(inputs, :lstep_times, false) == true)
+        st_t, st_wall, st_gc, st_alloc = Float64[], Float64[], Float64[], Int64[]
+        st_last = Ref{UInt64}(time_ns()); st_gc_last = Ref{UInt64}(Base.gc_time_ns())
+        st_al_last = Ref{Int64}(Base.gc_bytes())
+        st_file = Ref{String}(""); st_nstep = Ref{Int}(0)
+        function steptimes_flush!()
+            isempty(st_file[]) && return nothing
+            open(st_file[], "a") do io
+                k0 = st_nstep[] - length(st_t)
+                for k in eachindex(st_t)
+                    @printf(io, "%d,%.10g,%.6e,%.6e,%d\n", k0 + k, st_t[k], st_wall[k], st_gc[k], st_alloc[k])
+                end
+            end
+            empty!(st_t); empty!(st_wall); empty!(st_gc); empty!(st_alloc)
+            return nothing
+        end
+        function steptimes_affect!(integrator)
+            now = time_ns(); g = Base.gc_time_ns(); a = Base.gc_bytes()
+            push!(st_t, integrator.t); push!(st_wall, (now - st_last[])*1e-9)
+            push!(st_gc, (g - st_gc_last[])*1e-9); push!(st_alloc, a - st_al_last[])
+            st_nstep[] += 1
+            length(st_t) >= 1000 && steptimes_flush!()
+            st_last[] = time_ns(); st_gc_last[] = Base.gc_time_ns(); st_al_last[] = Base.gc_bytes()
+            return nothing
+        end
+        _steptimes_on && push!(_cbs, DiscreteCallback((u, t, integrator) -> true, steptimes_affect!;
+                                                      save_positions = (false, false)))
         callbacks_main = CallbackSet(_cbs...)
 
         # PERF: SciML integrator warmup with the REAL callback set.
@@ -600,6 +635,15 @@ function time_loop!(inputs, params, u, args...)
         # printing it nparts times is pure noise.  Root rank still sees
         # the warning once, which is the right amount.
         solve_logger = rank == 0 ? current_logger() : NullLogger()
+        if _steptimes_on   # drop the warm-up step(s); start the clock at the real solve
+            empty!(st_t); empty!(st_wall); empty!(st_gc); empty!(st_alloc); st_nstep[] = 0
+            prof_dir = joinpath(inputs[:output_dir], "profile")
+            rank == 0 && mkpath(prof_dir)
+            MPI.Barrier(comm)
+            st_file[] = joinpath(prof_dir, "steptimes_rank$(rank).csv")
+            open(io -> println(io, "step,t,wall_s,gc_s,alloc_bytes"), st_file[], "w")
+            st_last[] = time_ns(); st_gc_last[] = Base.gc_time_ns(); st_al_last[] = Base.gc_bytes()
+        end
         solution = with_logger(solve_logger) do
             solve(prob,
                   inputs[:ode_solver], dt=dt,
@@ -619,6 +663,21 @@ function time_loop!(inputs, params, u, args...)
             println("\n # Per-function timing & allocation summary (set ENV[\"JEXPRESSO_ALLOC_SUMMARY\"]=\"0\" to disable):")
             show(stdout, JEXPRESSO_TIMER; allocations=true, sortby=:firstexec)
             println()
+        end
+
+        # Per-rank outputs of the opt-in profiling (see _steptimes_on above and alloc_summary_enabled).
+        if _steptimes_on || alloc_summary_enabled(inputs)
+            prof_dir = joinpath(inputs[:output_dir], "profile")
+            rank == 0 && mkpath(prof_dir)
+            MPI.Barrier(comm)
+            _steptimes_on && steptimes_flush!()
+            if alloc_summary_enabled(inputs)
+                open(joinpath(prof_dir, "timers_rank$(rank).txt"), "w") do io
+                    show(io, JEXPRESSO_TIMER; allocations=true, sortby=:firstexec)
+                    println(io)
+                end
+            end
+            rank == 0 && println(" # Per-rank profile written to ", prof_dir)
         end
     end
     
