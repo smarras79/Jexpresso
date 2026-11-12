@@ -43,3 +43,4 @@ problems/*/smoothVortex/errors/
 problems/*/smoothVortex/errors.prev/
 # ... and of the Alfvén-wave sweeps (tools/alfven_wave_scan.sh; AW_KEEP=1 appends)
 problems/*/alfvenWaveBabbarRanocha2026/errors/
+__pycache__/
