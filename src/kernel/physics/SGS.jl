@@ -1927,6 +1927,51 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
 end
 
 # ================================================================================
+# _mhd_anomalous_eta_2d!: current-dependent (anomalous) magnetic diffusivity
+#
+#     η = η₀ max(0, |j|/j_crit − 1),     j = ∇×B,
+#
+# per element, with |j| the largest nodal value of the element (2D: ∂/∂z = 0,
+# j = (∂B_z/∂y, −∂B_z/∂x, ∂B_y/∂x − ∂B_x/∂y)), ADDED to ηe. The ion-acoustic
+# anomalous resistivity of Leake, Linton & Antiochos (ApJ 722:550, 2010, Eqs.
+# 7-8; problems/MHD/fluxEmergenceLeake2010), written as a diffusivity: η₀ and
+# j_crit in the case's code units (B in the units of the state, lengths in
+# mesh units). Returns the number of elements where it is active.
+# ================================================================================
+function _mhd_anomalous_eta_2d!(ηe::AbstractVector{TT}, q::AbstractMatrix{TT},
+                                connijk::AbstractArray{TI,4}, dψ::AbstractMatrix,
+                                dξdx::AbstractArray, dξdy::AbstractArray,
+                                dηdx::AbstractArray, dηdy::AbstractArray,
+                                nelem::Int, ngl::Int, η0::TT, jcrit::TT) where {TT<:AbstractFloat, TI<:Integer}
+    nact = 0
+    @inbounds for ie = 1:nelem
+        j2max = zero(TT)
+        for l = 1:ngl, k = 1:ngl
+            dBxdξ = zero(TT); dBxdη = zero(TT)
+            dBydξ = zero(TT); dBydη = zero(TT)
+            dBzdξ = zero(TT); dBzdη = zero(TT)
+            for m = 1:ngl
+                ipξ = connijk[ie,m,l,1]; ipη = connijk[ie,k,m,1]
+                dBxdξ += dψ[m,k]*q[ipξ,6]; dBxdη += dψ[m,l]*q[ipη,6]
+                dBydξ += dψ[m,k]*q[ipξ,7]; dBydη += dψ[m,l]*q[ipη,7]
+                dBzdξ += dψ[m,k]*q[ipξ,8]; dBzdη += dψ[m,l]*q[ipη,8]
+            end
+            ξx = dξdx[ie,k,l]; ξy = dξdy[ie,k,l]; ηx = dηdx[ie,k,l]; ηy = dηdy[ie,k,l]
+            jx =  dBzdξ*ξy + dBzdη*ηy                       #  ∂B_z/∂y
+            jy = -(dBzdξ*ξx + dBzdη*ηx)                     # −∂B_z/∂x
+            jz = (dBydξ*ξx + dBydη*ηx) - (dBxdξ*ξy + dBxdη*ηy)
+            j2max = max(j2max, jx*jx + jy*jy + jz*jz)
+        end
+        r = sqrt(j2max)/jcrit
+        if r > one(TT)
+            ηe[ie] += η0*(r - one(TT))
+            nact += 1
+        end
+    end
+    return nact
+end
+
+# ================================================================================
 # compute_dsgs_viscosity!(::DSGS_MHD, ::NSD_3D)
 #
 # The element form of the 2D kernel above for the nine-field 3D GLM-MHD system

@@ -1,0 +1,276 @@
+# 2.5D visco-resistive GLM-MHD: flux emergence into a field-free, quadrupolar or dipolar corona (Leake, Linton & Antiochos 2010)
+
+This case runs the 2.5D flux-emergence tests of
+
+> J. E. Leake, M. G. Linton, S. K. Antiochos,
+> *Tests of Dynamical Flux Emergence as a Mechanism for Coronal Mass Ejection
+> Initiation*, ApJ **722**:550 (2010). https://doi.org/10.1088/0004-637X/722/1/550
+> (arXiv:1007.5484)
+
+with the correction of its erratum,
+
+> J. E. Leake, M. G. Linton, S. K. Antiochos, *Erratum: "Tests of Dynamical Flux
+> Emergence as a Mechanism for Coronal Mass Ejection Initiation" (2010, ApJ,
+> 722, 550)*, ApJ **741**:125 (2011). https://doi.org/10.1088/0004-637X/741/2/125
+
+A buoyant, twisted flux tube 1.8 Mm below the photosphere rises through a
+3 Mm deep convection zone and emerges through an isothermal photosphere and
+chromosphere, a transition region and a 0.86 MK corona that is field-free, or
+holds a quadrupole (the magnetic breakout configuration) or a dipole. The
+erratum found that the original runs had an unintended local resistivity,
+$\hat\eta = 0.1\exp(-\hat r^2/0.66^2)$ at the origin; without it the axis of the
+low-tension tube stays at the surface and the lower coronal flux rope of the
+paper does not form. **The default deck is the erratum's Figure 3** (which
+replaces Fig. 10 of the paper): the low-tension tube emerging into the medium
+("98 G") quadrupole, $\log\rho$ and field lines at $t$ = 920, 1380, 1610,
+1955, 2185 and 2530 s.
+
+The numerics are those of
+[`fluxEmergenceSon2025DSGS`](../fluxEmergenceSon2025DSGS/README.md): continuous
+spectral elements, GLM divergence cleaning, and the reference-weighted,
+conserved-form Marras–Nazarov DynSGS operator as the only shock capturing, no
+limiter. On top of it come the paper's explicit viscosity and anomalous
+resistivity (a 2D version of the `:mhd_dissipation` hook of
+[`fluxEmergenceLeake2014`](../fluxEmergenceLeake2014/README.md), and a new
+`:mhd_anomalous_eta`), its energy-relaxation term, and an initialization of the
+magnetic field that is discretely divergence-free.
+
+## Run
+
+```bash
+mpiexec -n 64 julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2010
+```
+
+(`julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2010` serially; with
+MPICH_jll: `julia --project=. -e 'using MPI; run(`$(MPI.mpiexec()) -n 4 $(Base.julia_cmd()) --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2010`)'`).
+Output (VTU) goes to `./output/MHD/fluxEmergenceLeake2010/<run>/` every
+$5t_0 = 116$ s and at the times of the erratum's figures.
+
+All the simulations of the paper are selected from the environment, without
+editing the deck:
+
+| variable | values | meaning |
+|---|---|---|
+| `JEXPRESSO_LK10_TUBE` | `1`, `2` (default), `3`, `0` | tube 1 constant twist, 2 increasing twist ("low tension"), 3 decreasing twist; 0 no tube |
+| `JEXPRESSO_LK10_FIELD` | `quadrupole` (default), `dipole`, `none` | coronal field |
+| `JEXPRESSO_LK10_STRENGTH` | `strong`, `medium` (default), `weak` | quadrupole $q_d$ = 11.7, 5.85, 3.9 $\times10^7$ G cm ("197, 98, 66 G"); dipole $\lvert B(0,0)\rvert$ = 104, 52, 26 G |
+| `JEXPRESSO_LK10_REF` | `1`, `2` (default), `3` | mesh (below) |
+| `JEXPRESSO_LK10_TEND` | seconds, default 2530 | final time |
+| `JEXPRESSO_LK10_DOUT` | seconds, default 116 | snapshot interval (the figure times are always added) |
+| `JEXPRESSO_LK10_DT` | $t_0$ units | overrides the time step |
+| `JEXPRESSO_LK10_MCZ` | default 1.3 | polytropic index $m$ of the convection zone, $p\propto T^{m+1}$ |
+| `JEXPRESSO_LK10_RELAX_YMIN` | $L_0$ units, default $-\infty$ | apply the energy relaxation only above this height |
+| `JEXPRESSO_LK10_CMIN` | default 0 | DynSGS background floor $C_{min}$ |
+| `JEXPRESSO_LK10_FLOORS` | `0` (default), `1` | positivity floors as the Runge–Kutta stage limiter |
+
+For example, the erratum's Fig. 1 (tubes 1 and 2, field-free corona) and its
+Figs. 6–7 (tubes into the 52 G dipole):
+
+```bash
+JEXPRESSO_LK10_FIELD=none JEXPRESSO_LK10_TUBE=1 mpiexec -n 64 julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2010
+JEXPRESSO_LK10_FIELD=dipole JEXPRESSO_LK10_TUBE=2 mpiexec -n 64 julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2010
+```
+
+## Units and the reference atmosphere
+
+The paper is written in Gaussian units with dimensional values. The code units
+are photospheric, as in the authors' Lare runs (Arber, Haynes & Leake 2007,
+"normalised ... by photospheric values"; the erratum gives $L_0$ = 150 km,
+$v_0$ = 6.5 km/s):
+
+| | value |
+|---|---|
+| length $L_0$ | 150 km |
+| temperature | $T_{ph}$ = 5700 K ($T_{ph}$ = 1) |
+| density, pressure | $\rho_{ph} = 2.021\times10^{-7}$ g cm$^{-3}$, $p_{ph} = 8.45\times10^4$ dyn cm$^{-2}$ ($\rho_{ph} = p_{ph} = 1$) |
+| velocity $v_0 = (RT_{ph})^{1/2}$ | 6.467 km/s |
+| time $t_0 = L_0/v_0$ | 23.19 s (the "23 s" of the paper's Eq. 6) |
+| field $B_0 = (4\pi p_{ph})^{1/2}$ | 1030.6 G; magnetic pressure $\tfrac12\lvert\mathbf B\rvert^2$ |
+| gravity | $g = g_\odot L_0/v_0^2 = 0.98273$ ($g_\odot$ = 274 m s$^{-2}$) |
+| gas law | $p = \rho T$, $\gamma = 5/3$, mean molecular weight $\mu$ = 1.125 |
+
+**Two constants are not printed in the paper**: the gas constant (equivalently
+$\mu$) and the photospheric pressure. Both, and the convection-zone gradient
+below, were recovered from the paper's own Fig. 3(a), whose curves are vector
+data in the published PDF: a hydrostatic fit of its gas-pressure and
+temperature curves gives $\mu = 1.125$ (an isothermal scale height of
+152.6 km, the "0.25 times the scale height at the surface" of 0.0375 Mm),
+$p(0) = 10^{4.927}$ dyn cm$^{-2}$, and a convection zone with $p\propto T^{2.3}$,
+with an rms misfit of 0.006 dex.
+
+**Atmosphere** (Eq. 9), hydrostatic, $T_{cor} = 8.6\times10^5$ K $= 150.9$,
+$y_{tr}$ = 3.75 Mm $= 25$, $w_{tr}$ = 0.75 Mm $= 5$:
+
+$$
+T(y) = \begin{cases} 1 - \dfrac{g}{m+1}\,y & y\le 0\\[4pt]
+1 + \dfrac{T_{cor}-1}{2}\left[\tanh\dfrac{y-y_{tr}}{w_{tr}} + 1\right] & y > 0\end{cases}
+$$
+
+The paper sets $m = 1/(\gamma-1)$ and calls the polytrope "marginally unstable
+to convection"; its Fig. 3(a) has $m \approx 1.3$, which is what "marginally
+unstable" means, and is the default (`JEXPRESSO_LK10_MCZ`, 1.5 = adiabatic).
+The density falls from 18.8 at $y = -3$ Mm to $5.8\times10^{-8}$ at the
+transition region and $6.8\times10^{-10}$ at 90 Mm. Above about 12 Mm the
+paper's Fig. 3 shows a constant gas pressure, which is not hydrostatic (with
+gravity it would have to fall with the 23 Mm coronal scale height); the
+hydrostatic corona is kept here.
+
+**Flux tubes** (Eqs. 10–16), axis along $z$ at $y_t = -1.8$ Mm, $B_0$ = 7800 G,
+$a$ = 0.3 Mm, $B_z = B_0e^{-r^2/a^2}$, $B_\theta = \Theta(r)\,rB_z$ with
+
+$$
+\Theta_1 = c,\qquad \Theta_2 = c\left(1 - e^{-r^2/c_1^2}\right),\qquad \Theta_3 = c\,e^{-r^2/c_2^2},
+\qquad c = 1/a,\ c_1 = 0.15\ \text{Mm},\ c_2 = 1.5\ \text{Mm}.
+$$
+
+The in-plane field circulates so that $B_x > 0$ at the top of the tube:
+parallel to the inner arcade of the quadrupole and antiparallel to the dipole
+(the arrows of the paper's Fig. 5). Radial balance (Eq. 16) gives
+$p_1 = -\tfrac12B^2 + \int_r^\infty B_\theta^2/r'\,dr'$ in closed form, and the
+tube is in thermal equilibrium: $p = p_{bg} + p_1$, $\rho = p/T_{bg}$. At the
+axis of tube 2, $\beta = 1.5$ and the density deficit is 33% (the paper's text
+says "approximately 10", its Fig. 3(b) shows 1.5–1.9).
+
+**Quadrupole** (Eq. 17): $A_z$ on the source line $y = -7.5$ Mm is
+$q_d\,(x/L_0)^2[1 - (x/x_a)^2]$ for $\lvert x\rvert \le x_a$ = 21 Mm, and $A_z$
+is harmonic above it with $A_z\to0$ at infinity (its Poisson integral, by
+600-point Gauss–Legendre quadrature over the source). **$x$ enters in units of
+$L_0$ = 150 km**: with that reading $\beta(0, y)$ of the three quadrupoles
+matches the paper's Fig. 3(b) to within 1% at every height, and the null
+sits at 3.39 Mm (Fig. 3(b): 3.375 Mm; Fig. 5: "about 3.2 Mm"). The labels
+"197, 98, 66 G" are the **maximum** field on $y = 0$ (196, 97.8, 65.2 G at
+$x$ = 16.5 Mm); at $x = x_a/2$ the field is 158, 79, 53 G.
+
+**Dipole** (Eq. 18): $A_z = d\,(y - y_d)/r_1^3$, $y_d = -15$ Mm, with
+$\lvert B(0,0)\rvert$ = 104, 52, 26 G, the values of Fig. 3(b) and of
+Secs. 3.4–3.5 (the text's $d$ = 18, 9, 4.5 $\times10^{28}$ G cm$^3$ give 107, 53, 27 G).
+
+## Equations and dissipation
+
+Ideal GLM-MHD in conservation form (`user_flux.jl`), with gravity, the
+paper's dissipation and its energy relaxation:
+
+- **Viscosity** $\nu = 2.6\times10^4$ g cm$^{-1}$ s$^{-1}$ (Sec. 2.1) is dynamic;
+  in code units 0.01326. It is applied as a **kinematic** viscosity of 0.01326
+  (Re = 75 at every height), as the 3D case does with the same authors'
+  viscosity (`fluxEmergenceLeake2014`, Deviations 1): taken as dynamic it would
+  be a kinematic viscosity of $10^6$ in the corona.
+- **Anomalous resistivity** (Eqs. 7–8), $\eta = \eta_0\max(0, \lvert j\rvert/j_{crit} - 1)$,
+  $\eta_0 = 1.6\times10^{-11}$ s, $j_{crit} = 2.07\times10^7$ statA cm$^{-2}$: a
+  magnetic diffusivity $\eta_0c^2/4\pi = 1.18\times10^{-4}$ and
+  $\lvert\nabla\times\mathbf B\rvert_{crit} = 126$ in code units, evaluated per element
+  from the largest nodal current (`:mhd_anomalous_eta`, `src/kernel/physics/SGS.jl`).
+  Note that $j_{crit}$ is 30 times the current density of the initial tube,
+  and in the corona it would need a field reversal of $10^5$ G over one grid
+  cell: with the paper's constants the anomalous resistivity can only switch on
+  in kilogauss sheets a few km thick. The run prints when it first does.
+- **No other resistivity.** The erratum removed the local
+  $\hat\eta = 0.1\exp(-\hat r^2/0.66^2)$, $\hat r < 10$, of the original runs.
+- **Energy relaxation** (Eqs. 5–6): $D\epsilon/Dt$ gets
+  $-(\epsilon - \epsilon_0(\rho))/\tau$, with $\epsilon_0(\rho)$ the internal energy
+  of the initial atmosphere at the height where its density is $\rho$
+  (tabulated against $\ln\rho$), and $\tau = 23\,\text{s}\,(\rho/\rho_{ph})^{-1.43}$
+  with the local density, as in the authors' Lare runs (Arber, Haynes & Leake
+  2007, their Eq. 16). It acts in the convection zone ($\tau\approx1$ s) and the
+  photosphere (23 s) and is negligible above ~1 Mm. Applied everywhere it also
+  cools the buoyant tube, whose density deficit drops from 33% to ~21%; the
+  paper does not say where the term acts (`JEXPRESSO_LK10_RELAX_YMIN`).
+- **DynSGS** (`DSGS_MHD`, conserved form on the departure from the reference
+  state, weighted by $\rho_e$; legacy sensor; element norms; fast-speed floors
+  and thermal-energy residual for the low-β corona; $C_R = 1$,
+  $C_{max} = 0.5$). It replaces the numerical dissipation of Lare (shock
+  viscosity and remap) and is the only shock capturing. The background floor
+  $C_{min}$ of the parent case is off: $C_{min}\Delta c_f$ with $c_f\approx270$
+  in the corona would be a diffusivity of ~4 $L_0v_0$, two orders of magnitude
+  above Lare's own estimate of its numerical resistivity.
+
+## What is not in the paper, and what was done
+
+1. **Boundary conditions.** Not stated. As in the authors' 3D Lare runs (Leake,
+   Linton & Török 2013): closed walls, all velocity components zero, $\psi = 0$,
+   $\rho$, $E$, $\mathbf B$ free (zero normal gradient). Velocity damping
+   layers, rising linearly to $1/t_0$ at the boundary, absorb waves for
+   $\lvert x\rvert > 37.5$ Mm and $y > 75$ Mm, outside the region of the figures.
+2. **Grid.** "Stretched in both x and y", 0.0375 Mm at the surface to 0.15 Mm at
+   the top, map not given. `LK10.geo` grades the element size with a two-level
+   tanh map (below).
+3. **Discretely divergence-free initial field.** Lare's staggered field is the
+   discrete curl of $A_z$, so it starts with $\nabla\cdot\mathbf B = 0$. On a
+   collocated CG mesh the interpolated analytic field does not: its discrete
+   divergence was 0.2–0.7 $B_0/L_0$ for the tube on 2.5 $L_0$ elements, the GLM
+   carried it into the low-β corona within seconds (where an error $\delta B$
+   is a Lorentz force $B\delta B/\rho$), and the coronal velocity reached
+   $0.3v_0$ around the quadrupole null within 3 s. Here the in-plane field is the
+   lumped-mass average of the element curls of the nodal $A_z$
+   (`lk10_discrete_curl`), whose discrete divergence — the strong-form,
+   lumped-mass DSS divergence of `rhs.jl` — is zero to round-off on any
+   quadrilateral mesh.
+4. **The discrete equilibrium** (`:lwell_balanced`): the element RHS of the
+   reference state (atmosphere + potential coronal field) is subtracted at every
+   stage, so the background is an exact discrete steady state.
+
+## Meshes, time step and cost
+
+`LK10.geo`: $x\in[-45, 45]$ Mm, $y\in[-3, 90]$ Mm; core element size $h_0$
+over $\lvert x\rvert < 5$ Mm and $y < 4.5$ Mm (tube, photosphere, chromosphere,
+transition region), $2h_0$ over the region of the figures (to 12.75 Mm and
+19.5 Mm), up to ~$9h_0$ at the far boundaries.
+
+| `REF` | elements | nodes (`:nop => 4`) | core nodal spacing | file |
+|---|---|---|---|---|
+| 1 | 90 × 78 | 113 k | 0.62 $L_0$ (94 km) | `LK10_ref1.msh` (smoke tests) |
+| 2 | 180 × 156 | 451 k | 0.31 $L_0$ (47 km) | `LK10_ref2.msh` (default; the paper has 37.5 km) |
+| 3 | 362 × 312 | 1.8 M | 0.16 $L_0$ | `gmsh -2 LK10.geo -setnumber ref 3 -format msh41 -o LK10_ref3.msh` |
+
+The time step is set by the fastest wave of the initial state, the fast mode
+just above the transition region where the quadrupole is strongest
+($c_f$ = 275 $v_0$ = 1780 km/s at $x = \pm17$ Mm, $y = 4.7$ Mm, for the medium
+quadrupole; 549 and 183 for the strong and weak ones, 258, 130, 66 for the
+dipoles, 16 for the field-free corona), held as the GLM speed $c_h$:
+$\Delta t = 0.25\,\Delta h/c_h$ on the smallest LGL gap $\Delta h$, i.e.
+$3.9\times10^{-4}t_0$ (REF 1) and $2.0\times10^{-4}t_0$ (REF 2) for the
+default, $2.8\times10^5$ and $5.6\times10^5$ steps to 2530 s.
+
+COST_PLACEHOLDER
+
+## Figures
+
+`tools/plot_leake2010.py` draws the paper's figures from the output (numpy and
+matplotlib). `RUN` is `output/MHD/fluxEmergenceLeake2010/output-<date>`.
+
+```bash
+python3 tools/plot_leake2010.py density  $RUN            # Erratum Fig. 3: log rho, field lines, B_x arrows, 920-2530 s
+python3 tools/plot_leake2010.py shear    $RUN            # Erratum Fig. 1: B_z (G) and field lines, 920-2254 s
+python3 tools/plot_leake2010.py axis     tube2=$RUN      # Erratum Fig. 2(a): axis height vs time, with the erratum's curves
+python3 tools/plot_leake2010.py eshear   tube2=$RUN      # Erratum Figs. 2(b,c), 5: E_shear above 1.2 and 5 Mm (Eq. 20)
+python3 tools/plot_leake2010.py profiles $RUN            # Fig. 3(a,b) at t = 0, with the paper's values
+```
+
+The density panels use the paper's window ($\lvert x\rvert < 12.75$ Mm,
+$-3 < y < 19.5$ Mm), colour scale ($\log_{10}\rho$ from −16 to −5.3 g cm$^{-3}$, jet),
+field lines as equally spaced contours of $A_z$ (obtained by integrating
+$B_x$, $B_y$ on the node lattice) and arrows along $B_x$ at $x = 0$,
+$y$ = 3, 11, 16 Mm. `axis` writes one CSV per run, `eshear` too.
+
+## Verification here
+
+VERIFICATION_PLACEHOLDER
+
+## Files
+
+| file | content |
+|---|---|
+| `user_inputs.jl` | the deck: environment switches, Δt, DynSGS, dissipation, optional floors |
+| `initialize.jl` | atmosphere, tubes, quadrupole/dipole, the discrete curl, $c_h$, $\Delta h$, the $\epsilon_0(\rho)$ table |
+| `user_flux.jl` | units and constants of the paper, ideal GLM-MHD flux with $\gamma = 5/3$ |
+| `user_source.jl` | gravity, energy relaxation, GLM damping, damping layers |
+| `user_bc.jl` | closed walls: $\rho\mathbf v = 0$, $\psi = 0$ |
+| `user_primitives.jl` | the reference-weighted DynSGS primitives; output $T$, $\beta$, $\log_{10}\rho$ [g cm⁻³], $B_z$ [G] |
+| `LK10.geo`, `LK10_ref{1,2}.msh` | the graded mesh |
+
+Source changes for this case: `compute_dsgs_viscosity!(::DSGS_MHD, ::NSD_2D)`
+takes the per-element `νphys`, `ηphys` of the 3D kernel, and
+`_mhd_anomalous_eta_2d!` (`src/kernel/physics/SGS.jl`); `_mhd_dissipation_2d`
+fills them from `:mhd_dissipation` and `:mhd_anomalous_eta`
+(`src/kernel/operators/rhs.jl`); both keys are documented in
+`src/io/mod_inputs.jl`. Decks that set neither are unchanged.

@@ -1590,8 +1590,9 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
             (get(params.inputs, :dsgs_nazarov_energy, false) || get(params.inputs, :dsgs_conserved_prandtl, false))
 
         lnodal_mhd2d = get(params.inputs, :ldsgs_nodal, false)
-        lnodal_mhd2d && get(params.inputs, :mhd_dissipation, nothing) !== nothing &&
-            error(" :mhd_dissipation is implemented for the element form of DSGS_MHD only (not :ldsgs_nodal).")
+        (lnodal_mhd2d && (get(params.inputs, :mhd_dissipation, nothing) !== nothing ||
+                          get(params.inputs, :mhd_anomalous_eta, nothing) !== nothing)) &&
+            error(" :mhd_dissipation and :mhd_anomalous_eta are implemented for the element form of DSGS_MHD only (not :ldsgs_nodal).")
         dsgs_qA, dsgs_qB, dsgs_wt = _dsgs_stencil(params, TT)
         dsgs_rhs = _dsgs_residual_rhs!(u, params, SD)
         if lnodal_mhd2d
@@ -2309,31 +2310,54 @@ function _mhd_dissipation_3d(params, ::Type{TT}) where {TT}
     return c[2], c[3]
 end
 
-# 2D: the deck's :mhd_dissipation is called as f(x, y) (y the vertical coordinate of the 2D
-# MHD cases) at the element centroids, cached per mesh as the 3D one.
-const _MHD_DISS_CACHE_2D = Ref{Any}(nothing)
+# 2D counterpart: the static (ν, η) of :mhd_dissipation, a function (x, y) -> (ν, η)
+# evaluated once at the element centroids and cached, plus, with
+# :mhd_anomalous_eta => (η₀, j_crit), the current-dependent anomalous diffusivity
+# η₀ max(0, |∇×B|/j_crit − 1) of the present state (SGS.jl, _mhd_anomalous_eta_2d!),
+# re-evaluated at every call. (nothing, nothing) when the deck sets neither.
+const _MHD_DISS2D_CACHE = Ref{Any}(nothing)
+const _MHD_ANOM_REPORTED = Ref{Bool}(false)
 function _mhd_dissipation_2d(params, ::Type{TT}) where {TT}
-    f = get(params.inputs, :mhd_dissipation, nothing)
-    f === nothing && return nothing, nothing
-    c = _MHD_DISS_CACHE_2D[]
+    f  = get(params.inputs, :mhd_dissipation, nothing)
+    an = get(params.inputs, :mhd_anomalous_eta, nothing)
+    f === nothing && an === nothing && return nothing, nothing
     nelem = Int(params.mesh.nelem)
+    ngl   = Int(params.mesh.ngl)
+    c = _MHD_DISS2D_CACHE[]
     if c === nothing || c[1] !== params.mesh || length(c[2]) != nelem
-        ngl = Int(params.mesh.ngl)
         νe = zeros(TT, nelem); ηe = zeros(TT, nelem)
-        conn = params.mesh.connijk; X = params.mesh.coords
-        for ie = 1:nelem
-            xc = 0.0; yc = 0.0
-            for (i, j) in ((1,1), (ngl,1), (1,ngl), (ngl,ngl))
-                ip = conn[ie,i,j,1]
-                xc += X[1,ip]; yc += X[2,ip]
-            end
-            ν, η = f(xc/4, yc/4)
-            νe[ie] = ν; ηe[ie] = η
-        end
-        c = (params.mesh, νe, ηe)
-        _MHD_DISS_CACHE_2D[] = c
+        f === nothing || _mhd_fill_dissipation_2d!(νe, ηe, f, params.mesh.connijk, params.mesh.coords, nelem, ngl)
+        c = (params.mesh, νe, ηe, zeros(TT, nelem))
+        _MHD_DISS2D_CACHE[] = c
+        _MHD_ANOM_REPORTED[] = false
     end
-    return c[2], c[3]
+    an === nothing && return c[2], c[3]
+    ηw = c[4]
+    copyto!(ηw, c[3])
+    nact = _mhd_anomalous_eta_2d!(ηw, params.uaux, params.mesh.connijk, params.basis.dψ,
+                                  params.metrics.dξdx, params.metrics.dξdy,
+                                  params.metrics.dηdx, params.metrics.dηdy,
+                                  nelem, ngl, TT(an[1]), TT(an[2]))
+    if nact > 0 && !_MHD_ANOM_REPORTED[]
+        _MHD_ANOM_REPORTED[] = true
+        println(" # anomalous resistivity (:mhd_anomalous_eta) active in ", nact, " element(s) on rank ",
+                MPI.Comm_rank(MPI.COMM_WORLD), " (first time; |∇×B| > j_crit = ", an[2], ")")
+        flush(stdout)
+    end
+    return c[2], ηw
+end
+
+function _mhd_fill_dissipation_2d!(νe, ηe, f, connijk, coords, nelem, ngl)
+    for ie = 1:nelem
+        xc = 0.0; yc = 0.0
+        for (i, j) in ((1,1), (ngl,1), (1,ngl), (ngl,ngl))
+            ip = connijk[ie,i,j,1]
+            xc += coords[1,ip]; yc += coords[2,ip]
+        end
+        ν, η = f(xc/4, yc/4)
+        νe[ie] = ν; ηe[ie] = η
+    end
+    return nothing
 end
 
 function _mhd_fill_dissipation!(νe, ηe, f, connijk, coords, nelem, ngl)

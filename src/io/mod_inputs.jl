@@ -1213,8 +1213,12 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #                      magnetic diffusivity of a visco-resistive MHD case (physics, not
     #                      stabilization), added per element (at its centroid) to the DynSGS coefficient
     #                      of the momentum and B slots (problems/MHD/fluxEmergenceLeake2014, -2022,
-    #                      -2022_2D). Element form only (not :ldsgs_nodal); in 2D with :dsgs_conserved
+    #                      -2022_2D, -2010). Element form only (not :ldsgs_nodal); in 2D with :dsgs_conserved
     #                      the kinematic ν is added as is, otherwise as the dynamic ρ̄ν. Unset: none.
+    #   :mhd_anomalous_eta optional (η₀, j_crit), DSGS_MHD 2D: current-dependent diffusivity
+    #                      η₀ max(0, |∇×B|/j_crit − 1) per element (largest nodal |j|), added to the B
+    #                      slots on top of :mhd_dissipation (problems/MHD/fluxEmergenceLeake2010).
+    #                      Element form only. Unset: none.
     if(!haskey(inputs, :dsgs_nodal_rho))
         inputs[:dsgs_nodal_rho] = false
     end
