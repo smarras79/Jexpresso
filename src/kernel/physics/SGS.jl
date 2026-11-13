@@ -1927,6 +1927,78 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
 end
 
 # ================================================================================
+# _dsgs_curl_resistive_2d!: divergence-preserving DynSGS resistivity in 2D
+# (:dsgs_curl_resistivity).
+#
+# The component Laplacian ∇·(η∇B) of the conserved-form kernel does not keep the
+# discrete divergence of the field: with η constant per element its strong-form,
+# lumped-mass DSS divergence is as large as the tendency itself (measured on
+# stretched quadrilaterals), so wherever the sensor fires on B it makes ∇·B,
+# which GLM then carries away (in a low-β corona as a Lorentz force B δB/ρ).
+# The ideal induction term does keep it: ∂ₜB_x = −∂_y E_z, ∂ₜB_y = ∂_x E_z is the
+# DSS-averaged strong-form curl of a single-valued nodal E_z, whose discrete
+# divergence vanishes identically. This routine writes the resistive part of
+# the in-plane induction the same way,
+#
+#     ∂ₜ(B_x, B_y) = −∇ₕ×(E ẑ),      E = η j_z,   j_z = ∂_x δB_y − ∂_y δB_x,
+#
+# with δB = B − B_e the departure from the reference field (zero at rest), η the
+# element coefficient of the B slots (DynSGS + :mhd_dissipation), and E the
+# lumped-mass average of the element values η_e j_z,e at each node, summed over
+# the ranks (DSS_global_RHS! on the scratch array `scr`, an npoin × neqs array
+# that is zero on entry and is left zero). The element contributions ω J (−∂_y E,
+# ∂_x E) are added to slots 6 and 7 of rhs_diff_el, whose own Laplacian the
+# caller has switched off. For a solenoidal field and constant η this is η∇²B,
+# the operator it replaces. B_z (no part in ∇·B in 2D) and the energy keep their
+# Laplacians: the conserved-form Laplacian of E already carries the magnetic
+# energy flux and the Ohmic heating of the resistive term to leading order.
+# ================================================================================
+function _dsgs_curl_resistive_2d!(rhs_diff_el::AbstractArray{TT}, scr::AbstractMatrix{TT},
+                                  ηe::AbstractVector{TT}, q::AbstractMatrix{TT}, qe::AbstractMatrix,
+                                  connijk::AbstractArray{TI,4}, ω::AbstractVector, dψ::AbstractMatrix,
+                                  Je::AbstractArray, dξdx::AbstractArray, dξdy::AbstractArray,
+                                  dηdx::AbstractArray, dηdy::AbstractArray,
+                                  g_dss_cache, neqs::Int, nelem::Int, ngl::Int, npoin::Int) where {TT<:AbstractFloat, TI<:Integer}
+    fill!(scr, zero(TT))
+    @inbounds for ie = 1:nelem
+        η = ηe[ie]
+        for l = 1:ngl, k = 1:ngl
+            dBxdξ = zero(TT); dBxdη = zero(TT); dBydξ = zero(TT); dBydη = zero(TT)
+            for m = 1:ngl
+                ipξ = connijk[ie,m,l,1]; ipη = connijk[ie,k,m,1]
+                dBxdξ += dψ[m,k]*(q[ipξ,6] - qe[ipξ,6]); dBxdη += dψ[m,l]*(q[ipη,6] - qe[ipη,6])
+                dBydξ += dψ[m,k]*(q[ipξ,7] - qe[ipξ,7]); dBydη += dψ[m,l]*(q[ipη,7] - qe[ipη,7])
+            end
+            jz = (dBydξ*dξdx[ie,k,l] + dBydη*dηdx[ie,k,l]) - (dBxdξ*dξdy[ie,k,l] + dBxdη*dηdy[ie,k,l])
+            w  = ω[k]*ω[l]*Je[ie,k,l]
+            ip = connijk[ie,k,l,1]
+            scr[ip,1] += w*η*jz
+            scr[ip,2] += w
+        end
+    end
+    DSS_global_RHS!(scr, g_dss_cache, neqs)
+    @inbounds for ip = 1:npoin
+        scr[ip,1] = scr[ip,2] > zero(TT) ? scr[ip,1]/scr[ip,2] : zero(TT)
+    end
+    @inbounds for ie = 1:nelem
+        for l = 1:ngl, k = 1:ngl
+            dEdξ = zero(TT); dEdη = zero(TT)
+            for m = 1:ngl
+                dEdξ += dψ[m,k]*scr[connijk[ie,m,l,1],1]
+                dEdη += dψ[m,l]*scr[connijk[ie,k,m,1],1]
+            end
+            dEdx = dEdξ*dξdx[ie,k,l] + dEdη*dηdx[ie,k,l]
+            dEdy = dEdξ*dξdy[ie,k,l] + dEdη*dηdy[ie,k,l]
+            w = ω[k]*ω[l]*Je[ie,k,l]
+            rhs_diff_el[ie,k,l,6] -= w*dEdy
+            rhs_diff_el[ie,k,l,7] += w*dEdx
+        end
+    end
+    fill!(scr, zero(TT))
+    return nothing
+end
+
+# ================================================================================
 # _mhd_anomalous_eta_2d!: current-dependent (anomalous) magnetic diffusivity
 #
 #     η = η₀ max(0, |j|/j_crit − 1),     j = ∇×B,

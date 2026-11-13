@@ -244,17 +244,23 @@ def cmd_shear(a):
 
 
 def axis_height(g):
-    """Height [Mm] of the tube axis: where B_x on x = 0 changes sign from - to + going up, the lowest
-    such point (Sec. 3.2: "defined at the point where B_x|x=0 changes sign"); nan if none below 10 Mm."""
+    """Height [Mm] of the tube axis: where B_x on x = 0 changes sign from - to + going up (Sec. 3.2: "defined
+    at the point where B_x|x=0 changes sign"). Of all such crossings below 10 Mm, the one nearest the peak of
+    the tube's axial field B_z on x = 0 (far from the tube B_x is ~0 and noise crosses zero too); nan if none."""
     ix0 = np.argmin(np.abs(g["X"]))
     Bx = grid2d(g, g["fields"]["Bx"])[:, ix0]
+    Bz = np.abs(grid2d(g, g["fields"]["Bz"])[:, ix0])
     Y = g["Y"]
+    yz = Y[np.argmax(np.where(Y < 10.0, Bz, -1.0))]
+    best = np.nan
     for k in range(len(Y) - 1):
         if Y[k] > 10.0:
             break
         if Bx[k] < 0.0 <= Bx[k + 1]:
-            return Y[k] - Bx[k] * (Y[k + 1] - Y[k]) / (Bx[k + 1] - Bx[k])
-    return np.nan
+            yc = Y[k] - Bx[k] * (Y[k + 1] - Y[k]) / (Bx[k + 1] - Bx[k])
+            if np.isnan(best) or abs(yc - yz) < abs(best - yz):
+                best = yc
+    return best
 
 
 def cmd_axis(a):
@@ -264,7 +270,7 @@ def cmd_axis(a):
         items = runs_of(path)
         T, H = [], []
         for t, f in items:
-            T.append(t); H.append(axis_height(load(f, [])))
+            T.append(t); H.append(axis_height(load(f, ["Bz"])))
         np.savetxt(os.path.join(a.outdir, f"axis_{(lab or os.path.basename(path.rstrip('/'))).replace(' ', '_')}.csv"),
                    np.c_[T, H], header="t [s], axis height [Mm]", delimiter=",")
         ax.plot(T, H, "-o", ms=3, label=lab or os.path.basename(path.rstrip("/")))

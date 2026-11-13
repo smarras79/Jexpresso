@@ -1653,6 +1653,22 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                      Int(params.mesh.ngl), SD)
         end
 
+        # :dsgs_curl_resistivity: the in-plane field is diffused by the
+        # divergence-preserving curl form (SGS.jl, _dsgs_curl_resistive_2d!)
+        # instead of the component Laplacian, whose coefficient is set aside here
+        # and restored after the assembly.
+        lcurlB = get(params.inputs, :dsgs_curl_resistivity, false)::Bool
+        lcurlB && lnodal_mhd2d &&
+            error(" :dsgs_curl_resistivity needs the element form of DSGS_MHD (:ldsgs_nodal => false).")
+        nelemB = Int(params.mesh.nelem)
+        ηcurl  = lcurlB ? _dsgs_curl_buffer(TT, nelemB) : _DSGS_CURL_EMPTY
+        if lcurlB
+            for ie = 1:nelemB
+                ηcurl[ie] = params.μ_dsgs[ie,6]
+                params.μ_dsgs[ie,6] = zero(TT)
+                params.μ_dsgs[ie,7] = zero(TT)
+            end
+        end
         _viscous_rhs_el_2d_dsgs!(params.uaux, qe, params.uprimitive,
                                  params.rhs_diffξ_el, params.rhs_diffη_el,
                                  params.rhs_diff_el,
@@ -1669,6 +1685,20 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                  DSGS_MHD();
                                  μ_pnode = lnodal_mhd2d ? params.μ_dsgs_pnode : nothing,
                                  μloc    = params.dsgs_μloc)
+        if lcurlB
+            # restore the coefficient of the in-plane field (output, and a
+            # coefficient held by :dsgs_freeze_stage), then add the curl term
+            for ie = 1:nelemB
+                params.μ_dsgs[ie,6] = ηcurl[ie]
+                params.μ_dsgs[ie,7] = ηcurl[ie]
+            end
+            _dsgs_curl_resistive_2d!(params.rhs_diff_el, params.RHS_visc, ηcurl, params.uaux, qe,
+                                     params.mesh.connijk, params.ω, params.basis.dψ, params.metrics.Je,
+                                     params.metrics.dξdx, params.metrics.dξdy,
+                                     params.metrics.dηdx, params.metrics.dηdy,
+                                     params.g_dss_cache, Int(params.neqs), nelemB,
+                                     Int(params.mesh.ngl), Int(params.mesh.npoin))
+        end
         return
     end
 
@@ -2308,6 +2338,19 @@ function _mhd_dissipation_3d(params, ::Type{TT}) where {TT}
         _MHD_DISS_CACHE[] = c
     end
     return c[2], c[3]
+end
+
+# Per-element coefficient of the in-plane field set aside by :dsgs_curl_resistivity
+# (viscous_rhs_el!, NSD_2D), one buffer reused across calls.
+const _DSGS_CURL_BUF   = Ref{Any}(nothing)
+const _DSGS_CURL_EMPTY = Float64[]
+function _dsgs_curl_buffer(::Type{TT}, n::Int) where {TT}
+    b = _DSGS_CURL_BUF[]
+    if !(b isa Vector{TT}) || length(b) != n
+        b = zeros(TT, n)
+        _DSGS_CURL_BUF[] = b
+    end
+    return b::Vector{TT}
 end
 
 # 2D counterpart: the static (ν, η) of :mhd_dissipation, a function (x, y) -> (ν, η)

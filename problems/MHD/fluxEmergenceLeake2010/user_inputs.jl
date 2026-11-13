@@ -32,6 +32,7 @@
 #                            or on the relaxed background relation ρT₀(ρ) = p      [thermal]
 #   JEXPRESSO_LK10_CMIN      DynSGS background floor C_min                        [0]
 #   JEXPRESSO_LK10_FLOORS    1: positivity floors as the Runge-Kutta stage limiter [0]
+#   JEXPRESSO_LK10_CURLB     0: DynSGS resistivity as the component Laplacian       [1: curl form]
 #
 # Times are in t0 = 23.19 s inside the code (user_flux.jl).
 #---------------------------------------------------------------------------------
@@ -194,6 +195,10 @@ function user_inputs()
         :dsgs_nodal_rho       => true,       # inactive with :dsgs_conserved
         :dsgs_fast_floors     => true,
         :dsgs_thermal_residual => true,
+        # In-plane field diffused by the curl form −∇ₕ×(η j_z ẑ), which keeps the discrete ∇·B
+        # (the component Laplacian does not: README, "Divergence of B"); JEXPRESSO_LK10_CURLB=0 for
+        # the Laplacian of the parent case.
+        :dsgs_curl_resistivity => !(_lk10_env("CURLB", "1") in ("0", "false", "no", "off")),
         :lrichardson          => false,
         :energy_equation      => "energy",
         :lkep                 => false,

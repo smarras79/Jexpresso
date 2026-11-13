@@ -1219,6 +1219,11 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #                      η₀ max(0, |∇×B|/j_crit − 1) per element (largest nodal |j|), added to the B
     #                      slots on top of :mhd_dissipation (problems/MHD/fluxEmergenceLeake2010).
     #                      Element form only. Unset: none.
+    #   :dsgs_curl_resistivity  DSGS_MHD 2D, element form: diffuse the in-plane field with the curl form
+    #                      ∂ₜB = −∇ₕ×(η j_z ẑ) (strong form, nodal η j_z summed over the ranks) instead of
+    #                      the component Laplacian, so that the DynSGS (and :mhd_dissipation) resistivity
+    #                      keeps the discrete divergence of B (SGS.jl, _dsgs_curl_resistive_2d!).
+    #                      Default false.
     if(!haskey(inputs, :dsgs_nodal_rho))
         inputs[:dsgs_nodal_rho] = false
     end

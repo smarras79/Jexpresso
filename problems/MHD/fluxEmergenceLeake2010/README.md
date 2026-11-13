@@ -194,20 +194,53 @@ paper's dissipation and its energy relaxation:
 2. **Grid.** "Stretched in both x and y", 0.0375 Mm at the surface to 0.15 Mm at
    the top, map not given. `LK10.geo` grades the element size with a two-level
    tanh map (below).
-3. **Discretely divergence-free initial field.** Lare's staggered field is the
-   discrete curl of $A_z$, so it starts with $\nabla\cdot\mathbf B = 0$. On a
-   collocated CG mesh the interpolated analytic field does not: its discrete
-   divergence was 0.2–0.7 $B_0/L_0$ for the tube on 2.5 $L_0$ elements, the GLM
-   carried it into the low-β corona within seconds (where an error $\delta B$
-   is a Lorentz force $B\delta B/\rho$), and the coronal velocity reached
-   $0.3v_0$ around the quadrupole null within 3 s. Here the in-plane field is the
-   lumped-mass average of the element curls of the nodal $A_z$
-   (`lk10_discrete_curl`), whose discrete divergence — the strong-form,
-   lumped-mass DSS divergence of `rhs.jl` — is zero to round-off on any
-   quadrilateral mesh.
+3. **Divergence of B** (next section): the initial in-plane field is a discrete
+   curl, and the DynSGS resistivity acts on it in curl form.
 4. **The discrete equilibrium** (`:lwell_balanced`): the element RHS of the
    reference state (atmosphere + potential coronal field) is subtracted at every
    stage, so the background is an exact discrete steady state.
+
+## Divergence of B
+
+Lare's staggered field is the discrete curl of $A_z$ and keeps
+$\nabla\cdot\mathbf B = 0$ to round-off. Jexpresso's collocated CG field does not,
+and GLM carries the error away at $c_h$ (275 $v_0$ here) — into a corona where
+$\beta \sim 0.01$–0.1 and a field error $\delta B$ is a Lorentz force
+$B\,\delta B/\rho$ on a density of $10^{-8}$. Two sources were found and removed:
+
+- **The initial field.** The nodal interpolant of the analytic tube field has a
+  discrete divergence (the strong-form, lumped-mass DSS divergence of
+  `rhs.jl`) of 0.2–0.7 $B_0/L_0$ on 2.5 $L_0$ elements. Here the in-plane field
+  is instead the lumped-mass average of the element curls of the nodal $A_z$
+  (`lk10_discrete_curl` in `initialize.jl`, summed over the ranks through the
+  global node numbering), whose discrete divergence is zero to round-off on any
+  quadrilateral mesh. The ideal induction term keeps it so (its tendency is the
+  same kind of discrete curl, of $E_z = vB_x - uB_y$).
+- **The DynSGS resistivity.** The component Laplacian $\nabla\cdot(\eta\nabla\mathbf B)$
+  with an element-wise $\eta$ does not keep the discrete divergence: its
+  tendency has a divergence as large as itself (measured on stretched
+  elements). With `:dsgs_curl_resistivity` (new, default here) the in-plane
+  field is diffused as $\partial_t\mathbf B = -\nabla_h\times(\eta\,j_z\hat z)$ in
+  strong form, with the nodal $\eta j_z$ summed over the ranks
+  (`_dsgs_curl_resistive_2d!`, `src/kernel/physics/SGS.jl`): the same
+  operator for a solenoidal field, divergence-free to round-off.
+
+Measured on REF 1 with the quadrupole and tube 2 (relaxation everywhere, so
+that the tube contracts violently in its first second, see the relaxation item
+above), at $t$ = 1.5 s:
+
+| | max $\lvert\psi\rvert$ | max $\lvert\mathbf v\rvert$ around the null | max $\lvert\mathbf v\rvert$ in the corona ($y$ > 5.25 Mm) |
+|---|---|---|---|
+| interpolated field, Laplacian | $1.1\times10^{-3}$ | $4.7\times10^{-2}$ | $8.2\times10^{-3}$ |
+| discrete-curl field, Laplacian | $1.6\times10^{-3}$ | $5.9\times10^{-3}$ | $9.3\times10^{-4}$ |
+| discrete-curl field, curl form (default) | $9\times10^{-16}$ | $1.4\times10^{-14}$ | $1.4\times10^{-15}$ |
+| discrete-curl field, no DynSGS on $\mathbf B$ | $1\times10^{-15}$ | $1.4\times10^{-14}$ | $1.4\times10^{-15}$ |
+
+With the Laplacian the disturbance around the quadrupole null kept growing
+(0.04 $v_0$ at 3 s), forced by the ψ that the DynSGS made in the contracting
+tube; with the curl form the corona is at rest to round-off while the tube
+evolves as before. `JEXPRESSO_LK10_CURLB=0` restores the Laplacian of the
+parent case.
 
 ## Meshes, time step and cost
 
@@ -231,7 +264,13 @@ $\Delta t = 0.25\,\Delta h/c_h$ on the smallest LGL gap $\Delta h$, i.e.
 $3.9\times10^{-4}t_0$ (REF 1) and $2.0\times10^{-4}t_0$ (REF 2) for the
 default, $2.8\times10^5$ and $5.6\times10^5$ steps to 2530 s.
 
-COST_PLACEHOLDER
+**Cost** (measured here, 4 MPI ranks, CPU): 0.5 s per step on REF 1 and about
+3 s per step on REF 2, i.e. ~160 core-hours for the default problem on REF 1
+and ~1900 core-hours on REF 2 (a day on 64-128 cores, before parallel losses).
+The field-free corona allows a ~15 times larger step (`JEXPRESSO_LK10_DT`;
+0.006 $t_0$ is safe on REF 1 until the tube reaches the photosphere). A
+snapshot takes 84 MB on REF 2 (21 MB on REF 1): about 2.5 GB for the 30
+snapshots of the default output.
 
 ## Figures
 
