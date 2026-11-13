@@ -510,5 +510,250 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         flush(stdout)
     end
 
+    # Restart (README, "Restart"): the state of a snapshot of an earlier run of this
+    # case replaces q.qn, after everything above: the reference state, the relaxation
+    # table, c_h and Δh keep the values of t = 0, as in the run that wrote it. Every
+    # run records its configuration (lk10_case.txt), which a restart from it checks.
+    rec    = lk10_case_record(inputs)
+    rdir   = String(get(inputs, :lk10_restart_dir, ""))
+    origin = isempty(rdir) ? "" : lk10_restart_from_vtk!(q, mesh, inputs, rdir, OUTPUT_DIR, rec)
+    rank == 0 && lk10_write_case_record(OUTPUT_DIR, rec, origin)
+
     return q
+end
+
+#---------------------------------------------------------------------------------
+# Restart from the VTK output of an earlier run of this case (as
+# problems/MHD/fluxEmergenceLeake2022_2D). A snapshot holds the nine primitives
+# (ρ, u, v, w, p, Bx, By, Bz, ψ) in Float64 at every node, so the conserved state
+# is rebuilt to round-off with this case's energy E = p/(γ−1) + ½ρ|v|² + ½|B|² + ½ψ²
+# (user_flux.jl, pressure_mhd), and the in-plane field keeps the discrete ∇·B of
+# the snapshot. Each rank reads its own piece iter_N/iter_N_<rank+1>.vtu, so the
+# restart needs the mesh and the rank count of the run that wrote it; lk10_case.txt
+# records them with the physics switches, and a restart from a run whose record
+# differs stops. The snapshot is the one nearest :lk10_restart_time (t0), or else
+# the last COMPLETE one (every piece written to its </VTKFile>: a job stopped by
+# its time limit while writing leaves an incomplete one, which is skipped).
+# :lk10_restart_dir = "latest" takes the most recently written run with the same
+# record under the output root of this one, for chained jobs. inputs[:tinit] is
+# set to the snapshot's time. The DynSGS residual history starts afresh (its first
+# residual is zero), so the continuation is close to, not bitwise equal to, an
+# uninterrupted run.
+#---------------------------------------------------------------------------------
+lk10_restart_fields() = ["ρ", "u", "v", "w", "p", "Bx", "By", "Bz", "ψ"]
+
+# What a restart must not change: the problem, the dissipation, the mesh, the ranks.
+# (Δt, the end time and the snapshot interval may change.)
+function lk10_case_record(inputs)
+    return Pair{String,String}[
+        "tube"             => string(get(inputs, :lk10_tube, 2)),
+        "field"            => string(get(inputs, :lk10_field, "quadrupole")),
+        "qd"               => string(get(inputs, :lk10_qd, 0.0)),
+        "Bdip"             => string(get(inputs, :lk10_Bdip, 0.0)),
+        "mcz"              => string(get(inputs, :lk10_mcz, 1.3)),
+        "relax"            => string(get(inputs, :lk10_relax, true)),
+        "relax_ymin"       => string(get(inputs, :lk10_relax_ymin, -Inf)),
+        "tube_eq"          => string(get(inputs, :lk10_tube_eq, "thermal")),
+        "nu"               => string(get(inputs, :lk10_nu_mode, "")),
+        "curl_resistivity" => string(get(inputs, :dsgs_curl_resistivity, false)),
+        "Cmin"             => string(get(inputs, :dsgs_Cmin, 0.0)),
+        "floors"           => string(get(inputs, :lk10_floors, false)),
+        "mesh"             => basename(String(get(inputs, :gmsh_filename, ""))),
+        "nop"              => string(get(inputs, :nop, 4)),
+        "ranks"            => string(MPI.Comm_size(MPI.COMM_WORLD)),
+    ]
+end
+
+function lk10_write_case_record(dir, rec, origin)
+    f = joinpath(dir, "lk10_case.txt")
+    try
+        open(f, "w") do io
+            println(io, "# problems/MHD/fluxEmergenceLeake2010: the configuration of this run, checked by a restart from it (README, \"Restart\")")
+            isempty(origin) || println(io, "# restarted from ", origin)
+            for (k, v) in rec
+                println(io, k, " = ", v)
+            end
+        end
+    catch e
+        @warn " problems/MHD/fluxEmergenceLeake2010: could not write $(f): $(sprint(showerror, e))"
+    end
+    return nothing
+end
+
+function lk10_read_case_record(dir)
+    f = joinpath(dir, "lk10_case.txt")
+    isfile(f) || return nothing
+    d = Dict{String,String}()
+    for line in eachline(f)
+        s = strip(line)
+        (isempty(s) || startswith(s, "#")) && continue
+        i = findfirst(==('='), s)
+        i === nothing && continue
+        d[String(strip(s[1:prevind(s, i)]))] = String(strip(s[nextind(s, i):end]))
+    end
+    return d
+end
+
+function lk10_record_mismatch(old::Dict{String,String}, rec)
+    bad = String[]
+    for (k, v) in rec
+        w = get(old, k, "(not recorded)")
+        w == v || push!(bad, "$(k): $(w) there, $(v) here")
+    end
+    return bad
+end
+
+# [(t [t0], N)] of the snapshots listed in <dir>/simulation.pvd, in order
+function lk10_pvd_entries(dir)
+    ent = Tuple{Float64,Int}[]
+    pvd = joinpath(dir, "simulation.pvd")
+    isfile(pvd) || return ent
+    for line in eachline(pvd)
+        m = match(r"timestep=\"([^\"]+)\"[^>]*file=\"iter_(\d+)\.pvtu\"", line)
+        m === nothing && continue
+        t = tryparse(Float64, m[1])
+        t === nothing || push!(ent, (t, parse(Int, m[2])))
+    end
+    return ent
+end
+
+# every piece of iter_N, for nparts ranks, written to the end
+function lk10_snapshot_complete(dir, iout, nparts)
+    tag = codeunits("</VTKFile>")
+    for part = 1:nparts
+        f = joinpath(dir, "iter_$(iout)", "iter_$(iout)_$(lpad(part, ndigits(nparts), '0')).vtu")
+        isfile(f) || return false
+        n = filesize(f)
+        n > 64 || return false
+        tail = open(f) do io
+            seek(io, n - 64)
+            read(io)
+        end
+        findfirst(tag, tail) === nothing && return false
+    end
+    return true
+end
+
+# (t, N, number of incomplete snapshots skipped at the end of the list)
+function lk10_pick_snapshot(dir, want, nparts)
+    ent = lk10_pvd_entries(dir)
+    isempty(ent) && error(" problems/MHD/fluxEmergenceLeake2010: restart: no snapshot listed in $(joinpath(dir, "simulation.pvd")) (JEXPRESSO_LK10_RESTART_DIR is the output directory of the run, output/MHD/fluxEmergenceLeake2010/output-<date>).")
+    if want === nothing
+        k = findlast(e -> lk10_snapshot_complete(dir, e[2], nparts), ent)
+        k === nothing && error(" problems/MHD/fluxEmergenceLeake2010: restart: no complete snapshot for $(nparts) ranks in $(dir) (the restart needs the rank count of the run that wrote it).")
+        return ent[k][1], ent[k][2], length(ent) - k
+    end
+    k = argmin([abs(e[1] - Float64(want)) for e in ent])
+    lk10_snapshot_complete(dir, ent[k][2], nparts) ||
+        error(" problems/MHD/fluxEmergenceLeake2010: restart: iter_$(ent[k][2]) (t = $(round(ent[k][1]*LK10_T0, digits=2)) s) in $(dir) is incomplete for $(nparts) ranks.")
+    return ent[k][1], ent[k][2], 0
+end
+
+# "latest": the most recently written run with the same record under the output root
+function lk10_latest_run(OUTPUT_DIR, rec, nparts)
+    root  = dirname(rstrip(OUTPUT_DIR, '/'))
+    me    = basename(rstrip(OUTPUT_DIR, '/'))
+    best  = ""; tbest = -Inf; nskip = 0
+    for d in readdir(root)
+        dir = joinpath(root, d)
+        (d == me || !isdir(dir)) && continue
+        old = lk10_read_case_record(dir)
+        old === nothing && continue
+        if !isempty(lk10_record_mismatch(old, rec))
+            nskip += 1
+            continue
+        end
+        ent = lk10_pvd_entries(dir)
+        k = findlast(e -> lk10_snapshot_complete(dir, e[2], nparts), ent)
+        k === nothing && continue
+        m = mtime(joinpath(dir, "iter_$(ent[k][2]).pvtu"))
+        if m > tbest
+            best  = dir
+            tbest = m
+        end
+    end
+    isempty(best) && error(" problems/MHD/fluxEmergenceLeake2010: restart: JEXPRESSO_LK10_RESTART_DIR=latest: no earlier run of this configuration ",
+                           "(lk10_case.txt, $(nparts) ranks) with a complete snapshot under $(root)",
+                           nskip > 0 ? " ($(nskip) run(s) of other configurations skipped)." : ".")
+    return best
+end
+
+function lk10_restart_from_vtk!(q, mesh, inputs, rdir_in::String, OUTPUT_DIR::String, rec)
+    comm   = MPI.COMM_WORLD
+    rank   = MPI.Comm_rank(comm)
+    nparts = MPI.Comm_size(comm)
+    want   = get(inputs, :lk10_restart_time, nothing)
+
+    # rank 0 picks the run and the snapshot and checks them; every rank gets the
+    # choice, or the error
+    sel = ("", 0.0, 0, "")
+    if rank == 0
+        sel = try
+            rdir = lowercase(rdir_in) == "latest" ? lk10_latest_run(OUTPUT_DIR, rec, nparts) : rdir_in
+            isdir(rdir) || error(" problems/MHD/fluxEmergenceLeake2010: restart: $(rdir) is not a directory (JEXPRESSO_LK10_RESTART_DIR is the output directory of the run, or latest).")
+            old = lk10_read_case_record(rdir)
+            if old === nothing
+                @warn " problems/MHD/fluxEmergenceLeake2010: restart: $(rdir) has no lk10_case.txt (a run made before the restart existed): its configuration is not checked, it must be this one, on $(nparts) ranks."
+            else
+                bad = lk10_record_mismatch(old, rec)
+                isempty(bad) || error(" problems/MHD/fluxEmergenceLeake2010: restart: $(rdir) is a run of another configuration:\n   ",
+                                      join(bad, "\n   "), "\n Use the JEXPRESSO_LK10_* switches, the mesh and the rank count of the run that wrote it.")
+            end
+            tr, iout, nskip = lk10_pick_snapshot(rdir, want, nparts)
+            nskip > 0 && println(" Restart: the last $(nskip) snapshot(s) listed in $(rdir) are incomplete (a job stopped while writing); taking the one before.")
+            tr >= Float64(inputs[:tend]) - 1.5*Float64(inputs[:Δt]) &&
+                error(" problems/MHD/fluxEmergenceLeake2010: restart: the snapshot at t = $(round(tr*LK10_T0, digits=2)) s in $(rdir) is the end of the run ",
+                      "(JEXPRESSO_LK10_TEND = $(round((Float64(inputs[:tend]) - Float64(inputs[:Δt]))*LK10_T0, digits=2)) s): nothing to continue.")
+            (String(rdir), tr, iout, "")
+        catch e
+            ("", 0.0, 0, sprint(showerror, e))
+        end
+    end
+    sel = MPI.bcast(sel, 0, comm)
+    isempty(sel[4]) || error(sel[4])
+    rdir, tr, iout = sel[1], sel[2], sel[3]
+
+    # each rank its piece; the conserved state from the primitives
+    fname = joinpath(rdir, "iter_$(iout)", "iter_$(iout)_$(lpad(rank + 1, ndigits(nparts), '0')).vtu")
+    names = lk10_restart_fields()
+    msg   = ""
+    nbad  = 0
+    try
+        vars, np = read_vtu_point_data(fname, vcat(names, ["__coords__"]))
+        np == mesh.npoin || error(" problems/MHD/fluxEmergenceLeake2010: restart: $(fname) has $(np) points, this rank's mesh $(mesh.npoin): the mesh and the rank count of the run that wrote it are needed.")
+        for nm in names
+            haskey(vars, nm) || error(" problems/MHD/fluxEmergenceLeake2010: restart: field $(nm) missing in $(fname).")
+        end
+        # the 2D output writes its points with z = 0
+        ipmap = vtk_to_mesh_ipmap(vars["__coords__"], @view(mesh.coords[1,1:mesh.npoin]),
+                                  @view(mesh.coords[2,1:mesh.npoin]), zeros(mesh.npoin))
+        ρa  = vars["ρ"];  ua  = vars["u"];  va  = vars["v"]; wa = vars["w"]; pa = vars["p"]
+        Bxa = vars["Bx"]; Bya = vars["By"]; Bza = vars["Bz"]; ψa = vars["ψ"]
+        γm1 = γ_mhd - 1.0
+        for ip = 1:mesh.npoin
+            j = ipmap[ip]
+            ρ  = ρa[j];  u  = ua[j];  v  = va[j];  w = wa[j]; p = pa[j]
+            Bx = Bxa[j]; By = Bya[j]; Bz = Bza[j]; ψ = ψa[j]
+            (all(isfinite, (ρ, u, v, w, p, Bx, By, Bz, ψ)) && ρ > 0.0) || (nbad += 1)
+            q.qn[ip,1] = ρ
+            q.qn[ip,2] = ρ*u; q.qn[ip,3] = ρ*v; q.qn[ip,5] = ρ*w
+            q.qn[ip,4] = p/γm1 + 0.5*ρ*(u*u + v*v + w*w) + 0.5*(Bx*Bx + By*By + Bz*Bz) + 0.5*ψ*ψ
+            q.qn[ip,6] = Bx; q.qn[ip,7] = By; q.qn[ip,8] = Bz; q.qn[ip,9] = ψ
+            q.qn[ip,end] = p
+        end
+    catch e
+        msg = sprint(showerror, e)
+    end
+    nfail = MPI.Allreduce(isempty(msg) ? 0 : 1, +, comm)
+    nfail == 0 || error(isempty(msg) ? " problems/MHD/fluxEmergenceLeake2010: restart failed on $(nfail) other rank(s)." : msg)
+    nbad = MPI.Allreduce(nbad, +, comm)
+    nbad == 0 || error(" problems/MHD/fluxEmergenceLeake2010: restart: $(nbad) nodes of $(joinpath(rdir, "iter_$(iout)")) (t = $(round(tr*LK10_T0, digits=2)) s) are not finite or have ρ ≤ 0.")
+
+    inputs[:tinit] = tr
+    if rank == 0
+        println(" Restart: t = $(round(tr*LK10_T0, digits=3)) s ($(tr) t0) from $(joinpath(rdir, "iter_$(iout)")) ",
+                "($(nparts) piece$(nparts > 1 ? "s" : "")); output to $(OUTPUT_DIR)")
+        flush(stdout)
+    end
+    return "$(rdir), iter_$(iout), t = $(round(tr*LK10_T0, digits=3)) s"
 end

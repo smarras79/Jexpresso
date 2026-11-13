@@ -35,6 +35,12 @@
 #   JEXPRESSO_LK10_CURLB     0: DynSGS resistivity as the component Laplacian       [1: curl form]
 #   JEXPRESSO_LK10_NU        dynamic | kinematic: the paper's dynamic ν below the
 #                            photosphere (capped above), or kinematic everywhere   [dynamic]
+#   JEXPRESSO_LK10_RESTART_DIR  continue an earlier run of this case from a snapshot:
+#                            its output directory, or "latest" (the most recently
+#                            written run of the same configuration); same switches,
+#                            mesh and rank count (README, "Restart")             [none]
+#   JEXPRESSO_LK10_RESTART_TIME  the snapshot nearest this time in SECONDS
+#                            [the last complete one]
 #
 # Times are in t0 = 23.19 s inside the code (user_flux.jl).
 #---------------------------------------------------------------------------------
@@ -153,7 +159,9 @@ function user_inputs()
         :conservation_every   => 100,
         :conservation_slots   => [1, 4],
         :restart_time         => 0.0,
-        :lrestart             => false,
+        :lrestart             => false,      # the restart is the case's own (JEXPRESSO_LK10_RESTART_DIR, initialize.jl)
+        :lk10_restart_dir     => String(_lk10_env("RESTART_DIR", "")),
+        :lk10_floors          => floors,
         :lsource              => true,       # gravity, energy relaxation, ψ damping, damping layers
         :lwell_balanced       => true,       # the reference (atmosphere + coronal field) is a discrete steady state
         :SOL_VARS_TYPE        => TOTAL(),
@@ -229,6 +237,8 @@ function user_inputs()
         :linitial_refine      => false,
         :ladapt               => false,
     ) #Dict
+    rt = _lk10_num("RESTART_TIME", NaN)              # seconds
+    isnan(rt) || (inputs[:lk10_restart_time] = rt/LK10_T0)
 
     return inputs
 end

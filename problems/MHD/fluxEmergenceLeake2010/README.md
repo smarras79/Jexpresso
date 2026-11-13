@@ -70,6 +70,8 @@ editing the deck:
 | `JEXPRESSO_LK10_TUBE_EQ` | `thermal` (default), `relaxed` | tube in thermal equilibrium with its surroundings (the paper), or on the relaxed relation $\rho T_0(\rho) = p$ |
 | `JEXPRESSO_LK10_CURLB` | `1` (default), `0` | DynSGS resistivity of the in-plane field in curl form, or the component Laplacian of the parent case |
 | `JEXPRESSO_LK10_NU` | `dynamic` (default), `kinematic` | the paper's dynamic viscosity in the convection zone, held at its photospheric kinematic value above; or that kinematic value everywhere |
+| `JEXPRESSO_LK10_RESTART_DIR` | an output directory, or `latest` | continue that run from a snapshot (Restart, below) |
+| `JEXPRESSO_LK10_RESTART_TIME` | seconds | the snapshot nearest this time (default: the last complete one) |
 | `JEXPRESSO_LK10_CMIN` | default 0 | DynSGS background floor $C_{min}$ |
 | `JEXPRESSO_LK10_FLOORS` | `0` (default), `1` | positivity floors as the Runge–Kutta stage limiter |
 
@@ -301,6 +303,51 @@ The field-free corona allows a ~15 times larger step (`JEXPRESSO_LK10_DT`;
 snapshot takes 84 MB on REF 2 (21 MB on REF 1): about 2.5 GB for the 30
 snapshots of the default output.
 
+## Restart
+
+For a queue with a time limit (the default problem takes about a day on 128
+cores), a run continues from its snapshots:
+
+```bash
+# job 1
+mpiexec -n 128 julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2010
+# jobs 2, 3, ...: the most recently written run of the same configuration, from its last complete snapshot
+JEXPRESSO_LK10_RESTART_DIR=latest mpiexec -n 128 julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2010
+```
+
+With SLURM, for example, `sbatch job1.sh`, then
+`sbatch --dependency=afterany:<jobid> job2.sh` (`afterany`: also when job 1
+was stopped by the limit); a restart from a run that has reached the end time
+stops at once ("nothing to continue"), so a spare job in the chain is harmless.
+
+- **Same switches, mesh and rank count.** Each rank reads its own piece of the
+  snapshot. Every run writes its `JEXPRESSO_LK10_*` configuration, mesh and
+  rank count to `lk10_case.txt` in its output directory, and a restart from a
+  run with another record stops with the list of differences. The time step
+  (`JEXPRESSO_LK10_DT`), the end time and the snapshot interval may change.
+- **Which run.** `JEXPRESSO_LK10_RESTART_DIR` is the output directory
+  (`output/MHD/fluxEmergenceLeake2010/output-<date>`), or `latest`: the most
+  recently written run with the same record under
+  `output/MHD/fluxEmergenceLeake2010/`. Give the directory when two runs of
+  the same configuration are under way.
+- **Which snapshot.** The last complete one (a job stopped by its time limit
+  while writing leaves an incomplete one, which is skipped), or the one nearest
+  `JEXPRESSO_LK10_RESTART_TIME` (seconds).
+- **Output.** The new run writes to a new output directory, starting with the
+  snapshot it continues. The figure script reads a restarted run as one:
+  `RUN=output/.../output-<date1>,output/.../output-<date2>` (a later directory
+  wins a repeated time).
+- **What is restored.** The conserved state, rebuilt to round-off from the nine
+  primitives of the snapshot (Float64), the discrete $\nabla\cdot\mathbf B$
+  included; the reference state, the relaxation table, $c_h$ and $\Delta h$ are
+  those of $t = 0$, as in the run that wrote it. The DynSGS residual history
+  starts afresh, so the continuation is close to, not bitwise equal to, an
+  uninterrupted run (Verification).
+- **What a job stopped by the limit loses:** the time since its last snapshot,
+  116 s of simulated time by default, ~25,000 steps on REF 2 (an hour or less
+  on 128 cores); `JEXPRESSO_LK10_DOUT` shortens it (the figure times are always
+  written).
+
 ## Figures
 
 `tools/plot_leake2010.py` draws the paper's figures from the output (numpy and
@@ -360,7 +407,7 @@ Short runs on 4 cores; the full runs are for a cluster (above).
 | file | content |
 |---|---|
 | `user_inputs.jl` | the deck: environment switches, Δt, DynSGS, dissipation, optional floors |
-| `initialize.jl` | atmosphere, tubes, quadrupole/dipole, the discrete curl, $c_h$, $\Delta h$, the $\epsilon_0(\rho)$ table |
+| `initialize.jl` | atmosphere, tubes, quadrupole/dipole, the discrete curl, $c_h$, $\Delta h$, the $\epsilon_0(\rho)$ table; the restart and `lk10_case.txt` |
 | `user_flux.jl` | units and constants of the paper, ideal GLM-MHD flux with $\gamma = 5/3$ |
 | `user_source.jl` | gravity, energy relaxation, GLM damping, damping layers |
 | `user_bc.jl` | closed walls: $\rho\mathbf v = 0$, $\psi = 0$ |
