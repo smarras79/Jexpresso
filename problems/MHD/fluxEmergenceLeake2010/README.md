@@ -420,6 +420,18 @@ Short runs on 4 cores; the full runs are for a cluster (above).
       mpiexec -n 32 julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2010
   python3 tools/plot_leake2010.py axis ref2=output/MHD/fluxEmergenceLeake2010/output-<date> --tmax 1000
   ```
+- **Restart** (the run above): continued from its 417.5 s snapshot, the state
+  is the snapshot's to round-off (4e-16; only the DynSGS coefficient, a
+  diagnostic of the residual history, differs). After 46 and 93 s the axis
+  agrees with the uninterrupted run to 0.2 km and 2 mm; $\rho$ and $p$ agree to
+  2e-5 and $\mathbf B$ to 0.4 % (RMS), the velocity to 1–3 % (RMS, mostly in the
+  transition region and the corona), the footprint of the DynSGS coefficient of
+  the first steps, whose residual history starts afresh. `latest` then picked the
+  restarted run (not the empty directory of a failed one) and continued it to
+  557 s, 0.6 km from the uninterrupted axis after two restarts; from a run at its
+  end time it stopped with "nothing to continue"; a snapshot cut short (half of
+  one piece) was skipped for the one before. `plot_leake2010.py axis` reads the
+  three directories as one run.
 - **Not done here:** the emergence after 1000 s, any REF 2 run, and the
   quadrupole run to 2530 s, i.e. the comparison with the erratum's Fig. 3, which
   needs the cluster (above). `plot_leake2010.py density` and `dome` produce
