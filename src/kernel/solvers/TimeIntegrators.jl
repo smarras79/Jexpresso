@@ -219,6 +219,52 @@ function precompile_warmup_run!(inputs, params, u,
     return nothing
 end
 
+"""
+    gc_sync_interval(inputs) -> Int
+
+Synchronised garbage collection (opt-in). Returns N > 0 to collect on all ranks together every
+N time steps, with Julia's automatic GC switched off in between; 0 (default) leaves the GC alone.
+Set by ENV["JEXPRESSO_GC_SYNC"] = "N" (wins) or `:gc_sync_interval => N` in user_inputs.
+
+Why: each rank's GC runs at its own moment, and a rank that pauses stalls every other rank at the
+next halo exchange, so with hundreds of ranks some rank is collecting in most steps. Collecting
+everywhere at once turns those scattered stalls into one short, shared pause.
+"""
+function gc_sync_interval(inputs)
+    e = strip(get(ENV, "JEXPRESSO_GC_SYNC", ""))
+    isempty(e) || return max(0, something(tryparse(Int, e), 0))
+    return max(0, Int(get(inputs, :gc_sync_interval, 0)))
+end
+
+"""
+    gc_sync_callback(every, comm; max_bytes = 2^30)
+
+DiscreteCallback for synchronised GC: collects on all ranks every `every` steps, and earlier if
+any rank has allocated more than `max_bytes` (default 1 GiB, ENV JEXPRESSO_GC_SYNC_MAXBYTES)
+since the last collection — the safety net while the automatic GC is off. Every 10th
+collection is a full one. One Allreduce of a Bool per step.
+"""
+function gc_sync_callback(every::Int, comm; max_bytes::Int = 2^30)
+    nstep   = Ref(0)
+    ncoll   = Ref(0)
+    bytes0  = Ref(Base.gc_bytes())
+    cond(u, t, integrator) = true
+    function affect!(integrator)
+        nstep[] += 1
+        over = (Base.gc_bytes() - bytes0[]) > max_bytes
+        due  = (nstep[] % every == 0) || MPI.Allreduce(over, MPI.LOR, comm)
+        if due
+            ncoll[] += 1
+            GC.enable(true)
+            GC.gc(ncoll[] % 10 == 0)
+            GC.enable(false)
+            bytes0[] = Base.gc_bytes()
+        end
+        u_modified!(integrator, false)
+    end
+    return DiscreteCallback(cond, affect!; save_positions = (false, false))
+end
+
 function time_loop!(inputs, params, u, args...)
 
     comm = get_mpi_comm()
@@ -585,11 +631,16 @@ function time_loop!(inputs, params, u, args...)
             DiscreteCallback(step_heartbeat_condition, step_heartbeat_affect!) :
             nothing
 
+        _gc_every   = gc_sync_interval(inputs)
+        _gc_maxb    = something(tryparse(Int, strip(get(ENV, "JEXPRESSO_GC_SYNC_MAXBYTES", ""))), 2^30)
+        cb_gcsync   = _gc_every > 0 ? gc_sync_callback(_gc_every, comm; max_bytes = _gc_maxb) : nothing
+
         _cbs = Any[cb, cb_restart, cb_les_stat, cb_les_online]
         cb_pod !== nothing                     && push!(_cbs, cb_pod)
         lrad                                  && push!(_cbs, cb_rad)
         is_coupled && cb_coupling !== nothing  && push!(_cbs, cb_coupling)
         cb_heartbeat !== nothing               && push!(_cbs, cb_heartbeat)
+        cb_gcsync !== nothing                  && push!(_cbs, cb_gcsync)
         callbacks_main = CallbackSet(_cbs...)
 
         # PERF: SciML integrator warmup with the REAL callback set.
@@ -770,17 +821,30 @@ function time_loop!(inputs, params, u, args...)
             return MPI.Allreduce(bad, MPI.LOR, comm)
         end
 
-        solution = with_logger(solve_logger) do
-            solve(prob,
-                  inputs[:ode_solver], dt=dt,
-                  #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
-                  callback = callbacks_main, tstops = tstops_all,
-                  save_everystep = false,
-                  adaptive=inputs[:ode_adaptive_solver],
-                  unstable_check = mpi_unstable_check,
-                  saveat = range(inputs[:tinit],
-                                 inputs[:tend],
-                                 length=inputs[:ndiagnostics_outputs]))
+        # Synchronised GC: start from a clean heap on every rank (drops setup and warm-up garbage,
+        # which otherwise comes back as long full collections early in the run), then switch the
+        # automatic GC off; gc_sync_callback collects on all ranks together from here on.
+        if _gc_every > 0
+            GC.gc(true)
+            MPI.Barrier(comm)
+            rank == 0 && println(" # Synchronised GC every ", _gc_every, " steps (automatic GC off during the solve)")
+            GC.enable(false)
+        end
+        solution = try
+            with_logger(solve_logger) do
+                solve(prob,
+                      inputs[:ode_solver], dt=dt,
+                      #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
+                      callback = callbacks_main, tstops = tstops_all,
+                      save_everystep = false,
+                      adaptive=inputs[:ode_adaptive_solver],
+                      unstable_check = mpi_unstable_check,
+                      saveat = range(inputs[:tinit],
+                                     inputs[:tend],
+                                     length=inputs[:ndiagnostics_outputs]))
+            end
+        finally
+            GC.enable(true)
         end
 
         # End-of-simulation per-function timing & allocation summary.
