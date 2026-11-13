@@ -30,8 +30,9 @@ The numerics are those of
 spectral elements, GLM divergence cleaning, and the reference-weighted,
 conserved-form Marras–Nazarov DynSGS operator as the only shock capturing, no
 limiter. On top of it come the paper's explicit viscosity and anomalous
-resistivity (a 2D version of the `:mhd_dissipation` hook of
-[`fluxEmergenceLeake2014`](../fluxEmergenceLeake2014/README.md), and a new
+resistivity (the 2D `:mhd_dissipation` hook, as in
+[`fluxEmergenceLeake2014`](../fluxEmergenceLeake2014/README.md) and
+[`fluxEmergenceLeake2022_2D`](../fluxEmergenceLeake2022_2D/README.md), and a new
 `:mhd_anomalous_eta`), its energy-relaxation term, an initialization of the
 magnetic field that is discretely divergence-free, and a divergence-preserving
 (curl) form of the DynSGS resistivity (`:dsgs_curl_resistivity`, new).
@@ -170,7 +171,10 @@ paper's dissipation and its energy relaxation:
   authors' viscosity as kinematic everywhere; `JEXPRESSO_LK10_NU=kinematic` does
   that here). It enters through the `:mhd_dissipation` hook as a Laplacian of
   the momentum (the paper's stress tensor without its $\nabla\cdot\mathbf v$
-  part), and the kinetic energy it removes stays in $E$ as heat.
+  part), and the kinetic energy it removes stays in $E$ as heat. The choice
+  hardly matters for the rise (field-free corona, tube 2, REF 1): the DynSGS
+  coefficient at the tube, ~0.02, exceeds both forms, and the axis heights of
+  the two runs differ by 0.002 Mm at 186 s.
 - **Anomalous resistivity** (Eqs. 7–8), $\eta = \eta_0\max(0, \lvert j\rvert/j_{crit} - 1)$,
   $\eta_0 = 1.6\times10^{-11}$ s, $j_{crit} = 2.07\times10^7$ statA cm$^{-2}$: a
   magnetic diffusivity $\eta_0c^2/4\pi = 1.18\times10^{-4}$ and
@@ -363,14 +367,16 @@ Short runs on 4 cores; the full runs are for a cluster (above).
 | `user_primitives.jl` | the reference-weighted DynSGS primitives; output $T$, $\beta$, $\log_{10}\rho$ [g cm⁻³], $B_z$ [G] |
 | `LK10.geo`, `LK10_ref{1,2}.msh` | the graded mesh |
 
-Source changes for this case (all opt-in; decks that set none of the three
-keys are unchanged):
+Source changes for this case (all opt-in; decks that set none of the keys
+are unchanged):
 
-- `compute_dsgs_viscosity!(::DSGS_MHD, ::NSD_2D)` takes the per-element
-  `νphys`, `ηphys` of the 3D kernel; `_mhd_dissipation_2d` (`rhs.jl`) fills
-  them from `:mhd_dissipation` (static, $(x, y)\to(\nu, \eta)$) and
-  `:mhd_anomalous_eta` (`_mhd_anomalous_eta_2d!`, `SGS.jl`).
+- The 2D `:mhd_dissipation` hook (per-element `νphys`, `ηphys` in
+  `compute_dsgs_viscosity!(::DSGS_MHD, ::NSD_2D)`, as in 3D) is shared with
+  `fluxEmergenceLeake2022_2D`, which added it in parallel; this case adds
+  `:mhd_anomalous_eta` to it: `_mhd_dissipation_2d` (`rhs.jl`) adds
+  `_mhd_anomalous_eta_2d!` (`SGS.jl`) of the present state to the static
+  $\eta$ at every call.
 - `:dsgs_curl_resistivity`: `_dsgs_curl_resistive_2d!` (`SGS.jl`), called from
   `viscous_rhs_el!(…, ::NSD_2D)`, replaces the Laplacian of $B_x$, $B_y$ by
   the strong-form curl of the nodal $\eta j_z$ (section "Divergence of B").
-- The three keys are documented in `src/io/mod_inputs.jl`.
+- The keys are documented in `src/io/mod_inputs.jl`.
