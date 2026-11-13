@@ -50,6 +50,31 @@ function do_micro_physics!(Tabs, qn, qc, qi, qr, qs, qg, Pr, Ps, Pg, S_micro, qs
     return nothing
 end
 
+"""
+    reference_pressure_from_model_eos!(qe, z, npoin, NSD)
+
+Moist PERT only. Overwrite the reference pressure `qe[:,end]` with the pressure the RHS itself
+computes (`saturation_adjustment_sam_microphysics!`, lpert = true) for a zero perturbation, so that
+p' = P(q + qe) - qe[:,end] is exactly zero for a state at rest.
+
+Needed because the stored reference pressure can drift from the model EOS of the stored reference
+state, e.g. when `conformity4ncf_q!` averages qe over periodic copies whose coordinates differ by
+mesh-generator roundoff: the moist EOS depends on z explicitly (T = (hl - g z)/cp), so averaging the
+pressure column with the other columns is not enough. Differences are at roundoff/1e-7 Pa level.
+"""
+function reference_pressure_from_model_eos!(qe, z, npoin, NSD)
+    PhysConst  = PhysicalConst{Float64}()
+    MicroConst = MicrophysicalConst{Float64}()
+    T     = eltype(qe)
+    uaux  = zeros(T, npoin, size(qe, 2))      # zero perturbation (same layout as params.uaux)
+    Tabs  = zeros(T, npoin); qn = zeros(T, npoin); qi = zeros(T, npoin); qc = zeros(T, npoin)
+    qr    = zeros(T, npoin); qs = zeros(T, npoin); qg = zeros(T, npoin); qsatt = zeros(T, npoin)
+    saturation_adjustment_sam_microphysics!(uaux, qe, Tabs, qn, qi, qc, qr, qs, qg, qsatt, z, npoin,
+                                            MicroConst, PhysConst, NSD, true)
+    qe[:, end] .= @view(uaux[:, end])
+    return nothing
+end
+
 function do_micro_physics!(Tabs, qn, qc, qi, qr, qs, qg, Pr, Ps, Pg, S_micro, qsatt, npoin, uaux, z, qe, NSD, ::TOTAL)
 
      PhysConst = PhysicalConst{Float64}()
@@ -904,7 +929,7 @@ function saturation_adjustment_sam_microphysics!(uaux, qe, Tabs, qn, qi, qc, qr,
                     lstarn    = fac_cond+(1-ωn)*fac_fus
                     dlstarn   = -dωn*fac_fus#dωn*fac_cond - dωn * fac_fus 
                     qsatt[ip] = max(0.0,ωn*qsatw(T1,P/100) + (1-ωn)*qsati(T1,P/100))
-                    dqsat     = ωn*dtqsati(T1,P/100) + (1-ωn)*dtqsati(T1,P/100) + dωn * qsatw(T1,P/100) - dωn * qsati(T1,P/100)
+                    dqsat     = ωn*dtqsatw(T1,P/100) + (1-ωn)*dtqsati(T1,P/100) + dωn * qsatw(T1,P/100) - dωn * qsati(T1,P/100)
                 
                 end
 
@@ -1087,7 +1112,7 @@ function saturation_adjustment_sam_microphysics_gpu(u,qe,z,MicroConst,PhysConst,
                 lstarn  = fac_cond+(FT(1)-ωn)*fac_fus
                 dlstarn = an*fac_fus
                 qsatt   = FT(max(FT(0.0),ωn*FT(qsatw(T1,P/100)) + (FT(1)-ωn)*FT(qsati(T1,P/100))))
-                dqsat   = ωn*FT(dtqsati(T1,P/100)) + (FT(1)-ωn)*FT(dtqsati(T1,P/100)) + dωn * qsatw(T1,P/100) - dωn * qsati(T1,P/100)
+                dqsat   = ωn*FT(dtqsatw(T1,P/100)) + (FT(1)-ωn)*FT(dtqsati(T1,P/100)) + dωn * qsatw(T1,P/100) - dωn * qsati(T1,P/100)
             end
 
             if (T1 >= T0p)

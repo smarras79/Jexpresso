@@ -53,6 +53,7 @@ Base.@kwdef mutable struct St_SamMicrophysics{T <:AbstractFloat, dims1, dims2, d
     drad_lw::VT2 = KernelAbstractions.zeros(backend,  T, dims3) #Storage shortwave flux contribution
     flux_lw::VT1 = KernelAbstractions.zeros(backend,  T, dims1) # storage for longwave flux
     flux_sw::VT1 = KernelAbstractions.zeros(backend,  T, dims1) # storage for shortwave flux
+    dTdt_lat::VT1 = KernelAbstractions.zeros(backend,  T, dims1) # diagnostic: temperature change across the microphysics call / Δt
     rt_sol_lw = []
     rt_sol_sw = []
     rt_sol_lw_available = false

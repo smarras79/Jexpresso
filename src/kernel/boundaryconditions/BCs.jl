@@ -34,14 +34,19 @@ function apply_boundary_conditions_dirichlet!(u, uaux, t,qe,
                                               bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type,
                                               connijk, Jef, S_face, S_flux, F_surf, M_surf_inv, M_edge_inv, M_inv,
                                               Tabs, qn,
-                                              ω, neqs, inputs, AD, SD)
-    
+                                              ω, neqs, inputs, AD, SD; bc_cons = nothing)
+
     if inputs[:lperiodic_1d] && typeof(SD) == NSD_1D
-        
+
         apply_periodicity!(u, uaux, t,qe,
                            npoin_linear, ψ, dψ,
                            RHS, rhs_el, ubdy,
                            ω, neqs, inputs, AD, SD)
+    elseif bc_cons !== nothing
+        # constraints inferred at setup (bc_constraints.jl): impose values on the state only;
+        # the tendency is constrained after the global assembly (apply_bc_constraints_rhs!).
+        apply_bc_constraints_state!(bc_cons, u, uaux, qe, t, coords,
+                                    xmin, xmax, ymin, ymax, zmin, zmax, ubdy, neqs, npoin, inputs)
     else
         build_custom_bcs_dirichlet!(SD, t,
                                     coords,
@@ -761,15 +766,43 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                    Tabs, qn,
                                    neqs, dirichlet!,
                                    neumann, inputs)
+    # Function barrier: SOL_VARS_TYPE, δhf and user_heatflux come out of the untyped inputs Dict.
+    # Read them once here and pass them as arguments, so the per-node face loop below compiles
+    # with concrete types (no dynamic dispatch / allocation per boundary node and RK stage).
+    _build_custom_bcs_neumann_3d!(t, coords, nx, ny, nz, npoin, npoin_linear,
+                                  poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy,
+                                  ngl, ngr, nelem_semi_inf, ω,
+                                  xmax, ymax, zmax, xmin, ymin, zmin,
+                                  qbdy, uaux, u, qe,
+                                  connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type,
+                                  RHS, rhs_el,
+                                  connijk, Jef, S_face, S_flux, F_surf, M_surf_inv, M_edge_inv, M_inv,
+                                  τ_f, wθ, wqv,
+                                  Tabs, qn,
+                                  neqs, dirichlet!,
+                                  neumann, inputs,
+                                  inputs[:SOL_VARS_TYPE], Float64(inputs[:δhf]), Float64(inputs[:user_heatflux]))
+end
+
+function _build_custom_bcs_neumann_3d!(t, coords, nx, ny, nz, npoin, npoin_linear,
+                                       poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy,
+                                       ngl, ngr, nelem_semi_inf, ω,
+                                       xmax, ymax, zmax, xmin, ymin, zmin,
+                                       qbdy, uaux, u, qe,
+                                       connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type,
+                                       RHS, rhs_el,
+                                       connijk, Jef, S_face, S_flux, F_surf, M_surf_inv, M_edge_inv, M_inv,
+                                       τ_f, wθ, wqv,
+                                       Tabs, qn,
+                                       neqs, dirichlet!,
+                                       neumann, inputs,
+                                       SOL_VARS_TYPE, δhf::Float64, user_heatflux::Float64)
 
     PhysConst           = PhysicalConst{Float64}()
     micro               = size(Tabs,1)
     lbdy_fluxes         = inputs[:bdy_fluxes]::Bool
     lbulk_fluxes        = inputs[:bulk_fluxes]::Bool
-    SOL_VARS_TYPE       = inputs[:SOL_VARS_TYPE]
     ifirst_wall_node    = inputs[:ifirst_wall_node_index]::Int
-    δhf                 = inputs[:δhf]
-    user_heatflux       = inputs[:user_heatflux]
     
     for iface = 1:nfaces_bdy
         if (lbdy_fluxes)
@@ -808,8 +841,8 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                             
                             θ = 0.0   
                             θ1 = 0.0 
-                            qn1 = 0
-                            qn2 = 0
+                            qn1 = 0.0
+                            qn2 = 0.0
                             if (micro > 1)
                                 qn1 = qn[ip]
                                 qn2 = qn[ip1]

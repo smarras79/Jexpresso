@@ -281,6 +281,32 @@ function params_setup(sem,
                           cache_ghost_p, q_ghost_p,
                           cache_ghost_c, q_ghost_c,
                           sem.interp; ladapt=inputs[:ladapt], neqs=qp.neqs)
+        #
+        # Keep the reference pressure qe[:,end] consistent with the projected reference state.
+        # The projection above averages qe[:,1:neqs] over all copies of a node (periodic images,
+        # MPI copies, non-conforming faces). If copies carry different initial values and the
+        # pressure column is left untouched, p' = P(q+qe) - qe[:,end] is nonzero at rest and its
+        # gradient forces the flow. For periodic copies the root cause (mesh-generator coordinate
+        # noise, ~1e-8 m) is removed by the coordinate unification in restructure4periodicity_*;
+        # this step remains as a safeguard for the other kinds of copies:
+        #  1) project the pressure column with the same operator (consistent to second order in
+        #     any copy mismatch for EOS without explicit z dependence, e.g. dry P(ρ, ρθ));
+        #  2) moist PERT: recompute qe[:,end] with the model's own saturation adjustment at zero
+        #     perturbation (exactly what the RHS evaluates), so p' = 0 exactly at rest from t = 0.
+        #
+        conformity4ncf_q!(@view(qp.qe[:, end:end]), rhs_el_tmp, @view(utmp[:,:]), vaux,
+                          g_dss_cache_qp,
+                          sem.mesh.SD,
+                          sem.QT, sem.mesh.connijk,
+                          sem.mesh, sem.matrix.Minv,
+                          sem.metrics.Je, sem.ω, sem.AD,
+                          q_el, q_el_pro,
+                          cache_ghost_p, q_ghost_p,
+                          cache_ghost_c, q_ghost_c,
+                          sem.interp; ladapt=inputs[:ladapt], neqs=1)
+        if inputs[:lmoist] && sem.SOL_VARS_TYPE == PERT() && backend == CPU()
+            reference_pressure_from_model_eos!(qp.qe, @view(sem.mesh.coords[end, :]), sem.mesh.npoin, sem.mesh.SD)  # same height as do_micro_physics!
+        end
         MPI.Barrier(comm)
         if rank == 0
             println(" # end conformity4ncf_q!")
@@ -450,9 +476,31 @@ function params_setup(sem,
     les_cross_section = build_les_cross_section(sem.mesh, nprofiles, nstress, TFloat)
     les_bottom_cache  = build_les_bottom_cache(sem.mesh, sem.metrics, inputs)
 
+    # Non-conforming (hanging) facets anywhere in the partitioned mesh? Only then do the
+    # non-conforming gather/scatter and the conformity projection in rhs! have work to do.
+    # With :ladapt => true on a mesh that was never refined there are none, the projection
+    # is the identity, and skipping it saves a global DSS per RK stage.
+    lnc_facets = (inputs[:ladapt] == true) && any_nonconforming_facets(sem.mesh)
+
     #------------------------------------------------------------------------------------
     # Populate params tuple to carry global arrays and constants around
     #------------------------------------------------------------------------------------
+    #------------------------------------------------------------------------------------
+    # Dirichlet constraints inferred from user_bc_dirichlet! (1D/2D/3D, CPU, continuous
+    # Galerkin; see bc_constraints.jl). Laguerre (semi-infinite) meshes, DG, GPU runs and
+    # periodic 1D keep the legacy path (bc_cons = nothing).
+    #------------------------------------------------------------------------------------
+    bc_cons = nothing
+    if backend == CPU() && sem.AD isa ContGal &&
+        !(sem.mesh.lLaguerre || inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left]) &&
+        !(sem.mesh.SD == NSD_1D() && inputs[:lperiodic_1d])
+        bc_cons = build_bc_constraints(sem.mesh, sem.metrics, qp.qn, qp.qe, inputs, qp.neqs,
+                                       xmin, xmax, ymin, ymax, zmin, zmax; t = tspan[1])
+        nfix = MPI.Allreduce(length(bc_cons.fix_ip), MPI.SUM, comm)
+        nnp  = MPI.Allreduce(length(bc_cons.np_ip), MPI.SUM, comm)
+        println_rank(" # Dirichlet constraints: $(nfix) (node, component) value constraints, $(nnp) no-penetration nodes (incl. copies)"; msg_rank = rank, suppress = sem.mesh.msg_suppress)
+    end
+
     if (sem.mesh.lLaguerre ||
         inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
         g_dss_cache = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
@@ -495,6 +543,8 @@ function params_setup(sem,
                   sgs,
                   sgs_stress,
                   timers,
+                  bc_cons = bc_cons,
+                  lnc_facets,
                   coupling = coupling)
 
     else
@@ -538,6 +588,8 @@ function params_setup(sem,
                   OUTPUT_DIR,
                   timers,
                   sem.interp, sem.project, sem.nparts, sem.distribute,
+                  bc_cons = bc_cons,
+                  lnc_facets,
                   coupling = coupling)
     end
 
