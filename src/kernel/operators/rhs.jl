@@ -801,9 +801,9 @@ function _build_rhs!(RHS, u, params, time)
         if (params.laguerre)
             reset_laguerre_filters!(params)
             @timeit_debug JEXPRESSO_TIMER "filter" filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE;
-                    connijk_lag = params.mesh.connijk_lag, Je_lag = params.metrics_lag.Je, ladapt = inputs[:ladapt])
+                    connijk_lag = params.mesh.connijk_lag, Je_lag = params.metrics_lag.Je, ladapt = params.lnc_facets)
         else
-            @timeit_debug JEXPRESSO_TIMER "filter" filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE; ladapt = inputs[:ladapt])
+            @timeit_debug JEXPRESSO_TIMER "filter" filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE; ladapt = params.lnc_facets)
         end
         # filter! was handed params.uaux itself and finishes with
         # uaux2u!(u, uaux, ...), so params.uaux already holds the filtered
@@ -817,7 +817,7 @@ function _build_rhs!(RHS, u, params, time)
     # deck sets :lpositivity => true. See src/kernel/positivity/.
     @timeit_debug JEXPRESSO_TIMER "positivity" apply_positivity!(u, params, SD)
 
-    if (inputs[:ladapt] == true) && (params.inputs[:lfilter] == false)
+    if params.lnc_facets && (params.inputs[:lfilter] == false)
         @timeit_debug JEXPRESSO_TIMER "conformity4ncf_q" conformity4ncf_q!(params.uaux, params.rhs_el_tmp, @view(params.utmp[:,1:neqs]), params.vaux,
                           params.g_dss_cache,
                           params.mesh.SD,
@@ -887,7 +887,7 @@ function _build_rhs!(RHS, u, params, time)
     @timeit_debug JEXPRESSO_TIMER "inviscid_rhs_el" inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, lsource, 
                      params.mp.S_micro, params.mp.qn, params.mp.flux_lw, params.mp.flux_sw, SD)
 
-    if inputs[:ladapt] == true
+    if params.lnc_facets
         DSS_nc_gather_rhs!(params.RHS, SD, QT, params.rhs_el,
                            params.mesh.non_conforming_facets,
                            params.mesh.non_conforming_facets_parents_ghost, params.cache_ghost_p,
@@ -983,7 +983,7 @@ function _build_rhs!(RHS, u, params, time)
         
         @timeit_debug JEXPRESSO_TIMER "viscous_rhs_el" viscous_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, SD)
         
-        if inputs[:ladapt] == true
+        if params.lnc_facets
             DSS_nc_gather_rhs!(params.RHS_visc, SD, QT, params.rhs_diff_el,
                                params.mesh.non_conforming_facets,
                                params.mesh.non_conforming_facets_parents_ghost, params.cache_ghost_p,
@@ -1023,7 +1023,7 @@ function _build_rhs!(RHS, u, params, time)
     for ieq=1:neqs
         divide_by_mass_matrix!(@view(params.RHS[:,ieq]), params.vaux, params.Minv, neqs, npoin, AD)
         
-        if inputs[:ladapt] == true
+        if params.lnc_facets
             
             DSS_nc_scatter_rhs!(@view(params.RHS[:,ieq]), SD, QT,
                                 params.mesh.non_conforming_facets,

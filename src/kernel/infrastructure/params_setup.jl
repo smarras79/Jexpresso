@@ -450,6 +450,12 @@ function params_setup(sem,
     les_cross_section = build_les_cross_section(sem.mesh, nprofiles, nstress, TFloat)
     les_bottom_cache  = build_les_bottom_cache(sem.mesh, sem.metrics, inputs)
 
+    # Non-conforming (hanging) facets anywhere in the partitioned mesh? Only then do the
+    # non-conforming gather/scatter and the conformity projection in rhs! have work to do.
+    # With :ladapt => true on a mesh that was never refined there are none, the projection
+    # is the identity, and skipping it saves a global DSS per RK stage.
+    lnc_facets = (inputs[:ladapt] == true) && any_nonconforming_facets(sem.mesh)
+
     #------------------------------------------------------------------------------------
     # Populate params tuple to carry global arrays and constants around
     #------------------------------------------------------------------------------------
@@ -495,6 +501,7 @@ function params_setup(sem,
                   sgs,
                   sgs_stress,
                   timers,
+                  lnc_facets,
                   coupling = coupling)
 
     else
@@ -538,6 +545,7 @@ function params_setup(sem,
                   OUTPUT_DIR,
                   timers,
                   sem.interp, sem.project, sem.nparts, sem.distribute,
+                  lnc_facets,
                   coupling = coupling)
     end
 
