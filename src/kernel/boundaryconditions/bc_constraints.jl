@@ -34,7 +34,22 @@ const _BC_NP_SPLIT   = 0.2        # eigenvalue ratio separating distinct wall no
 const _BC_PERIODIC_TAGS = ("periodicx", "periodic1", "periodicy", "periodic3", "periodicz", "periodic2")
 
 bc_is_periodic_tag(tag) = tag in _BC_PERIODIC_TAGS
-bc_is_robin_tag(tag)    = occursin("robin", lowercase(String(tag)))
+# case-insensitive "robin" substring test without allocating (called per boundary face and RK stage)
+function bc_is_robin_tag(tag)
+    s = String(tag)                       # no copy when tag is already a String
+    n = ncodeunits(s)
+    @inbounds for i in 1:n-4
+        match = true
+        for k in 1:5
+            if lowercase(Char(codeunit(s, i+k-1))) != ('r', 'o', 'b', 'i', 'n')[k]
+                match = false
+                break
+            end
+        end
+        match && return true
+    end
+    return false
+end
 
 struct St_bc_constraints{TF}
     fixmask :: BitMatrix          # (npoin, neqs): value constrained -> tendency zeroed
@@ -206,7 +221,15 @@ end
 function apply_bc_constraints_state!(bc::St_bc_constraints, u, uaux, qe, t, coords,
                                      nx, ny, nz, mesh_bdy_face_type, poin_in_bdy_face, ngl,
                                      xmin, xmax, ymin, ymax, zmin, zmax, qbdy, neqs, npoin, inputs)
-    SOL   = inputs[:SOL_VARS_TYPE]
+    # function barrier: SOL_VARS_TYPE comes from the untyped inputs Dict
+    _apply_bc_constraints_state!(bc, u, uaux, qe, t, coords,
+                                 nx, ny, nz, mesh_bdy_face_type, poin_in_bdy_face, ngl,
+                                 xmin, xmax, ymin, ymax, zmin, zmax, qbdy, neqs, npoin, inputs[:SOL_VARS_TYPE])
+end
+
+function _apply_bc_constraints_state!(bc::St_bc_constraints, u, uaux, qe, t, coords,
+                                      nx, ny, nz, mesh_bdy_face_type, poin_in_bdy_face, ngl,
+                                      xmin, xmax, ymin, ymax, zmin, zmax, qbdy, neqs, npoin, SOL)
     lpert = (SOL == PERT())
 
     for iface = 1:size(mesh_bdy_face_type, 1)
