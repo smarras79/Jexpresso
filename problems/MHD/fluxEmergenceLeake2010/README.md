@@ -298,8 +298,9 @@ default, $2.8\times10^5$ and $5.6\times10^5$ steps to 2530 s.
 **Cost** (measured here, 4 MPI ranks, CPU): 0.5 s per step on REF 1 and about
 3 s per step on REF 2, i.e. ~160 core-hours for the default problem on REF 1
 and ~1900 core-hours on REF 2 (a day on 64-128 cores, before parallel losses).
-The field-free corona allows a ~15 times larger step (`JEXPRESSO_LK10_DT`;
-0.006 $t_0$ is safe on REF 1 until the tube reaches the photosphere). A
+The field-free corona allows a ~15 times larger step (`JEXPRESSO_LK10_DT`:
+0.006 $t_0$ on REF 1 ran to 1000 s with an acoustic CFL of 0.2, so 0.003 on
+REF 2; 1000 s took 80 minutes on REF 1 on 4 cores). A
 snapshot takes 84 MB on REF 2 (21 MB on REF 1): about 2.5 GB for the 30
 snapshots of the default output.
 
@@ -393,8 +394,33 @@ Short runs on 4 cores; the full runs are for a cluster (above).
 - **Rise through the convection zone** against the erratum's Fig. 2(a) (field-free
   corona, tube 2; the paper: "the initial rise of the flux tube is similar to
   the field-free corona case up to about 1000 s" for the quadrupole too):
-  RISE_PLACEHOLDER
-- **Not done here:** the emergence itself (after ~1000 s) and the
+  REF 1, 4 ranks, $\Delta t = 0.006\,t_0$, the dynamic viscosity (default). Height
+  of the axis in Mm:
+
+  | t (s) | 0 | 93 | 186 | 278 | 371 | 417 | 510 | 603 | 696 | 789 | 881 | 1000 |
+  |---|---|---|---|---|---|---|---|---|---|---|---|---|
+  | REF 1 | −1.79 | −1.70 | −1.57 | −1.41 | −1.22 | −1.14 | −0.95 | −0.77 | −0.60 | −0.45 | −0.34 | −0.22 |
+  | erratum | −1.84 | −1.71 | −1.58 | −1.40 | −1.21 | −1.12 | −0.87 | −0.63 | −0.41 | −0.19 | −0.06 | 0.12 |
+
+  To 420 s the axis follows the erratum's curve to 0.02 Mm. (At $t = 0$ it is at
+  −1.785 Mm: the zero of $B_x$ of the discrete curl on REF 1 lies 0.1 $L_0$ above
+  the analytic axis, −1.8 Mm; the erratum's curve starts at −1.84 Mm.) Then it
+  falls behind: 1.9 km/s between 420 and 650 s against the erratum's 2.6, and it
+  slows before the photosphere, which the erratum's axis crosses at 920 s; at
+  1000 s it is where the erratum's axis was at ~780 s. The kinematic viscosity
+  (`JEXPRESSO_LK10_NU=kinematic`) lowers it by less than 0.01 Mm to 417 s. REF 1
+  has three nodes across the tube's radius (94 km against the paper's 37.5 km),
+  which is the likely cause, untested here: **REF 1 is for smoke tests; the
+  comparison with the paper's figures needs REF 2.** The same run on REF 2 is
+  the cheapest check of that (field-free, ~50 core-hours, about 2 hours on 32
+  cores), before the day-long Fig. 3 run:
+
+  ```bash
+  JEXPRESSO_LK10_FIELD=none JEXPRESSO_LK10_TEND=1000 JEXPRESSO_LK10_DOUT=46.389 JEXPRESSO_LK10_DT=0.003 \
+      mpiexec -n 32 julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2010
+  python3 tools/plot_leake2010.py axis ref2=output/MHD/fluxEmergenceLeake2010/output-<date> --tmax 1000
+  ```
+- **Not done here:** the emergence after 1000 s, any REF 2 run, and the
   quadrupole run to 2530 s, i.e. the comparison with the erratum's Fig. 3, which
   needs the cluster (above). `plot_leake2010.py density` and `dome` produce
   the comparison: the erratum's dense dome reaches 3.5, 7.5, 10.4, 13.05 and
