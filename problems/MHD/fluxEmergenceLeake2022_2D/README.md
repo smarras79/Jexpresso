@@ -23,8 +23,9 @@ mpiexec -n 14 julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2022_2D
 ```
 
 Output goes to `./output/MHD/fluxEmergenceLeake2022_2D/<run>/`, a snapshot
-every $5t_0$ to $t = 400t_0$ (plus 142 and 184, the times of the 3D paper's
-Figs. 3–4). The keys of `user_inputs.jl`:
+every $5t_0$ to $t = 60t_0$, the emergence (`LK2D_TEND`; at 400, the 3D
+paper's length, also at 142 and 184, the times of its Figs. 3–4). The keys of
+`user_inputs.jl`:
 
 | key | values | meaning |
 |---|---|---|
@@ -143,9 +144,9 @@ element boundaries every $k$-th cell ($k_x$ in $x$, $k_z$ in $z$ for 4):
 
 | `LK2D_REF` | elements | $k$ | file | nodes ($N = 4$) | `:Δt` |
 |---|---|---|---|---|---|
-| 1 (default) | $32\times48$ | 16 | `LK22_2D_32x48.msh` | 24,897 | $2\times10^{-3}$ |
+| 1 | $32\times48$ | 16 | `LK22_2D_32x48.msh` | 24,897 | $2\times10^{-3}$ |
 | 2 | $64\times96$ | 8 | `LK22_2D_64x96.msh` | 98,945 | $10^{-3}$ |
-| 3 | $128\times192$ | 4 | `LK22_2D_128x192.msh` | 394,497 | $5\times10^{-4}$ |
+| 3 (default) | $128\times192$ | 4 | `LK22_2D_128x192.msh` | 394,497 | $5\times10^{-4}$ |
 | 4 | $32\times96$ | 16, 8 | `LK22_2D_32x96.msh` | 49,665 | $10^{-3}$ |
 
 `LK2D_REF = 1` is the cross-section of the 3D `LK22_REF = 2` mesh, 3 the
@@ -165,13 +166,14 @@ faces and midpoints of the 8 $L_0$ wide elements around the rope
 ($x = \pm4$, $\pm8$), and the corona above grows node-to-node stripes and
 hot spots. `LK2D_REF = 2` is the same columns split in two (elements 4
 wide, still 2 tall) and `LK2D_REF = 3` the paper's resolution (2 wide, 1
-tall); both ship. From $t = 0$ (a snapshot restarts only its own mesh), with
-everything else at its default (the reference-weighted operator, the floors
-at 0.2, a snapshot every $5t_0$):
+tall); both ship. The deck's defaults are this study: `LK2D_REF = 3`,
+$t = 60$, the stage diagnostics every 50 steps, the reference-weighted
+operator, the floors at 0.2, a snapshot every $5t_0$. From $t = 0$ (a
+snapshot restarts only its own mesh):
 
 ```bash
-LK2D_REF=2 LK2D_TEND=60 LK2D_DIAG=250 mpiexec -n 32 julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2022_2D
-LK2D_REF=3 LK2D_TEND=60 LK2D_DIAG=250 mpiexec -n 128 julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2022_2D
+mpiexec -n 256 julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2022_2D              # 128 x 192
+LK2D_REF=2 mpiexec -n 64 julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2022_2D    # 64 x 96
 ```
 
 The floors stay at 0.2: lowering the pressure floor only lets the
@@ -288,7 +290,8 @@ python3 $P $RUN --var Bz --symmetric --steps 1,11,21    # iter_N numbers
   nodes in the weak ambient field whose pressure collapses numerically: at
   0.01 they fall to the new floor, and the rope evolves the same
   (Verification).
-- **Stage diagnostics** (`LK2D_DIAG=n`, off by default): every `n`-th
+- **Stage diagnostics** (`LK2D_DIAG=n`, default 250, every 50 steps; 0
+  turns them off): every `n`-th
   Runge–Kutta stage, `#DIAG t=…` with the largest $|\mathbf v|$ and
   $|\mathbf v| + c_f$, the smallest $\rho/\rho_e$, the largest and smallest
   $p/p_e$, $T$, the nodes at the floors and the heights they span, the largest

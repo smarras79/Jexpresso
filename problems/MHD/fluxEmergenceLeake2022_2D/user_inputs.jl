@@ -8,9 +8,9 @@
 #
 # Environment overrides (README): LK2D_REF (mesh), LK2D_TEND, LK2D_OUT_DT, LK2D_DIAG,
 # LK2D_RESTART_DIR (+ LK2D_RESTART_TIME).
-#   LK2D_REF 1:  32 x 48 elements   (the 3D LK22_REF = 2 cross-section; default)
+#   LK2D_REF 1:  32 x 48 elements   (the 3D LK22_REF = 2 cross-section)
 #            2:  64 x 96 elements   (1/2 of the paper's resolution at :nop => 4)
-#            3: 128 x 192 elements  (the paper's 512 x 768 cells at :nop => 4)
+#            3: 128 x 192 elements  (the paper's 512 x 768 cells at :nop => 4; default)
 #            4:  32 x 96 elements   (1 in x, 2 in z: elements 2 tall at the bottom; README)
 #---------------------------------------------------------------------------------
 
@@ -125,13 +125,14 @@ function lk2d_positivity_limiter!(u, integrator, p, t)
     return nothing
 end
 
-# Stage diagnostics (LK2D_DIAG=n in the environment: every n-th stage; off by default), as the
+# Stage diagnostics (LK2D_DIAG=n in the environment: every n-th stage; default 250, every 50
+# steps; 0 turns them off), as the
 # 2014 case's LK_DIAG: the largest |v| and |v| + c_f, the smallest ρ/ρ_e, the largest and
 # smallest p/p_e, T, the nodes at the floors and the heights they span, the largest DynSGS +
 # explicit coefficient (ρ, momentum, B slots) and the explicit-diffusion number μΔt/Δh², then
 # where each extreme is.
 function lk2d_diag!(u, p, t)
-    n = parse(Int, get(ENV, "LK2D_DIAG", "0"))
+    n = parse(Int, get(ENV, "LK2D_DIAG", "250"))
     n <= 0 && return nothing
     lk2d_diag_calls[] += 1
     lk2d_diag_calls[] % n == 0 || return nothing
@@ -210,12 +211,12 @@ lk2d_dissipation(x, y) = (0.01, 0.01)
 
 function user_inputs()
 
-    LK2D_REF = parse(Int, get(ENV, "LK2D_REF", "1"))
+    LK2D_REF = parse(Int, get(ENV, "LK2D_REF", "3"))
     mesh     = ("LK22_2D_32x48.msh", "LK22_2D_64x96.msh", "LK22_2D_128x192.msh", "LK22_2D_32x96.msh")[LK2D_REF]
     # Δt for (|v| + c_f) Δt/Δh ≈ 0.25 at |v| + c_f ≈ 80 on the smallest LGL gap Δh of each mesh
     # (0.173 of the 4, 2, 1, 2 L₀ tall bottom elements), as the 3D deck at the same element size.
     Δt       = (2.0e-3, 1.0e-3, 5.0e-4, 1.0e-3)[LK2D_REF]
-    tend     = parse(Float64, get(ENV, "LK2D_TEND", "400.0"))
+    tend     = parse(Float64, get(ENV, "LK2D_TEND", "60.0"))
     dtout    = parse(Float64, get(ENV, "LK2D_OUT_DT", "5.0"))
     # Positivity floors (top of this file): the fractions of ρ_e(h), p_e(h) below which the stage
     # limiter raises ρ, p. The density floor also bounds the fast speed (∝ 1/√ρ) that the fixed
@@ -228,7 +229,7 @@ function user_inputs()
                                                       williamson_condition = false),
         :Δt                   => Δt,
         :tinit                => 0.0,
-        :tend                 => tend,       # 400: the 3D deck's (its simulation 4 erupts at 150-200 t₀)
+        :tend                 => tend,       # 60: the emergence (README, "Resolution study"); the 3D deck's 400 (its simulation 4 erupts at 150-200 t₀)
         :diagnostics_at_times => filter(<=(tend), sort(unique(vcat(collect(0.0:dtout:tend), [142.0, 184.0])))),
         :conservation_every   => 10,
         :conservation_slots   => [1, 4],
