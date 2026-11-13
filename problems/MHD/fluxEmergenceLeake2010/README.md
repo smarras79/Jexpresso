@@ -32,8 +32,9 @@ conserved-form Marras–Nazarov DynSGS operator as the only shock capturing, no
 limiter. On top of it come the paper's explicit viscosity and anomalous
 resistivity (a 2D version of the `:mhd_dissipation` hook of
 [`fluxEmergenceLeake2014`](../fluxEmergenceLeake2014/README.md), and a new
-`:mhd_anomalous_eta`), its energy-relaxation term, and an initialization of the
-magnetic field that is discretely divergence-free.
+`:mhd_anomalous_eta`), its energy-relaxation term, an initialization of the
+magnetic field that is discretely divergence-free, and a divergence-preserving
+(curl) form of the DynSGS resistivity (`:dsgs_curl_resistivity`, new).
 
 ## Run
 
@@ -41,8 +42,13 @@ magnetic field that is discretely divergence-free.
 mpiexec -n 64 julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2010
 ```
 
-(`julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2010` serially; with
-MPICH_jll: `julia --project=. -e 'using MPI; run(`$(MPI.mpiexec()) -n 4 $(Base.julia_cmd()) --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2010`)'`).
+or serially `julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2010`; with
+the MPI bundled in Julia (MPICH_jll, no system `mpiexec`):
+
+```bash
+julia --project=. -e 'using MPI; run(`$(MPI.mpiexec()) -n 4 $(Base.julia_cmd()) --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2010`)'
+```
+
 Output (VTU) goes to `./output/MHD/fluxEmergenceLeake2010/<run>/` every
 $5t_0 = 116$ s and at the times of the erratum's figures.
 
@@ -60,6 +66,8 @@ editing the deck:
 | `JEXPRESSO_LK10_DT` | $t_0$ units | overrides the time step |
 | `JEXPRESSO_LK10_MCZ` | default 1.3 | polytropic index $m$ of the convection zone, $p\propto T^{m+1}$ |
 | `JEXPRESSO_LK10_RELAX_YMIN` | $L_0$ units, default $-\infty$ | apply the energy relaxation only above this height |
+| `JEXPRESSO_LK10_TUBE_EQ` | `thermal` (default), `relaxed` | tube in thermal equilibrium with its surroundings (the paper), or on the relaxed relation $\rho T_0(\rho) = p$ |
+| `JEXPRESSO_LK10_CURLB` | `1` (default), `0` | DynSGS resistivity of the in-plane field in curl form, or the component Laplacian of the parent case |
 | `JEXPRESSO_LK10_CMIN` | default 0 | DynSGS background floor $C_{min}$ |
 | `JEXPRESSO_LK10_FLOORS` | `0` (default), `1` | positivity floors as the Runge–Kutta stage limiter |
 
@@ -87,7 +95,7 @@ $v_0$ = 6.5 km/s):
 | time $t_0 = L_0/v_0$ | 23.19 s (the "23 s" of the paper's Eq. 6) |
 | field $B_0 = (4\pi p_{ph})^{1/2}$ | 1030.6 G; magnetic pressure $\tfrac12\lvert\mathbf B\rvert^2$ |
 | gravity | $g = g_\odot L_0/v_0^2 = 0.98273$ ($g_\odot$ = 274 m s$^{-2}$) |
-| gas law | $p = \rho T$, $\gamma = 5/3$, mean molecular weight $\mu$ = 1.125 |
+| gas law | $p = \rho T$, $\gamma = 5/3$, mean molecular weight $\mu$ = 1.125 (fitted, below) |
 
 **Two constants are not printed in the paper**: the gas constant (equivalently
 $\mu$) and the photospheric pressure. Both, and the convection-zone gradient
@@ -107,8 +115,9 @@ T(y) = \begin{cases} 1 - \dfrac{g}{m+1}\,y & y\le 0\\[4pt]
 $$
 
 The paper sets $m = 1/(\gamma-1)$ and calls the polytrope "marginally unstable
-to convection"; its Fig. 3(a) has $m \approx 1.3$, which is what "marginally
-unstable" means, and is the default (`JEXPRESSO_LK10_MCZ`, 1.5 = adiabatic).
+to convection"; its Fig. 3(a) has $p\propto T^{2.3}$, i.e. $m \approx 1.3$, a
+slightly super-adiabatic (unstable) gradient. That is the default
+(`JEXPRESSO_LK10_MCZ`; 1.5 is the adiabatic polytrope).
 The density falls from 18.8 at $y = -3$ Mm to $5.8\times10^{-8}$ at the
 transition region and $6.8\times10^{-10}$ at 90 Mm. Above about 12 Mm the
 paper's Fig. 3 shows a constant gas pressure, which is not hydrostatic (with
@@ -154,7 +163,10 @@ paper's dissipation and its energy relaxation:
   in code units 0.01326. It is applied as a **kinematic** viscosity of 0.01326
   (Re = 75 at every height), as the 3D case does with the same authors'
   viscosity (`fluxEmergenceLeake2014`, Deviations 1): taken as dynamic it would
-  be a kinematic viscosity of $10^6$ in the corona.
+  be a kinematic viscosity of $10^6$ in the corona. It enters through the
+  `:mhd_dissipation` hook as a Laplacian of the momentum (the paper's stress
+  tensor without its $\nabla\cdot\mathbf v$ part), and the kinetic energy it
+  removes stays in $E$ as heat.
 - **Anomalous resistivity** (Eqs. 7–8), $\eta = \eta_0\max(0, \lvert j\rvert/j_{crit} - 1)$,
   $\eta_0 = 1.6\times10^{-11}$ s, $j_{crit} = 2.07\times10^7$ statA cm$^{-2}$: a
   magnetic diffusivity $\eta_0c^2/4\pi = 1.18\times10^{-4}$ and
@@ -173,13 +185,22 @@ paper's dissipation and its energy relaxation:
   with the local density, as in the authors' Lare runs (Arber, Haynes & Leake
   2007, their Eq. 16). It acts in the convection zone ($\tau\approx1$ s) and the
   photosphere (23 s) and is negligible above ~1 Mm. Applied everywhere it also
-  cools the buoyant tube, whose density deficit drops from 33% to ~21%; the
-  paper does not say where the term acts (`JEXPRESSO_LK10_RELAX_YMIN`).
+  cools the buoyant tube within its first second (the tube is in thermal
+  equilibrium at a lower density than its surroundings, so $\epsilon_0(\rho)$ is
+  that of a higher, cooler layer): the tube contracts and keeps a density
+  deficit of ~21% instead of 33%. The paper does not say where the term acts;
+  the rise of the tube decides it. Field-free corona, tube 2, REF 1, axis rise
+  speed between 139 and 186 s: 1.55 km/s with the relaxation everywhere,
+  2.53 km/s with it only above the photosphere (`JEXPRESSO_LK10_RELAX_YMIN=0`),
+  against 1.64 km/s in the erratum's Fig. 2(a). It acts everywhere by default.
+  (`JEXPRESSO_LK10_TUBE_EQ=relaxed` starts the tube in the contracted state,
+  without the transient.)
 - **DynSGS** (`DSGS_MHD`, conserved form on the departure from the reference
   state, weighted by $\rho_e$; legacy sensor; element norms; fast-speed floors
   and thermal-energy residual for the low-β corona; $C_R = 1$,
-  $C_{max} = 0.5$). It replaces the numerical dissipation of Lare (shock
-  viscosity and remap) and is the only shock capturing. The background floor
+  $C_{max} = 0.5$); the in-plane field is diffused in curl form (next sections).
+  It replaces the numerical dissipation of Lare (shock viscosity and remap) and
+  is the only shock capturing. The background floor
   $C_{min}$ of the parent case is off: $C_{min}\Delta c_f$ with $c_f\approx270$
   in the corona would be a diffusivity of ~4 $L_0v_0$, two orders of magnitude
   above Lare's own estimate of its numerical resistivity.
@@ -280,6 +301,7 @@ matplotlib). `RUN` is `output/MHD/fluxEmergenceLeake2010/output-<date>`.
 ```bash
 python3 tools/plot_leake2010.py density  $RUN            # Erratum Fig. 3: log rho, field lines, B_x arrows, 920-2530 s
 python3 tools/plot_leake2010.py shear    $RUN            # Erratum Fig. 1: B_z (G) and field lines, 920-2254 s
+python3 tools/plot_leake2010.py dome     tube2=$RUN      # top of the dense dome on x = 0 vs time, with the erratum's Fig. 3 values
 python3 tools/plot_leake2010.py axis     tube2=$RUN      # Erratum Fig. 2(a): axis height vs time, with the erratum's curves
 python3 tools/plot_leake2010.py eshear   tube2=$RUN      # Erratum Figs. 2(b,c), 5: E_shear above 1.2 and 5 Mm (Eq. 20)
 python3 tools/plot_leake2010.py profiles $RUN            # Fig. 3(a,b) at t = 0, with the paper's values
@@ -287,13 +309,43 @@ python3 tools/plot_leake2010.py profiles $RUN            # Fig. 3(a,b) at t = 0,
 
 The density panels use the paper's window ($\lvert x\rvert < 12.75$ Mm,
 $-3 < y < 19.5$ Mm), colour scale ($\log_{10}\rho$ from −16 to −5.3 g cm$^{-3}$, jet),
-field lines as equally spaced contours of $A_z$ (obtained by integrating
-$B_x$, $B_y$ on the node lattice) and arrows along $B_x$ at $x = 0$,
-$y$ = 3, 11, 16 Mm. `axis` writes one CSV per run, `eshear` too.
+field lines as equally spaced contours of $A_z$ (integrated from $B_x$, $B_y$
+element by element, exactly for the degree-4 interpolant) and arrows along
+$B_x$ at $x = 0$, $y$ = 3, 11, 16 Mm. The axis of the tube is where $B_x$ on
+$x = 0$ changes sign from − to + (the paper's definition), the crossing nearest
+the peak of $B_z$. `axis`, `dome` and `eshear` write one CSV per run.
 
 ## Verification here
 
-VERIFICATION_PLACEHOLDER
+Short runs on 4 cores; the full runs are for a cluster (above).
+
+- **Initial state against the paper.** At $x = 0$, $t = 0$
+  (`plot_leake2010.py profiles`), $T$ and $p$ lie on the curves of the paper's
+  Fig. 3(a) and $\beta$ on its Fig. 3(b) (98 G quadrupole). The quadrupole field
+  on $x = 0$ is the paper's to within 1% at every height for all three
+  strengths, the null at 3.39 Mm against 3.375 Mm, the surface maxima
+  195.6, 97.8, 65.2 G against "197, 98, 66 G"; the 52 G dipole within 0.3%.
+  The density of the erratum's Fig. 3 away from the tube (read off its colour
+  scale at $x = -10$ Mm, 920 s) is this atmosphere's to 0.1 dex between 0.5 and
+  3 Mm, and $\log_{10}\rho$ = −14.38 in its corona against −14.36 here.
+- **Background at rest** (`JEXPRESSO_LK10_TUBE=0`, quadrupole, REF 1, 4
+  ranks): after 220 steps every field equals the initial one to the last bit;
+  mass and energy unchanged to all printed digits.
+- **Divergence of B**: the table above; with the defaults $\psi$ stays at
+  round-off ($10^{-15}$) through the tube's initial contraction, in every
+  configuration run (quadrupole, strong quadrupole with tube 3, 52 G dipole with
+  tube 1).
+- **Rise through the convection zone** against the erratum's Fig. 2(a) (field-free
+  corona, tube 2; the paper: "the initial rise of the flux tube is similar to
+  the field-free corona case up to about 1000 s" for the quadrupole too):
+  RISE_PLACEHOLDER
+- **Not done here:** the emergence itself (after ~1000 s) and the
+  quadrupole run to 2530 s, i.e. the comparison with the erratum's Fig. 3, which
+  needs the cluster (above). `plot_leake2010.py density` and `dome` produce
+  the comparison: the erratum's dense dome reaches 3.5, 7.5, 10.4, 13.05 and
+  14.7 Mm on $x = 0$ at 920, 1380, 1610, 1955 and 2185 s (log $\rho$ > −13), and
+  its flux rope sits at $(x, y) \approx (0, 13.5)$ Mm at 2185 s and $(4.5, 13.5)$ Mm
+  at 2530 s.
 
 ## Files
 
@@ -307,9 +359,14 @@ VERIFICATION_PLACEHOLDER
 | `user_primitives.jl` | the reference-weighted DynSGS primitives; output $T$, $\beta$, $\log_{10}\rho$ [g cm⁻³], $B_z$ [G] |
 | `LK10.geo`, `LK10_ref{1,2}.msh` | the graded mesh |
 
-Source changes for this case: `compute_dsgs_viscosity!(::DSGS_MHD, ::NSD_2D)`
-takes the per-element `νphys`, `ηphys` of the 3D kernel, and
-`_mhd_anomalous_eta_2d!` (`src/kernel/physics/SGS.jl`); `_mhd_dissipation_2d`
-fills them from `:mhd_dissipation` and `:mhd_anomalous_eta`
-(`src/kernel/operators/rhs.jl`); both keys are documented in
-`src/io/mod_inputs.jl`. Decks that set neither are unchanged.
+Source changes for this case (all opt-in; decks that set none of the three
+keys are unchanged):
+
+- `compute_dsgs_viscosity!(::DSGS_MHD, ::NSD_2D)` takes the per-element
+  `νphys`, `ηphys` of the 3D kernel; `_mhd_dissipation_2d` (`rhs.jl`) fills
+  them from `:mhd_dissipation` (static, $(x, y)\to(\nu, \eta)$) and
+  `:mhd_anomalous_eta` (`_mhd_anomalous_eta_2d!`, `SGS.jl`).
+- `:dsgs_curl_resistivity`: `_dsgs_curl_resistive_2d!` (`SGS.jl`), called from
+  `viscous_rhs_el!(…, ::NSD_2D)`, replaces the Laplacian of $B_x$, $B_y$ by
+  the strong-form curl of the nodal $\eta j_z$ (section "Divergence of B").
+- The three keys are documented in `src/io/mod_inputs.jl`.

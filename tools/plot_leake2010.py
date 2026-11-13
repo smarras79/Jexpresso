@@ -323,7 +323,7 @@ def eshear(g, y1):
     Y = g["Y"][m]
     num = np.trapezoid(np.trapezoid(Bz[m] ** 2, g["X"], axis=1), Y)
     den = np.trapezoid(np.trapezoid((Bx ** 2 + By ** 2 + Bz ** 2)[m], g["X"], axis=1), Y)
-    return num / den
+    return num / den if den > 0 else 0.0
 
 
 def cmd_eshear(a):
