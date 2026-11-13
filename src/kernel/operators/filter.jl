@@ -987,10 +987,10 @@ function filter_step!(u, params, t)
             filter!(u, params, t, params.uaux, params.mesh.connijk, params.metrics.Je,
                     params.SD, params.SOL_VARS_TYPE;
                     connijk_lag = params.mesh.connijk_lag, Je_lag = params.metrics_lag.Je,
-                    ladapt = params.inputs[:ladapt])
+                    ladapt = params.lnc_facets)
         else
             filter!(u, params, t, params.uaux, params.mesh.connijk, params.metrics.Je,
-                    params.SD, params.SOL_VARS_TYPE; ladapt = params.inputs[:ladapt])
+                    params.SD, params.SOL_VARS_TYPE; ladapt = params.lnc_facets)
         end
     else
         filter_step_gpu!(u, params, params.SD)
