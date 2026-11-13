@@ -275,7 +275,14 @@ end
 #
 function apply_bc_constraints_state!(bc::St_bc_constraints, u, uaux, qe, t, coords,
                                      xmin, xmax, ymin, ymax, zmin, zmax, qbdy, neqs, npoin, inputs)
-    SOL   = inputs[:SOL_VARS_TYPE]
+    # Function barrier: SOL_VARS_TYPE comes from the untyped inputs Dict; passed as an argument,
+    # the per-node user_bc_dirichlet! call below is dispatched statically (no allocation).
+    _apply_bc_constraints_state!(bc, u, uaux, qe, t, coords,
+                                 xmin, xmax, ymin, ymax, zmin, zmax, qbdy, neqs, npoin, inputs[:SOL_VARS_TYPE])
+end
+
+function _apply_bc_constraints_state!(bc::St_bc_constraints, u, uaux, qe, t, coords,
+                                      xmin, xmax, ymin, ymax, zmin, zmax, qbdy, neqs, npoin, SOL)
     lpert = (SOL == PERT())
     SD    = bc.SD
     d     = bc.nd
