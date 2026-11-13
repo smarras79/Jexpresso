@@ -181,12 +181,24 @@ function lk2d_diag!(u, p, t)
                 round(glo[9], sigdigits=3), " μΔt/Δh²max=", round(glo[10], sigdigits=3),
                 cnt[1] + cnt[2] > 0 ? string(" floors at y=", round(-glo[11], digits=1), "..", round(glo[12], digits=1)) : "")
     end
-    for (val, g, x, name) in ((wmax, glo[2], xw, "(|v|+cf)max"), (vmax, glo[1], xv, "|v|max"),
-                              (-ρrmin, glo[3], xρ, "ρ/ρe min"), (prmax, glo[4], xp, "p/pe max"),
-                              (-prmin, glo[5], xpm, "p/pe min"), (Dmax, glo[10], xD, "μΔt/Δh² max"))
-        val == g && println(" #DIAG   ", name, " at (x, y) = ", round.(x, digits=2), " (rank ", MPI.Comm_rank(comm), ")")
+    # Where each extreme is: the ranks that hold one send its place to rank 0, which prints them
+    # all (a rank printing its own lines interleaves them with rank 0's summary line).
+    items = ((wmax, glo[2], xw, "(|v|+cf)max"), (vmax, glo[1], xv, "|v|max"),
+             (-ρrmin, glo[3], xρ, "ρ/ρe min"), (prmax, glo[4], xp, "p/pe max"),
+             (-prmin, glo[5], xpm, "p/pe min"), (Dmax, glo[10], xD, "μΔt/Δh² max"))
+    loc = zeros(3, length(items))
+    for (k, (val, g, x, _)) in enumerate(items)
+        val == g && (loc[:, k] .= (1.0, x[1], x[2]))
     end
-    flush(stdout)
+    gat = reshape(MPI.Allgather(vec(loc), comm), 3, length(items), :)
+    if MPI.Comm_rank(comm) == 0
+        for (k, (_, _, _, name)) in enumerate(items)
+            r = findfirst(j -> gat[1, k, j] == 1.0, axes(gat, 3))
+            r === nothing || println(" #DIAG   ", name, " at (x, y) = (", round(gat[2, k, r], digits=2), ", ",
+                                     round(gat[3, k, r], digits=2), ") (rank ", r - 1, ")")
+        end
+        flush(stdout)
+    end
     return nothing
 end
 

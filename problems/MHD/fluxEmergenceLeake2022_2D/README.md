@@ -157,6 +157,51 @@ the vertical (Notes, "Vertical resolution"), the cross-section of the 3D
 $(|\mathbf v| + c_f)\Delta t/\Delta h \approx 0.25$ at $|\mathbf v| + c_f = 80$,
 as the 3D deck.
 
+## Resolution study
+
+The emergence at `LK2D_REF = 4` (Verification) has two features at the
+element scale: the nodes whose pressure collapses to the floor sit on the
+faces and midpoints of the 8 $L_0$ wide elements around the rope
+($x = \pm4$, $\pm8$), and the corona above grows node-to-node stripes and
+hot spots. `LK2D_REF = 2` is the same columns split in two (elements 4
+wide, still 2 tall) and `LK2D_REF = 3` the paper's resolution (2 wide, 1
+tall); both ship. From $t = 0$ (a snapshot restarts only its own mesh), with
+everything else at its default (the reference-weighted operator, the floors
+at 0.2, a snapshot every $5t_0$):
+
+```bash
+LK2D_REF=2 LK2D_TEND=60 LK2D_DIAG=250 mpiexec -n 32 julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2022_2D
+LK2D_REF=3 LK2D_TEND=60 LK2D_DIAG=250 mpiexec -n 128 julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2022_2D
+```
+
+The floors stay at 0.2: lowering the pressure floor only lets the
+collapsing nodes get colder, and the split energy flux changes nothing
+(Verification). About 200 elements per rank is plenty (6,144 and 24,576
+elements); each rank holds about 2.5 GB before the problem (Julia and the
+packages), the problem itself 0.2 GB per 50,000 nodes. `LK2D_REF = 2` has
+98,945 nodes and 60,000 steps to $t = 60$ at $\Delta t = 10^{-3}$,
+`LK2D_REF = 3` 394,497 nodes and 120,000 steps. A restart needs the rank
+count of the run that wrote the snapshot (Restart).
+
+What to look at, against the `LK2D_REF = 4` run (`tools/plot_leake2022_2d.py`,
+Output and figures):
+
+| $t$ | rope axis | rope top | $T = 12.25$ on $x = 0$ | nodes at the floors | largest $T$ |
+|---|---|---|---|---|---|
+| 25 | $-6.7$ | $-1.1$ | 17.0 | 0 | 173 |
+| 30 | $-4.6$ | 3.3 | 17.0 | 12 | 166 |
+| 35 | $-2.3$ | 3.0 | 24.0 | 34 | 291 |
+| 40 | $-2.0$ | 6.7 | 25.4 | 34 | 279 |
+
+(`evol`; the first `positivity floors` line at $t = 25.7$, $10^6$ hits by
+36.7; `snap --var T --times 35` for the stripes and hot spots, `snap --var
+p_rel --times 30` for the collapsed nodes, isolated dark dots at
+$x = \pm4$, $\pm8$). The questions: do the floor hits and the stripes go
+away when the elements are 4 wide, or do they reappear at the new
+elements' faces, $x = \pm2$, $\pm4$? The first means the `LK2D_REF = 4`
+emergence is under-resolved around the rope; the second, that the collapse
+is in the discretization, not the resolution.
+
 ## Restart
 
 As the 3D Leake cases: any snapshot restarts the run (same mesh and rank
@@ -249,7 +294,8 @@ python3 $P $RUN --var Bz --symmetric --steps 1,11,21    # iter_N numbers
   $p/p_e$, $T$, the nodes at the floors and the heights they span, the largest
   DynSGS + explicit coefficient of the $\rho$, momentum and field slots and the
   largest explicit-diffusion number $\mu\Delta t/\Delta h^2$, then where each
-  extreme is. `LK2D_DIAG=25` is every 5 steps.
+  extreme is (gathered on rank 0, which prints every line). `LK2D_DIAG=25`
+  is every 5 steps.
 - **Vertical resolution.** At $N = 4$ an element couples all its nodes: a
   disturbance at its bottom node also forces its top node, which, with $\rho$
   falling by a factor $C$ across the element, gets of order $C/10$ times the
@@ -427,6 +473,14 @@ On 4 threads at `LK2D_REF = 1`, and 4 where stated; nothing was run here at
   largest 281 against 291), node-to-node jumps of 40 (44). The split takes
   the edge off the coronal heating and nothing else; the collapse is in the
   weak-field nodes' pressure itself, not in how it is diffused.
+- **The resolution-study meshes** (Resolution study). `LK2D_REF = 2` on 2
+  MPI ranks of 2 threads from $t = 0$ to 1: 98,945 nodes in 257 columns of
+  385, the elements 4 wide and 2 tall around the rope; the atmosphere
+  matches the closed form to $7\times10^{-14}$, the CFL monitor reads 0.155
+  at $t = 0$ (as `LK2D_REF = 4`), no floor fires, $T \le 150.3$ and
+  $|\mathbf v| \le 0.08$ to $t = 1$; 0.65 s per step. `LK2D_REF = 3` in one
+  process: the mesh (394,497 nodes, $\Delta h = 0.173$) reads, $c_h = 53.4$,
+  the CFL monitor 0.155, ten steps without a floor.
 
 ## Files
 

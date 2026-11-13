@@ -191,12 +191,22 @@ function lk_diag!(u, p, t)
                 round(glo[11], sigdigits=3), " μΔt/Δh²max=", round(glo[12], sigdigits=3),
                 cnt[1] + cnt[2] > 0 ? string(" floors at z=", round(-glo[13], digits=1), "..", round(glo[14], digits=1)) : "")
     end
-    # where: each extreme is printed by the rank that holds it
-    for (val, g, x, name) in ((wmax, glo[2], xw, "(|v|+cf)max"), (vmax, glo[1], xv, "|v|max"),
-                              (-ρrmin, glo[3], xρ, "ρ/ρe min"), (prmax, glo[4], xp, "p/pe max"),
-                              (-prmin, glo[5], xpm, "p/pe min"),
-                              (Dmax, glo[12], xD, "μΔt/Δh² max"))
-        val == g && println(" #DIAG   ", name, " at ", round.(x, digits=2), " (rank ", MPI.Comm_rank(comm), ")")
+    # Where each extreme is: the ranks that hold one send its place to rank 0, which prints them
+    # all (a rank printing its own lines interleaves them with rank 0's summary line).
+    items = ((wmax, glo[2], xw, "(|v|+cf)max"), (vmax, glo[1], xv, "|v|max"),
+             (-ρrmin, glo[3], xρ, "ρ/ρe min"), (prmax, glo[4], xp, "p/pe max"),
+             (-prmin, glo[5], xpm, "p/pe min"), (Dmax, glo[12], xD, "μΔt/Δh² max"))
+    loc = zeros(4, length(items))
+    for (k, (val, g, x, _)) in enumerate(items)
+        val == g && (loc[:, k] .= (1.0, x[1], x[2], x[3]))
+    end
+    gat = reshape(MPI.Allgather(vec(loc), comm), 4, length(items), :)
+    if MPI.Comm_rank(comm) == 0
+        for (k, (_, _, _, name)) in enumerate(items)
+            r = findfirst(j -> gat[1, k, j] == 1.0, axes(gat, 3))
+            r === nothing || println(" #DIAG   ", name, " at (", join(round.(gat[2:4, k, r], digits=2), ", "),
+                                     ") (rank ", r - 1, ")")
+        end
     end
     get(ENV, "LK_DIAG_TR", "0") == "1" && lk_diag_tr!(u, p, t)
     flush(stdout)
@@ -240,9 +250,19 @@ function lk_diag_tr!(u, p, t)
         " |δB|/|Be|=", round(glo[4], sigdigits=3), " |ψ|=", round(glo[5], sigdigits=3),
         " μ=", round(glo[6], sigdigits=3))
     names = ("|v|", "|δp/pe|", "|δρ/ρe|", "|δB|/|Be|", "|ψ|", "μ")
+    # the places, gathered on rank 0 as in lk_diag! (slot 5: the sign of δp/pe at its largest)
+    loc = zeros(5, 6)
     for k = 1:6
-        vals[k] == glo[k] && glo[k] > 0 && println(" #DIAG TR   ", names[k], " at ", round.(locs[k], digits=2),
-                                                   k == 2 ? string(" (δp/pe = ", round(sgn, sigdigits=3), ")") : "")
+        vals[k] == glo[k] && glo[k] > 0 && (loc[:, k] .= (1.0, locs[k][1], locs[k][2], locs[k][3], k == 2 ? sgn : 0.0))
+    end
+    gat = reshape(MPI.Allgather(vec(loc), comm), 5, 6, :)
+    if MPI.Comm_rank(comm) == 0
+        for k = 1:6
+            r = findfirst(j -> gat[1, k, j] == 1.0, axes(gat, 3))
+            r === nothing && continue
+            println(" #DIAG TR   ", names[k], " at (", join(round.(gat[2:4, k, r], digits=2), ", "), ")",
+                    k == 2 ? string(" (δp/pe = ", round(gat[5, k, r], sigdigits=3), ")") : "", " (rank ", r - 1, ")")
+        end
     end
     return nothing
 end
