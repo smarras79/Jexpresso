@@ -1,37 +1,75 @@
 nelemx = 10;
-nelemy = 8;
+nelemy = 10;
 nelemz = 1;
 
-xmin = 0;
-xmax = 10;
-ymin =  0;
-ymax =  8;
+xmin = -10000;
+xmax = 10000;
+ymin = 0;
+ymax = 20000;
+ymid = (ymax+ymin)/2;
 gridsize = (xmax-xmin) / nelemx;
 
-Point(1) = {xmin, ymin, gridsize};
-Point(2) = {xmax, ymin, gridsize};
-Point(3) = {xmax, ymax, gridsize};
-Point(4) = {xmin, ymax, gridsize};
+Point(1) = {xmin, ymin, 0};
+Point(2) = {0, ymin, 0};
+Point(3) = {xmax, ymin, 0};
+Point(4) = {xmax, ymid, 0};
+Point(5) = {xmax, ymax, 0};
+Point(6) = {0, ymax, 0};
+Point(7) = {xmin, ymax, 0};
+Point(8) = {xmin, ymid, 0};
+Point(9) = {0, ymid, 0};
 
 Line(1) = {1, 2};
 Line(2) = {2, 3};
 Line(3) = {3, 4};
-Line(4) = {4, 1};
+Line(4) = {4, 5};
+Line(5) = {5, 6};
+Line(6) = {6, 7};
+Line(7) = {7, 8};
+Line(8) = {8, 1};
+Line(9) = {2, 9};
+Line(10) = {9, 6};
+Line(11) = {4, 9};
+Line(12) = {9, 8};
 
 npx = nelemx + 1;
 npy = nelemy + 1;
 
 //Horizontal sides
-Transfinite Line {1, 3} = npx; //Ceil((xmax-xmin)/gridsize) Using Progression 1;
-//Vertical sides
-Transfinite Line {4, -2} = npy Using Progression 1.0;
+Transfinite Line {1, 12} = npx Using Progression 1;
+Transfinite Line {12, 6} = npx Using Progression 1;
+Transfinite Line {2, 11} = npx Using Progression 1;
+Transfinite Line {11, 5} = npx Using Progression 1;
 
-Line Loop(11) = {4, 1, 2, 3};
+//Vertical sides
+Transfinite Line {8, 9} = npy Using Progression 1.0;
+Transfinite Line {7, 10} = npy Using Progression 1.0;
+Transfinite Line {9, 3} = npy Using Progression 1.0;
+Transfinite Line {10, 4} = npy Using Progression 1.0;
+
+Line Loop(11) = {8, 1, 9, 12};
 Plane Surface(12) = {11};
 
 Transfinite Surface {12};
 Recombine Surface {12};
 
+Line Loop(21) = {7, -12, 10, 6};
+Plane Surface(22) = {21};
+
+Transfinite Surface {22};
+Recombine Surface {22};
+
+Line Loop(31) = {-9, 2, 3, 11};
+Plane Surface(32) = {31};
+
+Transfinite Surface {32};
+Recombine Surface {32};
+
+Line Loop(41) = {-10, -11, 4, 5};
+Plane Surface(42) = {41};
+
+Transfinite Surface {42};
+Recombine Surface {42};
 
 //-------------------------------------------------------------------------------
 //Boundary tagging
@@ -54,41 +92,8 @@ Recombine Surface {12};
 // in a single group (with prescribed tag 5); and a physical surface with name
 // "My surface" (with an automatic tag) containing the geometrical surface 1:
 //
-Physical Point("boundary",   1) = {1, 2, 3, 4};
-Physical Curve("inflow",     2) = {4};
-Physical Curve("outflow",    3) = {2};
-Physical Curve("free_slip1",  4) = {3};
-Physical Curve("free_slip2",   5) = {1};
-Physical Surface("domain") = {1};
-
-//
-// You can save the mesh in older
-// versions of the MSH format:
-//
-// - In the GUI: open `File->Export', enter your `filename.msh' and then pick
-//   the version in the dropdown menu.
-// - On the command line: use the `-format' option (e.g. `gmsh file.geo -format
-//   msh2 -2').
-// - In a `.geo' script: add `Mesh.MshFileVersion = x.y;' for any version
-//   number `x.y'.
-// - As an alternative method, you can also not specify the format explicitly,
-//   and just choose a filename with the `.msh2' or `.msh4' extension.
-
-// Note that starting with Gmsh 3.0, models can be built using other geometry
-// kernels than the default built-in kernel. By specifying
-//
-//   SetFactory("OpenCASCADE");
-//
-// any subsequent command in the `.geo' file would be handled by the OpenCASCADE
-// geometry kernel instead of the built-in kernel. Different geometry kernels
-// have different features. With OpenCASCADE, instead of defining the surface by
-// successively defining 4 points, 4 curves and 1 curve loop, one can define the
-// rectangular surface directly with
-//
-//   Rectangle(2) = {.2, 0, 0, .1, .3};
-//
-// The underlying curves and points could be accessed with the `Boundary' or
-// `CombinedBoundary' operators.
-//
-// See e.g. `t16.geo', `t18.geo', `t19.geo' or `t20.geo' for complete examples
-// based on OpenCASCADE, and `demos/boolean' for more.
+Physical Point("boundary",   1) = {1, 2, 3, 4, 5, 6, 7, 8};
+//Physical Curve("solid",  2) = {3};
+Physical Curve("solid",  3) = {3, 4, 5, 6, 7, 8};
+Physical Curve("bottom",  4) = {1, 2};
+Physical Surface("domain") = {12, 22, 32, 42};

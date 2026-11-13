@@ -54,7 +54,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             r0 = 2000.0 #m
         
             θref = 300.0 #K
-            θc   =   2.0 #K
+            θc   =   0.0 #K
             for ip = 1:mesh.npoin
             
                 x, y = mesh.coords[1,ip], mesh.coords[2,ip]

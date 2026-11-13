@@ -14,7 +14,11 @@ function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::Abst
     qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3])
     qbdy[2] = (q[2]+qe[2] - qnl*nx) - qe[2]
     qbdy[3] = (q[3]+qe[3] - qnl*ny) - qe[3]
-    
+    if (tag == "bottom")
+        qbdy[4] = 0.2
+    elseif (tag == "top")
+#        qbdy[4] = q[1]*299.0
+    end
       #else 
        # qbdy[2] = 0.0
         #qbdy[3] = 0.0
