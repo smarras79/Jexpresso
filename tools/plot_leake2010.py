@@ -167,10 +167,25 @@ def bx_arrows(ax, g, heights, xlen=2.5):
                                     fc="w", ec="k", lw=0.6), zorder=4)
 
 
+def _layout(fig, axs):
+    """Margins in inches, so that one panel or six keep their labels and room for the colour bar."""
+    w, h = fig.get_size_inches()
+    fig.subplots_adjust(left=0.62 / w, right=1 - 0.12 / w, top=1 - 0.1 / h, bottom=1.05 / h,
+                        wspace=0.2, hspace=0.14)
+
+
+def _cbar_axes(fig, axs):
+    """A horizontal colour bar under the panels, spanning them."""
+    w, h = fig.get_size_inches()
+    x0 = axs[-1, 0].get_position().x0
+    x1 = axs[-1, -1].get_position().x1
+    return fig.add_axes([x0 + 0.15 * (x1 - x0), 0.28 / h, 0.7 * (x1 - x0), 0.12 / h])
+
+
 def panel_grid(n):
     ncol = 3 if n > 4 else n
     nrow = int(np.ceil(n / ncol))
-    fig, axs = plt.subplots(nrow, ncol, figsize=(3.4 * ncol, 3.0 * nrow + 0.6), squeeze=False)
+    fig, axs = plt.subplots(nrow, ncol, figsize=(3.4 * ncol + 0.7, 3.0 * nrow + 1.2), squeeze=False)
     return fig, axs
 
 
@@ -204,9 +219,9 @@ def cmd_density(a):
         ax.set_ylabel("Y (Mm)", fontsize=8)
     for ax in axs[-1, :]:
         ax.set_xlabel("X (Mm)", fontsize=8)
-    fig.subplots_adjust(bottom=0.2, top=0.98, left=0.06, right=0.98, wspace=0.18, hspace=0.12)
-    cax = fig.add_axes([0.3, 0.07, 0.6, 0.025])
-    cb = fig.colorbar(im, cax=cax, orientation="horizontal")
+    _layout(fig, axs)
+    cb = fig.colorbar(im, cax=_cbar_axes(fig, axs), orientation="horizontal")
+    cb.set_ticks(np.arange(2 * np.ceil(a.clim[0] / 2), a.clim[1] + 1e-9, 2.0))
     cb.set_label(r"log $\rho$ (g/cm$^3$)", fontsize=9)
     out = os.path.join(a.outdir, f"density.{a.format}")
     fig.savefig(out, dpi=a.dpi); plt.close(fig)
@@ -234,9 +249,8 @@ def cmd_shear(a):
         ax.tick_params(labelsize=8)
     for ax in axs.flat[len(sel):]:
         ax.axis("off")
-    fig.subplots_adjust(bottom=0.2, top=0.98, left=0.07, right=0.98, wspace=0.2, hspace=0.15)
-    cax = fig.add_axes([0.3, 0.07, 0.6, 0.025])
-    cb = fig.colorbar(im, cax=cax, orientation="horizontal")
+    _layout(fig, axs)
+    cb = fig.colorbar(im, cax=_cbar_axes(fig, axs), orientation="horizontal")
     cb.set_label(r"$B_z$ (G)", fontsize=9)
     out = os.path.join(a.outdir, f"shear.{a.format}")
     fig.savefig(out, dpi=a.dpi); plt.close(fig)
@@ -273,7 +287,10 @@ def cmd_axis(a):
             T.append(t); H.append(axis_height(load(f, ["Bz"])))
         np.savetxt(os.path.join(a.outdir, f"axis_{(lab or os.path.basename(path.rstrip('/'))).replace(' ', '_')}.csv"),
                    np.c_[T, H], header="t [s], axis height [Mm]", delimiter=",")
-        ax.plot(T, H, "-o", ms=3, label=lab or os.path.basename(path.rstrip("/")))
+        H = np.array(H)
+        if a.shift:   # start from the erratum's initial height (the discrete axis of tube 2 sits higher on coarse meshes)
+            H = H - H[0] + ERRATUM_FIG2A_TUBE2[0, 1]
+        ax.plot(T, H, "-o", ms=3, label=(lab or os.path.basename(path.rstrip("/"))) + (" (shifted)" if a.shift else ""))
     ax.plot(*ERRATUM_FIG2A_TUBE2.T, "g--", lw=1.2, label="Erratum Fig. 2(a), low tension")
     ax.plot(*ERRATUM_FIG2A_TUBE3.T, "r-.", lw=1.0, label="Erratum Fig. 2(a), high tension")
     ax.set_xlabel("Time (s)"); ax.set_ylabel("Height of axis (Mm)")
@@ -404,6 +421,7 @@ def main():
     s.add_argument("runs", nargs="+", help="RUN or LABEL=RUN")
     s.add_argument("--tmax", type=float, default=4600.0)
     s.add_argument("--tall", action="store_true", help="y axis up to 12 Mm, as the paper's panel")
+    s.add_argument("--shift", action="store_true", help="shift each run to start at the erratum's -1.84 Mm")
     s = sub.add_parser("dome"); s.set_defaults(fn=cmd_dome)
     s.add_argument("runs", nargs="+", help="RUN or LABEL=RUN")
     s.add_argument("--thr", type=float, default=-13.0, help="log10 rho threshold [g cm^-3]")

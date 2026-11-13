@@ -504,7 +504,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
                 "c_h Δt/Δh = $(round(c_h_mhd[]*inputs[:Δt]/lk10_glm_dh[], digits=3))")
         println(" Energy relaxation: $(lk10_relax[] ? "on" : "OFF"), τ = $(round(lk10_tau0[], digits=4)) ρ^(-$(lk10_tau_exp[])) t0; ",
                 "above y = $(lk10_relax_ymin[]); damping layers |x| > $(lk10_damp_xd[]), y > $(lk10_damp_yd[]), rate $(lk10_damp_rate[])/t0 at the boundary")
-        println(" Dissipation: ν = $(round(LK10_NU, sigdigits=4)) (kinematic), anomalous η₀ = $(round(LK10_ETA0, sigdigits=4)), ",
+        println(" Dissipation: ν = $(round(LK10_NU, sigdigits=4)) ($(get(inputs, :lk10_nu_mode, "kinematic"))), anomalous η₀ = $(round(LK10_ETA0, sigdigits=4)), ",
                 "j_crit = $(round(LK10_JCRIT, sigdigits=4)) (code units)")
         println(" Initialize fields for 2.5D GLM-MHD flux emergence (Leake et al. 2010) ........... DONE")
         flush(stdout)

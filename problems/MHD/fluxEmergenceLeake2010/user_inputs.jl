@@ -33,6 +33,8 @@
 #   JEXPRESSO_LK10_CMIN      DynSGS background floor C_min                        [0]
 #   JEXPRESSO_LK10_FLOORS    1: positivity floors as the Runge-Kutta stage limiter [0]
 #   JEXPRESSO_LK10_CURLB     0: DynSGS resistivity as the component Laplacian       [1: curl form]
+#   JEXPRESSO_LK10_NU        dynamic | kinematic: the paper's dynamic ν below the
+#                            photosphere (capped above), or kinematic everywhere   [dynamic]
 #
 # Times are in t0 = 23.19 s inside the code (user_flux.jl).
 #---------------------------------------------------------------------------------
@@ -108,11 +110,16 @@ function lk10_positivity_limiter!(u, integrator, p, t)
     return nothing
 end
 
-# Explicit dissipation (Sec. 2.1), code units (user_flux.jl): kinematic ν
-# everywhere (README, "Deviations", item 2); the anomalous resistivity is the
-# :mhd_anomalous_eta pair below. No other resistivity: the erratum removed the
-# local η̂ = 0.1 exp(−r̂²/0.66²) at the origin that the original runs had.
-lk10_dissipation(x, y) = (LK10_NU, 0.0)
+# Explicit dissipation (Sec. 2.1), code units (user_flux.jl). The paper's
+# ν = 2.6e4 g cm⁻¹ s⁻¹ is a DYNAMIC viscosity, 0.01326 in code units: below the
+# photosphere it is used as such (kinematic ν/ρ_e(y), ρ_e = T^m of the
+# polytrope), above it the kinematic value is held at its photospheric 0.01326
+# (as a dynamic viscosity it would grow to 10⁶ in the corona; README).
+# JEXPRESSO_LK10_NU=kinematic: 0.01326 everywhere. The anomalous resistivity
+# is the :mhd_anomalous_eta pair below; no other resistivity (the erratum
+# removed the local η̂ = 0.1 exp(−r̂²/0.66²) at the origin of the original runs).
+lk10_nu_dynamic_cz() = !(lowercase(_lk10_env("NU", "dynamic")) in ("kinematic", "const", "constant"))
+lk10_dissipation(x, y) = ((lk10_nu_dynamic_cz() && y < 0.0) ? LK10_NU/lk10_temperature(y)^lk10_mcz[] : LK10_NU, 0.0)
 
 function user_inputs()
 
@@ -169,6 +176,7 @@ function user_inputs()
         :lk10_damp_yd         => 500.0,      # 75 Mm
         :lk10_damp_rate       => 1.0,        # 1/t0 at the boundary
         :mhd_dissipation      => lk10_dissipation,
+        :lk10_nu_mode         => lk10_nu_dynamic_cz() ? "dynamic below the photosphere, kinematic 0.01326 above" : "kinematic 0.01326 everywhere",
         :mhd_anomalous_eta    => (LK10_ETA0, LK10_JCRIT),
         #---------------------------------------------------------------------------
         # DynSGS: the parent case's reference-weighted conserved-form operator

@@ -68,6 +68,7 @@ editing the deck:
 | `JEXPRESSO_LK10_RELAX_YMIN` | $L_0$ units, default $-\infty$ | apply the energy relaxation only above this height |
 | `JEXPRESSO_LK10_TUBE_EQ` | `thermal` (default), `relaxed` | tube in thermal equilibrium with its surroundings (the paper), or on the relaxed relation $\rho T_0(\rho) = p$ |
 | `JEXPRESSO_LK10_CURLB` | `1` (default), `0` | DynSGS resistivity of the in-plane field in curl form, or the component Laplacian of the parent case |
+| `JEXPRESSO_LK10_NU` | `dynamic` (default), `kinematic` | the paper's dynamic viscosity in the convection zone, held at its photospheric kinematic value above; or that kinematic value everywhere |
 | `JEXPRESSO_LK10_CMIN` | default 0 | DynSGS background floor $C_{min}$ |
 | `JEXPRESSO_LK10_FLOORS` | `0` (default), `1` | positivity floors as the Runge–Kutta stage limiter |
 
@@ -159,14 +160,17 @@ Secs. 3.4–3.5 (the text's $d$ = 18, 9, 4.5 $\times10^{28}$ G cm$^3$ give 107, 
 Ideal GLM-MHD in conservation form (`user_flux.jl`), with gravity, the
 paper's dissipation and its energy relaxation:
 
-- **Viscosity** $\nu = 2.6\times10^4$ g cm$^{-1}$ s$^{-1}$ (Sec. 2.1) is dynamic;
-  in code units 0.01326. It is applied as a **kinematic** viscosity of 0.01326
-  (Re = 75 at every height), as the 3D case does with the same authors'
-  viscosity (`fluxEmergenceLeake2014`, Deviations 1): taken as dynamic it would
-  be a kinematic viscosity of $10^6$ in the corona. It enters through the
-  `:mhd_dissipation` hook as a Laplacian of the momentum (the paper's stress
-  tensor without its $\nabla\cdot\mathbf v$ part), and the kinetic energy it
-  removes stays in $E$ as heat.
+- **Viscosity** $\nu = 2.6\times10^4$ g cm$^{-1}$ s$^{-1}$ (Sec. 2.1) is a dynamic
+  viscosity, 0.01326 in code units. In the convection zone it is applied as
+  such: a kinematic viscosity $0.01326/\rho_e(y)$, with $\rho_e = T^m$ the density
+  of the polytrope, 0.00126 at the tube's initial depth and 0.0007 at the
+  bottom. Above the photosphere the kinematic value is held at its photospheric
+  0.01326: taken as dynamic it would be a kinematic viscosity of $10^6$ in the
+  corona (the 3D case, `fluxEmergenceLeake2014`, Deviations 1, uses the same
+  authors' viscosity as kinematic everywhere; `JEXPRESSO_LK10_NU=kinematic` does
+  that here). It enters through the `:mhd_dissipation` hook as a Laplacian of
+  the momentum (the paper's stress tensor without its $\nabla\cdot\mathbf v$
+  part), and the kinetic energy it removes stays in $E$ as heat.
 - **Anomalous resistivity** (Eqs. 7–8), $\eta = \eta_0\max(0, \lvert j\rvert/j_{crit} - 1)$,
   $\eta_0 = 1.6\times10^{-11}$ s, $j_{crit} = 2.07\times10^7$ statA cm$^{-2}$: a
   magnetic diffusivity $\eta_0c^2/4\pi = 1.18\times10^{-4}$ and
