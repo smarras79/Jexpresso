@@ -205,7 +205,7 @@ lk_dissipation(x, y, z) = (0.01, 0.01*0.5*(tanh(-(sqrt(x*x + y*y) - 100.0)/5.0) 
 
 function user_inputs()
 
-    LK_REF = parse(Int, get(ENV, "LK_REF", "2"))
+    LK_REF = parse(Int, get(ENV, "LK_REF", "1"))
     mesh   = ("LK_16x16x16.msh", "LK_38x38x38.msh", "LK_76x76x76.msh")[LK_REF]
     # Δt for (|v| + c_f) Δt/Δh ≈ 0.25 at |v| + c_f ≈ 120 on the smallest LGL gap Δh of each mesh:
     # the fast speed just above the transition region is 92 (SD), 72 (MD), 50 (WD) at t = 0, and
