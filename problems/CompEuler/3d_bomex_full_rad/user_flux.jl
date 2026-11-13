@@ -100,7 +100,7 @@ function user_flux!(F, G, H,
     # Subsidence, deviation part in flux form (see user_source! for the full split):
     #   flux w_s ρ_ref φ'  with φ' = φ - φ_ref
     if BOMEX_FORCING.subsidence
-        ws = bomex_subsidence(bomex_zlevel(mesh.z[ip]))[1]
+        ws = bomex_subsidence(bomex_zlevel((mesh.z::Vector{Float64})[ip]))[1]   # mesh.z is an untyped field: assert, or every node allocates
         if ws != 0.0
             H[5] += ws * qe[1] * (ρhl/ρ - qe[5]/qe[1])
             H[6] += ws * qe[1] * (ρqt/ρ - qe[6]/qe[1])
