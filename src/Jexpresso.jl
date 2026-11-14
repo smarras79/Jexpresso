@@ -177,6 +177,7 @@ include(joinpath( "kernel", "physics", "SGS.jl"))
 # Integrator-independent shallow-water state limiting plus OrdinaryDiffEq
 # stage/accepted-step adapters.
 include(joinpath( "kernel", "physics", "shallow_water_limiter.jl"))
+include(joinpath( "kernel", "physics", "shallow_water_volume.jl"))
 
 # Node-wise realizability repair for the compressible Euler state. Own module,
 # own directory: Positivity.jl is self-contained numerics with no Jexpresso
@@ -309,6 +310,7 @@ include(joinpath( "io", "mod_print_io.jl"))
 
 include(joinpath( "io", "write_output.jl"))
 include(joinpath( "io", "shallow_water_restart.jl"))
+include(joinpath( "io", "mass_diagnostic.jl"))
 
 # Nodal fields on a pixel raster (flat and spherical), and the POD figures
 # drawn on them.

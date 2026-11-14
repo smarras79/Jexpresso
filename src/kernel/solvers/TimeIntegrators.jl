@@ -267,6 +267,7 @@ function time_loop!(inputs, params, u, args...)
     # fallback. Sanitize the initial/restart state before the very first RHS.
     ode_alg, swe_stage_limiter_active, swe_step_limiter_active =
         configure_shallow_water_limiter(inputs[:ode_solver], inputs)
+    validate_shallow_water_volume_option(inputs, params)
     if shallow_water_limiter_enabled(inputs)
         apply_shallow_water_limiter!(u, params, params.tspan[1])
         if shallow_water_limiter_diagnostic_enabled(inputs)
@@ -667,6 +668,16 @@ function time_loop!(inputs, params, u, args...)
             DiscreteCallback(min_h_condition, min_h_affect!) :
             nothing
 
+        # Mass-conservation writer (:lmass_diagnostic): activated right before
+        # the real solve, after the integrator warm-up below.
+        mass_diag = mass_diagnostic_enabled(inputs) ?
+            MassDiagnostic(; interval = Int(get(inputs, :mass_diagnostic_interval, 1)),
+                             lpert = (params.SOL_VARS_TYPE == PERT())) : nothing
+        cb_mass = mass_diag === nothing ? nothing :
+            DiscreteCallback((u, t, integrator) -> mass_diagnostic_condition(mass_diag),
+                             integrator -> mass_diagnostic_affect!(mass_diag, integrator);
+                             save_positions = (false, false))
+
         # Put the state limiter first so subsequent diagnostics, output and
         # coupling callbacks observe the corrected accepted solution.
         _cbs = Any[]
@@ -679,6 +690,7 @@ function time_loop!(inputs, params, u, args...)
         is_coupled && cb_coupling !== nothing  && push!(_cbs, cb_coupling)
         cb_heartbeat !== nothing               && push!(_cbs, cb_heartbeat)
         cb_min_h !== nothing                   && push!(_cbs, cb_min_h)
+        cb_mass !== nothing                    && push!(_cbs, cb_mass)
         callbacks_main = CallbackSet(_cbs...)
 
         # PERF: SciML integrator warmup with the REAL callback set.
@@ -881,6 +893,9 @@ function time_loop!(inputs, params, u, args...)
         # the warning once, which is the right amount.
         solve_logger = rank == 0 ? current_logger() : NullLogger()
 
+        # after the warm-up: u is the initial (or restart) state again
+        mass_diag !== nothing && open_mass_diagnostic!(mass_diag, u, params, inputs, params.tspan[1])
+
 
         solution = with_logger(solve_logger) do
             solve(prob,
@@ -894,6 +909,8 @@ function time_loop!(inputs, params, u, args...)
                                  inputs[:tend],
                                  length=inputs[:ndiagnostics_outputs]))
         end
+
+        mass_diag !== nothing && close_mass_diagnostic!(mass_diag)
 
         # One exchange per step is the whole contract with Alya, which receives
         # exactly its own step count ("Steps:" in its startup output). A

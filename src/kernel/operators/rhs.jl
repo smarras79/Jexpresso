@@ -1018,6 +1018,12 @@ function _build_rhs!(RHS, u, params, time)
                                        params.ω, neqs, params.inputs, AD, SD) 
 
     @timeit_debug JEXPRESSO_TIMER "DSS_global_RHS" DSS_global_RHS!(@view(params.RHS[:,:]), params.g_dss_cache, params.neqs)
+
+    # Shallow water, opt-in: total volume constant to round-off (uniform
+    # compensation of the continuity source; shallow_water_volume.jl).
+    if params.inputs[:swe_conserve_volume]::Bool
+        @timeit_debug JEXPRESSO_TIMER "swe_volume" conserve_shallow_water_volume!(params.RHS, params)
+    end
     
     #if (rem(time, Δt) == 0 && time > 0.0)
     if (time > 0.0)

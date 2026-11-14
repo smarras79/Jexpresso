@@ -839,6 +839,22 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if !haskey(inputs, :swe_umax)
         inputs[:swe_umax] = 0.0
     end
+    # Keep the total volume ∫H dA exactly constant by removing the basin mean of
+    # the continuity tendency at every RHS evaluation (a uniform detrainment that
+    # balances e.g. a deep-water entrainment source). CPU, CG, lumped mass, no
+    # AMR. See src/kernel/physics/shallow_water_volume.jl.
+    if !haskey(inputs, :swe_conserve_volume)
+        inputs[:swe_conserve_volume] = false
+    end
+    # Mass-conservation writer: <output_dir>/mass.csv, one line every
+    # :mass_diagnostic_interval accepted steps (src/io/mass_diagnostic.jl);
+    # follow it live with tools/plot_mass_live.py.
+    if !haskey(inputs, :lmass_diagnostic)
+        inputs[:lmass_diagnostic] = false
+    end
+    if !haskey(inputs, :mass_diagnostic_interval)
+        inputs[:mass_diagnostic_interval] = 1
+    end
     # Debugging aid for the non-conservative clip limiter. Events are
     # accumulated during stages and summarized after accepted timesteps.
     if !haskey(inputs, :swe_limiter_diagnostic)

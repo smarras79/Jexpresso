@@ -49,6 +49,10 @@ function user_inputs()
         # summary after each accepted timestep that required correction.
         :swe_limiter_diagnostic => true,
         :swe_limiter_diagnostic_interval => 1,
+        # mass.csv in the output directory, one line per model hour (6 steps);
+        # follow it live with: python3 tools/plot_mass_live.py <output dir>
+        :lmass_diagnostic     => true,
+        :mass_diagnostic_interval => 6,
         #---------------------------------------------------------------------------
         # Integration and quadrature properties
         #---------------------------------------------------------------------------

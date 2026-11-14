@@ -46,10 +46,18 @@ function user_inputs()
         # rescaled, H untouched (mass-conserving). 2 m/s is 2.5x the largest physical
         # velocity of the run (~0.8 m/s) and 1/10 of dx_min/dt = 23 m/s. See README.md.
         :swe_umax             => 2.0,
+        # Remove the entrained volume uniformly (one 2-number Allreduce per RK stage),
+        # so the total volume of the layer stays constant: entrainment where the
+        # layer outcrops, balanced by a uniform detrainment over the basin.
+        :swe_conserve_volume  => true,
         # Accumulate every stage clipping event and print one MPI-global
         # summary after each accepted timestep that required correction.
         :swe_limiter_diagnostic => true,
         :swe_limiter_diagnostic_interval => 1,
+        # mass.csv in the output directory, one line per model hour (6 steps);
+        # follow it live with: python3 tools/plot_mass_live.py <output dir>
+        :lmass_diagnostic     => true,
+        :mass_diagnostic_interval => 6,
         #---------------------------------------------------------------------------
         # Integration and quadrature properties
         #---------------------------------------------------------------------------
