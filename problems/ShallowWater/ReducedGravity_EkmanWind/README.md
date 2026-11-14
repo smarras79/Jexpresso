@@ -1,5 +1,13 @@
 # ReducedGravity_EkmanWind
 
+> **Result: this does NOT fix the blow-up — kept as a negative control.**
+> In the standalone clone (`tools/reduced_gravity_clone`) the deck dies at
+> day 1470.8 and the deck with the wind ramped out below 20 m dies *earlier*,
+> at day 1445.4, with the same thin-layer velocity spikes (17 m/s on a 4 mm
+> layer at day 1440, where the local wind is 2×10⁻⁴ of full). The momentum on
+> the thin layers does not come from the local wind; see the clone README for
+> the diagnosis in progress. Do not use this case as a fix.
+
 A one-variable experiment on the `ReducedGravity` double gyre: the deck, mesh,
 time step, artificial viscosity, filter, clipping limiter and thin-film
 relaxation are those of `problems/ShallowWater/ReducedGravity` (the files are

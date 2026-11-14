@@ -833,6 +833,12 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if !haskey(inputs, :swe_hmin)
         inputs[:swe_hmin] = 1.0e-3
     end
+    # Velocity cap applied by the same limiter after the depth floor:
+    # |(Hu, Hv)| <= swe_umax * H, momentum rescaled, H untouched. 0 = off.
+    # Needs :swe_limiter => "clip" (it runs inside that limiter).
+    if !haskey(inputs, :swe_umax)
+        inputs[:swe_umax] = 0.0
+    end
     # Debugging aid for the non-conservative clip limiter. Events are
     # accumulated during stages and summarized after accepted timesteps.
     if !haskey(inputs, :swe_limiter_diagnostic)

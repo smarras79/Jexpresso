@@ -37,11 +37,25 @@ python3 plot_rg2d.py --logs deck.log nofilter.log noclip.log wind20.log wind20li
 ```
 
 Switches (`key=value`): `filter`, `mu_filter`, `limiter`, `hmin`, `mu`,
-`visc=cons|vel` (Laplacian of Hu, or of u weighted by H), `wind=smoothstep|linear|off`,
-`hwind` (upper end of the smoothstep wind ramp, 0.1 m in the deck), `hwind_lin`,
-`hrelax` (upper end of the thin-film relaxation ramp, 0.1 m), `sigma`,
-`sigma_mode=smooth|hard`, `dt`, `nel`, `N`, `tend_days`, `report_days`,
+`mu_h` (Laplacian of H − He, 0 in the deck), `visc=cons|vel` (Laplacian of Hu,
+or of u weighted by H), `wind=smoothstep|linear|off`, `hwind` (upper end of the
+smoothstep wind ramp, 0.1 m in the deck), `hwind_lin`, `hrelax` (upper end of
+the thin-film relaxation ramp, 0.1 m), `sigma`, `sigma_mode=smooth|hard`,
+`eps_u` (desingularisation scale of u = Hu/H, 1 mm in the deck), `ucap`
+(stage velocity cap |Hu| ≤ ucap·H, the clone's version of `:swe_umax`),
+`press=cons|noncons` (pressure as the flux g'(H²−He²)/2 as in the deck, or as
+the wet-aware force g'H∇H), `dt`, `nel`, `N`, `tend_days`, `report_days`,
 `umax_stop`, `dump`.
+
+Diagnostics and restarts: `report_after_days`/`report_fine_days` (finer log
+late in the run), `check_every_step=1` (stop on the first step with
+max|u| > `umax_stop`, so `<dump>_prev.dat` is the last state below it),
+`ring_len`/`ring_every` (keep the last `ring_len` states, one every
+`ring_every` steps, and dump them at the stop), `dump_every_days`/`dump_after_days`,
+`ckpt_days=d1,d2,...` (binary checkpoints `<dump>_ckpt_dXXXXX.X.bin`) and
+`restart=<checkpoint>` (bit-for-bit continuation), `diag_umax`/`diag_max`
+(print the momentum budget of the max-|u| node, term by term, when
+max|u| > `diag_umax`).
 
 Every `report_days` the log prints min H and where it is, max |u| and the
 thickness there, max |Hu|, the number of nodes with H < 1 m, the cumulative

@@ -22,11 +22,13 @@ mutable struct ShallowWaterLimiterDiagnostics
     first_h::Float64
     first_hu::Float64
     first_hv::Float64
+    capped_nodes::Int          # node-visits rescaled by the :swe_umax velocity cap
+    max_u_before::Float64      # largest |u| = |Hu|/H the cap removed
 end
 
 ShallowWaterLimiterDiagnostics() = ShallowWaterLimiterDiagnostics(
     0, 0, 0, Inf, 0.0, 0.0, 0.0, Inf, -Inf,
-    Inf, 0, NaN, NaN, NaN, NaN, NaN)
+    Inf, 0, NaN, NaN, NaN, NaN, NaN, 0, 0.0)
 
 function reset_shallow_water_limiter_diagnostics!(diag;
                                                    reset_step_counter=false)
@@ -46,6 +48,8 @@ function reset_shallow_water_limiter_diagnostics!(diag;
     diag.first_h = NaN
     diag.first_hu = NaN
     diag.first_hv = NaN
+    diag.capped_nodes = 0
+    diag.max_u_before = 0.0
     return nothing
 end
 
@@ -151,8 +155,58 @@ function apply_shallow_water_limiter!(u, params, time)
         Hu .= ifelse.(H .< hmin, zero(eltype(u)), Hu)
         Hv .= ifelse.(H .< hmin, zero(eltype(u)), Hv)
         H  .= max.(H, hmin)
+
+        # Optional velocity cap (:swe_umax > 0): |(Hu, Hv)| <= umax*H. Only the
+        # momentum is scaled, never H, so mass is untouched -- the shallow-water
+        # counterpart of branch 2a of the MHD realizability repair
+        # (src/kernel/positivity), which scales the momentum so that the derived
+        # pressure is admissible while the conserved density and energy stay put.
+        # Here the derived quantity is the velocity u = Hu/H: a layer just above
+        # the depth floor can carry O(0.1 m²/s) of transport (e.g. a dry node at a
+        # rotating outcrop front, where the discrete pressure gradient is balanced
+        # by Coriolis instead of filling the node), and u = Hu/H then exceeds any
+        # CFL limit long before H itself leaves the admissible set.
+        umax = convert(eltype(u), get(params.inputs, :swe_umax, 0.0))
+        if umax > zero(umax)
+            _cap_shallow_water_velocity!(params, H, Hu, Hv, umax)
+        end
     end
 
+    return nothing
+end
+
+function _cap_shallow_water_velocity!(params, H, Hu, Hv, umax)
+    T = eltype(H)
+    diag_on = shallow_water_limiter_diagnostic_enabled(params.inputs)
+    if params.backend isa CPU
+        ncap = 0
+        umax_before = 0.0
+        @inbounds for ip in eachindex(H)
+            lim = umax*max(H[ip], zero(T))
+            m   = hypot(Hu[ip], Hv[ip])
+            if m > lim
+                r = m > zero(T) ? lim/m : zero(T)
+                if diag_on
+                    ncap += 1
+                    umax_before = max(umax_before, Float64(m/max(H[ip], floatmin(T))))
+                end
+                Hu[ip] *= r
+                Hv[ip] *= r
+            end
+        end
+        if diag_on && ncap > 0
+            diag = params.swe_limiter_diag
+            diag.capped_nodes += ncap
+            diag.max_u_before  = max(diag.max_u_before, umax_before)
+        end
+    else
+        # Device path: the scale factor is computed from the unmodified pair,
+        # then applied to both components (one temporary per call).
+        r = @. ifelse(hypot(Hu, Hv) > umax*max(H, zero(T)),
+                      umax*max(H, zero(T))/max(hypot(Hu, Hv), floatmin(T)), one(T))
+        Hu .*= r
+        Hv .*= r
+    end
     return nothing
 end
 
@@ -174,6 +228,14 @@ function report_shallow_water_limiter_diagnostics!(params, time)
     # ranks. It is an event-count estimate if different ranks first encounter
     # clipping in different stages.
     global_events = MPI.Allreduce(diag.stage_events, MPI.MAX, comm)
+    global_capped = MPI.Allreduce(diag.capped_nodes, MPI.SUM, comm)
+    global_ucap   = MPI.Allreduce(diag.max_u_before, MPI.MAX, comm)
+    if global_capped > 0 && rank == 0
+        @printf(" # SWE velocity cap: step=%d t=%.6e capped node-visits=%d max|u| removed=%.6e m/s (:swe_umax=%g)\n",
+                diag.accepted_steps, time, global_capped, global_ucap,
+                Float64(get(params.inputs, :swe_umax, 0.0)))
+        flush(stdout)
+    end
     if global_events > 0
         global_corrections = MPI.Allreduce(diag.corrected_nodes, MPI.SUM, comm)
         global_min_h = MPI.Allreduce(diag.min_h_before, MPI.MIN, comm)
