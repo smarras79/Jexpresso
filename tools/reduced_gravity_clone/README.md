@@ -29,7 +29,7 @@ cd tools/reduced_gravity_clone
 julia -O3 rg2d_clone.jl tag=deck      dump=deck      > deck.log      &   # the deck as it is
 julia -O3 rg2d_clone.jl tag=nofilter  dump=nofilter  filter=0  > nofilter.log &   # :lfilter => false
 julia -O3 rg2d_clone.jl tag=noclip    dump=noclip    limiter=0 > noclip.log   &   # no :swe_limiter
-julia -O3 rg2d_clone.jl tag=wind20    dump=wind20    hwind=20  > wind20.log   &   # = ReducedGravity_EkmanWind
+julia -O3 rg2d_clone.jl tag=wind20    dump=wind20    hwind=20  > wind20.log   &   # wind handed over below 20 m (does not help)
 julia -O3 rg2d_clone.jl tag=wind20lin dump=wind20lin wind=linear hwind_lin=20 > wind20lin.log &
 wait
 python3 plot_rg2d.py --logs deck.log nofilter.log noclip.log wind20.log wind20lin.log \
