@@ -28,7 +28,7 @@ eastern thickness of ~360 m not to). The Ekman suction there (≈ 1×10⁻⁶ m/
 - goes down to the 1 mm film, where its momentum is set by its thick neighbours
   (in the clone's term-by-term budget the modal filter is the largest source,
   then the pressure flux) and u = Hu/H blows up — the deck dies;
-- with `:swe_umax` (`ReducedGravity_umax`) survives, but the 1 mm clip then
+- with the velocity cap `:swe_umax => 2.0` alone survives, but the 1 mm clip then
   keeps H ≥ 1 mm by **adding** the water the suction removes, every stage: at
   day 1835 of that run 5.8×10⁸ m³ per step, ≈ 5 % of the basin volume per year
   and growing with the outcrop area.
