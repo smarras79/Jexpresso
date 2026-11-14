@@ -14,11 +14,15 @@ Options:
   --interval S   refresh period in seconds (default 5)
   --png FILE     no window: rewrite FILE at every refresh (headless / over ssh)
   --once         draw once and exit (with --png: write FILE once)
+  --area A       domain area, for files written before the writer recorded it
+                 (e.g. 4e12 for the 2000 km x 2000 km ReducedGravity basin)
 
-Top panel: rel_change = mass/mass0 - 1 against model time in days; bottom: the
-absolute change mass - mass0 (units of the integral: m^3 for shallow water),
-with mass0 in the title. Close the window (or Ctrl-C) to stop. Needs numpy and
-matplotlib.
+Top panel: the relative change rel_change = (mass - mass0)/mass0 against model
+time in days. Bottom: the
+change as a domain mean, (mass - mass0)/area -- for shallow water the
+equivalent change of the layer thickness in m -- when the area is known (the
+"# area =" header line, or --area); otherwise the absolute change mass - mass0.
+Close the window (or Ctrl-C) to stop. Needs numpy and matplotlib.
 """
 import argparse, glob, os, sys, time
 
@@ -41,6 +45,7 @@ class Follower:
     def __init__(self, path):
         self.path, self.pos, self.rest = path, 0, ""
         self.t, self.mass, self.rel = [], [], []
+        self.area, self.q1 = None, None              # from the "# area =" / "# q1 =" header lines
 
     def poll(self):
         try:
@@ -55,6 +60,15 @@ class Follower:
         self.rest = lines.pop()                      # an incomplete last line waits for the next poll
         n = 0
         for line in lines:
+            if line.startswith("# area ="):
+                try:
+                    self.area = float(line.split("=", 1)[1])
+                except ValueError:
+                    pass
+                continue
+            if line.startswith("# q1 ="):
+                self.q1 = line.split("=", 1)[1].strip()
+                continue
             if not line or line.startswith("#") or line.startswith("step"):
                 continue
             parts = line.split(",")
@@ -74,6 +88,7 @@ def main():
     ap.add_argument("--interval", type=float, default=5.0)
     ap.add_argument("--png", default=None)
     ap.add_argument("--once", action="store_true")
+    ap.add_argument("--area", type=float, default=None)
     a = ap.parse_args()
 
     import matplotlib
@@ -93,7 +108,7 @@ def main():
     l0, = ax0.plot([], [], lw=1.2)
     l1, = ax1.plot([], [], lw=1.2, color="C1")
     ax0.axhline(0.0, color="k", lw=0.6)
-    ax0.set_ylabel("relative change\nmass / mass0 - 1")
+    ax0.set_ylabel("relative change\n(mass - mass0) / mass0")
     ax1.axhline(0.0, color="k", lw=0.6)
     ax1.set_ylabel("absolute change\nmass - mass0")
     ax1.set_xlabel("t [days]")
@@ -110,11 +125,21 @@ def main():
         if new and fol.t:
             t = np.asarray(fol.t)
             l0.set_data(t, np.asarray(fol.rel))
-            l1.set_data(t, np.asarray(fol.mass) - fol.mass[0])
+            area = a.area if a.area else fol.area
+            dm = np.asarray(fol.mass) - fol.mass[0]
+            if area:
+                l1.set_data(t, dm / area)
+                if fol.q1 in (None, "H"):
+                    ax1.set_ylabel("equivalent layer\nthickness change [m]")
+                else:
+                    ax1.set_ylabel(f"mean change of {fol.q1}\n(mass - mass0)/area")
+            else:
+                l1.set_data(t, dm)
             for ax in (ax0, ax1):
                 ax.relim(); ax.autoscale_view()
+            extra = f"   = {dm[-1] / area:+.2e} m of layer" if area and fol.q1 in (None, "H") else ""
             ax0.set_title(f"t = {t[-1]:.2f} d   rel. change = {fol.rel[-1]:+.3e}   "
-                          f"mass0 = {fol.mass[0]:.6e}   ({len(t)} samples)", fontsize=9)
+                          f"mass - mass0 = {dm[-1]:+.3e}{extra}   ({len(t)} samples)", fontsize=9)
             fig.tight_layout()
             if a.png:
                 fig.savefig(a.png, dpi=110)

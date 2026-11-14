@@ -15,7 +15,7 @@ const MD = MassDiagTest
 function fake_params(M, qe1)
     npoin = length(M)
     qe = zeros(npoin, 3); qe[:, 1] .= qe1
-    return (M=M, mesh=(npoin=npoin, gip2owner=zeros(Int, npoin)), qp=(qe=qe,),
+    return (M=M, mesh=(npoin=npoin, gip2owner=zeros(Int, npoin)), qp=(qe=qe, qvars=["H", "Hu", "Hv"]),
             backend=MD.CPU(), AD=MD.ContGal())
 end
 write_once!(d, integ) = MD.mass_diagnostic_affect!(d, integ)
@@ -44,6 +44,10 @@ alloc_of(d, integ)    = @allocated write_once!(d, integ)
     @test !d.active && d.io === nothing
 
     lines = readlines(joinpath(dir, "mass.csv"))
+    # header: the domain area (Σ M) and the name of the first variable, for the plotter
+    arealine = only(filter(l -> startswith(l, "# area ="), lines))
+    @test parse(Float64, strip(split(arealine, "=")[2])) ≈ sum(M)
+    @test only(filter(l -> startswith(l, "# q1 ="), lines)) == "# q1 = H"
     data  = [split(l, ',') for l in lines if !startswith(l, '#') && !startswith(l, "step")]
     @test length(data) == 3                        # t0 line + two writes
     @test parse(Float64, data[1][4]) ≈ d.mass0 && parse(Float64, data[1][5]) == 0.0
