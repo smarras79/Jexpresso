@@ -20,7 +20,9 @@ function user_flux!(F, G, H,
     w  = ρw/ρ
     qt = ρqt/ρ
     qp = ρqp/ρ
-    Pressure = q[end] - qe[end]#perfectGasLaw_ρhltoP(PhysConst, ρ=ρ, hl=hl, qt = qt, qp = qp)
+    # TOTAL: the full pressure, balancing the full gravity -ρg of user_source! (subtracting the reference
+    # pressure here left the column's weight unsupported: w ≈ -g t, 10 m/s after 1 s).
+    Pressure = q[end]
     F[1] = ρu
     F[2] = ρu*u .+ Pressure
     F[3] = ρu*v
@@ -67,8 +69,9 @@ function user_flux!(F, G, H,
     u  = ρu/ρ
     v  = ρv/ρ
     w  = ρw/ρ
-    ρqt = ρqt/ρ
-    ρqp = ρqp/ρ
+    # (ρqt and ρqp keep their meaning: the fluxes below are ρqt·u and ρqp·u. Overwriting them with
+    # ρqt/ρ, ρqp/ρ made the moisture fluxes qt·u, qp·u, a factor ρ off and inconsistent with mass:
+    # rising air then lost total water at qt·(∂ρ/∂z)/ρ², ~1.6 g/kg per km of ascent.)
 
     Pressure = q[end]#perfectGasLaw_ρhltoP(PhysConst, ρ=ρ, hl=hl, qt=qt, qp=qp)
     Pressure = Pressure - qe[end]
