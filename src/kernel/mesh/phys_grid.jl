@@ -273,7 +273,7 @@ function interpolate_to_phys_grid!(mesh,phys_grid,uaux,qe,nlay,ncol,P,T,qc,qi,ρ
         A[:,6] .= (uaux[:,6] .+ qe[:,6])./(A[:,1]) .- qc .- qi
     else
         A[:,1] .= uaux[:,1]
-        A[:,6] .= uaux[:,6] .+ qe[:,1] .- qc .- qi
+        A[:,6] .= uaux[:,6] ./ uaux[:,1] .- qc .- qi   # TOTAL: qv = rho*qt/rho - qc - qi
     end
     for ilay=1:nlay+1
         for icol=1:ncol
@@ -298,7 +298,7 @@ function interpolate_to_phys_grid!(mesh,phys_grid,uaux,qe,nlay,ncol,P,T,qc,qi,ρ
             phys_grid.qc[ilay,icol] = B[4] #* PhysConst.Mol_mass_water/ PhysConst.Mol_mass_air 
             phys_grid.qi[ilay,icol] = B[5] #* PhysConst.Mol_mass_water/ PhysConst.Mol_mass_air
             phys_grid.qv[ilay,icol] = B[6] #* PhysConst.Mol_mass_water/ PhysConst.Mol_mass_air
-            phys_grid.vmr[ilay,icol] = B[6] * PhysConst.Mol_mass_water/ PhysConst.Mol_mass_air
+            phys_grid.vmr[ilay,icol] = B[6] * PhysConst.Mol_mass_air/ PhysConst.Mol_mass_water   # vmr = qv * Ma/Mw
         end
     end
     
