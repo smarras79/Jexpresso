@@ -262,7 +262,7 @@ function dycore_to_atmos_data!(q, qe, npoin, T, qc, qi, lmoist, atmos_data, Phys
         atmos_data.t_back[i] = (qe[i,5]/qe[i,1]) / ((PhysConst.pref/qe[i,end])^(PhysConst.Rair/PhysConst.cp))
         if (lmoist)
             atmos_data.t_current[i] = T[i]
-            atmos_data.vmr_h2o[i] = ((q[i,6]/q[i,1])-qc[i]-qi[i])*PhysConst.Mol_mass_water/ PhysConst.Mol_mass_air
+            atmos_data.vmr_h2o[i] = ((q[i,6]/q[i,1])-qc[i]-qi[i])*PhysConst.Mol_mass_air/ PhysConst.Mol_mass_water   # vmr = qv * Ma/Mw
             atmos_data.q_liq[i] = qc[i]
             atmos_data.q_ice[i] = qi[i]
         else
@@ -284,7 +284,7 @@ function dycore_to_atmos_data!(q, qe, npoin, T, qc, qi, lmoist, atmos_data, Phys
         atmos_data.t_back[i] = (qe[i,5]/qe[i,1]) / ((PhysConst.pref/qe[i,end])^(PhysConst.Rair/PhysConst.cp))
         if (lmoist)
             atmos_data.t_current[i] = T[i]
-            atmos_data.vmr_h2o[i] = ((qt)-qc[i]-qi[i])*PhysConst.Mol_mass_water/ PhysConst.Mol_mass_air
+            atmos_data.vmr_h2o[i] = ((qt)-qc[i]-qi[i])*PhysConst.Mol_mass_air/ PhysConst.Mol_mass_water   # vmr = qv * Ma/Mw
             atmos_data.q_liq[i] = qc[i]
             atmos_data.q_ice[i] = qi[i]
         else

@@ -466,7 +466,7 @@ function rhs!(du, u, params, time)
                 k_moist(@view(params.uaux[:,:]), params.qp.qe, params.mp.Tabs, params.mp.qn, params.mp.qi, params.mp.qc,
                         params.mp.qr, params.mp.qs, params.mp.qg, params.mp.Pr, params.mp.Ps, params.mp.Pg,
                         params.mp.S_micro, PHYS_CONST, MicroConst, lpert, params.neqs, params.mesh.npoin, @view(params.mesh.coords[3,:]),
-                        params.adjusted, params.Pm; ndrange = (params.mesh.npoin))
+                        params.adjusted, params.Pm, inputs[:lprecip]; ndrange = (params.mesh.npoin))
                 
                 k_precip = _build_precipitation_rhs_gpu_3D_v0!(backend, (Int64(params.mesh.ngl),
                                                                          Int64(params.mesh.ngl),
@@ -790,7 +790,7 @@ function _build_rhs!(RHS, u, params, time)
                           params.mp.qs, params.mp.qg, params.mp.Pr, params.mp.Ps, params.mp.Pg,
                           params.mp.S_micro, params.mp.qsatt, params.mesh.npoin,
                           params.uaux, @view(params.mesh.coords[end, :]),
-                          params.qp.qe, SD, params.SOL_VARS_TYPE)
+                          params.qp.qe, SD, params.SOL_VARS_TYPE; lprecip = params.inputs[:lprecip])
         params.mp.dTdt_lat .= (params.mp.Tabs .- params.mp.dTdt_lat) ./ params.inputs[:Δt]
 
         # if inputs[:ladapt] == true

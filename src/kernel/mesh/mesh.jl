@@ -6079,6 +6079,21 @@ function load_p4est_checkpoint_model(base_model, forest_file::String)
         base_model)    # gc_ref: keep base_model alive
 end
 
+#
+# Build mesh.coords (3, npoin) from the per-direction arrays mesh.x/y/z.
+# coords ALWAYS HAS THREE ROWS (see the note where this is called at the end of
+# mod_mesh_mesh_driver). Guard on the SOURCE arrays: a 1D or 2D grid leaves
+# mesh.y/mesh.z short or empty, and the unfilled rows stay zero, which is
+# exactly what mesh.y/mesh.z read as there.
+#
+function fill_coords_from_xyz!(mesh)
+    mesh.coords = KernelAbstractions.zeros(CPU(), TFloat, 3, Int64(mesh.npoin))
+    length(mesh.x) >= mesh.npoin && (mesh.coords[1, :] = mesh.x[1:mesh.npoin])
+    length(mesh.y) >= mesh.npoin && (mesh.coords[2, :] = mesh.y[1:mesh.npoin])
+    length(mesh.z) >= mesh.npoin && (mesh.coords[3, :] = mesh.z[1:mesh.npoin])
+    return mesh
+end
+
 function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
     
     comm = get_mpi_comm()
@@ -6117,6 +6132,9 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
                                             ngr=TInt(inputs[:nop_laguerre]+1),
                                             SD=NSD_1D())
                     preadapt_flags = KernelAbstractions.zeros(CPU(), TInt, Int64(mesh_r_o.nelem))
+                    # the pre-adaptation criteria read mesh.coords, which is otherwise only
+                    # filled at the end of this driver (below): fill it for this mesh first
+                    fill_coords_from_xyz!(mesh_r_o)
                     do_preadapt!(preadapt_flags, inputs, mesh_r_o)
                     mesh_r_o.lneed_redistribute = false
                     p_model_r, n2o_ele_map_tmp = mod_mesh_read_gmsh!(mesh_r, inputs, nparts, distribute, preadapt_flags, p_model_r_o, mesh_r_o)
@@ -6228,14 +6246,7 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
         # removes that entire class of hazard. Nothing infers the dimension
         # from size(coords, 1); mesh.nsd is what says how many are meaningful.
         #
-        ncoord = 3
-        mesh.coords = KernelAbstractions.zeros(CPU(), TFloat, ncoord, Int64(mesh.npoin))
-        # Guard on the SOURCE arrays, not on ncoord: a 1D or 2D grid leaves
-        # mesh.y/mesh.z short or empty, and the unfilled rows stay zero, which
-        # is exactly what mesh.y/mesh.z read as there.
-        length(mesh.x) >= mesh.npoin && (mesh.coords[1, :] = mesh.x[1:mesh.npoin])
-        length(mesh.y) >= mesh.npoin && (mesh.coords[2, :] = mesh.y[1:mesh.npoin])
-        length(mesh.z) >= mesh.npoin && (mesh.coords[3, :] = mesh.z[1:mesh.npoin])
+        fill_coords_from_xyz!(mesh)
         
         println_rank(" # Read gmsh grid and populate with high-order points ........................ DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
         
