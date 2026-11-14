@@ -135,6 +135,8 @@ include(joinpath( "macros", "je_macros.jl"))
 
 include(joinpath( "auxiliary", "timing.jl"))
 
+include(joinpath( "auxiliary", "time_format.jl"))
+
 include(joinpath( "kernel", "abstractTypes.jl"))
 
 include(joinpath( "kernel", "mesh", "meshStructs.jl"))

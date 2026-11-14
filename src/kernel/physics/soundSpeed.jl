@@ -248,7 +248,11 @@ function local_wave_speeds(npoin, neqs, mp, p_m, integrator, SD, Δnode)
     # run that was perfectly fine (SoliWaveIslandDSGS at t = 5 s, when the
     # wave reaches the island).
     lswe  = !lacoustic && neqs == nsd + 1
-    g_swe = Float64(get(integrator.p.inputs, :dsgs_swe_g,    9.81))
+    # Gravity of the wave speed √(gH): :swe_g (any shallow-water deck), else the
+    # DynSGS one, else 9.81. A reduced-gravity deck that sets neither printed
+    # √(9.81·H) instead of √(g′H) -- 25x too fast at g′ = 0.015 -- and an
+    # "acoustic" CFL of ~2 on a run whose gravity-wave CFL is ~0.1.
+    g_swe = Float64(get(integrator.p.inputs, :swe_g, get(integrator.p.inputs, :dsgs_swe_g, 9.81)))
     h_min = Float64(get(integrator.p.inputs, :dsgs_swe_hmin, 1.0e-3))
 
     velomax = 0.0

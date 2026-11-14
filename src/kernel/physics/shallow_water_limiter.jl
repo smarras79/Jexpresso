@@ -231,8 +231,8 @@ function report_shallow_water_limiter_diagnostics!(params, time)
     global_capped = MPI.Allreduce(diag.capped_nodes, MPI.SUM, comm)
     global_ucap   = MPI.Allreduce(diag.max_u_before, MPI.MAX, comm)
     if global_capped > 0 && rank == 0
-        @printf(" # SWE velocity cap: step=%d t=%.6e capped node-visits=%d max|u| removed=%.6e m/s (:swe_umax=%g)\n",
-                diag.accepted_steps, time, global_capped, global_ucap,
+        @printf(" # SWE velocity cap: step=%d t=%.6e s (%.2f %s) capped node-visits=%d max|u| removed=%.6e m/s (:swe_umax=%g)\n",
+                diag.accepted_steps, time, time_unit(time)..., global_capped, global_ucap,
                 Float64(get(params.inputs, :swe_umax, 0.0)))
         flush(stdout)
     end
@@ -263,8 +263,8 @@ function report_shallow_water_limiter_diagnostics!(params, time)
         first_hv = MPI.Allreduce(selected ? diag.first_hv : 0.0, MPI.SUM, comm)
 
         if rank == 0
-            @printf(" # SWE limiter diagnostics: step=%d t=%.6e events=%d corrections=%d min(H)_before=%.16e max|Hu|=%.6e max|Hv|=%.6e mass_added=%.6e event_times=[%.6e, %.6e]\n",
-                    diag.accepted_steps, time, global_events,
+            @printf(" # SWE limiter diagnostics: step=%d t=%.6e s (%.2f %s) events=%d corrections=%d min(H)_before=%.16e max|Hu|=%.6e max|Hv|=%.6e mass_added=%.6e event_times=[%.6e, %.6e]\n",
+                    diag.accepted_steps, time, time_unit(time)..., global_events,
                     global_corrections, global_min_h, global_max_hu,
                     global_max_hv, global_mass_added, global_first_time,
                     global_last_time)

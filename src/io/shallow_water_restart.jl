@@ -61,6 +61,6 @@ function read_shallow_water_vtk_restart!(q, mesh, inputs; output_dir="")
     end
     inputs[:tinit] = time
     inputs[:restart_vtk_iout] = iout
-    rank == 0 && println(" # Shallow-water VTK restart: iter_$iout at t=$time (DynSGS history reinitialized)")
+    rank == 0 && @printf(" # Shallow-water VTK restart: iter_%d at t=%.6g s (%.2f %s) (DynSGS history reinitialized)\n", iout, time, time_unit(time)...)
     return nothing
 end

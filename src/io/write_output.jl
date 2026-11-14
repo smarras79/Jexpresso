@@ -261,7 +261,10 @@ function write_output(SD::NSD_2D, sol, uaux, t, iout,  mesh::St_mesh, mp,
                            μ_nodes=μ_nodes, μ_names=varnames, Minv=Minv, t=t)
     end
 
-    println_rank(string(" # writing ", OUTPUT_DIR, "/<var>-it", iout, ".png at t=", t, " s... DONE"); msg_rank = rank)
+    if rank == 0
+        @printf(" # writing %s/<var>-it%d.png at t=%.6g s (%.2f %s)... DONE\n", OUTPUT_DIR, iout, t, time_unit(t)...)
+        flush(stdout)
+    end
 end
 
 
@@ -334,7 +337,10 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
         write_vtk(SD, mesh, u, mp, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
     end
 
-    println_rank(string(" # writing ", OUTPUT_DIR, "/iter_", iout, ".pvtu at t=", t, " s... DONE"); msg_rank = rank )
+    if rank == 0
+        @printf(" # writing %s/iter_%d.pvtu at t=%.6g s (%.2f %s)... DONE\n", OUTPUT_DIR, iout, t, time_unit(t)...)
+        flush(stdout)
+    end
 
 end
 
@@ -372,7 +378,10 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                      iout=iout, nvar=nvar, qexact=u_exact, case=case)
     end
 
-    println_rank(string(" # writing ", OUTPUT_DIR, "/iter_", iout, ".pvtu at t=", t, " s... DONE"); msg_rank = rank )
+    if rank == 0
+        @printf(" # writing %s/iter_%d.pvtu at t=%.6g s (%.2f %s)... DONE\n", OUTPUT_DIR, iout, t, time_unit(t)...)
+        flush(stdout)
+    end
 
 end
 
@@ -1495,13 +1504,13 @@ function read_vtk_restart!(q, mesh, inputs, PhysConst; output_dir="")
         inputs[:tinit]            = time_arr[1]
         inputs[:restart_vtk_iout] = Int(iout_arr[1])
         if rank == 0
-            @info " VTK restart: last snapshot is iter_$(inputs[:restart_vtk_iout]) at t=$(inputs[:tinit]) s"
+            @info " VTK restart: last snapshot is iter_$(inputs[:restart_vtk_iout]) at t=" * @sprintf("%.6g s (%.2f %s)", inputs[:tinit], time_unit(inputs[:tinit])...)
         end
     else
 
         inputs[:tinit] = collect(Float64, inputs[:diagnostics_at_times])[inputs[:restart_vtk_iout]]
         if rank == 0
-            @info " VTK restart: snapshot is iter_$(inputs[:restart_vtk_iout]) at t=$(inputs[:tinit]) s"
+            @info " VTK restart: snapshot is iter_$(inputs[:restart_vtk_iout]) at t=" * @sprintf("%.6g s (%.2f %s)", inputs[:tinit], time_unit(inputs[:tinit])...)
         end
     end
 
@@ -1620,13 +1629,13 @@ function read_vtk_amr_restart!(q, mesh, inputs; output_dir="",
         inputs[:tinit]            = time_arr[1]
         inputs[:restart_vtk_iout] = Int(iout_arr[1])
         if rank == 0
-            @info " VTK restart: last snapshot is iter_$(inputs[:restart_vtk_iout]) at t=$(inputs[:tinit]) s"
+            @info " VTK restart: last snapshot is iter_$(inputs[:restart_vtk_iout]) at t=" * @sprintf("%.6g s (%.2f %s)", inputs[:tinit], time_unit(inputs[:tinit])...)
         end
     else
 
         inputs[:tinit] = collect(Float64, inputs[:diagnostics_at_times])[inputs[:restart_vtk_iout]]
         if rank == 0
-            @info " VTK restart: snapshot is iter_$(inputs[:restart_vtk_iout]) at t=$(inputs[:tinit]) s"
+            @info " VTK restart: snapshot is iter_$(inputs[:restart_vtk_iout]) at t=" * @sprintf("%.6g s (%.2f %s)", inputs[:tinit], time_unit(inputs[:tinit])...)
         end
     end
 

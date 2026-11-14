@@ -38,6 +38,8 @@ function user_inputs()
         :swe_limiter          => "clip",
         :swe_limiter_schedule => "stage",
         :swe_hmin             => 1.0e-3,
+        # gravity of the CFL diagnostic's wave speed √(g'H): = _G_SWE of user_flux.jl
+        :swe_g                => 0.015,
         # Accumulate every stage clipping event and print one MPI-global
         # summary after each accepted timestep that required correction.
         :swe_limiter_diagnostic => true,

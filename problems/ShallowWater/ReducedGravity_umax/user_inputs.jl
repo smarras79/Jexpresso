@@ -38,6 +38,8 @@ function user_inputs()
         :swe_limiter          => "clip",
         :swe_limiter_schedule => "stage",
         :swe_hmin             => 1.0e-3,
+        # gravity of the CFL diagnostic's wave speed √(g'H): = _G_SWE of user_flux.jl
+        :swe_g                => 0.015,
         # THE ONLY CHANGE w.r.t. ReducedGravity: velocity cap, applied by the same
         # stage limiter after the depth floor: |(Hu,Hv)| <= swe_umax*H, momentum
         # rescaled, H untouched (mass-conserving). 2 m/s is 2.5x the largest physical

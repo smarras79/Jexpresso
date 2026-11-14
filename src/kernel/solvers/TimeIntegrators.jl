@@ -630,7 +630,7 @@ function time_loop!(inputs, params, u, args...)
             return n <= 5 || (n % 100 == 0)
         end
         function step_heartbeat_affect!(integrator)
-            rank == 0 && (@printf(" #   step %d   t = %.6f\n", _step_count[], integrator.t); flush(stdout))
+            rank == 0 && (@printf(" #   step %d   t = %.6g s (%.2f %s)\n", _step_count[], integrator.t, time_unit(integrator.t)...); flush(stdout))
         end
         cb_heartbeat = get(inputs, :lstep_heartbeat, false) == true ?
             DiscreteCallback(step_heartbeat_condition, step_heartbeat_affect!; save_positions = (false, false)) :
@@ -658,8 +658,8 @@ function time_loop!(inputs, params, u, args...)
         end
         function min_h_affect!(integrator)
             if rank == 0
-                @printf(" #   min-H step %d   t = %.6f   min(H) = %.16e\n",
-                        _min_h_step_count[], integrator.t, _min_h_global[])
+                @printf(" #   min-H step %d   t = %.6g s (%.2f %s)   min(H) = %.16e\n",
+                        _min_h_step_count[], integrator.t, time_unit(integrator.t)..., _min_h_global[])
                 flush(stdout)
             end
         end
@@ -846,8 +846,8 @@ function time_loop!(inputs, params, u, args...)
             # perfectly healthy solve look hung.
             if rank == 0
                 print(YELLOW_FG(@sprintf("DONE (%.2f s)\n", (time_ns() - _t_wm) / 1e9)))
-                @printf(" # Time loop running: next output at t = %.6g (%d steps of Δt = %g). Per-step progress: :lstep_heartbeat => true\n",
-                        _next_out_t, max(1, ceil(Int, (_next_out_t - params.tspan[1])/Float64(inputs[:Δt]))), Float64(inputs[:Δt]))
+                @printf(" # Time loop running: next output at t = %.6g s (%.2f %s) (%d steps of Δt = %g). Per-step progress: :lstep_heartbeat => true\n",
+                        _next_out_t, time_unit(_next_out_t)..., max(1, ceil(Int, (_next_out_t - params.tspan[1])/Float64(inputs[:Δt]))), Float64(inputs[:Δt]))
                 flush(stdout)
             end
         end
