@@ -99,6 +99,7 @@ Base.@kwdef mutable struct Cfg
     wind::String = "smoothstep"; hwind::Float64 = 0.1; hwind_lin::Float64 = 1.0; hrelax::Float64 = 0.1
     sigma::Float64 = 0.25 / 1200; sigma_mode::String = "smooth"
     report_days::Float64 = 5.0; umax_stop::Float64 = 1.0e3; tag::String = "run"; dump::String = ""
+    dump_every_days::Float64 = 0.0; dump_after_days::Float64 = 0.0; report_after_days::Float64 = 0.0; report_fine_days::Float64 = 0.0
     # physics (ReducedGravity/user_flux.jl, user_source.jl)
     g::Float64 = 0.015; Hwet::Float64 = 1.0e-3; He::Float64 = 150.0
     f0::Float64 = 8.37e-5; beta::Float64 = 1.8e-11; tau0::Float64 = 0.03; rho::Float64 = 1000.0; kappa::Float64 = 1.0e-8
@@ -353,6 +354,8 @@ function main()
     day = 86400.0
     nsteps = round(Int, c.tend_days * day / c.dt)
     report_every = max(1, round(Int, c.report_days * day / c.dt))
+    report_fine = c.report_fine_days > 0 ? max(1, round(Int, c.report_fine_days * day / c.dt)) : 0
+    dump_every = c.dump_every_days > 0 ? max(1, round(Int, c.dump_every_days * day / c.dt)) : 0
     mass0 = sum(S.M .* q[1, :])
     t = 0.0; nclip_tot = 0; t0 = time(); n = 0
     blown = false
@@ -364,7 +367,11 @@ function main()
         nclip_tot += nclip
         t += c.dt
         bad = !all(isfinite, q)
-        if n % report_every == 0 || bad || n <= 2
+        if dump_every > 0 && c.dump != "" && t >= c.dump_after_days * day && n % dump_every == 0 && !bad
+            dump_state(@sprintf("%s_t%08.2f.dat", c.dump, t / day), S, q, t)
+        end
+        fine = report_fine > 0 && t >= c.report_after_days * day && n % report_fine == 0
+        if n % report_every == 0 || fine || bad || n <= 2
             H = view(q, 1, :)
             umax = 0.0; iu = 1; im = 1; hmin = Inf; nthin = 0
             if !bad
