@@ -1,4 +1,4 @@
-# Lasher-Trapp et al. (2001) CCOPE deep convection: balanced initialization.
+# Lasher-Trapp et al. (2001), Florida cumulus (SCMS sounding, 22 Jul 1995): balanced initialization.
 #
 #   * The reference (qe) is the HYDROSTATIC rest state, dP/dz = -ρ_model(z, P) g, with ρ solved from the
 #     model's own equation of state (saturation_adjustment_sam_microphysics! on one point), so
@@ -9,9 +9,12 @@
 #     held constant.
 #   * Initiation (paper): a Gaussian surface heat flux (user_bc.jl) plus "a small random velocity
 #     perturbation (0.5 m/s on the coarse grid, 0.2 m/s on the fine grid) added to the horizontal wind within
-#     the lowest kilometer". The perturbation here is zero-mean, uniform in ±amp (amp = :lt_noise_amp,
-#     default 0.5 m/s), and a deterministic hash of the periodically wrapped node coordinates, so periodic
-#     copies, MPI ranks and restarts agree.
+#     the lowest kilometer". :lt_noise_type selects it (amplitude :lt_noise_amp, default 0.5 m/s):
+#       "pointwise" (default): independent uniform ±amp at every node, a deterministic hash of the periodically
+#         wrapped node coordinates. White noise at the grid scale; it drives a domain-wide growth of w in
+#         the boundary layer when unfiltered.
+#       "smooth": a non-divergent, periodic sum of Fourier modes with wavelengths >= :lt_noise_lmin
+#         (default 1000 m), tapered smoothly to zero at 1 km, scaled so max |u|,|v| = amp (lt_smooth_noise).
 #   * Any sounding wind lives in the perturbation; the reference momentum is zero.
 
 using MPI
@@ -138,6 +141,43 @@ function lt_noise(x, y, z, xmin, ymin, Lx, Ly; amp = 0.5, z_top = 1000.0)
 end
 
 # ---------------------------------------------------------------------------------------------------------------
+# Smooth horizontal-wind perturbation (:lt_noise_type => "smooth"): non-divergent, u = ∂ψ/∂y, v = -∂ψ/∂x, with
+#   ψ = Σ_j (a_j/κ_j) cos(2π(kx_j x'/Lx + ky_j y'/Ly) + φ_j) cos(m_j π z/z_top) E(z),
+# over all periodic modes with wavelength >= lmin (:lt_noise_lmin) and vertical modes m = 0..nz-1. The
+# amplitudes a_j ∈ [0.5, 1] and phases φ_j come from a deterministic hash, so all ranks and restarts agree.
+# E(z) = 1 below 0.75 z_top and tapers as cos² to 0 at z_top, so no jump at the top of the layer.
+# Being non-divergent, the field launches no acoustic/gravity-wave pulse at t = 0. The caller rescales it so
+# max |u|, |v| over the mesh = amp (its rms is then ~1/4 of the pointwise noise's amp/√3).
+# ---------------------------------------------------------------------------------------------------------------
+function lt_smooth_noise_modes(Lx, Ly; lmin = 1000.0, nz = 3)
+    modes = NTuple{5,Float64}[]            # (kx, ky, m, a/κ, φ)
+    kxm, kym = floor(Int, Lx / lmin), floor(Int, Ly / lmin)
+    for kx = 0:kxm, ky = -kym:kym, m = 0:nz-1
+        (kx == 0 && ky <= 0) && continue                       # half plane: no duplicates, no mean mode
+        κ = 2π * hypot(kx / Lx, ky / Ly)
+        2π / κ < lmin && continue
+        h1 = Float64(hash((kx, ky, m, 11)) >> 11) * 2.0^-53
+        h2 = Float64(hash((kx, ky, m, 12)) >> 11) * 2.0^-53
+        push!(modes, (Float64(kx), Float64(ky), Float64(m), (0.5 + 0.5h1) / κ, 2π * h2))
+    end
+    return modes
+end
+
+function lt_smooth_noise(modes, x, y, z, xmin, ymin, Lx, Ly; z_top = 1000.0)
+    z >= z_top && return 0.0, 0.0
+    ζ = z / z_top
+    E = ζ <= 0.75 ? 1.0 : cospi(0.5 * (ζ - 0.75) / 0.25)^2
+    xp, yp = x - xmin, y - ymin
+    u = 0.0; v = 0.0
+    for (kx, ky, m, aκ, φ) in modes
+        s = -sin(2π * (kx * xp / Lx + ky * yp / Ly) + φ) * aκ * cospi(m * ζ)
+        u += 2π * ky / Ly * s              # ∂ψ/∂y
+        v -= 2π * kx / Lx * s              # -∂ψ/∂x
+    end
+    return E * u, E * v
+end
+
+# ---------------------------------------------------------------------------------------------------------------
 function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
 
     comm = MPI.COMM_WORLD
@@ -163,6 +203,13 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         ymax = MPI.Allreduce(maximum(mesh.y), MPI.MAX, comm)
         zmax = MPI.Allreduce(maximum(mesh.z), MPI.MAX, comm)
         LT_DOMAIN[] = (xmin, xmax, ymin, ymax, zmax)
+        LT_QMAX[]   = Float64(get(inputs, :lt_heat_flux_max, 300.0))   # 0 switches the surface heating off
+        LT_SIGMA[]  = Float64(get(inputs, :lt_heat_sigma, 500.0))      # m, Gaussian half-width of the heat flux
+        heat_mode   = get(inputs, :lt_heat_mode, "flux")
+        heat_mode in ("flux", "volume") || error("LT: :lt_heat_mode must be \"flux\" or \"volume\"")
+        LT_HEAT_VOLUME[] = heat_mode == "volume"
+        LT_HEAT_DEPTH[]  = Float64(get(inputs, :lt_heat_depth, 400.0))
+        rank == 0 && LT_HEAT_VOLUME[] && @info "LT heating: volume source over the lowest $(LT_HEAT_DEPTH[]) m"
 
         if inputs[:lrestart] == true
             q.qn, q.qe = read_output(mesh.SD, inputs[:restart_input_file_path],
@@ -172,6 +219,19 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
 
             R   = build_lt_reference(MicroConst, PhysConst, zmax + 10.0)
             amp = Float64(get(inputs, :lt_noise_amp, 0.5))
+            noise_type = get(inputs, :lt_noise_type, "pointwise")
+            noise_type in ("pointwise", "smooth") || error("LT: :lt_noise_type must be \"pointwise\" or \"smooth\"")
+            smooth = amp > 0 && noise_type == "smooth"
+            if smooth
+                modes = lt_smooth_noise_modes(Lx, Ly; lmin = Float64(get(inputs, :lt_noise_lmin, 1000.0)))
+                Δuv   = [lt_smooth_noise(modes, mesh.x[ip], mesh.y[ip], mesh.z[ip], xmin, ymin, Lx, Ly)
+                         for ip = 1:mesh.npoin]
+                # scaled so max |u|, |v| over the mesh = amp (weaker rms than the pointwise noise, by choice)
+                umax  = mapreduce(t -> max(abs(t[1]), abs(t[2])), max, Δuv; init = 0.0)
+                umax  = MPI.Allreduce(umax, MPI.MAX, comm)
+                nscale = amp / umax
+                rank == 0 && @info "LT noise: smooth, $(length(modes)) modes, lmin = $(get(inputs, :lt_noise_lmin, 1000.0)) m, max |u|,|v| = $(amp) m/s"
+            end
 
             for ip = 1:mesh.npoin
                 x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
@@ -179,7 +239,8 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
                 hl_ref, qt_ref = lt_target(z, PhysConst)
                 ρref           = lt_model_density(P, hl_ref, qt_ref, z, MicroConst, PhysConst)
                 _, _, us, vs   = lt_profile(z)
-                Δu, Δv         = amp > 0 ? lt_noise(x, y, z, xmin, ymin, Lx, Ly; amp = amp) : (0.0, 0.0)
+                Δu, Δv         = smooth  ? (nscale * Δuv[ip][1], nscale * Δuv[ip][2]) :
+                                 amp > 0 ? lt_noise(x, y, z, xmin, ymin, Lx, Ly; amp = amp) : (0.0, 0.0)
                 u, v           = us + Δu, vs + Δv
 
                 if inputs[:SOL_VARS_TYPE] == PERT()

@@ -1,5 +1,5 @@
 # Top buffer layer (no lateral sponges: the domain is periodic and the case does not need them).
-#   From z = 5.5 km (above the ~5 km maximum cloud top) to the lid at 8.1 km, rate ramping as
+#   From z = 6.5 km (above the ~5 km maximum cloud top of the paper) to the lid at 8.1 km, rate ramping as
 #   sin^2 to LT_SPONGE_TOP at the lid (timescale 1/LT_SPONGE_TOP = 20 s).
 #   It relaxes u, v, w, hl, qt and ρqp toward the reference state. hl and qt are relaxed as SPECIFIC
 #   quantities: the target for ρhl is hl_ref·ρ, not the reference ρhl. Relaxing the conserved ρhl
@@ -9,7 +9,7 @@
 #   7–8 km accumulate as ice/snow/graupel at the lid until the run blew up at t ≈ 4080 s.
 #   At rest the perturbation is zero, so the buffer does nothing.
 const LT_SPONGE_TOP = 0.05    # 1/s
-const LT_Z_SPONGE   = 5500.0  # m
+const LT_Z_SPONGE   = 6500.0  # m; paper cloud tops ~5 km, keep the buffer above them
 
 @inline function lt_sponge_rate(z, z_top)
     z >= LT_Z_SPONGE || return zero(z)
@@ -37,6 +37,7 @@ function user_source!(S,
     S[3] = -β * q[3]
     S[4] = -q[1] * PhysConst.g - β * q[4]
     S[5] = -β * (q[5] - q[1] * qe[5] / qe[1])
+    LT_HEAT_VOLUME[] && (S[5] += lt_heat_flux(x, y) * lt_heat_shape(z))   # W m-3 (:lt_heat_mode => "volume")
     S[6] = -β * (q[6] - q[1] * qe[6] / qe[1])
     S[7] = -β * q[7]
 end
@@ -61,10 +62,12 @@ function user_source!(S,
     S[3] = -β * q[3]
     S[4] = -q[1] * PhysConst.g - β * q[4]
     S[5] = -β * (q[5] - q[1] * qe[5] / qe[1])
+    LT_HEAT_VOLUME[] && (S[5] += lt_heat_flux(x, y) * lt_heat_shape(z))   # W m-3 (:lt_heat_mode => "volume")
     S[6] = -β * (q[6] - q[1] * qe[6] / qe[1])
     S[7] = -β * q[7]
 end
 
+# GPU path: sponge only (no :lt_heat_mode => "volume" support).
 function user_source_gpu(q, qe, x, y, z, PhysConst, xmax, xmin, ymax, ymin, zmax, zmin, lpert)
     T = eltype(q)
     z_sponge = T(LT_Z_SPONGE)

@@ -37,14 +37,26 @@ end
 # Signature as called by the kernel (BCs.jl). Requires :bdy_fluxes => true and :lwall_model => true
 # (the latter only allocates the wall-flux arrays τ_f, wθ that the kernel passes in).
 #
-const LT_QMAX  = 300.0     # W m-2
-const LT_SIGMA = 500.0     # m; keeps the flux < 1% of LT_QMAX at the lateral boundaries (3 km away)
+const LT_QMAX  = Ref(300.0)   # W m-2 peak; set from :lt_heat_flux_max in initialize() (0 = no heating)
+const LT_SIGMA = Ref(500.0)   # m, Gaussian half-width; set from :lt_heat_sigma in initialize()
+# :lt_heat_mode => "volume" applies the same heating as a source in the lowest LT_HEAT_DEPTH metres instead of a
+# boundary flux (test of whether the flux entering only the bottom nodes excites grid-scale vertical modes).
+const LT_HEAT_VOLUME = Ref(false)
+const LT_HEAT_DEPTH  = Ref(400.0)   # m
+
+@inline lt_heat_flux(x, y) = LT_QMAX[] * exp(-((x - 4050.0)^2 + (y - 4050.0)^2) / (2 * LT_SIGMA[]^2))
+
+# Vertical shape of the volume heating, integrating to 1: (2/H) cos^2(π z / 2H) for z < H.
+@inline function lt_heat_shape(z)
+    H = LT_HEAT_DEPTH[]
+    z < H || return 0.0
+    return 2 / H * cospi(z / (2H))^2
+end
 
 function user_bc_neumann!(F, q, q1, qe, qe1, tag, coords, τ_f, wθ, SOL_VARS_TYPE, PhysConst; kwargs...)
     tag == "bottom" || return nothing
-    x, y = coords[1], coords[2]
-    xc, yc = 4050.0, 4050.0          # domain centre (8.1 km x 8.1 km)
-    F[5] = LT_QMAX * exp(-((x - xc)^2 + (y - yc)^2) / (2 * LT_SIGMA^2))
+    LT_HEAT_VOLUME[] && return nothing   # heating applied in user_source! instead
+    F[5] = lt_heat_flux(coords[1], coords[2])   # centred on the domain (8.1 km x 8.1 km)
     return nothing
 end
 
