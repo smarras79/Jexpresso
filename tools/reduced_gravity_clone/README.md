@@ -44,7 +44,9 @@ the thin-film relaxation ramp, 0.1 m), `sigma`, `sigma_mode=smooth|hard`,
 `eps_u` (desingularisation scale of u = Hu/H, 1 mm in the deck), `ucap`
 (stage velocity cap |Hu| ≤ ucap·H, the clone's version of `:swe_umax`),
 `press=cons|noncons` (pressure as the flux g'(H²−He²)/2 as in the deck, or as
-the wet-aware force g'H∇H), `dt`, `nel`, `N`, `tend_days`, `report_days`,
+the wet-aware force g'H∇H), `ent_He`/`ent_te` (entrainment
+w_e = (H_e − H)²/(t_e H_e) for H < H_e, McCreary & Kundu 1988; 0 = off) and
+`ent_comp=1` (remove the entrained volume uniformly), `dt`, `nel`, `N`, `tend_days`, `report_days`,
 `umax_stop`, `dump`.
 
 Diagnostics and restarts: `report_after_days`/`report_fine_days` (finer log

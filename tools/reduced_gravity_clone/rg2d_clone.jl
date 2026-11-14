@@ -107,6 +107,9 @@ Base.@kwdef mutable struct Cfg
     press::String = "cons"       # "cons": flux g'(H²-He²)/2 (deck); "noncons": g' H ∇H
     diag_umax::Float64 = 0.0     # print the momentum budget at the max-|u| node when max|u| > diag_umax (0 = off)
     diag_max::Int = 6            # at most this many budgets
+    ent_He::Float64 = 0.0        # entrainment thickness H_e [m] (McCreary & Kundu 1988); 0 = off
+    ent_te::Float64 = 86400.0    # entrainment time scale t_e [s]
+    ent_comp::Bool = false       # remove the entrained volume uniformly (volume-conserving)
     # physics (ReducedGravity/user_flux.jl, user_source.jl)
     g::Float64 = 0.015; Hwet::Float64 = 1.0e-3; He::Float64 = 150.0
     f0::Float64 = 8.37e-5; beta::Float64 = 1.8e-11; tau0::Float64 = 0.03; rho::Float64 = 1000.0; kappa::Float64 = 1.0e-8
@@ -257,7 +260,7 @@ function rhs!(dq, q, S::Solver, t)
         wet = c.wind == "smoothstep" ? wet_fraction(H, c) :
               c.wind == "linear" ? clamp(Hc / c.hwind_lin, 0.0, 1.0) : 0.0
         sigma = c.sigma_mode == "hard" ? (H < c.Hwet ? c.sigma : 0.0) : (1.0 - relax_fraction(H, c)) * c.sigma
-        Src[1, ip] = 0.0
+        Src[1, ip] = (sf > 0 && c.ent_He > 0 && H < c.ent_He) ? (c.ent_He - H)^2 / (c.ent_te * c.ent_He) : 0.0
         Src[2, ip] = sf * (f * Hv + wet * taux / c.rho - (c.kappa + sigma) * Hu)
         Src[3, ip] = sf * (-f * Hu - (c.kappa + sigma) * Hv)
         S.prim[1, ip] = H - He
@@ -265,6 +268,16 @@ function rhs!(dq, q, S::Solver, t)
             S.prim[2, ip] = Hu; S.prim[3, ip] = Hv
         else
             S.prim[2, ip] = u; S.prim[3, ip] = v
+        end
+    end
+    if c.ent_comp && c.ent_He > 0 && mode == 0
+        Etot = 0.0; Atot = 0.0
+        @inbounds for ip in 1:S.npoin
+            Etot += S.M[ip] * Src[1, ip]; Atot += S.M[ip]
+        end
+        wbar = Etot / Atot
+        @inbounds for ip in 1:S.npoin
+            Src[1, ip] -= wbar
         end
     end
     fill!(RHS, 0.0)
@@ -364,6 +377,9 @@ function breakdown(q, S::Solver, ip, t)
     c = S.c
     qq = copy(q)
     c.filter && apply_filter!(qq, S)
+    # the filter is applied in place at every RK stage (5 per step): its increment
+    # per application at this node, and the equivalent rate 5*Δq/Δt
+    dqf = qq[:, ip] .- q[:, ip]
     apply_wall_bc!(qq, S)
     out = zeros(3, S.npoin)
     terms = Dict{String,Vector{Float64}}()
@@ -404,6 +420,9 @@ function breakdown(q, S::Solver, ip, t)
     end
     tot = sum(values(terms))
     @printf("#     %-11s d(Hu)/dt=%+.4e  d(Hv)/dt=%+.4e   dH/dt=%+.4e\n", "TOTAL", tot[2], tot[3], tot[1])
+    rf = 5.0 / c.dt
+    @printf("#     %-11s d(Hu)/dt~%+.4e  d(Hv)/dt~%+.4e   dH/dt~%+.4e   (5 x per-application increment / dt; increment: %+.3e %+.3e %+.3e)\n",
+            "filter", rf * dqf[2], rf * dqf[3], rf * dqf[1], dqf[2], dqf[3], dqf[1])
     flush(stdout)
 end
 
@@ -437,9 +456,9 @@ end
 function main()
     c = parse_cfg(ARGS)
     S = Solver(c)
-    @printf("# %s: nel=%dx%d N=%d npoin=%d dx_min=%.2f km dt=%gs filter=%d(mu_f=%g, weights=%s) limiter=%d(hmin=%g) ucap=%g eps_u=%g press=%s mu=%g(%s) mu_h=%g wind=%s(hwind=%g, hwind_lin=%g) sigma=%.3e(%s, hrelax=%g)\n",
+    @printf("# %s: nel=%dx%d N=%d npoin=%d dx_min=%.2f km dt=%gs filter=%d(mu_f=%g, weights=%s) limiter=%d(hmin=%g) ucap=%g eps_u=%g press=%s mu=%g(%s) mu_h=%g wind=%s(hwind=%g, hwind_lin=%g) sigma=%.3e(%s, hrelax=%g) entrainment(He=%g, te=%g s, comp=%d)\n",
             c.tag, c.nel, c.nel, c.N, S.npoin, S.dxmin / 1e3, c.dt, c.filter, c.mu_filter, string(round.(S.fweights, digits=4)),
-            c.limiter, c.hmin, c.ucap, c.eps_u, c.press, c.mu, c.visc, c.mu_h, c.wind, c.hwind, c.hwind_lin, c.sigma, c.sigma_mode, c.hrelax)
+            c.limiter, c.hmin, c.ucap, c.eps_u, c.press, c.mu, c.visc, c.mu_h, c.wind, c.hwind, c.hwind_lin, c.sigma, c.sigma_mode, c.hrelax, c.ent_He, c.ent_te, c.ent_comp)
     println("#   t[days]   min(H)      x,y of min(H) [km]   max|u| [m/s] (H there)   max|Hu|   #H<1m  #clips   mass/mass0-1")
     flush(stdout)
     q = zeros(3, S.npoin); q[1, :] .= c.He
