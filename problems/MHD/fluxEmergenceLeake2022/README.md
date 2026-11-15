@@ -50,7 +50,9 @@ The simulation is chosen in `user_inputs.jl`:
 | `:lk22_cz_gradient` | 1.0 | convection-zone temperature gradient factor (Eq. 23 as printed) |
 | `:lk22_glm_alpha` | 1.0 | Dedner damping $\alpha_p$ of $\psi$ |
 | `:lk22_damp_x_frac`, `:lk22_damp_z_frac` | 0.75, 0.875 | the damping layers start at $|x|, |y| = 3L_x/8$ and $z = 7\max(z)/8$ |
-| `LK22_REF` (top of `user_inputs()`) | 1, 2 (default), 3, 4 | mesh and time step (below) |
+| `LK22_REF` (environment variable) | 1, 2 (default), 3, 4, 5 | mesh and time step (below); also `LK22_TEND`, `LK22_OUT_DT` and the restart (Restart) |
+| `LK22_RHO_FLOOR`, `LK22_P_FLOOR` (environment variables) | 0.2 (default) | the density and pressure floors as fractions of the reference atmosphere (Notes, "The floor fractions") |
+| `LK22_REF_WEIGHT`, `LK22_ENERGY_SPLIT` (environment variables) | 0 (default), 1 | the reference-weighted DynSGS operator of `fluxEmergenceLeake2022_2D` (its Deviations, item 5) and the split energy flux (`src/kernel/physics/SGS.jl`; in the 2.5D emergence it changed nothing, that README's Verification); `LK22_REF_WEIGHT=1` on any mesh (Meshes and time step, "Vertical resolution") |
 
 ## Units
 
@@ -112,28 +114,49 @@ grid, so with `:nop => 4` the nodes follow its stretching:
 |---|---|---|---|---|---|
 | 1 | $16\times16\times24$ | 32 | `LK22_16x16x24.msh` (shipped) | 0.41 M | $4\times10^{-3}$ |
 | 2 | $32\times32\times48$ | 16 | `LK22_32x32x48.msh` (shipped) | 3.2 M | $2\times10^{-3}$ |
-| 3 | $64\times64\times96$ | 8 | generate | 25 M | $10^{-3}$ |
-| 4 | $128\times128\times192$ | 4 | generate | 202 M | $5\times10^{-4}$ |
+| 3 | $64\times64\times96$ | 8 | `LK22_64x64x96.msh` (generate) | 25 M | $10^{-3}$ |
+| 4 | $128\times128\times192$ | 4 | `LK22_128x128x192.msh` (generate) | 202 M | $5\times10^{-4}$ |
+| 5 | $32\times32\times96$ | 16 in $x$, $y$; 8 in $z$ | `LK22_32x32x96.msh` (generate, 12 MB) | 6.4 M | $10^{-3}$ |
 
 ```bash
 cd problems/MHD/fluxEmergenceLeake2022
 gmsh -3 LK22.geo -setnumber ref 3 -o LK22_64x64x96.msh
 gmsh -3 LK22.geo -setnumber ref 4 -o LK22_128x128x192.msh
+gmsh -3 LK22.geo -setnumber ref 5 -o LK22_32x32x96.msh
 ```
 
-`LK22_REF = 4` is the paper's resolution. The smallest LGL gap is 0.173 of
-the bottom elements' height ($8, 4, 2, 1\,L_0$). The fast speed of the initial
+`LK22_REF = 4` is the paper's resolution; 5 is the columns of 2 with the
+elements of 3 in the vertical (below, "Vertical resolution"). The smallest
+LGL gap is 0.173 of the bottom elements' height ($8, 4, 2, 1, 2\,L_0$). The fast speed of the initial
 state peaks at 45 just above the transition region (the GLM speed $c_h$,
 printed at start-up), and the paper's reconnection outflows reach tens of
 $v_0$; `:Δt` gives $(|\mathbf v| + c_f)\Delta t/\Delta h \approx 0.25$ at
 $|\mathbf v| + c_f = 80$. The step is fixed (Lare3D's is not): the CFL
 monitor (Notes) prints the actual value as it grows.
 
+**Vertical resolution.** The bottom elements of `LK22_REF = 2` are 4 $L_0$
+tall. In the 2.5D cross-section of this case (`fluxEmergenceLeake2022_2D`,
+its README's Verification) that mesh, with the absolute DynSGS form of this
+deck, hits the pressure floors at $t = 2.3$ and evacuates and heats the
+transition region above the rope from $t \approx 5$, before any flux has
+emerged; the same columns with elements 2 tall run to $t = 10$ without a
+floor, the rope rising at the same rate, and evacuate the chromosphere above
+the rope from $t = 12.7$. With the reference-weighted operator
+(`LK22_REF_WEIGHT=1`) neither mesh is evacuated by $t = 20$. The elements 2
+tall touch the floors at up to 20 nodes over $t = 14$–17. Those 4 tall touch
+them at 2 nodes, but grow node-to-node cold spots in the chromosphere far from
+the rope ($T$ down to $0.35T_e$ at $t = 20$) and diffuse the rope more. The
+2014 case's README ("Vertical resolution") has the mechanism. `LK22_REF = 3`
+has elements 2 tall, and eight times the elements of 2. `LK22_REF = 5` is the
+3D counterpart of the 2.5D test's refined mesh (`LK2D_REF = 4`): the columns
+of 2 with elements 2 tall up to $z \approx 30$, twice the elements of 2.
+
 **Cost.** `LK22_REF = 1` takes about 10 s per time step on 4 threads
 (0.41 M nodes; 13 s measured with other jobs on the machine). Scaling by
 nodes and steps to $t = 400t_0$: $\approx 1.1\times10^3$ core-hours at
-`LK22_REF = 1` ($10^5$ steps), $1.7\times10^4$ at 2, $2.7\times10^5$ at 3 and
-$4\times10^6$ at 4 (the paper's resolution), before parallel losses.
+`LK22_REF = 1` ($10^5$ steps), $1.7\times10^4$ at 2, $2.7\times10^5$ at 3,
+$4\times10^6$ at 4 (the paper's resolution) and $6.8\times10^4$ at 5 (twice
+the nodes and steps of 2), before parallel losses.
 Simulation 4 erupts by $200t_0$: `:tend => 250.0` covers it for 60 % of
 that.
 
@@ -182,7 +205,8 @@ that.
    initial fast-speed maximum, Dedner damping $\alpha_p = 1$), DynSGS in
    conserved form on the departure from the reference state (legacy sensor,
    fast-speed floors, thermal residual) with the explicit $\nu$, $\eta$ added,
-   positivity floors $\rho \ge 0.2\rho_e$, $p \ge 0.2p_e$, and the discrete
+   positivity floors $\rho \ge 0.2\rho_e$, $p \ge 0.2p_e$ (`LK22_RHO_FLOOR`,
+   `LK22_P_FLOOR`, Notes), and the discrete
    reference RHS subtracted (`:lwell_balanced`), as in the 2014 case (its
    README, items 6 and 8).
 8. **Boundaries.** CG imposes the velocity and $\psi = 0$ strongly; $\rho$,
@@ -195,10 +219,47 @@ that.
 mass and total energy every 10 steps.
 
 **Disk.** About 240 bytes per node: 0.1 GB per snapshot at `LK22_REF = 1`,
-0.77 GB at 2, 6 GB at 3, 48 GB at 4. The default 43 snapshots take 33 GB at
-`LK22_REF = 2`. The paper's figures use $t = 70, 100, 120, 130, 142, 160, 170,
+0.77 GB at 2, 6 GB at 3, 48 GB at 4, 1.5 GB at 5. The default 43 snapshots
+take 33 GB at `LK22_REF = 2`, 66 GB at 5. The paper's figures use $t = 70, 100, 120, 130, 142, 160, 170,
 184, 190, 240, 260, 380, 400t_0$; all but 142 and 184 are on the default
 10 $t_0$ cadence.
+
+## Restart
+
+Any snapshot of this case restarts the run, so a long run can be split into
+jobs that each fit a cluster's wall-time limit. A snapshot holds the nine
+primitives in Float64 at every node, and `initialize.jl` rebuilds the
+conserved state from them exactly ($E = p/(\gamma-1) + \tfrac12\rho|\mathbf
+v|^2 + \tfrac12|\mathbf B|^2 + \tfrac12\psi^2$), keeps the analytic reference
+state and the $c_h$ of $t = 0$, and starts the clock at the snapshot's time.
+Each rank reads its own piece, so **every job must use the rank count and the
+mesh of the run that wrote the snapshot**. The DynSGS residual history starts
+afresh, so the continuation is close to, not bitwise equal to, an
+uninterrupted run (checked on the 2014 case, which has the same restart:
+its README, Verification). Environment variables, so the deck need not be
+edited:
+
+| variable | meaning |
+|---|---|
+| `LK22_RESTART_DIR` | output directory of the earlier job (`output/MHD/fluxEmergenceLeake2022/output-<date>`) |
+| `LK22_RESTART_TIME` | snapshot to start from (nearest in its `simulation.pvd`; default the last) |
+| `LK22_TEND` | `:tend` (default 400) |
+| `LK22_OUT_DT` | a snapshot every `LK22_OUT_DT` (default 10), plus 142 and 184 |
+| `LK22_REF` | mesh (default 2; must be the one of the snapshot) |
+
+For example, simulation 4 to $t = 250t_0$ in three jobs of the same size:
+
+```bash
+LK22_TEND=90  mpiexec -n 512 julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2022
+LK22_TEND=170 LK22_RESTART_DIR=output/MHD/fluxEmergenceLeake2022/output-<job 1> mpiexec -n 512 julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2022
+LK22_TEND=250 LK22_RESTART_DIR=output/MHD/fluxEmergenceLeake2022/output-<job 2> mpiexec -n 512 julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2022
+```
+
+End each job on a snapshot time (a multiple of `LK22_OUT_DT`), or the next
+one restarts from the last snapshot before it and repeats the stretch in
+between. Each job writes to a new output directory, starting with the
+snapshot it restarted from; `tools/plot_leake2022.py` takes the pieces as
+`DIR1,DIR2,DIR3`.
 
 ## Figures
 
@@ -293,10 +354,47 @@ Short runs on 4 threads at `LK22_REF = 1`; the full runs are for a cluster.
   centre for a rope of width 2.5, so this tests the pipeline, not the physics.
 - **Figures.** Every command above ran on these outputs.
 
-Nothing was run here at `LK22_REF` ≥ 2.
+- **Restart** (Restart). A run with snapshots at $t = 0.02$ and $0.04$
+  restarted from its $t = 0.02$ snapshot: the restart state equals the
+  snapshot to $4\times10^{-16}$ of each field's maximum ($T$
+  $2\times10^{-15}$); five steps later $\rho$, $p$ and $T$ agree with the
+  uninterrupted run to $2\times10^{-4}$, $\mathbf v$ to 2–3.5 % and
+  $\mathbf B$, $\psi$ to 0.8–1.8 % of their maxima (the DynSGS residual
+  history restarts from zero). The same code was checked on 2 MPI ranks in the
+  2014 case.
+- **`LK22_REF = 5`** (load test; 15 GB of memory here, so at `:nop => 2`
+  with the mesh cache off). `LK22.geo` at `ref 2` reproduces the shipped
+  `LK22_32x32x48.msh` byte for byte; at `ref 5` it gives 98 304 positively
+  oriented hexahedra in 96 layers, 2.000 tall from $z = -30$ to 30, with the
+  boundary groups of the shipped meshes. In one process (4 threads) the mesh
+  reads, the initial state has the values above (19.5 G at the origin,
+  $c_h = 45.4$) and three steps run with no floor; the peak memory is
+  8.8 GB, the whole run 8 minutes.
+
+Nothing else was run here at `LK22_REF` ≥ 2.
 
 ## Notes
 
+- **Partition.** The deck sets `:lxy_partition => false`: a balanced 3D
+  partition (METIS, through GridapGmsh's distributed reader, which reads the
+  mesh file on every rank). Jexpresso's default (`true`) bins the $x$–$y$
+  bounding box into a uniform $n_x\times n_y$ grid of columns, one per rank;
+  on this horizontally stretched mesh the outer elements are several bins
+  wide, so from a few hundred ranks on some ranks get no element and the run
+  stops in `mod_mesh_read_gmsh!` with `reducing over an empty collection`
+  (at `LK22_REF = 2`: 96 of 448 and 412 of 896 ranks empty), and at any
+  count the central ranks carry more than the average (1.75 times at 14
+  ranks, 5.2 at 896). With METIS the useful rank count is limited by the
+  elements per rank (49 152 elements at `LK22_REF = 2`).
+- **Progress.** Snapshots are $10t_0$ apart (5000 steps at `LK22_REF = 2`,
+  3.2 M nodes; the 2014 case's similar $38^3$ mesh takes about 8 s per step
+  on 14 cores), and the floor and CFL lines below are
+  printed only when their totals pass a power of ten or grow by 20 %, so a
+  healthy run can print nothing for hours. The deck sets
+  `:lstep_heartbeat => true` (`#   step N   t = …` every 100 steps), and
+  `conservation.dat` in the run's output directory gets $t$, the step, the
+  total mass and energy every 10 steps
+  (`tail -f output/MHD/fluxEmergenceLeake2022/<run>/conservation.dat`).
 - **CFL monitor.** `# CFL: max (|v| + c_f) Δt/Δh = …` is printed by rank 0
   every time the largest value over the nodes has grown by 20 % (checked
   every 100 Runge–Kutta stages), as a `WARNING` above 0.5: halve `:Δt` and
@@ -306,6 +404,17 @@ Nothing was run here at `LK22_REF` ≥ 2.
 - **The positivity-floor line**, `# positivity floors: N node hits so far on
   all ranks …`, is printed each time the total passes a power of ten; its
   `t` is the Runge–Kutta stage time.
+- **The floor fractions.** A node with $\rho < f_\rho\rho_e(z)$ gets
+  $\rho = f_\rho\rho_e$ at fixed momentum, one with $p < f_pp_e(z)$ its
+  energy raised to $p = f_pp_e$ at fixed velocity and field (mass and heat
+  added). $f_\rho = f_p = 0.2$, or `LK22_RHO_FLOOR`, `LK22_P_FLOOR` in the
+  environment (read at each start and printed with the inputs, so a restart
+  can change them). The density floor also bounds the fast speed,
+  $\propto 1/\sqrt\rho$, that the fixed `:Δt` has to resolve; the pressure
+  floor only heats. In the 2.5D emergence (`fluxEmergenceLeake2022_2D`, its
+  README, Verification) the pressure floor holds isolated nodes in the weak
+  ambient field whose pressure collapses numerically; at 0.01 instead of 0.2
+  they fall to the new floor and the rope evolves the same.
 - **Constants shared by name** (`γ_mhd`, `c_h_mhd`, `pressure_mhd`) with the
   other MHD cases: restart Julia between cases with a different $\gamma$.
 
@@ -319,4 +428,4 @@ Nothing was run here at `LK22_REF` ≥ 2.
 | `user_source.jl` | gravity, GLM damping, velocity damping |
 | `user_bc.jl` | $\rho\mathbf v = 0$, $\psi = 0$ on all faces |
 | `user_primitives.jl` | DynSGS acts on $q - q_e$; derived output fields |
-| `LK22.geo` | the stretched hexahedral mesh (`ref` = 1–4) |
+| `LK22.geo` | the stretched hexahedral mesh (`ref` = 1–5) |

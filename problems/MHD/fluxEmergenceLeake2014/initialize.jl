@@ -187,6 +187,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     γm1 = γ_mhd - 1.0
     Bd  = lk_Bd[]
     ch_local = 0.0
+    lk_seed  = parse(Float64, get(ENV, "LK_SEED", "0"))
     for ip = 1:mesh.npoin
         x, y, z = mesh.coords[1,ip], mesh.coords[2,ip], mesh.coords[3,ip]
         p0 = lk_pressure(z)
@@ -211,6 +212,13 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         q.qn[ip,6] = Bx; q.qn[ip,7] = By; q.qn[ip,8] = Bz
         q.qn[ip,9] = 0.0
         q.qn[ip,end] = p
+        # LK_SEED=a (diagnostics): a vertical velocity of amplitude a, pseudo-random from node to
+        # node (a hash of the coordinates, so that the copies of a shared node agree), in z ∈ [0, 30]
+        if lk_seed > 0.0 && 0.0 <= z <= 30.0
+            h = sin(12.9898*x + 78.233*y + 37.719*z)*43758.5453
+            q.qn[ip,5]  = lk_seed*ρ*(2.0*(h - floor(h)) - 1.0)
+            q.qn[ip,4] += 0.5*q.qn[ip,5]^2/ρ
+        end
 
         ch_local = max(ch_local, sqrt((γ_mhd*p + Bx*Bx + By*By + Bz*Bz)/ρ))   # fast-speed bound, at rest
     end

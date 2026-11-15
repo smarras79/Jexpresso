@@ -19,13 +19,16 @@
 //   z:    d0 = 0.25, f = 2, l = 70,      w = 192/20,
 //
 // which places the faces at x, y in [-277.2, 277.2] and z in [-30, 530.5].
-// The ELEMENT boundaries are every k-th face of that grid, so with :nop => 4
-// the nodal spacing follows the paper's cells:
+// The ELEMENT boundaries are every k-th face of that grid (every kx-th in x
+// and y, kz-th in z), so with :nop => 4 the nodal spacing follows the paper's
+// cells:
 //
 //   ref = 1  ->  16 x 16 x 24 elements   (k = 32)  LK22_16x16x24.msh    smoke test
 //   ref = 2  ->  32 x 32 x 48 elements   (k = 16)  LK22_32x32x48.msh    1/4 of the paper's resolution
 //   ref = 3  ->  64 x 64 x 96 elements   (k = 8)   LK22_64x64x96.msh    1/2
 //   ref = 4  -> 128 x 128 x 192 elements (k = 4)   LK22_128x128x192.msh the paper's 512^2 x 768 at nop 4
+//   ref = 5  ->  32 x 32 x 96 elements   (kx = 16, kz = 8)  LK22_32x32x96.msh  ref 2 in x and y,
+//                ref 3 in z: elements 2 tall at the bottom (README, "Vertical resolution")
 //
 // Boundary tags (the strings user_bc_dirichlet! receives):
 //   "bottom" z = -30,  "top" z = Z,  "left" x = -X,  "right" x = X,
@@ -37,18 +40,22 @@
 //   gmsh -3 LK22.geo -setnumber ref 2 -o LK22_32x32x48.msh
 //   gmsh -3 LK22.geo -setnumber ref 3 -o LK22_64x64x96.msh
 //   gmsh -3 LK22.geo -setnumber ref 4 -o LK22_128x128x192.msh
+//   gmsh -3 LK22.geo -setnumber ref 5 -o LK22_32x32x96.msh
 // ============================================================
 
 DefineConstant[ ref = 1 ];
-k = 32;
+kx = 32; kz = 32;
 If (ref == 2)
-  k = 16;
+  kx = 16; kz = 16;
 EndIf
 If (ref == 3)
-  k = 8;
+  kx = 8;  kz = 8;
 EndIf
 If (ref == 4)
-  k = 4;
+  kx = 4;  kz = 4;
+EndIf
+If (ref == 5)
+  kx = 16; kz = 8;
 EndIf
 
 // horizontal faces on [0, X]: 256 paper cells per half-width
@@ -58,7 +65,7 @@ xh[0] = 0;
 For i In {1:256}
   s0 = 0.5*i;
   acc = acc + 0.5*(1 + 6*(1 + Tanh((s0 - lx)/wx)));
-  If (Fmod(i, k) == 0)
+  If (Fmod(i, kx) == 0)
     nh = nh + 1;
     xh[nh] = acc;
   EndIf
@@ -79,7 +86,7 @@ acc = 0; nv = 0;
 For i In {1:768}
   s0 = -30 + 0.25*i;
   acc = acc + 0.25*(1 + 2*(1 + Tanh((s0 - 70)/9.6)));
-  If (Fmod(i, k) == 0)
+  If (Fmod(i, kz) == 0)
     nv = nv + 1;
     zv[nv] = acc;
   EndIf

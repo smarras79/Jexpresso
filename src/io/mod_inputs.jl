@@ -1208,10 +1208,22 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
     #   DSGS_MHD in 3D (compute_dsgs_viscosity!(::DSGS_MHD, ::NSD_3D)): element form and conserved
     #                      form only (:dsgs_conserved => true), domain or element norms.
-    #   :mhd_dissipation   optional function (x, y, z) -> (ν, η): explicit kinematic viscosity and
-    #                      magnetic diffusivity of a visco-resistive 3D MHD case, added per element (at
-    #                      its centroid) to the DynSGS coefficient of the momentum and B slots
-    #                      (problems/MHD/fluxEmergenceLeake2014). Unset: none.
+    #   :mhd_dissipation   optional function (x, y, z) -> (ν, η) in 3D, (x, y) -> (ν, η) in 2D (y the
+    #                      vertical coordinate of the 2D cases): explicit kinematic viscosity and
+    #                      magnetic diffusivity of a visco-resistive MHD case (physics, not
+    #                      stabilization), added per element (at its centroid) to the DynSGS coefficient
+    #                      of the momentum and B slots (problems/MHD/fluxEmergenceLeake2014, -2022,
+    #                      -2022_2D, -2010). Element form only (not :ldsgs_nodal); in 2D with :dsgs_conserved
+    #                      the kinematic ν is added as is, otherwise as the dynamic ρ̄ν. Unset: none.
+    #   :mhd_anomalous_eta optional (η₀, j_crit), DSGS_MHD 2D: current-dependent diffusivity
+    #                      η₀ max(0, |∇×B|/j_crit − 1) per element (largest nodal |j|), added to the B
+    #                      slots on top of :mhd_dissipation (problems/MHD/fluxEmergenceLeake2010).
+    #                      Element form only. Unset: none.
+    #   :dsgs_curl_resistivity  DSGS_MHD 2D, element form: diffuse the in-plane field with the curl form
+    #                      ∂ₜB = −∇ₕ×(η j_z ẑ) (strong form, nodal η j_z summed over the ranks) instead of
+    #                      the component Laplacian, so that the DynSGS (and :mhd_dissipation) resistivity
+    #                      keeps the discrete divergence of B (SGS.jl, _dsgs_curl_resistive_2d!).
+    #                      Default false.
     if(!haskey(inputs, :dsgs_nodal_rho))
         inputs[:dsgs_nodal_rho] = false
     end

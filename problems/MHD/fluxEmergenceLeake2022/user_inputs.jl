@@ -16,14 +16,18 @@
 #   2:  32 x 32 x 48 elements  (1/4 of the paper's resolution at :nop => 4)
 #   3:  64 x 64 x 96 elements  (1/2; generate it first: gmsh -3 LK22.geo -setnumber ref 3 -o LK22_64x64x96.msh)
 #   4: 128 x 128 x 192 elements (the paper's 512 x 512 x 768 cells; ref 4, LK22_128x128x192.msh)
+#   5:  32 x 32 x 96 elements  (the columns of 2, elements 2 tall at the bottom as 3: README,
+#       "Vertical resolution"; generate it first: gmsh -3 LK22.geo -setnumber ref 5 -o LK22_32x32x96.msh)
 #---------------------------------------------------------------------------------
 
 # Positivity floors as the Runge-Kutta stage limiter (as problems/MHD/fluxEmergenceLeake2014):
-# ρ ≥ f ρ_e(z) and p ≥ f p_e(z) of the reference atmosphere, p raised through E at fixed
-# velocity and field. Not conservative where it fires; the hits are counted over all ranks and
-# reported by rank 0 each time the total passes a power of ten.
-if !@isdefined(lk22_floor_frac)
-    const lk22_floor_frac = Ref{Float64}(0.2)
+# ρ ≥ f_ρ ρ_e(z) and p ≥ f_p p_e(z) of the reference atmosphere, ρ raised at fixed momentum, p
+# raised through E at fixed velocity and field. Not conservative where it fires; the hits are
+# counted over all ranks and reported by rank 0 each time the total passes a power of ten.
+# f_ρ = f_p = 0.2, or LK22_RHO_FLOOR, LK22_P_FLOOR (read by user_inputs at each start; README).
+if !@isdefined(lk22_rho_floor)
+    const lk22_rho_floor  = Ref{Float64}(0.2)
+    const lk22_p_floor    = Ref{Float64}(0.2)
     const lk22_floor_hits = Ref{Int}(0)
     const lk22_floor_next = Ref{Int}(1)
 end
@@ -60,7 +64,8 @@ end
 function lk22_positivity_limiter!(u, integrator, p, t)
     npoin = p.mesh.npoin
     qe    = p.qp.qe
-    frac  = lk22_floor_frac[]
+    fρ    = lk22_rho_floor[]
+    fp    = lk22_p_floor[]
     γm1   = γ_mhd - 1.0
     nhit  = 0
     lk22_cfl_count[] += 1
@@ -74,8 +79,8 @@ function lk22_positivity_limiter!(u, integrator, p, t)
     @inbounds for ip = 1:npoin
         iρ = ip; iρu = npoin + ip; iρv = 2npoin + ip; iE = 3npoin + ip; iρw = 4npoin + ip
         iBx = 5npoin + ip; iBy = 6npoin + ip; iBz = 7npoin + ip; iψ = 8npoin + ip
-        ρmin = frac*qe[ip,1]
-        pmin = frac*qe[ip,end]
+        ρmin = fρ*qe[ip,1]
+        pmin = fp*qe[ip,end]
         ρ = u[iρ]
         if ρ < ρmin
             u[iρ] = ρmin; ρ = ρmin; nhit += 1
@@ -134,26 +139,41 @@ lk22_dissipation(x, y, z) = (0.01, 0.01)
 
 function user_inputs()
 
-    LK22_REF = 2
-    mesh     = ("LK22_16x16x24.msh", "LK22_32x32x48.msh", "LK22_64x64x96.msh", "LK22_128x128x192.msh")[LK22_REF]
+    LK22_REF = parse(Int, get(ENV, "LK22_REF", "2"))
+    mesh     = ("LK22_16x16x24.msh", "LK22_32x32x48.msh", "LK22_64x64x96.msh", "LK22_128x128x192.msh",
+                "LK22_32x32x96.msh")[LK22_REF]
     # Δt for (|v| + c_f) Δt/Δh ≈ 0.25 at |v| + c_f ≈ 80 on the smallest LGL gap Δh of each mesh
-    # (0.173 of the 8, 4, 2, 1 L₀ tall bottom elements): the fast speed just above the transition
+    # (0.173 of the 8, 4, 2, 1, 2 L₀ tall bottom elements): the fast speed just above the transition
     # region is 45 at t = 0 and reconnection outflows reach tens of v₀ (README). The CFL monitor
     # reports the actual value.
-    Δt       = (4.0e-3, 2.0e-3, 1.0e-3, 5.0e-4)[LK22_REF]
+    Δt       = (4.0e-3, 2.0e-3, 1.0e-3, 5.0e-4, 1.0e-3)[LK22_REF]
+    # Environment overrides (README, "Restart"): LK22_REF the mesh, LK22_TEND :tend,
+    # LK22_OUT_DT a snapshot every LK22_OUT_DT (default 10, plus 142 and 184; only those after
+    # the start are written), LK22_RESTART_DIR (+ LK22_RESTART_TIME) restarts from a snapshot.
+    tend     = parse(Float64, get(ENV, "LK22_TEND", "400.0"))
+    dtout    = parse(Float64, get(ENV, "LK22_OUT_DT", "10.0"))
+    # Positivity floors (top of this file): the fractions of ρ_e(z), p_e(z) below which the stage
+    # limiter raises ρ, p. The density floor also bounds the fast speed (∝ 1/√ρ) that the fixed
+    # Δt has to resolve; the pressure floor only adds heat (README).
+    lk22_rho_floor[] = parse(Float64, get(ENV, "LK22_RHO_FLOOR", "0.2"))
+    lk22_p_floor[]   = parse(Float64, get(ENV, "LK22_P_FLOOR", "0.2"))
 
     inputs = Dict(
         :ode_solver           => CarpenterKennedy2N54(stage_limiter! = lk22_positivity_limiter!,
                                                       williamson_condition = false),
         :Δt                   => Δt,
         :tinit                => 0.0,
-        :tend                 => 400.0,      # Fig. 8: simulation 4 erupts at 150-200 t₀, confined by 400
+        :tend                 => tend,       # 400: Fig. 8, simulation 4 erupts at 150-200 t₀, confined by 400
         # every 10 t₀, plus the times of the paper's Figs. 3-4 (142, 184); README for denser output
-        :diagnostics_at_times => sort(vcat(collect(0.0:10.0:400.0), [142.0, 184.0])),
+        :diagnostics_at_times => filter(<=(tend), sort(unique(vcat(collect(0.0:dtout:tend), [142.0, 184.0])))),
         :conservation_every   => 10,
         :conservation_slots   => [1, 4],
+        :lstep_heartbeat      => true,       # "#   step N   t = …" every 100 steps: snapshots are 5000 steps apart at LK22_REF = 2
         :restart_time         => 0.0,
         :lrestart             => false,
+        :lk22_restart_dir     => get(ENV, "LK22_RESTART_DIR", ""),   # "" = start from the initial state
+        :lk22_rho_floor       => lk22_rho_floor[],   # printed with the inputs; set from LK22_RHO_FLOOR above
+        :lk22_p_floor         => lk22_p_floor[],     # ... and LK22_P_FLOOR
         :lsource              => true,       # gravity, ψ damping, velocity damping
         :lwell_balanced       => true,       # subtract the discrete RHS of qe (atmosphere + dipole)
         :SOL_VARS_TYPE        => TOTAL(),
@@ -190,6 +210,14 @@ function user_inputs()
         :dsgs_norms           => "element",
         :dsgs_local_rel       => 1.0,
         :dsgs_conserved       => true,
+        # Reference-weighted operator (user_primitives.jl, README): rho, rho v, E diffused as
+        # (q - q_e)/rho_e with mu rho_e, which keeps the transition region from being evacuated and
+        # heated by the diffused departure of the dense side (LK22_REF_WEIGHT=0: the absolute form).
+        :dsgs_ref_weight      => get(ENV, "LK22_REF_WEIGHT", "0") == "1", # being tested in 3D: LK22_REF_WEIGHT=1
+        # Split energy flux (user_primitives.jl): the non-thermal part of E diffused with the
+        # momentum coefficient, the thermal part with slot 4's (LK22_ENERGY_SPLIT=1; in the 2.5D
+        # emergence it changed neither the floor activity nor the rope: that case's README)
+        :dsgs_nazarov_energy  => get(ENV, "LK22_ENERGY_SPLIT", "0") == "1",
         :dsgs_fast_floors     => true,
         :dsgs_thermal_residual => true,
         :lrichardson          => false,
@@ -200,6 +228,10 @@ function user_inputs()
         # Mesh: LK22.geo (the paper's stretching, element boundaries every 32, 16, 8, 4 cells)
         #---------------------------------------------------------------------------
         :lread_gmsh           => true,
+        # Balanced 3D (METIS) partition. The default column partition bins the x-y bounding box
+        # uniformly, which on this horizontally stretched mesh leaves ranks without elements from
+        # a few hundred ranks on and overloads the centre at any count (README, Notes).
+        :lxy_partition        => false,
         :gmsh_filename        => "./problems/MHD/fluxEmergenceLeake2022/" * mesh,
         :lfilter              => false,
         :outformat            => "vtk",
@@ -210,6 +242,7 @@ function user_inputs()
         :linitial_refine      => false,
         :ladapt               => false,
     ) #Dict
+    haskey(ENV, "LK22_RESTART_TIME") && (inputs[:lk22_restart_time] = parse(Float64, ENV["LK22_RESTART_TIME"]))
 
     return inputs
 end

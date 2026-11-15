@@ -11,14 +11,19 @@
 #   2: 38³ elements  (half the paper's resolution at :nop => 4)
 #   3: 76³ elements  (the paper's 304³ cells at :nop => 4; generate it first:
 #                     gmsh -3 LK.geo -setnumber ref 3 -o LK_76x76x76.msh)
+#   4: 38 x 38 x 76  (the paper's vertical spacing, 38³ horizontally; generate it first:
+#                     gmsh -3 LK.geo -setnumber ref 4 -o LK_38x38x76.msh)
+#   5: 16 x 16 x 64  (smoke test with element height 2 in z: gmsh ... ref 5 -o LK_16x16x64.msh)
 #---------------------------------------------------------------------------------
 
 # Positivity floors as the Runge-Kutta stage limiter (as problems/MHD/fluxEmergenceSon2025):
-# ρ ≥ f ρ_e(z) and p ≥ f p_e(z) of the reference atmosphere, p raised through E at fixed
-# velocity and field. Not conservative where it fires; the hits are counted over all ranks and
-# reported by rank 0 each time the total passes a power of ten.
-if !@isdefined(lk_floor_frac)
-    const lk_floor_frac = Ref{Float64}(0.2)
+# ρ ≥ f_ρ ρ_e(z) and p ≥ f_p p_e(z) of the reference atmosphere, ρ raised at fixed momentum, p
+# raised through E at fixed velocity and field. Not conservative where it fires; the hits are
+# counted over all ranks and reported by rank 0 each time the total passes a power of ten.
+# f_ρ = f_p = 0.2, or LK_RHO_FLOOR, LK_P_FLOOR (read by user_inputs at each start; README).
+if !@isdefined(lk_rho_floor)
+    const lk_rho_floor  = Ref{Float64}(0.2)
+    const lk_p_floor    = Ref{Float64}(0.2)
     const lk_floor_hits = Ref{Int}(0)
     const lk_floor_next = Ref{Int}(1)
 end
@@ -54,7 +59,8 @@ end
 function lk_positivity_limiter!(u, integrator, p, t)
     npoin = p.mesh.npoin
     qe    = p.qp.qe
-    frac  = lk_floor_frac[]
+    fρ    = lk_rho_floor[]
+    fp    = lk_p_floor[]
     γm1   = γ_mhd - 1.0
     nhit  = 0
     lk_cfl_count[] += 1
@@ -68,8 +74,8 @@ function lk_positivity_limiter!(u, integrator, p, t)
     @inbounds for ip = 1:npoin
         iρ = ip; iρu = npoin + ip; iρv = 2npoin + ip; iE = 3npoin + ip; iρw = 4npoin + ip
         iBx = 5npoin + ip; iBy = 6npoin + ip; iBz = 7npoin + ip; iψ = 8npoin + ip
-        ρmin = frac*qe[ip,1]
-        pmin = frac*qe[ip,end]
+        ρmin = fρ*qe[ip,1]
+        pmin = fp*qe[ip,end]
         ρ = u[iρ]
         if ρ < ρmin
             u[iρ] = ρmin; ρ = ρmin; nhit += 1
@@ -149,9 +155,9 @@ function lk_diag!(u, p, t)
         rr < ρrmin && (ρrmin = rr; xρ = (X[1,ip], X[2,ip], X[3,ip]))
         pp > prmax && (prmax = pp; xp = (X[1,ip], X[2,ip], X[3,ip]))
         pp < prmin && (prmin = pp; xpm = (X[1,ip], X[2,ip], X[3,ip]))
-        rr <= 1.000001*lk_floor_frac[] && (nρfl += 1)
-        if rr <= 1.000001*lk_floor_frac[] || pp <= 1.000001*lk_floor_frac[]
-            pp <= 1.000001*lk_floor_frac[] && (npfl += 1)
+        rr <= 1.000001*lk_rho_floor[] && (nρfl += 1)
+        if rr <= 1.000001*lk_rho_floor[] || pp <= 1.000001*lk_p_floor[]
+            pp <= 1.000001*lk_p_floor[] && (npfl += 1)
             zfl_lo = min(zfl_lo, X[3,ip]); zfl_hi = max(zfl_hi, X[3,ip])
         end
         ψmax = max(ψmax, abs(ψ)); Tmax = max(Tmax, lk_mf[]*pr/ρ)
@@ -185,14 +191,79 @@ function lk_diag!(u, p, t)
                 round(glo[11], sigdigits=3), " μΔt/Δh²max=", round(glo[12], sigdigits=3),
                 cnt[1] + cnt[2] > 0 ? string(" floors at z=", round(-glo[13], digits=1), "..", round(glo[14], digits=1)) : "")
     end
-    # where: each extreme is printed by the rank that holds it
-    for (val, g, x, name) in ((wmax, glo[2], xw, "(|v|+cf)max"), (vmax, glo[1], xv, "|v|max"),
-                              (-ρrmin, glo[3], xρ, "ρ/ρe min"), (prmax, glo[4], xp, "p/pe max"),
-                              (-prmin, glo[5], xpm, "p/pe min"),
-                              (Dmax, glo[12], xD, "μΔt/Δh² max"))
-        val == g && println(" #DIAG   ", name, " at ", round.(x, digits=2), " (rank ", MPI.Comm_rank(comm), ")")
+    # Where each extreme is: the ranks that hold one send its place to rank 0, which prints them
+    # all (a rank printing its own lines interleaves them with rank 0's summary line).
+    items = ((wmax, glo[2], xw, "(|v|+cf)max"), (vmax, glo[1], xv, "|v|max"),
+             (-ρrmin, glo[3], xρ, "ρ/ρe min"), (prmax, glo[4], xp, "p/pe max"),
+             (-prmin, glo[5], xpm, "p/pe min"), (Dmax, glo[12], xD, "μΔt/Δh² max"))
+    loc = zeros(4, length(items))
+    for (k, (val, g, x, _)) in enumerate(items)
+        val == g && (loc[:, k] .= (1.0, x[1], x[2], x[3]))
     end
+    gat = reshape(MPI.Allgather(vec(loc), comm), 4, length(items), :)
+    if MPI.Comm_rank(comm) == 0
+        for (k, (_, _, _, name)) in enumerate(items)
+            r = findfirst(j -> gat[1, k, j] == 1.0, axes(gat, 3))
+            r === nothing || println(" #DIAG   ", name, " at (", join(round.(gat[2:4, k, r], digits=2), ", "),
+                                     ") (rank ", r - 1, ")")
+        end
+    end
+    get(ENV, "LK_DIAG_TR", "0") == "1" && lk_diag_tr!(u, p, t)
     flush(stdout)
+    return nothing
+end
+
+# LK_DIAG_TR=1 (with LK_DIAG): the same departures restricted to the chromosphere-transition
+# region band 5 ≤ z ≤ 25 — |v|, |p/p_e − 1|, |ρ/ρ_e − 1|, |B − B_e|/|B_e|, |ψ|, and the DynSGS
+# coefficient of the elements whose centre is in the band — each with where it is.
+function lk_diag_tr!(u, p, t)
+    npoin = p.mesh.npoin; qe = p.qp.qe; γm1 = γ_mhd - 1.0; X = p.mesh.coords
+    vals = zeros(6); locs = [(0.0, 0.0, 0.0) for _ = 1:6]; sgn = 0.0
+    @inbounds for ip = 1:npoin
+        5.0 <= X[3,ip] <= 25.0 || continue
+        ρ = u[ip]; ru = u[npoin+ip]; rv = u[2npoin+ip]; E = u[3npoin+ip]; rw = u[4npoin+ip]
+        Bx = u[5npoin+ip]; By = u[6npoin+ip]; Bz = u[7npoin+ip]; ψ = u[8npoin+ip]
+        pr = γm1*(E - 0.5*(ru*ru + rv*rv + rw*rw)/ρ - 0.5*(Bx*Bx + By*By + Bz*Bz) - 0.5*ψ*ψ)
+        Be = sqrt(qe[ip,6]^2 + qe[ip,7]^2 + qe[ip,8]^2)
+        d = (sqrt(ru*ru + rv*rv + rw*rw)/ρ, abs(pr/qe[ip,end] - 1.0), abs(ρ/qe[ip,1] - 1.0),
+             sqrt((Bx - qe[ip,6])^2 + (By - qe[ip,7])^2 + (Bz - qe[ip,8])^2)/max(Be, 1e-30), abs(ψ))
+        for k = 1:5
+            if d[k] > vals[k]
+                vals[k] = d[k]; locs[k] = (X[1,ip], X[2,ip], X[3,ip])
+                k == 2 && (sgn = pr/qe[ip,end] - 1.0)
+            end
+        end
+    end
+    μd = p.μ_dsgs
+    if size(μd, 1) == p.mesh.nelem
+        @inbounds for ie = 1:p.mesh.nelem
+            ip = p.mesh.connijk[ie,3,3,3]
+            5.0 <= X[3,ip] <= 25.0 || continue
+            m = maximum(@view μd[ie,1:8])
+            m > vals[6] && (vals[6] = m; locs[6] = (X[1,ip], X[2,ip], X[3,ip]))
+        end
+    end
+    comm = MPI.COMM_WORLD
+    glo = MPI.Allreduce(vals, MPI.MAX, comm)
+    MPI.Comm_rank(comm) == 0 && println(" #DIAG TR t=", round(t, digits=4), " |v|=", round(glo[1], sigdigits=3),
+        " |δp/pe|=", round(glo[2], sigdigits=3), " |δρ/ρe|=", round(glo[3], sigdigits=3),
+        " |δB|/|Be|=", round(glo[4], sigdigits=3), " |ψ|=", round(glo[5], sigdigits=3),
+        " μ=", round(glo[6], sigdigits=3))
+    names = ("|v|", "|δp/pe|", "|δρ/ρe|", "|δB|/|Be|", "|ψ|", "μ")
+    # the places, gathered on rank 0 as in lk_diag! (slot 5: the sign of δp/pe at its largest)
+    loc = zeros(5, 6)
+    for k = 1:6
+        vals[k] == glo[k] && glo[k] > 0 && (loc[:, k] .= (1.0, locs[k][1], locs[k][2], locs[k][3], k == 2 ? sgn : 0.0))
+    end
+    gat = reshape(MPI.Allgather(vec(loc), comm), 5, 6, :)
+    if MPI.Comm_rank(comm) == 0
+        for k = 1:6
+            r = findfirst(j -> gat[1, k, j] == 1.0, axes(gat, 3))
+            r === nothing && continue
+            println(" #DIAG TR   ", names[k], " at (", join(round.(gat[2:4, k, r], digits=2), ", "), ")",
+                    k == 2 ? string(" (δp/pe = ", round(gat[5, k, r], sigdigits=3), ")") : "", " (rank ", r - 1, ")")
+        end
+    end
     return nothing
 end
 
@@ -205,17 +276,23 @@ lk_dissipation(x, y, z) = (0.01, 0.01*0.5*(tanh(-(sqrt(x*x + y*y) - 100.0)/5.0) 
 
 function user_inputs()
 
-    LK_REF = parse(Int, get(ENV, "LK_REF", "1"))
-    mesh   = ("LK_16x16x16.msh", "LK_38x38x38.msh", "LK_76x76x76.msh")[LK_REF]
+    LK_REF = parse(Int, get(ENV, "LK_REF", "2"))
+    mesh   = ("LK_16x16x16.msh", "LK_38x38x38.msh", "LK_76x76x76.msh", "LK_38x38x76.msh", "LK_16x16x64.msh")[LK_REF]
     # Δt for (|v| + c_f) Δt/Δh ≈ 0.25 at |v| + c_f ≈ 120 on the smallest LGL gap Δh of each mesh:
     # the fast speed just above the transition region is 92 (SD), 72 (MD), 50 (WD) at t = 0, and
     # Paper II's reconnection outflows reach 30 (README). The CFL monitor reports the actual value.
-    Δt     = (3.0e-3, 1.2e-3, 6.0e-4)[LK_REF]
+    Δt     = (3.0e-3, 1.2e-3, 6.0e-4, 6.0e-4, 7.5e-4)[LK_REF]   # 4, 5: set by the vertical LGL gap
+    haskey(ENV, "LK_DT") && (Δt = parse(Float64, ENV["LK_DT"]))   # diagnostics: another Δt
     # Environment overrides (README, "Restart"): LK_TEND sets :tend, LK_OUT_DT a snapshot every
     # LK_OUT_DT from 0 to :tend (only those after the start are written), LK_RESTART_DIR
     # (+ LK_RESTART_TIME) restarts from a snapshot of an earlier run.
     tend   = parse(Float64, get(ENV, "LK_TEND", "160.0"))
     dtout  = parse(Float64, get(ENV, "LK_OUT_DT", "5.0"))
+    # Positivity floors (top of this file): the fractions of ρ_e(z), p_e(z) below which the stage
+    # limiter raises ρ, p. The density floor also bounds the fast speed (∝ 1/√ρ) that the fixed
+    # Δt has to resolve; the pressure floor only adds heat (README, Notes).
+    lk_rho_floor[] = parse(Float64, get(ENV, "LK_RHO_FLOOR", "0.2"))
+    lk_p_floor[]   = parse(Float64, get(ENV, "LK_P_FLOOR", "0.2"))
 
     inputs = Dict(
         :ode_solver           => CarpenterKennedy2N54(stage_limiter! = lk_positivity_limiter!,
@@ -230,6 +307,8 @@ function user_inputs()
         :restart_time         => 0.0,
         :lrestart             => false,
         :lk_restart_dir       => get(ENV, "LK_RESTART_DIR", ""),   # "" = start from the initial state
+        :lk_rho_floor         => lk_rho_floor[],     # printed with the inputs; set from LK_RHO_FLOOR above
+        :lk_p_floor           => lk_p_floor[],       # ... and LK_P_FLOOR
         :lsource              => true,       # gravity, ψ damping, velocity damping
         :lwell_balanced       => true,       # subtract the discrete RHS of qe (atmosphere + dipole)
         :SOL_VARS_TYPE        => TOTAL(),
@@ -241,7 +320,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lk_dipole            => "MD",       # SD, MD, WD (Φ_dip/Φ_tube = 0.13, 0.1, 0.067) or ND
         :lk_flux_def          => "whole",    # Φ_tube of the whole tube (Paper II's Fig. 1; README) or "top" (its Eq. 10)
-        :lk_tube              => true,
+        :lk_tube              => get(ENV, "LK_TUBE", "1") == "1",   # LK_TUBE=0: the atmosphere and dipole alone
         :lk_cz_gradient       => 1.0,        # a of Paper I Eq. 11 (1 = exactly adiabatic with m_f = 1)
         :lk_mf                => 1.0,        # p = ρT/m_f: 1 reproduces the papers' Fig. 1 (README); 1.25 = literal text
         :lk_glm_alpha         => 1.0,        # ψ damping rate α_p c_h/Δh (README: GLM transient)
@@ -265,6 +344,14 @@ function user_inputs()
         :dsgs_norms           => "element",
         :dsgs_local_rel       => 1.0,
         :dsgs_conserved       => true,
+        # Reference-weighted operator (user_primitives.jl, README): rho, rho v, E diffused as
+        # (q - q_e)/rho_e with mu rho_e, which keeps the transition region from being evacuated and
+        # heated by the diffused departure of the dense side (LK_REF_WEIGHT=0: the absolute form).
+        :dsgs_ref_weight      => get(ENV, "LK_REF_WEIGHT", "0") == "1",   # being tested in 3D: LK_REF_WEIGHT=1
+        # Split energy flux (user_primitives.jl): the non-thermal part of E diffused with the
+        # momentum coefficient, the thermal part with slot 4's (LK_ENERGY_SPLIT=1; in the 2.5D
+        # emergence it changed neither the floor activity nor the rope: that case's README)
+        :dsgs_nazarov_energy  => get(ENV, "LK_ENERGY_SPLIT", "0") == "1",
         :dsgs_fast_floors     => true,
         :dsgs_thermal_residual => true,
         :lrichardson          => false,
@@ -275,6 +362,10 @@ function user_inputs()
         # Mesh: LK.geo (the papers' stretching, element boundaries every 4 cells at ref 3)
         #---------------------------------------------------------------------------
         :lread_gmsh           => true,
+        # Balanced 3D (METIS) partition. The default column partition bins the x-y bounding box
+        # uniformly, which on this horizontally stretched mesh leaves ranks without elements from
+        # a few hundred ranks on and overloads the centre at any count (README, Notes).
+        :lxy_partition        => false,
         :gmsh_filename        => "./problems/MHD/fluxEmergenceLeake2014/" * mesh,
         :lfilter              => false,
         :outformat            => "vtk",

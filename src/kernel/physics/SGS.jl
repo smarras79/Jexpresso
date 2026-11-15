@@ -1623,7 +1623,9 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  cutoff::TT=zero(TT),
                                  lnazarov_energy::Bool=false,
                                  lfast_floors::Bool=false,
-                                 lthermal::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
+                                 lthermal::Bool=false,
+                                 νphys::Union{Nothing,AbstractVector{TT}}=nothing,
+                                 ηphys::Union{Nothing,AbstractVector{TT}}=nothing) where {TT<:AbstractFloat, TI<:Integer}
     _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
     neqs = size(μ_dsgs, 2)
@@ -1903,9 +1905,142 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         if neqs >= 9
             μ_dsgs[ie,9] = visc_coeff[9]*μ                         # ψ
         end
+
+        # Explicit physical dissipation of a visco-resistive case (:mhd_dissipation, as the 3D
+        # kernel below): kinematic ν on the momentum slots (ρu, ρv, ρw; the dynamic ρ̄ν in the
+        # non-conserved form without the nodal-ρ scaling) and η on the B slots, on top of the
+        # DynSGS coefficient. Not on ρ, E or ψ.
+        if νphys !== nothing
+            νp = (lconserved || lnodal_rho) ? νphys[ie] : ρ_el*νphys[ie]
+            μ_dsgs[ie,2] += νp
+            μ_dsgs[ie,3] += νp
+            neqs >= 5 && (μ_dsgs[ie,5] += νp)
+        end
+        if ηphys !== nothing
+            for ieq = 6:min(neqs,8)
+                μ_dsgs[ie,ieq] += ηphys[ie]
+            end
+        end
     end
 
     return nothing
+end
+
+# ================================================================================
+# _dsgs_curl_resistive_2d!: divergence-preserving DynSGS resistivity in 2D
+# (:dsgs_curl_resistivity).
+#
+# The component Laplacian ∇·(η∇B) of the conserved-form kernel does not keep the
+# discrete divergence of the field: with η constant per element its strong-form,
+# lumped-mass DSS divergence is as large as the tendency itself (measured on
+# stretched quadrilaterals), so wherever the sensor fires on B it makes ∇·B,
+# which GLM then carries away (in a low-β corona as a Lorentz force B δB/ρ).
+# The ideal induction term does keep it: ∂ₜB_x = −∂_y E_z, ∂ₜB_y = ∂_x E_z is the
+# DSS-averaged strong-form curl of a single-valued nodal E_z, whose discrete
+# divergence vanishes identically. This routine writes the resistive part of
+# the in-plane induction the same way,
+#
+#     ∂ₜ(B_x, B_y) = −∇ₕ×(E ẑ),      E = η j_z,   j_z = ∂_x δB_y − ∂_y δB_x,
+#
+# with δB = B − B_e the departure from the reference field (zero at rest), η the
+# element coefficient of the B slots (DynSGS + :mhd_dissipation), and E the
+# lumped-mass average of the element values η_e j_z,e at each node, summed over
+# the ranks (DSS_global_RHS! on the scratch array `scr`, an npoin × neqs array
+# that is zero on entry and is left zero). The element contributions ω J (−∂_y E,
+# ∂_x E) are added to slots 6 and 7 of rhs_diff_el, whose own Laplacian the
+# caller has switched off. For a solenoidal field and constant η this is η∇²B,
+# the operator it replaces. B_z (no part in ∇·B in 2D) and the energy keep their
+# Laplacians: the conserved-form Laplacian of E already carries the magnetic
+# energy flux and the Ohmic heating of the resistive term to leading order.
+# ================================================================================
+function _dsgs_curl_resistive_2d!(rhs_diff_el::AbstractArray{TT}, scr::AbstractMatrix{TT},
+                                  ηe::AbstractVector{TT}, q::AbstractMatrix{TT}, qe::AbstractMatrix,
+                                  connijk::AbstractArray{TI,4}, ω::AbstractVector, dψ::AbstractMatrix,
+                                  Je::AbstractArray, dξdx::AbstractArray, dξdy::AbstractArray,
+                                  dηdx::AbstractArray, dηdy::AbstractArray,
+                                  g_dss_cache, neqs::Int, nelem::Int, ngl::Int, npoin::Int) where {TT<:AbstractFloat, TI<:Integer}
+    fill!(scr, zero(TT))
+    @inbounds for ie = 1:nelem
+        η = ηe[ie]
+        for l = 1:ngl, k = 1:ngl
+            dBxdξ = zero(TT); dBxdη = zero(TT); dBydξ = zero(TT); dBydη = zero(TT)
+            for m = 1:ngl
+                ipξ = connijk[ie,m,l,1]; ipη = connijk[ie,k,m,1]
+                dBxdξ += dψ[m,k]*(q[ipξ,6] - qe[ipξ,6]); dBxdη += dψ[m,l]*(q[ipη,6] - qe[ipη,6])
+                dBydξ += dψ[m,k]*(q[ipξ,7] - qe[ipξ,7]); dBydη += dψ[m,l]*(q[ipη,7] - qe[ipη,7])
+            end
+            jz = (dBydξ*dξdx[ie,k,l] + dBydη*dηdx[ie,k,l]) - (dBxdξ*dξdy[ie,k,l] + dBxdη*dηdy[ie,k,l])
+            w  = ω[k]*ω[l]*Je[ie,k,l]
+            ip = connijk[ie,k,l,1]
+            scr[ip,1] += w*η*jz
+            scr[ip,2] += w
+        end
+    end
+    DSS_global_RHS!(scr, g_dss_cache, neqs)
+    @inbounds for ip = 1:npoin
+        scr[ip,1] = scr[ip,2] > zero(TT) ? scr[ip,1]/scr[ip,2] : zero(TT)
+    end
+    @inbounds for ie = 1:nelem
+        for l = 1:ngl, k = 1:ngl
+            dEdξ = zero(TT); dEdη = zero(TT)
+            for m = 1:ngl
+                dEdξ += dψ[m,k]*scr[connijk[ie,m,l,1],1]
+                dEdη += dψ[m,l]*scr[connijk[ie,k,m,1],1]
+            end
+            dEdx = dEdξ*dξdx[ie,k,l] + dEdη*dηdx[ie,k,l]
+            dEdy = dEdξ*dξdy[ie,k,l] + dEdη*dηdy[ie,k,l]
+            w = ω[k]*ω[l]*Je[ie,k,l]
+            rhs_diff_el[ie,k,l,6] -= w*dEdy
+            rhs_diff_el[ie,k,l,7] += w*dEdx
+        end
+    end
+    fill!(scr, zero(TT))
+    return nothing
+end
+
+# ================================================================================
+# _mhd_anomalous_eta_2d!: current-dependent (anomalous) magnetic diffusivity
+#
+#     η = η₀ max(0, |j|/j_crit − 1),     j = ∇×B,
+#
+# per element, with |j| the largest nodal value of the element (2D: ∂/∂z = 0,
+# j = (∂B_z/∂y, −∂B_z/∂x, ∂B_y/∂x − ∂B_x/∂y)), ADDED to ηe. The ion-acoustic
+# anomalous resistivity of Leake, Linton & Antiochos (ApJ 722:550, 2010, Eqs.
+# 7-8; problems/MHD/fluxEmergenceLeake2010), written as a diffusivity: η₀ and
+# j_crit in the case's code units (B in the units of the state, lengths in
+# mesh units). Returns the number of elements where it is active.
+# ================================================================================
+function _mhd_anomalous_eta_2d!(ηe::AbstractVector{TT}, q::AbstractMatrix{TT},
+                                connijk::AbstractArray{TI,4}, dψ::AbstractMatrix,
+                                dξdx::AbstractArray, dξdy::AbstractArray,
+                                dηdx::AbstractArray, dηdy::AbstractArray,
+                                nelem::Int, ngl::Int, η0::TT, jcrit::TT) where {TT<:AbstractFloat, TI<:Integer}
+    nact = 0
+    @inbounds for ie = 1:nelem
+        j2max = zero(TT)
+        for l = 1:ngl, k = 1:ngl
+            dBxdξ = zero(TT); dBxdη = zero(TT)
+            dBydξ = zero(TT); dBydη = zero(TT)
+            dBzdξ = zero(TT); dBzdη = zero(TT)
+            for m = 1:ngl
+                ipξ = connijk[ie,m,l,1]; ipη = connijk[ie,k,m,1]
+                dBxdξ += dψ[m,k]*q[ipξ,6]; dBxdη += dψ[m,l]*q[ipη,6]
+                dBydξ += dψ[m,k]*q[ipξ,7]; dBydη += dψ[m,l]*q[ipη,7]
+                dBzdξ += dψ[m,k]*q[ipξ,8]; dBzdη += dψ[m,l]*q[ipη,8]
+            end
+            ξx = dξdx[ie,k,l]; ξy = dξdy[ie,k,l]; ηx = dηdx[ie,k,l]; ηy = dηdy[ie,k,l]
+            jx =  dBzdξ*ξy + dBzdη*ηy                       #  ∂B_z/∂y
+            jy = -(dBzdξ*ξx + dBzdη*ηx)                     # −∂B_z/∂x
+            jz = (dBydξ*ξx + dBydη*ηx) - (dBxdξ*ξy + dBxdη*ηy)
+            j2max = max(j2max, jx*jx + jy*jy + jz*jz)
+        end
+        r = sqrt(j2max)/jcrit
+        if r > one(TT)
+            ηe[ie] += η0*(r - one(TT))
+            nact += 1
+        end
+    end
+    return nact
 end
 
 # ================================================================================
@@ -1965,6 +2100,8 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  cutoff::TT=zero(TT),
                                  lfast_floors::Bool=false,
                                  lthermal::Bool=false,
+                                 lnazarov_energy::Bool=false,
+                                 Pr_t::TT=TT(0.7),
                                  νphys::Union{Nothing,AbstractVector{TT}}=nothing,
                                  ηphys::Union{Nothing,AbstractVector{TT}}=nothing) where {TT<:AbstractFloat, TI<:Integer}
     lconserved || error(" compute_dsgs_viscosity!(::DSGS_MHD, ::NSD_3D): only the conserved form is implemented in 3D (:dsgs_conserved => true).")
@@ -2127,7 +2264,12 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         μ_dsgs[ie,1] = visc_coeff[1]*μ                       # ρ
         μ_dsgs[ie,2] = visc_coeff[2]*μ + νp                  # ρu
         μ_dsgs[ie,3] = visc_coeff[3]*μ + νp                  # ρv
-        μ_dsgs[ie,4] = visc_coeff[4]*μ                       # E
+        # E: with the split energy flux (lnazarov_energy, as 2D) this coefficient acts on
+        # the THERMAL part p/(γ−1) only, Dao & Nazarov's κ = ρν/Pr on the residual viscosity
+        # with the full background floor; the non-thermal part is diffused with the ρu
+        # slot's coefficient by the 3D _expansion_visc!.
+        μ_dsgs[ie,4] = lnazarov_energy ? visc_coeff[4]*max(γ*γm1/Pr_t*μ_c, μ_floor) :
+                                         visc_coeff[4]*μ     # E
         μ_dsgs[ie,5] = visc_coeff[5]*μ + νp                  # ρw
         for ieq = 6:8
             μ_dsgs[ie,ieq] = visc_coeff[ieq]*μ + ηp          # B

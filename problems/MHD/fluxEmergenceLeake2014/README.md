@@ -47,7 +47,9 @@ The simulation is chosen in `user_inputs.jl`:
 | `:lk_mf` | `1.0` (default) / `1.25` | $p = \rho T/m_f$ (Deviations, item 4) |
 | `:lk_damp_xd`, `:lk_damp_zd` | 96, 180 | start of the side and top velocity-damping layers (Paper I used 170 at the top) |
 | `:lk_glm_alpha` | 1.0 | Dedner damping $\alpha_p$ of $\psi$, rate $\alpha_pc_h/\Delta h$ (Deviations, item 8) |
-| `LK_REF` (environment variable) | 1, 2 (default), 3 | mesh and time step (below); also `LK_TEND`, `LK_OUT_DT` and the restart (Restart) |
+| `LK_REF` (environment variable) | 1, 2 (default), 3, 4, 5 | mesh and time step (below); also `LK_TEND`, `LK_OUT_DT` and the restart (Restart) |
+| `LK_RHO_FLOOR`, `LK_P_FLOOR` (environment variables) | 0.2 (default) | the density and pressure floors as fractions of the reference atmosphere (Notes, "The floor fractions") |
+| `LK_REF_WEIGHT`, `LK_ENERGY_SPLIT` (environment variables) | 0 (default), 1 | the reference-weighted DynSGS operator of `fluxEmergenceLeake2022_2D` (its Deviations, item 5) and the split energy flux (`src/kernel/physics/SGS.jl`; in the 2.5D emergence it changed nothing, that README's Verification); `LK_REF_WEIGHT=1` for `LK_REF = 3`, 4 (Notes, "Vertical resolution") |
 
 ## Units
 
@@ -150,12 +152,15 @@ the paper's stretching:
 | 1 | $16^3$ | `LK_16x16x16.msh` (shipped) | $65^3$ | $3\times10^{-3}$ | smoke test |
 | 2 | $38^3$ | `LK_38x38x38.msh` (shipped) | $153^3$ | $1.2\times10^{-3}$ | half the paper's resolution (default) |
 | 3 | $76^3$ | `LK_76x76x76.msh` (generate) | $305^3$ | $6\times10^{-4}$ | the paper's $304^3$ |
+| 4 | $38^2\times76$ | `LK_38x38x76.msh` (generate) | $153^2\times305$ | $6\times10^{-4}$ | the paper's vertical spacing (Notes, "Vertical resolution") |
+| 5 | $16^2\times64$ | `LK_16x16x64.msh` (shipped) | $65^2\times257$ | $7.5\times10^{-4}$ | smoke test with the elements 2 tall |
 
-The $76^3$ mesh is not shipped (about 50 MB); generate it with
+The $76^3$ mesh is not shipped (about 50 MB), nor the $38^2\times76$ one (14 MB); generate them with
 
 ```bash
 cd problems/MHD/fluxEmergenceLeake2014
 gmsh -3 LK.geo -setnumber ref 3 -o LK_76x76x76.msh
+gmsh -3 LK.geo -setnumber ref 4 -o LK_38x38x76.msh
 ```
 
 The time step is set by the fastest wave on the smallest LGL gap. The fast
@@ -226,7 +231,8 @@ CFL monitor (Notes) prints the actual value as it grows.
    floors, thermal-energy residual), the explicit $\nu$ and $\eta$ added to
    the DynSGS coefficient element by element (`:mhd_dissipation`), and
    positivity floors $\rho \ge 0.2\rho_e(z)$, $p \ge 0.2p_e(z)$ as the
-   Runge–Kutta stage limiter (every hit is counted and printed).
+   Runge–Kutta stage limiter (every hit is counted and printed; the fractions
+   are `LK_RHO_FLOOR`, `LK_P_FLOOR`, Notes).
 6. **Discrete equilibrium (`:lwell_balanced`).** Neither the stratification
    nor the dipole is an exact equilibrium of the discrete operator, and in the
    corona ($\rho \sim 10^{-8}$, $\beta \sim 10^{-1}$) their interpolation errors
@@ -260,6 +266,25 @@ CFL monitor (Notes) prints the actual value as it grows.
    at $t = 0$, estimated elementwise on the three meshes, is 0.82, 0.082 and
    0.018 for `LK_REF` = 1, 2, 3 (the tube has $R = 2.5$, and the $16^3$
    elements are 12.5 wide), so the transient falls fast with resolution.
+9. **The papers' dipole is not current-free.** Paper II's Eq. 8 (Paper I's
+   Eq. 15) prints the dipole as "translationally invariant along y",
+   $A_y = B_d(z - z_d)/r_1^3$ with $r_1^2 = x^2 + (z - z_d)^2$, and this case
+   uses it as printed. A field invariant along $y$ is potential only if $A_y$
+   is harmonic in $(x, z)$, and $s/r_1^3$ ($s = z - z_d$) is not:
+   $\nabla\times\mathbf B = -\nabla^2A_y\,\hat{\mathbf y} = -3B_ds/r_1^5\,\hat{\mathbf y}$,
+   i.e. $|\mathbf j| = 1.5|\mathbf B|/r_1$ on the axis (checked by finite
+   differences of the coded field). For MD at the base of the corona
+   $(0, 0, 20)$ the Lorentz force $|\mathbf j\times\mathbf B| = 2.6\times10^{-6}$
+   is 60 times the gravity $\rho g = 4.2\times10^{-8}$: the background is not
+   an equilibrium of the continuous equations either, and only
+   `:lwell_balanced` (item 6) holds it at rest, by subtracting that force with
+   the rest of the background's discrete RHS at every stage; a departure from
+   the background (the emerging tube, the GLM transient) does not feel the
+   subtraction and moves in a corona that, physically, would not be at rest.
+   The potential field invariant along $y$ is the line dipole
+   $A_y \propto s/r_1^2$ (used by `fluxEmergenceLeake2022_2D`); it falls off
+   as $1/s^2$ rather than $1/s^3$, so it does not reproduce the shape of the
+   $\beta(0, 0, z)$ curves of Paper II's Fig. 1, which this field matches.
 
 ## Output
 
@@ -325,6 +350,7 @@ python3 $T ic MD=$MD                                              # Fig. 1(a), w
 python3 $T render $MD --preset ic        --times 0                # Fig. 1(b)
 python3 $T render $MD --preset emergence --times 5,40,60          # Fig. 2(a-c)
 python3 $T render $MD --preset emergence --times 5,40,60 --view top   # Fig. 2(d-f)
+python3 $T fig2   $MD --times 5,40,60 --grid                      # Fig. 2(a-f) with the paper's camera, colors and ticks
 python3 $T render $MD --preset arcade    --times 100,110,120      # Fig. 3
 python3 $T render $SD --preset dipoles   --times 100              # Fig. 4 (and $MD, $WD)
 python3 $T render $MD --preset rotation  --times 70,85,100        # Fig. 5(a-c)
@@ -371,7 +397,7 @@ How the quantities are computed:
   10 around it (blue, Fig. 10). The $B_z$ plane at $z = 0$ uses the papers'
   rainbow and range (±0.5 Fig. 2, ±0.2 Figs. 5–7 and 10, ±7.5 G in Fig. 1b);
   `--box`, `--azimuth`, `--elevation`, `--zoom`, `--dipole-seeds`,
-  `--tube-radii`, `--bz-clim` override a preset. Paper II's seed points and
+  `--tube-radii`, `--bz-clim`, `--bz-ticks` override a preset. Paper II's seed points and
   camera are not published, so the presets match its figures by eye. Fig. 9
   (hand-picked seeds) has no preset.
 
@@ -406,7 +432,25 @@ Short runs on 4 threads; the full runs are for a cluster.
   start at $t = 0.115t_0$ ($10^4$ hits by 0.15), and the CFL monitor stays at
   its initial 0.153.
 
-Nothing was run here at `LK_REF` = 2 or 3.
+- **Restart** (`LK_REF = 1`, Restart). A run with snapshots at $t = 0.03$
+  and $0.06$ restarted from its $t = 0.03$ snapshot, on 1 rank and on 2 MPI
+  ranks: the restart state equals the snapshot to $5\times10^{-16}$ of each
+  field's maximum ($T$ $7\times10^{-15}$), piece by piece. Ten steps later
+  (1 rank) $\rho$, $p$ and $T$ agree with the uninterrupted run to
+  $2\times10^{-4}$ and $\mathbf v$, $\mathbf B$ to 0.7–5 % of their maxima
+  ($\psi$ 9 %): the DynSGS residual history restarts from zero.
+- **`LK_REF = 4`** (load test; 15 GB of memory here, so at `:nop => 2`
+  with the mesh cache off). In one process (4 threads) the mesh reads, the
+  initial state solves to the MD values above ($B_d = -12351$,
+  $z_{sep} = -5.86$) and three steps run, with no floor and
+  $|\mathbf v| \le 6\times10^{-4}$; the peak memory is 9.4 GB, the whole run
+  8 minutes. On 4 MPI ranks the balanced partition, the metric terms and the
+  initial state complete, and each rank holds about 3 GB once the mesh is
+  read (every rank reads the whole file, Notes, "Partition"); the 4 ranks
+  pass 13 GB while allocating the solver arrays, and the test was stopped
+  there.
+
+Nothing was run here at `LK_REF` = 2 or 3, nor at 4 with `:nop => 4`.
 
 **Cost.** `LK_REF = 1` takes about 6 s per time step on 4 threads
 ($65^3$ nodes). Scaling by nodes and steps, `LK_REF = 2` ($153^3$ nodes,
@@ -418,6 +462,94 @@ formation of the flux rope.
 
 ## Notes
 
+- **Vertical resolution.** At $N = 4$ an element couples all its nodes: a
+  pressure or mass-flux disturbance at its bottom node also forces its top
+  node, by the derivative of the bottom node's Lagrange polynomial there,
+  $\ell_0'(1) = \tfrac{1}{10}\lvert\ell_0'(-1)\rvert$, and the top node's
+  acceleration is that force over its own density. An element across which
+  $\rho$ falls by a factor $C$ therefore hands its top node about $C/10$ times
+  the velocity of its bottom node, and the next element does the same. The
+  chromosphere ($T = 1$, scale height 1) and the transition region (density
+  scale height $1/(1/T + \alpha)$, 0.67 at its base) need elements no taller
+  than about 2 for $C/10 \lesssim 1$ (an estimate for tall elements: the
+  growth measured at height 2 is larger, below):
+
+  | `LK_REF` | element height, $z = 0$–20 | largest $C$ per element | $C/10$ along $z = 0$–15 |
+  |---|---|---|---|
+  | 1 ($16^3$) | 8.1 | 4230 ($z = 2.5$–10.6), 246 (10.6–18.75) | 423, 25 |
+  | 2 ($38^3$) | 3.4 | 31, 31, 41, 15 | 3.1, 3.1, 4.1, 1.5: about 60 in all |
+  | 5 ($16^2\times64$) | 2.0 | 9.5 | $\le 1$ (measured: about 4) |
+  | 3, 4 ($76$ in $z$) | 1.7 | 7.4 | $\le 0.7$ |
+
+  Measured at `LK_REF = 1` with `LK_DIAG_TR=1`: the tube's
+  start-up transient reaches $z = 2.5$ with $\lvert\mathbf v\rvert = 4\times10^{-6}$
+  at $t = 0.006$, and $\lvert\mathbf v\rvert$ then grows upward through the
+  chromosphere element ($4.5\times10^{-8}$ at $z = 3.9$, $1.6\times10^{-6}$ at
+  9.2, $7.5\times10^{-6}$ at 10.6) and again through the transition-region
+  element ($2.5\times10^{-5}$ at 18.75), independently of the time step and of
+  $y$. By $t = 0.06$ the transition region has $\lvert\delta\mathbf B\rvert/\lvert\mathbf B_e\rvert$
+  and $\lvert\delta p\rvert/p_e$ of 0.1, DynSGS is at its cap there, and the
+  pressure floors fire at $z = 10.6$ from $t = 0.115$; the reference-weighted
+  operator and the split energy flux (`LK_REF_WEIGHT`, `LK_ENERGY_SPLIT`) bring
+  the floors earlier ($t = 0.084$, 0.087). Without the tube the reference stays
+  exact, and a $10^{-8}$ random velocity in $0 \le z \le 30$ does not grow.
+
+  The same run at `LK_REF = 5` (same horizontal mesh and tube, elements 2 tall,
+  $\Delta t = 7.5\times10^{-4}$), with transition-region maxima over $5 \le z \le 25$:
+
+  | $t$ | $\lvert\mathbf v\rvert$, `LK_REF` 1 / 5 | $\lvert\delta p\rvert/p_e$, 1 / 5 | $\lvert\delta\mathbf B\rvert/\lvert\mathbf B_e\rvert$, 1 / 5 | DynSGS $\mu$, 1 / 5 |
+  |---|---|---|---|---|
+  | 0.03 | $1.7\times10^{-2}$ / $4\times10^{-8}$ | $2.7\times10^{-3}$ / $3\times10^{-9}$ | $7.8\times10^{-3}$ / $7\times10^{-6}$ | 0.9 / 0.01 |
+  | 0.06 | 0.40 / $1.6\times10^{-5}$ | 0.11 / $4\times10^{-7}$ | 0.12 / $1.1\times10^{-4}$ | 15.7 / 0.01 |
+  | 0.075 | 0.56 / $7.7\times10^{-5}$ | 0.25 / $1.2\times10^{-6}$ | 0.19 / $2.5\times10^{-4}$ | 40.6 / 0.01 |
+  | 0.15 | floors (from 0.115) / $6.2\times10^{-3}$ | / $2.1\times10^{-4}$ | / $9.8\times10^{-4}$ | / 0.0104 |
+
+  ($\mu = 0.01$ is the physical viscosity of `:mhd_dissipation`: DynSGS stays
+  idle, and no floor fires to $t = 0.15$.) The tube itself moves at the same
+  speed on both meshes ($\lvert\mathbf v\rvert_{\max} = 2.6$ and
+  $3.3\times10^{-3}$ at $t \approx 0.015$), so the orders of magnitude are the
+  transmission, not the source.
+
+  The refined mesh delays the transmission; it does not stop it. At
+  $t = 0.15$ the transition-region maximum is the same at every $y$ (the
+  whole tube, which runs along $y$, drives it, not its buoyant middle) and
+  still grows about as $t^5$. Along $x = 0$ it is a node-to-node oscillation
+  ($w$ changes sign from node to node, largest at the element faces) that
+  falls about tenfold per element through the convection zone above the tube
+  ($\lvert\mathbf v\rvert = 3\times10^{-5}$ at $z = -6$, $10^{-8}$ at $z = 0$)
+  and grows about fourfold per element through the chromosphere, where
+  $C = 7.6$: a wave that keeps its energy flux grows by $\sqrt{C} = 2.8$, and
+  the one-node estimate, $C/10 = 0.8$, is too low for elements this short.
+  Sound from the tube reaches the photosphere only at $t \approx 5$, so all of
+  it is numerical; what the refinement buys is mainly the six convection-zone
+  elements it has to cross. Whether `LK_REF = 3`, 4 carry the tube's physical
+  start-up transient (from $t \approx 5$) through the transition region
+  without the floors is not tested here in 3D. In 2.5D it is
+  (`fluxEmergenceLeake2022_2D`, the 2022 rope's cross-section in the same
+  atmosphere, absolute DynSGS form): with elements 4 tall ($C = 55$) the
+  pressure floors fire from $t = 2.3$ and the transition region above the
+  rope is evacuated and heated to $T \sim 7\times10^3$ from $t \approx 5$;
+  with elements 2 tall ($C = 7.4$–9.6, the same horizontal mesh) no floor
+  fires to $t = 10$ and $T \le 183$, while the rope rises at the same rate
+  in both. Continued from $t = 10$, that run drains the chromosphere above
+  the rope sideways and evacuates it to the floors from $t = 12.7$ (93 nodes
+  at $h = 7.7$–16.3 and $|\mathbf v|$ to 13.5 by $t = 15.1$); with the
+  reference-weighted operator instead (`LK_REF_WEIGHT=1` here), the same
+  continuation has at most 20 nodes at the floors, over $t = 14.1$–17.3, and
+  none from then to $t = 20$ (its README, Verification). No flux has emerged
+  by $t = 20$ in any of these runs. For `LK_REF = 3`, 4 this points to
+  `LK_REF_WEIGHT=1`. The one 3D comparison of the two forms, at `LK_REF = 1`
+  above, is the numerical transmission through 8-tall elements, which both
+  fail.
+- **Partition.** The deck sets `:lxy_partition => false`: a balanced 3D
+  partition (METIS, through GridapGmsh's distributed reader, which reads the
+  mesh file on every rank). Jexpresso's default (`true`) bins the $x$–$y$
+  bounding box into a uniform $n_x\times n_y$ grid of columns, one per rank;
+  on these horizontally stretched meshes the outer elements are several bins
+  wide, so from a few hundred ranks on some ranks get no element and the run
+  stops in `mod_mesh_read_gmsh!` with `reducing over an empty collection`
+  (at $38^3$: 32 of 448 and 116 of 896 ranks empty), and at any count the
+  central ranks carry 1.3–1.9 times the average load.
 - **Progress.** Snapshots are $5t_0$ apart (1667 steps at `LK_REF = 1`), and
   the floor and CFL lines below are printed only when their totals pass a
   power of ten or grow by 20 %, so a healthy run can print nothing for tens of
@@ -432,6 +564,17 @@ formation of the flux rope.
   ($t_n + c_i\Delta t$, in $t_0$), not an output time: snapshots are written at
   `:diagnostics_at_times` only. A node on a partition interface counts once
   per rank that holds it.
+- **The floor fractions.** A node with $\rho < f_\rho\rho_e(z)$ gets
+  $\rho = f_\rho\rho_e$ at fixed momentum, one with $p < f_pp_e(z)$ its
+  energy raised to $p = f_pp_e$ at fixed velocity and field (mass and heat
+  added). $f_\rho = f_p = 0.2$, or `LK_RHO_FLOOR`, `LK_P_FLOOR` in the
+  environment (read at each start and printed with the inputs, so a restart
+  can change them). The density floor also bounds the fast speed,
+  $\propto 1/\sqrt\rho$, that the fixed `:Δt` has to resolve; the pressure
+  floor only heats. In the 2.5D emergence (`fluxEmergenceLeake2022_2D`, its
+  README, Verification) the pressure floor holds isolated nodes in the weak
+  ambient field whose pressure collapses numerically; at 0.01 instead of 0.2
+  they fall to the new floor and the rope evolves the same.
 - **Stage diagnostics** (`LK_DIAG=n` in the environment, off by default):
   every `n`-th Runge–Kutta stage rank 0 prints `#DIAG t=…` with the largest
   $|\mathbf v|$ and $|\mathbf v| + c_f$, the smallest $\rho/\rho_e$, the
