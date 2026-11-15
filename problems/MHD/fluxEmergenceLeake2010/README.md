@@ -73,7 +73,8 @@ editing the deck:
 | `JEXPRESSO_LK10_RESTART_DIR` | an output directory, or `latest` | continue that run from a snapshot (Restart, below) |
 | `JEXPRESSO_LK10_RESTART_TIME` | seconds | the snapshot nearest this time (default: the last complete one) |
 | `JEXPRESSO_LK10_CMIN` | default 0 | DynSGS background floor $C_{min}$ |
-| `JEXPRESSO_LK10_FLOORS` | `0` (default), `1` | positivity floors as the Runge–Kutta stage limiter |
+| `JEXPRESSO_LK10_FLOORS` | `1` (default), `0` | positivity floors as the Runge–Kutta stage limiter (Positivity, below) |
+| `JEXPRESSO_LK10_TFLOOR` | default 0.1 | temperature floor, in $T_{ph}$ = 5700 K |
 
 For example, the erratum's Fig. 1 (tubes 1 and 2, field-free corona) and its
 Figs. 6–7 (tubes into the 52 G dipole):
@@ -210,10 +211,26 @@ paper's dissipation and its energy relaxation:
   and thermal-energy residual for the low-β corona; $C_R = 1$,
   $C_{max} = 0.5$); the in-plane field is diffused in curl form (next sections).
   It replaces the numerical dissipation of Lare (shock viscosity and remap) and
-  is the only shock capturing. The background floor
+  is the only shock capturing, with the positivity floors (next item). The background floor
   $C_{min}$ of the parent case is off: $C_{min}\Delta c_f$ with $c_f\approx270$
   in the corona would be a diffusivity of ~4 $L_0v_0$, two orders of magnitude
   above Lare's own estimate of its numerical resistivity.
+- **Positivity** (`JEXPRESSO_LK10_FLOORS`, on by default, as in the other Leake
+  cases). Where the field is strong and β low the pressure is the small
+  remainder $p = (\gamma-1)(E - \tfrac12\rho v^2 - \tfrac12B^2 - \tfrac12\psi^2)$,
+  and it goes negative: in a run of the default deck without floors from
+  ~200 s in the upper chromosphere under the quadrupole's strongest field
+  ($\lvert x\rvert$ = 10–19 Mm, $y \approx$ 2.3–2.6 Mm, $\beta \approx 3\times10^{-3}$;
+  $p/p_0$ = −2.2 at 232 s, the CFL number 0.11 throughout), then 50 km/s flows
+  in the corona and a non-finite solution at 631 s; in the field-free run at
+  the top of the emerging tube ($T$ = −0.02 at 1000 s). The stage limiter keeps
+  $T = p/\rho \ge T_{min}$ = 0.1 $T_{ph}$ (570 K, below any temperature of the
+  model; `JEXPRESSO_LK10_TFLOOR`) by raising $E$ at fixed velocity and field,
+  and $\rho \ge 0.2\,p_e(y)/T_{cor}$: $0.2\rho_e$ in the corona, 150 times below
+  the density in the chromosphere. Unlike the other cases' $0.2\rho_e(y)$,
+  $0.2p_e(y)$, neither acts where the transition region dips (coronal density
+  and pressure at chromospheric heights) or on cool plasma lifted into the
+  corona. Not conservative where they fire; the log reports the hits.
 
 ## What is not in the paper, and what was done
 
@@ -361,8 +378,9 @@ python3 tools/plot_leake2010.py diag $RUN --dt <the run's Δt>
 ```
 
 Then continue from a snapshot before the trouble began, one change at a time
-(same rank count), e.g. from 464 s with the time step halved, or with the
-positivity floors, or with the component Laplacian on $B$:
+(same rank count), e.g. from 464 s with the time step halved, or another
+temperature floor (`JEXPRESSO_LK10_TFLOOR`), or the component Laplacian on $B$
+(`JEXPRESSO_LK10_CURLB=0`); a run made without the floors gets them by default:
 
 ```bash
 JEXPRESSO_LK10_RESTART_DIR=$RUN JEXPRESSO_LK10_RESTART_TIME=464 JEXPRESSO_LK10_DT=<half the run's Δt> mpiexec -n <ranks> julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2010
@@ -462,12 +480,13 @@ Short runs on 4 cores; the full runs are for a cluster (above).
   end time it stopped with "nothing to continue"; a snapshot cut short (half of
   one piece) was skipped for the one before. `plot_leake2010.py axis` reads the
   three directories as one run.
-- **Known issue (open).** A cluster run of the default deck (medium quadrupole,
-  tube 2) stopped at $t$ = 631 s ($27.23\,t_0$) with a non-finite density in the
-  corona above the tube, first at $(x, y)$ = (0.75, 5.0) and (1.5, 8.3) Mm; the
-  anomalous resistivity had switched on just after 580 s. The cause is not
-  known yet: `diag` on that run and the restarts of "When a run fails" (above)
-  are the next steps.
+- **A failure, and the positivity floors.** A cluster run of the default deck,
+  then without floors, stopped at $t$ = 631 s ($27.23\,t_0$) with a non-finite
+  density in the corona above the tube; the anomalous resistivity had switched on
+  just after 580 s. `diag` on its snapshots: the CFL number stayed at 0.11, the
+  pressure went negative from ~200 s in the low-β upper chromosphere
+  (Positivity, above). The floors are on by default since; that they carry the
+  run through is still to be shown (a restart of that run from 116 s).
 - **Not done here:** the emergence after 1000 s, any REF 2 run, and the
   quadrupole run to 2530 s, i.e. the comparison with the erratum's Fig. 3, which
   needs the cluster (above). `plot_leake2010.py density` and `dome` produce
@@ -480,7 +499,7 @@ Short runs on 4 cores; the full runs are for a cluster (above).
 
 | file | content |
 |---|---|
-| `user_inputs.jl` | the deck: environment switches, Δt, DynSGS, dissipation, optional floors |
+| `user_inputs.jl` | the deck: environment switches, Δt, DynSGS, dissipation, positivity floors |
 | `initialize.jl` | atmosphere, tubes, quadrupole/dipole, the discrete curl, $c_h$, $\Delta h$, the $\epsilon_0(\rho)$ table; the restart and `lk10_case.txt` |
 | `user_flux.jl` | units and constants of the paper, ideal GLM-MHD flux with $\gamma = 5/3$ |
 | `user_source.jl` | gravity, energy relaxation, GLM damping, damping layers |
