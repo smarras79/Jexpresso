@@ -543,7 +543,11 @@ end
 lk10_restart_fields() = ["ρ", "u", "v", "w", "p", "Bx", "By", "Bz", "ψ"]
 
 # What a restart must not change: the problem, the dissipation, the mesh, the ranks.
-# (Δt, the end time and the snapshot interval may change.)
+# Δt, the end time and the snapshot interval may change, and so may the numerical
+# switches of lk10_numeric_keys (to continue past a failure from an earlier snapshot);
+# the restart says which changed.
+lk10_numeric_keys() = ("curl_resistivity", "Cmin", "floors")
+
 function lk10_case_record(inputs)
     return Pair{String,String}[
         "tube"             => string(get(inputs, :lk10_tube, 2)),
@@ -594,9 +598,11 @@ function lk10_read_case_record(dir)
     return d
 end
 
-function lk10_record_mismatch(old::Dict{String,String}, rec)
+# the differences in the keys that must not change, or (numerics = true) in the numerical switches
+function lk10_record_mismatch(old::Dict{String,String}, rec; numerics::Bool=false)
     bad = String[]
     for (k, v) in rec
+        (k in lk10_numeric_keys()) == numerics || continue
         w = get(old, k, "(not recorded)")
         w == v || push!(bad, "$(k): $(w) there, $(v) here")
     end
@@ -698,6 +704,8 @@ function lk10_restart_from_vtk!(q, mesh, inputs, rdir_in::String, OUTPUT_DIR::St
                 bad = lk10_record_mismatch(old, rec)
                 isempty(bad) || error(" problems/MHD/fluxEmergenceLeake2010: restart: $(rdir) is a run of another configuration:\n   ",
                                       join(bad, "\n   "), "\n Use the JEXPRESSO_LK10_* switches, the mesh and the rank count of the run that wrote it.")
+                chg = lk10_record_mismatch(old, rec; numerics=true)
+                isempty(chg) || println(" Restart: numerical switches changed: ", join(chg, "; "))
             end
             tr, iout, nskip = lk10_pick_snapshot(rdir, want, nparts)
             nskip > 0 && println(" Restart: the last $(nskip) snapshot(s) listed in $(rdir) are incomplete (a job stopped while writing); taking the one before.")

@@ -325,7 +325,9 @@ stops at once ("nothing to continue"), so a spare job in the chain is harmless.
   snapshot. Every run writes its `JEXPRESSO_LK10_*` configuration, mesh and
   rank count to `lk10_case.txt` in its output directory, and a restart from a
   run with another record stops with the list of differences. The time step
-  (`JEXPRESSO_LK10_DT`), the end time and the snapshot interval may change.
+  (`JEXPRESSO_LK10_DT`), the end time, the snapshot interval and the numerical
+  switches `JEXPRESSO_LK10_FLOORS`, `_CMIN` and `_CURLB` may change (the log
+  says which did): that is how a run continues past a failure (below).
 - **Which run.** `JEXPRESSO_LK10_RESTART_DIR` is the output directory
   (`output/MHD/fluxEmergenceLeake2010/output-<date>`), or `latest`: the most
   recently written run with the same record under
@@ -349,6 +351,27 @@ stops at once ("nothing to continue"), so a spare job in the chain is harmless.
   on 128 cores); `JEXPRESSO_LK10_DOUT` shortens it (the figure times are always
   written).
 
+**When a run fails** (`non-finite solution at t = …`, with the place): the
+snapshots before it show what grew, and from where (code units; `--dt` is the
+run's $\Delta t$ in $t_0$, printed in its log, and turns the rate into the CFL
+number with the true fast speed; `--ymin 2` looks at the corona only):
+
+```bash
+python3 tools/plot_leake2010.py diag $RUN --dt <the run's Δt>
+```
+
+Then continue from a snapshot before the trouble began, one change at a time
+(same rank count), e.g. from 464 s with the time step halved, or with the
+positivity floors, or with the component Laplacian on $B$:
+
+```bash
+JEXPRESSO_LK10_RESTART_DIR=$RUN JEXPRESSO_LK10_RESTART_TIME=464 JEXPRESSO_LK10_DT=<half the run's Δt> mpiexec -n <ranks> julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2010
+```
+
+A first sign comes before the failure: `anomalous resistivity … active` means
+$\lvert\nabla\times\mathbf B\rvert$ passed $j_{crit}$ = 126, a jump of tens of
+kilogauss across a cell, which nothing in this problem makes physically.
+
 ## Figures
 
 `tools/plot_leake2010.py` draws the paper's figures from the output (numpy and
@@ -361,6 +384,7 @@ python3 tools/plot_leake2010.py dome     tube2=$RUN      # top of the dense dome
 python3 tools/plot_leake2010.py axis     tube2=$RUN      # Erratum Fig. 2(a): axis height vs time, with the erratum's curves
 python3 tools/plot_leake2010.py eshear   tube2=$RUN      # Erratum Figs. 2(b,c), 5: E_shear above 1.2 and 5 Mm (Eq. 20)
 python3 tools/plot_leake2010.py profiles $RUN            # Fig. 3(a,b) at t = 0, with the paper's values
+python3 tools/plot_leake2010.py diag     $RUN --dt <Δt>  # per snapshot: largest speed, CFL, current; smallest p/p0, beta
 ```
 
 The density panels use the paper's window ($\lvert x\rvert < 12.75$ Mm,
@@ -370,6 +394,12 @@ element by element, exactly for the degree-4 interpolant) and arrows along
 $B_x$ at $x = 0$, $y$ = 3, 11, 16 Mm. The axis of the tube is where $B_x$ on
 $x = 0$ changes sign from − to + (the paper's definition), the crossing nearest
 the peak of $B_z$. `axis`, `dome` and `eshear` write one CSV per run.
+
+`RUN` may be any directory of a run continued by restarts: the script follows
+the chain through the `lk10_case.txt` files (`--no-chain`: only the
+directories given) and lists each directory with its times. A figure time with
+no snapshot (the run stopped before it) is left out, with a note (`--nearest`:
+the nearest snapshot instead).
 
 ## Verification here
 
@@ -432,6 +462,12 @@ Short runs on 4 cores; the full runs are for a cluster (above).
   end time it stopped with "nothing to continue"; a snapshot cut short (half of
   one piece) was skipped for the one before. `plot_leake2010.py axis` reads the
   three directories as one run.
+- **Known issue (open).** A cluster run of the default deck (medium quadrupole,
+  tube 2) stopped at $t$ = 631 s ($27.23\,t_0$) with a non-finite density in the
+  corona above the tube, first at $(x, y)$ = (0.75, 5.0) and (1.5, 8.3) Mm; the
+  anomalous resistivity had switched on just after 580 s. The cause is not
+  known yet: `diag` on that run and the restarts of "When a run fails" (above)
+  are the next steps.
 - **Not done here:** the emergence after 1000 s, any REF 2 run, and the
   quadrupole run to 2530 s, i.e. the comparison with the erratum's Fig. 3, which
   needs the cluster (above). `plot_leake2010.py density` and `dome` produce

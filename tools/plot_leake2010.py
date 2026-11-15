@@ -29,6 +29,7 @@ from plot_fluxemergence_vtu import read_pvtu, pvtu_time, grid2d, flux_function_i
 
 L0_MM = 0.15            # code length unit, Mm
 T0_S = 23.1946          # code time unit, s (problems/MHD/fluxEmergenceLeake2010/user_flux.jl)
+V0_KMS = L0_MM * 1e3 / T0_S   # code velocity unit, km/s
 ERRATUM_FIG3_TIMES = [920, 1380, 1610, 1955, 2185, 2530]
 ERRATUM_FIG1_TIMES = [920, 1610, 2070, 2254]
 
@@ -59,28 +60,84 @@ PAPER_FIG3B_QUAD98 = np.array([
     [8.0, -1.359], [10.0, -1.510]])
 
 
+def _record(d):
+    """lk10_case.txt of an output directory (initialize.jl): the output directory it was restarted from
+    (its name), or None."""
+    f = os.path.join(d, "lk10_case.txt")
+    if not os.path.isfile(f):
+        return None
+    for line in open(f, encoding="utf-8", errors="replace"):
+        m = re.match(r"#\s*restarted from\s+(.+?),\s*iter_\d+", line.strip())
+        if m:
+            return os.path.basename(os.path.normpath(m.group(1)))
+    return None
+
+
+def _chain(d):
+    """The output directories of the run through d, oldest first: each restart (JEXPRESSO_LK10_RESTART_DIR)
+    writes a new directory and names the one it continues in its lk10_case.txt. Two restarts from the same
+    directory: the most recent one is followed."""
+    root, name = os.path.split(os.path.normpath(d))
+    root = root or "."
+    if not os.path.isdir(os.path.join(root, name)):
+        raise SystemExit(f"{d}: not a directory (give the output-<date> directory of a run)")
+    parent = {s: _record(os.path.join(root, s)) for s in os.listdir(root) if os.path.isdir(os.path.join(root, s))}
+    chain = [name]
+    while parent.get(chain[0]) in parent and parent[chain[0]] not in chain:
+        chain.insert(0, parent[chain[0]])
+    while True:
+        kids = [s for s, q in parent.items() if q == chain[-1] and s not in chain]
+        if not kids:
+            break
+        chain.append(max(kids, key=lambda s: os.path.getmtime(os.path.join(root, s))))
+    return [os.path.join(root, s) for s in chain]
+
+
+FOLLOW_CHAIN = True    # --no-chain: only the directories given
+
+
 def runs_of(spec):
-    """[(t [s], iter_N.pvtu)] of RUN (DIR or DIR1,DIR2,...), by time; a later directory wins a repeated time."""
-    out = {}
+    """[(t [s], iter_N.pvtu)] of RUN (DIR or DIR1,DIR2,...), by time, with the directories of its restarts
+    (lk10_case.txt) unless --no-chain; a later directory wins a repeated time."""
+    dirs = []
     for d in spec.split(","):
+        for c in (_chain(d) if FOLLOW_CHAIN else [os.path.normpath(d)]):
+            if c not in dirs:
+                dirs.append(c)
+    out = {}
+    for d in dirs:
         items = [(pvtu_time(f), f) for f in glob.glob(os.path.join(d, "iter_*.pvtu"))]
+        items = [(t * T0_S, f) for t, f in items if t is not None]
         if not items:
-            raise SystemExit(f"{d}: no iter_N.pvtu (give the output-<date> directory of a run)")
+            raise SystemExit(f"{d}: no iter_N.pvtu with a time (give the output-<date> directory of a run)")
+        print(f"   {d}: {len(items)} snapshots, t = {min(items)[0]:.0f} to {max(items)[0]:.0f} s")
         for t, f in items:
-            if t is not None:
-                out[round(t * T0_S, 6)] = f
+            out[round(t, 6)] = f
     return sorted(out.items())
 
 
-def nearest(items, times):
-    """The snapshot nearest each requested time [s]; warns when it is more than 1 s away."""
-    sel = []
+def nearest(items, times, tol=1.0):
+    """The snapshot at each requested time [s], within tol. A time the run has no snapshot at is left out
+    (the deck writes every figure time, so the run did not get there); with --nearest the nearest is used."""
+    sel, miss = [], []
     for tq in times:
         t, f = min(items, key=lambda it: abs(it[0] - tq))
-        if abs(t - tq) > 1.0:
-            print(f"   note: no snapshot at {tq:g} s, using t = {t:.1f} s ({os.path.basename(f)})")
-        sel.append((t, f))
+        if abs(t - tq) <= tol or NEAREST:
+            if abs(t - tq) > tol:
+                print(f"   note: no snapshot at {tq:g} s, using t = {t:.1f} s ({os.path.basename(f)})")
+            sel.append((t, f))
+        else:
+            miss.append(tq)
+    if miss:
+        print(f"   no snapshot at {', '.join(f'{m:g}' for m in miss)} s: the snapshots end at {items[-1][0]:.1f} s. "
+              "If the run stopped there, its log says why; a run continued by restarts is followed through "
+              "lk10_case.txt (or give all its directories: RUN=dir1,dir2).")
+    if not sel:
+        raise SystemExit("   nothing to plot")
     return sel
+
+
+NEAREST = False        # --nearest: the nearest snapshot for a time the run has none at
 
 
 def load(path, names):
@@ -363,6 +420,52 @@ def cmd_eshear(a):
     print("wrote", out)
 
 
+def cmd_diag(a):
+    """What grows before a run fails: per snapshot, the largest speed |u|, fast speed c_f = ((gamma p + B^2)/rho)^1/2,
+    CFL rate (|u| + c_f)/dx (dx the local node spacing; times the run's dt, the CFL number), current |curl B|,
+    and the smallest p/p(t0) and beta, with where they are (Mm). Code units, as the run (README, "Units")."""
+    items = runs_of(a.run)
+    if a.tmin is not None:
+        items = [it for it in items if it[0] >= a.tmin - 1e-6]
+    names = ["ρ", "p", "u", "v", "w", "Bx", "By", "Bz"]
+    g0 = load(items[0][1], names)
+    G = lambda g, n: grid2d(g, g["fields"][n])
+    p0 = G(g0, "p")
+    if p0 is None:
+        raise SystemExit("diag: the nodes do not form a tensor-product grid")
+    xc, yc = g0["xc"], g0["yc"]
+    dx = np.gradient(xc)[None, :]; dy = np.gradient(yc)[:, None]
+    dmin = np.minimum(np.broadcast_to(dx, p0.shape), np.broadcast_to(dy, p0.shape))
+    win = np.ones(p0.shape, bool)
+    if a.ymin is not None:
+        win &= (yc[:, None] * L0_MM >= a.ymin)
+    at = lambda Z, k: f"({xc[k[1]] * L0_MM:6.2f},{yc[k[0]] * L0_MM:6.2f})"
+    def arg(Z, fn):
+        Zw = np.where(win, Z, np.nan)
+        k = np.unravel_index(fn(Zw), Z.shape)
+        return Zw[k], k
+    cfl_hdr = "CFL" if a.dt else "(|u|+cf)/dx"
+    print(f"{'t [s]':>8} {'max|u|':>9} {'at (x,y) Mm':>16} {'max cf':>9} {cfl_hdr:>11} {'at':>16} "
+          f"{'max|j|':>9} {'at':>16} {'min p/p0':>9} {'at':>16} {'min beta':>9} {'at':>16}")
+    for t, f in items:
+        g = load(f, names)
+        rho, p = G(g, "ρ"), G(g, "p")
+        u, v, w = G(g, "u"), G(g, "v"), G(g, "w")
+        Bx, By, Bz = G(g, "Bx"), G(g, "By"), G(g, "Bz")
+        B2 = Bx**2 + By**2 + Bz**2
+        sp = np.sqrt(u**2 + v**2 + w**2)
+        cf = np.sqrt(np.maximum(5.0 / 3.0 * p + B2, 0.0) / rho)
+        rate = (sp + cf) / dmin
+        jz = np.gradient(By, xc, axis=1) - np.gradient(Bx, yc, axis=0)
+        jx = np.gradient(Bz, yc, axis=0); jy = -np.gradient(Bz, xc, axis=1)
+        j = np.sqrt(jx**2 + jy**2 + jz**2)
+        beta = np.where(B2 > 0, 2.0 * p / np.maximum(B2, 1e-300), np.inf)
+        su, ku = arg(sp, np.nanargmax); sc, _ = arg(cf, np.nanargmax); sr, kr = arg(rate, np.nanargmax)
+        sj, kj = arg(j, np.nanargmax); spp, kp = arg(p / p0, np.nanargmin); sb, kb = arg(beta, np.nanargmin)
+        print(f"{t:8.1f} {su * V0_KMS:7.1f}km/s {at(sp, ku):>16} {sc:9.1f} {sr * (a.dt or 1.0):11.3g} {at(rate, kr):>16} "
+              f"{sj:9.3g} {at(j, kj):>16} {spp:9.3g} {at(p, kp):>16} {sb:9.3g} {at(beta, kb):>16}")
+
+
 def cmd_profiles(a):
     items = runs_of(a.run)
     t, f = items[0]
@@ -401,6 +504,8 @@ def main():
     p.add_argument("--outdir", default="figs_leake2010")
     p.add_argument("--format", default="png")
     p.add_argument("--dpi", type=int, default=150)
+    p.add_argument("--no-chain", action="store_true", help="only the directories given, not the restarts of the run")
+    p.add_argument("--nearest", action="store_true", help="the nearest snapshot for a time the run has none at")
     sub = p.add_subparsers(dest="cmd", required=True)
     for name, fn in (("density", cmd_density), ("shear", cmd_shear)):
         s = sub.add_parser(name); s.set_defaults(fn=fn)
@@ -429,7 +534,14 @@ def main():
     s.add_argument("runs", nargs="+", help="RUN or LABEL=RUN")
     s = sub.add_parser("profiles"); s.set_defaults(fn=cmd_profiles)
     s.add_argument("run")
+    s = sub.add_parser("diag"); s.set_defaults(fn=cmd_diag)
+    s.add_argument("run")
+    s.add_argument("--dt", type=float, default=None, help="the run's time step in t0 (its log): print the CFL number")
+    s.add_argument("--ymin", type=float, default=None, help="only y >= YMIN Mm (e.g. 2 for the corona)")
+    s.add_argument("--tmin", type=float, default=None, help="only snapshots from TMIN s")
     a = p.parse_args()
+    global FOLLOW_CHAIN, NEAREST
+    FOLLOW_CHAIN, NEAREST = not a.no_chain, a.nearest
     os.makedirs(a.outdir, exist_ok=True)
     a.fn(a)
 
