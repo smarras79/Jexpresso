@@ -23,7 +23,7 @@ function user_inputs()
         :ode_solver           => SSPRK54(), #CarpenterKennedy2N54(),
         :Δt                   => 6000.0/2^lvl, #600.0/2^lvl, 
         :tinit                => 0.0,
-        :tend                 => 6.0 * year, #6 years in seconds
+        :tend                 => 10.0 * year, #6 years in seconds
         :diagnostics_at_times => (0: 30*day : 6.0*year),
         # Debugging diagnostic: check the MPI-global minimum layer thickness
         # after every accepted timestep and print only when it is negative.
