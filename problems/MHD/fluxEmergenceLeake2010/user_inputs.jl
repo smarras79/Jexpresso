@@ -31,7 +31,8 @@
 #   JEXPRESSO_LK10_TUBE_EQ   thermal | relaxed: tube in thermal equilibrium (the paper),
 #                            or on the relaxed background relation ρT₀(ρ) = p      [thermal]
 #   JEXPRESSO_LK10_CMIN      DynSGS background floor C_min                        [0]
-#   JEXPRESSO_LK10_FLOORS    1: positivity floors as the Runge-Kutta stage limiter [0]
+#   JEXPRESSO_LK10_FLOORS    0: no positivity floors (stage limiter)              [1]
+#   JEXPRESSO_LK10_TFLOOR    temperature floor, in T_ph = 5700 K                 [0.1]
 #   JEXPRESSO_LK10_CURLB     0: DynSGS resistivity as the component Laplacian       [1: curl form]
 #   JEXPRESSO_LK10_NU        dynamic | kinematic: the paper's dynamic ν below the
 #                            photosphere (capped above), or kinematic everywhere   [dynamic]
@@ -66,36 +67,48 @@ function _lk10_case()
 end
 
 #---------------------------------------------------------------------------------
-# Optional positivity floors (JEXPRESSO_LK10_FLOORS=1), as in
-# problems/MHD/fluxEmergenceLeake2014: ρ ≥ f ρ_e(y) and p ≥ f p_e(y) of the
-# reference atmosphere, p raised through E at fixed velocity and field. Not
-# conservative where they fire; every hit is counted and reported by rank 0 each
-# time the total passes a power of ten. Off by default: the parent case runs on
-# DynSGS alone.
+# Positivity floors, as the Runge-Kutta stage limiter: on by default
+# (JEXPRESSO_LK10_FLOORS=0 switches them off), as in the other Leake cases. Where the
+# field is strong and β low, p is the small remainder E − ½ρv² − ½B² − ½ψ² and goes
+# negative: a run of the default deck from ~200 s in the upper chromosphere under the
+# quadrupole's strongest field (non-finite at 631 s), the field-free run at the top of
+# the emerging tube by 1000 s (README, "Positivity"). Two floors, chosen not to act on
+# what moves legitimately:
+#   T = p/ρ ≥ T_min = 0.1 T_ph (570 K; JEXPRESSO_LK10_TFLOOR), below any temperature of
+#     the model, through E at fixed velocity and field;
+#   ρ ≥ f p_e(y)/T_cor, f = 0.2: f ρ_e in the corona, and in the chromosphere 150 times
+#     below its density, so that the transition region can move (the other cases'
+#     f ρ_e(y) and f p_e(y) would add mass and heat where it dips).
+# Not conservative where they fire; every hit is counted and reported by rank 0 each
+# time the total passes a power of ten.
 #---------------------------------------------------------------------------------
 if !@isdefined(lk10_floor_frac)
     const lk10_floor_frac = Ref{Float64}(0.2)
     const lk10_floor_hits = Ref{Int}(0)
     const lk10_floor_next = Ref{Int}(1)
 end
+if !@isdefined(lk10_floor_Tmin)
+    const lk10_floor_Tmin = Ref{Float64}(0.1)
+end
 
 function lk10_positivity_limiter!(u, integrator, p, t)
     npoin = p.mesh.npoin
     qe    = p.qp.qe
     frac  = lk10_floor_frac[]
+    Tmin  = lk10_floor_Tmin[]
     γm1   = γ_mhd - 1.0
     nhit  = 0
     @inbounds for ip = 1:npoin
         iρ = ip; iρu = npoin + ip; iρv = 2npoin + ip; iE = 3npoin + ip; iρw = 4npoin + ip
         iBx = 5npoin + ip; iBy = 6npoin + ip; iBz = 7npoin + ip; iψ = 8npoin + ip
-        ρmin = frac*qe[ip,1]
-        pmin = frac*qe[ip,end]
+        ρmin = frac*qe[ip,end]/LK10_TCOR
         ρ = u[iρ]
         if ρ < ρmin
             u[iρ] = ρmin; ρ = ρmin; nhit += 1
         end
         ke = 0.5*(u[iρu]^2 + u[iρv]^2 + u[iρw]^2)/ρ
         me = 0.5*(u[iBx]^2 + u[iBy]^2 + u[iBz]^2) + 0.5*u[iψ]^2
+        pmin = Tmin*ρ
         if γm1*(u[iE] - ke - me) < pmin
             u[iE] = pmin/γm1 + ke + me; nhit += 1
         end
@@ -142,12 +155,14 @@ function user_inputs()
     tfig = [920.0, 1380.0, 1610.0, 1955.0, 2070.0, 2185.0, 2254.0, 2530.0] ./ LK10_T0
     dout = _lk10_num("DOUT", 5.0*LK10_T0)/LK10_T0          # JEXPRESSO_LK10_DOUT: snapshot interval in s
     tout = sort(unique(round.(vcat(collect(0.0:dout:tend), filter(t -> t <= tend + 1e-9, tfig), [tend]), digits = 6)))
-    floors = _lk10_env("FLOORS", "0") in ("1", "true", "yes", "on")
+    floors = !(_lk10_env("FLOORS", "1") in ("0", "false", "no", "off"))
+    lk10_floor_Tmin[] = _lk10_num("TFLOOR", 0.1)
+    lk10_floor_hits[] = 0; lk10_floor_next[] = 1
 
     inputs = Dict(
         #---------------------------------------------------------------------------
         # Time integration: the low-storage RK of the parent case, no limiter
-        # (unless JEXPRESSO_LK10_FLOORS=1)
+        # but the positivity floors (above; JEXPRESSO_LK10_FLOORS=0: none)
         #---------------------------------------------------------------------------
         :ode_solver           => floors ? CarpenterKennedy2N54(stage_limiter! = lk10_positivity_limiter!,
                                                                williamson_condition = false) :
@@ -162,6 +177,7 @@ function user_inputs()
         :lrestart             => false,      # the restart is the case's own (JEXPRESSO_LK10_RESTART_DIR, initialize.jl)
         :lk10_restart_dir     => String(_lk10_env("RESTART_DIR", "")),
         :lk10_floors          => floors,
+        :lk10_floor_Tmin      => lk10_floor_Tmin[],   # T_ph units
         :lsource              => true,       # gravity, energy relaxation, ψ damping, damping layers
         :lwell_balanced       => true,       # the reference (atmosphere + coronal field) is a discrete steady state
         :SOL_VARS_TYPE        => TOTAL(),
