@@ -1,12 +1,12 @@
 #!/bin/bash -l
-#SBATCH --job-name=flux
+#SBATCH --job-name=ocean
 #SBATCH --output=%x.%j.out
 #SBATCH --error=%x.%j.err
 #SBATCH --partition=general
 #SBATCH --qos=standard
 #SBATCH --account=smarras
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=128
+#SBATCH --ntasks-per-node=64
 #SBATCH --time=71:59:00
 #SBATCH --mem-per-cpu=4000M
 
@@ -33,4 +33,5 @@ export JULIA_PKG_PRECOMPILE_AUTO=0  # ranks must never attempt to precompile
 
 #mpirun -np 64 julia --project=. src/Jexpresso.jl CompEuler ffs_step
 #mpirun -np 512 julia --project=. src/Jexpresso.jl MHD orszagTangBormanis2024
-mpirun -np 64 julia --project=. src/Jexpresso.jl MHD fluxEmergenceSon2025DSGS
+#mpirun -np 64 julia --project=. src/Jexpresso.jl MHD fluxEmergenceSon2025DSG
+mpirun -np 64 julia --project=. src/Jexpresso.jl ShallowWater ReducedGravity_entrain

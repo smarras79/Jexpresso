@@ -2,7 +2,8 @@ function user_inputs()
 
     day = 86400.0 #seconds in a day
     year = 360.0 * day #seconds in a year (model year of 360 days)
-
+    lvl = 2
+    
     inputs = Dict(
         #---------------------------------------------------------------------------
         # ReducedGravity: 2D non-linear shallow water equations with reduced gravity.
@@ -20,7 +21,7 @@ function user_inputs()
         # where H is the local water depth.
         #---------------------------------------------------------------------------
         :ode_solver           => SSPRK54(), #CarpenterKennedy2N54(),
-        :Δt                   => 600.0, 
+        :Δt                   => 6000.0/2^lvl, #600.0/2^lvl, 
         :tinit                => 0.0,
         :tend                 => 6.0 * year, #6 years in seconds
         :diagnostics_at_times => (0: 30*day : 6.0*year),
@@ -98,6 +99,8 @@ function user_inputs()
         #NOTE - need to create that geo file and mesh for the double gyre case, and check if it is appropriate for the time step I want to use
         :lread_gmsh           => true,
         :gmsh_filename        => "./problems/ShallowWater/ReducedGravity/DoubleGyre.msh",
+        :linitial_refine     => true,
+        :init_refine_lvl     => lvl,
         #---------------------------------------------------------------------------
         # Plotting / output: one PNG per variable at every diagnostic time
         # (H-it<n>.png, Hu-it<n>.png, Hv-it<n>.png). Set :lplot_surf3d to
