@@ -1574,6 +1574,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
     dsgs_ref_weight[]   = false
     dsgs_nodal_rho[]    = false
     dsgs_split_energy[] = false
+    dsgs_thermal_energy[] = false
 
     if params.VT == DSGS_MHD()
         TT = eltype(params.μ_dsgs)
@@ -1593,6 +1594,13 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
         (lnodal_mhd2d && (get(params.inputs, :mhd_dissipation, nothing) !== nothing ||
                           get(params.inputs, :mhd_anomalous_eta, nothing) !== nothing)) &&
             error(" :mhd_dissipation and :mhd_anomalous_eta are implemented for the element form of DSGS_MHD only (not :ldsgs_nodal).")
+        # Energy-consistent DynSGS (SGS.jl, dsgs_thermal_energy): the case's user_primitives!
+        # reads the Ref to put the thermal departure in slot 4; _dsgs_energy_consistent_2d!
+        # below adds the work of the other slots and the dissipated heat.
+        dsgs_thermal_energy[] = get(params.inputs, :dsgs_thermal_energy, false)::Bool
+        dsgs_thermal_energy[] && (lnodal_mhd2d || dsgs_split_energy[] || !get(params.inputs, :dsgs_conserved, false)) &&
+            error(" :dsgs_thermal_energy needs the conserved element form of DSGS_MHD (:dsgs_conserved => true, ",
+                  ":ldsgs_nodal => false) without the split energy flux (:dsgs_nazarov_energy => false).")
         dsgs_qA, dsgs_qB, dsgs_wt = _dsgs_stencil(params, TT)
         dsgs_rhs = _dsgs_residual_rhs!(u, params, SD)
         if lnodal_mhd2d
@@ -1698,6 +1706,13 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                      params.metrics.dηdx, params.metrics.dηdy,
                                      params.g_dss_cache, Int(params.neqs), nelemB,
                                      Int(params.mesh.ngl), Int(params.mesh.npoin))
+        end
+        if dsgs_thermal_energy[]
+            _dsgs_energy_consistent_2d!(params.rhs_diff_el, params.μ_dsgs, params.uaux, qe,
+                                        params.mesh.connijk, params.ω, params.basis.dψ, params.metrics.Je,
+                                        params.metrics.dξdx, params.metrics.dξdy,
+                                        params.metrics.dηdx, params.metrics.dηdy,
+                                        nelemB, Int(params.mesh.ngl), lcurlB)
         end
         return
     end
@@ -2196,8 +2211,11 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
     dsgs_split_energy[] = lsplit3d
     if params.VT == DSGS_MHD()
         TT = eltype(params.μ_dsgs)
-        # the 2D-only nodal-ρ switch read by the MHD user_primitives! must stay off
+        # the 2D-only nodal-ρ and thermal-energy switches read by the MHD user_primitives! must stay off
         dsgs_nodal_rho[]    = false
+        dsgs_thermal_energy[] = false
+        get(params.inputs, :dsgs_thermal_energy, false) == true &&
+            error(" :dsgs_thermal_energy is implemented for 2D DSGS_MHD only.")
         dsgs_qA, dsgs_qB, dsgs_wt = _dsgs_stencil(params, TT)
         dsgs_rhs = _dsgs_residual_rhs!(u, params, SD)
         νphys, ηphys = _mhd_dissipation_3d(params, TT)

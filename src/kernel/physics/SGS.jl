@@ -544,6 +544,18 @@ const dsgs_ref_weight = Ref{Bool}(false)
 # corona within 10 τ₀).
 const dsgs_split_energy = Ref{Bool}(false)
 
+# Energy-consistent conserved-form DynSGS-MHD (:dsgs_thermal_energy, 2D element form;
+# set by rhs.jl from the inputs). The case's user_primitives! then hands the E slot the
+# THERMAL departure δ(p/(γ−1)) (relative to ρ_e where :dsgs_ref_weight), diffused with
+# the E-slot coefficient, and rhs.jl adds to the E slot the energy that the DynSGS terms
+# of the other slots move into or out of the kinetic, magnetic and ψ energies, with the
+# heat they dissipate (_dsgs_energy_consistent_2d!): the DynSGS changes p only by
+# diffusing the internal energy and by heating. With E diffused as a whole the pressure
+# change has the term ∇B_e : ∇δB, first order in the departure from a strong reference
+# field and larger than p where β ≲ 10⁻² (problems/MHD/fluxEmergenceLeake2010, README,
+# "Positivity"; the split energy flux above keeps it).
+const dsgs_thermal_energy = Ref{Bool}(false)
+
 @inline function SGS_diffusion(visc_coeffieq, ieq,
                                ρ,
                                u11, u22, u12, u21,
@@ -1995,6 +2007,91 @@ function _dsgs_curl_resistive_2d!(rhs_diff_el::AbstractArray{TT}, scr::AbstractM
         end
     end
     fill!(scr, zero(TT))
+    return nothing
+end
+
+# ================================================================================
+# _dsgs_energy_consistent_2d!: the energy slot of the energy-consistent DynSGS-MHD
+# (:dsgs_thermal_energy, dsgs_thermal_energy above), 2D conserved element form.
+#
+# rhs_diff_el holds the element contributions (×ω J) of every slot's DynSGS term, the E
+# slot's being the diffusion of the thermal energy departure. At each element node this
+# adds to the E slot the energy those terms move into or out of the kinetic, magnetic
+# and ψ energies,
+#
+#     W = u·R_ρu − ½|u|² R_ρ + B·R_B + ψ R_ψ,
+#
+# which the pressure p = (γ−1)(E − ½ρ|u|² − ½|B|² − ½ψ²) then does not see (u, B, ψ are
+# nodal, so the DSS sum of the element products is the product of the assembled rates),
+# and the heat they dissipate, ω J Q with
+#
+#     Q = max(0, ρ_e Σ_i μ_i ∇m̃_i·∇u_i) + η_⊥ j_z(δB)² + η_z |∇δBz|² + μ_ψ |∇ψ|²,
+#
+# m̃ = ρu/ρ_e (the reference-weighted momentum primitive), δB = B − B_e, j_z = ∂δBy/∂x −
+# ∂δBx/∂y (the curl form, :dsgs_curl_resistivity; η|∇δBx|² + η|∇δBy|² for the component
+# Laplacian). Every term of Q is ≥ 0, so the DynSGS changes p only by diffusing the
+# internal energy and by heating. Total energy is conserved to the discretization: the
+# momentum part exactly where the viscous term is not clipped, the field part up to
+# ∫η ∇B_e:∇δB, a boundary term for a potential reference field. Explicit ν, η
+# (:mhd_dissipation, :mhd_anomalous_eta) ride in μ_dsgs, so their heating is included.
+# ================================================================================
+function _dsgs_energy_consistent_2d!(rhs_diff_el::AbstractArray{TT}, μ_dsgs::AbstractMatrix{TT},
+                                     q::AbstractMatrix{TT}, qe::AbstractMatrix,
+                                     connijk::AbstractArray{TI,4}, ω::AbstractVector, dψ::AbstractMatrix,
+                                     Je::AbstractArray, dξdx::AbstractArray, dξdy::AbstractArray,
+                                     dηdx::AbstractArray, dηdy::AbstractArray,
+                                     nelem::Int, ngl::Int, lcurlB::Bool) where {TT<:AbstractFloat, TI<:Integer}
+    @inbounds for ie = 1:nelem
+        μu = μ_dsgs[ie,2]; μv = μ_dsgs[ie,3]; μw = μ_dsgs[ie,5]
+        ηx = μ_dsgs[ie,6]; ηy = μ_dsgs[ie,7]; ηz = μ_dsgs[ie,8]; μψ = μ_dsgs[ie,9]
+        for l = 1:ngl, k = 1:ngl
+            # element-local ξ and η derivatives of u, m̃ = ρu/ρ_e, δB and ψ at node (k, l)
+            duξ = zero(TT); duη = zero(TT); dvξ = zero(TT); dvη = zero(TT); dwξ = zero(TT); dwη = zero(TT)
+            dmuξ = zero(TT); dmuη = zero(TT); dmvξ = zero(TT); dmvη = zero(TT); dmwξ = zero(TT); dmwη = zero(TT)
+            dbxξ = zero(TT); dbxη = zero(TT); dbyξ = zero(TT); dbyη = zero(TT); dbzξ = zero(TT); dbzη = zero(TT)
+            dpξ = zero(TT); dpη = zero(TT)
+            for m = 1:ngl
+                aξ = dψ[m,k]; aη = dψ[m,l]
+                iξ = connijk[ie,m,l,1]; iη = connijk[ie,k,m,1]
+                rξ = one(TT)/q[iξ,1]; rη = one(TT)/q[iη,1]
+                eξ = one(TT)/qe[iξ,1]; eη = one(TT)/qe[iη,1]
+                duξ += aξ*q[iξ,2]*rξ; duη += aη*q[iη,2]*rη
+                dvξ += aξ*q[iξ,3]*rξ; dvη += aη*q[iη,3]*rη
+                dwξ += aξ*q[iξ,5]*rξ; dwη += aη*q[iη,5]*rη
+                dmuξ += aξ*q[iξ,2]*eξ; dmuη += aη*q[iη,2]*eη
+                dmvξ += aξ*q[iξ,3]*eξ; dmvη += aη*q[iη,3]*eη
+                dmwξ += aξ*q[iξ,5]*eξ; dmwη += aη*q[iη,5]*eη
+                dbxξ += aξ*(q[iξ,6] - qe[iξ,6]); dbxη += aη*(q[iη,6] - qe[iη,6])
+                dbyξ += aξ*(q[iξ,7] - qe[iξ,7]); dbyη += aη*(q[iη,7] - qe[iη,7])
+                dbzξ += aξ*(q[iξ,8] - qe[iξ,8]); dbzη += aη*(q[iη,8] - qe[iη,8])
+                dpξ  += aξ*(q[iξ,9] - qe[iξ,9]); dpη  += aη*(q[iη,9] - qe[iη,9])
+            end
+            ξx = dξdx[ie,k,l]; ξy = dξdy[ie,k,l]; ηxk = dηdx[ie,k,l]; ηyk = dηdy[ie,k,l]
+            dudx = duξ*ξx + duη*ηxk;    dudy = duξ*ξy + duη*ηyk
+            dvdx = dvξ*ξx + dvη*ηxk;    dvdy = dvξ*ξy + dvη*ηyk
+            dwdx = dwξ*ξx + dwη*ηxk;    dwdy = dwξ*ξy + dwη*ηyk
+            dmudx = dmuξ*ξx + dmuη*ηxk; dmudy = dmuξ*ξy + dmuη*ηyk
+            dmvdx = dmvξ*ξx + dmvη*ηxk; dmvdy = dmvξ*ξy + dmvη*ηyk
+            dmwdx = dmwξ*ξx + dmwη*ηxk; dmwdy = dmwξ*ξy + dmwη*ηyk
+            dbxdx = dbxξ*ξx + dbxη*ηxk; dbxdy = dbxξ*ξy + dbxη*ηyk
+            dbydx = dbyξ*ξx + dbyη*ηxk; dbydy = dbyξ*ξy + dbyη*ηyk
+            dbzdx = dbzξ*ξx + dbzη*ηxk; dbzdy = dbzξ*ξy + dbzη*ηyk
+            dpdx  = dpξ*ξx + dpη*ηxk;   dpdy  = dpξ*ξy + dpη*ηyk
+            ip  = connijk[ie,k,l,1]
+            ρe  = TT(qe[ip,1])
+            Dm  = ρe*(μu*(dudx*dmudx + dudy*dmudy) + μv*(dvdx*dmvdx + dvdy*dmvdy) +
+                      μw*(dwdx*dmwdx + dwdy*dmwdy))
+            jz  = dbydx - dbxdy
+            QB  = lcurlB ? ηx*jz*jz : ηx*(dbxdx*dbxdx + dbxdy*dbxdy) + ηy*(dbydx*dbydx + dbydy*dbydy)
+            Q   = max(Dm, zero(TT)) + QB + ηz*(dbzdx*dbzdx + dbzdy*dbzdy) + μψ*(dpdx*dpdx + dpdy*dpdy)
+            ρ   = q[ip,1]; u = q[ip,2]/ρ; v = q[ip,3]/ρ; w = q[ip,5]/ρ
+            W   = u*rhs_diff_el[ie,k,l,2] + v*rhs_diff_el[ie,k,l,3] + w*rhs_diff_el[ie,k,l,5] -
+                  TT(0.5)*(u*u + v*v + w*w)*rhs_diff_el[ie,k,l,1] +
+                  q[ip,6]*rhs_diff_el[ie,k,l,6] + q[ip,7]*rhs_diff_el[ie,k,l,7] +
+                  q[ip,8]*rhs_diff_el[ie,k,l,8] + q[ip,9]*rhs_diff_el[ie,k,l,9]
+            rhs_diff_el[ie,k,l,4] += W + ω[k]*ω[l]*Je[ie,k,l]*Q
+        end
+    end
     return nothing
 end
 

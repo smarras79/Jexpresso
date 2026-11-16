@@ -1224,6 +1224,13 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #                      the component Laplacian, so that the DynSGS (and :mhd_dissipation) resistivity
     #                      keeps the discrete divergence of B (SGS.jl, _dsgs_curl_resistive_2d!).
     #                      Default false.
+    #   :dsgs_thermal_energy  DSGS_MHD 2D, conserved element form, no split energy flux: the E slot
+    #                      diffuses the thermal energy departure (the case's user_primitives! puts
+    #                      δ(p/(γ−1)) in slot 4 when SGS.jl's dsgs_thermal_energy[] is set) and gets the
+    #                      work of the other slots' DynSGS terms and the heat they dissipate, so that the
+    #                      DynSGS changes p only by diffusing the internal energy and by heating
+    #                      (SGS.jl, _dsgs_energy_consistent_2d!; problems/MHD/fluxEmergenceLeake2010).
+    #                      Default false.
     if(!haskey(inputs, :dsgs_nodal_rho))
         inputs[:dsgs_nodal_rho] = false
     end

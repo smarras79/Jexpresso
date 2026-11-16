@@ -13,11 +13,16 @@
 # The explicit ν and η of the paper (:mhd_dissipation, :mhd_anomalous_eta) are
 # added by the kernel to the coefficient of the ρu, ρv, ρw and B slots.
 #
-# Energy slot: E as a whole (:dsgs_nazarov_energy => false in the deck). At
-# γ = 5/3 the split of the energy flux of the parent case changes the thermal
-# coefficient by γ(γ−1)/Pr = 1.11 only, and it is incompatible with the explicit
-# ν, η (it diffuses the non-thermal energy with the ρv slot's coefficient). The
-# split path is kept for completeness.
+# Energy slot: the THERMAL departure δ(p/(γ−1))/ρ_e with the energy-consistent
+# DynSGS (:dsgs_thermal_energy, JEXPRESSO_LK10_ENERGY=thermal, opt-in for now):
+# the kernel adds to the E slot the work of the other slots' DynSGS terms and the
+# heat they dissipate (SGS.jl, _dsgs_energy_consistent_2d!), so that the DynSGS
+# changes p only by diffusing the internal energy and by heating. E as a whole
+# with JEXPRESSO_LK10_ENERGY=total (default), the parent case's operator, whose pressure
+# change has the term ∇B_e:∇δB, larger than p where β ≲ 10⁻² (README,
+# "Positivity"). The split energy flux of the parent case (non-thermal part with
+# the ρv slot's coefficient) keeps that term and is incompatible with the
+# explicit ν, η; its path is kept for completeness.
 #---------------------------------------------------------------------------------
 @inline function lk10_energy_split(u)
     p = pressure_mhd(u[1], u[2], u[3], u[5], u[4], u[6], u[7], u[8], u[9])
@@ -36,6 +41,8 @@ function user_primitives!(u, qe, uprimitive, ::TOTAL)
         nthe, ethe = lk10_energy_split(qe)
         uprimitive[4]  = (nth - nthe)*iρe
         uprimitive[11] = (eth - ethe)*iρe
+    elseif dsgs_thermal_energy[]
+        uprimitive[4]  = (lk10_energy_split(u)[2] - lk10_energy_split(qe)[2])*iρe   # δ(p/(γ−1))
     else
         uprimitive[4]  = (u[4] - qe[4])*iρe       # E
     end
@@ -48,7 +55,8 @@ end
 
 function user_primitives(u, qe, uprimitive, ::TOTAL)
     iρe = 1.0/qe[1]
-    e4  = dsgs_split_energy[] ? (lk10_energy_split(u)[1] - lk10_energy_split(qe)[1])*iρe : (u[4] - qe[4])*iρe
+    e4  = dsgs_split_energy[]   ? (lk10_energy_split(u)[1] - lk10_energy_split(qe)[1])*iρe :
+          dsgs_thermal_energy[] ? (lk10_energy_split(u)[2] - lk10_energy_split(qe)[2])*iρe : (u[4] - qe[4])*iρe
     return SVector((u[1] - qe[1])*iρe, (u[2] - qe[2])*iρe, (u[3] - qe[3])*iρe, e4, (u[5] - qe[5])*iρe,
                    u[6] - qe[6], u[7] - qe[7], u[8] - qe[8], u[9] - qe[9])
 end
