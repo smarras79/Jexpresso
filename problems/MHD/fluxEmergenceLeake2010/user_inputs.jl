@@ -119,7 +119,8 @@ function lk10_positivity_limiter!(u, integrator, p, t)
     if nall > 0 && lk10_floor_hits[] >= lk10_floor_next[]
         if MPI.Comm_rank(comm) == 0
             print(string(" # positivity floors: ", lk10_floor_hits[], " node hits so far on all ranks (",
-                         nall, " in this stage) at t = ", round(t*LK10_T0, digits = 2), " s\n"))
+                         nall, " in this stage) at t = ", round(t, digits = 3), " t0 = ",
+                         round(t*LK10_T0, digits = 1), " s\n"))
             flush(stdout)
         end
         while lk10_floor_next[] <= lk10_floor_hits[]
