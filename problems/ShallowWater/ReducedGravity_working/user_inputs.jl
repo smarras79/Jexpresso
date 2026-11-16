@@ -2,7 +2,7 @@ function user_inputs()
 
     day = 86400.0 #seconds in a day
     year = 360.0 * day #seconds in a year (model year of 360 days)
-    lvl = 2
+    lvl = 0 #1 split the original msh by 2, 2 splits it by 4 etc.
     
     inputs = Dict(
         #---------------------------------------------------------------------------
@@ -99,7 +99,7 @@ function user_inputs()
         #NOTE - need to create that geo file and mesh for the double gyre case, and check if it is appropriate for the time step I want to use
         :lread_gmsh           => true,
         :gmsh_filename        => "./problems/ShallowWater/ReducedGravity/DoubleGyre.msh",
-        :linitial_refine     => true,
+        :linitial_refine     => lvl>0,
         :init_refine_lvl     => lvl,
         #---------------------------------------------------------------------------
         # Plotting / output: one PNG per variable at every diagnostic time
