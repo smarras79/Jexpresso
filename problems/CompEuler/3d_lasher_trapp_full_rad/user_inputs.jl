@@ -24,7 +24,8 @@ function user_inputs()
         # Physical parameters
         #---------------------------------------------------------------------------
         :lvisc                => true,
-        :visc_model           => SMAG(),
+        :visc_model           => DSGS(),  # residual-based; cleaner than SMAG + modal filter (no spurious cloud aloft)
+        :dsgs_CR              => 0.1,     # residual coefficient; the default 1 damped the plume out (12x12x16)
         :ivisc_equations      => [1, 2, 3, 4, 5, 6, 7],
         :μ                    => [0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],   # as BOMEX
         :lmoist               => true,   # activates SAM microphysics + RT flux injection
@@ -77,7 +78,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
-        :lfilter             => true,
+        :lfilter             => false,   # DSGS needs no filter; with SMAG() use true and mu 0.003 below
         :mu_x                => 0.003,   # applied every step: damping rate ~ mu/Δt (0.05 suppressed convection)
         :mu_y                => 0.003,
         :mu_z                => 0.003,
