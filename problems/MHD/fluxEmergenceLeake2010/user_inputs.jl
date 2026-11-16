@@ -35,7 +35,7 @@
 #   JEXPRESSO_LK10_TFLOOR    temperature floor, in T_ph = 5700 K                 [0.1]
 #   JEXPRESSO_LK10_ENERGY    thermal | total: the DynSGS energy slot diffuses the
 #                            internal energy, with the work and heat of the other
-#                            slots (energy-consistent), or E as a whole          [total]
+#                            slots (energy-consistent), or E as a whole          [thermal]
 #   JEXPRESSO_LK10_CURLB     0: DynSGS resistivity as the component Laplacian       [1: curl form]
 #   JEXPRESSO_LK10_NU        dynamic | kinematic: the paper's dynamic ν below the
 #                            photosphere (capped above), or kinematic everywhere   [dynamic]
@@ -227,7 +227,7 @@ function user_inputs()
         # Energy-consistent DynSGS (SGS.jl, dsgs_thermal_energy; README, "Positivity"): the
         # E slot diffuses the internal energy and receives the work and the heat of the other
         # slots, so the DynSGS cannot drive p negative in the low-β chromosphere and corona.
-        :dsgs_thermal_energy  => lowercase(_lk10_env("ENERGY", "total")) == "thermal",   # opt-in while under test
+        :dsgs_thermal_energy  => lowercase(_lk10_env("ENERGY", "thermal")) != "total",
         :dsgs_norms           => "element",
         :dsgs_local_rel       => 1.0,
         :dsgs_conserved       => true,

@@ -75,6 +75,7 @@ editing the deck:
 | `JEXPRESSO_LK10_CMIN` | default 0 | DynSGS background floor $C_{min}$ |
 | `JEXPRESSO_LK10_FLOORS` | `1` (default), `0` | positivity floors as the Runge–Kutta stage limiter (Positivity, below) |
 | `JEXPRESSO_LK10_TFLOOR` | default 0.1 | temperature floor, in $T_{ph}$ = 5700 K |
+| `JEXPRESSO_LK10_ENERGY` | `thermal` (default), `total` | energy-consistent DynSGS (Positivity, below), or $E$ diffused as a whole (the parent case) |
 
 For example, the erratum's Fig. 1 (tubes 1 and 2, field-free corona) and its
 Figs. 6–7 (tubes into the 52 G dipole):
@@ -215,15 +216,36 @@ paper's dissipation and its energy relaxation:
   $C_{min}$ of the parent case is off: $C_{min}\Delta c_f$ with $c_f\approx270$
   in the corona would be a diffusivity of ~4 $L_0v_0$, two orders of magnitude
   above Lare's own estimate of its numerical resistivity.
-- **Positivity** (`JEXPRESSO_LK10_FLOORS`, on by default, as in the other Leake
-  cases). Where the field is strong and β low the pressure is the small
+- **Positivity.** Where the field is strong and β low the pressure is the small
   remainder $p = (\gamma-1)(E - \tfrac12\rho v^2 - \tfrac12B^2 - \tfrac12\psi^2)$,
   and it goes negative: in a run of the default deck without floors from
   ~200 s in the upper chromosphere under the quadrupole's strongest field
   ($\lvert x\rvert$ = 10–19 Mm, $y \approx$ 2.3–2.6 Mm, $\beta \approx 3\times10^{-3}$;
   $p/p_0$ = −2.2 at 232 s, the CFL number 0.11 throughout), then 50 km/s flows
   in the corona and a non-finite solution at 631 s; in the field-free run at
-  the top of the emerging tube ($T$ = −0.02 at 1000 s). The stage limiter keeps
+  the top of the emerging tube ($T$ = −0.02 at 1000 s). Two measures:
+
+  *Energy-consistent DynSGS* (`JEXPRESSO_LK10_ENERGY=thermal`, the default;
+  `:dsgs_thermal_energy`, `src/kernel/physics/SGS.jl`). The parent operator
+  diffuses $E$ as a whole; its pressure change carries
+  $(\gamma-1)\mu(2\nabla\mathbf B_e:\nabla\delta\mathbf B + \delta\mathbf B\cdot\nabla^2\mathbf B_e)$,
+  first order in the departure $\delta\mathbf B$ from the strong reference field and
+  larger than $p$ where $\beta \lesssim 10^{-2}$ (the split energy flux of the parent
+  case keeps it). Here the $E$ slot diffuses the internal-energy departure and
+  receives, node by node, the work of the other slots' DynSGS terms,
+  $\mathbf u\cdot R_{\rho\mathbf u} - \tfrac12\lvert\mathbf u\rvert^2R_\rho + \mathbf B\cdot R_{\mathbf B} + \psi R_\psi$,
+  and the heat they dissipate (viscous, Ohmic, all $\ge 0$): the DynSGS changes $p$
+  only by diffusing the internal energy and by heating. Test: a 32 km/s kick at
+  (17, 2.4) Mm in the quadrupole's chromosphere ($\beta = 3.6\times10^{-3}$), REF 1,
+  no floors: with $E$ diffused as a whole the plasma there cools to
+  $T$ = 0.71 $T_{ph}$ in 2.3 s and $p/p_0$ falls to 0.28, energy-consistent $T$
+  stays at or above 1.01 $T_{ph}$ and $p/p_0 \ge 0.66$, with the same flows
+  (14.0 and 13.5 km/s at 11.6 s) and the same total energy (−2.2 and
+  −2.3 × 10⁻¹⁰ over 1200 steps). The background stays at rest to the bit;
+  the field-free rise to 186 s (REF 1) has the axis of the parent operator to 0.0001 Mm, and $\psi$ stays at round-off (7 × 10⁻¹⁶).
+
+  *Positivity floors* (`JEXPRESSO_LK10_FLOORS`, on by default, as in the other
+  Leake cases), the safety net. The stage limiter keeps
   $T = p/\rho \ge T_{min}$ = 0.1 $T_{ph}$ (570 K, below any temperature of the
   model; `JEXPRESSO_LK10_TFLOOR`) by raising $E$ at fixed velocity and field,
   and $\rho \ge 0.2\,p_e(y)/T_{cor}$: $0.2\rho_e$ in the corona, 150 times below
@@ -485,8 +507,10 @@ Short runs on 4 cores; the full runs are for a cluster (above).
   density in the corona above the tube; the anomalous resistivity had switched on
   just after 580 s. `diag` on its snapshots: the CFL number stayed at 0.11, the
   pressure went negative from ~200 s in the low-β upper chromosphere
-  (Positivity, above). The floors are on by default since; that they carry the
-  run through is still to be shown (a restart of that run from 116 s).
+  (Positivity, above). The cause is the DynSGS diffusion of $E$ as a whole
+  under a strong reference field; the energy-consistent DynSGS removes it and is
+  the default since, with the floors as a safety net. That the default deck now
+  runs past 631 s on the cluster is still to be shown.
 - **Not done here:** the emergence after 1000 s, any REF 2 run, and the
   quadrupole run to 2530 s, i.e. the comparison with the erratum's Fig. 3, which
   needs the cluster (above). `plot_leake2010.py density` and `dome` produce

@@ -14,11 +14,11 @@
 # added by the kernel to the coefficient of the ρu, ρv, ρw and B slots.
 #
 # Energy slot: the THERMAL departure δ(p/(γ−1))/ρ_e with the energy-consistent
-# DynSGS (:dsgs_thermal_energy, JEXPRESSO_LK10_ENERGY=thermal, opt-in for now):
+# DynSGS (:dsgs_thermal_energy, the default, JEXPRESSO_LK10_ENERGY=thermal):
 # the kernel adds to the E slot the work of the other slots' DynSGS terms and the
 # heat they dissipate (SGS.jl, _dsgs_energy_consistent_2d!), so that the DynSGS
 # changes p only by diffusing the internal energy and by heating. E as a whole
-# with JEXPRESSO_LK10_ENERGY=total (default), the parent case's operator, whose pressure
+# with JEXPRESSO_LK10_ENERGY=total, the parent case's operator, whose pressure
 # change has the term ∇B_e:∇δB, larger than p where β ≲ 10⁻² (README,
 # "Positivity"). The split energy flux of the parent case (non-thermal part with
 # the ρv slot's coefficient) keeps that term and is incompatible with the
