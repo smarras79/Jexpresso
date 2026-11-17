@@ -386,7 +386,13 @@ BDF5 on one figure. A store already there is moved aside, never deleted.
 tools/smooth_vortex_bdf_study.sh                         # both cases, 4 serial cases at a time
 SV_NP=1 SV_JOBS=8 tools/smooth_vortex_bdf_study.sh
 STUDY_STEPS=dtcheck tools/smooth_vortex_bdf_study.sh     # the Δt check alone
+sbatch tools/smooth_vortex_bdf_study_wulver.sh           # on Wulver: 16 serial cases at a time, ~3 h
+sbatch --ntasks-per-node=128 --export=ALL,SV_NP=8,SV_JOBS=16 tools/smooth_vortex_bdf_study_wulver.sh   # 8 ranks per case
 ```
+
+Each call of the sweep driver in the study runs one variant, so no two cases
+build the same SEM cache at once (a case that reads a cache file another one is
+writing dies with a bus error).
 
 **Measured on $32^2$** ($t = 1$, $\Delta t = 1/1750$, velocity $L^1$, ratio to
 Galerkin in brackets):

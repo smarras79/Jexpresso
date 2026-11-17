@@ -42,6 +42,14 @@
 # | SV_TEND           | 1.0                                      |
 # | JULIA, MPIEXEC, JEXPRESSO_EV_BETA (5)  passed through            |
 #
+# ONE (mesh, order) AT A TIME. The first case of a (mesh, order) writes its SEM
+# cache (.jexpresso_cache/*.jld2) and the others read it, memory-mapped; one
+# that reads while another writes dies with a bus error (seen here, two cases
+# started together on a mesh with no cache yet). The driver lists its cases
+# variant by variant, so each call below runs ONE variant: every (mesh, order)
+# is in it once, and the first call builds the caches the later ones read —
+# whatever SV_JOBS is.
+#
 # A store already there is MOVED ASIDE first, never deleted
 # (problems/<case>/errors.before-bdf-study-<date>), and so is an earlier
 # errors.dt2: a study starts from an empty store, which every figure of it is
@@ -128,7 +136,9 @@ for CASE in $CASES; do
 
     if [[ " $STEPS " == *" dtcheck "* ]]; then
         echo "=== dt check: ${MAXM}^2, nops [$CHECK_NOPS], Galerkin and DynSGS-BDF2 at dt/2 = $DT2"
-        scan SV_CASE="$CASE" SV_NELX="$MAXM" SV_NOPS="$CHECK_NOPS" SV_VISC="dsgs none" SV_DT="$DT2"
+        # one variant per driver call: see "ONE (mesh, order) AT A TIME" above
+        scan SV_CASE="$CASE" SV_NELX="$MAXM" SV_NOPS="$CHECK_NOPS" SV_VISC=none SV_DT="$DT2"
+        scan SV_CASE="$CASE" SV_NELX="$MAXM" SV_NOPS="$CHECK_NOPS" SV_VISC=dsgs SV_DT="$DT2"
         if [ "$DRY" != 1 ]; then
             mkdir -p "$ST.dt2" && mv "$ST"/*.dat "$ST.dt2"/ 2>/dev/null
             echo "=== the dt/2 records are in $ST.dt2"
@@ -139,8 +149,10 @@ for CASE in $CASES; do
     fi
 
     if [[ " $STEPS " == *" sweep "* ]]; then
-        echo "=== sweep: Galerkin and DynSGS without the cutoff, BDF2"
-        scan SV_CASE="$CASE" SV_NELX="$NELX" SV_NOPS="$NOPS" SV_VISC="dsgs none" SV_DT="$DT"
+        echo "=== sweep: Galerkin"
+        scan SV_CASE="$CASE" SV_NELX="$NELX" SV_NOPS="$NOPS" SV_VISC=none SV_DT="$DT"
+        echo "=== sweep: DynSGS without the cutoff, BDF2"
+        scan SV_CASE="$CASE" SV_NELX="$NELX" SV_NOPS="$NOPS" SV_VISC=dsgs SV_DT="$DT"
         for k in $BDFS; do
             echo "=== sweep: DynSGS without the cutoff, BDF$k"
             scan SV_CASE="$CASE" SV_NELX="$NELX" SV_NOPS="$NOPS" SV_VISC=dsgs SV_BDF="$k" SV_DT="$DT"
