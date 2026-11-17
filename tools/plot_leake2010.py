@@ -420,18 +420,24 @@ def cmd_eshear(a):
     print("wrote", out)
 
 
+MU_NAME = "mu_dsgs_ρu_ρv_ρw"   # the DynSGS momentum coefficient in the output (:plot_dsgs)
+
+
 def cmd_diag(a):
     """What grows before a run fails: per snapshot, the largest speed |u|, fast speed c_f = ((gamma p + B^2)/rho)^1/2,
     CFL rate (|u| + c_f)/dx (dx the local node spacing; times the run's dt, the CFL number), current |curl B|,
-    and the smallest p/p(t0), beta and T = p/rho (T_ph units; the floor is 0.1), with where they are (Mm).
+    and the smallest p/p(t0), beta and T = p/rho (T_ph units), with where they are (Mm), the number of
+    nodes at the temperature floor (--tfloor, 0.1 by default), the smallest rho/rho(t0), and the largest DynSGS
+    momentum coefficient (code units), where the operator works hardest.
     Code units, as the run (README, "Units")."""
     items = runs_of(a.run)
+    names = ["ρ", "p", "u", "v", "w", "Bx", "By", "Bz", MU_NAME]
+    g0 = load(items[0][1], names)          # the reference: the run's first snapshot, whatever --tmin
     if a.tmin is not None:
         items = [it for it in items if it[0] >= a.tmin - 1e-6]
-    names = ["ρ", "p", "u", "v", "w", "Bx", "By", "Bz"]
-    g0 = load(items[0][1], names)
     G = lambda g, n: grid2d(g, g["fields"][n])
     p0 = G(g0, "p")
+    r0 = G(g0, "ρ")
     if p0 is None:
         raise SystemExit("diag: the nodes do not form a tensor-product grid")
     xc, yc = g0["xc"], g0["yc"]
@@ -447,7 +453,7 @@ def cmd_diag(a):
         return Zw[k], k
     cfl_hdr = "CFL" if a.dt else "(|u|+cf)/dx"
     print(f"{'t [s]':>8} {'max|u|':>9} {'at (x,y) Mm':>16} {'max cf':>9} {cfl_hdr:>11} {'at':>16} "
-          f"{'max|j|':>9} {'at':>16} {'min p/p0':>9} {'at':>16} {'min beta':>9} {'at':>16} {'min T':>8} {'at':>16}")
+          f"{'max|j|':>9} {'at':>16} {'min p/p0':>9} {'at':>16} {'min beta':>9} {'at':>16} {'min T':>8} {'at':>16} {'#T floor':>8} {'min rho/rho0':>12} {'at':>16} {'max mu':>9} {'at':>16}")
     for t, f in items:
         g = load(f, names)
         rho, p = G(g, "ρ"), G(g, "p")
@@ -464,8 +470,12 @@ def cmd_diag(a):
         su, ku = arg(sp, np.nanargmax); sc, _ = arg(cf, np.nanargmax); sr, kr = arg(rate, np.nanargmax)
         sj, kj = arg(j, np.nanargmax); spp, kp = arg(p / p0, np.nanargmin); sb, kb = arg(beta, np.nanargmin)
         sT, kT = arg(p / rho, np.nanargmin)
+        nT = int(np.sum(np.where(win, p / rho, np.inf) <= 1.001 * a.tfloor))
+        sR, kR = arg(rho / r0, np.nanargmin)
+        mu = G(g, MU_NAME) if MU_NAME in g["fields"] else np.full(p.shape, np.nan)
+        sM, kM = arg(mu, np.nanargmax) if np.isfinite(mu).any() else (np.nan, (0, 0))
         print(f"{t:8.1f} {su * V0_KMS:7.1f}km/s {at(sp, ku):>16} {sc:9.1f} {sr * (a.dt or 1.0):11.3g} {at(rate, kr):>16} "
-              f"{sj:9.3g} {at(j, kj):>16} {spp:9.3g} {at(p, kp):>16} {sb:9.3g} {at(beta, kb):>16} {sT:8.3g} {at(p, kT):>16}")
+              f"{sj:9.3g} {at(j, kj):>16} {spp:9.3g} {at(p, kp):>16} {sb:9.3g} {at(beta, kb):>16} {sT:8.3g} {at(p, kT):>16} {nT:8d} {sR:12.3g} {at(p, kR):>16} {sM:9.3g} {at(p, kM):>16}")
 
 
 def cmd_profiles(a):
@@ -541,6 +551,7 @@ def main():
     s.add_argument("--dt", type=float, default=None, help="the run's time step in t0 (its log): print the CFL number")
     s.add_argument("--ymin", type=float, default=None, help="only y >= YMIN Mm (e.g. 2 for the corona)")
     s.add_argument("--tmin", type=float, default=None, help="only snapshots from TMIN s")
+    s.add_argument("--tfloor", type=float, default=0.1, help="the run's temperature floor (T_ph): count the nodes at it")
     a = p.parse_args()
     global FOLLOW_CHAIN, NEAREST
     FOLLOW_CHAIN, NEAREST = not a.no_chain, a.nearest

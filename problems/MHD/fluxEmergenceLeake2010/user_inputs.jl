@@ -33,6 +33,9 @@
 #   JEXPRESSO_LK10_CMIN      DynSGS background floor C_min                        [0]
 #   JEXPRESSO_LK10_FLOORS    0: no positivity floors (stage limiter)              [1]
 #   JEXPRESSO_LK10_TFLOOR    temperature floor, in T_ph = 5700 K                 [0.1]
+#   JEXPRESSO_LK10_ENERGY    thermal | total: the DynSGS energy slot diffuses the
+#                            internal energy, with the work and heat of the other
+#                            slots (energy-consistent), or E as a whole          [thermal]
 #   JEXPRESSO_LK10_CURLB     0: DynSGS resistivity as the component Laplacian       [1: curl form]
 #   JEXPRESSO_LK10_NU        dynamic | kinematic: the paper's dynamic ν below the
 #                            photosphere (capped above), or kinematic everywhere   [dynamic]
@@ -98,18 +101,25 @@ function lk10_positivity_limiter!(u, integrator, p, t)
     Tmin  = lk10_floor_Tmin[]
     γm1   = γ_mhd - 1.0
     nhit  = 0
+    worst = (0.0, 0.0, 0.0, 0.0, 0.0)    # (depth below the floor, 1 = ρ / 2 = T, x, y, value/floor) on this rank
+    X     = p.mesh.coords
     @inbounds for ip = 1:npoin
         iρ = ip; iρu = npoin + ip; iρv = 2npoin + ip; iE = 3npoin + ip; iρw = 4npoin + ip
         iBx = 5npoin + ip; iBy = 6npoin + ip; iBz = 7npoin + ip; iψ = 8npoin + ip
         ρmin = frac*qe[ip,end]/LK10_TCOR
         ρ = u[iρ]
         if ρ < ρmin
+            d = 1.0 - ρ/ρmin
+            d > worst[1] && (worst = (d, 1.0, X[1,ip], X[2,ip], ρ/ρmin))
             u[iρ] = ρmin; ρ = ρmin; nhit += 1
         end
         ke = 0.5*(u[iρu]^2 + u[iρv]^2 + u[iρw]^2)/ρ
         me = 0.5*(u[iBx]^2 + u[iBy]^2 + u[iBz]^2) + 0.5*u[iψ]^2
         pmin = Tmin*ρ
-        if γm1*(u[iE] - ke - me) < pmin
+        pnow = γm1*(u[iE] - ke - me)
+        if pnow < pmin
+            d = 1.0 - pnow/pmin
+            d > worst[1] && (worst = (d, 2.0, X[1,ip], X[2,ip], pnow/ρ))
             u[iE] = pmin/γm1 + ke + me; nhit += 1
         end
     end
@@ -117,9 +127,16 @@ function lk10_positivity_limiter!(u, integrator, p, t)
     nall = MPI.Comm_size(comm) > 1 ? MPI.Allreduce(nhit, +, comm) : nhit
     lk10_floor_hits[] += nall
     if nall > 0 && lk10_floor_hits[] >= lk10_floor_next[]
+        # the deepest violation of this stage on all ranks: which floor, its value, where
+        all = MPI.Comm_size(comm) > 1 ? MPI.Allgather(collect(worst), comm) : collect(worst)
+        k   = argmax(all[1:5:end]); w = all[5k-4:5k]
         if MPI.Comm_rank(comm) == 0
+            what = w[2] == 1.0 ? string("ρ = ", round(w[5], sigdigits = 3), " of its floor 0.2 p_e/T_cor") :
+                                 string("T = ", round(w[5], sigdigits = 3), " T_ph (floor ", Tmin, ")")
             print(string(" # positivity floors: ", lk10_floor_hits[], " node hits so far on all ranks (",
-                         nall, " in this stage) at t = ", round(t*LK10_T0, digits = 2), " s\n"))
+                         nall, " in this stage) at t = ", round(t, digits = 3), " t0 = ",
+                         round(t*LK10_T0, digits = 1), " s; deepest: ", what, " at (x, y) = (",
+                         round(w[3]*0.15, digits = 2), ", ", round(w[4]*0.15, digits = 2), ") Mm\n"))
             flush(stdout)
         end
         while lk10_floor_next[] <= lk10_floor_hits[]
@@ -220,6 +237,10 @@ function user_inputs()
         :dsgs_gamma           => 5.0/3.0,
         :dsgs_Prt             => 1.0,
         :dsgs_nazarov_energy  => false,
+        # Energy-consistent DynSGS (SGS.jl, dsgs_thermal_energy; README, "Positivity"): the
+        # E slot diffuses the internal energy and receives the work and the heat of the other
+        # slots, so the DynSGS cannot drive p negative in the low-β chromosphere and corona.
+        :dsgs_thermal_energy  => lowercase(_lk10_env("ENERGY", "thermal")) != "total",
         :dsgs_norms           => "element",
         :dsgs_local_rel       => 1.0,
         :dsgs_conserved       => true,

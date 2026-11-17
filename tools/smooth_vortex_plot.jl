@@ -17,7 +17,9 @@
 #
 #   --visc=TAGS   only these records, by their tag: dsgs (the deck as
 #                 committed), dsgs_nocut, dsgs_cut, dsgs_hold, galerkin
-#                 (comma list), e.g. to leave the run without the cutoff out
+#                 (comma list), e.g. to leave the run without the cutoff out;
+#                 a sensor with a BDF-k time difference (SV_BDF) adds _bdf<k>,
+#                 e.g. --visc=galerkin,dsgs_nocut,dsgs_nocut_bdf5
 using Plots, LaTeXStrings, Printf
 
 # --case=MHD/smoothVortex (default) or CompEuler/smoothVortex, the

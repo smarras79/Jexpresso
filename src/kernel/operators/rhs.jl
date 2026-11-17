@@ -141,11 +141,67 @@ end
 @inline function _dsgs_stencil(params, ::Type{TT}) where {TT}
     w = params.dsgs_wt[]
     wt = (TT(w[1]), TT(w[2]), TT(w[3]))
-    if params.dsgs_stage[]
+    if params.dsgs_hcomb_on[]
+        # :dsgs_bdf_order ≠ 2: the history part of the difference is already
+        # summed into dsgs_hcomb and the weights are (w₀, 1, 0), so the
+        # kernels' wt[1]·q + wt[2]·qA + wt[3]·qB is w₀q + Σⱼwⱼqⁿ⁻ʲ
+        # (_dsgs_bdf_combine!)
+        return params.dsgs_hcomb, params.dsgs_hcomb, wt
+    elseif params.dsgs_stage[]
         return params.dsgs_qn, params.dsgs_qnm1, wt
     else
         return params.dsgs_qnm1, params.dsgs_qnm2, wt
     end
+end
+
+# The state the residual's history holds at lag m: qⁿ⁻ᵐ (m = 0 is qⁿ).
+@inline _dsgs_hist(params, m::Int) = m == 0 ? params.dsgs_qn   :
+                                     m == 1 ? params.dsgs_qnm1 :
+                                     m == 2 ? params.dsgs_qnm2 : params.dsgs_qhist[m - 2]
+
+# BDF-k (:dsgs_bdf_order = k ≠ 2) for the residual's ∂ₜq at t = tⁿ + τ: the
+# derivative at the current state's time of the polynomial through it and k
+# states of the history. At the stage that sits on tⁿ (τ = 0, the current state
+# is qⁿ) the history is qⁿ⁻¹ … qⁿ⁻ᵏ at −h … −kh and the weights are the
+# backward-difference formula of order k,
+#
+#     k = 4:  ( 25/12, −4,  3,   −4/3, 1/4 )/h
+#     k = 5:  (137/60, −5,  5,  −10/3, 5/4, −1/5 )/h,
+#
+# whose truncation error is −hᵏ/(k+1)·∂ₜᵏ⁺¹q; at a later stage (τ > 0, only
+# when the coefficient is not frozen) it is qⁿ … qⁿ⁻ᵏ⁺¹ at 0 … −(k−1)h, the
+# (k+1)-point generalization of the stage-consistent BDF2 above. For k = 2
+# these are exactly the weights rhs! sets on the BDF2 path. The history part
+# Σⱼ wⱼqⁿ⁻ʲ is summed into dsgs_hcomb here, so the kernels see (w₀, 1, 0).
+function _dsgs_bdf_combine!(params, τ::Float64, h::Float64)
+    k    = params.dsgs_bdf_order
+    H    = params.dsgs_hcomb
+    at_n = τ <= 1.0e-8*h
+    t0   = at_n ? 0.0 : τ           # the current state's time, from tⁿ
+    lag0 = at_n ? 1 : 0             # the lag of the first history state
+    tj(j) = -(lag0 + j - 1)*h       # the time of history state j = 1 … k
+    w0 = 0.0
+    for j = 1:k
+        w0 += 1.0/(t0 - tj(j))
+    end
+    fill!(H, zero(eltype(H)))
+    for j = 1:k
+        # ℓⱼ'(t0) = Π_{m≠j}(t0 − t_m) / Π_{m≠j}(t_j − t_m), m over all k+1 nodes
+        num = 1.0
+        den = tj(j) - t0
+        for m = 1:k
+            m == j && continue
+            num *= t0 - tj(m)
+            den *= tj(j) - tj(m)
+        end
+        wj = eltype(H)(num/den)
+        q  = _dsgs_hist(params, lag0 + j - 1)
+        H .+= wj .* q
+    end
+    params.dsgs_stage[]    = false
+    params.dsgs_wt[]       = (w0, 1.0, 0.0)
+    params.dsgs_hcomb_on[] = true
+    return nothing
 end
 
 # DynSGS residual right-hand side. The kernels compare the assembled rate
@@ -182,7 +238,8 @@ end
 @inline function _dsgs_hold_steps(params)
     h = Int(get(params.inputs, :dsgs_hold_steps, 2))
     h <= 0 && return 0          # never holds: nhist starts at 0
-    return max(2, h) + 1        # nhist counts rotations: < hold+1 means "hold steps of them"
+    # BDF-k needs k steps of history (:dsgs_bdf_order; k = 2 is the minimum of 2 above)
+    return max(2, params.dsgs_bdf_order, h) + 1   # nhist counts rotations: < hold+1 means "hold steps of them"
 end
 
 function _dsgs_residual_rhs!(u, params, SD)
@@ -971,7 +1028,8 @@ function _build_rhs!(RHS, u, params, time)
     @timeit_debug JEXPRESSO_TIMER "DSS_rhs" DSS_rhs!(params.RHS, params.rhs_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
 
     #-----------------------------------------------------------------------------------
-    # DynSGS-MHD: advance the step-cadenced BDF2 history.
+    # DynSGS-MHD: advance the step-cadenced BDF2 history (BDF-k with
+    # :dsgs_bdf_order = k, whose older states sit in params.dsgs_qhist).
     #
     # params.qp.qnm1/qnm2 below are advanced on every RK *stage*, so a BDF2
     # stencil built on them is not an approximation of ∂q/∂t at all. DynSGS
@@ -990,6 +1048,12 @@ function _build_rhs!(RHS, u, params, time)
     if params.inputs[:lvisc] == true &&
         (params.VT == DSGS_MHD() || params.VT == DSGS() || params.VT == DSGS_SW())
         if time - params.dsgs_thist[] >= 0.999*params.Δt
+            # BDF-k, k > 2 (:dsgs_bdf_order): qⁿ⁻³ … qⁿ⁻ᵏ first, oldest out
+            qh = params.dsgs_qhist
+            for j = length(qh):-1:2
+                qh[j] .= qh[j-1]
+            end
+            isempty(qh) || (qh[1] .= params.dsgs_qnm2)
             params.dsgs_qnm2 .= params.dsgs_qnm1
             params.dsgs_qnm1 .= params.dsgs_qn
             params.dsgs_qn   .= params.uaux
@@ -1000,7 +1064,15 @@ function _build_rhs!(RHS, u, params, time)
         # _dsgs_stencil): the weights depend on the stage time τ = t − tⁿ.
         τ = time - params.dsgs_thist[]
         h = params.Δt
+        # :dsgs_freeze_stage (SGS.jl, _DSGS_FROZEN; see below): at a stage
+        # after tⁿ the coefficient of the step is kept, once the history holds
+        # the k+1 distinct states BDF-k needs (3 for BDF2, as it always was).
+        frozen = get(params.inputs, :dsgs_freeze_stage, false) &&
+                 params.dsgs_nhist[] >= params.dsgs_bdf_order + 1 && τ > 1.0e-8*h
         if params.dsgs_nhist[] < _dsgs_hold_steps(params)
+            # (a warm-up that ran past the hold and restored nhist can leave
+            # the BDF-k stencil switched on: off again for the hold)
+            params.dsgs_hcomb_on[] = false
             # The history is still seeded from the initial condition, so the
             # BDF2 is not a time derivative yet: 0 on the first step, 1.5·∂ₜq
             # on the second. Left alone it makes the residual the WHOLE flux
@@ -1019,6 +1091,10 @@ function _build_rhs!(RHS, u, params, time)
             # τ = Δt (−∂ₜq/2 at τ = 0), against the assembled RHS
             params.dsgs_stage[] = true
             params.dsgs_wt[]    = (1.5/h, -2.0/h, 0.5/h)
+        elseif params.dsgs_bdf_order != 2
+            # BDF-k (:dsgs_bdf_order). At a frozen stage the coefficient is
+            # not recomputed, so neither is the stencil: what tⁿ left is kept.
+            frozen || _dsgs_bdf_combine!(params, τ, h)
         elseif τ <= 1.0e-8*h
             params.dsgs_stage[] = false
             params.dsgs_wt[]    = (1.5/h, -2.0/h, 0.5/h)
@@ -1033,9 +1109,8 @@ function _build_rhs!(RHS, u, params, time)
         # stage, whose own error is O(Δt) — so the residual, and with it ν,
         # stalls at O(Δt) however well resolved the solution is. At τ = 0 the
         # three values are step-level states and the residual is the BDF2
-        # truncation error, O(Δt²).
-        _DSGS_FROZEN[] = get(params.inputs, :dsgs_freeze_stage, false) &&
-                         params.dsgs_nhist[] >= 3 && τ > 1.0e-8*h
+        # truncation error, O(Δt²) — O(Δtᵏ) with :dsgs_bdf_order = k.
+        _DSGS_FROZEN[] = frozen
     end
 
     #-----------------------------------------------------------------------------------
@@ -1574,6 +1649,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
     dsgs_ref_weight[]   = false
     dsgs_nodal_rho[]    = false
     dsgs_split_energy[] = false
+    dsgs_thermal_energy[] = false
 
     if params.VT == DSGS_MHD()
         TT = eltype(params.μ_dsgs)
@@ -1593,6 +1669,13 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
         (lnodal_mhd2d && (get(params.inputs, :mhd_dissipation, nothing) !== nothing ||
                           get(params.inputs, :mhd_anomalous_eta, nothing) !== nothing)) &&
             error(" :mhd_dissipation and :mhd_anomalous_eta are implemented for the element form of DSGS_MHD only (not :ldsgs_nodal).")
+        # Energy-consistent DynSGS (SGS.jl, dsgs_thermal_energy): the case's user_primitives!
+        # reads the Ref to put the thermal departure in slot 4; _dsgs_energy_consistent_2d!
+        # below adds the work of the other slots and the dissipated heat.
+        dsgs_thermal_energy[] = get(params.inputs, :dsgs_thermal_energy, false)::Bool
+        dsgs_thermal_energy[] && (lnodal_mhd2d || dsgs_split_energy[] || !get(params.inputs, :dsgs_conserved, false)) &&
+            error(" :dsgs_thermal_energy needs the conserved element form of DSGS_MHD (:dsgs_conserved => true, ",
+                  ":ldsgs_nodal => false) without the split energy flux (:dsgs_nazarov_energy => false).")
         dsgs_qA, dsgs_qB, dsgs_wt = _dsgs_stencil(params, TT)
         dsgs_rhs = _dsgs_residual_rhs!(u, params, SD)
         if lnodal_mhd2d
@@ -1697,7 +1780,15 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                      params.metrics.dξdx, params.metrics.dξdy,
                                      params.metrics.dηdx, params.metrics.dηdy,
                                      params.g_dss_cache, Int(params.neqs), nelemB,
-                                     Int(params.mesh.ngl), Int(params.mesh.npoin))
+                                     Int(params.mesh.ngl), Int(params.mesh.npoin),
+                                     _dsgs_curl_wall_mask(params.mesh))
+        end
+        if dsgs_thermal_energy[]
+            _dsgs_energy_consistent_2d!(params.rhs_diff_el, params.μ_dsgs, params.uaux, qe,
+                                        params.mesh.connijk, params.ω, params.basis.dψ, params.metrics.Je,
+                                        params.metrics.dξdx, params.metrics.dξdy,
+                                        params.metrics.dηdx, params.metrics.dηdy,
+                                        nelemB, Int(params.mesh.ngl), lcurlB)
         end
         return
     end
@@ -2196,8 +2287,11 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
     dsgs_split_energy[] = lsplit3d
     if params.VT == DSGS_MHD()
         TT = eltype(params.μ_dsgs)
-        # the 2D-only nodal-ρ switch read by the MHD user_primitives! must stay off
+        # the 2D-only nodal-ρ and thermal-energy switches read by the MHD user_primitives! must stay off
         dsgs_nodal_rho[]    = false
+        dsgs_thermal_energy[] = false
+        get(params.inputs, :dsgs_thermal_energy, false) == true &&
+            error(" :dsgs_thermal_energy is implemented for 2D DSGS_MHD only.")
         dsgs_qA, dsgs_qB, dsgs_wt = _dsgs_stencil(params, TT)
         dsgs_rhs = _dsgs_residual_rhs!(u, params, SD)
         νphys, ηphys = _mhd_dissipation_3d(params, TT)
@@ -2338,6 +2432,34 @@ function _mhd_dissipation_3d(params, ::Type{TT}) where {TT}
         _MHD_DISS_CACHE[] = c
     end
     return c[2], c[3]
+end
+
+# The wall nodes of the curl-form resistivity (E = 0 there; SGS.jl, _dsgs_curl_resistive_2d!):
+# the nodes of the non-periodic boundary edges of this rank's mesh, cached per mesh.
+const _DSGS_CURL_WALL = Ref{Any}(nothing)
+function _dsgs_curl_wall_mask(mesh)
+    c = _DSGS_CURL_WALL[]
+    npoin = Int(mesh.npoin)
+    (c !== nothing && c[1] === mesh && length(c[2]) == npoin) && return c[2]::Vector{Bool}
+    wall = falses(npoin)
+    nb = mesh.nedges_bdy
+    if !(nb === missing) && nb > 0 && size(mesh.poin_in_bdy_edge, 1) >= nb
+        for iedge = 1:Int(nb)
+            startswith(String(mesh.bdy_edge_type[iedge]), "periodic") && continue
+            for igl = 1:Int(mesh.ngl)
+                ip = Int(mesh.poin_in_bdy_edge[iedge, igl])
+                1 <= ip <= npoin && (wall[ip] = true)
+            end
+        end
+    end
+    m = Vector{Bool}(wall)
+    _DSGS_CURL_WALL[] = (mesh, m)
+    nall = MPI.Allreduce(count(m), +, MPI.COMM_WORLD)      # every rank builds its mask in the same RHS call
+    if MPI.Comm_rank(MPI.COMM_WORLD) == 0
+        println(" # :dsgs_curl_resistivity: resistive E = 0 on ", nall, " wall nodes (summed over ranks)")
+        flush(stdout)
+    end
+    return m
 end
 
 # Per-element coefficient of the in-plane field set aside by :dsgs_curl_resistivity

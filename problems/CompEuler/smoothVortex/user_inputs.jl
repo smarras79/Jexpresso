@@ -28,6 +28,10 @@
 #   JEXPRESSO_EV_VISC    "dsgs" (default) or "none" for plain Galerkin
 #   JEXPRESSO_EV_SOLVER  ck54 (default), vern9, vern7, dp8, ssprk54, tsit5
 #   JEXPRESSO_EV_CMIN / _CR / _CMAX / _REL / _NORMS   the DynSGS coefficients
+#   JEXPRESSO_EV_BDF     :dsgs_bdf_order, the order k of the backward
+#                        difference the residual sensor takes ∂ₜq with
+#                        (default 2; see problems/MHD/smoothVortex/user_inputs.jl,
+#                        _sv_bdf)
 #
 # THE MESHES ARE THE MHD CASE'S. They are the same [-5,5]² doubly periodic
 # quad grids, and duplicating them here would only mean two copies to
@@ -122,6 +126,11 @@ end
 # The default is the box of the paper, [-10,10]^2, i.e. L = 20.
 _ev_hold() = something(tryparse(Int, get(ENV, "JEXPRESSO_EV_HOLD", "")), 2)
 _ev_cutoff() = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_CUTOFF", "")), 0.0)
+# :dsgs_bdf_order (JEXPRESSO_EV_BDF): this deck runs without a cutoff, so the
+# BDF2 truncation error of the sensor, −(Δt²/3)∂ₜ³q, is what its residual
+# reads on the resolved vortex; BDF-k leaves −Δtᵏ/(k+1)·∂ₜᵏ⁺¹q (and the
+# integrator's own O(Δt⁴) defect). Records "dsgs_bdf<k>" (user_plot.jl).
+_ev_bdf() = something(tryparse(Int, get(ENV, "JEXPRESSO_EV_BDF", "")), 2)
 # JEXPRESSO_EV_FREEZE=1 or 0 forces :dsgs_freeze_stage; unset, the key is left
 # to mod_inputs.jl, whose default is on with the residual sensor.
 _ev_freeze() = (v = strip(get(ENV, "JEXPRESSO_EV_FREEZE", ""));
@@ -199,6 +208,9 @@ function user_inputs()
         # history needs and the long-standing behaviour; more is the probe of
         # whether the smooth-flow excess is a STARTUP dose.
         :dsgs_hold_steps   => _ev_hold(),
+        # Order of the residual sensor's backward difference (JEXPRESSO_EV_BDF,
+        # :dsgs_bdf_order): 2 is the BDF2 the sensor has always had.
+        :dsgs_bdf_order    => _ev_bdf(),
         :lrichardson      => false,
         :energy_equation  => "energy",
         :lkep             => false,

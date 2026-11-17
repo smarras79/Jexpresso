@@ -1224,6 +1224,13 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #                      the component Laplacian, so that the DynSGS (and :mhd_dissipation) resistivity
     #                      keeps the discrete divergence of B (SGS.jl, _dsgs_curl_resistive_2d!).
     #                      Default false.
+    #   :dsgs_thermal_energy  DSGS_MHD 2D, conserved element form, no split energy flux: the E slot
+    #                      diffuses the thermal energy departure (the case's user_primitives! puts
+    #                      δ(p/(γ−1)) in slot 4 when SGS.jl's dsgs_thermal_energy[] is set) and gets the
+    #                      work of the other slots' DynSGS terms and the heat they dissipate, so that the
+    #                      DynSGS changes p only by diffusing the internal energy and by heating
+    #                      (SGS.jl, _dsgs_energy_consistent_2d!; problems/MHD/fluxEmergenceLeake2010).
+    #                      Default false.
     if(!haskey(inputs, :dsgs_nodal_rho))
         inputs[:dsgs_nodal_rho] = false
     end
@@ -1359,6 +1366,50 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :dsgs_hold_steps))
         inputs[:dsgs_hold_steps] = 2
     end
+    #   :dsgs_bdf_order    order k of the backward difference the "residual"
+    #                      sensor takes ∂ₜq with (default 2, BDF2: the sensor
+    #                      as it has always been, bit for bit). 1 to 6.
+    #
+    #                      At the stage that sits on tⁿ the residual is
+    #                      BDF-k(qⁿ, …, qⁿ⁻ᵏ) − M_e⁻¹R_e(qⁿ), and on a smooth,
+    #                      resolved solution what is left of it is the
+    #                      truncation error of that difference,
+    #                      −Δtᵏ/(k+1)·∂ₜᵏ⁺¹q, which no mesh refinement removes:
+    #                      ν ∝ Δ²Δtᵏ, i.e. ∝ h^(k+2) at a fixed Courant
+    #                      number. With BDF2 that is the h⁴ floor that caps
+    #                      DynSGS near order 4 from N = 5 on
+    #                      (problems/MHD/setup_notes/dsgsCutoff.pdf, §3);
+    #                      k = 4 or 5 moves it to h⁶ or h⁷ (with an explicit
+    #                      integrator of order p the residual also carries the
+    #                      integrator's own defect, O(Δtᵖ): p = 4 for
+    #                      CarpenterKennedy2N54).
+    #
+    #                      The difference only estimates a derivative — the
+    #                      integrator is untouched — so the zero-stability
+    #                      limit of BDF as a time integrator (k ≤ 6) is not a
+    #                      constraint here; the cap at 6 only bounds the
+    #                      round-off its growing weights amplify. The history
+    #                      needs k steps, so the startup hold is at least k
+    #                      (:dsgs_hold_steps). The "legacy" sensor always takes
+    #                      its BDF2.
+    #
+    #                      Measured on both smooth vortices (their READMEs):
+    #                      the floor is not what makes DynSGS exceed Galerkin
+    #                      there (BDF4/5 change the error in its fifth digit
+    #                      from 16² on, and halving Δt moves the excess by
+    #                      under 6 %), and where the sensor is active a higher
+    #                      k costs accuracy: the residual reads back the
+    #                      viscous tendency of its own step-frozen coefficient,
+    #                      and BDF-k amplifies a step-to-step swing of it by
+    #                      Σⱼ 2^(j−1)/j (2 for BDF2, 5.3 for BDF4, 8.5 for
+    #                      BDF5) — up to 4× the error of BDF2 on 8²–16².
+    if(!haskey(inputs, :dsgs_bdf_order))
+        inputs[:dsgs_bdf_order] = 2
+    end
+    let k = inputs[:dsgs_bdf_order]
+        (k isa Integer && 1 <= k <= 6) ||
+            error(" user_inputs.jl: :dsgs_bdf_order must be an integer from 1 to 6 (got $(k)).")
+    end
     #   :dsgs_nazarov_energy  heat conduction of the energy slot is Dao &
     #                      Nazarov's κ = ρν/Pr (JSC 2022, §4.4) instead of
     #                      the Fourier-law c_p ρν/Pr: ρν/Pr_t on ∇T in the
@@ -1436,6 +1487,12 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     elseif inputs[:dsgs_freeze_stage] == true && inputs[:dsgs_sensor] == "legacy"
         rank == 0 && @warn " user_inputs.jl: :dsgs_freeze_stage is ignored with :dsgs_sensor => \"legacy\" (its stencil reads -∂ₜq/2 at the stage the freeze keeps); computing the coefficient at every stage."
         inputs[:dsgs_freeze_stage] = false
+    end
+    # :dsgs_bdf_order (documented above) is the residual sensor's: the legacy
+    # one always takes its BDF2 of the stage state.
+    if inputs[:dsgs_sensor] == "legacy" && inputs[:dsgs_bdf_order] != 2
+        rank == 0 && @warn " user_inputs.jl: :dsgs_bdf_order is ignored with :dsgs_sensor => \"legacy\" (it always takes its BDF2 of the stage state); using 2."
+        inputs[:dsgs_bdf_order] = 2
     end
 
     #

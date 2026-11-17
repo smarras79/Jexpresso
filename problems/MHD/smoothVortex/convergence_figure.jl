@@ -51,6 +51,28 @@ _conv_rate(xs, ys) = (length(xs) < 2 || ys[end-1] <= 0 || ys[end] <= 0) ? NaN :
 # A name set inside \mathrm, where a space must be "\ ".
 _conv_mathrm(s) = replace(string(s), " " => "\\ ")
 
+# RECORDS OF A HIGHER-ORDER SENSOR. A DynSGS run whose residual takes ∂ₜq with
+# a backward difference of order k ≠ 2 (:dsgs_bdf_order, mod_inputs.jl) is its
+# own experiment: its tag is the one the same run with BDF2 would have plus
+# "_bdf<k>" ("dsgs_nocut_bdf5"), so it never overwrites the BDF2 record and the
+# two are drawn as two curves. The two smooth vortices share these helpers.
+_conv_bdf_suffix(inputs) = (k = Int(get(inputs, :dsgs_bdf_order, 2)); k == 2 ? "" : string("_bdf", k))
+# ("dsgs_nocut", 5) for "dsgs_nocut_bdf5", (tag, 2) for a BDF2 tag
+function _conv_bdf_split(tag)
+    m = match(r"^(.*)_bdf(\d+)$", string(tag))
+    return m === nothing ? (string(tag), 2) : (String(m.captures[1]), parse(Int, m.captures[2]))
+end
+# The variant a figure draws as its solid, filled curve when BDF-k records are
+# on it: the one of highest k (the first in `tags` among equals), or nothing.
+function _conv_bdf_top(tags)
+    top = nothing; kt = 0
+    for t in tags
+        k = _conv_bdf_split(t)[2]
+        (k != 2 && k > kt) && (top = string(t); kt = k)
+    end
+    return top
+end
+
 # ATOMIC WRITES: the runs of a sweep finish at different times and every one
 # redraws the same figures from the shared store, so a figure is written
 # beside its target and renamed (atomic on POSIX): a reader sees either the

@@ -73,10 +73,47 @@ other nor share a curve.
 | `JEXPRESSO_EV_CMIN` / `_CR` / `_CMAX` | 0, 1, 0.5 | the DynSGS coefficients |
 | `JEXPRESSO_EV_REL` | 1 | `:dsgs_rel`, the normalization floor |
 | `JEXPRESSO_EV_NORMS` | `domain` | `:dsgs_norms` |
+| `JEXPRESSO_EV_BDF` | 2 | `:dsgs_bdf_order`, the order of the residual sensor's backward difference; records `dsgs_bdf<k>` ([below](#the-order-of-the-sensors-time-difference)) |
 
 The meshes are the MHD case's — the same $[-5,5]^2$ doubly periodic quad grids,
 and two copies would only mean two things to regenerate. Nothing else is
 shared: the per-case SEM cache and the error store live next to this deck.
+
+## The order of the sensor's time difference
+
+`JEXPRESSO_EV_BDF` (`:dsgs_bdf_order`) sets the order $k$ of the backward
+difference the residual sensor takes $\partial_t q$ with (default 2, BDF2); the
+option, and the study `tools/smooth_vortex_bdf_study.sh` runs on both vortices,
+are described in the [MHD case's README](../../MHD/smoothVortex/README.md#the-order-of-the-sensors-time-difference-bdf-k).
+On this vortex ($\beta = 5$, without the cutoff, which is this deck's default)
+DynSGS is far above Galerkin from $N = 6$ on, and the order of the difference
+does not change that ($32^2$, $t = 1$, $\Delta t = 1/1750$, velocity $L^1$, ratio
+to Galerkin in brackets):
+
+| $N$ | Galerkin | DynSGS, BDF2 | DynSGS, BDF5 |
+|---|---|---|---|
+| 4 | 3.417e-3 | 3.18e-2 (9.3) | 2.20e-2 (6.4) |
+| 5 | 2.297e-3 | 1.36e-2 (5.9) | 4.52e-2 (19.7) |
+| 6 | 7.223e-5 | 6.18e-2 (856) | 5.57e-2 (771) |
+| 7 | 2.927e-5 | 4.22e-2 (1443) | 4.86e-2 (1661) |
+
+$\nu$ is not sitting on the time-difference floor: at $N = 6$ it starts at
+2.2e-6 right after the startup hold, the same with BDF2 and BDF5 to three digits,
+and grows by about 1.7 % per step to ~1e-2 at $t \approx 0.45$ before it
+saturates, with either. That growth, not the order of the difference, is what
+the error above measures, and it is not a time error at all: halving $\Delta t$
+to 1/3500 changes the DynSGS error by under 6 % ($N = 6$: 0.0618 → 0.0621;
+$N = 7$: 0.0422 → 0.0400), where a BDF2 floor would fall 4×, and the Galerkin
+error by 1.2e-8 of itself at most. Between $16^2$ and $32^2$ DynSGS converges at 1.5
+($N = 6$) and −0.3 ($N = 7$) against Galerkin's 7.5 and 6.1.
+
+On the coarser meshes, where the sensor is active everywhere, a higher order makes
+DynSGS worse: at $N = 7$ on $16^2$ it is 17× Galerkin with BDF2, 44× with BDF4
+and 67× with BDF5; at $N = 5$ on $16^2$ 5.3×, 9.5×, 14.3×; at $N = 6$ on $8^2$
+4.1×, 7.6×, 9.4×. The mean coefficient is up to 3× BDF2's and swings from one
+step to the next by 2–12 % of itself (BDF2: 0–2.5 %): the sensor reads back its
+own step-frozen viscosity, which BDF4 and BDF5 amplify 2.7× and 4.3× more than
+BDF2 (the MHD case's README, *The order of the sensor's time difference*).
 
 ## Why the background floor is off here
 
@@ -91,6 +128,6 @@ sweep with it on measures the floor and not the scheme.
 |---|---|
 | `user_inputs.jl` | the deck and the environment overrides |
 | `initialize.jl` | the vortex, its exact-solution helper `ev_state`, and the wrap |
-| `user_plot.jl` | the error norms, the store and the convergence figures |
+| `user_plot.jl` | the error norms, the record tags and the store; the convergence figure is the MHD case's [`convergence_figure.jl`](../../MHD/smoothVortex/convergence_figure.jl), so the two cases are drawn the same way |
 | `user_flux.jl`, `user_primitives.jl`, `user_source.jl` | the 2D total-energy Euler system, as in `CompEuler/ffs_step` |
 | `user_bc.jl` | free-slip fallback; periodicity is handled at the mesh level |

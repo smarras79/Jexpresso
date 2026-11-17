@@ -66,9 +66,18 @@ include(joinpath(@__DIR__, "convergence_figure.jl"))
 # deck ran without the cutoff, called that run "dsgs" and carry no cutoff= key:
 # _sv_load_errors reads them as "dsgs_nocut".)
 const SV_DSGS_CUTOFF = 1.0e-3
-const SV_TAGS = ("dsgs", "dsgs_nocut", "dsgs_cut", "dsgs_hold", "galerkin")
+# A sensor whose backward difference is of order k ≠ 2 (JEXPRESSO_SV_BDF,
+# :dsgs_bdf_order) adds "_bdf<k>" to any DynSGS tag: "dsgs_nocut_bdf5" is the
+# run without the cutoff, with BDF5 (convergence_figure.jl, _conv_bdf_suffix).
+const SV_BASE_TAGS = ("dsgs", "dsgs_nocut", "dsgs_cut", "dsgs_hold")
+const SV_TAGS = (SV_BASE_TAGS...,
+                 (string(b, "_bdf", k) for b in SV_BASE_TAGS for k in (1, 3, 4, 5, 6))...,
+                 "galerkin")
 function _sv_tag(inputs)
     get(inputs, :lvisc, true) || return "galerkin"
+    return string(_sv_base_tag(inputs), _conv_bdf_suffix(inputs))
+end
+function _sv_base_tag(inputs)
     cut = Float64(get(inputs, :dsgs_cutoff, 0.0))
     cut == SV_DSGS_CUTOFF || return cut > 0 ? "dsgs_cut" : "dsgs_nocut"
     Int(get(inputs, :dsgs_hold_steps, 2)) == 2 || return "dsgs_hold"
@@ -201,6 +210,9 @@ function _sv_save_error(e, inputs, t, tnum = t)
                         " rel=", Float64(get(inputs, :dsgs_rel, 1.0)),
                         " hold=", Int(get(inputs, :dsgs_hold_steps, 2)),
                         " cutoff=", Float64(get(inputs, :dsgs_cutoff, 0.0)),
+                        # the order of the sensor's backward difference (no
+                        # key before :dsgs_bdf_order existed: BDF2)
+                        " bdf=", Int(get(inputs, :dsgs_bdf_order, 2)),
                         " dt=", Float64(get(inputs, :Δt, 0.0)))
             println(io, "# relative, for reference: L1=", e.r1, " L2=", e.r2, " Linf=", e.rinf)
             println(io, "# L1 L2 Linf")
@@ -266,15 +278,26 @@ end
 # norms, one panel each. The legend name of a record's tag, and its line style:
 # solid = DSGS as the deck runs it (with the cutoff), dash-dot = DSGS without
 # the cutoff, dash-dot-dot = DSGS with another cutoff or a longer startup hold,
-# dashed = plain Galerkin.
+# dashed = plain Galerkin. On a figure with records of a higher-order sensor
+# (BDF-k, "_bdf<k>") the one of highest k is the solid, filled curve instead,
+# and the other DSGS curves are dash-dot (no cutoff, BDF2) and dash-dot-dot:
+# the comparison is then Galerkin, the BDF2 sensor and the BDF-k one.
 #---------------------------------------------------------------------------------
-_sv_visc_label(tag) = tag == "dsgs"       ? "DSGS" :
-                        tag == "dsgs_nocut" ? "DSGS, no cutoff" :
-                        tag == "dsgs_cut"   ? "DSGS, other cutoff" :
-                        tag == "dsgs_hold"  ? "DSGS + hold" : "Galerkin"
-_sv_visc_style(tag, tags = SV_TAGS) = tag == "dsgs"       ? :solid :
-                                        tag == "dsgs_nocut" ? :dashdot :
-                                        tag in ("dsgs_cut", "dsgs_hold") ? :dashdotdot : :dash
+function _sv_visc_label(tag)
+    base, k = _conv_bdf_split(tag)
+    lab = base == "dsgs"       ? "DSGS" :
+          base == "dsgs_nocut" ? "DSGS, no cutoff" :
+          base == "dsgs_cut"   ? "DSGS, other cutoff" :
+          base == "dsgs_hold"  ? "DSGS + hold" : "Galerkin"
+    return k == 2 ? lab : string(lab, ", BDF", k)
+end
+function _sv_visc_style(tag, tags = (SV_BASE_TAGS..., "galerkin"))
+    tag == "galerkin" && return :dash
+    top = _conv_bdf_top(tags)
+    top === nothing || return tag == top ? :solid : tag == "dsgs_nocut" ? :dashdot : :dashdotdot
+    return tag == "dsgs"       ? :solid :
+           tag == "dsgs_nocut" ? :dashdot : :dashdotdot
+end
 const SV_PANELS = [   # (field, ylabel, title, file)
     (:l1,   "\\Vert\\mathbf{u}_h-\\mathbf{u}_{exact}\\Vert_{L^1}",       "L^1\\mathrm{-error}",       "L1"),
     (:l2,   "\\Vert\\mathbf{u}_h-\\mathbf{u}_{exact}\\Vert_{L^2}",       "L^2\\mathrm{-error}",       "L2"),

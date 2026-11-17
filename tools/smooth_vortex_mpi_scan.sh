@@ -50,6 +50,16 @@
 # and appear as their own curve beside the default DynSGS one instead of
 # overwriting it.
 #
+# SV_BDF=<k> is the order of the backward difference the DynSGS residual
+# sensor takes the time derivative with (:dsgs_bdf_order, default 2). The
+# sensor's floor on a smooth, resolved solution is the truncation error of
+# that difference, -dt^k/(k+1) d^(k+1)q/dt^(k+1), so nu ~ h^2 dt^k; with BDF2
+# that caps DynSGS near order 4 from N = 5 on. Its records are the BDF2 tag
+# plus "_bdf<k>" (dsgs_nocut_bdf5), a curve of their own:
+#
+#   SV_KEEP=1 SV_VISC=dsgs SV_CUTOFF=0 SV_BDF=5 SV_NP=1 SV_JOBS=4 \
+#       SV_NOPS="4 5 6 7" tools/smooth_vortex_mpi_scan.sh
+#
 # THE ERROR STORE IS CLEARED FIRST (SV_KEEP=1 to add to it instead): every run
 # redraws the figures from the whole store, so a leftover sweep would appear
 # on the comparison of this one.
@@ -155,7 +165,7 @@ if [ "$NP" -gt 1 ] && [ "${SV_SKIP_LAUNCHER_CHECK:-0}" != "1" ]; then
 fi
 
 echo "=== $CASE: nops [$NOPS] x nelx [$NELX] x [$VISCS] on the [-$(awk -v l="$LBOX" 'BEGIN{printf "%g", l/2}'), $(awk -v l="$LBOX" 'BEGIN{printf "%g", l/2}')]^2 box"
-echo "=== $NP rank(s) per case, $JOBS case(s) at a time, dt = $([ "$DT" = percase ] && echo "per case (the deck's CFL rule)" || echo "$DT"), solver $SOLVER, tend $TEND"
+echo "=== $NP rank(s) per case, $JOBS case(s) at a time, dt = $([ "$DT" = percase ] && echo "per case (the deck's CFL rule)" || echo "$DT"), solver $SOLVER, tend $TEND, sensor BDF${SV_BDF:-2}"
 
 run_one() {   # $1 visc  $2 nop  $3 nelx
     log="logs/${CNAME}_${1}_nop$2_nelx$3.log"
@@ -181,6 +191,7 @@ run_one() {   # $1 visc  $2 nop  $3 nelx
         JEXPRESSO_${PFX}_L="$LBOX" \
         ${SV_CUTOFF:+JEXPRESSO_${PFX}_CUTOFF="$SV_CUTOFF"} \
         ${SV_HOLD:+JEXPRESSO_${PFX}_HOLD="$SV_HOLD"} \
+        ${SV_BDF:+JEXPRESSO_${PFX}_BDF="$SV_BDF"} \
         ${PLOT_NOPS:+JEXPRESSO_${PFX}_PLOT_NOPS="$PLOT_NOPS"} \
         $launcher "$JULIA" --project=. src/Jexpresso.jl "$EQNS" "$CNAME" \
         > "$log" 2>&1
@@ -210,6 +221,9 @@ run_one() {   # $1 visc  $2 nop  $3 nelx
 # looks for a file the run will not write.
 _tag_of() {
     [ "$1" = none ] && { echo galerkin; return 0; }
+    echo "$(_base_tag_of)$(_bdf_suffix)"
+}
+_base_tag_of() {
     case $(awk -v c="${SV_CUTOFF:-$CUT_DEFAULT}" -v d="$CUT_DEFAULT" \
                'BEGIN { c += 0; d += 0; print (c == d ? "deck" : (c == 0 ? "nocut" : "cut")) }') in
         nocut) echo dsgs_nocut; return 0 ;;
@@ -217,6 +231,9 @@ _tag_of() {
     esac
     case "${SV_HOLD:-2}" in 2|"") echo dsgs ;; *) echo dsgs_hold ;; esac
 }
+# A sensor with a backward difference of order k != 2 (SV_BDF) adds "_bdf<k>"
+# to the DynSGS tag, as _conv_bdf_suffix does in the decks' plotting code.
+_bdf_suffix() { case "${SV_BDF:-2}" in 2|"") ;; *) printf '_bdf%s' "$SV_BDF" ;; esac; }
 
 # Does the stored record answer for this case? A Galerkin one does; a DynSGS one
 # only if it was run with the cutoff asked for now, which its tag alone does not

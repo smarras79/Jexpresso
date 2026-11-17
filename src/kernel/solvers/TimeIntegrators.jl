@@ -161,6 +161,7 @@ function precompile_warmup_run!(inputs, params, u,
     dsgs_qn_snapshot   = copy(params.dsgs_qn)
     dsgs_qnm1_snapshot = copy(params.dsgs_qnm1)
     dsgs_qnm2_snapshot = copy(params.dsgs_qnm2)
+    dsgs_qhist_snapshot = [copy(a) for a in params.dsgs_qhist]   # qⁿ⁻³ … for :dsgs_bdf_order > 2
     dsgs_thist_snapshot = params.dsgs_thist[]
     # nhist counts the step-cadenced rotations and gates the startup hold
     # (rhs.jl, _dsgs_hold_steps). It was NOT restored, so the warm-up silently
@@ -217,6 +218,7 @@ function precompile_warmup_run!(inputs, params, u,
     params.dsgs_qn   .= dsgs_qn_snapshot
     params.dsgs_qnm1 .= dsgs_qnm1_snapshot
     params.dsgs_qnm2 .= dsgs_qnm2_snapshot
+    foreach((a, b) -> (a .= b), params.dsgs_qhist, dsgs_qhist_snapshot)
     params.dsgs_thist[] = dsgs_thist_snapshot
 
     # The VTK write path is JIT-compiled on first use by the IC write in
@@ -733,6 +735,7 @@ function time_loop!(inputs, params, u, args...)
             dsgs_qn_snap   = copy(params.dsgs_qn)
             dsgs_qnm1_snap = copy(params.dsgs_qnm1)
             dsgs_qnm2_snap = copy(params.dsgs_qnm2)
+            dsgs_qhist_snap = [copy(a) for a in params.dsgs_qhist]
             dsgs_thist_snap = params.dsgs_thist[]
             dsgs_nhist_snap = params.dsgs_nhist[]
             # If a callback ends up actually writing during the warmup
@@ -791,6 +794,7 @@ function time_loop!(inputs, params, u, args...)
             params.dsgs_qn   .= dsgs_qn_snap
             params.dsgs_qnm1 .= dsgs_qnm1_snap
             params.dsgs_qnm2 .= dsgs_qnm2_snap
+            foreach((a, b) -> (a .= b), params.dsgs_qhist, dsgs_qhist_snap)
             params.dsgs_thist[] = dsgs_thist_snap
             params.dsgs_nhist[] = dsgs_nhist_snap
             inputs isa Dict && saved_outdir !== nothing && (inputs[:output_dir] = saved_outdir)
