@@ -1125,15 +1125,29 @@ function DSS_global_normals!(nx, ny, nz, mesh, SD::NSD_3D)
                 normz = normals[ip, 3]/mag
                 
             end
-            if mesh.bdy_face_type[iface] != "periodicx" && (abs(nx[iface, i, j] - normx) < 0.25)
+            tag = mesh.bdy_face_type[iface]
+            if tag == "periodicx" || tag == "periodicy" || tag == "periodicz"
+                # periodic faces: unchanged legacy per-component rule
+                if tag != "periodicx" && (abs(nx[iface, i, j] - normx) < 0.25)
+                    nx[iface, i, j] = normx
+                end
+                if tag != "periodicy" && (abs(ny[iface, i, j] - normy) < 0.25)
+                    ny[iface, i, j] = normy
+                end
+                if tag != "periodicz" && (abs(nz[iface, i, j] - normz) < 0.25)
+                    nz[iface, i, j] = normz
+                end
+            elseif (abs(nx[iface, i, j] - normx) < 0.25) &&
+                   (abs(ny[iface, i, j] - normy) < 0.25) &&
+                   (abs(nz[iface, i, j] - normz) < 0.25)
+                # smooth surface: use the node-averaged normal (same result as before)
                 nx[iface, i, j] = normx
-            end
-            if mesh.bdy_face_type[iface] != "periodicy" && (abs(ny[iface, i, j] - normy) < 0.25)
                 ny[iface, i, j] = normy
-            end
-            if mesh.bdy_face_type[iface] != "periodicz" && (abs(nz[iface, i, j] - normz) < 0.25)
                 nz[iface, i, j] = normz
             end
+            # otherwise (sharp edge/corner) keep the face's own normal intact: replacing only the
+            # components that happen to be within 0.25 (previous rule) gave a distorted normal
+            # that belongs to no face, e.g. where a tilted wall meets the floor.
 
             #makesure vectors are unit vectors 
             mag = sqrt(nx[iface, i, j]^2 + ny[iface, i, j]^2 + nz[iface, i, j]^2)

@@ -517,6 +517,12 @@ function time_loop!(inputs, params, u, args...)
     cb         = DiscreteCallback(condition, affect!)
     cb_amr     = DiscreteCallback(condition, affect!)
     cb_restart = DiscreteCallback(restart_condition, do_restart!)
+    # Modal filter (:lfilter): once per completed time step on integrator.u
+    # (see filter_step!). Not saved, so it does not grow the solution.
+    lfilter   = inputs[:lfilter] == true
+    cb_filter = DiscreteCallback((u, t, integrator) -> true,
+                                 integrator -> filter_step!(integrator.u, integrator.p, integrator.t);
+                                 save_positions = (false, false))
     # Coupled-mode exchange callback: fires once per accepted timestep,
     # sends Julia's interpolated solution to Alya so its MPI.Waitall in
     # the time loop can advance. Without this Alya hangs and never
@@ -586,6 +592,7 @@ function time_loop!(inputs, params, u, args...)
             nothing
 
         _cbs = Any[cb, cb_restart, cb_les_stat, cb_les_online]
+        lfilter                               && pushfirst!(_cbs, cb_filter)
         cb_pod !== nothing                     && push!(_cbs, cb_pod)
         lrad                                  && push!(_cbs, cb_rad)
         is_coupled && cb_coupling !== nothing  && push!(_cbs, cb_coupling)
@@ -812,7 +819,7 @@ function time_loop!(inputs, params, u, args...)
             println_rank(" #  dt=", dt; msg_rank = rank)
             @mpi_time solution = solve(prob,
                                 inputs[:ode_solver], dt=Float32(dt),
-                                callback = CallbackSet(cb_amr, cb_restart), tstops = dosetimes,
+                                callback = lfilter ? CallbackSet(cb_filter, cb_amr, cb_restart) : CallbackSet(cb_amr, cb_restart), tstops = dosetimes,
                                 save_everystep = false,
                                 adaptive=inputs[:ode_adaptive_solver],
                                 saveat = []);

@@ -47,7 +47,47 @@ For 2D, `build_custom_bcs_dirichlet!(::NSD_2D, ...)` loops over every boundary e
 
 At the end the array `u` is repacked from `uaux` via `uaux2u!(u, uaux, neqs, npoin)`.
 
-The 3D version is analogous, looping on `nfaces_bdy` and using `poin_in_bdy_face` together with the 3-component normal *(n_x, n_y, n_z)*.
+The 1D/2D versions (and the GPU and Laguerre paths) still work this way.
+
+### 2.1.1 Constraints inferred from `user_bc_dirichlet!` (1D, 2D, 3D; CPU, CG)
+
+On the CPU with continuous Galerkin, in 1D, 2D and 3D, the kernel no longer treats "the user wrote `qbdy[ieq]`" as "freeze this component". Instead it works out **what each boundary tag actually constrains** from what `user_bc_dirichlet!` does to a node value, once at setup (`build_bc_constraints` in `src/kernel/boundaryconditions/bc_constraints.jl`). No input parameter and no change to existing `user_bc.jl` files is needed.
+
+**Detection rules (per boundary node, per tag):**
+
+1. **Value constraint.** A component is constrained if `user_bc_dirichlet!` *changes* its value. The test is run on the initial state and on probe states (the initial state plus distinct, non-zero offsets on every component), so a constraint that the current state already satisfies — e.g. `w = 0` at a wall for a fluid at rest — is still detected. A component that is returned unchanged (passthrough, or tangential momentum on an axis-aligned wall) is *not* constrained.
+2. **No-penetration (free slip; 2D and 3D).** If the returned *total* momentum (equations 2:3 in 2D, 2:4 in 3D, adding `qe` in `PERT` form) equals the tangential projection of the input momentum, $\mathbf m - (\mathbf m\cdot\mathbf n)\,\mathbf n$, with $\mathbf n$ the boundary normal, the node is treated as a no-penetration node. This covers flat walls and walls with topography. Such nodes get a **node normal** built from all incident constrained boundary edges (2D) or faces (3D): the kernel accumulates $\sum \mathbf n\mathbf n^T$, eigen-decomposes it, and removes every direction whose eigenvalue exceeds 20 % of the largest. Nearly parallel normals (smooth terrain) therefore merge into one averaged normal, while distinct walls meeting at a corner (2D) or an edge or corner (3D) are all removed. In 1D a wall is simply ρu = 0, which rule 1 already covers.
+3. **Robin tags.** Tags whose name contains `robin` (any case, e.g. `"robin_bottom"`, `"ROBIN"`) are value + flux conditions: the values returned by `user_bc_dirichlet!` are applied, but **no tendency is constrained**, so a flux from `user_bc_neumann!` on the same tag acts.
+4. Periodic tags (`periodicx/y/z`, `periodic1/2/3`) and `Laguerre` edges are skipped, as before. In 1D the boundary nodes are the two end points, with tags `"left"` and `"right"`.
+
+The resulting masks are assembled across MPI ranks and periodic copies, so every copy of a node is treated identically.
+
+**What happens at every RHS evaluation:**
+
+- *Before the RHS (state):* `user_bc_dirichlet!` is called as before and its values are written **only for the constrained components**. For no-penetration nodes the kernel projects the total momentum with the node normal itself (so state and tendency use the same normal, also where several faces meet).
+- *After the global assembly (`DSS_global_RHS!`), before the mass-matrix division:* the tendency of every constrained component is zeroed, and for no-penetration nodes the normal part of the momentum tendency is removed, $\mathbf r \leftarrow (\mathbf I - \mathbf N\mathbf N^T)\,\mathbf r$. Tangential momentum is never frozen at a free-slip wall. Applying this after the assembly makes the result independent of how a wall node is split across MPI ranks.
+
+Neumann contributions (`user_bc_neumann!`, MOST, bulk fluxes, `S_flux`) are unchanged; they are added to the RHS before the constraints are applied, exactly as before.
+
+**Examples of what is inferred (no edits needed):**
+
+| `user_bc_dirichlet!` does | Inferred constraint |
+|---|---|
+| `qbdy[2:4] = m - (m·n) n` (standard free slip, any wall orientation) | no-penetration; tangential momentum free |
+| `qbdy[2:4] = 0` | no-slip (all momentum components fixed) |
+| `qbdy[5] = f(q, x, t)` on a tag | component 5 fixed to the returned value on that tag |
+| `qbdy[k] = q[k]` | nothing (passthrough) |
+| any assignment on a tag named `*robin*` | values applied, no tendency constraint |
+
+**Limitations to be aware of:**
+
+- The constraint pattern is detected once at setup. A BC that switches which components it constrains *during* the run (e.g. inflow/outflow chosen by the sign of `u`) is detected with the probe states only; values are still applied every stage, but the set of zeroed tendencies does not change.
+- Momentum is assumed to be equations 2:(1+d) (CompEuler and shallow-water convention, d = 2 or 3). The no-penetration test is attempted only when all of them are set; other equation sets fall back to the component-wise rule.
+- Laguerre (semi-infinite) meshes, DG, GPU runs and periodic 1D keep the legacy behaviour described in §2.1: the returned values overwrite the state at every RHS evaluation.
+
+**Boundary normals at edges (3D).** `DSS_global_normals!` replaces a face normal by the node-averaged normal only when *all three* components are within 0.25 of it (smooth surfaces). At sharp edges/corners the face keeps its own normal. Previously the components were replaced one at a time, which, where a tilted wall met another wall, produced a normal belonging to no face and a mass leak through the wall. Metric terms and normals are stored in the case's `.jexpresso_cache/` (keyed on mesh name and order, not on the code): after updating, clear it (`clean_cache.sh` in the case directory) so the normals are recomputed.
+
+**Migration note for existing cases.** No file needs to change. Previously the returned values overwrote the state at the start of every RHS evaluation, and the zeroing of `RHS[ip, ieq]` done at that point was overwritten by the subsequent assembly, so boundary tendencies were effectively not constrained; values were only re-imposed at the next stage. Now the constrained tendencies are zeroed after the global assembly, so results at Dirichlet boundaries change slightly (more consistently with the imposed values), and free-slip walls constrain only the normal momentum. Coordinate-gated workarounds in `user_bc.jl` (e.g. setting only `qbdy[4]` for `z < 0.01`) are no longer needed.
 
 ### 2.2 Neumann machinery
 
@@ -72,6 +112,24 @@ The variant used by elliptic problems is `apply_boundary_conditions_lin_solve!`,
   This is the standard "identity row" enforcement of essential BCs in *A x = b*.
 
 - **`build_custom_bcs_lin_solve_sparse!`** does the same on a `SparseMatrixCSC`, calling `apply_dirichlet_bc_inplace!` which collects the unique boundary nodes from `poin_in_bdy_edge` and rewrites `L[ip,:] = 0; L[ip,ip] = 1`.
+
+### 2.4 Periodic boundaries (3D)
+
+Periodic faces carry the tags `periodicx`, `periodicy`, `periodicz`. At mesh setup, `restructure4periodicity_3D_sorted!` (`src/kernel/mesh/restructure_for_periodicity.jl`) matches each node on the min face to its partner on the max face. Matching uses the transverse coordinates rounded to 1e-5 m. The two then share one global id (`ip2gip`). They stay separate local nodes ("copies"), and `assemble_mpi!` / `DSS_global_RHS!` sum their contributions. Removing the tag (renaming `periodicx` in a copy of the `.msh`) turns the face into an ordinary boundary.
+
+**Coordinates of periodic copies are unified.** A mesh generator can place the two faces independently. Gmsh transfinite meshing, for example, leaves differences of about 1e-8 m in the transverse coordinates. The copies are then not exactly the same point, which breaks exact periodicity:
+- they get slightly different metric terms;
+- anything evaluated pointwise at a node (reference state, forcing profiles, boundary data) can differ between copies. Where a piecewise profile has its breakpoint exactly on a node level, the two copies can even fall on different branches. In BOMEX, the subsidence profile w_s(z) has its kink at z = 1500 m, on a node level, and this gave a persistent source mismatch at the seam.
+
+The restructure therefore moves each slave copy onto its master's transverse coordinates. The coordinate along the periodic axis is unchanged. The move is at most the 1e-5 m matching tolerance, in practice about 1e-8 m. It happens before metric terms are computed, so all metrics, normals and profiles are evaluated on exactly periodic geometry. No user action is needed, and a correctly built mesh is unaffected.
+
+In a BOMEX rest-state test (2x2x19 gmsh mesh), the mismatched copies produced spurious lateral momentum: max|ρu′| reached 1.2e-8 after 100 s on the x-periodic faces. With the coordinates unified, it stays at round-off (about 1e-13).
+
+**Reference state** (`params_setup.jl`). In perturbation form (`PERT()`), after `initialize` fills `qe`, the reference is projected to be identical on all copies of a node (`conformity4ncf_q!`). This includes the reference pressure column `qe[:, end]`. For periodic copies this is now a no-op, but it also covers MPI copies and non-conforming (AMR) faces. For moist runs, the reference pressure is then recomputed from the model's own equation of state (`reference_pressure_from_model_eos!`), so that p′ = 0 exactly in the rest state from the first step.
+
+**Forcing profiles are a separate matter.** Mesh-generator noise affects every node height, not only periodic copies. A user profile that is discontinuous, or has a discontinuous slope, exactly at a node level is evaluated on different branches in different columns. BOMEX therefore evaluates its forcing at z rounded to 0.1 mm (`bomex_zlevel` in its `user_source.jl`). Without that, the subsidence kink at 1500 m produced a horizontally non-uniform forcing there.
+
+Mesh and metric terms are cached in the case's `.jexpresso_cache/`, keyed on mesh name and order, not on the code. After updating to a version with these corrections, clear the cache once (`clean_cache.sh` in the case directory).
 
 ---
 
@@ -149,6 +207,8 @@ end
 ```
 
 **What the kernel does at every RK stage.** The integrator calls `apply_boundary_conditions_dirichlet!`, which for every boundary node `ip` invokes the user routine with the local normal *(n_x, n_y)* taken from `metrics.nx`, `metrics.ny`, copies the returned `qbdy` into `uaux[ip,:]` and zeroes `RHS[ip,:]`. The result is then mapped back into `u` via `uaux2u!`.
+
+In 3D on the CPU the same `user_bc.jl` (with `nz` and `q[4]` added) is interpreted as described in §2.1.1: the projection is recognised as a free-slip wall, only the normal momentum and its tendency are constrained, and the tangential momentum evolves. The same function therefore works unchanged on flat walls, on terrain, and in closed boxes (edges and corners).
 
 ### 4.2 Elliptic problems leading to *A x = b*
 
@@ -278,7 +338,8 @@ Because the sponge is simply one block inside `user_source!`, it coexists natura
 
 | Problem class | Driver branch | Kernel entry point | Action |
 |---|---|---|---|
-| Hyperbolic, explicit | `time_loop!` | `apply_boundary_conditions_dirichlet!` | Overwrite `uaux`, zero RHS row |
+| Hyperbolic, explicit (1D/2D, GPU, Laguerre) | `time_loop!` | `apply_boundary_conditions_dirichlet!` | Overwrite `uaux`, zero RHS row |
+| Hyperbolic, explicit (3D, CPU) | `time_loop!` | `apply_boundary_conditions_dirichlet!` + `apply_bc_constraints_rhs!` | Write constrained values / project momentum; after `DSS_global_RHS!` zero constrained tendencies and remove normal momentum tendency (§2.1.1) |
 | | | `apply_boundary_conditions_neumann!` | Add surface flux to RHS |
 | Elliptic (*Ax = b*) | `llinsolve` branch | `apply_boundary_conditions_lin_solve!` | Zero *L* row, *L_ii = 1*, write RHS |
 | Hyperbolic, IMEX/impl. | `time_loop!` + implicit stage | `apply_boundary_conditions_lin_solve!` | Same as elliptic on stage matrix |
@@ -289,8 +350,11 @@ Because the sponge is simply one block inside `user_source!`, it coexists natura
 ## 7. Files referenced
 
 - `src/kernel/boundaryconditions/BCs.jl`
+- `src/kernel/boundaryconditions/bc_constraints.jl` (3D constraint detection and application)
 - `src/kernel/boundaryconditions/custom_bcs.jl`
 - `src/kernel/boundaryconditions/surface_integral.jl`
+- `src/kernel/mesh/restructure_for_periodicity.jl` (periodic matching and coordinate unification, §2.4)
+- `src/kernel/infrastructure/params_setup.jl` (periodic projection of the reference state, §2.4)
 - `problems/drivers.jl`
 - `problems/CompEuler/theta/user_bc.jl`, `user_inputs.jl`
 - `problems/Elliptic/case1/user_bc.jl`, `user_inputs.jl`

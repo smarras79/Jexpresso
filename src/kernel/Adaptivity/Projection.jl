@@ -2869,6 +2869,20 @@ function DSS_nc_scatter_rhs!(M, SD::NSD_3D, QT::Inexact,
     end
 end
 
+"""
+    any_nonconforming_facets(mesh) -> Bool
+
+True if any rank holds a non-conforming (hanging) facet, including periodic ones and the
+parent/child ghost facets. Collective: call it on every rank.
+"""
+function any_nonconforming_facets(mesh)
+    n = 0
+    for f in (:num_ncf, :num_ncf_pg, :num_ncf_cg, :num_ncf_peri, :num_ncf_pg_peri, :num_ncf_cg_peri)
+        hasproperty(mesh, f) && (n += Int(coalesce(getproperty(mesh, f), 0)))
+    end
+    return MPI.Allreduce(n, +, get_mpi_comm()) > 0
+end
+
 function conformity4ncf_q!(q, q_el_tmp, q_tmp, vaux, g_dss_cache,
                            SD::NSD_1D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD, params; ladapt = true, neqs = 4) 
     nothing 

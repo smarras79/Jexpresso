@@ -37,11 +37,15 @@ function user_inputs()
         :μ                   => [0.0, 20.0, 20.0, 60.0], # use [], not ()!
         #---------------------------------------------------------------------------
         # Filter parameters
+        # The modal filter is applied to the solution once per completed time
+        # step (not at every Runge-Kutta stage); mu_x/mu_y/mu_z set its strength.
         #---------------------------------------------------------------------------
         #:lfilter             => true,
         #:mu_x                => 0.01,
         #:mu_y                => 0.01,
         #:filter_type         => "erf",
+        #:filter_basis        => "legendre",  # default; "hierarchical" keeps element-end
+        #                                     # values but can add energy (not recommended)
 	#---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
