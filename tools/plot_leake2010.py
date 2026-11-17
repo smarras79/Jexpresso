@@ -478,6 +478,46 @@ def cmd_diag(a):
               f"{sj:9.3g} {at(j, kj):>16} {spp:9.3g} {at(p, kp):>16} {sb:9.3g} {at(beta, kb):>16} {sT:8.3g} {at(p, kT):>16} {nT:8d} {sR:12.3g} {at(p, kR):>16} {sM:9.3g} {at(p, kM):>16}")
 
 
+def cmd_atmos(a):
+    """The atmosphere away from the emerging region against height, at several times: medians over
+    XMIN <= |x| <= XMAX Mm of log10 rho (g cm^-3), log10 T (K), and the DynSGS momentum coefficient (code
+    units). Shows whether the chromosphere heats and the transition region rises (heating), or the corona
+    fills with dense plasma at the chromospheric temperature (transport), and where the DynSGS acts."""
+    items = runs_of(a.run)
+    times = [float(t) for t in a.times.split(",")] if a.times else [0, 464, 920, 1160, 1380, 1610, 1955, 2530]
+    sel = nearest(items, times)
+    fig, axs = plt.subplots(1, 3, figsize=(11.5, 4.6), sharey=True)
+    cmap = plt.get_cmap("viridis")
+    rows = []
+    for i, (t, f) in enumerate(sel):
+        g = load(f, ["log10rho_cgs", "T", MU_NAME])
+        cols = (np.abs(g["X"]) >= a.xmin) & (np.abs(g["X"]) <= a.xmax)
+        Y = g["Y"]
+        R = np.median(grid2d(g, g["fields"]["log10rho_cgs"])[:, cols], axis=1)
+        T = np.median(grid2d(g, g["fields"]["T"])[:, cols], axis=1) * 5700.0
+        M = np.median(grid2d(g, g["fields"][MU_NAME])[:, cols], axis=1) if MU_NAME in g["fields"] else np.full(Y.shape, np.nan)
+        c = cmap(i / max(len(sel) - 1, 1))
+        axs[0].plot(R, Y, color=c, lw=1.2, label=f"{t:.0f} s")
+        axs[1].plot(np.log10(np.clip(T, 1.0, None)), Y, color=c, lw=1.2)
+        axs[2].plot(M, Y, color=c, lw=1.2)
+        # where log rho crosses -13 (the transition region), and the chromospheric temperature at 2 Mm
+        k = np.where((R[:-1] > -13) & (R[1:] <= -13) & (Y[:-1] > 0))[0]
+        ytr = Y[k[0]] + (R[k[0]] + 13) / (R[k[0]] - R[k[0] + 1]) * (Y[k[0] + 1] - Y[k[0]]) if len(k) else np.nan
+        rows.append((t, ytr, np.interp(1.5, Y, T), np.interp(6.0, Y, R), np.nanmax(np.where((Y > 0) & (Y < 10), M, np.nan))))
+    for ax in axs:
+        ax.set_ylim(a.ylim); ax.grid(alpha=0.3); ax.tick_params(labelsize=8)
+    axs[0].set_xlabel(r"log $\rho$ (g cm$^{-3}$)"); axs[1].set_xlabel(r"log $T$ (K)"); axs[2].set_xlabel(r"DynSGS $\mu$ (code units)")
+    axs[0].set_ylabel("Y (Mm)"); axs[0].legend(fontsize=7, loc="upper right")
+    fig.suptitle(f"median over {a.xmin:g} <= |x| <= {a.xmax:g} Mm", fontsize=9)
+    fig.tight_layout()
+    out = os.path.join(a.outdir, f"atmos.{a.format}")
+    fig.savefig(out, dpi=a.dpi); plt.close(fig)
+    print(f"{'t [s]':>7} {'TR (log rho=-13) [Mm]':>22} {'T at 1.5 Mm / T(t0)':>20} {'log rho at 6 Mm':>16} {'max mu (0-10 Mm)':>17}")
+    for t, ytr, t2, r6, mm in rows:
+        print(f"{t:7.0f} {ytr:22.2f} {t2 / rows[0][2]:20.2f} {r6:16.2f} {mm:17.3g}")
+    print("wrote", out)
+
+
 def cmd_profiles(a):
     items = runs_of(a.run)
     t, f = items[0]
@@ -546,6 +586,12 @@ def main():
     s.add_argument("runs", nargs="+", help="RUN or LABEL=RUN")
     s = sub.add_parser("profiles"); s.set_defaults(fn=cmd_profiles)
     s.add_argument("run")
+    s = sub.add_parser("atmos"); s.set_defaults(fn=cmd_atmos)
+    s.add_argument("run")
+    s.add_argument("--times", default="", help="comma-separated times in s (default 0,464,920,1160,1380,1610,1955,2530)")
+    s.add_argument("--xmin", type=float, default=8.0, help="|x| range of the median, Mm")
+    s.add_argument("--xmax", type=float, default=12.75)
+    s.add_argument("--ylim", type=lambda t: tuple(map(float, t.split(","))), default=(-1.0, 20.0))
     s = sub.add_parser("diag"); s.set_defaults(fn=cmd_diag)
     s.add_argument("run")
     s.add_argument("--dt", type=float, default=None, help="the run's time step in t0 (its log): print the CFL number")
