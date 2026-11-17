@@ -201,13 +201,48 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
     if do_lw
         κ_lw, σ_lw = atmos_to_rad_longwave(atmos_data, mesh.npoin)
         lw = LWParams(inputs[:RT_ϵ_surface], inputs[:RT_T_space])
-        lw_case = build_longwave_case(atmos_data, κ_lw, σ_lw, bdy; ε_surface=lw.ε_surface, T_space=lw.T_space)
-        rt_lap!(tm, :lw_case)
+        # Lateral treatment (lw_lateral.jl):
+        #   :RT_lw_lateral_bc    :blackbody (σT_back⁴/π on real walls) | :plane_parallel (local-column 1D radiance)
+        #   :RT_lw_periodic_mode :periodic | :walls (periodic faces become walls with local-column 1D inflow)
+        #   :RT_lw_cold_init     :zero | :walls (cold solve starts from the :walls solution, then solves periodic)
+        #                        | :column_mean (cold solve starts from the plane-parallel horizontal-mean column)
+        #   :RT_lw_solver        :gmres | :gmres_precond (direction scaling by periodic path length, sweep_gmres.jl)
+        #   :RT_lw_cold_rtol     0 = off; > 0 relaxes the COLD solve to max(rt_tol, rtol·‖b‖)
+        cold = !micro.rt_sol_lw_available
+        lat_bc = Symbol(get(inputs, :RT_lw_lateral_bc, :blackbody))
+        per_mode = Symbol(get(inputs, :RT_lw_periodic_mode, :periodic))
+        cold_init = Symbol(get(inputs, :RT_lw_cold_init, :zero))
+        cold_rtol = Float64(get(inputs, :RT_lw_cold_rtol, 0.0))
+        need_cols = lat_bc == :plane_parallel || per_mode == :walls || (cold && cold_init == :walls)
+        cols = need_cols ? build_lw_lateral_columns(mesh, κ_lw .+ σ_lw, atmos_data.t_current, comm;
+                                                    ε_surface=lw.ε_surface, T_space=lw.T_space) : nothing
+        ovr = (per_mode == :walls || (cold && cold_init == :walls)) ? lw_lateral_prev_override(mesh, cols) : nothing
+        lw_case = build_longwave_case(atmos_data, κ_lw, σ_lw, bdy; ε_surface=lw.ε_surface, T_space=lw.T_space,
+                                      lateral_cols = lat_bc == :plane_parallel ? cols : nothing,
+                                      prev_override = per_mode == :walls ? ovr : nothing)
+        rt_lap!(tm, :lw_case)                                           # optics, lateral columns and case
+        I_init_lw = micro.rt_sol_lw_available ? micro.rt_sol_lw : nothing
+        lw_solver = Symbol(get(inputs, :RT_lw_solver, :gmres))
+        if cold && cold_init == :column_mean
+            I_init_lw = lw_column_mean_init(mesh, κ_lw .+ σ_lw, atmos_data.t_current, comm;
+                                            ε_surface=lw.ε_surface, T_space=lw.T_space)
+            rt_lap!(tm, :lw_mean_init)
+        end
+        if cold && cold_init == :walls && per_mode == :periodic
+            walls_case = build_longwave_case(atmos_data, κ_lw, σ_lw, bdy; ε_surface=lw.ε_surface, T_space=lw.T_space,
+                                             lateral_cols = lat_bc == :plane_parallel ? cols : nothing,
+                                             prev_override = ovr)
+            I_init_lw, _, _ = run_unified_case_solve(infra, metrics, comm, walls_case;
+                max_iter=rt_max_iter, tol=rt_tol, solver=:gmres, gmres_restart=60, gmres_max_restarts=10,
+                rtol=cold_rtol, report = rt_solve_report!(tm, :lw_walls_init))
+            rt_lap!(tm, :lw_walls_init)
+        end
         I_cg_lw, κ_lw_used, σ_lw_used = run_unified_case_solve(infra, metrics, comm, lw_case;
             max_iter=rt_max_iter, tol=rt_tol,
-            solver=:gmres,
             gmres_restart=60, gmres_max_restarts=10,
-            I_cg_all_init = micro.rt_sol_lw_available ? micro.rt_sol_lw : nothing,
+            I_cg_all_init = I_init_lw,
+            solver = lw_solver,
+            rtol = cold ? cold_rtol : 0.0,
             report = rt_solve_report!(tm, :lw))
         rt_lap!(tm, :lw_solve)
         micro.rt_sol_lw = I_cg_lw

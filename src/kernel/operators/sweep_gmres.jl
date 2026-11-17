@@ -97,10 +97,18 @@ function gmres_core(matvec::Function, b::Vector{Float64}, x0::Vector{Float64}, c
 end
 
 function gmres_fixed_point_solve(apply_G::Function, x0::Vector{Float64}, comm;
-                                  restart::Int=20, max_restarts::Int=10, tol::Float64=1e-5, verbose::Bool=true)
+                                  restart::Int=20, max_restarts::Int=10, tol::Float64=1e-5, rtol::Float64=0.0,
+                                  verbose::Bool=true)
     b = apply_G(zeros(length(x0)))
     matvec(v) = v .- (apply_G(v) .- b)
-    return gmres_core(matvec, b, x0, comm; restart=restart, max_restarts=max_restarts, tol=tol, verbose=verbose)
+    # tol is absolute on the global residual 2-norm; rtol > 0 relaxes it to max(tol, rtol·‖b‖)
+    tol_eff = tol
+    if rtol > 0
+        bn = sqrt(MPI.Allreduce(dot(b, b), MPI.SUM, comm))
+        tol_eff = max(tol, rtol * bn)
+        MPI.Comm_rank(comm) == 0 && verbose && println("  GMRES tolerance: max(abs $(tol), rtol $(rtol) × ‖b‖ $(bn)) = $(tol_eff)")
+    end
+    return gmres_core(matvec, b, x0, comm; restart=restart, max_restarts=max_restarts, tol=tol_eff, verbose=verbose)
 end
 
 function gmres_fixed_point_solve_precond(apply_G::Function, x0::Vector{Float64}, scales_flat::Vector{Float64}, comm;

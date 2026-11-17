@@ -12,6 +12,10 @@ Base.@kwdef struct RadiativeCase
     #   q_k(x) = coeff(x) Φ(Ω_k, Ω_beam; g(x)) / N(x),  N(x) = Σ_k w_k Φ(Ω_k, Ω_beam; g(x)) if normalize, else 1
     # fields: θ, ϕ (beam propagation direction), coeff::Vector (σ·I_dir per node), g::Vector, normalize::Bool
     beam_source::Union{Nothing,NamedTuple} = nothing
+    # Fixed values that replace entries of the lagged iterate the sweep reads across PERIODIC faces:
+    # (iel,d) => (lidx, values). Used to turn periodic faces into walls with a prescribed inflow
+    # (lw_lateral_prev_override). nothing = ordinary periodic coupling.
+    prev_override::Union{Nothing,Dict{Tuple{Int,Int},Tuple{Vector{Int},Vector{Float64}}}} = nothing
 end
 
 Base.@kwdef struct SweepOptions
@@ -167,19 +171,26 @@ function build_phase_coupling_matrices_elementwise(mesh, case::RadiativeCase)
     return C_iel_all
 end
 
+# lateral_cols (LWLateralColumns, lw_lateral.jl): if given, real lateral walls get the plane-parallel radiance of the
+#   local column instead of the blackbody σT_back⁴/π of user_rad_bc_longwave.
+# prev_override: see RadiativeCase (periodic faces treated as walls with that inflow).
 function build_longwave_case(atmos_data, κ_lw::Vector{Float64}, σ_lw::Vector{Float64}, bdy;
-                              ε_surface=0.97, T_space=0.0)
+                              ε_surface=0.97, T_space=0.0, lateral_cols=nothing, prev_override=nothing)
     lw = LWParams(ε_surface, T_space)
     kappa_fn = (x,y,z,ip) -> κ_lw[ip] + σ_lw[ip]
     sigma_fn = (x,y,z,ip) -> σ_lw[ip]
-    bc_fn = (x,y,z,ip,nx,ny,nz,θ,ϕ) -> user_rad_bc_longwave(x,y,z,θ,ϕ,nx,ny,nz,ip,atmos_data,bdy,lw)
+    bc_fn = lateral_cols === nothing ?
+        ((x,y,z,ip,nx,ny,nz,θ,ϕ) -> user_rad_bc_longwave(x,y,z,θ,ϕ,nx,ny,nz,ip,atmos_data,bdy,lw)) :
+        ((x,y,z,ip,nx,ny,nz,θ,ϕ) -> (bdy.is_top(z) || bdy.is_bottom(z)) ?
+              user_rad_bc_longwave(x,y,z,θ,ϕ,nx,ny,nz,ip,atmos_data,bdy,lw) :
+              lw_lateral_radiance(lateral_cols, x, y, z, cos(θ)))
     source_fn = (x,y,z,ip,θ,ϕ) -> user_rhs_longwave(x,y,z,θ,ϕ,ip,κ_lw,atmos_data)
     # LW scattering treated as isotropic per atmos_to_rad_longwave's own docs
     # (thermal-IR scattering is weak; ω₀_cloud=0.05 already folds the
     # MAGNITUDE into σ, only the ANGULAR redistribution is assumed isotropic).
     return RadiativeCase(kappa_fn=kappa_fn, sigma_fn=sigma_fn,
                           phase_fn=(θ,θ1,ϕ,ϕ1,g) -> 1/(4π), g_const=0.0,
-                          bc_fn=bc_fn, source_fn=source_fn)
+                          bc_fn=bc_fn, source_fn=source_fn, prev_override=prev_override)
 end
 
 """
@@ -487,6 +498,7 @@ function run_unified_case_solve(setup, metrics, comm, case::RadiativeCase;
                                  I_cg_all_init::Union{Dict{Tuple{Int,Int},Vector{Float64}},Nothing}=nothing,
                                  solver::Symbol=:jacobi,
                                  gmres_restart::Int=20, gmres_max_restarts::Int=10,
+                                 rtol::Float64=0.0,
                                  opts::SweepOptions=SweepOptions(),
                                  report::Union{Nothing,Dict{Symbol,Any}}=nothing)
     rank = MPI.Comm_rank(comm); np = MPI.Comm_size(comm)
@@ -543,6 +555,16 @@ function run_unified_case_solve(setup, metrics, comm, case::RadiativeCase;
                 extra_source_all[(iel,dk)] = q_ext_all[(iel,dk)] .+ σ_loc .* view(S,:,dk)
             end
         end
+        # Lagged iterate read across periodic faces; with prev_override some entries are replaced by fixed inflow
+        I_prev = I_cg_all
+        if case.prev_override !== nothing
+            I_prev = copy(I_cg_all)                                   # shallow: only overridden vectors are copied
+            for (key, (lids, vals)) in case.prev_override
+                v = get(I_prev, key, nothing); v === nothing && continue
+                w = copy(v); @inbounds for q in eachindex(lids); w[lids[q]] = vals[q]; end
+                I_prev[key] = w
+            end
+        end
         t_b = time_ns()
         x_dg, _ = run_dg_sweep_multirank_unified!(mesh, metrics, ψ, dψ, ω,
             setup.neighbor_elem, setup.neighbor_fid, setup.face_correspondence, setup.periodic_face_correspondence,
@@ -553,7 +575,7 @@ function run_unified_case_solve(setup, metrics, comm, case::RadiativeCase;
             setup.angular_deps, setup.angular_deps_cr, setup.remote_angular_mesh,
             setup.gid_exch, setup.periodic_gid_exch,
             κ, bc_fn_all, comm;
-            extra_source_all=extra_source_all, I_cg_all_prev=I_cg_all, elem_cache=cache,
+            extra_source_all=extra_source_all, I_cg_all_prev=I_prev, elem_cache=cache,
             gc_mode=ro.gc_mode, gc_every=ro.gc_every, round_cap=ro.round_cap, gs_tol=ro.gs_tol)
         t_c = time_ns()
         out = flatten_I(x_dg, order)
@@ -580,7 +602,7 @@ function run_unified_case_solve(setup, metrics, comm, case::RadiativeCase;
     try
         if solver == :gmres
             x_final = gmres_fixed_point_solve(apply_G, flatten_I(I_cg_init, order), comm;
-                                               restart=gmres_restart, max_restarts=gmres_max_restarts, tol=tol)
+                                               restart=gmres_restart, max_restarts=gmres_max_restarts, tol=tol, rtol=rtol)
             I_cg_all = Dict{Tuple{Int,Int}, Vector{Float64}}(); unflatten_I!(I_cg_all, x_final, order, len_each)
             result = (I_cg_all, κ, σ)
         elseif solver == :gmres_precond
