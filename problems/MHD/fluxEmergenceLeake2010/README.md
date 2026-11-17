@@ -323,8 +323,10 @@ kept, and below $10^{-11}$ (round-off) with $E = 0$ on the walls; the weak
 Laplacian has none. A run of the default deck blew up at 506.8 s from the top
 right corner (41.75, 86.34) Mm, where the largest DynSGS coefficient had grown
 from 7 to 113 in 36 s, every other diagnostic steady. The update is still the
-curl of a nodal scalar, so $\nabla\cdot\mathbf B$ stays at round-off; the log
-prints the number of wall nodes.
+curl of a nodal scalar, so $\nabla\cdot\mathbf B$ stays at round-off (quadrupole
+and tube, REF 1: $\max\lvert\psi\rvert = 10^{-15}$ at 5.8 s); the log prints the
+number of wall nodes. Restarted from 464 s with $E = 0$ on the walls, the same
+run went to 600 s with the largest coefficient at 6.3.
 
 ## Meshes, time step and cost
 
@@ -526,8 +528,9 @@ Short runs on 4 cores; the full runs are for a cluster (above).
   the default since, with the floors as a safety net. With it, the next run had
   no floor hit for 506 s, then blew up from the top right corner of the domain:
   the curl-form resistivity fed a growing mode through the walls ("Divergence of
-  B", the walls). $E = 0$ on the walls removes it. That the default deck now
-  runs past 506.8 s on the cluster is still to be shown.
+  B", the walls). $E = 0$ on the walls removes it: a restart of that run from
+  464 s with it ran to 600 s (the end it was given), the largest DynSGS
+  coefficient 6.3 at 600 s where it had reached 113 at 504 s.
 - **Not done here:** the emergence after 1000 s, any REF 2 run, and the
   quadrupole run to 2530 s, i.e. the comparison with the erratum's Fig. 3, which
   needs the cluster (above). `plot_leake2010.py density` and `dome` produce
