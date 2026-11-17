@@ -549,8 +549,10 @@ $8^2$ ($t = 0.1$) BDF2, BDF3 and BDF4 end with the same error and BDF5 grows $\n
 step after step to 8× the Galerkin error. On the smooth MHD vortex at $32^2$, $N = 4$
 to 7, BDF5 leaves DynSGS where BDF2 has it (1.055–1.085× Galerkin with either, equal
 to the fifth digit); on the $\beta = 5$ isentropic vortex DynSGS is 6 to 1700× Galerkin
-with either, from a $\nu$ that grows in time whatever the order. On both, the excess
-is the spatial part of the residual, not the time difference
+with either, from a $\nu$ that grows in time whatever the order. Halving $\Delta t$
+moves the DynSGS excess over Galerkin by under 0.4 % (MHD) and 6 % (Euler), where a
+BDF2 floor would fall 4×. On both, the excess is the spatial part of the residual,
+not the time difference
 (`problems/MHD/smoothVortex/README.md`, *The order of the sensor's time difference*).
 
 Every DynSGS result obtained before this change (September 2026) used the

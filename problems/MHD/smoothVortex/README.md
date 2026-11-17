@@ -404,8 +404,16 @@ Galerkin in brackets):
 | 6 | 1.4111e-6 | 1.5034e-6 (1.065) | 1.5027e-6 (1.065) |
 | 7 | 3.0168e-7 | 3.2721e-7 (1.085) | 3.2716e-7 (1.084) |
 
-On this vortex the time difference is not what DynSGS adds: BDF5 moves the error
-in its fifth digit. $\nu$ follows the same history with either — at $N = 6$ to
+On this vortex the time difference is not what DynSGS adds: BDF5 (and BDF4)
+moves the error in its fifth digit, at $16^2$ as at $32^2$. **The $\Delta t$ check
+settles it.** Halving $\Delta t$ to 1/3500 on $32^2$ moves the Galerkin error by
+3e-6 of itself at most — the integrator's own time error is not in these curves — and the
+DynSGS excess over Galerkin by under 0.4 % ($N = 6$: 9.234e-8 → 9.200e-8;
+$N = 7$: 2.552e-8 → 2.550e-8), where a BDF2 floor would have fallen 4×. Between
+$16^2$ and $32^2$ DynSGS converges at 4.5, 6.2, 7.3, 7.5 ($N = 4 \dots 7$), with
+BDF2, BDF4 and BDF5 alike, against Galerkin's 4.1, 6.1, 7.0, 7.3, and its excess
+shrinks from 13–38 % to 5–9 %: on this sweep there is no order cap for a higher
+BDF order to remove. $\nu$ follows the same history with either — at $N = 6$ to
 three digits from the first step after the hold to $t = 1$; at $N = 7$ BDF5's is
 ~20 % lower over the first $0.01$ and the same from $t \approx 0.06$ on — so what
 the sensor reads is the spatial part of the residual, the inter-element jump of

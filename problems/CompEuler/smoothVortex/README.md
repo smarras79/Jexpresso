@@ -101,7 +101,11 @@ $\nu$ is not sitting on the time-difference floor: at $N = 6$ it starts at
 2.2e-6 right after the startup hold, the same with BDF2 and BDF5 to three digits,
 and grows by about 1.7 % per step to ~1e-2 at $t \approx 0.45$ before it
 saturates, with either. That growth, not the order of the difference, is what
-the error above measures.
+the error above measures, and it is not a time error at all: halving $\Delta t$
+to 1/3500 changes the DynSGS error by under 6 % ($N = 6$: 0.0618 → 0.0621;
+$N = 7$: 0.0422 → 0.0400), where a BDF2 floor would fall 4×, and the Galerkin
+error by 1.2e-8 of itself at most. Between $16^2$ and $32^2$ DynSGS converges at 1.5
+($N = 6$) and −0.3 ($N = 7$) against Galerkin's 7.5 and 6.1.
 
 ## Why the background floor is off here
 
