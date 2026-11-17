@@ -107,6 +107,14 @@ $N = 7$: 0.0422 → 0.0400), where a BDF2 floor would fall 4×, and the Galerkin
 error by 1.2e-8 of itself at most. Between $16^2$ and $32^2$ DynSGS converges at 1.5
 ($N = 6$) and −0.3 ($N = 7$) against Galerkin's 7.5 and 6.1.
 
+On the coarser meshes, where the sensor is active everywhere, a higher order makes
+DynSGS worse: at $N = 7$ on $16^2$ it is 17× Galerkin with BDF2, 44× with BDF4
+and 67× with BDF5; at $N = 5$ on $16^2$ 5.3×, 9.5×, 14.3×; at $N = 6$ on $8^2$
+4.1×, 7.6×, 9.4×. The mean coefficient is up to 3× BDF2's and swings from one
+step to the next by 2–12 % of itself (BDF2: 0–2.5 %): the sensor reads back its
+own step-frozen viscosity, which BDF4 and BDF5 amplify 2.7× and 4.3× more than
+BDF2 (the MHD case's README, *The order of the sensor's time difference*).
+
 ## Why the background floor is off here
 
 `:dsgs_Cmin` defaults to **0**, as in the MHD case. The floor is a viscosity

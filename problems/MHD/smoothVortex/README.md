@@ -427,7 +427,14 @@ $\tfrac12\big|\sum_j c_j(-1)^j\big| = \sum_{j=1}^{k} 2^{j-1}/j$: 2 for BDF2, 5.3
 for BDF4, 8.5 for BDF5. Where the sensor is genuinely active that loop can cross
 unit gain: on the $\beta = 5$ isentropic vortex at $N = 5$ on $8^2$ ($t = 0.1$)
 BDF2, BDF3 and BDF4 end with the same error (0.280, 0.279, 0.279) while BDF5
-grows $\nu$ step after step and ends at 1.06, 8× Galerkin's.
+grows $\nu$ step after step and ends at 1.06, 8× Galerkin's. On this vortex the
+full sweep shows it on the coarse meshes only, where the sensor is active: at
+$N = 6$ on $8^2$ DynSGS is 1.71× Galerkin with BDF2, 1.75× with BDF4, 2.08× with
+BDF5, and at $N = 7$ on $4^2$ 1.04×, 1.23×, 1.49×; the coefficient there swings
+from one step to the next with BDF4 and BDF5 (by up to 5 % of itself, against
+none with BDF2). From $16^2$ on the three orders agree to the third digit. So a
+higher BDF order buys nothing on these vortices and costs accuracy where the
+viscosity works.
 
 ## The final time is part of the measurement
 

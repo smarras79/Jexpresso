@@ -1392,6 +1392,17 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #                      needs k steps, so the startup hold is at least k
     #                      (:dsgs_hold_steps). The "legacy" sensor always takes
     #                      its BDF2.
+    #
+    #                      Measured on both smooth vortices (their READMEs):
+    #                      the floor is not what makes DynSGS exceed Galerkin
+    #                      there (BDF4/5 change the error in its fifth digit
+    #                      from 16² on, and halving Δt moves the excess by
+    #                      under 6 %), and where the sensor is active a higher
+    #                      k costs accuracy: the residual reads back the
+    #                      viscous tendency of its own step-frozen coefficient,
+    #                      and BDF-k amplifies a step-to-step swing of it by
+    #                      Σⱼ 2^(j−1)/j (2 for BDF2, 5.3 for BDF4, 8.5 for
+    #                      BDF5) — up to 4× the error of BDF2 on 8²–16².
     if(!haskey(inputs, :dsgs_bdf_order))
         inputs[:dsgs_bdf_order] = 2
     end
