@@ -315,6 +315,76 @@ function local_wave_speeds(npoin, neqs, mp, p_m, integrator, SD, Δnode)
 end
 
 # -----------------------------------------------------------------------------
+# The same maxima for the nine-field GLM-MHD state of problems/MHD,
+#
+#     (ρ, ρu, ρv, E, ρw, Bx, By, Bz, ψ)      in 2D and in 3D alike,
+#
+# recognised from the case's own qvars (positivity_is_mhd). The Euler branch
+# above reads that state wrong: in 2D its "pressure" keeps ½|B|² + ½ψ², it
+# uses air's γ and its c is the sound speed; in 3D it takes E (slot 4) as the
+# third momentum and ρw (slot 5) as the energy.
+#
+# Here the momentum is slots (2, 3, 5), the pressure is that of the MHD
+# equation of state, p = (γ − 1)(E − ½|ρu|²/ρ − ½|B|² − ½ψ²), with the case's
+# γ (:dsgs_gamma, which the DSGS kernel and the positivity limiter use too),
+# and the speed is |u| + c_f with
+#
+#     c_f = √((γp + |B|²)/ρ),
+#
+# the fast magnetosonic speed bounded over all directions: the w of the DSGS
+# cap (SGS.jl) and the speed of the paper's Δt_CFL. A node whose pressure has
+# gone negative keeps its Alfvén speed |B|/√ρ.
+# -----------------------------------------------------------------------------
+function local_wave_speeds_mhd(npoin, integrator, Δnode)
+
+    q     = integrator.u
+    qe    = integrator.p.qp.qe
+    lpert = (integrator.p.SOL_VARS_TYPE == PERT())
+    γ     = Float64(get(integrator.p.inputs, :dsgs_gamma, 5.0/3.0))
+    γm1   = γ - 1.0
+    tiny  = 1.0e-16
+
+    velomax = 0.0
+    cmax    = 0.0
+    wavemax = 0.0
+    cflu_dt = 0.0
+    cflc_dt = 0.0
+
+    @inbounds for ip = 1:npoin
+        # slot k of the total state at node ip
+        s(k) = lpert ? Float64(q[(k-1)*npoin + ip]) + Float64(qe[ip,k]) :
+                       Float64(q[(k-1)*npoin + ip])
+
+        ρ  = max(s(1), tiny)
+        m2 = s(2)^2 + s(3)^2 + s(5)^2
+        B2 = s(6)^2 + s(7)^2 + s(8)^2
+        p  = γm1*(s(4) - 0.5*m2/ρ - 0.5*B2 - 0.5*s(9)^2)
+
+        vel = sqrt(m2)/ρ
+        cf  = sqrt((γ*max(p, 0.0) + B2)/ρ)
+
+        velomax = max(velomax, vel)
+        cmax    = max(cmax, cf)
+        wavemax = max(wavemax, vel + cf)
+
+        Δi      = Δnode[ip]
+        cflu_dt = max(cflu_dt, vel/Δi)
+        cflc_dt = max(cflc_dt, (vel + cf)/Δi)
+    end
+
+    return velomax, cmax, wavemax, cflu_dt, cflc_dt
+end
+
+# The GLM cleaning speed c_h of an MHD case: the c_h_mhd Ref that every case in
+# problems/MHD defines in its user_flux.jl (included into this module) and sets
+# in initialize.jl. 0 when the case has none.
+function glm_cleaning_speed()
+    isdefined(@__MODULE__, :c_h_mhd) || return 0.0
+    ch = getfield(@__MODULE__, :c_h_mhd)
+    return ch isa Ref ? Float64(ch[]) : 0.0
+end
+
+# -----------------------------------------------------------------------------
 # Largest KINEMATIC diffusivity (m²/s) the viscous RHS actually applies on
 # this rank.
 #
@@ -430,7 +500,10 @@ function computeCFL(npoin, neqs, mp, p, dt, Δs, integrator, SD::Union{NSD_2D, N
 
     Δnode_v = nodal_length_scale(integrator.p.mesh, SD)
 
-    velomax_l, cmax_l, wavemax_l, cflu_dt_l, cflc_dt_l =
+    # GLM-MHD: |u| + c_f from the MHD slots (local_wave_speeds_mhd)
+    lmhd = positivity_is_mhd(integrator.p, Int(neqs))
+    velomax_l, cmax_l, wavemax_l, cflu_dt_l, cflc_dt_l = lmhd ?
+        local_wave_speeds_mhd(npoin, integrator, Δnode_v) :
         local_wave_speeds(npoin, neqs, mp, p, integrator, SD, Δnode_v)
     νmax_l, parab_dt_l = local_max_diffusivity(npoin, integrator.p, visc, Δnode_v)
 
@@ -458,15 +531,25 @@ function computeCFL(npoin, neqs, mp, p, dt, Δs, integrator, SD::Union{NSD_2D, N
     # the speed and the length come from the same node. See the comment on
     # nodal_length_scale above for what the old pairing cost.
     cfl_u    = cflu_dt*dtf             # advective
-    cfl_c    = cflc_dt*dtf             # acoustic: the |u| + c characteristic
+    cfl_c    = cflc_dt*dtf             # acoustic |u| + c; for GLM-MHD the fast |u| + c_f
     cfl_visc = parab_dt*dtf            # parabolic
 
     println_rank(@sprintf(" #  Δx_min (LGL) : %.4e m   (Δelem/nop = %.4e m)",
                           Δ, Float64(Δs)); msg_rank = rank)
     println_rank(@sprintf(" #  Advective CFL: %.6f   max|u|      = %.4e m/s",
                           cfl_u, velomax); msg_rank = rank)
-    println_rank(@sprintf(" #  Acoustic  CFL: %.6f   max(|u|+c)  = %.4e m/s  (max c = %.4e)",
-                          cfl_c, wavemax, cmax); msg_rank = rank)
+    if lmhd
+        println_rank(@sprintf(" #  Fast      CFL: %.6f   max(|u|+c_f)= %.4e  (max c_f = %.4e, γ = %.4g)",
+                              cfl_c, wavemax, cmax,
+                              Float64(get(integrator.p.inputs, :dsgs_gamma, 5.0/3.0))); msg_rank = rank)
+        # The GLM wave ±c_h is uniform, so its number is c_h·Δt over the smallest gap.
+        ch = glm_cleaning_speed()
+        ch > 0.0 && println_rank(@sprintf(" #  GLM       CFL: %.6f   c_h         = %.4e",
+                                          ch*dtf/Δ, ch); msg_rank = rank)
+    else
+        println_rank(@sprintf(" #  Acoustic  CFL: %.6f   max(|u|+c)  = %.4e m/s  (max c = %.4e)",
+                              cfl_c, wavemax, cmax); msg_rank = rank)
+    end
     println_rank(@sprintf(" #  Viscous   CFL: %.6f   max ν       = %.4e m²/s",
                           cfl_visc, νmax); msg_rank = rank)
 
