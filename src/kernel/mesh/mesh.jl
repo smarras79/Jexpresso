@@ -3263,19 +3263,24 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         if (inputs[:adaptive_extra_meshes])
             mesh.extra_mesh = Array{St_extra_mesh,1}(undef, Int64(mesh.nelem))
 
-            for iel = 1:mesh.nelem
-                if (inputs[:extra_dimensions] == 1)
-                    mesh.extra_mesh[iel] = make_extra_mesh_1D(inputs[:extra_dimensions_nelemx], inputs[:extra_dimensions_order], inputs[:extra_dimensions_xmin],
-                                                                           inputs[:extra_dimensions_xmax], backend, inputs, true)
-                elseif (inputs[:extra_dimensions] == 2)
-                    ξω  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], inputs[:extra_dimensions_order], inputs[:backend])
-                    basis = build_Interpolation_basis!(LagrangeBasis(), ξω.ξ, ξω.ξ, TFloat, inputs[:backend])
-                    mesh.extra_mesh[iel] = make_extra_mesh_2D(inputs[:extra_dimensions_nelemx], inputs[:extra_dimensions_nelemy], inputs[:extra_dimensions_order],
-                                                                          inputs[:extra_dimensions_xmin], inputs[:extra_dimensions_xmax], inputs[:extra_dimensions_ymin],
-                                                                          inputs[:extra_dimensions_ymax], basis, backend, inputs, true)
-
-                else
-                    println("Extra meshes of dimensions 1 or 2 only are currently supported")
+            # Every element starts from the same angular mesh: build it once and give each element its own
+            # deep copy (angular adaptivity later refines each element's mesh in place, so they must not alias).
+            template = nothing
+            if (inputs[:extra_dimensions] == 1)
+                template = make_extra_mesh_1D(inputs[:extra_dimensions_nelemx], inputs[:extra_dimensions_order], inputs[:extra_dimensions_xmin],
+                                              inputs[:extra_dimensions_xmax], backend, inputs, true)
+            elseif (inputs[:extra_dimensions] == 2)
+                ξω  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], inputs[:extra_dimensions_order], inputs[:backend])
+                basis = build_Interpolation_basis!(LagrangeBasis(), ξω.ξ, ξω.ξ, TFloat, inputs[:backend])
+                template = make_extra_mesh_2D(inputs[:extra_dimensions_nelemx], inputs[:extra_dimensions_nelemy], inputs[:extra_dimensions_order],
+                                              inputs[:extra_dimensions_xmin], inputs[:extra_dimensions_xmax], inputs[:extra_dimensions_ymin],
+                                              inputs[:extra_dimensions_ymax], basis, backend, inputs, true)
+            else
+                println("Extra meshes of dimensions 1 or 2 only are currently supported")
+            end
+            if template !== nothing
+                for iel = 1:mesh.nelem
+                    mesh.extra_mesh[iel] = deepcopy(template)
                 end
             end
 

@@ -413,6 +413,7 @@ function build_periodic_face_correspondence_same_rank(mesh, same_rank_kind::Dict
         # by checking which of jel's faces maps back to iel.
         jfid = 0
         for fid2 = 1:6
+            (jel == iel && fid2 == fid) && continue   # self-periodic element: the partner face is the OTHER face
             haskey(same_rank_kind, (jel,fid2)) || continue
             same_rank_kind[(jel,fid2)] == :conforming || continue
             same_rank_partner[(jel,fid2)] == [iel] || continue
@@ -575,7 +576,9 @@ function resolve_periodic_or_rankcut_neighbors_ncf(mesh, suspected_faces::Vector
         my_is_periodic = local_is_periodic[i]
         my_bbox, my_excl, my_normal = bbox_and_normal(local_coords[i])
 
-        exact_matches = [e for e in entries if e.key == my_key && e.gel != local_gel[i]]
+        # Exclude only THIS face's own entry, not the whole element: on a one-element-thick periodic slab an element's
+        # periodic partner is its own opposite face (same gel, different fid).
+        exact_matches = [e for e in entries if e.key == my_key && !(e.gel == local_gel[i] && e.fid == my_fid)]
         if length(exact_matches) == 1
             m = exact_matches[1]
             if m.rank == rank
@@ -601,7 +604,7 @@ function resolve_periodic_or_rankcut_neighbors_ncf(mesh, suspected_faces::Vector
         # unrelated, coincidentally-aligned faces elsewhere in the mesh). ────
         candidates_inside = NamedTuple[]; candidates_containing = NamedTuple[]
         for e in entries
-            e.gel == local_gel[i] && continue
+            (e.gel == local_gel[i] && e.fid == my_fid) && continue   # skip own entry only (self-periodic slabs)
             ebbox, e_excl, e_normal = bbox_and_normal(e.corners)
             e_excl == my_excl || continue   # must share the SAME normal axis to even be comparable
 

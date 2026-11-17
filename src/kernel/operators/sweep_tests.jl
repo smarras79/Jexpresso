@@ -1313,7 +1313,14 @@ function make_angular_mesh_builder(inputs, backend)
                                   basis, backend, inputs, true)
     end
 end
-reset_angular_mesh!(mesh, builder) = (for iel = 1:mesh.nelem; mesh.extra_mesh[iel] = builder(); end)
+# Build the base angular mesh once and give each element its own deep copy (elements are refined in place later).
+function reset_angular_mesh!(mesh, builder)
+    mesh.nelem == 0 && return
+    template = builder()
+    for iel = 1:mesh.nelem
+        mesh.extra_mesh[iel] = deepcopy(template)
+    end
+end
 
 # --- geometry / levels ---
 function ang_nodes(em, e)
