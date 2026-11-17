@@ -409,19 +409,23 @@ function build_periodic_face_correspondence_same_rank(mesh, same_rank_kind::Dict
         kind == :conforming || continue   # periodicity is always :conforming, per our policy
         jel = same_rank_partner[(iel,fid)][1]
 
-        # Find jel's own local fid for this SAME periodic relationship —
-        # by checking which of jel's faces maps back to iel.
+        # Find jel's own local fid for this SAME periodic relationship: the face of jel whose nodes carry exactly the
+        # global IDs of iel's face (periodic pairs share gids). Matching on "partner == iel" alone is ambiguous when jel
+        # is also iel's ordinary neighbour (domain 2 elements wide: both of jel's x-faces touch iel).
+        irange_i,jrange_i,krange_i = face_ip_range(fid, ngl)
+        gids_i = Set(mesh.ip2gip[mesh.connijk[iel,i,j,k]] for k in krange_i, j in jrange_i, i in irange_i)
         jfid = 0
         for fid2 = 1:6
             (jel == iel && fid2 == fid) && continue   # self-periodic element: the partner face is the OTHER face
             haskey(same_rank_kind, (jel,fid2)) || continue
             same_rank_kind[(jel,fid2)] == :conforming || continue
             same_rank_partner[(jel,fid2)] == [iel] || continue
+            ir2, jr2, kr2 = face_ip_range(fid2, ngl)
+            Set(mesh.ip2gip[mesh.connijk[jel,i,j,k]] for k in kr2, j in jr2, i in ir2) == gids_i || continue
             jfid = fid2; break
         end
         jfid == 0 && continue   # no reciprocal found — shouldn't happen given earlier mutual-consistency checks
 
-        irange_i,jrange_i,krange_i = face_ip_range(fid, ngl)
         irange_j,jrange_j,krange_j = face_ip_range(jfid, ngl)
 
         jel_gid_to_ijk = Dict{Int,Tuple{Int,Int,Int}}()
@@ -579,6 +583,17 @@ function resolve_periodic_or_rankcut_neighbors_ncf(mesh, suspected_faces::Vector
         # Exclude only THIS face's own entry, not the whole element: on a one-element-thick periodic slab an element's
         # periodic partner is its own opposite face (same gel, different fid).
         exact_matches = [e for e in entries if e.key == my_key && !(e.gel == local_gel[i] && e.fid == my_fid)]
+        # The key is the 4 corner gids. On a domain only 2 elements wide that is periodic in two directions, corner gids
+        # collapse (x=0 ≡ x=L and y=0 ≡ y=L) and faces in different rows share the same corner set. Disambiguate only
+        # then: keep candidates at the same in-plane position (bbox without the normal axis) and, for a periodic face,
+        # on the opposite face. A unique match is left untouched.
+        if length(exact_matches) > 1
+            same_inplane(e) = begin
+                eb, ex, _ = bbox_and_normal(e.corners)
+                ex == my_excl && all(q -> (isinf(my_bbox[q]) && isinf(eb[q])) || abs(my_bbox[q] - eb[q]) <= tol*100, 1:6)
+            end
+            exact_matches = [e for e in exact_matches if same_inplane(e) && (!my_is_periodic || e.fid == OPP_FACE[my_fid])]
+        end
         if length(exact_matches) == 1
             m = exact_matches[1]
             if m.rank == rank
