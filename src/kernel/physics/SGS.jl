@@ -703,6 +703,22 @@ const _DSGS_RELMUL = Ref(1000.0)
 @inline _dsgs_cut(ratio::TT, cut::TT) where {TT<:AbstractFloat} =
     cut > zero(TT) ? max(ratio - cut, zero(TT)) : ratio
 
+# RUNNING MAXIMA OVER A RUN, for reporting what the model did: the normalized
+# residual r BEFORE the cutoff (the ratio above) and the kinematic coefficient
+# μ that the element (or node) then gets, the μ_e of the paper's Eqs. (14)-(17).
+# The DSGS_MHD kernels update them where they set μ, so with :dsgs_freeze_stage
+# they see the one coefficient of each step. time_loop! zeroes them before the
+# solve (not the warm-up step), and dsgs_run_stats(comm) returns them reduced
+# over the ranks: [max r, max μ]. Collective.
+const _DSGS_RUN_STATS = zeros(Float64, 2)
+@inline function _dsgs_record!(ratio, μ)
+    @inbounds _DSGS_RUN_STATS[1] = max(_DSGS_RUN_STATS[1], Float64(ratio))
+    @inbounds _DSGS_RUN_STATS[2] = max(_DSGS_RUN_STATS[2], Float64(μ))
+    return nothing
+end
+dsgs_run_stats_reset!() = (fill!(_DSGS_RUN_STATS, 0.0); nothing)
+dsgs_run_stats(comm) = MPI.Allreduce(copy(_DSGS_RUN_STATS), MPI.MAX, comm)
+
 # :dsgs_freeze_stage — the coefficient is computed ONCE PER TIME STEP, at the
 # stage that sits on tⁿ, and held for the rest of the step.
 #
@@ -1845,6 +1861,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         # resolved structure by only √(Cmin Δ c t) ≈ 1 H₀ over the whole run.
         μ_floor = Cmin > zero(TT) ? Cmin*Δ*wmax : zero(TT)
         μ = max(μ, μ_floor)
+        _dsgs_record!(ratio, μ)          # running maxima over the run (_DSGS_RUN_STATS)
 
         # dynamic coefficient for u/v/w/T: ρ̄·μ with the element mean, or the
         # kinematic μ that SGS_diffusion(::DSGS_MHD) scales by the nodal ρ
@@ -2258,6 +2275,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         μ_c     = max(zero(TT), min(Cmax*Δ*wmax, μ_res))     # kinematic, residual-based, capped
         μ_floor = Cmin > zero(TT) ? Cmin*Δ*wmax : zero(TT)
         μ       = max(μ_c, μ_floor)
+        _dsgs_record!(ratio, μ)
         νp = νphys === nothing ? zero(TT) : νphys[ie]
         ηp = ηphys === nothing ? zero(TT) : ηphys[ie]
 
@@ -2467,6 +2485,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         μ_c   = max(zero(TT), min(μ_max, μ_res))
         μ_fl  = Cmin > zero(TT) ? Cmin*Δ*wmax : zero(TT)
         μ     = max(μ_c, μ_fl)
+        _dsgs_record!(ratio, μ)
         μ_dyn = lnodal_rho ? μ : ρ_el*μ
 
         μ_dsgs[ie,1] = visc_coeff[1]*μ
@@ -2636,7 +2655,8 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
     # --- nodal viscosity ---------------------------------------------------
     _dsgs_nodal_residual_1d!(Rnod, mnod, q, q1, q2, wt, rhs_el, ω, Je, connijk, nelem, ngl, npoin, NRES)
     @inbounds for ip = 1:npoin
-        ratio = _dsgs_cut(_dsgs_nodal_ratio(Rnod, ip, NRES, denom, qmin, qmax, nmin, nmax, Cl, eps), cutoff)
+        r0    = _dsgs_nodal_ratio(Rnod, ip, NRES, denom, qmin, qmax, nmin, nmax, Cl, eps)
+        ratio = _dsgs_cut(r0, cutoff)
         ρl = max(q[ip,1], eps)
         ul = q[ip,2]/ρl
         vl = q[ip,3]/ρl
@@ -2655,6 +2675,7 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
 
         ν_c = max(zero(TT), min(Cmax*h*λ, CR*h*h*ratio))
         ν   = Cmin > zero(TT) ? max(ν_c, Cmin*h*λ) : ν_c
+        _dsgs_record!(r0, ν)
         ν_d = ρl*ν
 
         μ_pnode[ip,1] = visc_coeff[1]*ν
@@ -2947,7 +2968,8 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
     fE = lnazarov_energy ? γ*γm1/Pr_t : one(TT)
     _dsgs_nodal_residual_2d!(Rnod, mnod, q, q1, q2, wt, rhs_el, ω, Je, connijk, nelem, ngl, npoin, NRES)
     @inbounds for ip = 1:npoin
-        ratio = _dsgs_cut(_dsgs_nodal_ratio(Rnod, ip, NRES, denom, qmin, qmax, nmin, nmax, Cl, eps), cutoff)
+        r0    = _dsgs_nodal_ratio(Rnod, ip, NRES, denom, qmin, qmax, nmin, nmax, Cl, eps)
+        ratio = _dsgs_cut(r0, cutoff)
         ρl = max(q[ip,1], eps)
         ul = q[ip,2]/ρl
         vl = q[ip,3]/ρl
@@ -2961,6 +2983,7 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
         ν_c = max(zero(TT), min(Cmax*h*λ, CR*h*h*ratio))
         ν_f = Cmin > zero(TT) ? Cmin*h*λ : zero(TT)
         ν   = max(ν_c, ν_f)
+        _dsgs_record!(r0, ν)
         ν_d = ρl*ν
 
         μ_pnode[ip,1] = visc_coeff[1]*ν

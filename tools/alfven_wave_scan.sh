@@ -2,17 +2,22 @@
 #
 # Convergence history of the smooth Alfvén wave (Babbar & Ranocha 2026, §5.5.1
 # and Fig. 13) for the polynomial orders N = 3 ... 7: every order on its own
-# range of meshes, with DynSGS and with plain Galerkin. At the end
-# tools/alfven_wave_plot.jl draws the figure of the whole sweep,
-# output/MHD/alfvenWaveBabbarRanocha2026/output/convergence-it0.png, and prints
-# the table of errors and observed orders.
+# range of meshes, with DynSGS (with its cutoff, and without it) and with plain
+# Galerkin. At the end tools/alfven_wave_plot.jl draws the figure of the whole
+# sweep, output/MHD/alfvenWaveBabbarRanocha2026/output/convergence-it0.png (and
+# convergence_Bperp-it0.png, the error of the wave's transverse field, alone),
+# and prints the table of errors, observed orders, and the largest normalized
+# residual r and DSGS coefficient μ of every run.
 #
-#   tools/alfven_wave_scan.sh                       # N = 3 ... 7, DSGS and Galerkin
+#   tools/alfven_wave_scan.sh                       # N = 3 ... 7, DSGS, DSGS c = 0, Galerkin
 #   AW_JOBS=5 tools/alfven_wave_scan.sh             # the five orders at once
 #   AW_NOPS="3 4" AW_NELX="16 32 64 128" tools/alfven_wave_scan.sh   # the paper's meshes
 #   AW_NELX_7="4 8 16" tools/alfven_wave_scan.sh    # other meshes for one order
-#   AW_VISC=dsgs tools/alfven_wave_scan.sh          # only the DynSGS runs
+#   AW_VISC="dsgs none" tools/alfven_wave_scan.sh   # without the c = 0 runs
 #   JULIA=/path/to/julia tools/alfven_wave_scan.sh  # default: the macOS app's julia, else the PATH's
+#
+# AW_VISC lists the variants: dsgs (the deck: cutoff 1e-3), nocut (DSGS with
+# :dsgs_cutoff = 0, records "dsgs_nocut") and none (Galerkin, "galerkin").
 #
 # MESHES. Each order gets the meshes that take its Galerkin error from the
 # coarse-mesh range down to about 1e-12, short of the round-off level, so that
@@ -25,10 +30,12 @@
 # TIME INTEGRATION follows the deck (user_inputs.jl): CarpenterKennedy2N54 up
 # to N = 5 and Vern7 above, at a Courant number of 0.1 for every run.
 #
-# COST: about 3.5 h one order after the other (AW_JOBS=1, the default: one
-# Julia session, the case compiled once); 83 min with AW_JOBS=4 on four cores,
-# the time of the N = 4 session. The longest run is N = 4 on 64² with DynSGS,
-# about 40 min. AW_JOBS=n runs up to n orders at once, one Julia session per
+# COST, measured with the two variants dsgs and none: about 3.5 h one order
+# after the other (AW_JOBS=1, the default: one Julia session, the case compiled
+# once); 83 min with AW_JOBS=4 on four cores, the time of the N = 4 session. The
+# nocut runs cost what the dsgs ones do, so the default three variants take
+# about 1.6 times that: 5.5 h, or 2 h 15 min with AW_JOBS=4. The longest run is
+# N = 4 on 64² with DynSGS, about 40 min. AW_JOBS=n runs up to n orders at once, one Julia session per
 # order (each compiles the case, 2-3 min, and holds about 2 GB). The log of
 # order N then goes to
 # output/MHD/alfvenWaveBabbarRanocha2026/scan-nop<N>.log. The order is the unit
@@ -45,7 +52,7 @@ cd "$(dirname "$0")/.."
 CASE=problems/MHD/alfvenWaveBabbarRanocha2026
 OUT=output/MHD/alfvenWaveBabbarRanocha2026
 NOPS=${AW_NOPS:-"3 4 5 6 7"}
-VISCS=${AW_VISC:-"dsgs none"}
+VISCS=${AW_VISC:-"dsgs nocut none"}
 JOBS=${AW_JOBS:-1}
 # JULIA: as given, or else the first that starts of the macOS app's julia and
 # the julia on the PATH. On a Mac the one on the PATH can be a juliaup launcher
@@ -90,7 +97,10 @@ runs   = copy(ARGS)      # run_case empties ARGS and puts the case name in it
 failed = String[]
 for r in runs
     v, n, m = split(r, ":")
-    ENV["JEXPRESSO_AW_VISC"] = v; ENV["JEXPRESSO_AW_NOP"] = n; ENV["JEXPRESSO_AW_NELX"] = m
+    # nocut: DSGS with :dsgs_cutoff = 0; dsgs and none: the deck cutoff
+    ENV["JEXPRESSO_AW_VISC"] = v == "nocut" ? "dsgs" : v
+    v == "nocut" ? (ENV["JEXPRESSO_AW_CUTOFF"] = "0") : delete!(ENV, "JEXPRESSO_AW_CUTOFF")
+    ENV["JEXPRESSO_AW_NOP"] = n; ENV["JEXPRESSO_AW_NELX"] = m
     println("=== smooth Alfvén wave: N = ", n, ", ", m, "x", m, " elements, visc ", v)
     t0 = time()
     try

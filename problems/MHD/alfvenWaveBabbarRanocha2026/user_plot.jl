@@ -17,10 +17,20 @@
 # from its LGL nodes. Tenkai evaluates it for the FIRST conserved variable only,
 # the density. The exact density is 1, so that number measures how far the
 # scheme moves ρ off a constant (a by-product of the nonlinear coupling), not
-# the wave itself. Every conserved variable is stored here, and the figure has
-# three panels: the L² error of ρ, the paper's measure; of the full state,
-# sqrt(Σ_k e(q_k)²), which does measure the wave (it lives in u, v, w, B); and
-# the L∞ error of the state, the largest of the variables' maxima.
+# the wave itself. Every conserved variable is stored here, and so are the
+# errors of the WAVE: the transverse field and velocity,
+#
+#     B⊥ = (B·e⊥, Bz),   u⊥ = (u·e⊥, w),   e⊥ = (−sin α, cos α),
+#
+# e(B⊥) = sqrt((1/|Ω|) ∫ |B⊥,h − B⊥|² dΩ) and the same for u⊥; the wave is
+# 0.1 (sin, cos)(2π(x∥ + t)) in both. The figure has five panels: B⊥ and u⊥,
+# the wave's own error; ρ, the paper's measure; the full state,
+# sqrt(Σ_k e(q_k)²); and the L∞ error of the state.
+#
+# WHAT DSGS DID. Each record also stores the largest normalized residual r
+# (before the cutoff) and the largest coefficient μ over the whole run
+# (SGS.jl, dsgs_run_stats): μ = 0 with r below the cutoff means the cutoff,
+# not the residual, switched the model off.
 #
 # At the final time every run stores its errors in
 # `errors/nop<N>_nelx<M>_<visc>.dat` in this case directory, and the figure is
@@ -128,6 +138,13 @@ function _aw_errors(mesh, q, t, outvar)
     Xq = zeros(nq, nq); Yq = zeros(nq, nq)
     Xa = zeros(nq, nq); Xb = zeros(nq, nq); Ya = zeros(nq, nq); Yb = zeros(nq, nq)
     Uq = zeros(nq, nq, nv)
+    # the wave: B·e⊥, u·e⊥ and w at the nodes (Bz is U[:,:,8]); sums of
+    # |B⊥,h − B⊥|² and |u⊥,h − u⊥|², and their maxima
+    sα, cα = sincos(AW_ALPHA)
+    T  = zeros(ngl, ngl, 3)
+    Tq = zeros(nq, nq, 3)
+    sp2 = zeros(2)
+    spm = zeros(2)
     out(k, ip) = q[(iv[k] - 1)*npoin + ip]
 
     for iel = 1:mesh.nelem
@@ -148,6 +165,9 @@ function _aw_errors(mesh, q, t, outvar)
             U[i,j,4] = p/(γ - 1.0) + 0.5*ρ*(u*u + v*v + w*w) + 0.5*(Bx*Bx + By*By + Bz*Bz) + 0.5*ψ*ψ
             U[i,j,5] = ρ*w
             U[i,j,6] = Bx; U[i,j,7] = By; U[i,j,8] = Bz; U[i,j,9] = ψ
+            T[i,j,1] = -sα*Bx + cα*By       # B·e⊥
+            T[i,j,2] = -sα*u  + cα*v        # u·e⊥
+            T[i,j,3] = w
         end
         # coordinates and their derivatives at the Gauss points (isoparametric)
         Xq .= L*X*L';  Yq .= L*Y*L'
@@ -155,6 +175,9 @@ function _aw_errors(mesh, q, t, outvar)
         Ya .= D*Y*L';  Yb .= L*Y*D'
         for k = 1:nv
             Uq[:,:,k] .= L*view(U, :, :, k)*L'
+        end
+        for k = 1:3
+            Tq[:,:,k] .= L*view(T, :, :, k)*L'
         end
         for b = 1:nq, a = 1:nq
             wab = wg[a]*wg[b]*abs(Xa[a,b]*Yb[a,b] - Xb[a,b]*Ya[a,b])
@@ -164,21 +187,29 @@ function _aw_errors(mesh, q, t, outvar)
                 s2[k] += wab*e*e
                 sm[k]  = max(sm[k], abs(e))
             end
+            # the wave's transverse field and velocity against the exact ones
+            eB2 = (Tq[a,b,1] - (-sα*se[6] + cα*se[7]))^2 + (Uq[a,b,8] - se[8])^2
+            eU2 = (Tq[a,b,2] - (-sα*se[2] + cα*se[3])/se[1])^2 + (Tq[a,b,3] - se[5]/se[1])^2
+            sp2[1] += wab*eB2;  spm[1] = max(spm[1], sqrt(eB2))
+            sp2[2] += wab*eU2;  spm[2] = max(spm[2], sqrt(eU2))
             area += wab
         end
     end
 
     comm = get_mpi_comm()
     if MPI.Comm_size(comm) > 1
-        r = MPI.Allreduce(vcat(s2, area), MPI.SUM, comm)
-        s2 .= r[1:nv]; area = r[end]
-        sm .= MPI.Allreduce(sm, MPI.MAX, comm)
+        r = MPI.Allreduce(vcat(s2, sp2, area), MPI.SUM, comm)
+        s2 .= r[1:nv]; sp2 .= r[nv+1:nv+2]; area = r[end]
+        sm  .= MPI.Allreduce(sm,  MPI.MAX, comm)
+        spm .= MPI.Allreduce(spm, MPI.MAX, comm)
     end
     # the quadrature must integrate the box: a cheap check that the element
     # geometry (and the unwrapping above) is right
     abs(area - Lx*Ly) <= 1.0e-10*Lx*Ly ||
         @warn "alfvenWaveBabbarRanocha2026: the error quadrature integrates $(area), not the box area $(Lx*Ly)"
-    return (l2 = sqrt.(s2 ./ area), linf = sm, area = area)
+    return (l2 = sqrt.(s2 ./ area), linf = sm,
+            perp_l2 = sqrt.(sp2 ./ area), perp_linf = spm,    # (B⊥, u⊥)
+            area = area)
 end
 
 # The record's tag names what differs from the deck as committed: "dsgs" is
@@ -218,24 +249,31 @@ end
 _aw_nelx_of(inputs) = (m = match(r"alfven_(\d+)x", string(get(inputs, :gmsh_filename, "")));
                        m === nothing ? Int(get(inputs, :nelx, 0)) : parse(Int, m.captures[1]))
 
-function _aw_save(e, inputs, tnom, tnum)
+# st = [max r, max μ] over the run (dsgs_run_stats; NaN, 0 for Galerkin)
+function _aw_save(e, inputs, tnom, tnum, st)
     nop  = Int(get(inputs, :nop, 0))
     nelx = _aw_nelx_of(inputs)
     try
         f = joinpath(AW_ERR_DIR, string("nop", nop, "_nelx", nelx, "_", _aw_tag(inputs), ".dat"))
         _aw_atomic(f, tmp -> open(tmp, "w") do io
             println(io, "# smooth Alfvén wave: e(q) = sqrt((1/|Ω|) ∫ (q_h − q)² dΩ) against the exact solution,",
-                        " N+4 Gauss points per direction; Linf at those points")
+                        " N+4 Gauss points per direction; Linf at those points.",
+                        " Bperp = (B·e⊥, Bz), uperp = (u·e⊥, w): the wave, as vectors.",
+                        " r_max, mu_max: the largest normalized residual (before the cutoff) and DSGS coefficient over the run")
             println(io, "# nop=", nop, " nelx=", nelx, " ndofs=", (nelx*nop)^2,
                         " t=", tnom, " tnum=", tnum, " visc=", _aw_tag(inputs),
                         " dt=", Float64(get(inputs, :Δt, 0.0)),
                         " Cmin=", Float64(get(inputs, :dsgs_Cmin, 0.0)),
+                        " cutoff=", Float64(get(inputs, :dsgs_cutoff, 0.0)),
                         " solver=", nameof(typeof(get(inputs, :ode_solver, nothing))),
-                        " area=", e.area)
+                        " area=", e.area,
+                        " r_max=", st[1], " mu_max=", st[2])
             println(io, "# var L2 Linf")
             for (k, n) in enumerate(AW_QVARS)
                 println(io, n, " ", e.l2[k], " ", e.linf[k])
             end
+            println(io, "Bperp ", e.perp_l2[1], " ", e.perp_linf[1])
+            println(io, "uperp ", e.perp_l2[2], " ", e.perp_linf[2])
         end)
     catch err
         @warn "alfvenWaveBabbarRanocha2026: could not store the error" exception=err
@@ -272,10 +310,14 @@ function _aw_load(tnom)
         all(haskey(l2, n) for n in AW_QVARS) || continue
         nop  = tryparse(Int, get(meta, "nop", "")); nelx = tryparse(Int, get(meta, "nelx", ""))
         (nop === nothing || nelx === nothing) && continue
+        # records stored before the wave's errors and the run maxima have NaN there
         push!(rows, (nop = nop, nelx = nelx, ndofs = (nelx*nop)^2, visc = get(meta, "visc", "dsgs"),
                      t = tc, dt = something(tryparse(Float64, get(meta, "dt", "")), NaN),
+                     bperp = get(l2, "Bperp", NaN), uperp = get(l2, "uperp", NaN),
                      rho = l2["ρ"], state = sqrt(sum(abs2, l2[n] for n in AW_QVARS)),
-                     state_inf = maximum(linf[n] for n in AW_QVARS)))
+                     state_inf = maximum(linf[n] for n in AW_QVARS),
+                     r_max  = something(tryparse(Float64, get(meta, "r_max",  "")), NaN),
+                     mu_max = something(tryparse(Float64, get(meta, "mu_max", "")), NaN)))
     end
     return sort!(rows, by = r -> (r.visc, r.nop, r.ndofs))
 end
@@ -285,17 +327,21 @@ _aw_rate(d1, e1, d2, e2) = (e1 > 0 && e2 > 0) ? -2.0*log(e2/e1)/log(d2/d1) : NaN
 
 function _aw_report(rows)
     println(" # alfvenWaveBabbarRanocha2026: L2 error at t = ", rows[1].t,
-            " (rho: the paper's Fig. 13 measure; state: all conserved variables)")
-    println(" #   visc        N  nelx    DOFs      L2(rho)  order     L2(state)  order")
+            " (B⊥, u⊥: the wave; rho: the paper's Fig. 13 measure, exact rho = 1;",
+            " r, mu: largest normalized residual before the cutoff and largest DSGS coefficient over the run)")
+    println(" #   visc         N  nelx    DOFs     L2(B⊥)  order     L2(u⊥)  order    L2(rho)  order       max r      max mu")
+    _o(p) = isfinite(p) ? @sprintf("%.2f", p) : ""
+    _g(x) = isfinite(x) ? @sprintf("%.3e", x) : "-"
     prev = nothing
     for r in rows
         same = prev !== nothing && prev.visc == r.visc && prev.nop == r.nop
-        p1 = same ? _aw_rate(prev.ndofs, prev.rho,   r.ndofs, r.rho)   : NaN
-        p2 = same ? _aw_rate(prev.ndofs, prev.state, r.ndofs, r.state) : NaN
-        println(@sprintf(" #   %-10s %2d  %4d  %6d   %10.3e  %5s    %10.3e  %5s",
-                         r.visc, r.nop, r.nelx, r.ndofs, r.rho,
-                         isfinite(p1) ? @sprintf("%.2f", p1) : "", r.state,
-                         isfinite(p2) ? @sprintf("%.2f", p2) : ""))
+        pb = same ? _aw_rate(prev.ndofs, prev.bperp, r.ndofs, r.bperp) : NaN
+        pu = same ? _aw_rate(prev.ndofs, prev.uperp, r.ndofs, r.uperp) : NaN
+        pr = same ? _aw_rate(prev.ndofs, prev.rho,   r.ndofs, r.rho)   : NaN
+        println(@sprintf(" #   %-11s %2d  %4d  %6d  %10s  %5s %10s  %5s %10.3e  %5s  %10s  %10s",
+                         r.visc, r.nop, r.nelx, r.ndofs,
+                         _g(r.bperp), _o(pb), _g(r.uperp), _o(pu), r.rho, _o(pr),
+                         _g(r.r_max), _g(r.mu_max)))
         prev = r
     end
     return nothing
@@ -319,14 +365,16 @@ _aw_label(tag) = startswith(tag, "galerkin") ? replace(tag, "galerkin" => "Galer
                  replace(tag, "dsgs" => "DSGS", "_nocut" => ", no cutoff",
                          r"_cut([0-9.e+-]+)" => s", cutoff \1", "_" => " ")
 const AW_PANELS = [   # (field, ylabel, title, file)
+    (:bperp,     "\\Vert\\mathbf{B}_{\\perp,h}-\\mathbf{B}_\\perp\\Vert_{L^2}", "L^2\\mathrm{-error\\ of}\\ \\mathbf{B}_\\perp", "Bperp"),
+    (:uperp,     "\\Vert\\mathbf{u}_{\\perp,h}-\\mathbf{u}_\\perp\\Vert_{L^2}", "L^2\\mathrm{-error\\ of}\\ \\mathbf{u}_\\perp", "uperp"),
     (:rho,       "\\Vert\\rho_h-\\rho\\Vert_{L^2}",                  "L^2\\mathrm{-error\\ of}\\ \\rho",               "rho"),
     (:state,     "\\Vert\\mathbf{q}_h-\\mathbf{q}\\Vert_{L^2}",      "L^2\\mathrm{-error\\ of\\ the\\ state}",       "L2"),
     (:state_inf, "\\Vert\\mathbf{q}_h-\\mathbf{q}\\Vert_{L^\\infty}", "L^\\infty\\mathrm{-error\\ of\\ the\\ state}", "Linf"),
 ]
 
-# <name>-it<iout>.png, the three panels side by side, and <name>_rho, _L2 and
-# _Linf, one each. Returns the first, or nothing when no order/tag has two
-# meshes yet.
+# <name>-it<iout>.png, the five panels side by side, and <name>_Bperp, _uperp,
+# _rho, _L2 and _Linf, one each. Returns the first, or nothing when no
+# order/tag has two meshes yet.
 _aw_plot(rows, OUTPUT_DIR, iout; name = "convergence") =
     _conv_figure(rows, AW_PANELS, OUTPUT_DIR, iout; prefix = name,
                  tags = sort(unique(r.visc for r in rows)), label = _aw_label, line = _aw_line,
@@ -343,8 +391,10 @@ function user_plot_2d(mesh, q, t, outvar, inputs, OUTPUT_DIR, iout; Minv = nothi
 
     e = _aw_errors(mesh, q, t, outvar)                 # collective
     e === nothing && return nothing
+    # what DSGS did up to here, the whole run (SGS.jl): [max r, max μ]; collective
+    st = get(inputs, :lvisc, false) == true ? dsgs_run_stats(get_mpi_comm()) : [NaN, 0.0]
     if MPI.Comm_rank(get_mpi_comm()) == 0
-        _aw_save(e, inputs, tnom, t)
+        _aw_save(e, inputs, tnom, t, st)
         rows = _aw_load(tnom)
         isempty(rows) || (_aw_report(rows); _aw_plot(rows, OUTPUT_DIR, iout))
     end

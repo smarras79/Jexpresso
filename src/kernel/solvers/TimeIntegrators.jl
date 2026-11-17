@@ -858,6 +858,9 @@ function time_loop!(inputs, params, u, args...)
         # the warning once, which is the right amount.
         solve_logger = rank == 0 ? current_logger() : NullLogger()
 
+        # The DSGS running maxima (SGS.jl, _DSGS_RUN_STATS) cover this solve
+        # only: not the warm-up step, nor an earlier run of the same session.
+        dsgs_run_stats_reset!()
 
         solution = with_logger(solve_logger) do
             solve(prob,
@@ -872,6 +875,16 @@ function time_loop!(inputs, params, u, args...)
                                  length=inputs[:ndiagnostics_outputs]))
         end
         cons_io[] === nothing || close(cons_io[])
+
+        # What DSGS did over the whole run (recorded by the DSGS_MHD kernels):
+        # the largest normalized residual before the cutoff, and the largest
+        # coefficient. μ = 0 with r below :dsgs_cutoff means the cutoff, not
+        # the residual, kept the model off.
+        if get(inputs, :lvisc, false) == true && params.VT == DSGS_MHD()
+            st = dsgs_run_stats(comm)
+            rank == 0 && @printf(" # DSGS over the run: max normalized residual r = %.3e (cutoff %.1e), max μ = %.3e\n",
+                                 st[1], Float64(get(inputs, :dsgs_cutoff, 0.0)), st[2])
+        end
 
         # One exchange per step is the whole contract with Alya, which receives
         # exactly its own step count ("Steps:" in its startup output). A

@@ -28,6 +28,8 @@
 #   JEXPRESSO_AW_VISC   "dsgs" (default) or "none" for the plain Galerkin run
 #   JEXPRESSO_AW_SENSOR :dsgs_sensor, "residual" (default) | "legacy"
 #   JEXPRESSO_AW_CMIN   :dsgs_Cmin, the DynSGS background floor (default 0)
+#   JEXPRESSO_AW_CUTOFF :dsgs_cutoff (default AW_CUTOFF below, 1e-3); 0 is
+#                       DynSGS without it, stored as "dsgs_nocut"
 #   JEXPRESSO_AW_FREEZE 1 or 0 forces :dsgs_freeze_stage (the coefficient once
 #                       per step, or at every stage); unset, mod_inputs.jl's
 #                       default applies: on with the residual sensor
@@ -52,8 +54,9 @@
 # error, the paper's measure, does not see this error at all: ρ = 1 whatever
 # the phase of the wave.
 #
-# THE DYNSGS CUTOFF is a deck entry, AW_CUTOFF below (:dsgs_cutoff): set it
-# there, 0 for DynSGS without it.
+# THE DYNSGS CUTOFF is a deck entry, AW_CUTOFF below (:dsgs_cutoff), and
+# JEXPRESSO_AW_CUTOFF overrides it for one run: 0 for DynSGS without it
+# (tools/alfven_wave_scan.sh runs that as the "nocut" variant).
 #---------------------------------------------------------------------------------
 const AW_NELX_DEFAULT = 16
 const AW_NOP_DEFAULT  = 3
@@ -78,6 +81,7 @@ _aw_nop()  = something(tryparse(Int,     get(ENV, "JEXPRESSO_AW_NOP",  "")), AW_
 _aw_nelx() = something(tryparse(Int,     get(ENV, "JEXPRESSO_AW_NELX", "")), AW_NELX_DEFAULT)
 _aw_tend() = something(tryparse(Float64, get(ENV, "JEXPRESSO_AW_TEND", "")), 2.0)
 _aw_cmin() = something(tryparse(Float64, get(ENV, "JEXPRESSO_AW_CMIN", "")), 0.0)
+_aw_cutoff() = something(tryparse(Float64, get(ENV, "JEXPRESSO_AW_CUTOFF", "")), AW_CUTOFF)
 _aw_visc() = lowercase(strip(get(ENV, "JEXPRESSO_AW_VISC", "dsgs")))
 _aw_sensor() = lowercase(strip(get(ENV, "JEXPRESSO_AW_SENSOR", "residual")))
 _aw_freeze() = (v = strip(get(ENV, "JEXPRESSO_AW_FREEZE", ""));
@@ -150,7 +154,7 @@ function user_inputs()
         :dsgs_CR          => 1.0,
         :dsgs_Cmax        => 0.5,
         :dsgs_Cmin        => _aw_cmin(),   # 0: a floor would add an O(h) error
-        :dsgs_cutoff      => AW_CUTOFF,    # the BDF2 floor of the residual, see AW_CUTOFF
+        :dsgs_cutoff      => _aw_cutoff(), # the BDF2 floor of the residual, see AW_CUTOFF
         :dsgs_gamma       => 5.0/3.0,
         :dsgs_Prt         => 1.0,
         :dsgs_conserved      => false,     # physical form, as user_primitives.jl

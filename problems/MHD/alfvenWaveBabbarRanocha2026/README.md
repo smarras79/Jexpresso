@@ -161,7 +161,16 @@ returns before it fills `poin_in_edge` when nop < 2.)
 
 At t = 2, a run stores the error of every conserved variable in
 `errors/nop<N>_nelx<M>_<visc>.dat`, in this directory. Each record holds the L² error
-above and the largest pointwise error at the Gauss points.
+above and the largest pointwise error at the Gauss points. It also holds:
+
+- the errors of the wave itself, `Bperp` and `uperp`: the transverse field
+  B⊥ = (B·e⊥, B_z) and velocity u⊥ = (u·e⊥, w), with e⊥ = (−sin α, cos α), as vectors,
+  e(B⊥) = sqrt((1/|Ω|) ∫ |B⊥,h − B⊥|² dΩ). The wave is 0.1 (sin, cos)(2π(x∥ + t)) in both;
+  ρ ≡ 1, so the ρ error only measures how far the scheme moves ρ off a constant;
+- `r_max` and `mu_max` in its header: the largest normalized residual r (before the
+  cutoff) and the largest DynSGS coefficient μ over the whole run (`src/kernel/physics/SGS.jl`,
+  `dsgs_run_stats`). μ = 0 with r below the cutoff means that the cutoff, not the residual,
+  kept the model off. Galerkin records have r_max = NaN and mu_max = 0.
 
 `<visc>` is `galerkin` for `JEXPRESSO_AW_VISC=none`, and `dsgs` for DynSGS as the deck
 runs it (with the cutoff `AW_CUTOFF = 1e-3`). Anything else a run changes is added to it,
@@ -174,13 +183,15 @@ Stores written before 16 Oct 2026 used `dsgs` for the run without the cutoff and
 
 From every record stored for the same final time, the run then:
 
-- prints a table with the observed orders;
+- prints a table with the errors of B⊥, u⊥ and ρ, their observed orders, and max r and
+  max μ of every run;
 - draws `output/convergence-it<n>.png` with the convergence figure of the smooth vortex
   (`../smoothVortex/convergence_figure.jl`, shared by the two cases): the error against
-  #DOFs on log-log axes in three panels — the L² error of ρ (the measure of the paper's
-  Fig. 13), the L² error of the whole state and its L∞ error, the largest of the
-  variables' maxima — and each panel on its own as `convergence_rho-it<n>.png`,
-  `convergence_L2-it<n>.png` and `convergence_Linf-it<n>.png`, at publication size.
+  #DOFs on log-log axes in five panels — the L² errors of B⊥ and u⊥ (the wave), of ρ (the
+  measure of the paper's Fig. 13), of the whole state, and its L∞ error, the largest of
+  the variables' maxima — and each panel on its own as `convergence_Bperp-it<n>.png`,
+  `convergence_uperp-it<n>.png`, `convergence_rho-it<n>.png`, `convergence_L2-it<n>.png`
+  and `convergence_Linf-it<n>.png`, at publication size.
   Every order and stabilization is on the same axes: one colour and marker per order,
   DynSGS solid with a filled marker, its variants dash-dot with a hollow one, Galerkin
   dashed with a larger hollow one, so that a DynSGS point equal to the Galerkin one (the
@@ -217,8 +228,9 @@ To start a fresh comparison, run `rm -r problems/MHD/alfvenWaveBabbarRanocha2026
 
 ## The sweep
 
-`tools/alfven_wave_scan.sh` runs every order on its meshes, with DynSGS and with Galerkin,
-and ends with `tools/alfven_wave_plot.jl`: the figure of the whole sweep,
+`tools/alfven_wave_scan.sh` runs every order on its meshes, with DynSGS as the deck runs it
+(cutoff 10⁻³), DynSGS without the cutoff (`nocut`: `JEXPRESSO_AW_CUTOFF=0`, records
+`dsgs_nocut`) and Galerkin, and ends with `tools/alfven_wave_plot.jl`: the figure of the whole sweep,
 `output/MHD/alfvenWaveBabbarRanocha2026/output/convergence-it0.png`, and its table.
 
 Each order gets the meshes that take its Galerkin error from the coarse-mesh range down to
@@ -235,12 +247,14 @@ about 1e-12, short of round-off, so the five curves cover about the same span of
 | `AW_NOPS="3 4"` | the orders (default `3 4 5 6 7`) |
 | `AW_NELX="16 32 64 128"` | the meshes of every order (the paper's, here) |
 | `AW_NELX_7="4 8 16 32"` | the meshes of one order |
-| `AW_VISC=dsgs` | only the DynSGS runs (default `dsgs none`) |
+| `AW_VISC="dsgs none"` | the variants: `dsgs`, `nocut` (DynSGS with c = 0), `none` (Galerkin); default `dsgs nocut none` |
 | `AW_JOBS=5` | up to 5 orders at once, one Julia session each (default 1) |
 | `AW_KEEP=1` | keep the stored errors (they are cleared first by default) |
 | `JULIA=/path/to/julia` | default: the macOS app's julia if it starts, else the one on the PATH (a juliaup launcher is bypassed: the runs call the binary itself) |
 
-The sweep as committed, measured here with `AW_JOBS=4` on four cores, took 83 min. That
+The sweep with the two variants `dsgs none`, measured here with `AW_JOBS=4` on four
+cores, took 83 min; the `nocut` runs cost what the `dsgs` ones do, so the default three
+variants take about 1.6 times as long (2 h 15 min with `AW_JOBS=4`, 5.5 h with `AW_JOBS=1`). That
 is the time of the N = 4 session, whose two 64² runs take 67 of its 82 min. The five
 sessions add up to 3.75 h. `AW_JOBS=1` takes a little less, about 3.5 h, because running
 side by side slowed them down: alone, N = 4 on 64² with DynSGS takes 38 min instead of 48.
@@ -254,6 +268,9 @@ parallelism for a reason. Two sessions on the same mesh and order would write th
 dies with a bus error (it happened while this sweep was being set up).
 
 ## What this test found
+
+The table below predates the B⊥/u⊥ errors and the max r, max μ records: it gives ρ and the
+state. A new sweep (`tools/alfven_wave_scan.sh`) prints those too.
 
 Measured here with `tools/alfven_wave_scan.sh`, t = 2: DynSGS as the deck runs it (with the
 cutoff, `AW_CUTOFF = 1e-3`), DynSGS without the cutoff (`AW_CUTOFF = 0`), and Galerkin

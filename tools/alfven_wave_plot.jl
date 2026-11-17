@@ -17,7 +17,8 @@
 # says otherwise.
 #
 #   --visc=TAGS   only these records, by the tag of their file name: dsgs (the
-#                 deck as committed), galerkin, dsgs_perstage, ... (comma list)
+#                 deck as committed), dsgs_nocut (cutoff 0), galerkin, dsgs_perstage, ...
+#                 (comma list)
 using Plots, LaTeXStrings, Printf, LinearAlgebra
 
 const CASE = joinpath(@__DIR__, "..", "problems", "MHD", "alfvenWaveBabbarRanocha2026")
