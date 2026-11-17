@@ -173,6 +173,7 @@ include(joinpath( "kernel", "physics", "CM_MOST.jl"))
 
 include(joinpath( "kernel", "physics", "atmos_to_rad.jl"))
 
+include(joinpath( "kernel", "physics", "rt_timing.jl"))        # RT timing record (per-call phases, solves, memory)
 include(joinpath( "kernel", "physics", "sw_ref_1d.jl"))        # SWRef1D: plane-parallel SW reference (1D DOM + doubling)
 include(joinpath( "kernel", "physics", "shortwave_rad.jl"))
 

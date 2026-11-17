@@ -114,6 +114,7 @@ end
 function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, params, dψ, ψ, ω, PhysConst, inputs;
                                      rt_max_iter::Int=200, rt_tol::Float64=1e-5)
     comm = get_mpi_comm()
+    tm = RTTiming()                                                     # RT timing record (rt_timing.jl)
     bdy = make_boundary_predicates(mesh)
 
     dycore_to_atmos_data!(q, qe, mesh.npoin, micro.Tabs, micro.qc, micro.qi, inputs[:lmoist],
@@ -134,6 +135,7 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
         reset_rt_adapt!()                                                         ### NEW
     end
     infra = micro.rt_infra
+    rt_lap!(tm, :atmos_infra)                                           # dycore -> atmos data, sweep infrastructure
 
     do_sw = inputs[:RT_compute_sw]; do_lw = inputs[:RT_compute_lw]
     adaptive = get(inputs, :RT_adaptive_angular, false)
@@ -149,6 +151,7 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
         z_prof, τ_from_TOA = build_sw_lateral_bc_profile(mesh, κ_ext_sw, mesh.ngl)
         sw = SWParams(inputs[:RT_S0_flux], inputs[:RT_μ0], inputs[:RT_ϕ0], 0.35, z_prof, τ_from_TOA)
         F_dir, G_dir, Q_dir = compute_direct_beam(mesh, κ_sw, σ_sw, sw)
+        rt_lap!(tm, :sw_optics)                                         # optics, reference column, direct beam
     end
 
     ### NEW: adaptive angular regrid at the start of the RT solve, warm starts remapped, caches invalidated
@@ -163,6 +166,7 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
             micro.rt_sol_sw = new_sols[1]
             micro.rt_sol_lw = new_sols[2]
         end
+        rt_lap!(tm, :adapt)
     end
     ### END NEW
 
@@ -174,17 +178,21 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
                                                surface_albedo=inputs[:RT_surface_albedo],
                                                phase_norm=inputs[:RT_sw_phase_normalization],
                                                lateral_bc=inputs[:RT_sw_lateral_bc], mesh=mesh)
+        rt_lap!(tm, :sw_case)
         I_cg_sw, κ_sw_used, σ_sw_used = run_unified_case_solve(infra, metrics, comm, sw_case;
             max_iter=rt_max_iter, tol=rt_tol,
             solver=:gmres,
             gmres_restart=60, gmres_max_restarts=10,
-            I_cg_all_init = micro.rt_sol_sw_available ? micro.rt_sol_sw : nothing)
+            I_cg_all_init = micro.rt_sol_sw_available ? micro.rt_sol_sw : nothing,
+            report = rt_solve_report!(tm, :sw))
+        rt_lap!(tm, :sw_solve)
         micro.rt_sol_sw = I_cg_sw
         Q_sw, dTdt_sw, F_net_sw, G_sw = compute_rt_radiative_heating_unified(
             mesh, I_cg_sw, atmos_data, κ_sw_used, σ_sw_used, false, comm;
             G_dir=G_dir, Q_dir=Q_dir, sw_μ₀=sw.μ₀, sw_φ₀=sw.φ₀)
         micro.flux_sw .= to_flux(dTdt_sw)
         micro.rt_sol_sw_available = true
+        rt_lap!(tm, :sw_heat)
     else
         micro.flux_sw .= 0.0
     end
@@ -194,21 +202,26 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
         κ_lw, σ_lw = atmos_to_rad_longwave(atmos_data, mesh.npoin)
         lw = LWParams(inputs[:RT_ϵ_surface], inputs[:RT_T_space])
         lw_case = build_longwave_case(atmos_data, κ_lw, σ_lw, bdy; ε_surface=lw.ε_surface, T_space=lw.T_space)
+        rt_lap!(tm, :lw_case)
         I_cg_lw, κ_lw_used, σ_lw_used = run_unified_case_solve(infra, metrics, comm, lw_case;
             max_iter=rt_max_iter, tol=rt_tol,
             solver=:gmres,
             gmres_restart=60, gmres_max_restarts=10,
-            I_cg_all_init = micro.rt_sol_lw_available ? micro.rt_sol_lw : nothing)
+            I_cg_all_init = micro.rt_sol_lw_available ? micro.rt_sol_lw : nothing,
+            report = rt_solve_report!(tm, :lw))
+        rt_lap!(tm, :lw_solve)
         micro.rt_sol_lw = I_cg_lw
         Q_lw, dTdt_lw, F_net_lw, G_lw = compute_rt_radiative_heating_unified(
             mesh, I_cg_lw, atmos_data, κ_lw_used, σ_lw_used, true, comm)
         micro.flux_lw .= to_flux(dTdt_lw)
         micro.rt_sol_lw_available = true
+        rt_lap!(tm, :lw_heat)
     else
         micro.flux_lw .= 0.0
     end
 
     micro.rt_nelem_saved = mesh.nelem
+    rt_timing_enabled(inputs) && rt_timing_report!(tm, mesh, infra, comm, inputs)
 end
 
 # A posteriori angular-resolution indicator. NOT compiled or run.

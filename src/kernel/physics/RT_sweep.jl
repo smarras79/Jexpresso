@@ -496,6 +496,7 @@ function run_unified_case_solve(setup, metrics, comm, case::RadiativeCase;
 
     ro = apply_sweep_options!(opts, np)          # sets the switches; returns the keyword values
 
+    t_setup0 = time_ns()
     κ, σ, bc_fn_all, q_ext_all = build_case_fields(mesh, case)
     C_iel_all = build_phase_coupling_matrices_elementwise(mesh, case)
 
@@ -521,6 +522,7 @@ function run_unified_case_solve(setup, metrics, comm, case::RadiativeCase;
     end
     cache = make_elem_cache(mesh, metrics, setup.n_dirs, ngl; budget_mb=cache_mb)
     memprobe("after make_elem_cache", comm)
+    t_setup = (time_ns() - t_setup0) * 1e-9          # case fields, phase matrices, element cache (before the solve)
 
     t_src = Float64[]; t_swp = Float64[]; t_tot = Float64[]
     gc_prev = ro.gc_mode == :sync ? GC.enable(false) : true      # sync mode: the sweep collects on a schedule
@@ -635,7 +637,18 @@ function run_unified_case_solve(setup, metrics, comm, case::RadiativeCase;
         	"options: async=$(opts.async) cache_mb=$(round(cache.budget_bytes/1e6; digits=0)) cached_mb=$(round(cache.bytes/1e6; digits=0)) gc=$(ro.gc_mode)/$(ro.gc_every)")
 	println("matvec times [s]: " * join([string(round(x; digits=2)) for x in tot], " "))
     end
-    report === nothing || (report[:matvec_times] = tot_dummy(T, nmv); report[:solve_time] = t_solve)
+    if report !== nothing                                                      # for the RT timing record (rt_timing.jl)
+        report[:nmv] = nmv; report[:solve_time] = t_solve; report[:setup_time] = t_setup
+        report[:matvec_times] = tot_dummy(T, nmv)                              # max over ranks, per matvec
+        report[:src_times] = T[1:nmv]; report[:sweep_times] = T[nmv+1:2nmv]
+        # load balance of the sweeps: each rank's total sweep time over the steady matvecs, min/max over ranks
+        st_ = nmv >= 3 ? (3:nmv) : (1:nmv)
+        my_sw = isempty(t_swp) ? 0.0 : sum(t_swp[st_])
+        report[:sweep_rank_min] = MPI.Allreduce(my_sw, MPI.MIN, comm)
+        report[:sweep_rank_max] = MPI.Allreduce(my_sw, MPI.MAX, comm)
+        report[:cache_mb] = MPI.Allreduce(cache.bytes/1e6, MPI.MAX, comm)
+        report[:rss_max_gb] = rss
+    end
     return result
 end
 tot_dummy(T, nmv) = T[2nmv+1:3nmv]
