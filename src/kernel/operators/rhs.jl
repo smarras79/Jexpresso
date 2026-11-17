@@ -1649,6 +1649,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
     dsgs_ref_weight[]   = false
     dsgs_nodal_rho[]    = false
     dsgs_split_energy[] = false
+    dsgs_thermal_energy[] = false
 
     if params.VT == DSGS_MHD()
         TT = eltype(params.μ_dsgs)
@@ -1665,6 +1666,16 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
             (get(params.inputs, :dsgs_nazarov_energy, false) || get(params.inputs, :dsgs_conserved_prandtl, false))
 
         lnodal_mhd2d = get(params.inputs, :ldsgs_nodal, false)
+        (lnodal_mhd2d && (get(params.inputs, :mhd_dissipation, nothing) !== nothing ||
+                          get(params.inputs, :mhd_anomalous_eta, nothing) !== nothing)) &&
+            error(" :mhd_dissipation and :mhd_anomalous_eta are implemented for the element form of DSGS_MHD only (not :ldsgs_nodal).")
+        # Energy-consistent DynSGS (SGS.jl, dsgs_thermal_energy): the case's user_primitives!
+        # reads the Ref to put the thermal departure in slot 4; _dsgs_energy_consistent_2d!
+        # below adds the work of the other slots and the dissipated heat.
+        dsgs_thermal_energy[] = get(params.inputs, :dsgs_thermal_energy, false)::Bool
+        dsgs_thermal_energy[] && (lnodal_mhd2d || dsgs_split_energy[] || !get(params.inputs, :dsgs_conserved, false)) &&
+            error(" :dsgs_thermal_energy needs the conserved element form of DSGS_MHD (:dsgs_conserved => true, ",
+                  ":ldsgs_nodal => false) without the split energy flux (:dsgs_nazarov_energy => false).")
         dsgs_qA, dsgs_qB, dsgs_wt = _dsgs_stencil(params, TT)
         dsgs_rhs = _dsgs_residual_rhs!(u, params, SD)
         if lnodal_mhd2d
@@ -1693,6 +1704,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                           lnazarov_energy = get(params.inputs, :dsgs_nazarov_energy, false) ||
                                                             get(params.inputs, :dsgs_conserved_prandtl, false))
         else
+            νphys2d, ηphys2d = _mhd_dissipation_2d(params, TT)
             compute_dsgs_viscosity!(params.μ_dsgs, DSGS_MHD(), SD,
                                     params.uaux, dsgs_qA, dsgs_qB,
                                     dsgs_rhs, params.ω, params.metrics.Je, params.visc_coeff,
@@ -1716,13 +1728,30 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                     lnazarov_energy = get(params.inputs, :dsgs_nazarov_energy, false) ||
                                                       get(params.inputs, :dsgs_conserved_prandtl, false),
                                     lfast_floors    = get(params.inputs, :dsgs_fast_floors, false)::Bool,
-                                    lthermal        = get(params.inputs, :dsgs_thermal_residual, false)::Bool)
+                                    lthermal        = get(params.inputs, :dsgs_thermal_residual, false)::Bool,
+                                    νphys = νphys2d, ηphys = ηphys2d)
             broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
                                      params.mesh.connijk,
                                      Int(params.mesh.nelem),
                                      Int(params.mesh.ngl), SD)
         end
 
+        # :dsgs_curl_resistivity: the in-plane field is diffused by the
+        # divergence-preserving curl form (SGS.jl, _dsgs_curl_resistive_2d!)
+        # instead of the component Laplacian, whose coefficient is set aside here
+        # and restored after the assembly.
+        lcurlB = get(params.inputs, :dsgs_curl_resistivity, false)::Bool
+        lcurlB && lnodal_mhd2d &&
+            error(" :dsgs_curl_resistivity needs the element form of DSGS_MHD (:ldsgs_nodal => false).")
+        nelemB = Int(params.mesh.nelem)
+        ηcurl  = lcurlB ? _dsgs_curl_buffer(TT, nelemB) : _DSGS_CURL_EMPTY
+        if lcurlB
+            for ie = 1:nelemB
+                ηcurl[ie] = params.μ_dsgs[ie,6]
+                params.μ_dsgs[ie,6] = zero(TT)
+                params.μ_dsgs[ie,7] = zero(TT)
+            end
+        end
         _viscous_rhs_el_2d_dsgs!(params.uaux, qe, params.uprimitive,
                                  params.rhs_diffξ_el, params.rhs_diffη_el,
                                  params.rhs_diff_el,
@@ -1739,6 +1768,28 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                  DSGS_MHD();
                                  μ_pnode = lnodal_mhd2d ? params.μ_dsgs_pnode : nothing,
                                  μloc    = params.dsgs_μloc)
+        if lcurlB
+            # restore the coefficient of the in-plane field (output, and a
+            # coefficient held by :dsgs_freeze_stage), then add the curl term
+            for ie = 1:nelemB
+                params.μ_dsgs[ie,6] = ηcurl[ie]
+                params.μ_dsgs[ie,7] = ηcurl[ie]
+            end
+            _dsgs_curl_resistive_2d!(params.rhs_diff_el, params.RHS_visc, ηcurl, params.uaux, qe,
+                                     params.mesh.connijk, params.ω, params.basis.dψ, params.metrics.Je,
+                                     params.metrics.dξdx, params.metrics.dξdy,
+                                     params.metrics.dηdx, params.metrics.dηdy,
+                                     params.g_dss_cache, Int(params.neqs), nelemB,
+                                     Int(params.mesh.ngl), Int(params.mesh.npoin),
+                                     _dsgs_curl_wall_mask(params.mesh))
+        end
+        if dsgs_thermal_energy[]
+            _dsgs_energy_consistent_2d!(params.rhs_diff_el, params.μ_dsgs, params.uaux, qe,
+                                        params.mesh.connijk, params.ω, params.basis.dψ, params.metrics.Je,
+                                        params.metrics.dξdx, params.metrics.dξdy,
+                                        params.metrics.dηdx, params.metrics.dηdy,
+                                        nelemB, Int(params.mesh.ngl), lcurlB)
+        end
         return
     end
 
@@ -2217,12 +2268,30 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
     # kinematic viscosity and magnetic diffusivity (:mhd_dissipation, a
     # function (x, y, z) -> (ν, η) evaluated once at the element centroids).
     # Assembled through the same Laplacian-per-slot barrier as the θ kernel.
+    #
+    # Reference-weighted operator (:dsgs_ref_weight, SGS.jl; conserved form only): slots
+    # 1-5 diffused as ∇·(μ ρ_e ∇((q − q_e)/ρ_e)), the weight ρ_e read by the 3D
+    # _expansion_visc! from the spare slot neqs+1 of uprimitive, where the case's
+    # user_primitives! puts it. Set on every call, for every 3D viscous path: a 2D case
+    # run earlier in the same session may have left the Ref on.
+    dsgs_ref_weight[] = params.VT == DSGS_MHD() && get(params.inputs, :dsgs_ref_weight, false) &&
+                        get(params.inputs, :dsgs_conserved, false)
+    # Split energy flux (:dsgs_nazarov_energy, SGS.jl dsgs_split_energy; conserved form only),
+    # as 2D: the case's user_primitives! puts the non-thermal energy departure in slot 4 and
+    # the thermal one in the spare slot neqs+2; the 3D _expansion_visc! diffuses the first
+    # with the ρu slot's coefficient (so that the kinetic and magnetic energy fluxes of E are
+    # those of the ρv and B Laplacians) and the second with slot 4's (γ(γ−1)/Pr_t on the
+    # residual viscosity, compute_dsgs_viscosity!(::DSGS_MHD, ::NSD_3D)).
+    lsplit3d = params.VT == DSGS_MHD() && get(params.inputs, :dsgs_conserved, false) &&
+               (get(params.inputs, :dsgs_nazarov_energy, false) || get(params.inputs, :dsgs_conserved_prandtl, false))
+    dsgs_split_energy[] = lsplit3d
     if params.VT == DSGS_MHD()
         TT = eltype(params.μ_dsgs)
-        # the 2D-only switches read by the MHD user_primitives! must stay off
-        dsgs_ref_weight[]   = false
+        # the 2D-only nodal-ρ and thermal-energy switches read by the MHD user_primitives! must stay off
         dsgs_nodal_rho[]    = false
-        dsgs_split_energy[] = false
+        dsgs_thermal_energy[] = false
+        get(params.inputs, :dsgs_thermal_energy, false) == true &&
+            error(" :dsgs_thermal_energy is implemented for 2D DSGS_MHD only.")
         dsgs_qA, dsgs_qB, dsgs_wt = _dsgs_stencil(params, TT)
         dsgs_rhs = _dsgs_residual_rhs!(u, params, SD)
         νphys, ηphys = _mhd_dissipation_3d(params, TT)
@@ -2246,6 +2315,8 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                 cutoff        = TT(get(params.inputs, :dsgs_cutoff, 0.0)),
                                 lfast_floors  = get(params.inputs, :dsgs_fast_floors, false)::Bool,
                                 lthermal      = get(params.inputs, :dsgs_thermal_residual, false)::Bool,
+                                lnazarov_energy = lsplit3d,
+                                Pr_t          = TT(get(params.inputs, :dsgs_Prt, 0.7)),
                                 νphys = νphys, ηphys = ηphys)
         broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
                                  params.mesh.connijk,
@@ -2361,6 +2432,97 @@ function _mhd_dissipation_3d(params, ::Type{TT}) where {TT}
         _MHD_DISS_CACHE[] = c
     end
     return c[2], c[3]
+end
+
+# The wall nodes of the curl-form resistivity (E = 0 there; SGS.jl, _dsgs_curl_resistive_2d!):
+# the nodes of the non-periodic boundary edges of this rank's mesh, cached per mesh.
+const _DSGS_CURL_WALL = Ref{Any}(nothing)
+function _dsgs_curl_wall_mask(mesh)
+    c = _DSGS_CURL_WALL[]
+    npoin = Int(mesh.npoin)
+    (c !== nothing && c[1] === mesh && length(c[2]) == npoin) && return c[2]::Vector{Bool}
+    wall = falses(npoin)
+    nb = mesh.nedges_bdy
+    if !(nb === missing) && nb > 0 && size(mesh.poin_in_bdy_edge, 1) >= nb
+        for iedge = 1:Int(nb)
+            startswith(String(mesh.bdy_edge_type[iedge]), "periodic") && continue
+            for igl = 1:Int(mesh.ngl)
+                ip = Int(mesh.poin_in_bdy_edge[iedge, igl])
+                1 <= ip <= npoin && (wall[ip] = true)
+            end
+        end
+    end
+    m = Vector{Bool}(wall)
+    _DSGS_CURL_WALL[] = (mesh, m)
+    nall = MPI.Allreduce(count(m), +, MPI.COMM_WORLD)      # every rank builds its mask in the same RHS call
+    if MPI.Comm_rank(MPI.COMM_WORLD) == 0
+        println(" # :dsgs_curl_resistivity: resistive E = 0 on ", nall, " wall nodes (summed over ranks)")
+        flush(stdout)
+    end
+    return m
+end
+
+# Per-element coefficient of the in-plane field set aside by :dsgs_curl_resistivity
+# (viscous_rhs_el!, NSD_2D), one buffer reused across calls.
+const _DSGS_CURL_BUF   = Ref{Any}(nothing)
+const _DSGS_CURL_EMPTY = Float64[]
+function _dsgs_curl_buffer(::Type{TT}, n::Int) where {TT}
+    b = _DSGS_CURL_BUF[]
+    if !(b isa Vector{TT}) || length(b) != n
+        b = zeros(TT, n)
+        _DSGS_CURL_BUF[] = b
+    end
+    return b::Vector{TT}
+end
+
+# 2D counterpart: the static (ν, η) of :mhd_dissipation, a function (x, y) -> (ν, η)
+# evaluated once at the element centroids and cached, plus, with
+# :mhd_anomalous_eta => (η₀, j_crit), the current-dependent anomalous diffusivity
+# η₀ max(0, |∇×B|/j_crit − 1) of the present state (SGS.jl, _mhd_anomalous_eta_2d!),
+# re-evaluated at every call. (nothing, nothing) when the deck sets neither.
+const _MHD_DISS2D_CACHE = Ref{Any}(nothing)
+const _MHD_ANOM_REPORTED = Ref{Bool}(false)
+function _mhd_dissipation_2d(params, ::Type{TT}) where {TT}
+    f  = get(params.inputs, :mhd_dissipation, nothing)
+    an = get(params.inputs, :mhd_anomalous_eta, nothing)
+    f === nothing && an === nothing && return nothing, nothing
+    nelem = Int(params.mesh.nelem)
+    ngl   = Int(params.mesh.ngl)
+    c = _MHD_DISS2D_CACHE[]
+    if c === nothing || c[1] !== params.mesh || length(c[2]) != nelem
+        νe = zeros(TT, nelem); ηe = zeros(TT, nelem)
+        f === nothing || _mhd_fill_dissipation_2d!(νe, ηe, f, params.mesh.connijk, params.mesh.coords, nelem, ngl)
+        c = (params.mesh, νe, ηe, zeros(TT, nelem))
+        _MHD_DISS2D_CACHE[] = c
+        _MHD_ANOM_REPORTED[] = false
+    end
+    an === nothing && return c[2], c[3]
+    ηw = c[4]
+    copyto!(ηw, c[3])
+    nact = _mhd_anomalous_eta_2d!(ηw, params.uaux, params.mesh.connijk, params.basis.dψ,
+                                  params.metrics.dξdx, params.metrics.dξdy,
+                                  params.metrics.dηdx, params.metrics.dηdy,
+                                  nelem, ngl, TT(an[1]), TT(an[2]))
+    if nact > 0 && !_MHD_ANOM_REPORTED[]
+        _MHD_ANOM_REPORTED[] = true
+        println(" # anomalous resistivity (:mhd_anomalous_eta) active in ", nact, " element(s) on rank ",
+                MPI.Comm_rank(MPI.COMM_WORLD), " (first time; |∇×B| > j_crit = ", an[2], ")")
+        flush(stdout)
+    end
+    return c[2], ηw
+end
+
+function _mhd_fill_dissipation_2d!(νe, ηe, f, connijk, coords, nelem, ngl)
+    for ie = 1:nelem
+        xc = 0.0; yc = 0.0
+        for (i, j) in ((1,1), (ngl,1), (1,ngl), (ngl,ngl))
+            ip = connijk[ie,i,j,1]
+            xc += coords[1,ip]; yc += coords[2,ip]
+        end
+        ν, η = f(xc/4, yc/4)
+        νe[ie] = ν; ηe[ie] = η
+    end
+    return nothing
 end
 
 function _mhd_fill_dissipation!(νe, ηe, f, connijk, coords, nelem, ngl)
@@ -3988,6 +4150,22 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                         dqdη += dψ[ii,l]*uprimitiveieq[k,ii,m,ieq]
                         dqdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,ieq]
                     end
+                    # Split energy (dsgs_split_energy, set by the 3D viscous_rhs_el!): slot 4
+                    # holds the non-thermal energy departure, diffused with the ρu slot's
+                    # coefficient; the spare slot neqs+2 (the last) the thermal one, diffused
+                    # with slot 4's. Both carry the reference weight when it is on.
+                    lsplit = dsgs_split_energy[] && ieq == 4
+                    nth = size(uprimitiveieq, 4)            # neqs+2 (@turbo cannot index with `end`)
+                    dtdξ = 0.0
+                    dtdη = 0.0
+                    dtdζ = 0.0
+                    if lsplit
+                        @turbo for ii = 1:ngl
+                            dtdξ += dψ[ii,k]*uprimitiveieq[ii,l,m,nth]
+                            dtdη += dψ[ii,l]*uprimitiveieq[k,ii,m,nth]
+                            dtdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,nth]
+                        end
+                    end
                     dξdx_klm = dξdx[iel,k,l,m]
                     dξdy_klm = dξdy[iel,k,l,m]
                     dξdz_klm = dξdz[iel,k,l,m]
@@ -4000,14 +4178,21 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                     dζdy_klm = dζdy[iel,k,l,m]
                     dζdz_klm = dζdz[iel,k,l,m]
 
+                    # DynSGS-MHD reference weight (SGS.jl, dsgs_ref_weight; set by the 3D
+                    # viscous_rhs_el!): the case stores ρ_e in the spare slot neqs+1 of
+                    # uprimitive and slots 1-5 hold (q − q_e)/ρ_e, so the flux is μρ_e∇(…).
+                    wgt = (dsgs_ref_weight[] && ieq <= 5) ? uprimitiveieq[k,l,m,nth-1] : 1.0   # slot neqs+1
+                    μw  = lsplit ? visc_coeffieq[2]*wgt : visc_coeffieq[ieq]*wgt
+                    μt  = lsplit ? visc_coeffieq[4]*wgt : 0.0
+
                     auxi = dqdξ*dξdx_klm + dqdη*dηdx_klm + dqdζ*dζdx_klm
-                    dqdx = visc_coeffieq[ieq]*auxi
+                    dqdx = μw*auxi + μt*(dtdξ*dξdx_klm + dtdη*dηdx_klm + dtdζ*dζdx_klm)
 
                     auxi = dqdξ*dξdy_klm + dqdη*dηdy_klm + dqdζ*dζdy_klm
-                    dqdy = visc_coeffieq[ieq]*auxi
+                    dqdy = μw*auxi + μt*(dtdξ*dξdy_klm + dtdη*dηdy_klm + dtdζ*dζdy_klm)
 
                     auxi = dqdξ*dξdz_klm + dqdη*dηdz_klm + dqdζ*dζdz_klm
-                    dqdz = visc_coeffieq[ieq]*auxi
+                    dqdz = μw*auxi + μt*(dtdξ*dξdz_klm + dtdη*dηdz_klm + dtdζ*dζdz_klm)
 
                     ∇ξ∇u_klm = (dξdx_klm*dqdx + dξdy_klm*dqdy + dξdz_klm*dqdz)*ωJac
                     ∇η∇u_klm = (dηdx_klm*dqdx + dηdy_klm*dqdy + dηdz_klm*dqdz)*ωJac

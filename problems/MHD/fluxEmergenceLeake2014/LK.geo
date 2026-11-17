@@ -22,6 +22,8 @@
 //   ref = 1  ->  16 x 16 x 16 elements (nh = 8,  nv = 16)  LK_16x16x16.msh  smoke test
 //   ref = 2  ->  38 x 38 x 38 elements (nh = 19, nv = 38)  LK_38x38x38.msh  half the paper's resolution
 //   ref = 3  ->  76 x 76 x 76 elements (nh = 38, nv = 76)  LK_76x76x76.msh  the paper's 304^3 at nop 4
+//   ref = 4  ->  38 x 38 x 76 elements (nh = 19, nv = 76)  LK_38x38x76.msh  the paper's vertical spacing
+//   ref = 5  ->  16 x 16 x 64 elements (nh = 8,  nv = 64)  LK_16x16x64.msh  smoke test, z-refined
 //
 // The paper's centre spacing 0.658 is 100/152, its bottom spacing 0.428 is
 // 130/304: at nop 4 each element spans four of the paper's cells.
@@ -36,6 +38,8 @@
 //   gmsh -3 LK.geo -setnumber ref 1 -o LK_16x16x16.msh
 //   gmsh -3 LK.geo -setnumber ref 2 -o LK_38x38x38.msh
 //   gmsh -3 LK.geo -setnumber ref 3 -o LK_76x76x76.msh
+//   gmsh -3 LK.geo -setnumber ref 4 -o LK_38x38x76.msh
+//   gmsh -3 LK.geo -setnumber ref 5 -o LK_16x16x64.msh
 // ============================================================
 
 DefineConstant[ ref = 1 ];
@@ -47,6 +51,12 @@ If (ref == 2)
 EndIf
 If (ref == 3)
   nh = 38; nv = 76;
+EndIf
+If (ref == 4)
+  nh = 19; nv = 76;
+EndIf
+If (ref == 5)
+  nh = 8;  nv = 64;
 EndIf
 
 fh = 2.1; fv = 1.83; Lh = 95; Lv = 100; w = 10;

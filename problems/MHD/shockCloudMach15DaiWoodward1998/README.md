@@ -20,7 +20,7 @@ DW's text gives the states, the domain and the grid:
 | γ | 5/3 |
 | DW's grid | 384 × 256 cells; here 96 × 64 elements at N = 4, i.e. 385 × 257 nodes |
 
-**The frame.** The shocked gas is at rest. The gas ahead of the shock, cloud included, flows in from the right at u = −15.27. In this frame the shock moves right at s = (ρ₂u₂ − ρ₁u₁)/(ρ₂ − ρ₁) = 5.18. Against the gas ahead it moves at 20.45: 14.0 times the fast speed (1.46) and 15.8 times the sound speed (1.29).
+**The frame.** The shocked gas is at rest. The gas ahead of the shock, cloud included, flows in from the right at u = −15.27. In this frame the shock moves right at s = (ρ₂u₂ − ρ₁u₁)/(ρ₂ − ρ₁) = 5.18. Against the gas ahead it moves at 20.45: 15.0 times the fast speed along the shock normal x (c_f,x = 1.363), which is DW's "Mach 15", and 15.8 times the sound speed (1.29). The gas behind leaves the shock at 0.45 times its fast speed.
 
 **Units of B.** As in the letters case, **B** is DW's Gaussian field divided by √(4π). With that conversion the states satisfy the Rankine–Hugoniot conditions to 5 digits. The gas ahead enters faster than its fast speed (|u| = 15.27 > c_f = 1.46), so the right side is a super-fast inflow. c_h = 16.7.
 

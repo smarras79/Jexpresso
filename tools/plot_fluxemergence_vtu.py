@@ -2,7 +2,7 @@
 """log10(rho/rho0) and magnetic field lines from Jexpresso MPI output (iter_N.pvtu -> iter_N/iter_N_*.vtu), on the native grid.
 Field lines: isolines A_n = k/(N+1), k = 1..N, of the flux function A (Bx = dA/dz, Bz = -dA/dx), A_n = (A - Amin)/(Amax - Amin).
   python3 tools/plot_fluxemergence_vtu.py output/MHD/<case>/output-<date> [--steps 5,10,20-40] [--vectors] [--outdir figs] [--format pdf]
-                                          [--var Bx --symmetric] [--no-colorbar]
+                                          [--var Bx --symmetric] [--no-colorbar] [--xlim X0 X1 --ylim Z0 Z1]
 Needs numpy and matplotlib; scipy only for --a-method lsq."""
 import argparse, base64, gc, os, re, sys
 import xml.etree.ElementTree as ET
@@ -141,13 +141,15 @@ def _field(g, name, path):
     return g["fields"][name]
 
 
-def velocity_vectors(ax, g, a, path):
-    """White arrows at the native nodes nearest an nx-by-ny lattice; reference arrow bottom-left (as the PNG writer)."""
+def velocity_vectors(ax, g, a, path, box=None):
+    """White arrows at the native nodes nearest an nx-by-ny lattice over the plotted window
+    (box = (x0, x1, y0, y1), default the domain); reference arrow bottom-left (as the PNG writer)."""
     U, V = _field(g, a.vec_fields[0], path), _field(g, a.vec_fields[1], path)
     x, y = g["x"], g["y"]
-    Lx, Ly = np.ptp(x), np.ptp(y)
-    xs = x.min() + Lx * np.arange(1, a.vec_n[0] + 1) / (a.vec_n[0] + 1)
-    ys = y.min() + Ly * np.arange(1, a.vec_n[1] + 1) / (a.vec_n[1] + 1)
+    bx0, bx1, by0, by1 = box if box else (x.min(), x.max(), y.min(), y.max())
+    Lx, Ly = bx1 - bx0, by1 - by0
+    xs = bx0 + Lx * np.arange(1, a.vec_n[0] + 1) / (a.vec_n[0] + 1)
+    ys = by0 + Ly * np.arange(1, a.vec_n[1] + 1) / (a.vec_n[1] + 1)
     ip = np.array([np.argmin((x - px) ** 2 + (y - py) ** 2) for py in ys for px in xs])
     ref = a.vec_ref if a.vec_ref else max(np.max(np.hypot(U, V)), 1e-300)
     ip = ip[np.hypot(U[ip], V[ip]) >= 0.01 * ref]
@@ -155,7 +157,7 @@ def velocity_vectors(ax, g, a, path):
     kw = dict(angles="xy", scale_units="xy", scale=s, color=a.vec_color, width=a.vec_width,
               headwidth=4, headlength=4, headaxislength=3.5, zorder=3)
     ax.quiver(x[ip], y[ip], U[ip], V[ip], **kw)
-    x0, y0 = x.min() + 0.02 * Lx, y.min() + 0.05 * Ly
+    x0, y0 = bx0 + 0.02 * Lx, by0 + 0.05 * Ly
     ax.quiver([x0], [y0], [ref], [0.0], **kw)
     ax.text(x0 + 0.09 * Lx + 0.01 * Lx, y0, f"= {ref:g}", color=a.vec_color, fontsize=8, va="center", zorder=3)
 
@@ -246,25 +248,33 @@ def plot_one(path, a, out):
             if a.a_method == "integrate":
                 raise ValueError("the nodes are not a tensor-product grid; use --a-method lsq")
             A = flux_function_lsq(g, tri(), Bx, Bz)
-        An = (A - A.min()) / max(np.ptp(A), 1e-300)
+    # --xlim/--ylim: the plotted window; the color range and the field-line levels come from
+    # the nodes inside it (A itself is integrated over the whole domain)
+    X0, X1 = a.xlim if a.xlim else (g["x"].min(), g["x"].max())
+    Y0, Y1 = a.ylim if a.ylim else (g["y"].min(), g["y"].max())
+    win = (g["x"] >= X0) & (g["x"] <= X1) & (g["y"] >= Y0) & (g["y"] <= Y1)
+    if not win.any():
+        raise ValueError(f"no nodes in the window x = [{X0}, {X1}], z = [{Y0}, {Y1}]")
+    if a.fieldlines:
+        An = (A - A[win].min()) / max(np.ptp(A[win]), 1e-300)
 
-    vmin, vmax = a.clim if a.clim else (np.nanmin(field), np.nanmax(field))
+    vmin, vmax = a.clim if a.clim else (np.nanmin(field[win]), np.nanmax(field[win]))
     if a.symmetric:
         vmax = max(abs(vmin), abs(vmax)); vmin = -vmax
     vmax = vmax if vmax > vmin else vmin + 1.0
-    Lx, Ly = np.ptp(g["x"]), np.ptp(g["y"])
+    Lx, Ly = X1 - X0, Y1 - Y0
     fig, ax = plt.subplots(figsize=(a.width, a.width * Ly / Lx + 1.2))
     fill(ax, g, tri, field, a.cmap, vmin, vmax, a.shading)
-    if A is not None and np.ptp(A) > 0:
+    if A is not None and np.ptp(A[win]) > 0:
         lev, An2 = np.arange(1, a.nlevels + 1) / (a.nlevels + 1), grid2d(g, An)
         if An2 is not None:
             ax.contour(g["xc"], g["yc"], An2, levels=lev, colors="k", linewidths=a.linewidth)
         else:
             ax.tricontour(Triangulation(g["x"], g["y"], tri()), An, levels=lev, colors="k", linewidths=a.linewidth)
     if a.vectors:
-        velocity_vectors(ax, g, a, path)
+        velocity_vectors(ax, g, a, path, (X0, X1, Y0, Y1))
     ax.set_aspect("equal")
-    ax.set_xlim(g["x"].min(), g["x"].max()); ax.set_ylim(g["y"].min(), g["y"].max())
+    ax.set_xlim(X0, X1); ax.set_ylim(Y0, Y1)
     ax.set_xlabel(a.xlabel); ax.set_ylabel(a.ylabel)
     label = {"log10_ρ": r"$\log_{10}(\rho/\rho_0)$", "vA": r"$V_A/C_s$"}.get(a.var, a.var)
     ax.set_title(label + (f"   t = {g['t']:g}{a.time_unit}" if g["t"] is not None else ""))
@@ -341,6 +351,8 @@ def main():
     p.add_argument("--vec-color", default="white")
     p.add_argument("--vec-width", type=float, default=0.0015, help="shaft width, fraction of the axes width")
     p.add_argument("--outdir", default=None, help="default: next to each pvtu")
+    p.add_argument("--xlim", type=float, nargs=2, default=None, help="plotted x range (default: the domain)")
+    p.add_argument("--ylim", type=float, nargs=2, default=None, help="plotted vertical range (default: the domain)")
     p.add_argument("--format", default="png", help="png, pdf, svg, ...")
     p.add_argument("--dpi", type=int, default=200)
     p.add_argument("--width", type=float, default=12.0, help="figure width in inches")
