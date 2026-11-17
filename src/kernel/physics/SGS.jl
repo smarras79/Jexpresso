@@ -1970,7 +1970,8 @@ function _dsgs_curl_resistive_2d!(rhs_diff_el::AbstractArray{TT}, scr::AbstractM
                                   connijk::AbstractArray{TI,4}, ω::AbstractVector, dψ::AbstractMatrix,
                                   Je::AbstractArray, dξdx::AbstractArray, dξdy::AbstractArray,
                                   dηdx::AbstractArray, dηdy::AbstractArray,
-                                  g_dss_cache, neqs::Int, nelem::Int, ngl::Int, npoin::Int) where {TT<:AbstractFloat, TI<:Integer}
+                                  g_dss_cache, neqs::Int, nelem::Int, ngl::Int, npoin::Int,
+                                  wall::AbstractVector{Bool}=Bool[]) where {TT<:AbstractFloat, TI<:Integer}
     fill!(scr, zero(TT))
     @inbounds for ie = 1:nelem
         η = ηe[ie]
@@ -1989,8 +1990,15 @@ function _dsgs_curl_resistive_2d!(rhs_diff_el::AbstractArray{TT}, scr::AbstractM
         end
     end
     DSS_global_RHS!(scr, g_dss_cache, neqs)
+    # E = 0 on the walls (wall[ip], the nodes of the non-periodic boundary edges): a
+    # conducting wall for the resistive field, as the ideal E = −u×B is at a no-slip wall.
+    # With the wall values of the one-sided E kept, the operator has growing modes, the
+    # fastest at the corners of the domain (its Poynting flux through the wall feeds
+    # them); with E = 0 there it has none (problems/MHD/fluxEmergenceLeake2010, README,
+    # "Divergence of B"). The update is still the curl of a nodal scalar: ∇·B is kept.
+    lwall = length(wall) == npoin
     @inbounds for ip = 1:npoin
-        scr[ip,1] = scr[ip,2] > zero(TT) ? scr[ip,1]/scr[ip,2] : zero(TT)
+        scr[ip,1] = (scr[ip,2] > zero(TT) && !(lwall && wall[ip])) ? scr[ip,1]/scr[ip,2] : zero(TT)
     end
     @inbounds for ie = 1:nelem
         for l = 1:ngl, k = 1:ngl

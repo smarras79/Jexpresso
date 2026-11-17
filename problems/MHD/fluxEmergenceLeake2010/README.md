@@ -312,6 +312,20 @@ tube; with the curl form the corona is at rest to round-off while the tube
 evolves as before. `JEXPRESSO_LK10_CURLB=0` restores the Laplacian of the
 parent case.
 
+**The walls.** The resistive $E$ is set to zero at the wall nodes, a
+conducting wall for the resistive field, as the ideal $E = -\mathbf u\times\mathbf B$
+already is at the no-slip walls. With the one-sided wall values of $E$ kept,
+the operator has growing modes, the fastest at the corners of the domain,
+where its Poynting flux through the walls feeds them: on 5×5 to 6×6 elements
+with walls (uniform or stretched, $\eta$ uniform or varying up to 100× between
+elements) the largest growth rate was up to $+2\,\eta/h^2$ with the wall values
+kept, and below $10^{-11}$ (round-off) with $E = 0$ on the walls; the weak
+Laplacian has none. A run of the default deck blew up at 506.8 s from the top
+right corner (41.75, 86.34) Mm, where the largest DynSGS coefficient had grown
+from 7 to 113 in 36 s, every other diagnostic steady. The update is still the
+curl of a nodal scalar, so $\nabla\cdot\mathbf B$ stays at round-off; the log
+prints the number of wall nodes.
+
 ## Meshes, time step and cost
 
 `LK10.geo`: $x\in[-45, 45]$ Mm, $y\in[-3, 90]$ Mm; core element size $h_0$
@@ -509,8 +523,11 @@ Short runs on 4 cores; the full runs are for a cluster (above).
   pressure went negative from ~200 s in the low-β upper chromosphere
   (Positivity, above). The cause is the DynSGS diffusion of $E$ as a whole
   under a strong reference field; the energy-consistent DynSGS removes it and is
-  the default since, with the floors as a safety net. That the default deck now
-  runs past 631 s on the cluster is still to be shown.
+  the default since, with the floors as a safety net. With it, the next run had
+  no floor hit for 506 s, then blew up from the top right corner of the domain:
+  the curl-form resistivity fed a growing mode through the walls ("Divergence of
+  B", the walls). $E = 0$ on the walls removes it. That the default deck now
+  runs past 506.8 s on the cluster is still to be shown.
 - **Not done here:** the emergence after 1000 s, any REF 2 run, and the
   quadrupole run to 2530 s, i.e. the comparison with the erratum's Fig. 3, which
   needs the cluster (above). `plot_leake2010.py density` and `dome` produce

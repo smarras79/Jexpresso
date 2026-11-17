@@ -1705,7 +1705,8 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                      params.metrics.dξdx, params.metrics.dξdy,
                                      params.metrics.dηdx, params.metrics.dηdy,
                                      params.g_dss_cache, Int(params.neqs), nelemB,
-                                     Int(params.mesh.ngl), Int(params.mesh.npoin))
+                                     Int(params.mesh.ngl), Int(params.mesh.npoin),
+                                     _dsgs_curl_wall_mask(params.mesh))
         end
         if dsgs_thermal_energy[]
             _dsgs_energy_consistent_2d!(params.rhs_diff_el, params.μ_dsgs, params.uaux, qe,
@@ -2356,6 +2357,34 @@ function _mhd_dissipation_3d(params, ::Type{TT}) where {TT}
         _MHD_DISS_CACHE[] = c
     end
     return c[2], c[3]
+end
+
+# The wall nodes of the curl-form resistivity (E = 0 there; SGS.jl, _dsgs_curl_resistive_2d!):
+# the nodes of the non-periodic boundary edges of this rank's mesh, cached per mesh.
+const _DSGS_CURL_WALL = Ref{Any}(nothing)
+function _dsgs_curl_wall_mask(mesh)
+    c = _DSGS_CURL_WALL[]
+    npoin = Int(mesh.npoin)
+    (c !== nothing && c[1] === mesh && length(c[2]) == npoin) && return c[2]::Vector{Bool}
+    wall = falses(npoin)
+    nb = mesh.nedges_bdy
+    if !(nb === missing) && nb > 0 && size(mesh.poin_in_bdy_edge, 1) >= nb
+        for iedge = 1:Int(nb)
+            startswith(String(mesh.bdy_edge_type[iedge]), "periodic") && continue
+            for igl = 1:Int(mesh.ngl)
+                ip = Int(mesh.poin_in_bdy_edge[iedge, igl])
+                1 <= ip <= npoin && (wall[ip] = true)
+            end
+        end
+    end
+    m = Vector{Bool}(wall)
+    _DSGS_CURL_WALL[] = (mesh, m)
+    nall = MPI.Allreduce(count(m), +, MPI.COMM_WORLD)      # every rank builds its mask in the same RHS call
+    if MPI.Comm_rank(MPI.COMM_WORLD) == 0
+        println(" # :dsgs_curl_resistivity: resistive E = 0 on ", nall, " wall nodes (summed over ranks)")
+        flush(stdout)
+    end
+    return m
 end
 
 # Per-element coefficient of the in-plane field set aside by :dsgs_curl_resistivity
