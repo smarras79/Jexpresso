@@ -122,6 +122,7 @@ experiment the record belongs to, so that no experiment overwrites another's:
 | `dsgs_cut` | DynSGS with another cutoff |
 | `dsgs_hold` | DynSGS with a startup hold other than 2 steps |
 | `galerkin` | the plain Galerkin run (`JEXPRESSO_SV_VISC=none`) |
+| `<tag>_bdf<k>` | any DynSGS run above with the residual sensor's time difference of order $k \neq 2$ (`JEXPRESSO_SV_BDF=k`, [below](#the-order-of-the-sensors-time-difference-bdf-k)): `dsgs_nocut_bdf5` is DynSGS without the cutoff, with BDF5 |
 
 Every run then prints the table of **every** error in the store that carries
 its final time and box, and draws the figures from them:
@@ -218,6 +219,7 @@ case's error as it finishes.
 | `SV_L` | 20 | box width |
 | `SV_CUTOFF` | the deck's, $10^{-3}$ | 0 runs DynSGS without the cutoff (`dsgs_nocut`) |
 | `SV_HOLD` | 2 | startup hold in steps (`dsgs_hold` otherwise) |
+| `SV_BDF` | 2 | the order $k$ of the residual sensor's backward difference (`:dsgs_bdf_order`); records `<tag>_bdf<k>` ([below](#the-order-of-the-sensors-time-difference-bdf-k)) |
 | `SV_KEEP` | 0 | 1 adds to the store and skips the cases already in it |
 | `SV_REDO` | 0 | with `SV_KEEP=1`, runs those cases again anyway |
 | `SV_PLOT_NOPS` | — | a subset of the orders to draw on its own axes as well |
@@ -246,6 +248,7 @@ JEXPRESSO_SV_NOP=4 JEXPRESSO_SV_NELX=16 julia --project=. src/Jexpresso.jl MHD s
 | `JEXPRESSO_SV_SENSOR` | `residual` | `legacy` for the assembled-rate sensor |
 | `JEXPRESSO_SV_CUTOFF` | $10^{-3}$ | `:dsgs_cutoff`; 0 for none |
 | `JEXPRESSO_SV_HOLD` | 2 | `:dsgs_hold_steps` |
+| `JEXPRESSO_SV_BDF` | 2 | `:dsgs_bdf_order`, the order of the residual sensor's backward difference (1 to 6) |
 | `JEXPRESSO_SV_FREEZE` | (on) | 1 or 0 forces `:dsgs_freeze_stage` |
 | `JEXPRESSO_SV_CR`, `JEXPRESSO_SV_CMAX` | 1, 0.5 | `:dsgs_CR`, `:dsgs_Cmax`; both zero keeps the sensor and applies no viscosity |
 | `JEXPRESSO_SV_CMIN` | 0 | the background floor `:dsgs_Cmin` |
@@ -351,6 +354,66 @@ not move the error (absolute velocity $L^1$ at $t = 1$):
 so the honest check on any sweep is to re-run its **finest** case at half
 `SV_DT` and see that the error does not move; if it does, the time error is
 part of what the figure shows.
+
+## The order of the sensor's time difference (BDF-k)
+
+The residual sensor takes $\partial_t q$ with BDF2 on the step states
+$(q^n, q^{n-1}, q^{n-2})$, and on a smooth, resolved solution its residual keeps
+that difference's truncation error, $-(\Delta t^2/3)\,\partial_t^3 q$: the floor
+[the cutoff](#the-dynsgs-setup) is there to remove, found on the Alfvén wave
+([`setup_notes/dsgsCutoff.pdf`](../setup_notes/dsgsCutoff.pdf)).
+`:dsgs_bdf_order => k` (`JEXPRESSO_SV_BDF`, `SV_BDF`; 1 to 6, default 2) takes
+$\partial_t q$ with the backward difference of order $k$ on
+$(q^n, \dots, q^{n-k})$ instead, whose truncation error is
+$-\Delta t^k/(k+1)\,\partial_t^{k+1} q$, so $\nu$'s floor becomes
+$C_R\Delta^2\,O(\Delta t^k)$. The default runs the BDF2 path exactly as before
+(checked bit for bit against the code before the option: every digit of the
+error and of the mass and energy history, DynSGS without the cutoff at $N = 5$ on
+$8^2$), and the startup hold is at least $k$ steps. With `CarpenterKennedy2N54` the residual
+of the integrated solution also carries the integrator's own $O(\Delta t^4)$
+defect, so $k = 5$ lowers the constant of that floor, not its order.
+
+Whether that floor is what makes DynSGS without the cutoff drift above Galerkin
+from $N = 5$ on is what `tools/smooth_vortex_bdf_study.sh` measures, on this
+vortex and on the [isentropic one](../../CompEuler/smoothVortex/README.md): for
+each it runs the finest mesh at $\Delta t$ and $\Delta t/2$ (a BDF2 floor falls
+4× when $\Delta t$ halves; a spatial residual does not move), then Galerkin and
+DynSGS without the cutoff with BDF2, BDF5 and BDF4 on every order and mesh at one
+$\Delta t$, prints every error against Galerkin's and draws Galerkin, BDF2 and
+BDF5 on one figure. A store already there is moved aside, never deleted.
+
+```bash
+tools/smooth_vortex_bdf_study.sh                         # both cases, 4 serial cases at a time
+SV_NP=1 SV_JOBS=8 tools/smooth_vortex_bdf_study.sh
+STUDY_STEPS=dtcheck tools/smooth_vortex_bdf_study.sh     # the Δt check alone
+```
+
+**Measured on $32^2$** ($t = 1$, $\Delta t = 1/1750$, velocity $L^1$, ratio to
+Galerkin in brackets):
+
+| $N$ | Galerkin | DynSGS, BDF2 | DynSGS, BDF5 |
+|---|---|---|---|
+| 4 | 3.1145e-4 | 3.2843e-4 (1.055) | 3.2843e-4 (1.055) |
+| 5 | 4.4097e-5 | 4.6575e-5 (1.056) | 4.6573e-5 (1.056) |
+| 6 | 1.4111e-6 | 1.5034e-6 (1.065) | 1.5027e-6 (1.065) |
+| 7 | 3.0168e-7 | 3.2721e-7 (1.085) | 3.2716e-7 (1.084) |
+
+On this vortex the time difference is not what DynSGS adds: BDF5 moves the error
+in its fifth digit. $\nu$ follows the same history with either — at $N = 6$ to
+three digits from the first step after the hold to $t = 1$; at $N = 7$ BDF5's is
+~20 % lower over the first $0.01$ and the same from $t \approx 0.06$ on — so what
+the sensor reads is the spatial part of the residual, the inter-element jump of
+$\nabla\cdot\mathbf F_h$.
+
+**A higher-order difference amplifies the sensor's own viscosity.** The residual
+subtracts the inviscid element RHS only, so it reads back the viscous tendency
+that its coefficient, frozen over each step, put into the history. A
+step-to-step alternation of that tendency comes back multiplied by
+$\tfrac12\big|\sum_j c_j(-1)^j\big| = \sum_{j=1}^{k} 2^{j-1}/j$: 2 for BDF2, 5.3
+for BDF4, 8.5 for BDF5. Where the sensor is genuinely active that loop can cross
+unit gain: on the $\beta = 5$ isentropic vortex at $N = 5$ on $8^2$ ($t = 0.1$)
+BDF2, BDF3 and BDF4 end with the same error (0.280, 0.279, 0.279) while BDF5
+grows $\nu$ step after step and ends at 1.06, 8× Galerkin's.
 
 ## The final time is part of the measurement
 

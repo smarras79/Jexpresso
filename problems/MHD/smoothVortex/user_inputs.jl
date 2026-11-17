@@ -39,6 +39,10 @@
 #   JEXPRESSO_SV_CUTOFF :dsgs_cutoff, the smoothness cutoff      (default 1e-3;
 #                       0 runs DynSGS without it)
 #   JEXPRESSO_SV_HOLD   :dsgs_hold_steps                         (default 2)
+#   JEXPRESSO_SV_BDF    :dsgs_bdf_order, the order k of the backward
+#                       difference the residual sensor takes ∂ₜq with
+#                       (default 2; 4 or 5 move the time-difference floor of
+#                       the sensor from Δt² to Δt⁴/Δt⁵ — see _sv_bdf below)
 #   JEXPRESSO_SV_FREEZE 1 or 0 forces :dsgs_freeze_stage         (default: on,
 #                       mod_inputs.jl's, with the residual sensor)
 #   JEXPRESSO_SV_L      the box width L; picks vortex_L<L>_<n>x<n>.msh (default 20)
@@ -145,6 +149,15 @@ _sv_hold() = something(tryparse(Int, get(ENV, "JEXPRESSO_SV_HOLD", "")), 2)
 # SV_DSGS_CUTOFF: keep that equal to the value here).
 const SV_CUTOFF_DEFAULT = 1.0e-3
 _sv_cutoff() = something(tryparse(Float64, get(ENV, "JEXPRESSO_SV_CUTOFF", "")), SV_CUTOFF_DEFAULT)
+# The ORDER of that time difference, :dsgs_bdf_order (mod_inputs.jl). The
+# floor above is the truncation error of BDF2; with BDF-k it is
+# −Δtᵏ/(k+1)·∂ₜᵏ⁺¹q, so ν ∝ Δ²Δtᵏ ∝ h^(k+2) instead of h⁴ — together with
+# CarpenterKennedy2N54's own defect, O(Δt⁴), which the residual of the
+# integrated solution also carries. JEXPRESSO_SV_BDF=4 or 5 with
+# JEXPRESSO_SV_CUTOFF=0 is the test of whether the order cap of DynSGS from
+# N = 5 on is that floor; their records are "dsgs_nocut_bdf4", "_bdf5"
+# (user_plot.jl). The startup hold is at least k steps.
+_sv_bdf() = something(tryparse(Int, get(ENV, "JEXPRESSO_SV_BDF", "")), 2)
 # JEXPRESSO_SV_FREEZE=1 or 0 forces :dsgs_freeze_stage; unset, the key is left
 # to mod_inputs.jl, whose default is on with the residual sensor.
 _sv_freeze() = (v = strip(get(ENV, "JEXPRESSO_SV_FREEZE", ""));
@@ -234,6 +247,9 @@ function user_inputs()
         # history needs and the long-standing behaviour; more is the probe of
         # whether the smooth-flow excess is a STARTUP dose.
         :dsgs_hold_steps   => _sv_hold(),
+        # Order of the residual sensor's backward difference (JEXPRESSO_SV_BDF,
+        # :dsgs_bdf_order): 2 is the BDF2 the sensor has always had.
+        :dsgs_bdf_order    => _sv_bdf(),
         :lrichardson      => false,
         :energy_equation  => "energy",
         :lkep              => false,

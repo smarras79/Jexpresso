@@ -528,6 +528,31 @@ ahead of the shock that the per-stage run does not have. The
 legacy sensor below must not be frozen (its stencil reads $-\tfrac12\partial_t q$ at
 $\tau = 0$), and an explicit request for it is ignored.
 
+**The order of the time difference: `:dsgs_bdf_order`.** `:dsgs_bdf_order => k`
+(1 to 6, default 2) takes $\partial_t q$ at $\tau = 0$ with the backward-difference
+formula of order $k$ on $(q^n, \dots, q^{n-k})$, whose truncation error is
+$-\tfrac{\Delta t^k}{k+1}\,\partial_t^{k+1} q$, so the floor of $\nu$ above becomes
+$C_R\,\Delta^2\,O(\Delta t^k)$; the default runs the BDF2 path exactly as before, bit
+for bit. The states older than $q^{n-2}$ sit in `params.dsgs_qhist`, and the kernels
+keep their three-term stencil because the history part of the difference is summed into
+one array first (`rhs.jl`, `_dsgs_bdf_combine!`, weights $(w_0, 1, 0)$); the startup
+hold is at least $k$ steps, and the legacy sensor always takes BDF2. Two things bound
+what it buys. The residual of the integrated solution also carries the explicit
+integrator's own defect, $O(\Delta t^p)$ ($p = 4$ for `CarpenterKennedy2N54`), so
+$k > 4$ lowers the constant, not the order. And the residual subtracts the inviscid
+element RHS only, so the sensor reads back the viscous tendency its own coefficient,
+frozen over each step, put into the history: a step-to-step alternation of it comes back
+multiplied by $\tfrac12\big|\sum_j c_j(-1)^j\big| = \sum_{j=1}^{k} 2^{j-1}/j$, which is
+2 for BDF2 and 3.3, 5.3, 8.5 for $k = 3, 4, 5$. Where the sensor is genuinely active
+that loop can cross unit gain — on the $\beta = 5$ isentropic vortex at $N = 5$ on
+$8^2$ ($t = 0.1$) BDF2, BDF3 and BDF4 end with the same error and BDF5 grows $\nu$
+step after step to 8× the Galerkin error. On the smooth MHD vortex at $32^2$, $N = 4$
+to 7, BDF5 leaves DynSGS where BDF2 has it (1.055–1.085× Galerkin with either, equal
+to the fifth digit); on the $\beta = 5$ isentropic vortex DynSGS is 6 to 1700× Galerkin
+with either, from a $\nu$ that grows in time whatever the order. On both, the excess
+is the spatial part of the residual, not the time difference
+(`problems/MHD/smoothVortex/README.md`, *The order of the sensor's time difference*).
+
 Every DynSGS result obtained before this change (September 2026) used the
 fixed BDF2 on $(q(\tau), q^n, q^{n-1})$ together with the assembled RHS
 (§1.2): `:dsgs_sensor => "legacy"` reproduces that sensor, and the decks of
