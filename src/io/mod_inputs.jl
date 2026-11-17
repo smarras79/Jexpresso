@@ -163,6 +163,35 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:RT_T_space] = 0.0
     end
 
+    # Sweep RT (coupled and frozen-snapshot runs, get_rt_heat_fluxes_sweeps!): which bands are computed and how the
+    # shortwave scattering is discretised. (Independent of :RT_longwave/:RT_shortwave, which drive the standalone RT path.)
+    if(!haskey(inputs, :RT_compute_lw))
+        inputs[:RT_compute_lw] = true
+    end
+    if(!haskey(inputs, :RT_compute_sw))
+        inputs[:RT_compute_sw] = false
+    end
+    # Discrete scattering operator C[k,m] = Φ(Ω_k,Ω_m) w_m and the direct-beam source:
+    #   :none (raw quadrature), :row (each row sums to 1: energy-conserving), :symmetric (unit row sums AND symmetric kernel)
+    inputs[:RT_sw_phase_normalization] = Symbol(get(inputs, :RT_sw_phase_normalization, :none))
+    inputs[:RT_sw_phase_normalization] in (:none, :row, :symmetric) ||
+        error(":RT_sw_phase_normalization must be :none, :row or :symmetric")
+    # Forward-peak truncation of the shortwave phase function:
+    #   :none, :delta_eddington (f = g^2), or :delta_m (f = g^M, M = number of Legendre moments the angular mesh resolves)
+    inputs[:RT_sw_delta_scaling] = Symbol(get(inputs, :RT_sw_delta_scaling, :none))
+    inputs[:RT_sw_delta_scaling] in (:none, :delta_eddington, :delta_m) ||
+        error(":RT_sw_delta_scaling must be :none, :delta_eddington or :delta_m")
+    # Diffuse SW inflow on lateral walls (non-periodic meshes): :single_scatter (plane-parallel single scattering of the
+    # reference column), :plane_parallel (single scattering + multiple scattering from the 1D reference solver),
+    # :none (no inflow) or :legacy (old ω̄ Φ S₀ (1 - e^{-τ/μ₀}) estimate)
+    inputs[:RT_sw_lateral_bc] = Symbol(get(inputs, :RT_sw_lateral_bc, :plane_parallel))
+    inputs[:RT_sw_lateral_bc] in (:single_scatter, :plane_parallel, :none, :legacy) ||
+        error(":RT_sw_lateral_bc must be :single_scatter, :plane_parallel, :none or :legacy")
+    # M for :delta_m; 0 = from the angular mesh: polar nodes n_theta = extra_dimensions_nelemx*extra_dimensions_order + 1
+    if(!haskey(inputs, :RT_sw_delta_m_moments))
+        inputs[:RT_sw_delta_m_moments] = 0
+    end
+
     if(!haskey(inputs, :RT_data_file))
        inputs[:RT_data_file] = ""
     end

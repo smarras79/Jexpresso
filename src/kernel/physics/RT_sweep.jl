@@ -6,6 +6,12 @@ Base.@kwdef struct RadiativeCase
     g_field::Union{Function,Nothing} = nothing   # (x,y,z,ip) -> g
     bc_fn::Function                       # (x,y,z,ip,nx,ny,nz,θ,ϕ) -> I_bc
     source_fn::Function = (x,y,z,ip,θ,ϕ) -> 0.0
+    # Normalisation of the discrete scattering operator C[k,m] = Φ(Ω_k,Ω_m) w_m: :none, :row or :symmetric
+    phase_norm::Symbol = :none
+    # Direct-beam scattering source, added per node in build_case_fields:
+    #   q_k(x) = coeff(x) Φ(Ω_k, Ω_beam; g(x)) / N(x),  N(x) = Σ_k w_k Φ(Ω_k, Ω_beam; g(x)) if normalize, else 1
+    # fields: θ, ϕ (beam propagation direction), coeff::Vector (σ·I_dir per node), g::Vector, normalize::Bool
+    beam_source::Union{Nothing,NamedTuple} = nothing
 end
 
 Base.@kwdef struct SweepOptions
@@ -76,7 +82,52 @@ function build_case_fields(mesh, case::RadiativeCase)
             q_ext_all[(iel,d)] = q_vec
         end
     end
+
+    # Direct-beam scattering source (single beam direction): per node, Φ(Ω_k, Ω_beam; g) over the element's angular
+    # nodes, optionally divided by its discrete integral Σ_k w_k Φ so the scattered beam energy is exactly σ·I_dir.
+    bs = case.beam_source
+    if bs !== nothing
+        w_all = build_angular_quadrature_weights(mesh)
+        for iel = 1:mesh.nelem
+            em = mesh.extra_mesh[iel]; nd = em.extra_npoin; w = w_all[iel]
+            θd = em.extra_coords[1,1:nd]; ϕd = em.extra_coords[2,1:nd]
+            Φd = zeros(nd)
+            for k=1:ngl, j=1:ngl, i=1:ngl
+                gip = mesh.connijk[iel,i,j,k]
+                c = bs.coeff[gip]; c == 0.0 && continue
+                for d = 1:nd; Φd[d] = phase_function_hg(θd[d], bs.θ, ϕd[d], bs.ϕ, bs.g[gip]); end
+                N = bs.normalize ? sum(w[d]*Φd[d] for d = 1:nd) : 1.0
+                l = lidx(i,j,k,ngl)
+                for d = 1:nd; q_ext_all[(iel,d)][l] += c * Φd[d] / N; end
+            end
+        end
+    end
     return κ, σ, bc_fn_all, q_ext_all
+end
+
+"""
+    normalize_phase_matrix(C, w, mode) -> C̃
+
+C[k,m] = Φ(Ω_k,Ω_m) w_m is the discrete scattering operator; the exact one conserves scattered energy,
+Σ_m C[k,m] = 1. mode = :row divides each row by its sum. mode = :symmetric writes C = K diag(w) with K symmetric and
+finds d > 0 such that C̃ = diag(d) K diag(d) diag(w) has unit row sums (Sinkhorn: d ← sqrt(d ./ (K (d .* w)))), so the
+kernel stays symmetric (reciprocity Φ(Ω,Ω′) = Φ(Ω′,Ω)).
+"""
+function normalize_phase_matrix(C::Matrix{Float64}, w::Vector{Float64}, mode::Symbol)
+    mode == :none && return C
+    if mode == :row
+        return C ./ sum(C; dims=2)
+    elseif mode == :symmetric
+        K = C ./ transpose(w)
+        d = ones(length(w))
+        for it = 1:500
+            d = sqrt.(d ./ (K * (d .* w)))
+            maximum(abs.(d .* (K * (d .* w)) .- 1.0)) < 1e-13 && break
+        end
+        return (d .* K .* transpose(d)) .* transpose(w)
+    else
+        error("normalize_phase_matrix: unknown mode $(mode)")
+    end
 end
 
 function build_phase_coupling_matrices_elementwise(mesh, case::RadiativeCase)
@@ -111,7 +162,7 @@ function build_phase_coupling_matrices_elementwise(mesh, case::RadiativeCase)
         for dk = 1:npd, m = 1:npd
             C[dk,m] = case.phase_fn(thetas[dk], thetas[m], phis[dk], phis[m], g_iel) * w_ext[m]
         end
-        C_iel_all[iel] = C
+        C_iel_all[iel] = normalize_phase_matrix(C, w_ext, case.phase_norm)
     end
     return C_iel_all
 end
@@ -151,22 +202,62 @@ function compute_direct_beam(mesh, κ_sw::Vector{Float64}, σ_sw::Vector{Float64
 end
 
 function build_shortwave_diffuse_case(κ_sw::Vector{Float64}, σ_sw::Vector{Float64}, g_eff::Vector{Float64},
-                                       sw::SWParams, F_dir::Vector{Float64}, bdy; surface_albedo=0.15)
+                                       sw::SWParams, F_dir::Vector{Float64}, bdy; surface_albedo=0.15,
+                                       phase_norm::Symbol=:none, lateral_bc::Symbol=:plane_parallel,
+                                       mesh=nothing)
     κ_ext_sw = κ_sw .+ σ_sw
     ω0_lateral = sum(σ_sw) / sum(max.(κ_ext_sw, 1e-30))   # domain-mean SSA, per user_rad_bc_shortwave_diffuse's docstring
 
     kappa_fn = (x,y,z,ip) -> κ_ext_sw[ip]
     sigma_fn = (x,y,z,ip) -> σ_sw[ip]
     g_field  = (x,y,z,ip) -> g_eff[ip]
-    bc_fn = (x,y,z,ip,nx,ny,nz,θ,ϕ) -> begin
-        τ_z = interp_optical_depth(z, sw.z_prof, sw.τ_from_TOA)
-        user_rad_bc_shortwave_diffuse(x,y,z,θ,ϕ,bdy,sw,F_dir[ip],τ_z,ω0_lateral,g_eff[ip]; surface_albedo=surface_albedo)
+    # Boundary inflow of DIFFUSE radiance. Top: none. Bottom: Lambertian reflection of the direct beam (diffuse
+    # reflection is not included yet). Lateral walls (non-periodic meshes only):
+    #   :single_scatter  plane-parallel single-scattering radiance of the reference column (SWLateralSingleScatter)
+    #   :none            no inflow
+    #   :legacy          the old user_rad_bc_shortwave_diffuse estimate ω̄ Φ S₀ (1 - e^{-τ/μ₀})
+    #   :plane_parallel  single scattering + multiply scattered part from the 1D reference solver (SWLateralPlaneParallel)
+    # Built lazily on the first lateral call, so periodic meshes (no lateral faces) never pay for it.
+    # The column profile is gathered over MPI (collective), so it is built here on every rank; only the per-rank
+    # radiance object (which runs the 1D solver) is built lazily.
+    lat_ref = Ref{Any}(nothing)
+    prof = nothing
+    if lateral_bc in (:single_scatter, :plane_parallel)
+        mesh === nothing && error("build_shortwave_diffuse_case: lateral_bc = $(lateral_bc) needs mesh=")
+        prof = build_sw_column_optics(mesh, κ_ext_sw, σ_sw, g_eff, mesh.ngl)
     end
-    source_fn = (x,y,z,ip,θ,ϕ) -> user_rhs_shortwave_diffuse(x,y,z,θ,ϕ,ip,F_dir,σ_sw,sw,g_eff[ip])
+    make_lat() = begin
+        lateral_bc == :single_scatter ?
+            SWLateralSingleScatter(prof, sw.S₀_flux, sw.μ₀, sw.φ₀, surface_albedo) :
+            build_sw_lateral_plane_parallel(prof, sw.S₀_flux, sw.μ₀, sw.φ₀, surface_albedo)
+    end
+    if !(lateral_bc in (:single_scatter, :plane_parallel, :none, :legacy))
+        error("build_shortwave_diffuse_case: unknown lateral_bc $(lateral_bc)")
+    end
+    bc_fn = (x,y,z,ip,nx,ny,nz,θ,ϕ) -> begin
+        if bdy.is_bottom(z)
+            surface_albedo * F_dir[ip] / π
+        elseif bdy.is_top(z)
+            0.0
+        elseif lateral_bc in (:single_scatter, :plane_parallel)
+            lat_ref[] === nothing && (lat_ref[] = make_lat())
+            lat_ref[](z, θ, ϕ)
+        elseif lateral_bc == :none
+            0.0
+        else
+            τ_z = interp_optical_depth(z, sw.z_prof, sw.τ_from_TOA)
+            user_rad_bc_shortwave_diffuse(x,y,z,θ,ϕ,bdy,sw,F_dir[ip],τ_z,ω0_lateral,g_eff[ip]; surface_albedo=surface_albedo)
+        end
+    end
+    # Direct beam scattered into the diffuse field: σ(x) I_dir(x) Φ(Ω, Ω_sun; g(x)), I_dir = F_dir/μ₀, with the same
+    # phase function as the scattering operator (phase_function_hg) and, unless phase_norm = :none, normalised per node.
+    θ_sun, ϕ_sun = rt_sun_angles(sw)
+    beam = sw.μ₀ > 0.0 ?
+        (θ = θ_sun, ϕ = ϕ_sun, coeff = σ_sw .* F_dir ./ sw.μ₀, g = g_eff, normalize = phase_norm != :none) : nothing
 
     return RadiativeCase(kappa_fn=kappa_fn, sigma_fn=sigma_fn,
                           phase_fn=phase_function_hg, g_field=g_field,
-                          bc_fn=bc_fn, source_fn=source_fn)
+                          bc_fn=bc_fn, phase_norm=phase_norm, beam_source=beam)
 end
 
 function compute_rt_radiative_heating_unified(mesh, I_cg_all::Dict{Tuple{Int,Int},Vector{Float64}},
@@ -341,6 +432,21 @@ function build_unified_ncf_infrastructure(mesh, sem, comm)
         same_rank_kind, same_rank_partner, same_rank_is_periodic, n_unresolved =
         resolve_periodic_or_rankcut_neighbors_ncf(mesh, suspected_faces, periodic_face_keys, comm)
     println("Rank $rank: unresolved=$n_unresolved  " * (n_unresolved==0 ? "✓" : "✗"))
+    if get(ENV, "JEXPRESSO_RT_DEBUG_TOPO", "") == "1"
+        # Elements that are their own face neighbour (e.g. a one-element-thick periodic slab)
+        n_self_adj = count(neighbor_elem[iel][fid] == iel for iel = 1:mesh.nelem, fid = 1:6)
+        n_self_partner = count(iel in p for ((iel, fid), p) in same_rank_partner)
+        n_bdy = count(neighbor_elem[iel][fid] == 0 for iel = 1:mesh.nelem, fid = 1:6)
+        kinds = Dict{Symbol,Int}(); for (_, k) in same_rank_kind; kinds[k] = get(kinds, k, 0) + 1; end
+        println("Rank $rank [topo]: nelem=$(mesh.nelem) self-adjacent faces=$n_self_adj  boundary/periodic faces=$n_bdy  " *
+                "suspected=$(length(suspected_faces)) same-rank periodic partners=$(length(same_rank_partner)) " *
+                "(self=$n_self_partner, kinds=$kinds) cross-rank=$(length(neighbor_rank))")
+        test_periodic_face_correspondence_same_rank(mesh, same_rank_kind, same_rank_partner, ngl)
+        for iel = 1:min(mesh.nelem, 2), fid = 1:6
+            println("Rank $rank [topo]: iel=$iel fid=$fid neighbor=$(neighbor_elem[iel][fid]) nfid=$(neighbor_fid[iel][fid]) " *
+                    "partner=$(get(same_rank_partner, (iel,fid), nothing))")
+        end
+    end
     n_unresolved > 0 && error("Rank $rank: unresolved faces — aborting")
 
     neighbor_gel = Dict{Tuple{TInt,TInt}, TInt}()

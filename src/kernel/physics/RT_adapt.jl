@@ -59,7 +59,8 @@ end
 # Convention hook: (θ,ϕ) of the direction the solar beam TRAVELS, i.e. the centre of the forward-scattering lobe, in the same angular
 # coordinates as mesh.extra_mesh (θ polar from +z, ϕ azimuth).  In the manufactured tests θs=2.4 (Ωz<0, downward).
 # Replace the body with whatever compute_direct_beam / your sun_direction helper uses, so the refined cap sits on the beam.
-rt_sun_angles(sw) = error("define rt_sun_angles(sw): return (θ_beam, ϕ_beam) consistent with compute_direct_beam")
+# Propagation direction of the solar beam (downward, μ₀ = cos SZA), as used by compute_direct_beam and the beam source.
+rt_sun_angles(sw) = (π - acos(clamp(sw.μ₀, 0.0, 1.0)), sw.φ₀)
 
 function rt_adaptive_regrid_step!(mesh, params, infra, comm, inputs, phase_fn, g_node, σ_node, F_node, θs, ϕs,
                                    sols::Vector; have_solution::Bool)
@@ -134,14 +135,24 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
     end
     infra = micro.rt_infra
 
-    κ_sw, σ_sw, g_eff = atmos_to_rad_shortwave(atmos_data, mesh.npoin)
-    κ_ext_sw = κ_sw .+ σ_sw
-    z_prof, τ_from_TOA = build_sw_lateral_bc_profile(mesh, κ_ext_sw, mesh.ngl)
-    sw = SWParams(inputs[:RT_S0_flux], inputs[:RT_μ0], inputs[:RT_ϕ0], 0.35, z_prof, τ_from_TOA)
-    F_dir, G_dir, Q_dir = compute_direct_beam(mesh, κ_sw, σ_sw, sw)
+    do_sw = inputs[:RT_compute_sw]; do_lw = inputs[:RT_compute_lw]
+    adaptive = get(inputs, :RT_adaptive_angular, false)
+
+    # Shortwave optics and direct beam: needed for the SW solve, and by the adaptive angular regrid (it refines
+    # around the solar lobe) even when only LW is computed.
+    if do_sw || adaptive
+        M_dm = inputs[:RT_sw_delta_m_moments] > 0 ? inputs[:RT_sw_delta_m_moments] :
+               inputs[:extra_dimensions_nelemx] * inputs[:extra_dimensions_order] + 1     # polar nodes of the angular mesh
+        κ_sw, σ_sw, g_eff = atmos_to_rad_shortwave(atmos_data, mesh.npoin;
+                                                   delta_scaling=inputs[:RT_sw_delta_scaling], delta_m_moments=M_dm)
+        κ_ext_sw = κ_sw .+ σ_sw
+        z_prof, τ_from_TOA = build_sw_lateral_bc_profile(mesh, κ_ext_sw, mesh.ngl)
+        sw = SWParams(inputs[:RT_S0_flux], inputs[:RT_μ0], inputs[:RT_ϕ0], 0.35, z_prof, τ_from_TOA)
+        F_dir, G_dir, Q_dir = compute_direct_beam(mesh, κ_sw, σ_sw, sw)
+    end
 
     ### NEW: adaptive angular regrid at the start of the RT solve, warm starts remapped, caches invalidated
-    if get(inputs, :RT_adaptive_angular, false)
+    if adaptive
         θs, ϕs = rt_sun_angles(sw)
         have_sol = micro.rt_sol_sw_available && micro.rt_sol_lw_available
         sols = have_sol ? Any[micro.rt_sol_sw, micro.rt_sol_lw] : Any[]
@@ -155,47 +166,48 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
     end
     ### END NEW
 
-    #=sw_case = build_shortwave_diffuse_case(κ_sw, σ_sw, g_eff, sw, F_dir, bdy; surface_albedo=inputs[:RT_surface_albedo])
+    to_flux(dTdt) = (!(inputs[:energy_equation] == "theta") || inputs[:lmoist]) ? PhysConst.cp .* dTdt : dTdt
 
-    I_cg_sw, κ_sw_used, σ_sw_used = run_unified_case_solve(infra, metrics, comm, sw_case;
-        max_iter=rt_max_iter, tol=rt_tol,
-        solver=:gmres,
-        gmres_restart=60, gmres_max_restarts=10,
-        I_cg_all_init = micro.rt_sol_sw_available ? micro.rt_sol_sw : nothing)
-    micro.rt_sol_sw = I_cg_sw
-
-    Q_sw, dTdt_sw, F_net_sw, G_sw = compute_rt_radiative_heating_unified(
-        mesh, I_cg_sw, atmos_data, κ_sw_used, σ_sw_used, false, comm;
-        G_dir=G_dir, Q_dir=Q_dir, sw_μ₀=sw.μ₀, sw_φ₀=sw.φ₀)
-
-    if !(inputs[:energy_equation] == "theta") || inputs[:lmoist]
-        micro.flux_sw .= PhysConst.cp .* dTdt_sw
+    # ── Shortwave: diffuse field from the sweep, direct beam analytic (G_dir, Q_dir added in the heating) ──────────
+    if do_sw
+        sw_case = build_shortwave_diffuse_case(κ_sw, σ_sw, g_eff, sw, F_dir, bdy;
+                                               surface_albedo=inputs[:RT_surface_albedo],
+                                               phase_norm=inputs[:RT_sw_phase_normalization],
+                                               lateral_bc=inputs[:RT_sw_lateral_bc], mesh=mesh)
+        I_cg_sw, κ_sw_used, σ_sw_used = run_unified_case_solve(infra, metrics, comm, sw_case;
+            max_iter=rt_max_iter, tol=rt_tol,
+            solver=:gmres,
+            gmres_restart=60, gmres_max_restarts=10,
+            I_cg_all_init = micro.rt_sol_sw_available ? micro.rt_sol_sw : nothing)
+        micro.rt_sol_sw = I_cg_sw
+        Q_sw, dTdt_sw, F_net_sw, G_sw = compute_rt_radiative_heating_unified(
+            mesh, I_cg_sw, atmos_data, κ_sw_used, σ_sw_used, false, comm;
+            G_dir=G_dir, Q_dir=Q_dir, sw_μ₀=sw.μ₀, sw_φ₀=sw.φ₀)
+        micro.flux_sw .= to_flux(dTdt_sw)
+        micro.rt_sol_sw_available = true
     else
-        micro.flux_sw .= dTdt_sw
-    end=#
-
-    κ_lw, σ_lw = atmos_to_rad_longwave(atmos_data, mesh.npoin)
-    lw = LWParams(inputs[:RT_ϵ_surface], inputs[:RT_T_space])
-    lw_case = build_longwave_case(atmos_data, κ_lw, σ_lw, bdy; ε_surface=lw.ε_surface, T_space=lw.T_space)
-
-    I_cg_lw, κ_lw_used, σ_lw_used = run_unified_case_solve(infra, metrics, comm, lw_case;
-        max_iter=rt_max_iter, tol=rt_tol,
-        solver=:gmres,
-        gmres_restart=60, gmres_max_restarts=10,
-        I_cg_all_init = micro.rt_sol_lw_available ? micro.rt_sol_lw : nothing)
-    micro.rt_sol_lw = I_cg_lw
-
-    Q_lw, dTdt_lw, F_net_lw, G_lw = compute_rt_radiative_heating_unified(
-        mesh, I_cg_lw, atmos_data, κ_lw_used, σ_lw_used, true, comm)
-
-    if !(inputs[:energy_equation] == "theta") || inputs[:lmoist]
-        micro.flux_lw .= PhysConst.cp .* dTdt_lw
-    else
-        micro.flux_lw .= dTdt_lw
+        micro.flux_sw .= 0.0
     end
 
-    micro.rt_sol_sw_available = true
-    micro.rt_sol_lw_available = true
+    # ── Longwave ───────────────────────────────────────────────────────────────────────────────────────────────────
+    if do_lw
+        κ_lw, σ_lw = atmos_to_rad_longwave(atmos_data, mesh.npoin)
+        lw = LWParams(inputs[:RT_ϵ_surface], inputs[:RT_T_space])
+        lw_case = build_longwave_case(atmos_data, κ_lw, σ_lw, bdy; ε_surface=lw.ε_surface, T_space=lw.T_space)
+        I_cg_lw, κ_lw_used, σ_lw_used = run_unified_case_solve(infra, metrics, comm, lw_case;
+            max_iter=rt_max_iter, tol=rt_tol,
+            solver=:gmres,
+            gmres_restart=60, gmres_max_restarts=10,
+            I_cg_all_init = micro.rt_sol_lw_available ? micro.rt_sol_lw : nothing)
+        micro.rt_sol_lw = I_cg_lw
+        Q_lw, dTdt_lw, F_net_lw, G_lw = compute_rt_radiative_heating_unified(
+            mesh, I_cg_lw, atmos_data, κ_lw_used, σ_lw_used, true, comm)
+        micro.flux_lw .= to_flux(dTdt_lw)
+        micro.rt_sol_lw_available = true
+    else
+        micro.flux_lw .= 0.0
+    end
+
     micro.rt_nelem_saved = mesh.nelem
 end
 

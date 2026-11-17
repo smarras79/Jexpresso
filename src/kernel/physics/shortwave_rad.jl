@@ -222,3 +222,138 @@ function user_rad_bc_shortwave_diffuse(x, y, z, θ, ϕ,
         return I_lat
     end
 end
+
+"""
+    sw_single_scatter_column(prof, S0, μ0, φ0, θ, ϕ; albedo=0.0) -> Vector{Float64}
+
+Single-scattering diffuse radiance of a horizontally homogeneous (plane-parallel) column, for one direction Ω = (θ, ϕ),
+at every level of `prof` (from build_sw_column_optics: z, τ from TOA, ω, g; TOA first).
+
+  downward (cosθ < 0):  I(τ) = ∫₀^τ   J(τ′) e^{-τ′/μ₀} e^{-(τ-τ′)/μ} dτ′/μ,      J = ω S₀ Φ(Ω,Ω_sun; g)
+  upward   (cosθ ≥ 0):  I(τ) = ∫_τ^τ* J(τ′) e^{-τ′/μ₀} e^{-(τ′-τ)/μ} dτ′/μ + (A/π) μ₀ S₀ e^{-τ*/μ₀} e^{-(τ*-τ)/μ}
+
+μ = |cosθ|; vacuum top; Lambertian surface reflecting the direct beam. J is taken LINEAR in τ inside each layer and the
+exponential integrals are done exactly (closed forms with the e^{-Δ/μ} factor folded in: no overflow as μ → 0, where
+I → ω S₀ Φ e^{-τ/μ₀}; Taylor limits when |aΔ| is tiny).
+"""
+function sw_single_scatter_column(prof, S0, μ0, φ0, θ, ϕ; albedo = 0.0)
+    n = length(prof.z); I = zeros(n)
+    μ0 > 0 || return I
+    θs = π - acos(clamp(μ0, 0.0, 1.0))
+    Ωz = cos(θ); μ = max(abs(Ωz), 1e-12)
+    τ = prof.τ
+    J = [prof.ω[k] * S0 * phase_function_hg(θ, θs, ϕ, φ0, prof.g[k]) for k = 1:n]
+    if Ωz < 0
+        a = 1/μ - 1/μ0
+        for k = 1:n-1
+            Δ = τ[k+1] - τ[k]; m = Δ > 0 ? (J[k+1] - J[k])/Δ : 0.0
+            eΔ = exp(-Δ/μ0)
+            if abs(a*Δ) < 1e-6                                        # Taylor limits
+                A0 = Δ*eΔ*(1 - a*Δ/2); A1 = Δ^2*eΔ*(0.5 - a*Δ/3)
+            else
+                A0 = eΔ*(-expm1(-a*Δ))/a
+                A1 = (Δ*eΔ - A0)/a
+            end
+            I[k+1] = I[k]*exp(-Δ/μ) + exp(-τ[k]/μ0)/μ * (J[k]*A0 + m*A1)
+        end
+    else
+        b = 1/μ + 1/μ0
+        I[n] = albedo/π * μ0*S0*exp(-τ[n]/μ0)
+        for k = n-1:-1:1
+            Δ = τ[k+1] - τ[k]; m = Δ > 0 ? (J[k+1] - J[k])/Δ : 0.0
+            B0 = -expm1(-b*Δ)/b
+            B1 = (B0 - Δ*exp(-b*Δ))/b
+            I[k] = I[k+1]*exp(-Δ/μ) + exp(-τ[k]/μ0)/μ * (J[k]*B0 + m*B1)
+        end
+    end
+    return I
+end
+
+"""
+    SWLateralSingleScatter(prof, S0, μ0, φ0, albedo)
+
+Lateral-boundary inflow radiance for the diffuse SW solve: the plane-parallel single-scattering radiance of the
+reference column (sw_single_scatter_column), computed once per direction and interpolated linearly in z.
+Call as `lat(z, θ, ϕ)`.
+"""
+struct SWLateralSingleScatter
+    prof
+    S0::Float64; μ0::Float64; φ0::Float64; albedo::Float64
+    cache::Dict{Tuple{Float64,Float64},Vector{Float64}}
+end
+SWLateralSingleScatter(prof, S0, μ0, φ0, albedo) =
+    SWLateralSingleScatter(prof, S0, μ0, φ0, albedo, Dict{Tuple{Float64,Float64},Vector{Float64}}())
+
+function (lat::SWLateralSingleScatter)(z, θ, ϕ)
+    Icol = get!(lat.cache, (θ, ϕ)) do
+        sw_single_scatter_column(lat.prof, lat.S0, lat.μ0, lat.φ0, θ, ϕ; albedo = lat.albedo)
+    end
+    zp = lat.prof.z                                       # descending
+    z >= zp[1] && return Icol[1]
+    z <= zp[end] && return Icol[end]
+    k = clamp(searchsortedfirst(zp, z, rev=true) - 1, 1, length(zp)-1)
+    t = (zp[k] - z) / (zp[k] - zp[k+1])
+    return Icol[k] + t*(Icol[k+1] - Icol[k])
+end
+
+
+"""
+    build_sw_lateral_plane_parallel(prof, S0, μ0, φ0, albedo; N=16, nphi=144) -> SWLateralPlaneParallel
+
+Lateral-boundary inflow for the diffuse SW solve: the full plane-parallel radiance of the reference column,
+
+    I_lat(z, Ω) = I_ss(z, Ω) + ΔI(z, μ),      ΔI(z, μ_i) = I_1D(z, μ_i) - ⟨I_ss⟩_φ(z, μ_i)
+
+I_ss is the exact single-scattering radiance (sw_single_scatter_column: keeps the sharp solar-azimuth dependence);
+ΔI is the multiply scattered part, from the 1D reference solver (SWRef1D.solve_column, azimuth-averaged, at its
+Gauss μ_i) minus the azimuth mean of I_ss at the same μ_i, taken independent of azimuth. ΔI is interpolated linearly
+in z and in μ within each hemisphere (constant beyond the outermost Gauss nodes). μ here is the 1D convention:
+μ > 0 = downward travel = -cosθ. NOTE: the 1D solve reflects the TOTAL downward flux at a Lambertian surface; the 3D
+bottom condition currently reflects only the direct beam, so the two agree only for albedo = 0.
+"""
+struct SWLateralPlaneParallel
+    ss::SWLateralSingleScatter
+    μp::Vector{Float64}             # Gauss μ on (0,1), ascending
+    ΔI_dn::Matrix{Float64}          # (N, nlev) downward-travelling, at μp
+    ΔI_up::Matrix{Float64}          # (N, nlev) upward-travelling, at μp
+    z::Vector{Float64}              # levels, descending
+end
+
+function build_sw_lateral_plane_parallel(prof, S0, μ0, φ0, albedo; N::Int = 16, nphi::Int = 144)
+    ss = SWLateralSingleScatter(prof, S0, μ0, φ0, albedo)
+    κa = (1 .- prof.ω) .* prof.e; σ = prof.ω .* prof.e
+    r = SWRef1D.solve_column(prof.z, κa, σ, prof.g; S0 = S0, μ0 = μ0, A = albedo, N = N, deltam = true, dτmax = 0.05)
+    nl = length(prof.z)
+    length(r.z) == nl || error("SWLateralPlaneParallel: level mismatch")
+    ΔI = zeros(2N, nl)
+    φs = range(0, 2π, length = nphi + 1)[1:nphi]
+    for i = 1:2N
+        θ = acos(-r.μ[i])                                  # 1D μ > 0 (down) -> Ωz = cosθ = -μ
+        m = zeros(nl)
+        for ϕ in φs; m .+= sw_single_scatter_column(prof, S0, μ0, φ0, θ, ϕ; albedo = albedo); end
+        ΔI[i, :] .= r.Idiff[i, :] .- m ./ nphi
+    end
+    return SWLateralPlaneParallel(ss, r.μ[1:N], ΔI[1:N, :], ΔI[N+1:2N, :], collect(prof.z))
+end
+
+function (lat::SWLateralPlaneParallel)(z, θ, ϕ)
+    μ = -cos(θ)
+    T = μ >= 0 ? lat.ΔI_dn : lat.ΔI_up
+    a = abs(μ); μp = lat.μp; N = length(μp)
+    # μ interpolation weights (constant beyond the end nodes)
+    if a <= μp[1];      i1, i2, t = 1, 1, 0.0
+    elseif a >= μp[N];  i1, i2, t = N, N, 0.0
+    else
+        i2 = searchsortedfirst(μp, a); i1 = i2 - 1; t = (a - μp[i1]) / (μp[i2] - μp[i1])
+    end
+    # z interpolation (levels descending)
+    zp = lat.z
+    if z >= zp[1];       k1, k2, s = 1, 1, 0.0
+    elseif z <= zp[end]; k1, k2, s = length(zp), length(zp), 0.0
+    else
+        k1 = clamp(searchsortedfirst(zp, z, rev = true) - 1, 1, length(zp) - 1); k2 = k1 + 1
+        s = (zp[k1] - z) / (zp[k1] - zp[k2])
+    end
+    at(k) = T[i1, k] + t * (T[i2, k] - T[i1, k])
+    return lat.ss(z, θ, ϕ) + at(k1) + s * (at(k2) - at(k1))
+end

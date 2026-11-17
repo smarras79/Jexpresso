@@ -72,8 +72,7 @@ function atmos_to_rad_longwave(atmos_data, npoin)
     # In clouds, absorption dominates over scattering at 10 μm.
     # Single-scatter albedo ω₀ ≈ 0.02–0.08 for liquid clouds in thermal IR.
     ω₀_clear = 0.0    # clear-sky: no scattering
-    #ω₀_cloud = 0.05   # in-cloud: small but non-zero
-    ω₀_cloud = 0.2   # in-cloud: small but non-zero
+    ω₀_cloud = 0.05   # in-cloud: small but non-zero
 
     # ── Reference pressure for collision-broadening scaling ───────────────
     P_ref = 101325.0   # Pa
@@ -162,7 +161,7 @@ should be set consistently with the dominant scatterer:
 A single g cannot represent both Rayleigh and cloud scattering simultaneously.
 For clear-sky problems use g = 0; for overcast scenes use g = 0.85.
 """
-function atmos_to_rad_shortwave(atmos_data, npoin)
+function atmos_to_rad_shortwave(atmos_data, npoin; delta_scaling::Symbol = :none, delta_m_moments::Int = 0)
 
     PhysConst = PhysicalConst{Float64}()
 
@@ -259,10 +258,26 @@ function atmos_to_rad_shortwave(atmos_data, npoin)
 
     end
 
+    # Delta scaling of the forward peak (δ-Eddington, f = g²): the fraction f of scattering that goes into the narrow
+    # forward peak is treated as unscattered. σ′ = (1-f)σ, g′ = (g-f)/(1-f), absorption unchanged; the direct beam is
+    # then attenuated by κ + σ′ automatically (compute_direct_beam builds τ from the returned κ and σ).
+    # δ-M (Wiscombe 1977): keep the first M Legendre moments χ_l = g^l exactly, truncate the rest: f = χ_M = g^M.
+    if delta_scaling in (:delta_eddington, :delta_m)
+        delta_scaling == :delta_m && delta_m_moments < 1 && error("atmos_to_rad_shortwave: :delta_m needs delta_m_moments >= 1")
+        for ip = 1:npoin
+            f = delta_scaling == :delta_eddington ? g_eff[ip]^2 : g_eff[ip]^delta_m_moments
+            σ[ip]     *= (1.0 - f)
+            g_eff[ip]  = f < 1.0 ? (g_eff[ip] - f) / (1.0 - f) : 0.0
+        end
+    elseif delta_scaling != :none
+        error("atmos_to_rad_shortwave: unknown delta_scaling $(delta_scaling)")
+    end
+
     κ_ext = κ .+ σ
     ω₀    = σ ./ max.(κ_ext, 1e-30)
 
     if MPI.Comm_rank(MPI.COMM_WORLD) == 0
+        delta_scaling == :none || @info "SW delta scaling: $(delta_scaling)" * (delta_scaling == :delta_m ? " (M = $(delta_m_moments))" : "")
         @info "SW extinction   extrema: $(extrema(κ_ext))"
         @info "SW absorption   extrema: $(extrema(κ))"
         @info "SW scattering   extrema: $(extrema(σ))"
@@ -634,114 +649,102 @@ depth between z and zmax. The slant-path optical depth at solar zenith
 angle θ_sun is τ(z)/μ₀.
 """
 function build_sw_lateral_bc_profile(mesh, κ_ext, ngl)
-
-    # ── Find a vertical stack of elements through the domain centre ───────────
-    # In a structured hex mesh connijk[iel,i,j,k] gives the global node index.
-    # Nodes at the same (i,j) across elements stacked in z form an exact column.
-    # We find one such stack by:
-    # 1. Picking a reference node near the domain centre at z=zmin
-    # 2. Finding all nodes with the same (x,y) by exact connijk lookup
-
-    # Fix i,j at the middle of the reference element
-    i_fix = ceil(Int, ngl/2)
-    j_fix = ceil(Int, ngl/2)
-
-    # Find the element whose centre is closest to (x_mid, y_mid, zmin)
-    x_mid = 0.5*(mesh.xmin + mesh.xmax)
-    y_mid = 0.5*(mesh.ymin + mesh.ymax)
-
-    best_dist = Inf
-    ref_iel   = 1
-    for iel = 1:mesh.nelem
-        ip = mesh.connijk[iel, i_fix, j_fix, 1]
-        dx = mesh.x[ip] - x_mid
-        dy = mesh.y[ip] - y_mid
-        dz = mesh.z[ip] - mesh.zmin
-        d  = dx^2 + dy^2 + 100*dz^2   # weight z heavily to prefer bottom elements
-        if d < best_dist
-            best_dist = d
-            ref_iel   = iel
-        end
-    end
-
-    # ── Collect all nodes in this column via connectivity ─────────────────────
-    # The reference x,y coordinates come from connijk — exact by construction
-    ref_ip = mesh.connijk[ref_iel, i_fix, j_fix, 1]
-    x_col  = mesh.x[ref_ip]
-    y_col  = mesh.y[ref_ip]
-
-    # Collect every node ip where x[ip] ≈ x_col AND y[ip] ≈ y_col
-    # Use a tolerance relative to the element size, not the domain size
-    # Element size estimate: domain / number of elements per direction
-    n_elem_per_dir = round(Int, mesh.nelem^(1/3))
-    elem_size      = min(mesh.xmax-mesh.xmin,
-                         mesh.ymax-mesh.ymin) / max(n_elem_per_dir, 1)
-    tol_xy         = elem_size * 1e-4   # 0.01% of element size — tight but safe
-
-    nodes_in_col = Int[]
-    for ip = 1:mesh.npoin
-        if abs(mesh.x[ip] - x_col) < tol_xy &&
-           abs(mesh.y[ip] - y_col) < tol_xy
-            push!(nodes_in_col, ip)
-        end
-    end
-
-    # ── Validate ──────────────────────────────────────────────────────────────
-    if isempty(nodes_in_col)
-        @error "Column finder: no nodes found near " *
-               "($(round(x_col,digits=4)), $(round(y_col,digits=4))). " *
-               "This should not happen since ref_ip was found via connijk."
-        return [mesh.zmax, mesh.zmin], [0.0, 0.0]
-    end
-
-    z_span = maximum(mesh.z[nodes_in_col]) - minimum(mesh.z[nodes_in_col])
-    if MPI.Comm_rank(MPI.COMM_WORLD) == 0
-        if z_span < 0.5*(mesh.zmax - mesh.zmin)
-            @warn "Column spans only $(round(z_span,digits=2)) m of " *
-                  "$(round(mesh.zmax-mesh.zmin,digits=2)) m total. " *
-                  "Column may be incomplete."
-        end
-        @info "SW lateral BC profile:"
-        @info "  Reference element: $ref_iel"
-        @info "  Column (x,y): ($(round(x_col,digits=4)), $(round(y_col,digits=4)))"
-        @info "  Nodes found: $(length(nodes_in_col))"
-        @info "  z range: [$(round(minimum(mesh.z[nodes_in_col]),digits=2)), " *
-                          "$(round(maximum(mesh.z[nodes_in_col]),digits=2))]"
-    end
-
-    # ── Sort by z descending (TOA first), deduplicate interfaces ─────────────
-    z_vals   = mesh.z[nodes_in_col]
-    sort_idx = sortperm(z_vals, rev=true)
-    nodes_s  = nodes_in_col[sort_idx]
-    z_s      = z_vals[sort_idx]
-
-    tol_z       = (mesh.zmax - mesh.zmin) * 1e-8
-    z_unique    = Float64[]
-    κext_unique = Float64[]
-    for (ip, zv) in zip(nodes_s, z_s)
-        if !isempty(z_unique) && abs(zv - z_unique[end]) < tol_z
-            κext_unique[end] = 0.5*(κext_unique[end] + κ_ext[ip])
-        else
-            push!(z_unique,    zv)
-            push!(κext_unique, κ_ext[ip])
-        end
-    end
-
-    # ── Cumulative τ from TOA downward (trapezoidal) ──────────────────────────
-    n          = length(z_unique)
-    τ_from_TOA = zeros(Float64, n)
-    for i = 2:n
-        dz             = z_unique[i-1] - z_unique[i]   # positive, descending z
-        τ_from_TOA[i]  = τ_from_TOA[i-1] +
-                         0.5*(κext_unique[i-1] + κext_unique[i]) * dz
-    end
-
-    MPI.Comm_rank(MPI.COMM_WORLD) == 0 &&
-        @info "  Total optical depth τ(surface): $(round(τ_from_TOA[end], digits=4))"
-
-    return z_unique, τ_from_TOA
+    z, (e,) = sw_global_column(mesh, [κ_ext], ngl)
+    τ = zeros(length(z))
+    for i = 2:length(z); τ[i] = τ[i-1] + 0.5*(e[i-1] + e[i])*(z[i-1] - z[i]); end   # trapezoid from TOA down
+    MPI.Comm_rank(MPI.COMM_WORLD) == 0 && @info "  Total optical depth τ(surface): $(round(τ[end], digits=4))"
+    return z, τ
 end
 
+"""
+    sw_global_column(mesh, fields, ngl) -> (z, vals)
+
+Values of each array in `fields` (nodal, length npoin) on ONE vertical column of the global mesh, TOA first: the
+column through the bottom element nearest the domain centre (x, y at the element's middle GLL node). COLLECTIVE: all
+ranks must call it. Every rank picks its best local candidate, the global best wins (ties: lowest rank), then each
+rank contributes the column nodes it owns and the pieces are gathered with Allgatherv. Nodes repeated at element
+interfaces or across ranks are averaged. The result is identical on every rank whatever the partition (a rank may hold
+only part of the column, or none of it, e.g. with p4est partitioning).
+"""
+function sw_global_column(mesh, fields::AbstractVector, ngl)
+    comm  = MPI.COMM_WORLD
+    rank  = MPI.Comm_rank(comm)
+    nf    = length(fields)
+    i_fix = ceil(Int, ngl/2); j_fix = ceil(Int, ngl/2)
+    x_mid = 0.5*(mesh.xmin + mesh.xmax); y_mid = 0.5*(mesh.ymin + mesh.ymax)
+
+    # ── 1. best candidate column on this rank, then the global best ──────────
+    best = Inf; xb = 0.0; yb = 0.0
+    for iel = 1:mesh.nelem
+        ip = mesh.connijk[iel, i_fix, j_fix, 1]
+        d  = (mesh.x[ip] - x_mid)^2 + (mesh.y[ip] - y_mid)^2 + 100*(mesh.z[ip] - mesh.zmin)^2
+        if d < best; best = d; xb = mesh.x[ip]; yb = mesh.y[ip]; end
+    end
+    cand = MPI.Allgather([best, xb, yb], comm)          # 3 entries per rank, rank order
+    dmin = Inf; x_col = 0.0; y_col = 0.0
+    for r = 0:(length(cand) ÷ 3 - 1)
+        if cand[3r+1] < dmin; dmin = cand[3r+1]; x_col = cand[3r+2]; y_col = cand[3r+3]; end
+    end
+    isfinite(dmin) || error("sw_global_column: no rank has elements")
+
+    # ── 2. local nodes on that column ───────────────────────────────────────
+    tol_xy = 1e-6 * min(mesh.xmax - mesh.xmin, mesh.ymax - mesh.ymin)
+    loc = [ip for ip = 1:mesh.npoin if abs(mesh.x[ip] - x_col) < tol_xy && abs(mesh.y[ip] - y_col) < tol_xy]
+
+    # ── 3. gather (z, field values) from all ranks ─────────────────────────
+    nloc   = length(loc)
+    sendb  = Vector{Float64}(undef, (nf + 1)*nloc)
+    for (k, ip) in enumerate(loc)
+        sendb[(nf+1)*(k-1) + 1] = mesh.z[ip]
+        for f = 1:nf; sendb[(nf+1)*(k-1) + 1 + f] = fields[f][ip]; end
+    end
+    counts = MPI.Allgather(Int32(length(sendb)), comm)
+    recvb  = Vector{Float64}(undef, sum(counts))
+    MPI.Allgatherv!(sendb, MPI.VBuffer(recvb, counts), comm)
+    ntot   = length(recvb) ÷ (nf + 1)
+    ntot == 0 && error("sw_global_column: column ($x_col, $y_col) has no nodes")
+    zs  = [recvb[(nf+1)*(k-1) + 1] for k = 1:ntot]
+    o   = sortperm(zs, rev=true)                       # TOA first
+
+    # ── 4. merge duplicates (element interfaces, rank boundaries) ──────────
+    tol_z = (mesh.zmax - mesh.zmin) * 1e-8
+    z = Float64[]; vals = [Float64[] for _ = 1:nf]; cnt = Int[]
+    for k in o
+        zk = zs[k]
+        if !isempty(z) && abs(zk - z[end]) < tol_z
+            for f = 1:nf; vals[f][end] += recvb[(nf+1)*(k-1) + 1 + f]; end
+            cnt[end] += 1
+        else
+            push!(z, zk); push!(cnt, 1)
+            for f = 1:nf; push!(vals[f], recvb[(nf+1)*(k-1) + 1 + f]); end
+        end
+    end
+    for f = 1:nf; vals[f] ./= cnt; end
+
+    if rank == 0
+        z_span = z[1] - z[end]
+        z_span < 0.99*(mesh.zmax - mesh.zmin) &&
+            @warn "SW reference column spans only $(round(z_span, digits=2)) m of $(round(mesh.zmax - mesh.zmin, digits=2)) m."
+        @info "SW reference column: (x,y) = ($(round(x_col, digits=4)), $(round(y_col, digits=4))), " *
+              "$(length(z)) levels, z ∈ [$(round(z[end], digits=2)), $(round(z[1], digits=2))]"
+    end
+    return z, vals
+end
+
+"""
+    build_sw_column_optics(mesh, κ_ext, σ, g, ngl) -> (z, τ, ω, g, e)
+
+Vertical profile (TOA first) of the SW optics on the global reference column (sw_global_column): z, optical depth from
+TOA (trapezoid, as build_sw_lateral_bc_profile), single-scattering albedo ω = σ/κ_ext, asymmetry g and extinction
+e = κ_ext. Uses the (delta-scaled) κ_ext, σ, g the solve uses, so the lateral boundary radiance is consistent with the
+interior. COLLECTIVE.
+"""
+function build_sw_column_optics(mesh, κ_ext, σ, g, ngl)
+    z, (e, s, gg) = sw_global_column(mesh, [κ_ext, σ, g], ngl)
+    τ = zeros(length(z))
+    for i = 2:length(z); τ[i] = τ[i-1] + 0.5*(e[i-1] + e[i])*(z[i-1] - z[i]); end
+    return (z = z, τ = τ, ω = [e[i] > 0 ? s[i]/e[i] : 0.0 for i in eachindex(e)], g = gg, e = e)
+end
 
 function interp_optical_depth(z, z_prof, τ_from_TOA)
     # z_prof is sorted from zmax (TOA) down to zmin (surface)
