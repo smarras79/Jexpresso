@@ -275,10 +275,15 @@ paper's dissipation and its energy relaxation:
   (the residual coefficient is $C_R\Delta^2\times$ the residual). The kick test
   of "Positivity" (32 km/s at (17, 2.4) Mm, $\beta = 3.6\times10^{-3}$, REF 1):
   in the disturbed corona (11 < x < 23 Mm, 1.5 < y < 12 Mm) the resistivity is
-  0.32 (median) and 1.5 (largest) $L_0v_0$ at 5.8 s with one coefficient, 0.024
-  and 0.17 from the induction residuals alone, with the same flows (17.5 km/s),
-  currents, $\psi$ (round-off) and total energy (−1.1 × 10⁻¹⁰ over 600 steps).
-  The `atmos` figure shows both coefficients against height.
+  0.57 (median) and 1.5 (largest) $L_0v_0$ at 11.6 s with one coefficient, 0.018
+  and 0.18 from the induction residuals alone, with the same flows (14.0 and
+  13.9 km/s), currents, $\psi$ (round-off) and total energy (−2.2 × 10⁻¹⁰ over
+  1200 steps). With the induction sensor the background stays at rest to the
+  bit, and the field-free rise to 186 s (REF 1) has the axis of the
+  one-coefficient run to 0.004 Mm, with $\psi$ at round-off, no floor hit, and
+  the tube's axial field better kept (6216 against 5985 G at 186 s; around the
+  tube the resistivity is half the viscosity). The `atmos` figure shows both
+  coefficients against height.
 
 ## What is not in the paper, and what was done
 
