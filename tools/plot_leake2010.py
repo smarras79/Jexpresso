@@ -421,6 +421,7 @@ def cmd_eshear(a):
 
 
 MU_NAME = "mu_dsgs_ρu_ρv_ρw"   # the DynSGS momentum coefficient in the output (:plot_dsgs)
+ETA_NAMES = ("mu_dsgs_Bx_By_Bz", "mu_dsgs_ρ_ρE_Bx_By_Bz_ψ")   # the B coefficient: its own (JEXPRESSO_LK10_ETA=induction), or shared
 
 
 def cmd_diag(a):
@@ -481,8 +482,9 @@ def cmd_diag(a):
 def cmd_atmos(a):
     """The atmosphere away from the emerging region against height, at several times: medians over
     XMIN <= |x| <= XMAX Mm of log10 rho (g cm^-3), log10 T (K), and the DynSGS momentum coefficient (code
-    units). Shows whether the chromosphere heats and the transition region rises (heating), or the corona
-    fills with dense plasma at the chromospheric temperature (transport), and where the DynSGS acts."""
+    units; dashed: the coefficient of the B slots, the DynSGS resistivity). Shows whether the chromosphere
+    heats and the transition region rises (heating), or the corona fills with dense plasma at the
+    chromospheric temperature (transport), and where the DynSGS acts."""
     items = runs_of(a.run)
     times = [float(t) for t in a.times.split(",")] if a.times else [0, 464, 920, 1160, 1380, 1610, 1955, 2530]
     sel = nearest(items, times)
@@ -490,31 +492,36 @@ def cmd_atmos(a):
     cmap = plt.get_cmap("viridis")
     rows = []
     for i, (t, f) in enumerate(sel):
-        g = load(f, ["log10rho_cgs", "T", MU_NAME])
+        g = load(f, ["log10rho_cgs", "T", MU_NAME, *ETA_NAMES])
         cols = (np.abs(g["X"]) >= a.xmin) & (np.abs(g["X"]) <= a.xmax)
         Y = g["Y"]
         R = np.median(grid2d(g, g["fields"]["log10rho_cgs"])[:, cols], axis=1)
         T = np.median(grid2d(g, g["fields"]["T"])[:, cols], axis=1) * 5700.0
         M = np.median(grid2d(g, g["fields"][MU_NAME])[:, cols], axis=1) if MU_NAME in g["fields"] else np.full(Y.shape, np.nan)
+        en = next((n for n in ETA_NAMES if n in g["fields"]), None)
+        E = np.median(grid2d(g, g["fields"][en])[:, cols], axis=1) if en else np.full(Y.shape, np.nan)
         c = cmap(i / max(len(sel) - 1, 1))
         axs[0].plot(R, Y, color=c, lw=1.2, label=f"{t:.0f} s")
         axs[1].plot(np.log10(np.clip(T, 1.0, None)), Y, color=c, lw=1.2)
         axs[2].plot(M, Y, color=c, lw=1.2)
+        axs[2].plot(E, Y, color=c, lw=0.9, ls="--")
         # where log rho crosses -13 (the transition region), and the chromospheric temperature at 2 Mm
         k = np.where((R[:-1] > -13) & (R[1:] <= -13) & (Y[:-1] > 0))[0]
         ytr = Y[k[0]] + (R[k[0]] + 13) / (R[k[0]] - R[k[0] + 1]) * (Y[k[0] + 1] - Y[k[0]]) if len(k) else np.nan
-        rows.append((t, ytr, np.interp(1.5, Y, T), np.interp(6.0, Y, R), np.nanmax(np.where((Y > 0) & (Y < 10), M, np.nan))))
+        band = (Y > 0) & (Y < 10)
+        rows.append((t, ytr, np.interp(1.5, Y, T), np.interp(6.0, Y, R), np.nanmax(np.where(band, M, np.nan)),
+                     np.nanmax(np.where(band, E, np.nan)) if en else np.nan))
     for ax in axs:
         ax.set_ylim(a.ylim); ax.grid(alpha=0.3); ax.tick_params(labelsize=8)
-    axs[0].set_xlabel(r"log $\rho$ (g cm$^{-3}$)"); axs[1].set_xlabel(r"log $T$ (K)"); axs[2].set_xlabel(r"DynSGS $\mu$ (code units)")
+    axs[0].set_xlabel(r"log $\rho$ (g cm$^{-3}$)"); axs[1].set_xlabel(r"log $T$ (K)"); axs[2].set_xlabel(r"DynSGS $\mu$ (solid), resistivity $\eta$ (dashed), code units")
     axs[0].set_ylabel("Y (Mm)"); axs[0].legend(fontsize=7, loc="upper right")
     fig.suptitle(f"median over {a.xmin:g} <= |x| <= {a.xmax:g} Mm", fontsize=9)
     fig.tight_layout()
     out = os.path.join(a.outdir, f"atmos.{a.format}")
     fig.savefig(out, dpi=a.dpi); plt.close(fig)
-    print(f"{'t [s]':>7} {'TR (log rho=-13) [Mm]':>22} {'T at 1.5 Mm / T(t0)':>20} {'log rho at 6 Mm':>16} {'max mu (0-10 Mm)':>17}")
-    for t, ytr, t2, r6, mm in rows:
-        print(f"{t:7.0f} {ytr:22.2f} {t2 / rows[0][2]:20.2f} {r6:16.2f} {mm:17.3g}")
+    print(f"{'t [s]':>7} {'TR (log rho=-13) [Mm]':>22} {'T at 1.5 Mm / T(t0)':>20} {'log rho at 6 Mm':>16} {'max mu (0-10 Mm)':>17} {'max eta (0-10 Mm)':>18}")
+    for t, ytr, t2, r6, mm, ee in rows:
+        print(f"{t:7.0f} {ytr:22.2f} {t2 / rows[0][2]:20.2f} {r6:16.2f} {mm:17.3g} {ee:18.3g}")
     print("wrote", out)
 
 

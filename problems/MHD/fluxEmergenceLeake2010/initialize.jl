@@ -546,7 +546,7 @@ lk10_restart_fields() = ["ρ", "u", "v", "w", "p", "Bx", "By", "Bz", "ψ"]
 # Δt, the end time and the snapshot interval may change, and so may the numerical
 # switches of lk10_numeric_keys (to continue past a failure from an earlier snapshot);
 # the restart says which changed.
-lk10_numeric_keys() = ("curl_resistivity", "Cmin", "floors", "dsgs_energy")
+lk10_numeric_keys() = ("curl_resistivity", "Cmin", "floors", "dsgs_energy", "eta_sensor")
 
 function lk10_case_record(inputs)
     return Pair{String,String}[
@@ -563,6 +563,7 @@ function lk10_case_record(inputs)
         "Cmin"             => string(get(inputs, :dsgs_Cmin, 0.0)),
         "floors"           => string(get(inputs, :lk10_floors, false)),
         "dsgs_energy"      => get(inputs, :dsgs_thermal_energy, false) == true ? "thermal" : "total",
+        "eta_sensor"       => get(inputs, :dsgs_induction_sensor, false) == true ? "induction" : "all",
         "mesh"             => basename(String(get(inputs, :gmsh_filename, ""))),
         "nop"              => string(get(inputs, :nop, 4)),
         "ranks"            => string(MPI.Comm_size(MPI.COMM_WORLD)),

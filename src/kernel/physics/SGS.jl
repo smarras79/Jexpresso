@@ -1589,6 +1589,19 @@ end
 #     Cmax cap, for the node-to-node modes the residual cannot sense (see the
 #     kernel). 0 by default.
 #
+#  *  linduction (:dsgs_induction_sensor). The coefficient of the B slots (the
+#     resistivity) comes from the residuals of the induction equation alone,
+#     η = max(0, min(C_max Δ λ, C_R Δ² max_{i∈B} ‖R_i‖/den_i)), with the same cap and
+#     floor; ρ, ρv, E and ψ keep the max over all equations. With ONE coefficient
+#     (Dao & Nazarov) an acoustic or slow-mode front in a low-β plasma, whose ρ and
+#     thermal residuals are O(c_s/Δ) while B hardly changes, makes the field as
+#     resistive as the gas is viscous. In the corona of
+#     problems/MHD/fluxEmergenceLeake2010 (REF 2) the coefficient was 0.5-3 L₀v₀
+#     from before the emergence on, and the coronal flux rope of the paper's figure
+#     formed small and was gone within 230 s (README; whether this option restores
+#     it is to be shown). An Alfvénic or fast-mode structure has δB/B = δv/c_f, so
+#     its η is its ν as before; a current sheet at the grid scale still gets the cap.
+#
 #  *  lconserved (:dsgs_conserved). Every slot receives the kinematic μ and
 #     the case's user_primitives! hands the assembly the conserved variables
 #     themselves, so the operator is a Laplacian on (ρ, ρv, E, B, ψ) — the
@@ -1652,6 +1665,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  lnazarov_energy::Bool=false,
                                  lfast_floors::Bool=false,
                                  lthermal::Bool=false,
+                                 linduction::Bool=false,
                                  νphys::Union{Nothing,AbstractVector{TT}}=nothing,
                                  ηphys::Union{Nothing,AbstractVector{TT}}=nothing) where {TT<:AbstractFloat, TI<:Integer}
     _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
@@ -1738,6 +1752,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         Δ = Δelem[ie]/ngl
 
         ratio = zero(TT)      # max_i ‖R_i‖∞,e / denom_i
+        ratioB = zero(TT)     # the same over the B slots only (linduction)
         wmax  = zero(TT)      # (‖v‖ + c_f)∞,e
         ρ_el  = zero(TT)      # element-mean density
         den_th = one(TT)      # thermal-energy normalization (lth)
@@ -1826,6 +1841,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                     R = abs((wt[1]*q[ip,ieq] + wt[2]*q1[ip,ieq] + wt[3]*q2[ip,ieq]) - imK*rhs_el[ie,i,j,ieq])
                     r = R/den[ieq]
                     ratio = max(ratio, r)
+                    ieq >= 6 && (ratioB = max(ratioB, r))
                 end
 
                 ρl = max(q[ip,1], eps)
@@ -1874,6 +1890,8 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         μ_floor = Cmin > zero(TT) ? Cmin*Δ*wmax : zero(TT)
         μ = max(μ, μ_floor)
         _dsgs_record!(ratio, μ)          # running maxima over the run (_DSGS_RUN_STATS)
+        # resistivity: the same μ, or (linduction) the one of the induction residuals alone
+        μ_B = linduction ? max(max(zero(TT), min(μ_max, CR*Δ*Δ*_dsgs_cut(ratioB, cutoff))), μ_floor) : μ
 
         # dynamic coefficient for u/v/w/T: ρ̄·μ with the element mean, or the
         # kinematic μ that SGS_diffusion(::DSGS_MHD) scales by the nodal ρ
@@ -1929,7 +1947,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
             end
         end
         for ieq = 6:min(neqs,8)
-            μ_dsgs[ie,ieq] = visc_coeff[ieq]*μ                     # B (resistivity)
+            μ_dsgs[ie,ieq] = visc_coeff[ieq]*μ_B                   # B (resistivity)
         end
         if neqs >= 9
             μ_dsgs[ie,9] = visc_coeff[9]*μ                         # ψ

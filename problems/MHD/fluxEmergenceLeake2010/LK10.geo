@@ -33,6 +33,12 @@
 //   ref = 2 -> h0 = 1.25 L0: 180 x 156 elements  LK10_ref2.msh  ~ the paper's
 //              resolution at :nop => 4 (nodal spacing 0.31 L0 in the core)
 //   ref = 3 -> h0 = 0.625 L0: 362 x 312 elements LK10_ref3.msh (generate)
+//   ref = 4 -> h0 = 1.25 L0 over the WHOLE figure region (|x| < 85, y < 130)
+//              and one grading level to ~10 h0 beyond it: 200 x 172 elements,
+//              LK10_ref4.msh. Nodal spacing 0.33 L0 (49 km) where the dome and
+//              the flux rope of the erratum's Fig. 3 evolve, as the paper's grid
+//              there (37.5 km at the surface, 150 km at the top), against 0.63 L0
+//              (94 km) for ref = 2; 1.23 times the elements of ref = 2, same Δt.
 //
 // Boundary tags (the strings user_bc_dirichlet! receives):
 //   "bottom" y = -20,  "top" y = 600,  "left" x = -300,  "right" x = 300.
@@ -41,6 +47,7 @@
 //   gmsh -2 LK10.geo -setnumber ref 1 -format msh41 -o LK10_ref1.msh
 //   gmsh -2 LK10.geo -setnumber ref 2 -format msh41 -o LK10_ref2.msh
 //   gmsh -2 LK10.geo -setnumber ref 3 -format msh41 -o LK10_ref3.msh
+//   gmsh -2 LK10.geo -setnumber ref 4 -format msh41 -o LK10_ref4.msh
 // ============================================================
 
 DefineConstant[ ref = 1 ];
@@ -53,6 +60,9 @@ EndIf
 If (ref == 3)
   nh = 181; nv = 312;
 EndIf
+If (ref == 4)
+  nh = 100; nv = 172;
+EndIf
 
 X = 300.0;  Y0 = -20.0;  Y = 600.0;
 
@@ -60,6 +70,12 @@ X = 300.0;  Y0 = -20.0;  Y = 600.0;
 ax1 = 0.5; cx1 = 40.0;  wx1 = 6.0;  ax2 = 4.0; cx2 = 100.0; wx2 = 15.0; chix = 113.026993;
 // height map (y - Y0 from 0 to Y - Y0)
 ay1 = 0.5; cy1 = 55.0;  wy1 = 6.0;  ay2 = 4.0; cy2 = 160.0; wy2 = 20.0; chiy = 195.268206;
+// ref = 4: one level, from h0 over the figure region to 1 + 2 a2 = 10 h0 beyond it
+// (|x| = 105 and y - Y0 = 170 are 2.5 widths past the region's edges |x| = 85, y = 130)
+If (ref == 4)
+  ax1 = 0.0; ax2 = 4.5; cx2 = 105.0; wx2 = 8.0; chix = 124.472429;
+  ay1 = 0.0; ay2 = 4.5; cy2 = 170.0; wy2 = 8.0; chiy = 214.999953;
+EndIf
 
 For k In {0:nh}
   chi = k*chix/nh;

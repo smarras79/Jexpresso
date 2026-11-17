@@ -1224,6 +1224,11 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #                      the component Laplacian, so that the DynSGS (and :mhd_dissipation) resistivity
     #                      keeps the discrete divergence of B (SGS.jl, _dsgs_curl_resistive_2d!).
     #                      Default false.
+    #   :dsgs_induction_sensor  DSGS_MHD 2D, element form: the coefficient of the B slots (the DynSGS
+    #                      resistivity) from the residuals of the induction equation alone; the other
+    #                      slots keep the max over all equations. For low-β plasmas, where one
+    #                      coefficient makes the field as resistive as an acoustic front makes the gas
+    #                      viscous (SGS.jl, linduction; problems/MHD/fluxEmergenceLeake2010). Default false.
     #   :dsgs_thermal_energy  DSGS_MHD 2D, conserved element form, no split energy flux: the E slot
     #                      diffuses the thermal energy departure (the case's user_primitives! puts
     #                      δ(p/(γ−1)) in slot 4 when SGS.jl's dsgs_thermal_energy[] is set) and gets the

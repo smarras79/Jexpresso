@@ -61,7 +61,7 @@ editing the deck:
 | `JEXPRESSO_LK10_TUBE` | `1`, `2` (default), `3`, `0` | tube 1 constant twist, 2 increasing twist ("low tension"), 3 decreasing twist; 0 no tube |
 | `JEXPRESSO_LK10_FIELD` | `quadrupole` (default), `dipole`, `none` | coronal field |
 | `JEXPRESSO_LK10_STRENGTH` | `strong`, `medium` (default), `weak` | quadrupole $q_d$ = 11.7, 5.85, 3.9 $\times10^7$ G cm ("197, 98, 66 G"); dipole $\lvert B(0,0)\rvert$ = 104, 52, 26 G |
-| `JEXPRESSO_LK10_REF` | `1`, `2` (default), `3` | mesh (below) |
+| `JEXPRESSO_LK10_REF` | `1`, `2` (default), `3`, `4` | mesh (below); 4 has the core spacing of 2 over the whole figure region |
 | `JEXPRESSO_LK10_TEND` | seconds, default 2530 | final time |
 | `JEXPRESSO_LK10_DOUT` | seconds, default 116 | snapshot interval (the figure times are always added) |
 | `JEXPRESSO_LK10_DT` | $t_0$ units | overrides the time step |
@@ -75,6 +75,7 @@ editing the deck:
 | `JEXPRESSO_LK10_CMIN` | default 0 | DynSGS background floor $C_{min}$ |
 | `JEXPRESSO_LK10_FLOORS` | `1` (default), `0` | positivity floors as the Runge–Kutta stage limiter (Positivity, below) |
 | `JEXPRESSO_LK10_TFLOOR` | default 0.1 | temperature floor, in $T_{ph}$ = 5700 K |
+| `JEXPRESSO_LK10_ETA` | `all` (default), `induction` | DynSGS resistivity from the max over all residuals (one coefficient), or from the induction residuals alone (DynSGS in the corona, below) |
 | `JEXPRESSO_LK10_ENERGY` | `thermal` (default), `total` | energy-consistent DynSGS (Positivity, below), or $E$ diffused as a whole (the parent case) |
 
 For example, the erratum's Fig. 1 (tubes 1 and 2, field-free corona) and its
@@ -254,6 +255,31 @@ paper's dissipation and its energy relaxation:
   and pressure at chromospheric heights) or on cool plasma lifted into the
   corona. Not conservative where they fire; the log reports the hits.
 
+- **DynSGS in the corona** (open). The DynSGS has one coefficient per element,
+  from the largest normalized residual of all equations, used as viscosity,
+  mass and heat diffusivity and resistivity alike (Dao & Nazarov). In the
+  low-β corona the waves that reach it from below steepen, and their density
+  and thermal residuals set a coefficient of 0.5–3 $L_0v_0$ (REF 2, cluster run),
+  0.2–1 % of the first-order value $C_{max}\Delta c_f$ but, as a resistivity, 5–30
+  times the $\hat\eta = 0.1$ whose accidental presence at the origin changed the
+  paper's results (erratum), and enough to diffuse a 1 Mm flux rope away in a
+  few hundred seconds. Lare has no resistivity there: its shock viscosity acts
+  on compressions only, and its remap diffuses with the flow speed, not the fast
+  speed. Two measures, to be shown on the cluster: `JEXPRESSO_LK10_ETA=induction`
+  (`:dsgs_induction_sensor`) takes the coefficient of the $\mathbf B$ slots from
+  the residuals of the induction equation alone, so that an acoustic front,
+  which hardly changes $\mathbf B$ at low β, no longer makes the field resistive
+  (an Alfvénic or fast-mode structure has $\delta B/B = \delta v/c_f$ and keeps
+  $\eta = \nu$; a grid-scale current sheet still gets the cap); and REF 4
+  (Meshes), which halves $\Delta$ where the dome and the rope evolve
+  (the residual coefficient is $C_R\Delta^2\times$ the residual). The kick test
+  of "Positivity" (32 km/s at (17, 2.4) Mm, $\beta = 3.6\times10^{-3}$, REF 1):
+  in the disturbed corona (11 < x < 23 Mm, 1.5 < y < 12 Mm) the resistivity is
+  0.32 (median) and 1.5 (largest) $L_0v_0$ at 5.8 s with one coefficient, 0.024
+  and 0.17 from the induction residuals alone, with the same flows (17.5 km/s),
+  currents, $\psi$ (round-off) and total energy (−1.1 × 10⁻¹⁰ over 600 steps).
+  The `atmos` figure shows both coefficients against height.
+
 ## What is not in the paper, and what was done
 
 1. **Boundary conditions.** Not stated. As in the authors' 3D Lare runs (Leake,
@@ -340,6 +366,14 @@ transition region), $2h_0$ over the region of the figures (to 12.75 Mm and
 | 1 | 90 × 78 | 113 k | 0.62 $L_0$ (94 km) | `LK10_ref1.msh` (smoke tests) |
 | 2 | 180 × 156 | 451 k | 0.31 $L_0$ (47 km) | `LK10_ref2.msh` (default; the paper has 37.5 km) |
 | 3 | 362 × 312 | 1.8 M | 0.16 $L_0$ | `gmsh -2 LK10.geo -setnumber ref 3 -format msh41 -o LK10_ref3.msh` |
+| 4 | 200 × 172 | 552 k | 0.31 $L_0$ (47 km) | `LK10_ref4.msh`: $h_0$ of REF 2 over the whole region of the figures |
+
+REF 2 has its core spacing only where the tube rises and crosses the surface;
+where the dome and the coronal flux rope of the erratum's Fig. 3 evolve
+($\lvert x\rvert$ to 12.75 Mm, $y$ to 19.5 Mm) its nodes are 0.63 $L_0$ (94 km) apart,
+against the paper's 37.5 km at the surface to 150 km at the top. REF 4 keeps
+0.31–0.33 $L_0$ (49 km) over that whole region, then grows in one level to ~10 $h_0$
+at the far boundaries: 1.23 times the elements of REF 2 at the same time step.
 
 The time step is set by the fastest wave of the initial state, the fast mode
 just above the transition region where the quadrupole is strongest
@@ -531,13 +565,26 @@ Short runs on 4 cores; the full runs are for a cluster (above).
   B", the walls). $E = 0$ on the walls removes it: a restart of that run from
   464 s with it ran to 600 s (the end it was given), the largest DynSGS
   coefficient 6.3 at 600 s where it had reached 113 at 504 s.
-- **Not done here:** the emergence after 1000 s, any REF 2 run, and the
-  quadrupole run to 2530 s, i.e. the comparison with the erratum's Fig. 3, which
-  needs the cluster (above). `plot_leake2010.py density` and `dome` produce
-  the comparison: the erratum's dense dome reaches 3.5, 7.5, 10.4, 13.05 and
-  14.7 Mm on $x = 0$ at 920, 1380, 1610, 1955 and 2185 s (log $\rho$ > −13), and
-  its flux rope sits at $(x, y) \approx (0, 13.5)$ Mm at 2185 s and $(4.5, 13.5)$ Mm
-  at 2530 s.
+- **The erratum's Fig. 3 on REF 2** (cluster run of the default deck to 2530 s,
+  128 ranks; `density`, `dome`, `atmos`). Top of the dense dome on $x = 0$
+  (log $\rho$ > −13), in Mm:
+
+  | t (s) | 920 | 1380 | 1610 | 1955 | 2185 | 2530 |
+  |---|---|---|---|---|---|---|
+  | REF 2 | 3.45 | 7.6 | 9.6 | 11.4 | 9.6 | 7.6 |
+  | erratum | 3.5 | 7.5 | 10.4 | 13.05 | 14.7 | 3.65 |
+
+  The rise, the emergence and the dome agree to 1400 s. Then the dome climbs
+  too slowly and stops at 11.4 Mm: the $B_x$ arrow at 11 Mm never turns (it
+  does at 1955 s in the erratum), the flux rope at the apex forms small at
+  (0, 10.5) Mm at 1955 s and is gone at 2185 s, where the erratum has it at
+  (0, 13.5) Mm (the 14.7 Mm of the table is its top) and at (4.5, 13.5) Mm at
+  2530 s. Beside the dome (8 ≤ $\lvert x\rvert$ ≤ 12.75 Mm) the chromosphere and the
+  transition region do not move or heat; a layer up to 100 times the coronal
+  density lies at 5–9 Mm from 1160 s (the erratum has it from ~1600 s), and the
+  DynSGS coefficient is 0.5–3 $L_0v_0$ between 5 and 12 Mm from 464 s on, before
+  anything has emerged. Open; see "DynSGS in the corona" below for the two
+  measures under test (REF 4, `JEXPRESSO_LK10_ETA=induction`).
 
 ## Files
 

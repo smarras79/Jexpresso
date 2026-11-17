@@ -22,7 +22,8 @@
 #   JEXPRESSO_LK10_STRENGTH  strong | medium | weak: quadrupole q_d = 11.7, 5.85,
 #                            3.9e7 G cm ("197, 98, 66 G"), dipole |B(0,0)| = 104,
 #                            52, 26 G                                             [medium]
-#   JEXPRESSO_LK10_REF       mesh 1 | 2 | 3 (LK10.geo; 3 must be generated)       [2]
+#   JEXPRESSO_LK10_REF       mesh 1 | 2 | 3 | 4 (LK10.geo; 3 must be generated; 4 is
+#                            2's core spacing over the whole figure region)      [2]
 #   JEXPRESSO_LK10_TEND      final time in SECONDS                               [2530]
 #   JEXPRESSO_LK10_DOUT      snapshot interval in SECONDS (plus the figure times) [116 = 5 t0]
 #   JEXPRESSO_LK10_DT        time step in t0 (default: c_h Δt/Δh = 0.25, below)
@@ -33,6 +34,9 @@
 #   JEXPRESSO_LK10_CMIN      DynSGS background floor C_min                        [0]
 #   JEXPRESSO_LK10_FLOORS    0: no positivity floors (stage limiter)              [1]
 #   JEXPRESSO_LK10_TFLOOR    temperature floor, in T_ph = 5700 K                 [0.1]
+#   JEXPRESSO_LK10_ETA       induction | all: the DynSGS resistivity from the residuals
+#                            of the induction equation alone, or from the max over
+#                            all equations (one coefficient, the parent case)    [all]
 #   JEXPRESSO_LK10_ENERGY    thermal | total: the DynSGS energy slot diffuses the
 #                            internal energy, with the work and heat of the other
 #                            slots (energy-consistent), or E as a whole          [thermal]
@@ -58,7 +62,7 @@ function _lk10_case()
     ref   = something(tryparse(Int, _lk10_env("REF", "")), 2)
     istr  = Dict("strong" => 1, "medium" => 2, "weak" => 3)
     haskey(istr, str) || error(" problems/MHD/fluxEmergenceLeake2010: JEXPRESSO_LK10_STRENGTH = $(str), expected strong, medium or weak.")
-    ref in (1, 2, 3) || error(" problems/MHD/fluxEmergenceLeake2010: JEXPRESSO_LK10_REF = $(ref), expected 1, 2 or 3.")
+    ref in (1, 2, 3, 4) || error(" problems/MHD/fluxEmergenceLeake2010: JEXPRESSO_LK10_REF = $(ref), expected 1, 2, 3 or 4.")
     qd    = (11.7e7, 5.85e7, 3.9e7)[istr[str]]        # G cm (Sec. 2.2.3)
     Bdip  = (104.0, 52.0, 26.0)[istr[str]]            # G at (0, 0) (Fig. 3(b), Secs. 3.4-3.5)
     # Fastest wave of the initial state (code units; printed again by initialize.jl).
@@ -160,11 +164,11 @@ lk10_dissipation(x, y) = ((lk10_nu_dynamic_cz() && y < 0.0) ? LK10_NU/lk10_tempe
 function user_inputs()
 
     c    = _lk10_case()
-    mesh = ("LK10_ref1.msh", "LK10_ref2.msh", "LK10_ref3.msh")[c.ref]
+    mesh = ("LK10_ref1.msh", "LK10_ref2.msh", "LK10_ref3.msh", "LK10_ref4.msh")[c.ref]
     # c_h Δt/Δh = 0.25 on the smallest LGL gap of the mesh (0.1727 of the 2.5,
     # 1.25, 0.625 L0 core elements at :nop => 4); c_h is the fastest wave of the
     # initial state, at the top of the transition region (README, "Cost").
-    Δh   = 0.17267*(2.5, 1.25, 0.625)[c.ref]
+    Δh   = 0.17267*(2.5, 1.25, 0.625, 1.25)[c.ref]   # ref 4: ref 2's core elements, over the whole figure region
     Δt   = _lk10_num("DT", 0.25*Δh/c.cmax)
     tend = _lk10_num("TEND", 2530.0)/LK10_T0
     # Snapshots every 5 t0 (116 s) and at the times of the erratum's figures
@@ -241,6 +245,9 @@ function user_inputs()
         # E slot diffuses the internal energy and receives the work and the heat of the other
         # slots, so the DynSGS cannot drive p negative in the low-β chromosphere and corona.
         :dsgs_thermal_energy  => lowercase(_lk10_env("ENERGY", "thermal")) != "total",
+        # Resistivity from the induction residuals alone (SGS.jl, linduction; README, "DynSGS in
+        # the corona"): acoustic fronts in the low-β corona then do not make the field resistive.
+        :dsgs_induction_sensor => lowercase(_lk10_env("ETA", "all")) == "induction",   # opt-in while under test
         :dsgs_norms           => "element",
         :dsgs_local_rel       => 1.0,
         :dsgs_conserved       => true,
