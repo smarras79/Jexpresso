@@ -61,57 +61,64 @@ PAPER_FIG3B_QUAD98 = np.array([
 
 
 def _record(d):
-    """lk10_case.txt of an output directory (initialize.jl): the output directory it was restarted from
-    (its name), or None."""
+    """lk10_case.txt of an output directory (initialize.jl): (the directory it was restarted from, by name,
+    the time [s] of the snapshot it continued), or (None, None)."""
     f = os.path.join(d, "lk10_case.txt")
     if not os.path.isfile(f):
-        return None
+        return None, None
     for line in open(f, encoding="utf-8", errors="replace"):
-        m = re.match(r"#\s*restarted from\s+(.+?),\s*iter_\d+", line.strip())
+        m = re.match(r"#\s*restarted from\s+(.+?),\s*iter_\d+(?:,\s*t\s*=\s*([-+0-9.eE]+)\s*s)?", line.strip())
         if m:
-            return os.path.basename(os.path.normpath(m.group(1)))
-    return None
+            return os.path.basename(os.path.normpath(m.group(1))), (float(m.group(2)) if m.group(2) else None)
+    return None, None
 
 
 def _chain(d):
-    """The output directories of the run through d, oldest first: each restart (JEXPRESSO_LK10_RESTART_DIR)
-    writes a new directory and names the one it continues in its lk10_case.txt. Two restarts from the same
-    directory: the most recent one is followed."""
+    """[(directory, last time used [s])] of the run that ENDS in d, oldest first: d and the runs it was
+    restarted from (JEXPRESSO_LK10_RESTART_DIR; each restart names the run and the snapshot it continues in
+    its lk10_case.txt). An earlier run is used up to the snapshot its successor continued, so a run
+    restarted from the middle of a finished one (to try other numerics) is not mixed with what that one
+    did afterwards. Runs restarted FROM d are not followed: give the last directory of a chain."""
     root, name = os.path.split(os.path.normpath(d))
     root = root or "."
     if not os.path.isdir(os.path.join(root, name)):
         raise SystemExit(f"{d}: not a directory (give the output-<date> directory of a run)")
-    parent = {s: _record(os.path.join(root, s)) for s in os.listdir(root) if os.path.isdir(os.path.join(root, s))}
-    chain = [name]
-    while parent.get(chain[0]) in parent and parent[chain[0]] not in chain:
-        chain.insert(0, parent[chain[0]])
+    rec = {s: _record(os.path.join(root, s)) for s in os.listdir(root) if os.path.isdir(os.path.join(root, s))}
+    chain = [(name, np.inf)]
     while True:
-        kids = [s for s, q in parent.items() if q == chain[-1] and s not in chain]
-        if not kids:
+        par, tr = rec.get(chain[0][0], (None, None))
+        if par not in rec or par in [c[0] for c in chain]:
             break
-        chain.append(max(kids, key=lambda s: os.path.getmtime(os.path.join(root, s))))
-    return [os.path.join(root, s) for s in chain]
+        chain.insert(0, (par, np.inf if tr is None else tr))
+    kids = sorted(s for s, (q, _) in rec.items() if q == name)
+    if kids:
+        print(f"   note: {', '.join(kids)} restarted from {name} and {'is' if len(kids) == 1 else 'are'} not included "
+              "(give the last directory of a chain to plot the whole run)")
+    return [(os.path.join(root, s), t) for s, t in chain]
 
 
 FOLLOW_CHAIN = True    # --no-chain: only the directories given
 
 
 def runs_of(spec):
-    """[(t [s], iter_N.pvtu)] of RUN (DIR or DIR1,DIR2,...), by time, with the directories of its restarts
-    (lk10_case.txt) unless --no-chain; a later directory wins a repeated time."""
+    """[(t [s], iter_N.pvtu)] of RUN (DIR or DIR1,DIR2,...), by time. Unless --no-chain, each DIR stands for
+    the run that ends in it: the runs it was restarted from are read too, each up to the snapshot its
+    successor continued (_chain). A later directory wins a repeated time."""
     dirs = []
     for d in spec.split(","):
-        for c in (_chain(d) if FOLLOW_CHAIN else [os.path.normpath(d)]):
-            if c not in dirs:
-                dirs.append(c)
+        for c, tmax in (_chain(d) if FOLLOW_CHAIN else [(os.path.normpath(d), np.inf)]):
+            if c not in [x[0] for x in dirs]:
+                dirs.append((c, tmax))
     out = {}
-    for d in dirs:
+    for d, tmax in dirs:
         items = [(pvtu_time(f), f) for f in glob.glob(os.path.join(d, "iter_*.pvtu"))]
         items = [(t * T0_S, f) for t, f in items if t is not None]
         if not items:
             raise SystemExit(f"{d}: no iter_N.pvtu with a time (give the output-<date> directory of a run)")
-        print(f"   {d}: {len(items)} snapshots, t = {min(items)[0]:.0f} to {max(items)[0]:.0f} s")
-        for t, f in items:
+        used = [it for it in items if it[0] <= tmax + 0.5]
+        note = "" if len(used) == len(items) else f"; used to {tmax:.0f} s, where the next run continued it"
+        print(f"   {d}: {len(items)} snapshots, t = {min(items)[0]:.0f} to {max(items)[0]:.0f} s{note}")
+        for t, f in used:
             out[round(t, 6)] = f
     return sorted(out.items())
 

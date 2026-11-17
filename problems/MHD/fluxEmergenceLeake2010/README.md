@@ -426,9 +426,8 @@ stops at once ("nothing to continue"), so a spare job in the chain is harmless.
   while writing leaves an incomplete one, which is skipped), or the one nearest
   `JEXPRESSO_LK10_RESTART_TIME` (seconds).
 - **Output.** The new run writes to a new output directory, starting with the
-  snapshot it continues. The figure script reads a restarted run as one:
-  `RUN=output/.../output-<date1>,output/.../output-<date2>` (a later directory
-  wins a repeated time).
+  snapshot it continues. The figure script reads a restarted run as one from
+  its last directory (Figures).
 - **What is restored.** The conserved state, rebuilt to round-off from the nine
   primitives of the snapshot (Float64), the discrete $\nabla\cdot\mathbf B$
   included; the reference state, the relaxation table, $c_h$ and $\Delta h$ are
@@ -485,9 +484,13 @@ $B_x$ at $x = 0$, $y$ = 3, 11, 16 Mm. The axis of the tube is where $B_x$ on
 $x = 0$ changes sign from − to + (the paper's definition), the crossing nearest
 the peak of $B_z$. `axis`, `dome` and `eshear` write one CSV per run.
 
-`RUN` may be any directory of a run continued by restarts: the script follows
-the chain through the `lk10_case.txt` files (`--no-chain`: only the
-directories given) and lists each directory with its times. A figure time with
+`RUN` is the last directory of a run continued by restarts: the script reads
+the runs it was restarted from through the `lk10_case.txt` files, each up to
+the snapshot its successor continued (`--no-chain`: only the directories
+given), and lists each directory with its times. A run restarted from the
+middle of a finished one, to try other numerics, is thus not mixed with what
+the finished one did afterwards, and the two compare as
+`dome old=<finished> new=<restarted>`. A figure time with
 no snapshot (the run stopped before it) is left out, with a note (`--nearest`:
 the nearest snapshot instead).
 
