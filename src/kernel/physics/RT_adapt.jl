@@ -223,6 +223,14 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
         rt_lap!(tm, :lw_case)                                           # optics, lateral columns and case
         I_init_lw = micro.rt_sol_lw_available ? micro.rt_sol_lw : nothing
         lw_solver = Symbol(get(inputs, :RT_lw_solver, :gmres))
+        #   :RT_lw_tol_study     true: heating at every GMRES iterate of the LW solve, compared with the converged one
+        #                        (rt_tol_study_report!, rt_timing.jl). Costs one heating evaluation per iterate.
+        tol_study = get(inputs, :RT_lw_tol_study, false) == true
+        study = RTTolStudyPoint[]
+        lw_monitor = !tol_study ? nothing : (kind, res, nmv, Id, κu, σu) -> begin
+            _, dT, _, _ = compute_rt_radiative_heating_unified(mesh, Id, atmos_data, κu, σu, true, comm)
+            push!(study, RTTolStudyPoint(kind, res, nmv, copy(dT)))
+        end
         if cold && cold_init == :column_mean
             I_init_lw = lw_column_mean_init(mesh, κ_lw .+ σ_lw, atmos_data.t_current, comm;
                                             ε_surface=lw.ε_surface, T_space=lw.T_space)
@@ -243,12 +251,14 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
             I_cg_all_init = I_init_lw,
             solver = lw_solver,
             rtol = cold ? cold_rtol : 0.0,
+            monitor = lw_monitor,
             report = rt_solve_report!(tm, :lw))
         rt_lap!(tm, :lw_solve)
         micro.rt_sol_lw = I_cg_lw
         Q_lw, dTdt_lw, F_net_lw, G_lw = compute_rt_radiative_heating_unified(
             mesh, I_cg_lw, atmos_data, κ_lw_used, σ_lw_used, true, comm)
         micro.flux_lw .= to_flux(dTdt_lw)
+        tol_study && rt_tol_study_report!(study, dTdt_lw, atmos_data.rho, mesh.npoin, comm, inputs; cold=cold)
         micro.rt_sol_lw_available = true
         rt_lap!(tm, :lw_heat)
     else

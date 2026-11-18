@@ -38,7 +38,11 @@ knowledge of apply_G or preconditioning, so both plain and
 preconditioned callers share this exact implementation.
 """
 function gmres_core(matvec::Function, b::Vector{Float64}, x0::Vector{Float64}, comm;
-                     restart::Int=20, max_restarts::Int=10, tol::Float64=1e-5, verbose::Bool=true)
+                     restart::Int=20, max_restarts::Int=10, tol::Float64=1e-5, verbose::Bool=true,
+                     monitor::Union{Nothing,Function}=nothing)
+    # monitor (collective, optional): monitor(kind, residual, x) with kind = :outer (x = current iterate, residual = TRUE
+    # ‖b - A x‖) or :inner (x = the iterate GMRES would return now, residual = its Arnoldi estimate). For studies only:
+    # forming x at every inner step costs O(n·j).
     rank = MPI.Comm_rank(comm)
     n = length(x0)
     gdot(a,c) = MPI.Allreduce(dot(a,c), MPI.SUM, comm)
@@ -49,6 +53,7 @@ function gmres_core(matvec::Function, b::Vector{Float64}, x0::Vector{Float64}, c
         r0 = b .- matvec(x)
         β = gnorm(r0)
         rank==0 && verbose && println("  GMRES outer $outer: ||r0||=$β")
+        monitor === nothing || monitor(:outer, β, x)
         β < tol && (rank==0 && println("GMRES converged (outer residual)"); return x)
 
         V = Vector{Vector{Float64}}(undef, restart+1)
@@ -81,6 +86,14 @@ function gmres_core(matvec::Function, b::Vector{Float64}, x0::Vector{Float64}, c
             temp = cs[j]*g[j]; g[j+1] = -sn[j]*g[j]; g[j] = temp
 
             rank==0 && verbose && println("    GMRES inner $j: residual=$(abs(g[j+1]))")
+            if monitor !== nothing && abs(g[j+1]) >= tol            # the converged iterate is reported by the caller
+                yj = zeros(j)
+                for i = j:-1:1
+                    yj[i] = (g[i] - sum(H[i,k]*yj[k] for k = i+1:j; init=0.0)) / H[i,i]
+                end
+                xj = copy(x); for i = 1:j; xj .+= yj[i] .* V[i]; end
+                monitor(:inner, abs(g[j+1]), xj)
+            end
             abs(g[j+1]) < tol && (m_used = j; break)
         end
 
@@ -98,7 +111,7 @@ end
 
 function gmres_fixed_point_solve(apply_G::Function, x0::Vector{Float64}, comm;
                                   restart::Int=20, max_restarts::Int=10, tol::Float64=1e-5, rtol::Float64=0.0,
-                                  verbose::Bool=true)
+                                  verbose::Bool=true, monitor::Union{Nothing,Function}=nothing)
     b = apply_G(zeros(length(x0)))
     matvec(v) = v .- (apply_G(v) .- b)
     # tol is absolute on the global residual 2-norm; rtol > 0 relaxes it to max(tol, rtol·‖b‖)
@@ -108,7 +121,8 @@ function gmres_fixed_point_solve(apply_G::Function, x0::Vector{Float64}, comm;
         tol_eff = max(tol, rtol * bn)
         MPI.Comm_rank(comm) == 0 && verbose && println("  GMRES tolerance: max(abs $(tol), rtol $(rtol) × ‖b‖ $(bn)) = $(tol_eff)")
     end
-    return gmres_core(matvec, b, x0, comm; restart=restart, max_restarts=max_restarts, tol=tol_eff, verbose=verbose)
+    return gmres_core(matvec, b, x0, comm; restart=restart, max_restarts=max_restarts, tol=tol_eff, verbose=verbose,
+                      monitor=monitor)
 end
 
 function gmres_fixed_point_solve_precond(apply_G::Function, x0::Vector{Float64}, scales_flat::Vector{Float64}, comm;

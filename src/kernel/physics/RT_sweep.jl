@@ -499,6 +499,7 @@ function run_unified_case_solve(setup, metrics, comm, case::RadiativeCase;
                                  solver::Symbol=:jacobi,
                                  gmres_restart::Int=20, gmres_max_restarts::Int=10,
                                  rtol::Float64=0.0,
+                                 monitor::Union{Nothing,Function}=nothing,
                                  opts::SweepOptions=SweepOptions(),
                                  report::Union{Nothing,Dict{Symbol,Any}}=nothing)
     rank = MPI.Comm_rank(comm); np = MPI.Comm_size(comm)
@@ -601,8 +602,14 @@ function run_unified_case_solve(setup, metrics, comm, case::RadiativeCase;
     t_solve0 = time_ns()
     try
         if solver == :gmres
+            # monitor (optional): monitor(kind, residual, nmv, I_dict, κ, σ) at every GMRES iterate (gmres_core)
+            gmon = monitor === nothing ? nothing : (kind, res, x) -> begin
+                Id = Dict{Tuple{Int,Int}, Vector{Float64}}(); unflatten_I!(Id, x, order, len_each)
+                monitor(kind, res, length(t_tot), Id, κ, σ)
+            end
             x_final = gmres_fixed_point_solve(apply_G, flatten_I(I_cg_init, order), comm;
-                                               restart=gmres_restart, max_restarts=gmres_max_restarts, tol=tol, rtol=rtol)
+                                               restart=gmres_restart, max_restarts=gmres_max_restarts, tol=tol, rtol=rtol,
+                                               monitor=gmon)
             I_cg_all = Dict{Tuple{Int,Int}, Vector{Float64}}(); unflatten_I!(I_cg_all, x_final, order, len_each)
             result = (I_cg_all, κ, σ)
         elseif solver == :gmres_precond

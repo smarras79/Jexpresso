@@ -146,3 +146,57 @@ function rt_timing_report!(tm::RTTiming, mesh, infra, comm, inputs)
 end
 
 rows_lookup(rows, q) = (i = findfirst(r -> r[1] == q, rows); i === nothing ? NaN : rows[i][2])
+
+# ── Tolerance study (:RT_lw_tol_study => true) ────────────────────────────────────────────────────────────────────────
+# For every GMRES iterate of the LW solve (outer = true residual at a restart, inner = Arnoldi residual estimate), the LW
+# heating it would give, compared with the converged solve's heating: relative L2 and max |diff| over nodes [K/day], and
+# the relative difference of the mass-weighted domain-mean heating. Nodes shared by ranks count once per rank (fine for
+# a study). Written to the log and <output_dir>/profile/rt_tol_study.csv:
+#   call, cold, kind, matvecs, residual, l2_rel, max_kday, mean_rel
+
+struct RTTolStudyPoint
+    kind::Symbol
+    residual::Float64
+    nmv::Int
+    dTdt::Vector{Float64}
+end
+
+const RT_TOL_STUDY_ROWS = String[]
+
+function rt_tol_study_report!(pts::Vector{RTTolStudyPoint}, dTdt_final::AbstractVector, ρ::AbstractVector, npoin::Int,
+                              comm, inputs; cold::Bool=false)
+    call = RT_TIMING_NCALLS[] + 1                   # this call's number in rt_timing.csv (reported after this)
+    rank = MPI.Comm_rank(comm)
+    f = view(dTdt_final, 1:npoin); r = view(ρ, 1:npoin)
+    g = MPI.Allreduce(Float64[sum(abs2, f), sum(r .* f), sum(r)], MPI.SUM, comm)
+    nrm = sqrt(g[1]); mean_f = g[2] / g[3]
+    rows = NTuple{6,Any}[]
+    for p in pts
+        d = view(p.dTdt, 1:npoin) .- f
+        h = MPI.Allreduce(Float64[sum(abs2, d), sum(r .* d)], MPI.SUM, comm)
+        mx = MPI.Allreduce(isempty(d) ? 0.0 : maximum(abs, d), MPI.MAX, comm)
+        push!(rows, (p.kind, p.nmv, p.residual, sqrt(h[1]) / nrm, mx * 86400, abs(h[2] / g[3]) / abs(mean_f)))
+    end
+    rank == 0 || return nothing
+    println("LW tolerance study (call $call, $(cold ? "cold" : "warm") solve): heating at each GMRES iterate vs converged; " *
+            "mass-weighted mean heating $(@sprintf("%.4g", mean_f * 86400)) K/day")
+    println("   kind   matvecs   residual     L2 rel     max K/day   mean rel")
+    for (k, n, res, l2, mx, mr) in rows
+        @printf("  %-6s %6d   %10.3e   %9.2e   %9.2e   %9.2e\n", k, n, res, l2, mx, mr)
+        push!(RT_TOL_STUDY_ROWS, @sprintf("%d,%d,%s,%d,%.6g,%.6g,%.6g,%.6g", call, cold, k, n, res, l2, mx, mr))
+    end
+    flush(stdout)
+    od = get(inputs, :output_dir, "none")
+    if od isa AbstractString && od != "none" && !isempty(od)
+        try
+            dir = joinpath(od, "profile"); mkpath(dir)
+            open(joinpath(dir, "rt_tol_study.csv"), "w") do io
+                println(io, "call,cold,kind,matvecs,residual,l2_rel,max_kday,mean_rel")
+                foreach(x -> println(io, x), RT_TOL_STUDY_ROWS)
+            end
+        catch err
+            @warn "RT tolerance study: could not write rt_tol_study.csv" exception=err
+        end
+    end
+    return nothing
+end
