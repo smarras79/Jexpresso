@@ -74,8 +74,7 @@ end
 
 #----------------------------------------------------------------------------------------------
 # BOMEX prescribed surface fluxes (Siebesma et al. 2003), applied on the "bottom" tag through the
-# kernel Neumann path. Active when user_inputs sets :bdy_fluxes => true (and :lwall_model => true,
-# which only allocates the per-face τ_f / wθ arrays this call is handed).
+# kernel Neumann path. Active when user_inputs sets :bdy_fluxes => true.
 # F is the flux INTO the domain per unit area; the kernel adds ∫ F ψ dS to the RHS.
 #   hl  (ρ hl, hl = cp T + g z - Lc q_l): sensible heat only, ρ cp w'θl'  (hl carries no vapour latent heat)
 #   ρqt: ρ w'qt'

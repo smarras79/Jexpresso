@@ -33,7 +33,6 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lwall_model          => true,
         :ifirst_wall_node_index=> 2, # This must be between 2 <= :first_wall_node_index <= nop+1
         :bdy_fluxes           => true,
         :lvisc                => true, #false by default

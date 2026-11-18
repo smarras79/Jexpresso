@@ -20,7 +20,6 @@ function user_inputs()
         :bomex_sponge         => true,   # top buffer layer, z >= 2250 m
         :bomex_noise          => true,   # initial θl/qt noise below 1600 m
         :bdy_fluxes           => true,   # surface fluxes (user_bc_neumann!)
-        :lwall_model          => true,   # allocates the wall-flux arrays used by the surface fluxes
         #---------------------------------------------------------------------------
         # Restart options
         #---------------------------------------------------------------------------

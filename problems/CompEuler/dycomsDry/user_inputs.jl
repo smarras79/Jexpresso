@@ -22,7 +22,6 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lwall_model          => true,
         :bdy_fluxes           => true,
         #:bulk_fluxes          => false, #For dirichlet on theta
         :lvisc                => true, #false by default NOTICE: works only for Inexact

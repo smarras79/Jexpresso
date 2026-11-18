@@ -181,8 +181,11 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:extra_dimensions_ymax] = 2*π
     end
 
-    if(!haskey(inputs, :lwall_model))
-       inputs[:lwall_model] = false
+    # :lwall_model is gone: the wall-model arrays are allocated when the mesh has a "MOST"
+    # boundary (params_setup.jl). Accept and ignore it in old decks.
+    if(haskey(inputs, :lwall_model))
+       @warn ":lwall_model is no longer used and is ignored: the Monin-Obukhov wall model is enabled by tagging a boundary \"MOST\" in the mesh." maxlog=1
+       delete!(inputs, :lwall_model)
     end
 
     # Default to the rank-0-read + MPI.bcast mesh path on every platform.
