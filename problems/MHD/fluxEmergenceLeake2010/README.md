@@ -70,6 +70,7 @@ editing the deck:
 | `JEXPRESSO_LK10_TUBE_EQ` | `thermal` (default), `relaxed` | tube in thermal equilibrium with its surroundings (the paper), or on the relaxed relation $\rho T_0(\rho) = p$ |
 | `JEXPRESSO_LK10_CURLB` | `1` (default), `0` | DynSGS resistivity of the in-plane field in curl form, or the component Laplacian of the parent case |
 | `JEXPRESSO_LK10_NU` | `dynamic` (default), `kinematic` | the paper's dynamic viscosity in the convection zone, held at its photospheric kinematic value above; or that kinematic value everywhere |
+| `JEXPRESSO_LK10_SUBNORMALS` | `flush` (default), `keep` | subnormal numbers flushed to zero, or IEEE gradual underflow (Meshes, time step and cost) |
 | `JEXPRESSO_LK10_RESTART_DIR` | an output directory, or `latest` | continue that run from a snapshot (Restart, below) |
 | `JEXPRESSO_LK10_RESTART_TIME` | seconds | the snapshot nearest this time (default: the last complete one) |
 | `JEXPRESSO_LK10_CMIN` | default 0 | DynSGS background floor $C_{min}$ |
@@ -397,6 +398,20 @@ The field-free corona allows a ~15 times larger step (`JEXPRESSO_LK10_DT`:
 REF 2; 1000 s took 80 minutes on REF 1 on 4 cores). A
 snapshot takes 84 MB on REF 2 (21 MB on REF 1): about 2.5 GB for the 30
 snapshots of the default output.
+
+**Subnormal numbers** are flushed to zero on every rank
+(`set_zero_subnormals(true)` in `initialize.jl`; `JEXPRESSO_LK10_SUBNORMALS=keep`
+for IEEE underflow). $\rho\mathbf u$, $\rho w$, $B_z$ and $\psi$ are zero in the
+reference state, and what reaches the quiet parts of the domain first is their
+numerical precursor, values of $10^{-300}$ and less, on which the processor
+takes a path about a hundred times slower. After 121 steps on REF 4 (4 ranks,
+induction sensor) a third of the nodes held $\lvert B_z\rvert$ and $\lvert w\rvert$ below
+$10^{-200}$ and 2–4 % of them subnormal values; the step took 3.57 s on average
+over steps 5–100 against 2.68 s with the flush, and the two solutions differ
+by $10^{-291}$ at most ($\rho$, $p$, $B_x$, $B_y$ are equal to the bit). A
+128-rank cluster run on REF 4 with the induction sensor, which leaves the far
+$B_z$ undiffused, advanced 8 times more slowly than expected before the flush
+(5 $t_0$ in 3.5 hours).
 
 ## Restart
 

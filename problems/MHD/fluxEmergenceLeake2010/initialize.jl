@@ -322,6 +322,18 @@ end
 #---------------------------------------------------------------------------------
 function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
 
+    # Subnormal numbers are flushed to zero on this rank (JEXPRESSO_LK10_SUBNORMALS=keep:
+    # IEEE gradual underflow). ρu, ρv, ρw, B_z and ψ are zero in the reference state, and
+    # what reaches the quiet parts of the domain first is their numerical precursor, values
+    # of 1e-300 and less: after 121 steps on REF 4 a third of the nodes held |B_z|, |w| below
+    # 1e-200 and 2-4 % of them subnormal values, on which the processor takes a slow path
+    # (measured: 3.6 s per step against 2.7 over the first 100 steps on 4 ranks, growing; a
+    # 128-rank REF 4 run with the induction sensor, which leaves the far B_z undiffused, went
+    # 8 times slower than expected). The solutions differ by 1e-291 at most. Per thread: the
+    # ranks are single-threaded.
+    lflush = !(lowercase(strip(get(ENV, "JEXPRESSO_LK10_SUBNORMALS", "flush"))) in ("keep", "ieee"))
+    lflush && set_zero_subnormals(true)
+
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     rank == 0 && println(" Initialize fields for 2.5D GLM-MHD flux emergence (Leake, Linton & Antiochos 2010) ........... ")
@@ -504,6 +516,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
                 "c_h Δt/Δh = $(round(c_h_mhd[]*inputs[:Δt]/lk10_glm_dh[], digits=3))")
         println(" Energy relaxation: $(lk10_relax[] ? "on" : "OFF"), τ = $(round(lk10_tau0[], digits=4)) ρ^(-$(lk10_tau_exp[])) t0; ",
                 "above y = $(lk10_relax_ymin[]); damping layers |x| > $(lk10_damp_xd[]), y > $(lk10_damp_yd[]), rate $(lk10_damp_rate[])/t0 at the boundary")
+        println(" Subnormal numbers: ", get_zero_subnormals() ? "flushed to zero" : "kept (IEEE; slow where the solution is ~1e-308)")
         println(" Dissipation: ν = $(round(LK10_NU, sigdigits=4)) ($(get(inputs, :lk10_nu_mode, "kinematic"))), anomalous η₀ = $(round(LK10_ETA0, sigdigits=4)), ",
                 "j_crit = $(round(LK10_JCRIT, sigdigits=4)) (code units)")
         println(" Initialize fields for 2.5D GLM-MHD flux emergence (Leake et al. 2010) ........... DONE")

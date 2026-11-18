@@ -43,6 +43,8 @@
 #   JEXPRESSO_LK10_CURLB     0: DynSGS resistivity as the component Laplacian       [1: curl form]
 #   JEXPRESSO_LK10_NU        dynamic | kinematic: the paper's dynamic ν below the
 #                            photosphere (capped above), or kinematic everywhere   [dynamic]
+#   JEXPRESSO_LK10_SUBNORMALS  flush | keep: subnormal numbers flushed to zero (they
+#                            slow the run several times, initialize.jl), or IEEE  [flush]
 #   JEXPRESSO_LK10_RESTART_DIR  continue an earlier run of this case from a snapshot:
 #                            its output directory, or "latest" (the most recently
 #                            written run of the same configuration); same switches,
