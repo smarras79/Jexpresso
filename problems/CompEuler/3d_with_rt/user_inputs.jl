@@ -29,7 +29,6 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        #:lwall_model          => true,
         :lvisc                => true, #false by default
         #:visc_model           => VREM(),
         :visc_model           => AV(),
