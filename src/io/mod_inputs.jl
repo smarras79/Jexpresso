@@ -173,12 +173,12 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
     # Discrete scattering operator C[k,m] = Φ(Ω_k,Ω_m) w_m and the direct-beam source:
     #   :none (raw quadrature), :row (each row sums to 1: energy-conserving), :symmetric (unit row sums AND symmetric kernel)
-    inputs[:RT_sw_phase_normalization] = Symbol(get(inputs, :RT_sw_phase_normalization, :none))
+    inputs[:RT_sw_phase_normalization] = Symbol(get(inputs, :RT_sw_phase_normalization, :symmetric))
     inputs[:RT_sw_phase_normalization] in (:none, :row, :symmetric) ||
         error(":RT_sw_phase_normalization must be :none, :row or :symmetric")
     # Forward-peak truncation of the shortwave phase function:
     #   :none, :delta_eddington (f = g^2), or :delta_m (f = g^M, M = number of Legendre moments the angular mesh resolves)
-    inputs[:RT_sw_delta_scaling] = Symbol(get(inputs, :RT_sw_delta_scaling, :none))
+    inputs[:RT_sw_delta_scaling] = Symbol(get(inputs, :RT_sw_delta_scaling, :delta_m))
     inputs[:RT_sw_delta_scaling] in (:none, :delta_eddington, :delta_m) ||
         error(":RT_sw_delta_scaling must be :none, :delta_eddington or :delta_m")
     # Diffuse SW inflow on lateral walls (non-periodic meshes): :single_scatter (plane-parallel single scattering of the

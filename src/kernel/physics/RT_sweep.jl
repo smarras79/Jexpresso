@@ -215,7 +215,7 @@ end
 function build_shortwave_diffuse_case(κ_sw::Vector{Float64}, σ_sw::Vector{Float64}, g_eff::Vector{Float64},
                                        sw::SWParams, F_dir::Vector{Float64}, bdy; surface_albedo=0.15,
                                        phase_norm::Symbol=:none, lateral_bc::Symbol=:plane_parallel,
-                                       mesh=nothing)
+                                       mesh=nothing, periodic_walls::Bool=false, comm=nothing)
     κ_ext_sw = κ_sw .+ σ_sw
     ω0_lateral = sum(σ_sw) / sum(max.(κ_ext_sw, 1e-30))   # domain-mean SSA, per user_rad_bc_shortwave_diffuse's docstring
 
@@ -233,7 +233,7 @@ function build_shortwave_diffuse_case(κ_sw::Vector{Float64}, σ_sw::Vector{Floa
     # radiance object (which runs the 1D solver) is built lazily.
     lat_ref = Ref{Any}(nothing)
     prof = nothing
-    if lateral_bc in (:single_scatter, :plane_parallel)
+    if lateral_bc in (:single_scatter, :plane_parallel) || periodic_walls
         mesh === nothing && error("build_shortwave_diffuse_case: lateral_bc = $(lateral_bc) needs mesh=")
         prof = build_sw_column_optics(mesh, κ_ext_sw, σ_sw, g_eff, mesh.ngl)
     end
@@ -266,9 +266,17 @@ function build_shortwave_diffuse_case(κ_sw::Vector{Float64}, σ_sw::Vector{Floa
     beam = sw.μ₀ > 0.0 ?
         (θ = θ_sun, ϕ = ϕ_sun, coeff = σ_sw .* F_dir ./ sw.μ₀, g = g_eff, normalize = phase_norm != :none) : nothing
 
+    # periodic_walls: periodic faces become walls whose diffuse inflow is the lateral_bc radiance (prev_override)
+    ovr = nothing
+    if periodic_walls
+        lateral_bc in (:single_scatter, :plane_parallel, :none) ||
+            error("build_shortwave_diffuse_case: periodic_walls needs lateral_bc :single_scatter, :plane_parallel or :none")
+        lat = lateral_bc == :none ? nothing : make_lat()
+        ovr = lateral_prev_override(mesh, (x,y,z,θ,ϕ) -> lat === nothing ? 0.0 : lat(z, θ, ϕ), comm)
+    end
     return RadiativeCase(kappa_fn=kappa_fn, sigma_fn=sigma_fn,
                           phase_fn=phase_function_hg, g_field=g_field,
-                          bc_fn=bc_fn, phase_norm=phase_norm, beam_source=beam)
+                          bc_fn=bc_fn, phase_norm=phase_norm, beam_source=beam, prev_override=ovr)
 end
 
 function compute_rt_radiative_heating_unified(mesh, I_cg_all::Dict{Tuple{Int,Int},Vector{Float64}},

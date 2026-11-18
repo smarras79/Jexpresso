@@ -287,3 +287,35 @@ function lw_alltoallv(sbufs::Vector{Vector{Float64}}, comm)
     for s = 1:np; out[s] = rall[o+1:o+rcounts[s]]; o += rcounts[s]; end
     return out
 end
+
+"""
+    lateral_prev_override(mesh, f, comm) -> Dict{(iel,d) => (lidx, vals)}
+
+Collective (domain extents). Like lw_lateral_prev_override, for any inflow radiance f(x, y, z, θ, ϕ): turns periodic
+faces into walls with that inflow (RadiativeCase.prev_override). Used for SW walls mode (:RT_sw_periodic_mode).
+"""
+function lateral_prev_override(mesh, f::Function, comm)
+    np_ = mesh.npoin
+    ext(v, op, d) = MPI.Allreduce(np_ > 0 ? op(view(v, 1:np_)) : d, op === minimum ? MPI.MIN : MPI.MAX, comm)
+    xmin, xmax = ext(mesh.x, minimum, Inf), ext(mesh.x, maximum, -Inf)
+    ymin, ymax = ext(mesh.y, minimum, Inf), ext(mesh.y, maximum, -Inf)
+    tol = 1e-6 * max(xmax - xmin, ymax - ymin, 1.0)
+    onlat(x, y) = abs(x - xmin) < tol || abs(x - xmax) < tol || abs(y - ymin) < tol || abs(y - ymax) < tol
+    ngl = mesh.ngl
+    out = Dict{Tuple{Int,Int},Tuple{Vector{Int},Vector{Float64}}}()
+    for iel = 1:mesh.nelem
+        lids = Int[]; pts = NTuple{3,Float64}[]
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            ip = mesh.connijk[iel,i,j,k]
+            onlat(mesh.x[ip], mesh.y[ip]) || continue
+            push!(lids, lidx(i,j,k,ngl)); push!(pts, (mesh.x[ip], mesh.y[ip], mesh.z[ip]))
+        end
+        isempty(lids) && continue
+        em = mesh.extra_mesh[iel]
+        for d = 1:em.extra_npoin
+            θ = em.extra_coords[1,d]; ϕ = em.extra_coords[2,d]
+            out[(iel,d)] = (lids, [f(p[1], p[2], p[3], θ, ϕ) for p in pts])
+        end
+    end
+    return out
+end

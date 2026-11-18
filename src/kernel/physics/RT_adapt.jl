@@ -177,7 +177,11 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
         sw_case = build_shortwave_diffuse_case(κ_sw, σ_sw, g_eff, sw, F_dir, bdy;
                                                surface_albedo=inputs[:RT_surface_albedo],
                                                phase_norm=inputs[:RT_sw_phase_normalization],
-                                               lateral_bc=inputs[:RT_sw_lateral_bc], mesh=mesh)
+                                               lateral_bc=inputs[:RT_sw_lateral_bc], mesh=mesh,
+                                               # :RT_sw_periodic_mode :periodic | :walls (periodic faces read the
+                                               # :RT_sw_lateral_bc inflow instead of the lagged iterate; direct beam unchanged)
+                                               periodic_walls = Symbol(get(inputs, :RT_sw_periodic_mode, :periodic)) == :walls,
+                                               comm=comm)
         rt_lap!(tm, :sw_case)
         I_cg_sw, κ_sw_used, σ_sw_used = run_unified_case_solve(infra, metrics, comm, sw_case;
             max_iter=rt_max_iter, tol=rt_tol,
