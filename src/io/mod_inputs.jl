@@ -243,6 +243,12 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :lxy_partition))
         inputs[:lxy_partition] = true
     end
+    #   :lxy_partition_balanced  with :lxy_partition => true: the nx × ny bins hold equal NUMBERS
+    #                      of cells (x-rank columns, y-rank blocks within each) instead of equal
+    #                      extents, so a graded mesh is balanced to within one cell, with the same
+    #                      rank-0 read and local meshes without ghost cells (mesh.jl,
+    #                      _compute_xy_partition). Off unless the deck sets it (not defaulted here:
+    #                      the key is part of the mesh-cache fingerprint).
 
     if(!haskey(inputs, :ifirst_wall_node_index))
          inputs[:ifirst_wall_node_index] = 2 #default is the first LGL point above the surface node along the vertical direction of the surface element

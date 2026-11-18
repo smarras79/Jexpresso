@@ -194,7 +194,7 @@ const _CACHE_FINGERPRINT_KEYS = (
     :lphysics_grid, :nlay_pg, :nx_pg, :ny_pg,
     :ladapt, :linitial_refine, :init_refine_lvl, :lamr,
     :lpreadapt, :preadapt_max_level, :amr_max_level, :lrestart_amr,
-    :lxy_partition, :lwarp,
+    :lxy_partition, :lxy_partition_balanced, :lwarp,
     :lproject_to_sphere, :sphere_radius, :cubed_sphere_map,
     # Curving the boundary onto an exact shape MOVES nodes, so a cached mesh
     # built with a different (or absent) :exact_geometry must not be reused.

@@ -43,6 +43,10 @@
 #   JEXPRESSO_LK10_CURLB     0: DynSGS resistivity as the component Laplacian       [1: curl form]
 #   JEXPRESSO_LK10_NU        dynamic | kinematic: the paper's dynamic ν below the
 #                            photosphere (capped above), or kinematic everywhere   [dynamic]
+#   JEXPRESSO_LK10_PARTITION balanced | uniform: the ranks hold equal numbers of elements,
+#                            or equal areas (the framework's default: on these graded
+#                            meshes one of 128 ranks then holds 6.8 times the average
+#                            and every step waits for it)                       [balanced]
 #   JEXPRESSO_LK10_SUBNORMALS  flush | keep: subnormal numbers flushed to zero (they
 #                            slow the run several times, initialize.jl), or IEEE  [flush]
 #   JEXPRESSO_LK10_RESTART_DIR  continue an earlier run of this case from a snapshot:
@@ -269,6 +273,10 @@ function user_inputs()
         # Mesh (LK10.geo): -45 ≤ x ≤ 45 Mm, -3 ≤ y ≤ 90 Mm, walls on all sides
         #---------------------------------------------------------------------------
         :lread_gmsh           => true,
+        # Rank partition (mesh.jl, _compute_xy_partition): the x-y bins with equal numbers of
+        # elements. No ghost cells, so the solution is that of the uniform bins to round-off.
+        :lxy_partition        => true,
+        :lxy_partition_balanced => lowercase(_lk10_env("PARTITION", "balanced")) != "uniform",
         :gmsh_filename        => "./problems/MHD/fluxEmergenceLeake2010/" * mesh,
         :lfilter              => false,
         #---------------------------------------------------------------------------

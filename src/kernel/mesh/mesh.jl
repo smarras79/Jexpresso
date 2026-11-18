@@ -1718,7 +1718,21 @@ end
 
 # Partition cells into nparts by x-y centroid bins, ignoring z.
 # Returns a 1-indexed cell_to_part vector of length num_cells(model).
-function _compute_xy_partition(model, nparts)
+#
+# balanced = false (the default): a uniform nx × ny grid of the bounding box. On a
+# graded mesh the bins over the refined region hold several times the average
+# number of cells, and every rank waits for them at each step (mod_inputs.jl,
+# :lxy_partition; problems/MHD/fluxEmergenceLeake2010 on 128 ranks: 6.8 times).
+#
+# balanced = true (:lxy_partition_balanced): the same nx × ny layout with equal
+# COUNTS, nx columns by the x-rank of the centroids and ny blocks by their y-rank
+# within each column, so every rank holds nparts⁻¹ of the cells to within one,
+# on any mesh. Like the uniform bins and unlike the :lxy_partition => false
+# branch, the local meshes hold no ghost cells, so the discrete operators are
+# those of the serial run (the ghost layer of that branch weights its cells twice
+# in the DSS one layer inside each rank: measured on fluxEmergenceLeake2010, ψ of
+# 3e-5 after 300 steps where it stays at round-off without it).
+function _compute_xy_partition(model, nparts; balanced::Bool=false)
     Ω  = Triangulation(model)
     coords = get_cell_coordinates(Ω)
     cx = [sum(p[1] for p in c) / length(c) for c in coords]
@@ -1732,6 +1746,27 @@ function _compute_xy_partition(model, nparts)
     target_nx  = sqrt(nparts * lx / ly)
     nx = divisors[argmin(abs.(divisors .- target_nx))]
     ny = nparts ÷ nx
+
+    if balanced
+        ncell = length(cx)
+        ncell >= nparts || error(" mesh.jl, _compute_xy_partition: $(ncell) cells cannot be split into $(nparts) parts.")
+        # centroids rounded to 1e-9 of the extent, so that the cells of one mesh
+        # column (or row) of a structured grid sort as equal and stay together
+        # where a bin boundary allows it; ties go by y, then by cell number
+        qx = round.(Int, (cx .- minimum(cx)) ./ lx .* 1.0e9)
+        qy = round.(Int, (cy .- minimum(cy)) ./ ly .* 1.0e9)
+        part = zeros(Int, ncell)
+        px = sortperm(collect(zip(qx, qy, 1:ncell)))
+        for ix = 0:nx-1
+            col = px[div(ix*ncell, nx)+1:div((ix+1)*ncell, nx)]
+            py  = col[sortperm(collect(zip(qy[col], qx[col], col)))]
+            nc  = length(py)
+            for iy = 0:ny-1
+                part[py[div(iy*nc, ny)+1:div((iy+1)*nc, ny)]] .= ix*ny + iy + 1
+            end
+        end
+        return part
+    end
 
     x_min, y_min = minimum(cx), minimum(cy)
     xi = clamp.(floor.(Int, (cx .- x_min) ./ lx .* nx), 0, nx - 1)
@@ -1842,7 +1877,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                     flush(stdout)
                 end
 
-                cell_to_part = _compute_xy_partition(smodel, nparts)
+                cell_to_part = _compute_xy_partition(smodel, nparts;
+                                                     balanced = get(inputs, :lxy_partition_balanced, false) == true)
                 # Renamed from `DiscreteModel(parts, smodel,
                 # cell_to_part)` to `je_DiscreteModel(...)` — see
                 # Geom.jl for why we no longer pirate

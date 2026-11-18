@@ -261,9 +261,27 @@ function lk10_discrete_curl(As::Vector{Vector{Float64}}, mesh, comm)
           (nprocs == 1 ? collect(1:npoin) :
            error(" problems/MHD/fluxEmergenceLeake2010: mesh.ip2gip is not set; cannot assemble the discrete curl across ranks."))
     gn  = MPI.Allreduce(maximum(gid), MPI.MAX, comm)
+    # Every element once, whatever the partition. With the balanced partition
+    # (:lxy_partition => false) the local mesh of a rank also holds a layer of its
+    # neighbours' elements (848 of REF 4's 34,400 on 4 ranks), and summing every
+    # rank's local elements would weight those twice at the nodes one layer inside
+    # each rank: the lowest rank that holds an element (mesh.el2gel, its global
+    # number) adds it.
+    mine = trues(nelem)
+    if nprocs > 1
+        (length(mesh.el2gel) >= nelem && all(>(0), @view(mesh.el2gel[1:nelem]))) ||
+            error(" problems/MHD/fluxEmergenceLeake2010: mesh.el2gel is not set; cannot assemble the discrete curl across ranks.")
+        gel = Int.(mesh.el2gel[1:nelem])
+        gne = MPI.Allreduce(maximum(gel), MPI.MAX, comm)
+        own = fill(nprocs, gne)
+        own[gel] .= MPI.Comm_rank(comm)
+        MPI.Allreduce!(own, MPI.MIN, comm)
+        mine = own[gel] .== MPI.Comm_rank(comm)
+    end
     acc = zeros(2nA + 1, gn)            # rows: (Bx, By) per potential, then the weight
     X = zeros(ngl, ngl); Y = zeros(ngl, ngl); A = zeros(ngl, ngl)
     for e = 1:nelem
+        mine[e] || continue
         for j = 1:ngl, i = 1:ngl
             ip = mesh.connijk[e,i,j]
             X[i,j] = mesh.coords[1,ip]; Y[i,j] = mesh.coords[2,ip]
@@ -578,6 +596,8 @@ function lk10_case_record(inputs)
         "dsgs_energy"      => get(inputs, :dsgs_thermal_energy, false) == true ? "thermal" : "total",
         "eta_sensor"       => get(inputs, :dsgs_induction_sensor, false) == true ? "induction" : "all",
         "mesh"             => basename(String(get(inputs, :gmsh_filename, ""))),
+        "partition"        => get(inputs, :lxy_partition, true) != true ? "metis" :
+                              (get(inputs, :lxy_partition_balanced, false) == true ? "balanced" : "uniform"),
         "nop"              => string(get(inputs, :nop, 4)),
         "ranks"            => string(MPI.Comm_size(MPI.COMM_WORLD)),
     ]
@@ -618,8 +638,10 @@ function lk10_record_mismatch(old::Dict{String,String}, rec; numerics::Bool=fals
     bad = String[]
     for (k, v) in rec
         (k in lk10_numeric_keys()) == numerics || continue
-        w = get(old, k, "(not recorded)")
-        w == v || push!(bad, "$(k): $(w) there, $(v) here")
+        # (runs made before the partition was recorded had the uniform bins)
+        w = get(old, k, k == "partition" ? "uniform" : "(not recorded)")
+        w == v || push!(bad, "$(k): $(w) there, $(v) here" *
+                             (k == "partition" ? " (JEXPRESSO_LK10_PARTITION=$(w) to continue that run)" : ""))
     end
     return bad
 end

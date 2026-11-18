@@ -70,6 +70,7 @@ editing the deck:
 | `JEXPRESSO_LK10_TUBE_EQ` | `thermal` (default), `relaxed` | tube in thermal equilibrium with its surroundings (the paper), or on the relaxed relation $\rho T_0(\rho) = p$ |
 | `JEXPRESSO_LK10_CURLB` | `1` (default), `0` | DynSGS resistivity of the in-plane field in curl form, or the component Laplacian of the parent case |
 | `JEXPRESSO_LK10_NU` | `dynamic` (default), `kinematic` | the paper's dynamic viscosity in the convection zone, held at its photospheric kinematic value above; or that kinematic value everywhere |
+| `JEXPRESSO_LK10_PARTITION` | `balanced` (default), `uniform` | the ranks hold equal numbers of elements, or equal areas (Meshes, time step and cost) |
 | `JEXPRESSO_LK10_SUBNORMALS` | `flush` (default), `keep` | subnormal numbers flushed to zero, or IEEE gradual underflow (Meshes, time step and cost) |
 | `JEXPRESSO_LK10_RESTART_DIR` | an output directory, or `latest` | continue that run from a snapshot (Restart, below) |
 | `JEXPRESSO_LK10_RESTART_TIME` | seconds | the snapshot nearest this time (default: the last complete one) |
@@ -399,6 +400,33 @@ REF 2; 1000 s took 80 minutes on REF 1 on 4 cores). A
 snapshot takes 84 MB on REF 2 (21 MB on REF 1): about 2.5 GB for the 30
 snapshots of the default output.
 
+**Rank partition.** The framework's default (`:lxy_partition`) bins the
+elements into a uniform $n_x\times n_y$ grid of the bounding box, equal areas
+for every rank. These meshes are graded, so the ranks over the refined region
+hold most of the elements and every step waits for them:
+
+| ranks | REF 2, largest rank / ideal | REF 4, largest rank / ideal |
+|---|---|---|
+| 4 (2 × 2) | 11340 / 7020 = 1.6 | 14700 / 8600 = 1.7 |
+| 32 (4 × 8) | 3710 / 878 = 4.2 | 5394 / 1075 = 5.0 |
+| 64 (8 × 8) | 2385 / 439 = 5.4 | 3658 / 538 = 6.8 |
+| 128 (8 × 16) | 1395 / 219 = 6.4 | 1829 / 269 = 6.8 |
+
+The deck therefore sets `:lxy_partition_balanced` (new; `mesh.jl`,
+`_compute_xy_partition`): the same bins with equal *numbers* of elements
+($x$-rank columns, $y$-rank blocks within each), 268–269 elements per rank on
+REF 4 with 128 ranks. Measured on REF 4, 4 ranks: 1.53 s per step against
+2.72 s. The local meshes hold no ghost elements, and the solution is that of
+the uniform bins to round-off (REF 1, 333 steps: $\rho$ to $2\times10^{-16}$,
+$\mathbf B$ to $6\times10^{-16}$, the same mass and energy to every digit).
+`JEXPRESSO_LK10_PARTITION=uniform` restores the old bins, which a restart of a
+run made with them needs. The framework's other balanced partition
+(`:lxy_partition => false`, METIS) is not used: its local meshes carry a layer
+of the neighbours' elements, which the assembly then weights twice one layer
+inside each rank, and with it $\psi$ reached $3\times10^{-5}$ in 300 steps where
+it stays at round-off here (the discrete curl of `initialize.jl` now counts
+every element once whatever the partition).
+
 **Subnormal numbers** are flushed to zero on every rank
 (`set_zero_subnormals(true)` in `initialize.jl`; `JEXPRESSO_LK10_SUBNORMALS=keep`
 for IEEE underflow). $\rho\mathbf u$, $\rho w$, $B_z$ and $\psi$ are zero in the
@@ -430,8 +458,9 @@ With SLURM, for example, `sbatch job1.sh`, then
 was stopped by the limit); a restart from a run that has reached the end time
 stops at once ("nothing to continue"), so a spare job in the chain is harmless.
 
-- **Same switches, mesh and rank count.** Each rank reads its own piece of the
-  snapshot. Every run writes its `JEXPRESSO_LK10_*` configuration, mesh and
+- **Same switches, mesh, rank count and partition.** Each rank reads its own
+  piece of the snapshot (a run made before the balanced partition existed
+  continues with `JEXPRESSO_LK10_PARTITION=uniform`). Every run writes its `JEXPRESSO_LK10_*` configuration, mesh and
   rank count to `lk10_case.txt` in its output directory, and a restart from a
   run with another record stops with the list of differences. The time step
   (`JEXPRESSO_LK10_DT`), the end time, the snapshot interval and the numerical
