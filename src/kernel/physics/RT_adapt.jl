@@ -212,12 +212,16 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
         #                        | :column_mean (cold solve starts from the plane-parallel horizontal-mean column; default)
         #                        | :column_local (cold solve starts from each node's own column: ICA)
         #   :RT_lw_solver        :gmres | :gmres_precond (direction scaling by periodic path length, sweep_gmres.jl)
-        #   :RT_lw_cold_rtol     0 = off; > 0 relaxes the COLD solve to max(rt_tol, rtol·‖b‖)
+        #   :RT_lw_rtol          relaxes EVERY LW solve to max(rt_tol, rtol·‖b‖); 0 = off. Default 2.6e-8 ≈ absolute 0.1
+        #                        on BOMEX 32x32x30 4x4O4 (‖b‖ 3.8e6): heating error ≲3e-7 rel L2, ≲2e-3 K/day max
+        #                        (tolerance study, 2026-11-18), ~1e4 below the 3D−ICA difference
+        #   :RT_lw_cold_rtol     overrides :RT_lw_rtol for the cold solve (default: :RT_lw_rtol)
         cold = !micro.rt_sol_lw_available
         lat_bc = Symbol(get(inputs, :RT_lw_lateral_bc, :blackbody))
         per_mode = Symbol(get(inputs, :RT_lw_periodic_mode, :periodic))
         cold_init = Symbol(get(inputs, :RT_lw_cold_init, :column_mean))
-        cold_rtol = Float64(get(inputs, :RT_lw_cold_rtol, 0.0))
+        lw_rtol   = Float64(get(inputs, :RT_lw_rtol, 2.6e-8))
+        cold_rtol = Float64(get(inputs, :RT_lw_cold_rtol, lw_rtol))
         need_cols = lat_bc == :plane_parallel || per_mode == :walls || (cold && cold_init == :walls)
         cols = need_cols ? build_lw_lateral_columns(mesh, κ_lw .+ σ_lw, atmos_data.t_current, comm;
                                                     ε_surface=lw.ε_surface, T_space=lw.T_space) : nothing
@@ -259,7 +263,7 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
             gmres_restart=60, gmres_max_restarts=10,
             I_cg_all_init = I_init_lw,
             solver = lw_solver,
-            rtol = cold ? cold_rtol : 0.0,
+            rtol = cold ? cold_rtol : lw_rtol,
             monitor = lw_monitor,
             report = rt_solve_report!(tm, :lw))
         rt_lap!(tm, :lw_solve)
