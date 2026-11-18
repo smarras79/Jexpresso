@@ -17,8 +17,9 @@
 #     corners/edges stay separate), and the kernel itself projects the momentum and its
 #     tendency with it. Tangential momentum is never frozen. In 1D a wall is ρu = 0, which the
 #     component rule above already handles.
-#   * Tags whose name contains "robin" (any case) are value+flux conditions: their values are
-#     applied but no tendency is constrained, so a Neumann flux on the same tag acts.
+#   * Flux, Neumann and Robin conditions are not constraints: they are boundary fluxes added by
+#     user_bc_neumann! (BCs.jl). A tag on which user_bc_dirichlet! leaves every value unchanged
+#     constrains nothing, so a flux there acts freely (docs/boundary_conditions.md, §4.1.1).
 #
 # Tendency constraints are applied once per RHS evaluation AFTER the global assembly
 # (DSS_global_RHS!), on masks that are themselves assembled across MPI ranks and periodic
@@ -39,7 +40,6 @@ const _BC_NP_SPLIT   = 0.2        # eigenvalue ratio separating distinct wall no
 const _BC_PERIODIC_TAGS = ("periodicx", "periodic1", "periodicy", "periodic3", "periodicz", "periodic2")
 
 bc_is_periodic_tag(tag) = tag in _BC_PERIODIC_TAGS
-bc_is_robin_tag(tag)    = occursin("robin", lowercase(String(tag)))
 bc_is_skipped_tag(tag)  = bc_is_periodic_tag(tag) || tag == "Laguerre"
 
 struct St_bc_constraints{TF, SDT}
@@ -49,7 +49,6 @@ struct St_bc_constraints{TF, SDT}
     b_ip    :: Vector{Int}
     b_tag   :: Vector{String}
     b_n     :: Matrix{TF}         # (3, nb) outward normal; unused components are 0
-    b_robin :: BitVector
     fixmask :: BitMatrix          # (npoin, neqs): value constrained -> tendency zeroed
     fix_ip  :: Vector{Int}        # flat list of the constrained (ip, ieq) pairs
     fix_ieq :: Vector{Int}
@@ -122,10 +121,8 @@ function build_bc_constraints(mesh, metrics, qn, qe, inputs, neqs,
     b_ip, b_tag, b_nt = _bc_boundary_nodes(SD, mesh, metrics, TF)
     nb      = length(b_ip)
     b_n     = zeros(TF, 3, nb)
-    b_robin = falses(nb)
     for e = 1:nb
         b_n[1, e], b_n[2, e], b_n[3, e] = b_nt[e]
-        b_robin[e] = bc_is_robin_tag(b_tag[e])
     end
 
     ncol = neqs + nS + 1              # [component flags (neqs) | S entries | np count]
@@ -141,7 +138,6 @@ function build_bc_constraints(mesh, metrics, qn, qe, inputs, neqs,
            (1.0, -1.61, 1.23, -2.07, 2.71, -3.29, 3.97, -4.61))
 
     for e = 1:nb
-        b_robin[e] && continue
         ip  = b_ip[e]; tag = b_tag[e]
         n1, n2, n3 = b_n[1, e], b_n[2, e], b_n[3, e]
         nv  = (n1, n2, n3)
@@ -266,7 +262,7 @@ function build_bc_constraints(mesh, metrics, qn, qe, inputs, neqs,
         np_P[:, k] .= Pcols[k]
     end
 
-    return St_bc_constraints{TF, typeof(SD)}(SD, d, b_ip, b_tag, b_n, b_robin,
+    return St_bc_constraints{TF, typeof(SD)}(SD, d, b_ip, b_tag, b_n,
                                               fixmask, fix_ip, fix_ieq, np_ip, np_P, is_np)
 end
 
@@ -293,10 +289,9 @@ function _apply_bc_constraints_state!(bc::St_bc_constraints, u, uaux, qe, t, coo
         _bc_user!(SD, @view(uaux[ip, :]), @view(coords[:, ip]), t, bc.b_tag[e], qbdy,
                   bc.b_n[1, e], bc.b_n[2, e], bc.b_n[3, e],
                   xmin, xmax, ymin, ymax, zmin, zmax, @view(qe[ip, :]), SOL)
-        robin = bc.b_robin[e]
         for k = 1:neqs
             _bc_isset(qbdy[k]) || continue
-            if robin || bc.fixmask[ip, k]
+            if bc.fixmask[ip, k]
                 uaux[ip, k] = qbdy[k]
             end
         end
