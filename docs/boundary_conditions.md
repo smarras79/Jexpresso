@@ -89,15 +89,28 @@ Neumann contributions (`user_bc_neumann!`, MOST, bulk fluxes, `S_flux`) are unch
 
 **Migration note for existing cases.** No file needs to change. Previously the returned values overwrote the state at the start of every RHS evaluation, and the zeroing of `RHS[ip, ieq]` done at that point was overwritten by the subsequent assembly, so boundary tendencies were effectively not constrained; values were only re-imposed at the next stage. Now the constrained tendencies are zeroed after the global assembly, so results at Dirichlet boundaries change slightly (more consistently with the imposed values), and free-slip walls constrain only the normal momentum. Coordinate-gated workarounds in `user_bc.jl` (e.g. setting only `qbdy[4]` for `z < 0.01`) are no longer needed.
 
-### 2.2 Neumann machinery
+### 2.2 Neumann machinery (boundary fluxes)
 
-`build_custom_bcs_neumann!` is invoked only when `inputs[:bdy_fluxes] = true`. For each boundary edge/face it:
+`build_custom_bcs_neumann!` runs at every RHS evaluation when `inputs[:bdy_fluxes] = true` (CPU, CG). It adds the boundary integral of the weak form,
 
-1. Zeroes `F_surf`;
-2. If `inputs[:bulk_fluxes]` is true, calls the analytic `bulk_surface_flux!`; for the special tag `"MOST"` in 3D it calls the Monin-Obukhov routine `CM_MOST!`;
-3. Otherwise calls the user routine `user_bc_neumann!(@view(F_surf[...]), uaux[ip,:], uaux[ip1,:], qe[ip,:], qe[ip1,:], bdy_edge_type[iedge], coords, ..., inputs[:SOL_VARS_TYPE])`;
-4. Integrates over the boundary segment/face with `compute_segment_integral!` or `compute_surface_integral!`;
-5. Performs DSS and adds the result to the global RHS: `RHS[:,ieq] .+= S_flux[:,ieq]`.
+$$\text{RHS}_i \mathrel{+}= \oint_{\partial \Omega} F\,\psi_i\,dS ,$$
+
+to the assembled RHS, before the mass-matrix division and before the Dirichlet constraints of §2.1.1 are applied. For each boundary edge (2D) or face (3D):
+
+1. Periodic tags (`periodicx/y/z`, `periodic1/2/3`) and `Laguerre` are skipped: they are not physical boundaries;
+2. `F_surf` is filled at every node, by `bulk_surface_flux!` (`:bulk_fluxes`), by the Monin–Obukhov routine on the tag `"MOST"`, or otherwise by the user hook
+
+   ```julia
+   user_bc_neumann!(F, q, q1, qe, qe1, tag, coords, τ_f, wθ, SOL_VARS_TYPE, PhysConst;
+                    t = 0.0, nx = 0.0, ny = 0.0, nz = 0.0, kwargs...)
+   ```
+
+   which writes the inward flux at the node into `F` (one entry per equation). It receives the node state `q` and reference `qe`, the same at the next node inward (`q1`, `qe1`), the boundary `tag`, the node `coords`, and as keywords the time `t` and the outward unit normal `(nx, ny, nz)`. `τ_f` and `wθ` are the wall-model arrays when the MOST wall model is in use, and zeroed work vectors otherwise. End the keyword list with `kwargs...`;
+3. `compute_segment_integral!` / `compute_surface_integral!` multiply by the quadrature weights and the edge/face Jacobian, and the result is assembled into `S_flux` and added to `RHS`.
+
+In 1D the "integral" is the flux at the two end nodes, tags `"left"` (normal −1) and `"right"` (normal +1); it is skipped for periodic 1D (`:lperiodic_1d`) and at an end attached to Laguerre elements.
+
+Not covered: the GPU RHS, DG (whose boundary term lives in `surface_rhs_el!`), and the linear-solve path (§2.3), which builds only Dirichlet rows. There, a boundary without a Dirichlet value has the natural zero-flux condition.
 
 ### 2.3 Linear-solve machinery
 

@@ -279,7 +279,37 @@ function build_custom_bcs_neumann!(::NSD_1D, t,
                                    Tabs, qn,
                                    neqs, dirichlet!, neumann, inputs)
 
-    nothing
+    # In 1D the boundary integral ∮ ψ F dS is the flux at the two end nodes, "left" (x = xmin,
+    # outward normal -1) and "right" (x = xmax, normal +1), the same tags user_bc_dirichlet! sees.
+    # Same hook and keywords as in 2D/3D; q1 is the next node inward. Skipped for periodic 1D
+    # and on an end that continues into Laguerre (semi-infinite) elements.
+    inputs[:bdy_fluxes]::Bool || return nothing
+    inputs[:lperiodic_1d]     && return nothing
+    SOL_VARS_TYPE = inputs[:SOL_VARS_TYPE]
+    PhysConst     = PhysicalConst{Float64}()
+    for (ip, tag, n, laguerre) in ((1,            "left",  -1.0, inputs[:llaguerre_1d_left]),
+                                   (npoin_linear, "right",  1.0, inputs[:llaguerre_1d_right]))
+        laguerre && continue
+        ip1 = _neighbour_node_1d(connijk, ngl, ip)
+        F = qbdy                     # neqs-long work vector, free once the Dirichlet pass is done
+        fill!(F, zero(eltype(F)))
+        user_bc_neumann!(F, @view(uaux[ip, :]), @view(uaux[ip1, :]), @view(qe[ip, :]), @view(qe[ip1, :]),
+                         tag, @view(coords[:, ip]), zeros(3), zeros(1), SOL_VARS_TYPE, PhysConst;  # τ_f, wθ: unused work vectors, as in 2D/3D
+                         t = t, nx = n, ny = 0.0, nz = 0.0)
+        for ieq = 1:neqs
+            RHS[ip, ieq] += F[ieq]
+        end
+    end
+    return nothing
+end
+
+# The node next to the end node ip, inside the element that has ip as its first or last node.
+function _neighbour_node_1d(connijk, ngl, ip)
+    for e = 1:size(connijk, 1)
+        connijk[e, 1,   1, 1] == ip && return connijk[e, 2,       1, 1]
+        connijk[e, ngl, 1, 1] == ip && return connijk[e, ngl - 1, 1, 1]
+    end
+    return ip
 end
 
 function build_custom_bcs_dirichlet!(::NSD_2D, t,
@@ -409,6 +439,9 @@ function build_custom_bcs_neumann!(::NSD_2D, t,
     if (lbdy_fluxes)
         for iedge = 1:nedges_bdy
             F_surf .= 0.0
+            # Periodic seams and Laguerre (semi-infinite) edges are not physical boundaries:
+            # no flux enters through them.
+            bc_is_skipped_tag(bdy_edge_type[iedge]) && continue
             if (lbulk_fluxes)
                 for i = 1:ngl
                     ip  = poin_in_bdy_edge[iedge,i]
@@ -512,7 +545,9 @@ function build_custom_bcs_neumann!(::NSD_2D, t,
                                          θ  = θ,
                                          θ1 = θ1,
                                          qn0 = qn1,
-                                         qn1 = qn2)
+                                         qn1 = qn2,
+                                         t  = t,                                    # time
+                                         nx = nx[iedge,i], ny = ny[iedge,i], nz = 0.0)  # outward unit normal
                     end
                 end
             end
@@ -803,10 +838,18 @@ function _build_custom_bcs_neumann_3d!(t, coords, nx, ny, nz, npoin, npoin_linea
     lbdy_fluxes         = inputs[:bdy_fluxes]::Bool
     lbulk_fluxes        = inputs[:bulk_fluxes]::Bool
     ifirst_wall_node    = inputs[:ifirst_wall_node_index]::Int
+    # The wall-model arrays τ_f, wθ exist only when the MOST wall model is in use. Otherwise the
+    # user hook gets these zeroed work vectors instead (as in 2D), so reading them gives 0 and
+    # writing them is harmless; a plain flux condition then needs no wall-model setting.
+    lwm       = size(τ_f, 1) >= nfaces_bdy && nfaces_bdy > 0
+    τ_f_local = zeros(Float64, 3)
+    wθ_local  = zeros(Float64, 1)
     
     for iface = 1:nfaces_bdy
         if (lbdy_fluxes)
             F_surf .= 0.0
+            # Periodic seams and Laguerre faces are not physical boundaries: no flux enters there.
+            bc_is_skipped_tag(bdy_face_type[iface]) && continue
             if (lbulk_fluxes)
                 if (coords[3, poin_in_bdy_face[iface,3,3]] == zmin)
                     for i = 1:ngl
@@ -920,11 +963,16 @@ function _build_custom_bcs_neumann_3d!(t, coords, nx, ny, nz, npoin, npoin_linea
                                                  @view(qe[ip,:]), @view(qe[ip1,:]),
                                                  bdy_face_type[iface],
                                                  @view(coords[:, ip]),
-                                                 @view(τ_f[iface,i,j,:]), @view(wθ[iface,i,j,:]), SOL_VARS_TYPE, PhysConst;
+                                                 lwm ? @view(τ_f[iface,i,j,:]) : fill!(τ_f_local, 0.0),
+                                                 lwm ? @view(wθ[iface,i,j,:])  : fill!(wθ_local, 0.0),
+                                                 SOL_VARS_TYPE, PhysConst;
                                                  θ = θ,
                                                  θ1 = θ1,
                                                  qn0 = qn1,
-                                                 qn1=qn2)
+                                                 qn1=qn2,
+                                                 t  = t,                                  # time
+                                                 nx = nx[iface,i,j], ny = ny[iface,i,j],  # outward unit normal
+                                                 nz = nz[iface,i,j])
                             end
                         end
                     end
