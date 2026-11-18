@@ -205,3 +205,85 @@ function lw_column_mean_init(mesh, κ_ext::AbstractVector, T::AbstractVector, co
     end
     return out
 end
+
+"""
+    lw_column_local_init(mesh, κ_ext, T, comm; ε_surface, T_space) -> Dict{(iel,d) => Vector (ngl^3, lidx order)}
+
+Collective. Initial guess for a cold LW solve (:RT_lw_cold_init => :column_local): at every node, the plane-parallel
+radiance of the node's OWN (x,y) column (independent column approximation), same model as the lateral columns.
+Columns are split across ranks, so each column is assembled on an owner rank (chosen from its (x,y) key) and the full
+profile is sent back to every rank holding part of it: two Alltoallv, memory ~ the rank's own columns.
+"""
+function lw_column_local_init(mesh, κ_ext::AbstractVector, T::AbstractVector, comm;
+                              ε_surface::Float64=0.97, T_space::Float64=0.0)
+    np = MPI.Comm_size(comm); npoin = length(κ_ext); ngl = mesh.ngl
+    owner(k) = mod(k[1] * 1_000_003 + k[2], np) + 1
+    # 1) nodes -> column owners: (x_mm, y_mm, z, κ, B)
+    sbufs = [Float64[] for _ = 1:np]
+    for ip = 1:npoin
+        key = (lw_mm(mesh.x[ip]), lw_mm(mesh.y[ip]))
+        push!(sbufs[owner(key)], key[1], key[2], mesh.z[ip], κ_ext[ip], LW_σ_SB * T[ip]^4 / π)
+    end
+    recv = lw_alltoallv(sbufs, comm)
+    # 2) owners assemble columns; remember which ranks asked for which column
+    acc = Dict{Tuple{Int,Int},Dict{Int,NTuple{4,Float64}}}(); askers = Dict{Tuple{Int,Int},Set{Int}}()
+    for (src, buf) in enumerate(recv), r = 1:5:length(buf)
+        key = (round(Int, buf[r]), round(Int, buf[r+1])); zm = lw_mm(buf[r+2])
+        d = get!(acc, key, Dict{Int,NTuple{4,Float64}}())
+        a = get(d, zm, (buf[r+2], 0.0, 0.0, 0.0))
+        d[zm] = (a[1], a[2] + buf[r+3], a[3] + buf[r+4], a[4] + 1.0)
+        push!(get!(askers, key, Set{Int}()), src)
+    end
+    sbufs = [Float64[] for _ = 1:np]
+    for (key, d) in acc
+        zs = sort(collect(keys(d))); n = length(zs)
+        prof = vcat(Float64[key[1], key[2], n], [d[k][1] for k in zs], [d[k][2]/d[k][4] for k in zs],
+                    [d[k][3]/d[k][4] for k in zs])
+        for dst in askers[key]; append!(sbufs[dst], prof); end
+    end
+    recv = lw_alltoallv(sbufs, comm)
+    # 3) local columns -> radiance at every node and direction
+    I_top = LW_σ_SB * T_space^4 / π
+    cols = Dict{Tuple{Int,Int},LWColumn}()
+    for buf in recv
+        r = 1
+        while r <= length(buf)
+            key = (round(Int, buf[r]), round(Int, buf[r+1])); n = round(Int, buf[r+2]); r += 3
+            zv = buf[r:r+n-1]; κv = buf[r+n:r+2n-1]; Bv = buf[r+2n:r+3n-1]; r += 3n
+            cols[key] = LWColumn(zv, κv, Bv, ε_surface * Bv[1], I_top)
+        end
+    end
+    cache = Dict{Tuple{Tuple{Int,Int},Float64},Vector{Float64}}()
+    out = Dict{Tuple{Int,Int},Vector{Float64}}()
+    keyk = Vector{Tuple{Int,Int}}(undef, ngl^3); lev = Vector{Int}(undef, ngl^3)
+    for iel = 1:mesh.nelem
+        em = mesh.extra_mesh[iel]
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            ip = mesh.connijk[iel,i,j,k]; q = lidx(i,j,k,ngl)
+            keyk[q] = (lw_mm(mesh.x[ip]), lw_mm(mesh.y[ip]))
+            c = cols[keyk[q]]
+            lev[q] = searchsortedfirst(c.z, mesh.z[ip] - 1e-4)
+        end
+        for d = 1:em.extra_npoin
+            μ = cos(em.extra_coords[1,d]); v = Vector{Float64}(undef, ngl^3)
+            for q = 1:ngl^3
+                I = get!(() -> lw_column_radiance(cols[keyk[q]], μ), cache, (keyk[q], μ))
+                v[q] = I[lev[q]]
+            end
+            out[(iel,d)] = v
+        end
+    end
+    return out
+end
+
+# Variable-size all-to-all of Float64 buffers (one per destination rank, 1-based); returns one buffer per source rank.
+function lw_alltoallv(sbufs::Vector{Vector{Float64}}, comm)
+    np = MPI.Comm_size(comm)
+    scounts = Int32[length(b) for b in sbufs]
+    rcounts = MPI.Alltoall(MPI.UBuffer(scounts, 1), comm)
+    sall = reduce(vcat, sbufs; init=Float64[]); rall = Vector{Float64}(undef, sum(rcounts))
+    MPI.Alltoallv!(MPI.VBuffer(sall, scounts), MPI.VBuffer(rall, rcounts), comm)
+    out = Vector{Vector{Float64}}(undef, np); o = 0
+    for s = 1:np; out[s] = rall[o+1:o+rcounts[s]]; o += rcounts[s]; end
+    return out
+end

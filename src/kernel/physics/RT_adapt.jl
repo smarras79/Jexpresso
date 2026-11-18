@@ -205,13 +205,14 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
         #   :RT_lw_lateral_bc    :blackbody (σT_back⁴/π on real walls) | :plane_parallel (local-column 1D radiance)
         #   :RT_lw_periodic_mode :periodic | :walls (periodic faces become walls with local-column 1D inflow)
         #   :RT_lw_cold_init     :zero | :walls (cold solve starts from the :walls solution, then solves periodic)
-        #                        | :column_mean (cold solve starts from the plane-parallel horizontal-mean column)
+        #                        | :column_mean (cold solve starts from the plane-parallel horizontal-mean column; default)
+        #                        | :column_local (cold solve starts from each node's own column: ICA)
         #   :RT_lw_solver        :gmres | :gmres_precond (direction scaling by periodic path length, sweep_gmres.jl)
         #   :RT_lw_cold_rtol     0 = off; > 0 relaxes the COLD solve to max(rt_tol, rtol·‖b‖)
         cold = !micro.rt_sol_lw_available
         lat_bc = Symbol(get(inputs, :RT_lw_lateral_bc, :blackbody))
         per_mode = Symbol(get(inputs, :RT_lw_periodic_mode, :periodic))
-        cold_init = Symbol(get(inputs, :RT_lw_cold_init, :zero))
+        cold_init = Symbol(get(inputs, :RT_lw_cold_init, :column_mean))
         cold_rtol = Float64(get(inputs, :RT_lw_cold_rtol, 0.0))
         need_cols = lat_bc == :plane_parallel || per_mode == :walls || (cold && cold_init == :walls)
         cols = need_cols ? build_lw_lateral_columns(mesh, κ_lw .+ σ_lw, atmos_data.t_current, comm;
@@ -235,6 +236,10 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
             I_init_lw = lw_column_mean_init(mesh, κ_lw .+ σ_lw, atmos_data.t_current, comm;
                                             ε_surface=lw.ε_surface, T_space=lw.T_space)
             rt_lap!(tm, :lw_mean_init)
+        elseif cold && cold_init == :column_local
+            I_init_lw = lw_column_local_init(mesh, κ_lw .+ σ_lw, atmos_data.t_current, comm;
+                                             ε_surface=lw.ε_surface, T_space=lw.T_space)
+            rt_lap!(tm, :lw_ica_init)
         end
         if cold && cold_init == :walls && per_mode == :periodic
             walls_case = build_longwave_case(atmos_data, κ_lw, σ_lw, bdy; ε_surface=lw.ε_surface, T_space=lw.T_space,
