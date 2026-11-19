@@ -1673,6 +1673,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
         # reads the Ref to put the thermal departure in slot 4; _dsgs_energy_consistent_2d!
         # below adds the work of the other slots and the dissipated heat.
         dsgs_thermal_energy[] = get(params.inputs, :dsgs_thermal_energy, false)::Bool
+        dsgs_heat_factor[]    = Float64(get(params.inputs, :dsgs_heating, 1.0))
         dsgs_thermal_energy[] && (lnodal_mhd2d || dsgs_split_energy[] || !get(params.inputs, :dsgs_conserved, false)) &&
             error(" :dsgs_thermal_energy needs the conserved element form of DSGS_MHD (:dsgs_conserved => true, ",
                   ":ldsgs_nodal => false) without the split energy flux (:dsgs_nazarov_energy => false).")

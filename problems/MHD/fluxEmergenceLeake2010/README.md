@@ -81,6 +81,8 @@ editing the deck:
 | `JEXPRESSO_LK10_ENERGY` | `thermal` (default), `total` | energy-consistent DynSGS (Positivity, below), or $E$ diffused as a whole (the parent case) |
 | `JEXPRESSO_LK10_ETACAP` | `fast` (default), `flow` | DynSGS resistivity capped at $C_{max}\Delta(\lvert v\rvert + c_f)$ like the viscosity, or at $C_{max}\Delta\lvert v\rvert$ (Verification, the REF 4 run) |
 | `JEXPRESSO_LK10_ETAFAC` | default 1 | factor on the DynSGS resistivity (the `:μ` multipliers of the B slots), a sensitivity test |
+| `JEXPRESSO_LK10_RHOFAC` | default 1 | factor on the DynSGS mass diffusion (the `:μ` multiplier of the ρ slot), a sensitivity test |
+| `JEXPRESSO_LK10_HEAT` | default 1 | fraction of the heat the DynSGS dissipates that goes into the plasma (`:dsgs_heating`; 0: lost, not energy conserving), a sensitivity test |
 | `JEXPRESSO_LK10_SENSOR` | `legacy` (default), `residual` | DynSGS sensor: $\lvert\partial_tq\rvert$ against the assembled RHS (the parent case's), or the element residual once per step (DSGS.md §1.2) |
 
 For example, the erratum's Fig. 1 (tubes 1 and 2, field-free corona) and its
@@ -527,6 +529,7 @@ python3 tools/plot_leake2010.py eshear   tube2=$RUN      # Erratum Figs. 2(b,c),
 python3 tools/plot_leake2010.py profiles $RUN            # Fig. 3(a,b) at t = 0, with the paper's values
 python3 tools/plot_leake2010.py diag     $RUN --dt <Δt>  # per snapshot: largest speed, CFL, current; smallest p/p0, beta
 python3 tools/plot_leake2010.py null     base=$RUN       # on x = 0 vs time: the null above the dome, the flux below it, the mass lifted
+python3 tools/plot_leake2010.py mass     $RUN            # the plasma above 3 Mm: mass budget, temperature, pressure, draining, heating time
 ```
 
 The density panels use the paper's window ($\lvert x\rvert < 12.75$ Mm,
@@ -656,31 +659,47 @@ Short runs on 4 cores; the full runs are for a cluster (above).
   dense plasma at 5–8 Mm, which the erratum's are not at 1380–1610 s. In the
   paper the dome is the expanding shell of the emerged tube, which stretches
   the quadrupole's null into a crescent-shaped current sheet and pushes it up;
-  the rope forms in that sheet at its apex. Lare reconnects there only at its
-  grid scale (the erratum removed the explicit resistivity, and the anomalous
-  one cannot switch on at coronal field strengths). The hypothesis under test:
-  the DynSGS resistivity of the sheet lets the shell reconnect with the
-  overlying field as fast as it rises, so the top stalls, and the reconnected
-  loops, now side-lobe loops, carry the dome's plasma to the sides.
-  `plot_leake2010.py null` measures it on a run: the in-plane flux between the
-  tube axis and the null on $x = 0$ (10.4 × 10¹⁰ Mx cm⁻¹ at $t = 0$) can only
-  fall by reconnection at the null, and it prints the DynSGS coefficients
-  there. The tests are restarts of this run at 920 s with
-  `JEXPRESSO_LK10_ETAFAC=0.1` (sensitivity) and with
-  `JEXPRESSO_LK10_ETACAP=flow` (the resistivity capped at $C_{max}\Delta\lvert v\rvert$,
-  the first-order diffusivity of a field carried by the flow, instead of the
-  viscosity's $C_{max}\Delta(\lvert v\rvert + c_f)$, ~10 $L_0v_0$ at a coronal sheet
-  of REF 4).
-  Here: both switches act and are recorded, and a restart that changes them
+  the rope forms in that sheet at its apex.
+
+  *Not reconnection at the null.* `plot_leake2010.py null` on this run: the
+  in-plane flux between the tube axis and the null on $x = 0$, which only
+  reconnection at the null can lower, is 10.44 × 10¹⁰ Mx cm⁻¹ at $t = 0$, 10.01
+  at 920 s, 9.86 at 1380 s and 9.82 at 1955 s, and the overlying flux 4.23,
+  4.20, 4.11, 4.04: the dome keeps its flux while it stalls, and the DynSGS
+  resistivity at the null is 0.003–0.3 $L_0v_0$ (mostly 0.02–0.1). The tests
+  `ETAFAC=0.1` and `ETACAP=flow` (above) were for this hypothesis.
+
+  *The lifted plasma stops draining.* The mass in $3 < y < 20$ Mm,
+  $\lvert x\rvert$ < 13 Mm, against $t = 0$: 34 at 1044 s, 606 at 1160 s, 362 at
+  1380 s, 258 at 1610 s, then 245–282 to 2530 s. The dome rises while half of
+  what it lifted drains (1160–1610 s) and stops when the draining stops; in the
+  erratum the dome's density falls about tenfold between 1610 and 1955 s while
+  it rises. The dense plasma also reaches 0.5–1.2 Mm above the null (the dome
+  top of the table is above the top of the emerged flux), into the overlying
+  field, which only a cross-field (numerical) transport can do. The REF 2 run
+  shows why it can stay: beside the dome its dense layer at 7.5 Mm has
+  log ρ ≈ −12 at 1.3–2 × 10⁵ K: a gas pressure of 10–15 dyn cm⁻², 30–45 times
+  the initial coronal one there, and a pressure scale height of 3.5–5.5 Mm, so
+  it sits on its own pressure; plasma lifted from the chromosphere and cooled
+  by its expansion, as in Lare (no heating there but its shock viscosity), has
+  a scale height of a fraction of a Mm (0.16 Mm at 6000 K) and drains. The candidates are the heat of the DynSGS
+  dissipation (viscosity 0.1–0.9 $L_0v_0$ at the null, 0.5–3 in the corona of
+  REF 2) and the DynSGS mass diffusion (the ρ slot), which mixes the dense
+  plasma across the field with the hot corona. `plot_leake2010.py mass` gives,
+  per snapshot, that mass's budget (carried by the flow across the box's edges,
+  or not), its temperatures, its pressure against the initial atmosphere, its
+  draining speed and the time the DynSGS heating needs to supply its internal
+  energy; the switches `JEXPRESSO_LK10_HEAT=0` and `JEXPRESSO_LK10_RHOFAC=0.1`
+  test the two causes in restarts of the run.
+
+  Here: the switches act, are recorded, and a restart that changes them
   reports it and continues; the first 40 s of the run on REF 1 (the corona is
-  still quiet then, DynSGS coefficient at the explicit viscosity) are the same
-  with `ETACAP=flow` to round-off, with the same axis, the same
-  smallest temperature (0.92 $T_{ph}$) and $\psi$ at round-off.
-  `JEXPRESSO_LK10_SENSOR=residual` does not help: in the kick test of
-  "Positivity" the coefficient of the disturbed corona is 0.45 against 0.59
-  (median, 11.6 s) and, with `ETA=induction`, the resistivity 0.25 against
-  0.018 — the element residual of the induction equation is larger than the
-  legacy sensor's assembled one.
+  still quiet then) are the same with `ETACAP=flow` to round-off.
+  `JEXPRESSO_LK10_SENSOR=residual` does not lower the coronal coefficient: in
+  the kick test of "Positivity" it is 0.45 against 0.59 (median, 11.6 s) and,
+  with `ETA=induction`, the resistivity 0.25 against 0.018 — the element
+  residual of the induction equation is larger than the legacy sensor's
+  assembled one.
 
 ## Files
 

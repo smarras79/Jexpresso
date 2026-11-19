@@ -14,6 +14,8 @@ t0 = 23.1946 s), the density in g cm^-3 and B_z in G, as in the paper.
   python3 tools/plot_leake2010.py axis RUN [RUN2 ...]         # Erratum Figs. 2(a), 7(a): height of the tube axis vs time
   python3 tools/plot_leake2010.py eshear RUN [RUN2 ...]       # Erratum Figs. 2(b,c), 5: E_shear above 1.2 and 5 Mm (Eq. 20)
   python3 tools/plot_leake2010.py profiles RUN                # Fig. 3(a,b): T, p, p_mag and beta at x = 0, t = 0
+  python3 tools/plot_leake2010.py mass RUN                    # the plasma lifted above 3 Mm: its mass budget (with the flow
+                                                              #   or not), temperature, pressure, draining speed, heating time
   python3 tools/plot_leake2010.py null RUN [RUN2 ...]         # on x = 0 vs time: the top of the emerged flux (the null
                                                               #   above it), the flux between the tube axis and it, the
                                                               #   mass lifted, and the DynSGS coefficients at the null
@@ -555,7 +557,8 @@ def null_row(g, thr=-13.0):
     Bx = grid2d(g, g["fields"]["Bx"])[:, ix0]
     A = a_grid(g)[:, ix0] / L0_MM                       # code units B0 L0
     axis = axis_height(g)
-    tops = [y for y in _bx_crossings(Y, Bx, -1) if y > (axis if np.isfinite(axis) else 0.0) and y < 40.0]
+    # above the axis and above the low chromosphere (small reversals there are not the null)
+    tops = [y for y in _bx_crossings(Y, Bx, -1) if y > max(axis if np.isfinite(axis) else 0.0, 1.0) and y < 40.0]
     top = tops[0] if tops else np.nan
     Ai = lambda y: np.interp(y, Y, A)
     # B0 = (4 pi p0)^1/2 G with p0 = 10^4.927 dyn cm^-2, L0 = 1.5e7 cm
@@ -618,6 +621,93 @@ def cmd_null(a):
     out = os.path.join(a.outdir, f"null.{a.format}")
     fig.savefig(out, dpi=a.dpi); plt.close(fig)
     print("wrote", out)
+
+
+def _edge_flux(F, X, Y, box):
+    """Inflow [per unit length] of the flux vector F = (Fx, Fy) (grids (ny, nx)) through the edges of the box
+    (x0, x1, y0, y1): through y = y0 and x = x0 counted inward, y = y1 and x = x1 outward; nearest lattice lines."""
+    x0, x1, y0, y1 = box
+    iy0, iy1 = np.argmin(np.abs(Y - y0)), np.argmin(np.abs(Y - y1))
+    ix0, ix1 = np.argmin(np.abs(X - x0)), np.argmin(np.abs(X - x1))
+    cx, cy = slice(ix0, ix1 + 1), slice(iy0, iy1 + 1)
+    return (np.trapezoid(F[1][iy0, cx], X[cx]) - np.trapezoid(F[1][iy1, cx], X[cx])
+            + np.trapezoid(F[0][cy, ix0], Y[cy]) - np.trapezoid(F[0][cy, ix1], Y[cy]))
+
+
+def mass_row(g, p0):
+    """The plasma in the box 3 < y < 20 Mm, |x| < 13 Mm (cmd_mass). p0: the first snapshot's pressure grid."""
+    X, Y = g["X"], g["Y"]
+    G = lambda n: grid2d(g, g["fields"][n])
+    box = (-13.0, 13.0, 3.0, 20.0)
+    m = ((Y > box[2]) & (Y < box[3]))[:, None] & ((X > box[0]) & (X < box[1]))[None, :]
+    L = G("log10rho_cgs"); rho = 10.0 ** L                        # g cm^-3
+    u, v = G("u"), G("v")
+    T = G("T") * 5700.0
+    cm = 1e8                                                      # cm per Mm
+    integ = lambda f: np.trapezoid(np.trapezoid(np.where(m, f, 0.0), X * cm, axis=1), Y * cm)
+    M = integ(rho)
+    vs = V0_KMS * 1e5                                             # cm/s per code velocity
+    Fin = _edge_flux((rho * u * vs, rho * v * vs), X * cm, Y * cm, (box[0] * cm, box[1] * cm, box[2] * cm, box[3] * cm))
+    w = np.where(m, rho, 0.0)
+    fr = lambda sel: integ(np.where(sel, rho, 0.0)) / M
+    P = G("p"); ratio = P / np.where(p0 > 0, p0, np.nan)
+    o = np.argsort(ratio[m]); cw = np.cumsum(w[m][o]); pmed = ratio[m][o][np.searchsorted(cw, 0.5 * cw[-1])]
+    vy = integ(rho * v) / M * V0_KMS
+    # heating of the dense plasma (log rho > -13) by the DynSGS, code units: rho mu |grad v|^2 and eta |curl B|^2
+    d = m & (L > -13.0)
+    Xc, Yc = g["xc"], g["yc"]
+    dx = lambda f: np.gradient(f, Xc, axis=1)
+    dy = lambda f: np.gradient(f, Yc, axis=0)
+    w3 = G("w")
+    gv2 = dx(u) ** 2 + dy(u) ** 2 + dx(v) ** 2 + dy(v) ** 2 + dx(w3) ** 2 + dy(w3) ** 2
+    Bx, By, Bz = G("Bx"), G("By"), G("Bz")
+    j2 = (dx(By) - dy(Bx)) ** 2 + dy(Bz) ** 2 + dx(Bz) ** 2
+    mu = G(MU_NAME) if MU_NAME in g["fields"] else np.zeros_like(u)
+    en = next((n for n in ETA_NAMES if n in g["fields"]), None)
+    eta = G(en) if en else np.zeros_like(u)
+    eint = np.sum(np.where(d, P, 0.0)) / (5.0 / 3.0 - 1.0)
+    qv = np.sum(np.where(d, G("ρ") * mu * gv2, 0.0))
+    qo = np.sum(np.where(d, eta * j2, 0.0))
+    tv = eint / qv * T0_S if qv > 0 else np.inf
+    to = eint / qo * T0_S if qo > 0 else np.inf
+    return dict(M=M, Fin=Fin, cold=fr(T < 2e4), warm=fr((T >= 2e4) & (T < 2e5)), hot=fr(T >= 2e5),
+                pmed=pmed, vy=vy, tv=tv, to=to)
+
+
+def cmd_mass(a):
+    """Where the plasma lifted above the transition region goes, and how hot it is. Per snapshot, over the box
+    3 < y < 20 Mm, |x| < 13 Mm: the mass against the first snapshot's; its change since the previous snapshot,
+    split into what the flow carried across the box's edges (advective, trapezoid in time) and the rest
+    (non-advective: the DynSGS mass diffusion, the density floor), in units of the first snapshot's mass; the
+    mass fractions below 2e4 K, 2e4-2e5 K and above; the mass-weighted median of p over the first snapshot's p
+    at the same point (the initial atmosphere: > 1 is plasma hotter than pressure balance with it allows); the
+    mass-weighted mean v_y (km/s, < 0: draining); and, for the plasma denser than 10^-13 g cm^-3, the time in
+    which the DynSGS viscous (rho mu |grad v|^2) and Ohmic (eta |curl B|^2) heating, estimated from the snapshot,
+    would supply its internal energy. Plasma that is hot and in no hurry to drain is held up by its own pressure."""
+    items = runs_of(a.run)
+    rows = []
+    p0 = None
+    for t, f in items:
+        g = load(f, ["log10rho_cgs", "ρ", "p", "T", "u", "v", "w", "Bz", MU_NAME, *ETA_NAMES])
+        if p0 is None:
+            p0 = grid2d(g, g["fields"]["p"])
+        rows.append((t, mass_row(g, p0)))
+    M0 = rows[0][1]["M"]
+    print("box 3 < y < 20 Mm, |x| < 13 Mm; masses in units of the first snapshot's (" + f"{M0:.3g} g/cm)")
+    print(f"{'t [s]':>7} {'mass':>8} {'change':>8} {'advect.':>8} {'other':>8} | {'<2e4 K':>6} {'2e4-2e5':>7} {'>2e5 K':>6} | "
+          f"{'p/p_init':>8} {'v_y km/s':>8} | {'heat visc s':>11} {'heat Ohm s':>10}")
+    prev = None
+    for t, r in rows:
+        if prev is None:
+            ch = ad = ot = np.nan
+        else:
+            tp, rp = prev
+            ch = (r["M"] - rp["M"]) / M0
+            ad = 0.5 * (r["Fin"] + rp["Fin"]) * (t - tp) / M0
+            ot = ch - ad
+        print(f"{t:7.0f} {r['M'] / M0:8.2f} {ch:8.2f} {ad:8.2f} {ot:8.2f} | {r['cold']:6.2f} {r['warm']:7.2f} {r['hot']:6.2f} | "
+              f"{r['pmed']:8.3g} {r['vy']:8.2f} | {r['tv']:11.3g} {r['to']:10.3g}")
+        prev = (t, r)
 
 
 def cmd_profiles(a):
@@ -684,6 +774,8 @@ def main():
     s = sub.add_parser("dome"); s.set_defaults(fn=cmd_dome)
     s.add_argument("runs", nargs="+", help="RUN or LABEL=RUN")
     s.add_argument("--thr", type=float, default=-13.0, help="log10 rho threshold [g cm^-3]")
+    s = sub.add_parser("mass"); s.set_defaults(fn=cmd_mass)
+    s.add_argument("run")
     s = sub.add_parser("null"); s.set_defaults(fn=cmd_null)
     s.add_argument("runs", nargs="+", help="RUN or LABEL=RUN")
     s.add_argument("--thr", type=float, default=-13.0, help="log10 rho threshold of the dome top [g cm^-3]")

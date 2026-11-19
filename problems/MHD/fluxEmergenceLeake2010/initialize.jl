@@ -577,7 +577,8 @@ lk10_restart_fields() = ["ρ", "u", "v", "w", "p", "Bx", "By", "Bz", "ψ"]
 # Δt, the end time and the snapshot interval may change, and so may the numerical
 # switches of lk10_numeric_keys (to continue past a failure from an earlier snapshot);
 # the restart says which changed.
-lk10_numeric_keys() = ("curl_resistivity", "Cmin", "floors", "dsgs_energy", "eta_sensor", "dsgs_sensor", "eta_cap", "eta_factor")
+lk10_numeric_keys() = ("curl_resistivity", "Cmin", "floors", "dsgs_energy", "eta_sensor", "dsgs_sensor", "eta_cap", "eta_factor",
+                         "rho_factor", "heating")
 
 function lk10_case_record(inputs)
     return Pair{String,String}[
@@ -598,6 +599,8 @@ function lk10_case_record(inputs)
         "dsgs_sensor"      => String(get(inputs, :dsgs_sensor, "legacy")),
         "eta_cap"          => get(inputs, :dsgs_eta_flow_cap, false) == true ? "flow" : "fast",
         "eta_factor"       => string(Float64(get(inputs, :μ, ones(9))[6])),
+        "rho_factor"       => string(Float64(get(inputs, :μ, ones(9))[1])),
+        "heating"          => string(Float64(get(inputs, :dsgs_heating, 1.0))),
         "mesh"             => basename(String(get(inputs, :gmsh_filename, ""))),
         "partition"        => get(inputs, :lxy_partition, true) != true ? "metis" :
                               (get(inputs, :lxy_partition_balanced, false) == true ? "balanced" : "uniform"),
@@ -644,7 +647,7 @@ function lk10_record_mismatch(old::Dict{String,String}, rec; numerics::Bool=fals
         # (runs made before the partition was recorded had the uniform bins)
         # (and the legacy DynSGS sensor)
         w = get(old, k, k == "partition" ? "uniform" : k == "dsgs_sensor" ? "legacy" : k == "eta_cap" ? "fast" :
-                        k == "eta_factor" ? "1.0" : "(not recorded)")
+                        k in ("eta_factor", "rho_factor", "heating") ? "1.0" : "(not recorded)")
         w == v || push!(bad, "$(k): $(w) there, $(v) here" *
                              (k == "partition" ? " (JEXPRESSO_LK10_PARTITION=$(w) to continue that run)" : ""))
     end

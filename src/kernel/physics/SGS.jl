@@ -555,6 +555,11 @@ const dsgs_split_energy = Ref{Bool}(false)
 # field and larger than p where β ≲ 10⁻² (problems/MHD/fluxEmergenceLeake2010, README,
 # "Positivity"; the split energy flux above keeps it).
 const dsgs_thermal_energy = Ref{Bool}(false)
+# :dsgs_heating — the fraction of the dissipated heat Q that _dsgs_energy_consistent_2d! puts
+# into the internal energy (1, the default: energy conserving). 0 loses the energy that the
+# DynSGS dissipates instead of heating the plasma with it: a test of how much the numerical
+# dissipation heats (problems/MHD/fluxEmergenceLeake2010, the plasma lifted into the corona).
+const dsgs_heat_factor = Ref{Float64}(1.0)
 
 @inline function SGS_diffusion(visc_coeffieq, ieq,
                                ρ,
@@ -2140,7 +2145,7 @@ function _dsgs_energy_consistent_2d!(rhs_diff_el::AbstractArray{TT}, μ_dsgs::Ab
                   TT(0.5)*(u*u + v*v + w*w)*rhs_diff_el[ie,k,l,1] +
                   q[ip,6]*rhs_diff_el[ie,k,l,6] + q[ip,7]*rhs_diff_el[ie,k,l,7] +
                   q[ip,8]*rhs_diff_el[ie,k,l,8] + q[ip,9]*rhs_diff_el[ie,k,l,9]
-            rhs_diff_el[ie,k,l,4] += W + ω[k]*ω[l]*Je[ie,k,l]*Q
+            rhs_diff_el[ie,k,l,4] += W + ω[k]*ω[l]*Je[ie,k,l]*TT(dsgs_heat_factor[])*Q
         end
     end
     return nothing
