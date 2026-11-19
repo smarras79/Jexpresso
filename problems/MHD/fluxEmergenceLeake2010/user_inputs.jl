@@ -37,6 +37,13 @@
 #   JEXPRESSO_LK10_ETA       induction | all: the DynSGS resistivity from the residuals
 #                            of the induction equation alone, or from the max over
 #                            all equations (one coefficient, the parent case)    [all]
+#   JEXPRESSO_LK10_ETAFAC    factor on the DynSGS resistivity (the :μ multiplier of the B
+#                            slots), a sensitivity test of the reconnection          [1]
+#   JEXPRESSO_LK10_ETACAP    fast | flow: the DynSGS resistivity capped at C_max Δ (|v| + c_f)
+#                            like the viscosity, or at C_max Δ |v|, the flow speed alone [fast]
+#   JEXPRESSO_LK10_SENSOR    legacy | residual: the DynSGS coefficient from |∂ₜq| (the
+#                            sensor the parent case was validated with), or from the
+#                            element residual of the equations, once per step     [legacy]
 #   JEXPRESSO_LK10_ENERGY    thermal | total: the DynSGS energy slot diffuses the
 #                            internal energy, with the work and heat of the other
 #                            slots (energy-consistent), or E as a whole          [thermal]
@@ -238,9 +245,13 @@ function user_inputs()
         # would be a diffusivity of ~4 L0 v0 (README, "DynSGS").
         #---------------------------------------------------------------------------
         :lvisc                => true,
-        :μ                    => [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        # (slots ρ, ρu, ρv, E, ρw, Bx, By, Bz, ψ; JEXPRESSO_LK10_ETAFAC scales the resistivity)
+        :μ                    => [1.0, 1.0, 1.0, 1.0, 1.0, fill(_lk10_num("ETAFAC", 1.0), 3)..., 1.0],
         :visc_model           => DSGS_MHD(),
-        :dsgs_sensor          => "legacy",
+        # "legacy" (DSGS.md §1.2): the assembled RHS against a BDF2 of the RK stage state, which
+        # reads -∂ₜq/2 at the first stage — R ≈ |∂ₜq|, so every moving structure is diffused,
+        # the corona's waves included. "residual": the element residual, frozen once per step.
+        :dsgs_sensor          => lowercase(_lk10_env("SENSOR", "legacy")) == "residual" ? "residual" : "legacy",
         :dsgs_CR              => 1.0,
         :dsgs_Cmax            => 0.5,
         :dsgs_Cmin            => _lk10_num("CMIN", 0.0),
@@ -254,6 +265,9 @@ function user_inputs()
         # Resistivity from the induction residuals alone (SGS.jl, linduction; README, "DynSGS in
         # the corona"): acoustic fronts in the low-β corona then do not make the field resistive.
         :dsgs_induction_sensor => lowercase(_lk10_env("ETA", "all")) == "induction",   # opt-in while under test
+        # ... and capped at the first-order diffusivity of a field carried by the flow, C_max Δ |v|,
+        # instead of the viscosity's C_max Δ (|v| + c_f) (SGS.jl, lflowcap): opt-in while under test
+        :dsgs_eta_flow_cap    => lowercase(_lk10_env("ETACAP", "fast")) == "flow",
         :dsgs_norms           => "element",
         :dsgs_local_rel       => 1.0,
         :dsgs_conserved       => true,

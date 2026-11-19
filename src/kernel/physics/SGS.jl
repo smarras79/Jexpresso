@@ -1666,6 +1666,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  lfast_floors::Bool=false,
                                  lthermal::Bool=false,
                                  linduction::Bool=false,
+                                 lflowcap::Bool=false,
                                  νphys::Union{Nothing,AbstractVector{TT}}=nothing,
                                  ηphys::Union{Nothing,AbstractVector{TT}}=nothing) where {TT<:AbstractFloat, TI<:Integer}
     _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
@@ -1754,6 +1755,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         ratio = zero(TT)      # max_i ‖R_i‖∞,e / denom_i
         ratioB = zero(TT)     # the same over the B slots only (linduction)
         wmax  = zero(TT)      # (‖v‖ + c_f)∞,e
+        umax  = zero(TT)      # ‖v‖∞,e (lflowcap)
         ρ_el  = zero(TT)      # element-mean density
         den_th = one(TT)      # thermal-energy normalization (lth)
 
@@ -1856,6 +1858,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                 # over all propagation directions (a² = γp/ρ, b² = |B|²/ρ).
                 cf = sqrt(max(γ*pl/ρl + B2/ρl, zero(TT)))
                 wmax  = max(wmax, sqrt(ul*ul + vl*vl + wl*wl) + cf)
+                umax  = max(umax, sqrt(ul*ul + vl*vl + wl*wl))
                 ρ_el += ρl
                 if lth   # R_ρe = R_E − v·R_m + ½|v|² R_ρ − B·R_B − ψ R_ψ
                     Rth = _dsgs_rsig(q, q1, q2, rhs_el, wt, imK, ip, ie, i, j, 4) +
@@ -1892,6 +1895,11 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         _dsgs_record!(ratio, μ)          # running maxima over the run (_DSGS_RUN_STATS)
         # resistivity: the same μ, or (linduction) the one of the induction residuals alone
         μ_B = linduction ? max(max(zero(TT), min(μ_max, CR*Δ*Δ*_dsgs_cut(ratioB, cutoff))), μ_floor) : μ
+        # (lflowcap, :dsgs_eta_flow_cap) capped at the first-order diffusivity of the frozen-in field,
+        # C_max Δ ‖v‖∞,e, the flow speed alone: B is carried by v, and the fast speed of the cap above
+        # is the momentum's (problems/MHD/fluxEmergenceLeake2010: at a coronal current sheet
+        # C_max Δ c_f is ~10 L₀v₀, a Lundquist number of a few hundred)
+        lflowcap && (μ_B = max(min(μ_B, Cmax*Δ*umax), μ_floor))
 
         # dynamic coefficient for u/v/w/T: ρ̄·μ with the element mean, or the
         # kinematic μ that SGS_diffusion(::DSGS_MHD) scales by the nodal ρ

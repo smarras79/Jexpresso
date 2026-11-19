@@ -1235,6 +1235,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #                      slots keep the max over all equations. For low-β plasmas, where one
     #                      coefficient makes the field as resistive as an acoustic front makes the gas
     #                      viscous (SGS.jl, linduction; problems/MHD/fluxEmergenceLeake2010). Default false.
+    #   :dsgs_eta_flow_cap  DSGS_MHD 2D, element form: the coefficient of the B slots capped at
+    #                      C_max Δ ‖v‖∞,e (the flow speed: the first-order diffusivity of a field carried
+    #                      by v) instead of C_max Δ (‖v‖ + c_f)∞,e, which at a coronal current sheet is a
+    #                      Lundquist number of a few hundred (SGS.jl, lflowcap). Default false.
     #   :dsgs_thermal_energy  DSGS_MHD 2D, conserved element form, no split energy flux: the E slot
     #                      diffuses the thermal energy departure (the case's user_primitives! puts
     #                      δ(p/(γ−1)) in slot 4 when SGS.jl's dsgs_thermal_energy[] is set) and gets the

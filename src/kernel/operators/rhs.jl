@@ -1730,6 +1730,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                     lfast_floors    = get(params.inputs, :dsgs_fast_floors, false)::Bool,
                                     lthermal        = get(params.inputs, :dsgs_thermal_residual, false)::Bool,
                                     linduction      = get(params.inputs, :dsgs_induction_sensor, false)::Bool,
+                                    lflowcap        = get(params.inputs, :dsgs_eta_flow_cap, false)::Bool,
                                     νphys = νphys2d, ηphys = ηphys2d)
             broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
                                      params.mesh.connijk,

@@ -14,6 +14,9 @@ t0 = 23.1946 s), the density in g cm^-3 and B_z in G, as in the paper.
   python3 tools/plot_leake2010.py axis RUN [RUN2 ...]         # Erratum Figs. 2(a), 7(a): height of the tube axis vs time
   python3 tools/plot_leake2010.py eshear RUN [RUN2 ...]       # Erratum Figs. 2(b,c), 5: E_shear above 1.2 and 5 Mm (Eq. 20)
   python3 tools/plot_leake2010.py profiles RUN                # Fig. 3(a,b): T, p, p_mag and beta at x = 0, t = 0
+  python3 tools/plot_leake2010.py null RUN [RUN2 ...]         # on x = 0 vs time: the top of the emerged flux (the null
+                                                              #   above it), the flux between the tube axis and it, the
+                                                              #   mass lifted, and the DynSGS coefficients at the null
 
 Every command takes --outdir (default figs_leake2010) and --format (png). Needs numpy and matplotlib;
 it reads the VTU files with the reader of tools/plot_fluxemergence_vtu.py.
@@ -532,6 +535,91 @@ def cmd_atmos(a):
     print("wrote", out)
 
 
+def _bx_crossings(Y, B, sign):
+    """Heights where B (on x = 0) changes sign, going up: from - to + (sign = +1) or + to - (sign = -1)."""
+    out = []
+    for i in range(len(Y) - 1):
+        if (sign > 0 and B[i] < 0 <= B[i + 1]) or (sign < 0 and B[i] > 0 >= B[i + 1]):
+            out.append(Y[i] - B[i] * (Y[i + 1] - Y[i]) / (B[i + 1] - B[i]))
+    return out
+
+
+def null_row(g, thr=-13.0):
+    """On x = 0: the tube axis (B_x from - to + below 3 Mm), the top of the emerged flux system (the first height
+    above the axis where B_x turns from + to -: the quadrupole's null, or the O-point of a rope formed in its
+    current sheet), the in-plane flux between the two (A(top) - A(axis), per unit length, in 10^10 Mx/cm), the
+    overlying flux from the top to y = 40 Mm, the dome top (log rho > thr), the mass in 3 < y < 20 Mm, |x| < 13 Mm
+    (g/cm), and the largest DynSGS mu and eta within 1 Mm of the top (code units)."""
+    ix0 = np.argmin(np.abs(g["X"]))
+    Y = g["Y"]
+    Bx = grid2d(g, g["fields"]["Bx"])[:, ix0]
+    A = a_grid(g)[:, ix0] / L0_MM                       # code units B0 L0
+    axis = axis_height(g)
+    tops = [y for y in _bx_crossings(Y, Bx, -1) if y > (axis if np.isfinite(axis) else 0.0) and y < 40.0]
+    top = tops[0] if tops else np.nan
+    Ai = lambda y: np.interp(y, Y, A)
+    # B0 = (4 pi p0)^1/2 G with p0 = 10^4.927 dyn cm^-2, L0 = 1.5e7 cm
+    unit = np.sqrt(4.0 * np.pi * 10 ** 4.927) * 1.5e7 / 1e10
+    flux = (Ai(top) - Ai(axis)) * unit if np.isfinite(top) and np.isfinite(axis) else np.nan
+    over = (Ai(top) - Ai(40.0)) * unit if np.isfinite(top) else np.nan
+    L = grid2d(g, g["fields"]["log10rho_cgs"])
+    m = ((Y > 3.0) & (Y < 20.0))[:, None] & (np.abs(g["X"]) < 13.0)[None, :]
+    rho = np.where(m, 10.0 ** L, 0.0)
+    mass = np.trapezoid(np.trapezoid(rho, g["X"] * 1e8, axis=1), Y * 1e8)
+    near = np.abs(Y - top) < 1.0 if np.isfinite(top) else np.zeros_like(Y, bool)
+    def mx(name):
+        if name not in g["fields"] or not near.any():
+            return np.nan
+        return float(np.max(grid2d(g, g["fields"][name])[near, ix0]))
+    en = next((n for n in ETA_NAMES if n in g["fields"]), None)
+    return dict(axis=axis, top=top, flux=flux, over=over, dome=dome_top(g, thr), mass=mass,
+                mu=mx(MU_NAME), eta=mx(en) if en else np.nan, ntop=len(tops))
+
+
+def cmd_null(a):
+    """The emerged flux system against time on x = 0 (null_row). If the flux between the axis and the top
+    falls while the top stalls, the emerging flux is being reconnected away at the null as fast as it rises;
+    if it holds, the top is held down (weight, a stronger overlying field)."""
+    fig, axs = plt.subplots(1, 3, figsize=(12.5, 3.8))
+    for spec in a.runs:
+        lab, _, path = spec.rpartition("=")
+        lab = lab or os.path.basename(path.rstrip("/"))
+        rows = []
+        for t, f in runs_of(path):
+            g = load(f, ["log10rho_cgs", "Bz", MU_NAME, *ETA_NAMES])
+            rows.append((t, null_row(g, a.thr)))
+        T = np.array([t for t, _ in rows])
+        col = lambda k: np.array([r[k] for _, r in rows])
+        name = lab.replace(" ", "_")
+        np.savetxt(os.path.join(a.outdir, f"null_{name}.csv"),
+                   np.c_[T, col("axis"), col("top"), col("dome"), col("flux"), col("over"), col("mass"), col("mu"), col("eta")],
+                   header="t [s], axis [Mm], top of the emerged flux (B_x + to - on x = 0) [Mm], dome top [Mm], "
+                          "flux axis-top [1e10 Mx/cm], flux top-40 Mm [1e10 Mx/cm], mass in 3 < y < 20 Mm, |x| < 13 Mm "
+                          "[g/cm], max mu near the top, max eta near the top", delimiter=",")
+        print(f"--- {lab}")
+        print("heights in Mm on x = 0; in-plane flux in 1e10 Mx/cm; mass in 3 < y < 20 Mm, |x| < 13 Mm, against the first snapshot")
+        print(f"{'t [s]':>7} {'axis':>6} {'top':>6} {'dome':>6} {'flux axis-top':>13} {'overlying':>9} {'mass':>8} {'mu@top':>8} {'eta@top':>8}")
+        m0 = rows[0][1]["mass"]
+        for t, r in rows:
+            print(f"{t:7.0f} {r['axis']:6.2f} {r['top']:6.2f} {r['dome']:6.2f} {r['flux']:13.4g} {r['over']:9.4g} "
+                  f"{r['mass'] / m0:8.2f} {r['mu']:8.3g} {r['eta']:8.3g}" + ("  (+ a second sign change: rope)" if r["ntop"] > 1 else ""))
+        axs[0].plot(T, col("top"), "-o", ms=3, label=f"{lab}: top of the emerged flux")
+        axs[0].plot(T, col("dome"), "--", lw=1, label=f"{lab}: dome top")
+        axs[1].plot(T, col("flux"), "-o", ms=3, label=f"{lab}: axis to top")
+        axs[1].plot(T, col("over"), "--", lw=1, label=f"{lab}: top to 40 Mm")
+        axs[2].plot(T, col("mass") / col("mass")[0], "-o", ms=3, label=lab)
+    axs[0].plot(*ERRATUM_FIG3_DOME_TOP.T, "ks", mfc="none", ms=7, label="Erratum Fig. 3, dome top")
+    axs[0].set_ylabel("height on x = 0 (Mm)"); axs[0].set_ylim(0, 19)
+    axs[1].set_ylabel(r"in-plane flux (10$^{10}$ Mx cm$^{-1}$)")
+    axs[2].set_ylabel(r"mass in 3 < y < 20 Mm, |x| < 13 Mm, / first snapshot"); axs[2].set_yscale("log")
+    for ax in axs:
+        ax.set_xlabel("Time (s)"); ax.set_xlim(0, 2700); ax.grid(alpha=0.3); ax.legend(fontsize=6)
+    fig.tight_layout()
+    out = os.path.join(a.outdir, f"null.{a.format}")
+    fig.savefig(out, dpi=a.dpi); plt.close(fig)
+    print("wrote", out)
+
+
 def cmd_profiles(a):
     items = runs_of(a.run)
     t, f = items[0]
@@ -596,6 +684,9 @@ def main():
     s = sub.add_parser("dome"); s.set_defaults(fn=cmd_dome)
     s.add_argument("runs", nargs="+", help="RUN or LABEL=RUN")
     s.add_argument("--thr", type=float, default=-13.0, help="log10 rho threshold [g cm^-3]")
+    s = sub.add_parser("null"); s.set_defaults(fn=cmd_null)
+    s.add_argument("runs", nargs="+", help="RUN or LABEL=RUN")
+    s.add_argument("--thr", type=float, default=-13.0, help="log10 rho threshold of the dome top [g cm^-3]")
     s = sub.add_parser("eshear"); s.set_defaults(fn=cmd_eshear)
     s.add_argument("runs", nargs="+", help="RUN or LABEL=RUN")
     s = sub.add_parser("profiles"); s.set_defaults(fn=cmd_profiles)
