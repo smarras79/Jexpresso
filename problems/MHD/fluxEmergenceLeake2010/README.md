@@ -79,6 +79,9 @@ editing the deck:
 | `JEXPRESSO_LK10_TFLOOR` | default 0.1 | temperature floor, in $T_{ph}$ = 5700 K |
 | `JEXPRESSO_LK10_ETA` | `all` (default), `induction` | DynSGS resistivity from the max over all residuals (one coefficient), or from the induction residuals alone (DynSGS in the corona, below) |
 | `JEXPRESSO_LK10_ENERGY` | `thermal` (default), `total` | energy-consistent DynSGS (Positivity, below), or $E$ diffused as a whole (the parent case) |
+| `JEXPRESSO_LK10_ETACAP` | `fast` (default), `flow` | DynSGS resistivity capped at $C_{max}\Delta(\lvert v\rvert + c_f)$ like the viscosity, or at $C_{max}\Delta\lvert v\rvert$ (Verification, the REF 4 run) |
+| `JEXPRESSO_LK10_ETAFAC` | default 1 | factor on the DynSGS resistivity (the `:μ` multipliers of the B slots), a sensitivity test |
+| `JEXPRESSO_LK10_SENSOR` | `legacy` (default), `residual` | DynSGS sensor: $\lvert\partial_tq\rvert$ against the assembled RHS (the parent case's), or the element residual once per step (DSGS.md §1.2) |
 
 For example, the erratum's Fig. 1 (tubes 1 and 2, field-free corona) and its
 Figs. 6–7 (tubes into the 52 G dipole):
@@ -523,6 +526,7 @@ python3 tools/plot_leake2010.py axis     tube2=$RUN      # Erratum Fig. 2(a): ax
 python3 tools/plot_leake2010.py eshear   tube2=$RUN      # Erratum Figs. 2(b,c), 5: E_shear above 1.2 and 5 Mm (Eq. 20)
 python3 tools/plot_leake2010.py profiles $RUN            # Fig. 3(a,b) at t = 0, with the paper's values
 python3 tools/plot_leake2010.py diag     $RUN --dt <Δt>  # per snapshot: largest speed, CFL, current; smallest p/p0, beta
+python3 tools/plot_leake2010.py null     base=$RUN       # on x = 0 vs time: the null above the dome, the flux below it, the mass lifted
 ```
 
 The density panels use the paper's window ($\lvert x\rvert < 12.75$ Mm,
@@ -637,6 +641,46 @@ Short runs on 4 cores; the full runs are for a cluster (above).
   DynSGS coefficient is 0.5–3 $L_0v_0$ between 5 and 12 Mm from 464 s on, before
   anything has emerged. Open; see "DynSGS in the corona" below for the two
   measures under test (REF 4, `JEXPRESSO_LK10_ETA=induction`).
+- **REF 4 with `JEXPRESSO_LK10_ETA=induction`** (cluster run to 2530 s, 128 ranks).
+  Dome top, in Mm:
+
+  | t (s) | 920 | 1380 | 1610 | 1955 | 2185 | 2530 |
+  |---|---|---|---|---|---|---|
+  | REF 4, `ETA=induction` | 3.9 | 8.6 | 9.6 | 9.8 | 9.7 | 9.5 |
+  | erratum | 3.5 | 7.5 | 10.4 | 13.05 | 14.7 | 3.65 |
+
+  Closer to the figure in its structure than REF 2, and the same stall: ahead
+  of the erratum to 1380 s, flat at 9.5–10 Mm from 1610 s, the $B_x$ arrow at
+  11 Mm never turns (the null stays below it), a small rope-like bump at
+  (−1, 9) Mm from 1955 s, and the side regions ($\lvert x\rvert$ > 8 Mm) full of cool,
+  dense plasma at 5–8 Mm, which the erratum's are not at 1380–1610 s. In the
+  paper the dome is the expanding shell of the emerged tube, which stretches
+  the quadrupole's null into a crescent-shaped current sheet and pushes it up;
+  the rope forms in that sheet at its apex. Lare reconnects there only at its
+  grid scale (the erratum removed the explicit resistivity, and the anomalous
+  one cannot switch on at coronal field strengths). The hypothesis under test:
+  the DynSGS resistivity of the sheet lets the shell reconnect with the
+  overlying field as fast as it rises, so the top stalls, and the reconnected
+  loops, now side-lobe loops, carry the dome's plasma to the sides.
+  `plot_leake2010.py null` measures it on a run: the in-plane flux between the
+  tube axis and the null on $x = 0$ (10.4 × 10¹⁰ Mx cm⁻¹ at $t = 0$) can only
+  fall by reconnection at the null, and it prints the DynSGS coefficients
+  there. The tests are restarts of this run at 920 s with
+  `JEXPRESSO_LK10_ETAFAC=0.1` (sensitivity) and with
+  `JEXPRESSO_LK10_ETACAP=flow` (the resistivity capped at $C_{max}\Delta\lvert v\rvert$,
+  the first-order diffusivity of a field carried by the flow, instead of the
+  viscosity's $C_{max}\Delta(\lvert v\rvert + c_f)$, ~10 $L_0v_0$ at a coronal sheet
+  of REF 4).
+  Here: both switches act and are recorded, and a restart that changes them
+  reports it and continues; the first 40 s of the run on REF 1 (the corona is
+  still quiet then, DynSGS coefficient at the explicit viscosity) are the same
+  with `ETACAP=flow` to round-off, with the same axis, the same
+  smallest temperature (0.92 $T_{ph}$) and $\psi$ at round-off.
+  `JEXPRESSO_LK10_SENSOR=residual` does not help: in the kick test of
+  "Positivity" the coefficient of the disturbed corona is 0.45 against 0.59
+  (median, 11.6 s) and, with `ETA=induction`, the resistivity 0.25 against
+  0.018 — the element residual of the induction equation is larger than the
+  legacy sensor's assembled one.
 
 ## Files
 
