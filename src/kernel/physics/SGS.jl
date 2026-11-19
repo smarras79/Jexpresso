@@ -555,11 +555,19 @@ const dsgs_split_energy = Ref{Bool}(false)
 # field and larger than p where β ≲ 10⁻² (problems/MHD/fluxEmergenceLeake2010, README,
 # "Positivity"; the split energy flux above keeps it).
 const dsgs_thermal_energy = Ref{Bool}(false)
-# :dsgs_heating — the fraction of the dissipated heat Q that _dsgs_energy_consistent_2d! puts
-# into the internal energy (1, the default: energy conserving). 0 loses the energy that the
-# DynSGS dissipates instead of heating the plasma with it: a test of how much the numerical
-# dissipation heats (problems/MHD/fluxEmergenceLeake2010, the plasma lifted into the corona).
+# :dsgs_heating — what _dsgs_energy_consistent_2d! does with the heat Q that the DynSGS terms
+# dissipate. A number is the fraction of Q put into the internal energy: 1 (the default)
+# conserves the total energy, 0 loses what the DynSGS dissipates. "shock" (dsgs_heat_shock)
+# heats as a Lagrangian-remap code with a shock viscosity does (Lare, Arber et al. 2001, whose
+# remap does not return the kinetic energy it loses as heat, `rke = .FALSE.`): the explicit
+# viscosity and resistivity of the case (:mhd_dissipation, :mhd_anomalous_eta) heat in full,
+# the DynSGS viscosity only where the flow is compressed, ρ μ (∇·v)₋² (no more than it
+# dissipates there), and the DynSGS resistivity and ψ diffusion not at all.
+# problems/MHD/fluxEmergenceLeake2010: with the default the plasma the emerging field lifts
+# into the corona was heated from below 2·10⁴ K to 10⁵ K in a few hundred seconds, stopped
+# draining, and held the field down.
 const dsgs_heat_factor = Ref{Float64}(1.0)
+const dsgs_heat_shock  = Ref{Bool}(false)
 
 @inline function SGS_diffusion(visc_coeffieq, ieq,
                                ρ,
@@ -2090,16 +2098,25 @@ end
 # momentum part exactly where the viscous term is not clipped, the field part up to
 # ∫η ∇B_e:∇δB, a boundary term for a potential reference field. Explicit ν, η
 # (:mhd_dissipation, :mhd_anomalous_eta) ride in μ_dsgs, so their heating is included.
+# :dsgs_heating (dsgs_heat_factor, dsgs_heat_shock above) scales Q or keeps only its
+# shock-viscosity and explicit parts; νphys, ηphys are those explicit coefficients.
 # ================================================================================
 function _dsgs_energy_consistent_2d!(rhs_diff_el::AbstractArray{TT}, μ_dsgs::AbstractMatrix{TT},
                                      q::AbstractMatrix{TT}, qe::AbstractMatrix,
                                      connijk::AbstractArray{TI,4}, ω::AbstractVector, dψ::AbstractMatrix,
                                      Je::AbstractArray, dξdx::AbstractArray, dξdy::AbstractArray,
                                      dηdx::AbstractArray, dηdy::AbstractArray,
-                                     nelem::Int, ngl::Int, lcurlB::Bool) where {TT<:AbstractFloat, TI<:Integer}
+                                     nelem::Int, ngl::Int, lcurlB::Bool;
+                                     νphys::Union{Nothing,AbstractVector}=nothing,
+                                     ηphys::Union{Nothing,AbstractVector}=nothing) where {TT<:AbstractFloat, TI<:Integer}
+    fheat  = TT(dsgs_heat_factor[])
+    lshock = dsgs_heat_shock[]
     @inbounds for ie = 1:nelem
         μu = μ_dsgs[ie,2]; μv = μ_dsgs[ie,3]; μw = μ_dsgs[ie,5]
         ηx = μ_dsgs[ie,6]; ηy = μ_dsgs[ie,7]; ηz = μ_dsgs[ie,8]; μψ = μ_dsgs[ie,9]
+        # the explicit ν, η riding in μ_dsgs (dsgs_heat_shock: they heat, the DynSGS part by compression only)
+        νp = (lshock && νphys !== nothing) ? TT(νphys[ie]) : zero(TT)
+        ηp = (lshock && ηphys !== nothing) ? TT(ηphys[ie]) : zero(TT)
         for l = 1:ngl, k = 1:ngl
             # element-local ξ and η derivatives of u, m̃ = ρu/ρ_e, δB and ψ at node (k, l)
             duξ = zero(TT); duη = zero(TT); dvξ = zero(TT); dvη = zero(TT); dwξ = zero(TT); dwη = zero(TT)
@@ -2139,13 +2156,21 @@ function _dsgs_energy_consistent_2d!(rhs_diff_el::AbstractArray{TT}, μ_dsgs::Ab
                       μw*(dwdx*dmwdx + dwdy*dmwdy))
             jz  = dbydx - dbxdy
             QB  = lcurlB ? ηx*jz*jz : ηx*(dbxdx*dbxdx + dbxdy*dbxdy) + ηy*(dbydx*dbydx + dbydy*dbydy)
-            Q   = max(Dm, zero(TT)) + QB + ηz*(dbzdx*dbzdx + dbzdy*dbzdy) + μψ*(dpdx*dpdx + dpdy*dpdy)
             ρ   = q[ip,1]; u = q[ip,2]/ρ; v = q[ip,3]/ρ; w = q[ip,5]/ρ
+            if lshock
+                Dp  = max(ρe*νp*((dudx*dmudx + dudy*dmudy) + (dvdx*dmvdx + dvdy*dmvdy) + (dwdx*dmwdx + dwdy*dmwdy)), zero(TT))
+                QBp = (lcurlB ? ηp*jz*jz : ηp*(dbxdx*dbxdx + dbxdy*dbxdy + dbydx*dbydx + dbydy*dbydy)) +
+                      ηp*(dbzdx*dbzdx + dbzdy*dbzdy)
+                dv  = min(dudx + dvdy, zero(TT))
+                Q   = Dp + QBp + min(ρ*max(μu - νp, zero(TT))*dv*dv, max(max(Dm, zero(TT)) - Dp, zero(TT)))
+            else
+                Q   = fheat*(max(Dm, zero(TT)) + QB + ηz*(dbzdx*dbzdx + dbzdy*dbzdy) + μψ*(dpdx*dpdx + dpdy*dpdy))
+            end
             W   = u*rhs_diff_el[ie,k,l,2] + v*rhs_diff_el[ie,k,l,3] + w*rhs_diff_el[ie,k,l,5] -
                   TT(0.5)*(u*u + v*v + w*w)*rhs_diff_el[ie,k,l,1] +
                   q[ip,6]*rhs_diff_el[ie,k,l,6] + q[ip,7]*rhs_diff_el[ie,k,l,7] +
                   q[ip,8]*rhs_diff_el[ie,k,l,8] + q[ip,9]*rhs_diff_el[ie,k,l,9]
-            rhs_diff_el[ie,k,l,4] += W + ω[k]*ω[l]*Je[ie,k,l]*TT(dsgs_heat_factor[])*Q
+            rhs_diff_el[ie,k,l,4] += W + ω[k]*ω[l]*Je[ie,k,l]*Q
         end
     end
     return nothing

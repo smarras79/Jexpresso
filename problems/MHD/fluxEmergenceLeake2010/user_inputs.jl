@@ -39,8 +39,10 @@
 #                            all equations (one coefficient, the parent case)    [all]
 #   JEXPRESSO_LK10_RHOFAC    factor on the DynSGS mass diffusion (the :μ multiplier of the ρ
 #                            slot), a test of the plasma it carries across the field  [1]
-#   JEXPRESSO_LK10_HEAT      fraction of the heat the DynSGS dissipates put into the plasma
-#                            (1: energy conserving; 0: lost), a test of that heating  [1]
+#   JEXPRESSO_LK10_HEAT      what the heat the DynSGS dissipates does: a fraction put into the
+#                            plasma (1: all, energy conserving; 0: none), or "shock": only
+#                            the explicit ν, η and the DynSGS viscosity in compression heat,
+#                            as in Lare (README, "The heat of the DynSGS")           [1]
 #   JEXPRESSO_LK10_ETAFAC    factor on the DynSGS resistivity (the :μ multiplier of the B
 #                            slots), a sensitivity test of the reconnection          [1]
 #   JEXPRESSO_LK10_ETACAP    fast | flow: the DynSGS resistivity capped at C_max Δ (|v| + c_f)
@@ -266,7 +268,7 @@ function user_inputs()
         # E slot diffuses the internal energy and receives the work and the heat of the other
         # slots, so the DynSGS cannot drive p negative in the low-β chromosphere and corona.
         :dsgs_thermal_energy  => lowercase(_lk10_env("ENERGY", "thermal")) != "total",
-        :dsgs_heating         => _lk10_num("HEAT", 1.0),     # (JEXPRESSO_LK10_HEAT) 1: the dissipated heat into the plasma
+        :dsgs_heating         => lowercase(_lk10_env("HEAT", "1")) == "shock" ? "shock" : _lk10_num("HEAT", 1.0),   # (JEXPRESSO_LK10_HEAT)
         # Resistivity from the induction residuals alone (SGS.jl, linduction; README, "DynSGS in
         # the corona"): acoustic fronts in the low-β corona then do not make the field resistive.
         :dsgs_induction_sensor => lowercase(_lk10_env("ETA", "all")) == "induction",   # opt-in while under test

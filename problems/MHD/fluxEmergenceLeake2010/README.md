@@ -82,7 +82,7 @@ editing the deck:
 | `JEXPRESSO_LK10_ETACAP` | `fast` (default), `flow` | DynSGS resistivity capped at $C_{max}\Delta(\lvert v\rvert + c_f)$ like the viscosity, or at $C_{max}\Delta\lvert v\rvert$ (Verification, the REF 4 run) |
 | `JEXPRESSO_LK10_ETAFAC` | default 1 | factor on the DynSGS resistivity (the `:μ` multipliers of the B slots), a sensitivity test |
 | `JEXPRESSO_LK10_RHOFAC` | default 1 | factor on the DynSGS mass diffusion (the `:μ` multiplier of the ρ slot), a sensitivity test |
-| `JEXPRESSO_LK10_HEAT` | default 1 | fraction of the heat the DynSGS dissipates that goes into the plasma (`:dsgs_heating`; 0: lost, not energy conserving), a sensitivity test |
+| `JEXPRESSO_LK10_HEAT` | `1` (default), a fraction, `shock` | what the heat the DynSGS dissipates does (`:dsgs_heating`): that fraction of it into the plasma (1 conserves energy, 0 loses it all), or `shock`: only the explicit ν, η and the DynSGS viscosity in compression heat, as in Lare (The heat of the DynSGS, below) |
 | `JEXPRESSO_LK10_SENSOR` | `legacy` (default), `residual` | DynSGS sensor: $\lvert\partial_tq\rvert$ against the assembled RHS (the parent case's), or the element residual once per step (DSGS.md §1.2) |
 
 For example, the erratum's Fig. 1 (tubes 1 and 2, field-free corona) and its
@@ -291,6 +291,33 @@ paper's dissipation and its energy relaxation:
   the tube's axial field better kept (6216 against 5985 G at 186 s; around the
   tube the resistivity is half the viscosity). The `atmos` figure shows both
   coefficients against height.
+
+- **The heat of the DynSGS** (open). With the energy-consistent operator every
+  erg the DynSGS removes from the flow and the field becomes heat, so the total
+  energy is conserved. Lare does not do that: its remap does not conserve the
+  kinetic energy and the loss is not returned as heat unless asked
+  (`rke = .FALSE.` in the distributed `control.f90`: "This missing energy can be
+  added back into the simulation as a uniform heating"); what heats there is
+  the shock viscosity, which acts in compression, and the physical terms of the
+  paper's Eq. (5). The difference matters for the cold, dense plasma that the
+  emerging field lifts into the corona, which has little internal energy: in
+  the REF 4 run (Verification) the DynSGS viscosity could supply all of it in
+  100–600 s, the plasma went from below 2 × 10⁴ K to 10⁵ K, stopped draining,
+  and the dome stopped rising. `JEXPRESSO_LK10_HEAT=shock` (`:dsgs_heating =>
+  "shock"`, `src/kernel/physics/SGS.jl`) heats as Lare does: the explicit ν and
+  η in full, the DynSGS viscosity only where the flow is compressed,
+  $\rho\mu(\nabla\cdot\mathbf v)_-^2$ and never more than it dissipates there, the
+  DynSGS resistivity and ψ diffusion not at all; the rest of what the DynSGS
+  dissipates is lost, as in the remap. `JEXPRESSO_LK10_HEAT=0` loses all of it
+  (shocks then do not heat either: a test only). The default stays 1 until the
+  cluster runs decide. Here, the kick test of "Positivity" (REF 1, no floors,
+  11.6 s) runs the same with the three: flows of 13.9, 13.8 and 13.8 km/s
+  (1, `shock`, 0), the same smallest temperature, the pressure near the kick
+  1.0 % (`shock`) and 1.3 % (0) below the default's, the total energy change
+  −2.98 and −3.22 against −2.21 × 10⁻¹⁰: of the heat the DynSGS dissipates
+  there `shock` keeps a quarter, the compressed half of a kick whose velocity
+  gradient is half compression. A restart that changes the mode reports it
+  and continues.
 
 ## What is not in the paper, and what was done
 
@@ -682,15 +709,31 @@ Short runs on 4 cores; the full runs are for a cluster (above).
   the initial coronal one there, and a pressure scale height of 3.5–5.5 Mm, so
   it sits on its own pressure; plasma lifted from the chromosphere and cooled
   by its expansion, as in Lare (no heating there but its shock viscosity), has
-  a scale height of a fraction of a Mm (0.16 Mm at 6000 K) and drains. The candidates are the heat of the DynSGS
-  dissipation (viscosity 0.1–0.9 $L_0v_0$ at the null, 0.5–3 in the corona of
-  REF 2) and the DynSGS mass diffusion (the ρ slot), which mixes the dense
-  plasma across the field with the hot corona. `plot_leake2010.py mass` gives,
-  per snapshot, that mass's budget (carried by the flow across the box's edges,
-  or not), its temperatures, its pressure against the initial atmosphere, its
-  draining speed and the time the DynSGS heating needs to supply its internal
-  energy; the switches `JEXPRESSO_LK10_HEAT=0` and `JEXPRESSO_LK10_RHOFAC=0.1`
-  test the two causes in restarts of the run.
+  a scale height of a fraction of a Mm (0.16 Mm at 6000 K) and drains.
+
+  `plot_leake2010.py mass` on this run, for the plasma in that box:
+
+  | t (s) | 1160 | 1380 | 1508 | 1610 | 1740 | 1856 | 1955 |
+  |---|---|---|---|---|---|---|---|
+  | mass / mass(0) | 606 | 362 | 272 | 258 | 279 | 282 | 260 |
+  | fraction below 2 × 10⁴ K | 0.99 | 0.88 | 0.52 | 0.23 | 0.08 | 0.02 | 0.00 |
+  | $p$ / initial $p$ there (median) | 12 | 2.0 | 21 | 76 | 108 | 113 | 75 |
+  | mean $v_y$ (km/s) | +9.3 | −4.0 | −5.0 | −1.9 | +2.0 | +0.7 | −2.2 |
+  | DynSGS viscous heating time (s) | 968 | 94 | 352 | 588 | 1060 | 2830 | 11300 |
+  | DynSGS Ohmic heating time (s) | 537 | 555 | 2790 | 2930 | 2180 | 4950 | 31000 |
+
+  The plasma arrives cold and cools further as it expands (to twice the
+  coronal pressure at 1380 s), draining at 4–5 km/s. Between 1392 and 1740 s it
+  is heated to 2 × 10⁴–2 × 10⁵ K, its pressure rises fifty-fold, the draining
+  stops, and so does the dome. The heating times are those in which the DynSGS
+  dissipation of the snapshot ($\rho\mu\lvert\nabla\mathbf v\rvert^2$ and
+  $\eta\lvert\nabla\times\mathbf B\rvert^2$ summed over the plasma denser than
+  10⁻¹³ g cm⁻³) supplies that plasma's internal energy: 100–600 s while it
+  heats. The mass change is the flow's: after 1392 s the part not carried
+  across the box's edges is at most 17 units in an interval and +17 net in
+  1140 s, of 260, so the DynSGS mass diffusion does not feed it. See "The heat of the DynSGS" above; the tests are
+  restarts of this run from 920 s with `JEXPRESSO_LK10_HEAT=shock` and
+  `JEXPRESSO_LK10_HEAT=0`.
 
   Here: the switches act, are recorded, and a restart that changes them
   reports it and continues; the first 40 s of the run on REF 1 (the corona is

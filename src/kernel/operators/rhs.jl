@@ -1673,12 +1673,17 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
         # reads the Ref to put the thermal departure in slot 4; _dsgs_energy_consistent_2d!
         # below adds the work of the other slots and the dissipated heat.
         dsgs_thermal_energy[] = get(params.inputs, :dsgs_thermal_energy, false)::Bool
-        dsgs_heat_factor[]    = Float64(get(params.inputs, :dsgs_heating, 1.0))
+        let h = get(params.inputs, :dsgs_heating, 1.0)
+            dsgs_heat_shock[]  = h isa AbstractString && lowercase(h) == "shock"
+            dsgs_heat_factor[] = h isa Number ? Float64(h) : 1.0
+            (h isa Number || dsgs_heat_shock[]) || error(" :dsgs_heating must be a number (the fraction of the dissipated heat kept) or \"shock\" (got ", h, ").")
+        end
         dsgs_thermal_energy[] && (lnodal_mhd2d || dsgs_split_energy[] || !get(params.inputs, :dsgs_conserved, false)) &&
             error(" :dsgs_thermal_energy needs the conserved element form of DSGS_MHD (:dsgs_conserved => true, ",
                   ":ldsgs_nodal => false) without the split energy flux (:dsgs_nazarov_energy => false).")
         dsgs_qA, dsgs_qB, dsgs_wt = _dsgs_stencil(params, TT)
         dsgs_rhs = _dsgs_residual_rhs!(u, params, SD)
+        νphys2d = nothing; ηphys2d = nothing     # the explicit ν, η of the element form (below)
         if lnodal_mhd2d
             # Nodal (Dao & Nazarov) form: ν at every node (SGS.jl); the
             # element loop interpolates it, no broadcast.
@@ -1791,7 +1796,8 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                         params.mesh.connijk, params.ω, params.basis.dψ, params.metrics.Je,
                                         params.metrics.dξdx, params.metrics.dξdy,
                                         params.metrics.dηdx, params.metrics.dηdy,
-                                        nelemB, Int(params.mesh.ngl), lcurlB)
+                                        nelemB, Int(params.mesh.ngl), lcurlB;
+                                        νphys = νphys2d, ηphys = ηphys2d)
         end
         return
     end

@@ -1246,9 +1246,13 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #                      DynSGS changes p only by diffusing the internal energy and by heating
     #                      (SGS.jl, _dsgs_energy_consistent_2d!; problems/MHD/fluxEmergenceLeake2010).
     #                      Default false.
-    #   :dsgs_heating      with :dsgs_thermal_energy: the fraction of the heat the DynSGS dissipates that
-    #                      goes into the internal energy (SGS.jl, dsgs_heat_factor). Default 1 (energy
-    #                      conserving); 0 loses it, a test of the heating by the numerical dissipation.
+    #   :dsgs_heating      with :dsgs_thermal_energy: what becomes of the heat the DynSGS dissipates
+    #                      (SGS.jl, dsgs_heat_factor, dsgs_heat_shock). A number: the fraction that goes
+    #                      into the internal energy (default 1, energy conserving; 0 loses it).
+    #                      "shock": as a Lagrangian-remap code with a shock viscosity (Lare) — the
+    #                      explicit ν, η (:mhd_dissipation, :mhd_anomalous_eta) heat in full, the
+    #                      DynSGS viscosity only where the flow is compressed, ρ μ (∇·v)₋², and the
+    #                      DynSGS resistivity not at all.
     if(!haskey(inputs, :dsgs_nodal_rho))
         inputs[:dsgs_nodal_rho] = false
     end

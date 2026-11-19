@@ -600,7 +600,7 @@ function lk10_case_record(inputs)
         "eta_cap"          => get(inputs, :dsgs_eta_flow_cap, false) == true ? "flow" : "fast",
         "eta_factor"       => string(Float64(get(inputs, :μ, ones(9))[6])),
         "rho_factor"       => string(Float64(get(inputs, :μ, ones(9))[1])),
-        "heating"          => string(Float64(get(inputs, :dsgs_heating, 1.0))),
+        "heating"          => (h = get(inputs, :dsgs_heating, 1.0); h isa Number ? string(Float64(h)) : String(h)),
         "mesh"             => basename(String(get(inputs, :gmsh_filename, ""))),
         "partition"        => get(inputs, :lxy_partition, true) != true ? "metis" :
                               (get(inputs, :lxy_partition_balanced, false) == true ? "balanced" : "uniform"),
