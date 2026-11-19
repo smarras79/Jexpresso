@@ -62,6 +62,9 @@
 #                            and every step waits for it)                       [balanced]
 #   JEXPRESSO_LK10_SUBNORMALS  flush | keep: subnormal numbers flushed to zero (they
 #                            slow the run several times, initialize.jl), or IEEE  [flush]
+#   JEXPRESSO_LK10_PROGRESS  minutes between the progress lines of the log (simulated time
+#                            reached, hours so far and to go); 0: none (printed by the
+#                            stage limiter, so not with JEXPRESSO_LK10_FLOORS=0)     [10]
 #   JEXPRESSO_LK10_RESTART_DIR  continue an earlier run of this case from a snapshot:
 #                            its output directory, or "latest" (the most recently
 #                            written run of the same configuration); same switches,
@@ -116,6 +119,28 @@ end
 if !@isdefined(lk10_floor_Tmin)
     const lk10_floor_Tmin = Ref{Float64}(0.1)
 end
+# Progress line (rank 0): the snapshots are 116 s of simulated time apart, an hour of wall
+# time on the fine meshes, and nothing else is printed in between.
+if !@isdefined(lk10_progress)
+    const lk10_progress       = Ref{NTuple{3,Float64}}((0.0, 0.0, 0.0))   # wall time and t of the first call, wall time of the last line
+    const lk10_progress_every = Ref{Float64}(600.0)                       # s of wall time between lines (0: none)
+    const lk10_progress_tend  = Ref{Float64}(0.0)
+end
+function lk10_report_progress(t)
+    now = time()
+    w0, t0, wl = lk10_progress[]
+    if w0 == 0.0
+        lk10_progress[] = (now, t, now)
+    elseif now - wl >= lk10_progress_every[] && t > t0
+        left = (lk10_progress_tend[] - t)*(now - w0)/(t - t0)
+        print(string(" # progress: t = ", round(t, digits = 2), " t0 = ", round(Int, t*LK10_T0), " s of ",
+                     round(Int, lk10_progress_tend[]*LK10_T0), " s; ", round((now - w0)/3600, digits = 2),
+                     " h so far, about ", round(max(left, 0.0)/3600, digits = 1), " h to go at this rate\n"))
+        flush(stdout)
+        lk10_progress[] = (w0, t0, now)
+    end
+    return nothing
+end
 
 function lk10_positivity_limiter!(u, integrator, p, t)
     npoin = p.mesh.npoin
@@ -166,6 +191,7 @@ function lk10_positivity_limiter!(u, integrator, p, t)
             lk10_floor_next[] *= 10
         end
     end
+    (lk10_progress_every[] > 0 && MPI.Comm_rank(comm) == 0) && lk10_report_progress(t)
     return nothing
 end
 
@@ -198,6 +224,8 @@ function user_inputs()
     floors = !(_lk10_env("FLOORS", "1") in ("0", "false", "no", "off"))
     lk10_floor_Tmin[] = _lk10_num("TFLOOR", 0.1)
     lk10_floor_hits[] = 0; lk10_floor_next[] = 1
+    lk10_progress[] = (0.0, 0.0, 0.0); lk10_progress_tend[] = tend
+    lk10_progress_every[] = 60.0*_lk10_num("PROGRESS", 10.0)
 
     inputs = Dict(
         #---------------------------------------------------------------------------

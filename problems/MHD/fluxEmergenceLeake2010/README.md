@@ -52,6 +52,12 @@ julia --project=. -e 'using MPI; run(`$(MPI.mpiexec()) -n 4 $(Base.julia_cmd()) 
 
 Output (VTU) goes to `./output/MHD/fluxEmergenceLeake2010/<run>/` every
 $5t_0 = 116$ s and at the times of the erratum's figures.
+Between two snapshots (an hour of wall time on the fine meshes) the log is
+silent but for a line every ten minutes,
+`# progress: t = 43.1 t0 = 1000 s of 2530 s; 0.57 h so far, about 9.8 h to go at this rate`
+(`JEXPRESSO_LK10_PROGRESS`), and the reports of the positivity floors, which
+carry the time too; `conservation.dat` in the output directory gets a line
+(`t` in $t_0$, step, mass, energy) every 100 steps.
 
 All the simulations of the paper are selected from the environment, without
 editing the deck:
@@ -72,6 +78,7 @@ editing the deck:
 | `JEXPRESSO_LK10_NU` | `dynamic` (default), `kinematic` | the paper's dynamic viscosity in the convection zone, held at its photospheric kinematic value above; or that kinematic value everywhere |
 | `JEXPRESSO_LK10_PARTITION` | `balanced` (default), `uniform` | the ranks hold equal numbers of elements, or equal areas (Meshes, time step and cost) |
 | `JEXPRESSO_LK10_SUBNORMALS` | `flush` (default), `keep` | subnormal numbers flushed to zero, or IEEE gradual underflow (Meshes, time step and cost) |
+| `JEXPRESSO_LK10_PROGRESS` | minutes, default 10 | interval of the log's progress line (simulated time reached, hours so far and to go); 0: none |
 | `JEXPRESSO_LK10_RESTART_DIR` | an output directory, or `latest` | continue that run from a snapshot (Restart, below) |
 | `JEXPRESSO_LK10_RESTART_TIME` | seconds | the snapshot nearest this time (default: the last complete one) |
 | `JEXPRESSO_LK10_CMIN` | default 0 | DynSGS background floor $C_{min}$ |
