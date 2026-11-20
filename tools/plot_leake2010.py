@@ -24,7 +24,8 @@ t0 = 23.1946 s), the density in g cm^-3 and B_z in G, as in the paper.
                                                               #   above it), the flux between the tube axis and it, the
                                                               #   mass lifted, and the DynSGS coefficients at the null
 
-Every command takes --outdir (default figs_leake2010) and --format (png). Needs numpy and matplotlib;
+Every command takes --outdir (default figs_leake2010), --format (png), --dpi and --lw (the width of the
+field lines), before or after the command name. Needs numpy and matplotlib;
 it reads the VTU files with the reader of tools/plot_fluxemergence_vtu.py.
 """
 import argparse, glob, os, re, sys
@@ -913,9 +914,17 @@ def main():
     p.add_argument("--no-chain", action="store_true", help="only the directories given, not the restarts of the run")
     p.add_argument("--nearest", action="store_true", help="the nearest snapshot for a time the run has none at")
     p.add_argument("--lw", type=float, default=LINE_WIDTH, help="width of the field lines, in points")
+    # the same options after the command name (they keep the value given before it, if any)
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--outdir", default=argparse.SUPPRESS)
+    common.add_argument("--format", default=argparse.SUPPRESS)
+    common.add_argument("--dpi", type=int, default=argparse.SUPPRESS)
+    common.add_argument("--no-chain", action="store_true", default=argparse.SUPPRESS)
+    common.add_argument("--nearest", action="store_true", default=argparse.SUPPRESS)
+    common.add_argument("--lw", type=float, default=argparse.SUPPRESS)
     sub = p.add_subparsers(dest="cmd", required=True)
     for name, fn in (("density", cmd_density), ("shear", cmd_shear)):
-        s = sub.add_parser(name); s.set_defaults(fn=fn)
+        s = sub.add_parser(name, parents=[common]); s.set_defaults(fn=fn)
         s.add_argument("run")
         s.add_argument("--times", default="", help="comma-separated times in s")
         s.add_argument("--label", default="Low Tension")
@@ -930,7 +939,7 @@ def main():
         s.add_argument("--arrows", type=lambda t: [float(v) for v in t.split(",")] if t else [],
                        default=[3.0, 11.0, 16.0], help="heights [Mm] of the B_x arrows on x = 0 ('' for none)")
     pair = lambda t: tuple(map(float, t.split(",")))
-    s = sub.add_parser("dsgs"); s.set_defaults(fn=cmd_dsgs)
+    s = sub.add_parser("dsgs", parents=[common]); s.set_defaults(fn=cmd_dsgs)
     s.add_argument("run")
     s.add_argument("--which", choices=("mu", "eta"), default="mu", help="viscosity (momentum slots) or resistivity (B slots)")
     s.add_argument("--times", default="", help="comma-separated times in s")
@@ -938,7 +947,7 @@ def main():
     s.add_argument("--ylim", type=pair, default=(-3.0, 19.5))
     s.add_argument("--clim", type=pair, default=None, help="limits of log10 of the coefficient (default -2,2; eta: -4,1)")
     s.add_argument("--nlines", type=int, default=45, help="field lines (0: none)")
-    s = sub.add_parser("movie"); s.set_defaults(fn=cmd_movie)
+    s = sub.add_parser("movie", parents=[common]); s.set_defaults(fn=cmd_movie)
     s.add_argument("run")
     s.add_argument("--field", choices=tuple(MAPS), default="density")
     s.add_argument("--fps", type=float, default=4.0, help="snapshots per second of the GIF (at the usual snapshot interval)")
@@ -953,32 +962,32 @@ def main():
                    default=[3.0, 11.0, 16.0], help="heights [Mm] of the B_x arrows of the density frames ('' for none)")
     s.add_argument("--label", default="", help="text in the top left corner of each frame")
     s.add_argument("--no-gif", action="store_true", help="the images only")
-    s = sub.add_parser("axis"); s.set_defaults(fn=cmd_axis)
+    s = sub.add_parser("axis", parents=[common]); s.set_defaults(fn=cmd_axis)
     s.add_argument("runs", nargs="+", help="RUN or LABEL=RUN")
     s.add_argument("--tmax", type=float, default=4600.0)
     s.add_argument("--tall", action="store_true", help="y axis up to 12 Mm, as the paper's panel")
     s.add_argument("--shift", action="store_true", help="shift each run to start at the erratum's -1.84 Mm")
-    s = sub.add_parser("dome"); s.set_defaults(fn=cmd_dome)
+    s = sub.add_parser("dome", parents=[common]); s.set_defaults(fn=cmd_dome)
     s.add_argument("runs", nargs="+", help="RUN or LABEL=RUN")
     s.add_argument("--thr", type=float, default=-13.0, help="log10 rho threshold [g cm^-3]")
-    s = sub.add_parser("mass"); s.set_defaults(fn=cmd_mass)
+    s = sub.add_parser("mass", parents=[common]); s.set_defaults(fn=cmd_mass)
     s.add_argument("run")
     s.add_argument("--ref", default="", help="run whose first snapshot (t = 0) gives the initial pressure and the unit "
                                              "of mass, for a restarted run listed from its restart time on")
-    s = sub.add_parser("null"); s.set_defaults(fn=cmd_null)
+    s = sub.add_parser("null", parents=[common]); s.set_defaults(fn=cmd_null)
     s.add_argument("runs", nargs="+", help="RUN or LABEL=RUN")
     s.add_argument("--thr", type=float, default=-13.0, help="log10 rho threshold of the dome top [g cm^-3]")
-    s = sub.add_parser("eshear"); s.set_defaults(fn=cmd_eshear)
+    s = sub.add_parser("eshear", parents=[common]); s.set_defaults(fn=cmd_eshear)
     s.add_argument("runs", nargs="+", help="RUN or LABEL=RUN")
-    s = sub.add_parser("profiles"); s.set_defaults(fn=cmd_profiles)
+    s = sub.add_parser("profiles", parents=[common]); s.set_defaults(fn=cmd_profiles)
     s.add_argument("run")
-    s = sub.add_parser("atmos"); s.set_defaults(fn=cmd_atmos)
+    s = sub.add_parser("atmos", parents=[common]); s.set_defaults(fn=cmd_atmos)
     s.add_argument("run")
     s.add_argument("--times", default="", help="comma-separated times in s (default 0,464,920,1160,1380,1610,1955,2530)")
     s.add_argument("--xmin", type=float, default=8.0, help="|x| range of the median, Mm")
     s.add_argument("--xmax", type=float, default=12.75)
     s.add_argument("--ylim", type=lambda t: tuple(map(float, t.split(","))), default=(-1.0, 20.0))
-    s = sub.add_parser("diag"); s.set_defaults(fn=cmd_diag)
+    s = sub.add_parser("diag", parents=[common]); s.set_defaults(fn=cmd_diag)
     s.add_argument("run")
     s.add_argument("--dt", type=float, default=None, help="the run's time step in t0 (its log): print the CFL number")
     s.add_argument("--ymin", type=float, default=None, help="only y >= YMIN Mm (e.g. 2 for the corona)")
