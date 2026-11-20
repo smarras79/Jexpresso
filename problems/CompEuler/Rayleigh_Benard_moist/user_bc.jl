@@ -45,7 +45,8 @@ function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::Abst
     
 end
 
-function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, coords, ::TOTAL)
+function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, coords, τ_f, wθ, ::TOTAL, PhysConst; kwargs...)
+    x = coords[1]
 
     if (tag == "bottom" && x < 4000 && x > -4000)
         F_edge[4] = 0.0001*1004*rand()*u[1]
@@ -57,7 +58,8 @@ function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, coords, ::TOTAL)
 end
 
 
-function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, coords, τ_f, wθ, ::PERT)
+function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, coords, τ_f, wθ, ::PERT, PhysConst; kwargs...)
+    x = coords[1]
 
     if (tag == "bottom" && x < 4000 && x > -4000)
         F_edge[4] = 0.0001*1004*rand()*(u[1]+qe[1])
