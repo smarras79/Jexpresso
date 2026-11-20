@@ -394,10 +394,8 @@ function rhs!(du, u, params, time)
     if (backend == CPU())
         @timeit_debug JEXPRESSO_TIMER "build_rhs" _build_rhs!(@view(params.RHS[:,:]), u, params, time)
 
-        if (params.laguerre)
-            @timeit_debug JEXPRESSO_TIMER "build_rhs_laguerre" build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
-            params.RHS .= @views(params.RHS .+ params.RHS_lag)
-        end
+        # The Laguerre (semi-infinite) elements are assembled inside _build_rhs!,
+        # before the global DSS and the boundary constraints (see there).
 
         @timeit_debug JEXPRESSO_TIMER "RHStoDU" RHStoDU!(du, @view(params.RHS[:,:]), params.neqs, params.mesh.npoin)
     else
@@ -611,8 +609,8 @@ function rhs!(du, u, params, time)
                   params.mesh.connijk_lag,
                   params.qbdy_lag_gpu,
                   params.mesh.ngl, params.mesh.ngr,
-                  TInt(params.neqs), params.mesh.npoin, params.mesh.nelem_semi_inf, 
-                  params.inputs[:lperiodic_laguerre], lpert;
+                  TInt(params.neqs), params.mesh.npoin,
+                  params.lag_side_n, params.lag_far_n, lpert;
                   ndrange = (params.mesh.nelem_semi_inf*params.mesh.ngl,params.mesh.ngr),
                   workgroupsize = (params.mesh.ngl,params.mesh.ngr))
                 
@@ -950,6 +948,16 @@ function _build_rhs!(RHS, u, params, time)
                                        params.WM.τ_f, params.WM.wθ, params.WM.wqv,
                                        params.mp.Tabs, params.mp.qn,
                                        params.ω, neqs, params.inputs, AD, SD) 
+
+    # Semi-infinite (Laguerre) elements: their element contributions are added to
+    # the same locally assembled RHS as the finite elements, so the global DSS,
+    # the boundary constraints and the mass division below act on the complete
+    # tendency. (Adding them after the constraints undid the constraint at every
+    # node shared with a Laguerre element.)
+    if params.laguerre
+        @timeit_debug JEXPRESSO_TIMER "build_rhs_laguerre" build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
+        params.RHS .+= params.RHS_lag
+    end
 
     @timeit_debug JEXPRESSO_TIMER "DSS_global_RHS" DSS_global_RHS!(@view(params.RHS[:,:]), params.g_dss_cache, params.neqs)
     params.bc_cons === nothing || apply_bc_constraints_rhs!(params.RHS, params.bc_cons)

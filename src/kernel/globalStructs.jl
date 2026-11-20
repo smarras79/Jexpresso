@@ -463,7 +463,7 @@ function allocate_gpuAux_lag(SD, nelem_semi_inf, nedges_bdy, nfaces_bdy, ngl, ng
         elseif SD == NSD_2D()
             dims1 = (Int64(nelem_semi_inf), Int64(ngl), Int64(ngr), 2*neqs)
             dims2 = (Int64(nelem_semi_inf), Int64(ngl), Int64(ngr),   neqs)
-            dims3 = (Int64(nedges_bdy),     Int64(ngl),               neqs)
+            dims3 = (Int64(nelem_semi_inf), Int64(ngl), Int64(ngr),   neqs)   # indexed [e, i, j, ieq]
         elseif SD == NSD_3D()
             error(" globalStructs.jl: --> 3D Laguerre not implemented yet!")
         end
@@ -475,6 +475,35 @@ function allocate_gpuAux_lag(SD, nelem_semi_inf, nedges_bdy, nfaces_bdy, ngl, ng
     gpuAux_lag = St_gpuAux_lag{T, dims1, dims2, dims3, backend, Arr1, Arr2, Arr3}()
 
     return gpuAux_lag
+end
+
+#
+# Normals of the boundary sides of the 2D semi-infinite layer, for the GPU
+# Dirichlet kernel (which cannot use the string tags): computed once on the host
+# from laguerre_side_columns_2D (bc_constraints.jl) and copied to the backend.
+#   side_n[e, s, :] : outward normal of column side s (s = 1 -> i = 1, s = 2 -> i = ngl)
+#                     of element e when that side continues a boundary of the
+#                     finite domain, (0, 0) otherwise (interior or periodic);
+#   far_n[e, i, :]  : column direction of column i of element e (far-end normal).
+#
+function laguerre_bc_normals_gpu(mesh, T, backend)
+    ne = Int64(mesh.nelem_semi_inf); ngl = Int64(mesh.ngl); ngr = Int64(mesh.ngr)
+    side_n = zeros(T, ne, 2, 2)
+    far_n  = zeros(T, ne, ngl, 2)
+    if mesh.SD == NSD_2D() && ne > 0
+        C = Array(mesh.connijk_lag); X = Array(mesh.coords)
+        for (e, i, _, nx, ny) in laguerre_side_columns_2D(C, X, Array(mesh.poin_in_bdy_edge), mesh.bdy_edge_type,
+                                                          mesh.nedges_bdy, ne, ngl, ngr)
+            s = i == 1 ? 1 : 2
+            side_n[e, s, 1] = nx; side_n[e, s, 2] = ny
+        end
+        for e = 1:ne, i = 1:ngl
+            far_n[e, i, 1], far_n[e, i, 2] = laguerre_far_normal(C, X, e, i, ngr)
+        end
+    end
+    side_n_b = KernelAbstractions.allocate(backend, T, size(side_n)); KernelAbstractions.copyto!(backend, side_n_b, side_n)
+    far_n_b  = KernelAbstractions.allocate(backend, T, size(far_n));  KernelAbstractions.copyto!(backend, far_n_b,  far_n)
+    return side_n_b, far_n_b
 end
 
 Base.@kwdef mutable struct St_gpuMoist{T <: AbstractFloat, dims1, dims2, dims3, dims4, backend, Arr1, Arr2, Arr3, Arr4}

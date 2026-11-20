@@ -1,5 +1,6 @@
 #----------------------------------------------------------------------------------------------
-# Dirichlet constraints detected from user_bc_dirichlet!  (1D, 2D, 3D; CPU, CG, non-Laguerre)
+# Dirichlet constraints detected from user_bc_dirichlet!  (1D, 2D, 3D; CPU, CG; with semi-infinite
+# Laguerre elements in 1D and 2D, see _bc_laguerre_nodes_2D!)
 #
 # No user input is needed: what a boundary tag constrains is inferred from what the case's
 # user_bc_dirichlet! does to a node value.
@@ -73,7 +74,7 @@ end
 #
 # Boundary node entries (ip, tag, normal) for each dimension.
 #
-function _bc_boundary_nodes(::NSD_3D, mesh, metrics, TF)
+function _bc_boundary_nodes(::NSD_3D, mesh, metrics, TF, inputs)
     ips = Int[]; tags = String[]; ns = NTuple{3,TF}[]
     for iface = 1:size(mesh.bdy_face_type, 1)
         tag = mesh.bdy_face_type[iface]
@@ -86,7 +87,7 @@ function _bc_boundary_nodes(::NSD_3D, mesh, metrics, TF)
     return ips, tags, ns
 end
 
-function _bc_boundary_nodes(::NSD_2D, mesh, metrics, TF)
+function _bc_boundary_nodes(::NSD_2D, mesh, metrics, TF, inputs)
     ips = Int[]; tags = String[]; ns = NTuple{3,TF}[]
     for iedge = 1:mesh.nedges_bdy
         tag = mesh.bdy_edge_type[iedge]
@@ -96,11 +97,124 @@ function _bc_boundary_nodes(::NSD_2D, mesh, metrics, TF)
             push!(ns, (metrics.nx[iedge, k], metrics.ny[iedge, k], zero(TF)))
         end
     end
+    mesh.lLaguerre && _bc_laguerre_nodes_2D!(ips, tags, ns, mesh, metrics, TF, inputs)
     return ips, tags, ns
 end
 
-function _bc_boundary_nodes(::NSD_1D, mesh, metrics, TF)
-    return [1, mesh.npoin_linear], ["left", "right"], [(-one(TF), zero(TF), zero(TF)), (one(TF), zero(TF), zero(TF))]
+#
+# Boundary sides of the semi-infinite (Laguerre) elements, 2D -- shared by every
+# path that imposes boundary conditions on the layer (the inferred constraints
+# below, the legacy CPU/GPU Dirichlet paths and the linear-solve paths in BCs.jl).
+#
+# A Laguerre element e is the column connijk_lag[e, i, j] (i = 1:ngl along its base
+# edge, j = 1:ngr outward, j = 1 on the base edge). Nothing is assumed about the
+# direction of the layer or the order of the elements: everything is found from
+# the topology.
+#
+#   * Column sides i = 1 and i = ngl. A side is a domain boundary only when its
+#     base node lies on a (non-Laguerre) boundary edge of the finite domain and
+#     the side is not shared with another Laguerre element. It INHERITS that
+#     edge's tag -- a wall, inflow, Dirichlet... boundary continues into the
+#     layer as the same boundary; a periodic one stays periodic (no constraint).
+#     Normal: perpendicular to the column, pointing out of the element.
+#   * The far row j = ngr (the "infinity" end) is the layer's own boundary
+#     (:laguerre_tag); its normal is the column direction, laguerre_far_normal.
+#
+# Returns a vector of (e, i, tag, nx, ny), one per boundary column side.
+#
+function laguerre_side_columns_2D(connijk_lag, coords, poin_in_bdy_edge, bdy_edge_type,
+                                  nedges_bdy, nelem_semi_inf, ngl, ngr)
+    C = connijk_lag
+    sides = Tuple{Int,Int,String,Float64,Float64}[]
+    (nelem_semi_inf > 0 && ngr > 1) || return sides
+
+    # base node -> tag of a non-Laguerre boundary edge through it
+    wall = Dict{Int,String}()
+    for iedge = 1:nedges_bdy
+        tag = String(bdy_edge_type[iedge])
+        tag == "Laguerre" && continue
+        for k = 1:ngl
+            ip = poin_in_bdy_edge[iedge, k]
+            # a periodic tag wins: the side is then an internal (periodic) seam
+            (haskey(wall, ip) && bc_is_periodic_tag(wall[ip])) || (wall[ip] = tag)
+        end
+    end
+    # a column side used by two Laguerre elements is interior
+    nuse = Dict{Int,Int}()
+    for e = 1:nelem_semi_inf, i in (1, ngl)
+        ip = C[e, i, 2]
+        nuse[ip] = get(nuse, ip, 0) + 1
+    end
+
+    for e = 1:nelem_semi_inf
+        for (i, iopp) in ((1, ngl), (ngl, 1))
+            ipb = C[e, i, 1]
+            get(nuse, C[e, i, 2], 0) > 1 && continue
+            haskey(wall, ipb) || continue
+            tag = wall[ipb]
+            bc_is_skipped_tag(tag) && continue
+            tx, ty = laguerre_far_normal(C, coords, e, i, ngr)      # column direction
+            nx, ny = ty, -tx
+            if nx*(coords[1, C[e, iopp, 1]] - coords[1, ipb]) +
+               ny*(coords[2, C[e, iopp, 1]] - coords[2, ipb]) > 0
+                nx, ny = -nx, -ny
+            end
+            push!(sides, (e, i, tag, nx, ny))
+        end
+    end
+    return sides
+end
+
+# Unit vector along column (e, i) of a Laguerre element, from its base outward:
+# the outward normal of the far end j = ngr.
+function laguerre_far_normal(connijk_lag, coords, e, i, ngr)
+    ip0 = connijk_lag[e, i, 1]; ip1 = connijk_lag[e, i, ngr]
+    dx = coords[1, ip1] - coords[1, ip0]; dy = coords[2, ip1] - coords[2, ip0]
+    d  = sqrt(dx^2 + dy^2)
+    return dx/d, dy/d
+end
+
+function _bc_laguerre_nodes_2D!(ips, tags, ns, mesh, metrics, TF, inputs)
+    ngl = mesh.ngl; ngr = mesh.ngr
+    C = mesh.connijk_lag
+    sides = laguerre_side_columns_2D(C, mesh.coords, mesh.poin_in_bdy_edge, mesh.bdy_edge_type,
+                                     mesh.nedges_bdy, mesh.nelem_semi_inf, ngl, ngr)
+    for (e, i, tag, nx, ny) in sides, j = 2:ngr
+        push!(ips, C[e, i, j]); push!(tags, tag)
+        push!(ns, (TF(nx), TF(ny), zero(TF)))
+    end
+    if inputs[:llaguerre_bc] && ngr > 1
+        tag = String(inputs[:laguerre_tag])
+        for e = 1:mesh.nelem_semi_inf, i = 1:ngl
+            tx, ty = laguerre_far_normal(C, mesh.coords, e, i, ngr)
+            push!(ips, C[e, i, ngr]); push!(tags, tag)
+            push!(ns, (TF(tx), TF(ty), zero(TF)))
+        end
+    end
+    return nothing
+end
+
+#
+# 1D: the ends are "left" (node 1) and "right" (node npoin_linear). An end with a
+# Laguerre element attached (:llaguerre_1d_left/right) is not a boundary: the
+# domain continues past it. The far node of that element takes :laguerre_tag
+# when :llaguerre_bc is on.
+#
+function _bc_boundary_nodes(::NSD_1D, mesh, metrics, TF, inputs)
+    ips = Int[]; tags = String[]; ns = NTuple{3,TF}[]
+    lright = inputs[:llaguerre_1d_right]; lleft = inputs[:llaguerre_1d_left]
+    if !lleft
+        push!(ips, 1); push!(tags, "left"); push!(ns, (-one(TF), zero(TF), zero(TF)))
+    end
+    if !lright
+        push!(ips, mesh.npoin_linear); push!(tags, "right"); push!(ns, (one(TF), zero(TF), zero(TF)))
+    end
+    if inputs[:llaguerre_bc]
+        # element 1 is the right extension when there is one, the left one is element min(2, n)
+        lright && (push!(ips, mesh.connijk_lag[1, mesh.ngr, 1]); push!(tags, String(inputs[:laguerre_tag])); push!(ns, (one(TF), zero(TF), zero(TF))))
+        lleft  && (push!(ips, mesh.connijk_lag[min(2, mesh.nelem_semi_inf), mesh.ngr, 1]); push!(tags, String(inputs[:laguerre_tag])); push!(ns, (-one(TF), zero(TF), zero(TF))))
+    end
+    return ips, tags, ns
 end
 
 _bc_np_dim(::NSD_3D) = 3
@@ -119,7 +233,10 @@ function build_bc_constraints(mesh, metrics, qn, qe, inputs, neqs,
     lmom  = d > 0 && neqs >= 1 + d
     nS    = d*(d+1) ÷ 2               # independent entries of the symmetric S = sum n n^T
 
-    b_ip, b_tag, b_nt = _bc_boundary_nodes(SD, mesh, metrics, TF)
+    # Laguerre runs carry (finite-element metrics, Laguerre metrics); the boundary
+    # normals live in the finite-element ones.
+    metrics isa Tuple && (metrics = metrics[1])
+    b_ip, b_tag, b_nt = _bc_boundary_nodes(SD, mesh, metrics, TF, inputs)
     nb      = length(b_ip)
     b_n     = zeros(TF, 3, nb)
     b_robin = falses(nb)

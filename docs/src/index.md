@@ -254,7 +254,7 @@ Pages = [
     "tutorials/user_inputs.md",
     "tutorials/theta.md",
     "tutorials/define_output_variables.md",
-    "tutorials/laguerre_paper.md",
+    "tutorials/laguerre.md",
     ]
 Depth = 2
 ```
