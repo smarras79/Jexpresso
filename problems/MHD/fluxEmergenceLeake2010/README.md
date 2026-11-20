@@ -84,13 +84,13 @@ editing the deck:
 | `JEXPRESSO_LK10_CMIN` | default 0 | DynSGS background floor $C_{min}$ |
 | `JEXPRESSO_LK10_FLOORS` | `1` (default), `0` | positivity floors as the Runge–Kutta stage limiter (Positivity, below) |
 | `JEXPRESSO_LK10_TFLOOR` | default 0.1 | temperature floor, in $T_{ph}$ = 5700 K |
-| `JEXPRESSO_LK10_ETA` | `all` (default), `induction` | DynSGS resistivity from the max over all residuals (one coefficient), or from the induction residuals alone (DynSGS in the corona, below) |
+| `JEXPRESSO_LK10_ETA` | `induction` (default), `all` | DynSGS resistivity from the induction residuals alone, or from the max over all residuals (one coefficient, the parent case) (DynSGS in the corona, below) |
 | `JEXPRESSO_LK10_ENERGY` | `thermal` (default), `total` | energy-consistent DynSGS (Positivity, below), or $E$ diffused as a whole (the parent case) |
 | `JEXPRESSO_LK10_STABCAP` | default 0.2; 0: none | the DynSGS coefficient never above this viscous number $\mu\Delta t/\Delta x^2$, which the explicit step still integrates (Meshes, time step and cost) |
 | `JEXPRESSO_LK10_ETACAP` | `fast` (default), `flow` | DynSGS resistivity capped at $C_{max}\Delta(\lvert v\rvert + c_f)$ like the viscosity, or at $C_{max}\Delta\lvert v\rvert$ (Verification, the REF 4 run) |
 | `JEXPRESSO_LK10_ETAFAC` | default 1 | factor on the DynSGS resistivity (the `:μ` multipliers of the B slots), a sensitivity test |
 | `JEXPRESSO_LK10_RHOFAC` | default 1 | factor on the DynSGS mass diffusion (the `:μ` multiplier of the ρ slot), a sensitivity test |
-| `JEXPRESSO_LK10_HEAT` | `1` (default), a fraction, `shock` | what the heat the DynSGS dissipates does (`:dsgs_heating`): that fraction of it into the plasma (1 conserves energy, 0 loses it all), or `shock`: only the explicit ν, η and the DynSGS viscosity in compression heat, as in Lare (The heat of the DynSGS, below) |
+| `JEXPRESSO_LK10_HEAT` | `shock` (default), a fraction | what the heat the DynSGS dissipates does (`:dsgs_heating`): `shock`, only the explicit ν, η and the DynSGS viscosity in compression heat, as in Lare (The heat of the DynSGS, below); or that fraction of it into the plasma (1 conserves energy, 0 loses it all) |
 | `JEXPRESSO_LK10_SENSOR` | `legacy` (default), `residual` | DynSGS sensor: $\lvert\partial_tq\rvert$ against the assembled RHS (the parent case's), or the element residual once per step (DSGS.md §1.2) |
 
 For example, the erratum's Fig. 1 (tubes 1 and 2, field-free corona) and its
@@ -270,7 +270,7 @@ paper's dissipation and its energy relaxation:
   and pressure at chromospheric heights) or on cool plasma lifted into the
   corona. Not conservative where they fire; the log reports the hits.
 
-- **DynSGS in the corona** (open). The DynSGS has one coefficient per element,
+- **DynSGS in the corona.** The DynSGS has one coefficient per element,
   from the largest normalized residual of all equations, used as viscosity,
   mass and heat diffusivity and resistivity alike (Dao & Nazarov). In the
   low-β corona the waves that reach it from below steepen, and their density
@@ -280,7 +280,8 @@ paper's dissipation and its energy relaxation:
   paper's results (erratum), and enough to diffuse a 1 Mm flux rope away in a
   few hundred seconds. Lare has no resistivity there: its shock viscosity acts
   on compressions only, and its remap diffuses with the flow speed, not the fast
-  speed. Two measures, to be shown on the cluster: `JEXPRESSO_LK10_ETA=induction`
+  speed. Two measures (the first is the default since the cluster run of
+  Verification, the second is the mesh of that run): `JEXPRESSO_LK10_ETA=induction`
   (`:dsgs_induction_sensor`) takes the coefficient of the $\mathbf B$ slots from
   the residuals of the induction equation alone, so that an acoustic front,
   which hardly changes $\mathbf B$ at low β, no longer makes the field resistive
@@ -300,9 +301,9 @@ paper's dissipation and its energy relaxation:
   tube the resistivity is half the viscosity). The `atmos` figure shows both
   coefficients against height.
 
-- **The heat of the DynSGS** (open). With the energy-consistent operator every
-  erg the DynSGS removes from the flow and the field becomes heat, so the total
-  energy is conserved. Lare does not do that: its remap does not conserve the
+- **The heat of the DynSGS.** With the energy-consistent operator every
+  erg the DynSGS removes from the flow and the field can become heat, so that
+  the total energy is conserved (`JEXPRESSO_LK10_HEAT=1`). Lare does not do that: its remap does not conserve the
   kinetic energy and the loss is not returned as heat unless asked
   (`rke = .FALSE.` in the distributed `control.f90`: "This missing energy can be
   added back into the simulation as a uniform heating"); what heats there is
@@ -312,16 +313,17 @@ paper's dissipation and its energy relaxation:
   the REF 4 run (Verification) the DynSGS viscosity could supply all of it in
   100–600 s, the plasma went from below 2 × 10⁴ K to 10⁵ K, stopped draining,
   and the dome stopped rising. `JEXPRESSO_LK10_HEAT=shock` (`:dsgs_heating =>
-  "shock"`, `src/kernel/physics/SGS.jl`) heats as Lare does: the explicit ν and
+  "shock"`, `src/kernel/physics/SGS.jl`), the default, heats as Lare does: the explicit ν and
   η in full, the DynSGS viscosity only where the flow is compressed,
   $\rho\mu(\nabla\cdot\mathbf v)_-^2$ and never more than it dissipates there, the
   DynSGS resistivity and ψ diffusion not at all; the rest of what the DynSGS
   dissipates is lost, as in the remap. `JEXPRESSO_LK10_HEAT=0` loses all of it
-  (shocks then do not heat either: a test only). The default stays 1 until the
-  cluster runs decide. Here, the kick test of "Positivity" (REF 1, no floors,
+  (shocks then do not heat either: a test only). `shock` is the default since
+  the cluster run of Verification, in which the lifted plasma keeps draining
+  and the flux rope of the erratum forms. Here, the kick test of "Positivity" (REF 1, no floors,
   11.6 s) runs the same with the three: flows of 13.9, 13.8 and 13.8 km/s
   (1, `shock`, 0), the same smallest temperature, the pressure near the kick
-  1.0 % (`shock`) and 1.3 % (0) below the default's, the total energy change
+  1.0 % (`shock`) and 1.3 % (0) below that with all the heat, the total energy change
   −2.98 and −3.22 against −2.21 × 10⁻¹⁰: of the heat the DynSGS dissipates
   there `shock` keeps a quarter, the compressed half of a kick whose velocity
   gradient is half compression. A restart that changes the mode reports it
@@ -530,7 +532,11 @@ stops at once ("nothing to continue"), so a spare job in the chain is harmless.
 
 - **Same switches, mesh, rank count and partition.** Each rank reads its own
   piece of the snapshot (a run made before the balanced partition existed
-  continues with `JEXPRESSO_LK10_PARTITION=uniform`). Every run writes its `JEXPRESSO_LK10_*` configuration, mesh and
+  continues with `JEXPRESSO_LK10_PARTITION=uniform`). The numerical switches
+  may change, and the log says which did: to continue a run made before a
+  default changed with its own numerics, set them (`JEXPRESSO_LK10_ETA=all`,
+  `JEXPRESSO_LK10_HEAT=1` for runs older than those defaults; its
+  `lk10_case.txt` lists what it used). Every run writes its `JEXPRESSO_LK10_*` configuration, mesh and
   rank count to `lk10_case.txt` in its output directory, and a restart from a
   run with another record stops with the list of differences. The time step
   (`JEXPRESSO_LK10_DT`), the end time, the snapshot interval and the numerical
@@ -588,8 +594,10 @@ matplotlib). `RUN` is `output/MHD/fluxEmergenceLeake2010/output-<date>`.
 ```bash
 python3 tools/plot_leake2010.py density  $RUN            # Erratum Fig. 3: log rho, field lines, B_x arrows, 920-2530 s
 python3 tools/plot_leake2010.py shear    $RUN            # Erratum Fig. 1: B_z (G) and field lines, 920-2254 s
-python3 tools/plot_leake2010.py dsgs     $RUN            # the DynSGS viscosity at the times of Fig. 3 (--which eta: the resistivity)
-python3 tools/plot_leake2010.py movie    $RUN            # one image per snapshot and a GIF of them (--field density | mu | eta)
+python3 tools/plot_leake2010.py dsgs     $RUN            # the DynSGS coefficient of the momentum equations at the times of Fig. 3
+                                                         #   (--which induction | energy: of those equations)
+python3 tools/plot_leake2010.py movie    $RUN            # one image per snapshot and a GIF of them
+                                                         #   (--field density | momentum | induction | energy)
 python3 tools/plot_leake2010.py dome     tube2=$RUN      # top of the dense dome on x = 0 vs time, with the erratum's Fig. 3 values
 python3 tools/plot_leake2010.py axis     tube2=$RUN      # Erratum Fig. 2(a): axis height vs time, with the erratum's curves
 python3 tools/plot_leake2010.py eshear   tube2=$RUN      # Erratum Figs. 2(b,c), 5: E_shear above 1.2 and 5 Mm (Eq. 20)
@@ -599,16 +607,39 @@ python3 tools/plot_leake2010.py null     base=$RUN       # on x = 0 vs time: the
 python3 tools/plot_leake2010.py mass     $RUN            # the plasma above 3 Mm: mass budget, temperature, pressure, draining, heating time
 ```
 
-Every map has a title and a labelled colour bar naming what its colours show.
-`dsgs` draws log₁₀ of the DynSGS coefficient in code units ($L_0v_0$ = 970 km² s⁻¹)
-on a one-hue scale, palest where there is none (the paper's explicit viscosity,
-0.013 above the photosphere, is in it). `movie` writes
-`frames_<field>/<field>_NNNN_t<seconds>s.png` for every snapshot (`--tmin`,
-`--tmax`, `--every`), all with the same window, colour limits and field-line
-levels (those of the run's first snapshot, so that a line is the same flux
-surface in every frame), and `<field>.gif` (`--fps`, default 4; a frame lasts in
+Figures are written to `figs_leake2010/` (`--outdir`) as
+`flux_emergence_Leake2010_<variable>.png` (`--prefix`, `--format`):
+`…_density`, `…_Bz`, `…_mu_dsgs_momentum`, `…_mu_dsgs_induction`,
+`…_mu_dsgs_mass_energy`, `…_dome`, `…_axis`, `…_null`, `…_eshear`, `…_atmos`,
+`…_profiles`. Every map has a title and a labelled colour bar naming what its
+colours show.
+
+**Which DynSGS coefficient.** The solver has one coefficient $\mu$ per element,
+from the largest normalized residual of the eight equations ($\rho$, $\rho u$,
+$\rho v$, $E$, $\rho w$, $B_x$, $B_y$, $B_z$; and of the thermal energy; $\psi$
+is left out), capped (Meshes, time step and cost). What is *applied* differs by equation, and the output has one field per
+group of equations with the same coefficient, named after them:
+
+| output field | equations | what it is | `dsgs --which`, `movie --field` |
+|---|---|---|---|
+| `mu_dsgs_ρu_ρv_ρw` | momentum | $\mu$ plus the paper's explicit viscosity (0.013 above the photosphere) | `momentum` (default; `mu`) |
+| `mu_dsgs_Bx_By_Bz` | induction | its own coefficient $\eta$, from the induction residuals alone (`JEXPRESSO_LK10_ETA=induction`), plus the anomalous resistivity where it is active | `induction` (`eta`) |
+| `mu_dsgs_ρ_ρE_ψ` | mass, energy, $\psi$ | $\mu$ itself | `energy` (`rho`) |
+
+(With `JEXPRESSO_LK10_ETA=all` the induction equations share $\mu$ and the last
+two are one field, `mu_dsgs_ρ_ρE_Bx_By_Bz_ψ`.) All are kinematic, in code units
+$L_0v_0$ = 970 km² s⁻¹, the element's value at its nodes (the largest of the
+elements sharing a node). `dsgs` and `movie` draw log₁₀ of the chosen one
+(`--linear`: the coefficient itself) on the colour scale of the group's DynSGS
+figures, dark navy where there is none, through cyan and cream to dark red.
+`movie` writes
+`frames_<variable>/flux_emergence_Leake2010_<variable>_NNNN_t<seconds>s.png`
+for every snapshot (`--tmin`, `--tmax`, `--every`), all with the same window,
+colour limits and field-line levels (those of the run's first snapshot, so
+that a line is the same flux surface in every frame), and
+`flux_emergence_Leake2010_<variable>.gif` (`--fps`, default 4; a frame lasts in
 proportion to the time to the next snapshot, which are not equally spaced;
-needs Pillow, which matplotlib installs). `--lw` before the command sets the
+needs Pillow, which matplotlib installs). `--lw` sets the
 width of the field lines (0.9 pt); a limit that begins with a minus sign is
 written with `=`, `--ylim=-3,19.5`.
 
@@ -808,8 +839,17 @@ Short runs on 4 cores; the full runs are for a cluster (above).
   6.7 < y < 11 Mm), of the time step and not of the heating: the fast CFL
   number had reached 0.64 at 1624 s, above the 0.62 at which the DynSGS
   coefficient on its first-order cap is unstable (Meshes, time step and cost).
-  `:dsgs_stab_cap` is the remedy, on by default since; the run is to be
-  continued from its 1508 s snapshot.
+  `:dsgs_stab_cap` is the remedy, on by default since. Continued from its
+  1508 s snapshot with it (and $\Delta t = 1.5\times10^{-4}$ for margin) the run
+  reaches 2530 s, and its density figure has the erratum's sequence: a flux
+  rope, a closed field line around a dense core, at the apex of the dome at
+  1955 s, at (0.5, 8.3) Mm; at 2185 s it has moved to the right and down, to
+  (6, 6.5) Mm; at 2530 s it is gone and the column above the tube has drained
+  to coronal density from ~4.5 Mm up (erratum: the rope at (0, 13.7) Mm at
+  2185 s, at (4.5, 13.7) Mm at 2530 s, the column coronal above 3.65 Mm). It
+  happens some 5 Mm lower and 200 s earlier than in the erratum, and the $B_x$
+  arrow at 11 Mm still does not turn. `JEXPRESSO_LK10_HEAT=shock` and
+  `JEXPRESSO_LK10_ETA=induction` are the defaults since this run.
 
   Here: the switches act, are recorded, and a restart that changes them
   reports it and continues; the first 40 s of the run on REF 1 (the corona is

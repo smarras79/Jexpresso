@@ -11,9 +11,10 @@ t0 = 23.1946 s), the density in g cm^-3 and B_z in G, as in the paper.
                                                               #   B_x arrows at t = 920, 1380, 1610, 1955, 2185, 2530 s
   python3 tools/plot_leake2010.py density RUN --times 920,1610 --label "Low Tension"
   python3 tools/plot_leake2010.py shear RUN                   # Erratum Figs. 1 and 8: B_z (G) and field lines
-  python3 tools/plot_leake2010.py dsgs RUN                    # the DynSGS viscosity (--which eta: resistivity) at those times
+  python3 tools/plot_leake2010.py dsgs RUN                    # the DynSGS coefficient of the momentum equations at those
+                                                              #   times (--which induction | energy: of those equations)
   python3 tools/plot_leake2010.py movie RUN                   # one image per snapshot and an animated GIF of them
-                                                              #   (--field density | mu | eta)
+                                                              #   (--field density | momentum | induction | energy)
   python3 tools/plot_leake2010.py dome RUN [RUN2 ...]         # top of the dense dome on x = 0 vs time, against Erratum Fig. 3
   python3 tools/plot_leake2010.py axis RUN [RUN2 ...]         # Erratum Figs. 2(a), 7(a): height of the tube axis vs time
   python3 tools/plot_leake2010.py eshear RUN [RUN2 ...]       # Erratum Figs. 2(b,c), 5: E_shear above 1.2 and 5 Mm (Eq. 20)
@@ -24,8 +25,9 @@ t0 = 23.1946 s), the density in g cm^-3 and B_z in G, as in the paper.
                                                               #   above it), the flux between the tube axis and it, the
                                                               #   mass lifted, and the DynSGS coefficients at the null
 
-Every command takes --outdir (default figs_leake2010), --format (png), --dpi and --lw (the width of the
-field lines), before or after the command name. Needs numpy and matplotlib;
+Every command takes --outdir (default figs_leake2010), --format (png), --dpi, --lw (the width of the field
+lines) and --prefix, before or after the command name. A figure is <prefix><variable>.<format>, by default
+flux_emergence_Leake2010_density.png, ..._mu_dsgs_momentum.png, ..._Bz.png, ..._dome.png, and so on. Needs numpy and matplotlib;
 it reads the VTU files with the reader of tools/plot_fluxemergence_vtu.py.
 """
 import argparse, glob, os, re, sys
@@ -218,6 +220,11 @@ def a_grid(g):
 
 
 LINE_WIDTH = 0.9       # field lines, points (--lw)
+PREFIX = "flux_emergence_Leake2010_"   # every figure is <PREFIX><variable>.<format> (--prefix)
+
+
+def fig_path(a, variable, ext=None):
+    return os.path.join(a.outdir, f"{PREFIX}{variable}.{ext or a.format}")
 
 
 def field_lines(ax, g, levels, color="w", lw=None, alpha=1.0):
@@ -227,13 +234,23 @@ def field_lines(ax, g, levels, color="w", lw=None, alpha=1.0):
     return A
 
 
-# One-hue sequential ramp, light to dark, for a magnitude (the DynSGS coefficients): near zero recedes
-# toward the page, more is darker. The density and B_z maps keep the paper's own rainbow scale, to be laid
-# beside its figures.
-SEQ_BLUE = matplotlib.colors.LinearSegmentedColormap.from_list(
-    "seq_blue", ["#f4f8fe", "#cde2fb", "#b7d3f6", "#9ec5f4", "#86b6ef", "#6da7ec", "#5598e7", "#3987e5", "#2a78d6",
-                 "#256abf", "#1c5cab", "#184f95", "#104281", "#0d366b"])
-INK = "#1f2933"        # text and field lines on the light ramp
+# The colour scale of the DynSGS coefficient in the group's figures: dark navy where there is none, through
+# cyan and cream to dark red where it is largest (ParaView's "Cool to Warm (Extended)" control points, here
+# interpolated in RGB). The density and B_z maps keep Leake et al.'s rainbow scale, to be laid beside theirs.
+_C2W = [(0.0, 0.0, 0.0, 0.34902), (0.03125, 0.039216, 0.062745, 0.380392), (0.0625, 0.062745, 0.117647, 0.411765),
+        (0.09375, 0.090196, 0.184314, 0.45098), (0.125, 0.12549, 0.262745, 0.501961), (0.15625, 0.160784, 0.337255, 0.541176),
+        (0.1875, 0.2, 0.396078, 0.568627), (0.21875, 0.239216, 0.454902, 0.6), (0.25, 0.286275, 0.521569, 0.65098),
+        (0.28125, 0.337255, 0.592157, 0.701961), (0.3125, 0.388235, 0.654902, 0.74902), (0.34375, 0.466667, 0.737255, 0.819608),
+        (0.375, 0.572549, 0.819608, 0.878431), (0.40625, 0.654902, 0.866667, 0.909804), (0.4375, 0.752941, 0.917647, 0.941176),
+        (0.46875, 0.823529, 0.956863, 0.968627), (0.5, 0.941176, 0.984314, 0.988235), (0.5, 0.988235, 0.960784, 0.901961),
+        (0.52, 0.988235, 0.945098, 0.85098), (0.54, 0.980392, 0.898039, 0.784314), (0.5625, 0.968627, 0.835294, 0.698039),
+        (0.59375, 0.94902, 0.733333, 0.588235), (0.625, 0.929412, 0.65098, 0.509804), (0.65625, 0.909804, 0.564706, 0.435294),
+        (0.6875, 0.878431, 0.458824, 0.352941), (0.71875, 0.839216, 0.388235, 0.286275), (0.75, 0.760784, 0.294118, 0.211765),
+        (0.78125, 0.701961, 0.211765, 0.168627), (0.8125, 0.65098, 0.156863, 0.129412), (0.84375, 0.6, 0.094118, 0.094118),
+        (0.875, 0.54902, 0.066667, 0.098039), (0.90625, 0.501961, 0.05098, 0.12549), (0.9375, 0.45098, 0.054902, 0.172549),
+        (0.96875, 0.4, 0.054902, 0.192157), (1.0, 0.34902, 0.070588, 0.211765)]
+DSGS_CMAP = matplotlib.colors.LinearSegmentedColormap.from_list("dsgs_cool_to_warm", [(x, (r, g, b)) for x, r, g, b in _C2W], N=512)
+INK = "#1f2933"        # titles
 
 # What a map shows: the output field(s) it reads (the first one present), whether its log10 is taken, the
 # colour map and its default limits, the colour-bar label, the colour of the text and field lines drawn on it.
@@ -241,14 +258,46 @@ MAPS = {
     "density": dict(names=("log10rho_cgs",), log=False, cmap="jet", clim=(-16.0, -5.3), ink="w", line="w", alpha=1.0,
                     label=r"log$_{10}$ $\rho$ (g cm$^{-3}$)", tick=2.0,
                     title=r"Density: log$_{10}$ $\rho$ (g cm$^{-3}$), with the field lines and the direction of $B_x$"),
-    "mu":      dict(names=("mu_dsgs_ρu_ρv_ρw",), log=True, cmap=SEQ_BLUE, clim=(-2.0, 2.0), ink=INK, line=INK, alpha=0.55,
-                    label=r"log$_{10}$ $\mu$ ($\mu$ in $L_0v_0$ = 970 km$^2$ s$^{-1}$)", tick=1.0,
-                    title=r"DynSGS viscosity: log$_{10}$ $\mu$, with the field lines"),
-    "eta":     dict(names=("mu_dsgs_Bx_By_Bz", "mu_dsgs_ρ_ρE_Bx_By_Bz_ψ"), log=True, cmap=SEQ_BLUE, clim=(-4.0, 1.0),
-                    ink=INK, line=INK, alpha=0.55,
-                    label=r"log$_{10}$ $\eta$ ($\eta$ in $L_0v_0$ = 970 km$^2$ s$^{-1}$)", tick=1.0,
-                    title=r"DynSGS resistivity: log$_{10}$ $\eta$, with the field lines"),
+    # The DynSGS coefficients. The solver has ONE coefficient mu per element, from the largest normalized residual
+    # of the eight equations (rho, rho u, rho v, E, rho w, Bx, By, Bz), and writes one output field per group of
+    # equations whose applied coefficient differs, named after them (src/io/write_output.jl):
+    #   mu_dsgs_ρu_ρv_ρw   momentum:            mu + the paper's explicit viscosity (0.013 above the photosphere)
+    #   mu_dsgs_Bx_By_Bz   induction:           its own coefficient eta from the induction residuals alone
+    #                                           (JEXPRESSO_LK10_ETA=induction) + the anomalous resistivity where active
+    #   mu_dsgs_ρ_ρE_ψ     mass, energy, psi:   mu itself
+    # (JEXPRESSO_LK10_ETA=all: the induction equations share mu, field mu_dsgs_ρ_ρE_Bx_By_Bz_ψ.)
+    "momentum":  dict(names=("mu_dsgs_ρu_ρv_ρw", "mu_dsgs"), log=True, cmap=DSGS_CMAP, clim=(-2.0, 2.0), ink="w", line="w",
+                      alpha=0.45, plate=True, var="mu_dsgs_momentum", tick=1.0,
+                      label=r"log$_{10}$ $\mu$ ($\mu$ in $L_0v_0$ = 970 km$^2$ s$^{-1}$)",
+                      title=r"DynSGS $\mu$ of the momentum equations ($\rho u$, $\rho v$, $\rho w$)",
+                      lin=dict(clim=(0.0, 5.0), label=r"$\mu$ (in $L_0v_0$ = 970 km$^2$ s$^{-1}$)")),
+    "induction": dict(names=("mu_dsgs_Bx_By_Bz", "mu_dsgs_ρ_ρE_Bx_By_Bz_ψ", "mu_dsgs"), log=True, cmap=DSGS_CMAP, clim=(-4.0, 1.0),
+                      ink="w", line="w", alpha=0.45, plate=True, var="mu_dsgs_induction", tick=1.0,
+                      label=r"log$_{10}$ $\eta$ ($\eta$ in $L_0v_0$ = 970 km$^2$ s$^{-1}$)",
+                      title=r"DynSGS $\eta$ of the induction equations ($B_x$, $B_y$, $B_z$)",
+                      lin=dict(clim=(0.0, 0.5), label=r"$\eta$ (in $L_0v_0$ = 970 km$^2$ s$^{-1}$)")),
+    "energy":    dict(names=("mu_dsgs_ρ_ρE_ψ", "mu_dsgs_ρ_ρE_Bx_By_Bz_ψ", "mu_dsgs_ρE_ψ", "mu_dsgs"), log=True, cmap=DSGS_CMAP,
+                      clim=(-2.0, 2.0), ink="w", line="w", alpha=0.45, plate=True, var="mu_dsgs_mass_energy", tick=1.0,
+                      label=r"log$_{10}$ $\mu$ ($\mu$ in $L_0v_0$ = 970 km$^2$ s$^{-1}$)",
+                      title=r"DynSGS $\mu$ of the mass, energy and $\psi$ equations ($\rho$, $E$, $\psi$)",
+                      lin=dict(clim=(0.0, 5.0), label=r"$\mu$ (in $L_0v_0$ = 970 km$^2$ s$^{-1}$)")),
 }
+MAP_ALIAS = {"mu": "momentum", "eta": "induction", "rho": "energy"}
+
+
+def map_spec(name, linear=False):
+    """The map `name` of MAPS; with linear = True a DynSGS coefficient itself instead of its log10."""
+    spec = dict(MAPS[MAP_ALIAS.get(name, name)])
+    spec.setdefault("var", name)
+    if linear and "lin" in spec:
+        spec.update(spec["lin"], log=False, tick=None)
+    return spec
+
+
+def cbar_ticks(cb, clim, spec):
+    if spec.get("tick"):
+        cb.set_ticks(np.arange(spec["tick"] * np.ceil(clim[0] / spec["tick"]), clim[1] + 1e-9, spec["tick"]))
+    cb.set_label(spec["label"], fontsize=9); cb.ax.tick_params(labelsize=8)
 
 
 def map_field(g, spec):
@@ -262,9 +311,9 @@ def map_field(g, spec):
 
 
 def corner_text(ax, x, y, text, spec, size=9, **kw):
-    """A label in a corner of a panel, in the map's ink; on the light ramps it gets a pale plate, since the
-    tone under it can be anything from the page's to the darkest."""
-    plate = None if spec["ink"] == "w" else dict(boxstyle="round,pad=0.25", fc="white", ec="none", alpha=0.8)
+    """A label in a corner of a panel, in the map's ink; on the DynSGS scale it gets a dark plate, since the
+    tone under it can be anything from navy to cream."""
+    plate = dict(boxstyle="round,pad=0.25", fc="#0b1030", ec="none", alpha=0.7) if spec.get("plate") else None
     ax.text(x, y, text, color=spec["ink"], transform=ax.transAxes, fontsize=size, weight="bold", bbox=plate, **kw)
 
 
@@ -358,17 +407,18 @@ def cmd_density(a):
     cb = fig.colorbar(im, cax=_cbar_axes(fig, axs), orientation="horizontal")
     cb.set_ticks(np.arange(2 * np.ceil(a.clim[0] / 2), a.clim[1] + 1e-9, 2.0))
     cb.set_label(spec["label"], fontsize=9); cb.ax.tick_params(labelsize=8)
-    out = os.path.join(a.outdir, f"density.{a.format}")
+    out = fig_path(a, "density")
     fig.savefig(out, dpi=a.dpi); plt.close(fig)
     print("wrote", out)
 
 
 def cmd_dsgs(a):
-    """The DynSGS coefficient at the times of the density figure, in the same window, with the field lines:
-    the viscosity (the coefficient of the momentum slots; default) or the resistivity (--which eta), log10,
-    in code units L0 v0 = 970 km^2/s. The explicit viscosity of the paper (0.013 above the photosphere) is in
-    it, so the palest tone is "no DynSGS"."""
-    spec = MAPS[a.which]
+    """A DynSGS coefficient at the times of the density figure, in the same window, with the field lines, as
+    log10 (or --linear) in code units L0 v0 = 970 km^2/s, on the colour scale of the group's DynSGS figures.
+    --which says whose (MAPS): the momentum equations' (default; the element's mu plus the paper's explicit
+    viscosity, 0.013 above the photosphere, so navy is "no DynSGS"), the induction equations' (eta), or the
+    mass, energy and psi equations' (mu itself)."""
+    spec = map_spec(a.which, a.linear)
     clim = a.clim or spec["clim"]
     items = runs_of(a.run)
     times = [float(t) for t in a.times.split(",")] if a.times else ERRATUM_FIG3_TIMES
@@ -389,9 +439,8 @@ def cmd_dsgs(a):
         ax.set_xlabel("X (Mm)", fontsize=8)
     _layout(fig, axs, spec["title"])
     cb = fig.colorbar(im, cax=_cbar_axes(fig, axs), orientation="horizontal")
-    cb.set_ticks(np.arange(np.ceil(clim[0]), clim[1] + 1e-9, spec["tick"]))
-    cb.set_label(spec["label"], fontsize=9); cb.ax.tick_params(labelsize=8)
-    out = os.path.join(a.outdir, f"dsgs_{a.which}.{a.format}")
+    cbar_ticks(cb, clim, spec)
+    out = fig_path(a, spec["var"])
     fig.savefig(out, dpi=a.dpi); plt.close(fig)
     print("wrote", out)
 
@@ -401,16 +450,17 @@ def cmd_movie(a):
     window, colour limits and field-line levels (those of the first snapshot of the run, so that a line is the
     same flux surface in every frame), and an animated GIF of them in which the simulated time runs evenly
     (a frame stays in proportion to the time to the next one: the snapshots are not equally spaced)."""
-    spec = MAPS[a.field]
+    spec = map_spec(a.field, a.linear)
     clim = a.clim or spec["clim"]
     items = runs_of(a.run)
     levels = None if a.nlines <= 0 else a_levels(load(items[0][1], []), a.xlim, a.ylim, a.nlines)
     sel = [(t, f) for t, f in items if a.tmin - 0.5 <= t <= a.tmax + 0.5][::max(a.every, 1)]
     if not sel:
         raise SystemExit("   no snapshot in that range of times")
-    fdir = os.path.join(a.outdir, f"frames_{a.field}")
+    var = spec["var"]
+    fdir = os.path.join(a.outdir, f"frames_{var}")
     os.makedirs(fdir, exist_ok=True)
-    arrows = a.arrows if a.field == "density" else []
+    arrows = a.arrows if spec["var"] == "density" else []
     files = []
     for k, (t, f) in enumerate(sel):
         g = load(f, list(spec["names"]))
@@ -423,9 +473,8 @@ def cmd_movie(a):
         corner_text(ax, 0.97, 0.97, f"t = {t:.0f} s", spec, size=10, va="top", ha="right")
         ax.set_xlabel("X (Mm)", fontsize=9); ax.set_ylabel("Y (Mm)", fontsize=9)
         cb = fig.colorbar(im, cax=fig.add_axes([0.20, 0.095, 0.68, 0.022]), orientation="horizontal")
-        cb.set_ticks(np.arange(spec["tick"] * np.ceil(clim[0] / spec["tick"]), clim[1] + 1e-9, spec["tick"]))
-        cb.set_label(spec["label"], fontsize=8); cb.ax.tick_params(labelsize=8)
-        out = os.path.join(fdir, f"{a.field}_{k + 1:04d}_t{t:05.0f}s.png")
+        cbar_ticks(cb, clim, spec)
+        out = os.path.join(fdir, f"{PREFIX}{var}_{k + 1:04d}_t{t:05.0f}s.png")
         fig.savefig(out, dpi=a.dpi); plt.close(fig)
         files.append(out)
         print(f"   {os.path.basename(out)}", flush=True)
@@ -436,7 +485,7 @@ def cmd_movie(a):
         from PIL import Image
     except ImportError:
         print("   no GIF: the Python package Pillow is missing (pip install pillow), or join the images yourself, e.g.\n"
-              f"   ffmpeg -framerate {a.fps:g} -pattern_type glob -i '{fdir}/*.png' {a.field}.mp4")
+              f"   ffmpeg -framerate {a.fps:g} -pattern_type glob -i '{fdir}/*.png' {PREFIX}{var}.mp4")
         return
     T = np.array([t for t, _ in sel])
     gaps = np.append(np.diff(T), np.median(np.diff(T)))
@@ -446,7 +495,7 @@ def cmd_movie(a):
     # a GIF has 256 colours a frame: each frame gets its own best 256 (one palette for all bands the gradients)
     frames = [Image.open(f).convert("RGB").quantize(colors=256, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
               for f in files]
-    out = os.path.join(a.outdir, f"{a.field}.gif")
+    out = fig_path(a, var, "gif")
     frames[0].save(out, save_all=True, append_images=frames[1:], duration=dur, loop=0, optimize=False)
     print(f"wrote {out} ({len(frames)} frames, {os.path.getsize(out) / 1e6:.1f} MB)")
 
@@ -475,7 +524,7 @@ def cmd_shear(a):
     _layout(fig, axs, r"Shear field $B_z$ (G), with the field lines")
     cb = fig.colorbar(im, cax=_cbar_axes(fig, axs), orientation="horizontal")
     cb.set_label(r"$B_z$ (G)", fontsize=9); cb.ax.tick_params(labelsize=8)
-    out = os.path.join(a.outdir, f"shear.{a.format}")
+    out = fig_path(a, "Bz")
     fig.savefig(out, dpi=a.dpi); plt.close(fig)
     print("wrote", out)
 
@@ -520,7 +569,7 @@ def cmd_axis(a):
     ax.set_xlim(0, a.tmax); ax.set_ylim(-3, 12 if a.tall else 2)
     ax.legend(fontsize=7); ax.grid(alpha=0.3)
     fig.tight_layout()
-    out = os.path.join(a.outdir, f"axis.{a.format}")
+    out = fig_path(a, "axis")
     fig.savefig(out, dpi=a.dpi); plt.close(fig)
     print("wrote", out)
 
@@ -550,7 +599,7 @@ def cmd_dome(a):
     ax.set_xlabel("Time (s)"); ax.set_ylabel(r"top of log $\rho$ > %g on x = 0 (Mm)" % a.thr)
     ax.set_xlim(0, 2700); ax.set_ylim(0, 19); ax.grid(alpha=0.3); ax.legend(fontsize=7)
     fig.tight_layout()
-    out = os.path.join(a.outdir, f"dome.{a.format}")
+    out = fig_path(a, "dome")
     fig.savefig(out, dpi=a.dpi); plt.close(fig)
     print("wrote", out)
 
@@ -581,7 +630,7 @@ def cmd_eshear(a):
         ax.set_ylabel(r"$E_{shear}$ above %g Mm" % y1); ax.grid(alpha=0.3); ax.set_ylim(0, 0.1)
     axs[0].legend(fontsize=7); axs[1].set_xlabel("Time (s)")
     fig.tight_layout()
-    out = os.path.join(a.outdir, f"eshear.{a.format}")
+    out = fig_path(a, "eshear")
     fig.savefig(out, dpi=a.dpi); plt.close(fig)
     print("wrote", out)
 
@@ -683,7 +732,7 @@ def cmd_atmos(a):
     axs[0].set_ylabel("Y (Mm)"); axs[0].legend(fontsize=7, loc="upper right")
     fig.suptitle(f"median over {a.xmin:g} <= |x| <= {a.xmax:g} Mm", fontsize=9)
     fig.tight_layout()
-    out = os.path.join(a.outdir, f"atmos.{a.format}")
+    out = fig_path(a, "atmos")
     fig.savefig(out, dpi=a.dpi); plt.close(fig)
     print(f"{'t [s]':>7} {'TR (log rho=-13) [Mm]':>22} {'T at 1.5 Mm / T(t0)':>20} {'log rho at 6 Mm':>16} {'max mu (0-10 Mm)':>17} {'max eta (0-10 Mm)':>18}")
     for t, ytr, t2, r6, mm, ee in rows:
@@ -772,7 +821,7 @@ def cmd_null(a):
     for ax in axs:
         ax.set_xlabel("Time (s)"); ax.set_xlim(0, 2700); ax.grid(alpha=0.3); ax.legend(fontsize=6)
     fig.tight_layout()
-    out = os.path.join(a.outdir, f"null.{a.format}")
+    out = fig_path(a, "null")
     fig.savefig(out, dpi=a.dpi); plt.close(fig)
     print("wrote", out)
 
@@ -900,13 +949,13 @@ def cmd_profiles(a):
     a2.axvline(0.2, color="k", ls=":", lw=0.8)
     a2.set_xlim(1e-3, 1e6); a2.set_xlabel(r"Plasma $\beta$"); a2.legend(fontsize=7)
     fig.tight_layout()
-    out = os.path.join(a.outdir, f"profiles.{a.format}")
+    out = fig_path(a, "profiles")
     fig.savefig(out, dpi=a.dpi); plt.close(fig)
     print("wrote", out)
 
 
 def main():
-    global FOLLOW_CHAIN, NEAREST, LINE_WIDTH
+    global FOLLOW_CHAIN, NEAREST, LINE_WIDTH, PREFIX
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--outdir", default="figs_leake2010")
     p.add_argument("--format", default="png")
@@ -914,6 +963,7 @@ def main():
     p.add_argument("--no-chain", action="store_true", help="only the directories given, not the restarts of the run")
     p.add_argument("--nearest", action="store_true", help="the nearest snapshot for a time the run has none at")
     p.add_argument("--lw", type=float, default=LINE_WIDTH, help="width of the field lines, in points")
+    p.add_argument("--prefix", default=PREFIX, help="start of every figure's file name (default flux_emergence_Leake2010_)")
     # the same options after the command name (they keep the value given before it, if any)
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--outdir", default=argparse.SUPPRESS)
@@ -922,6 +972,7 @@ def main():
     common.add_argument("--no-chain", action="store_true", default=argparse.SUPPRESS)
     common.add_argument("--nearest", action="store_true", default=argparse.SUPPRESS)
     common.add_argument("--lw", type=float, default=argparse.SUPPRESS)
+    common.add_argument("--prefix", default=argparse.SUPPRESS)
     sub = p.add_subparsers(dest="cmd", required=True)
     for name, fn in (("density", cmd_density), ("shear", cmd_shear)):
         s = sub.add_parser(name, parents=[common]); s.set_defaults(fn=fn)
@@ -941,15 +992,19 @@ def main():
     pair = lambda t: tuple(map(float, t.split(",")))
     s = sub.add_parser("dsgs", parents=[common]); s.set_defaults(fn=cmd_dsgs)
     s.add_argument("run")
-    s.add_argument("--which", choices=("mu", "eta"), default="mu", help="viscosity (momentum slots) or resistivity (B slots)")
+    s.add_argument("--which", choices=("momentum", "induction", "energy", "mu", "eta", "rho"), default="momentum",
+                   help="whose coefficient: the momentum equations' (mu), the induction equations' (eta), "
+                        "or the mass, energy and psi equations' (rho)")
     s.add_argument("--times", default="", help="comma-separated times in s")
     s.add_argument("--xlim", type=pair, default=(-12.75, 12.75))
     s.add_argument("--ylim", type=pair, default=(-3.0, 19.5))
     s.add_argument("--clim", type=pair, default=None, help="limits of log10 of the coefficient (default -2,2; eta: -4,1)")
+    s.add_argument("--linear", action="store_true", help="the coefficient itself, not its log10 (default limits 0,5; eta: 0,0.5)")
     s.add_argument("--nlines", type=int, default=45, help="field lines (0: none)")
     s = sub.add_parser("movie", parents=[common]); s.set_defaults(fn=cmd_movie)
     s.add_argument("run")
-    s.add_argument("--field", choices=tuple(MAPS), default="density")
+    s.add_argument("--field", choices=tuple(MAPS) + tuple(MAP_ALIAS), default="density",
+                   help="density, or a DynSGS coefficient: momentum (mu), induction (eta), energy (rho)")
     s.add_argument("--fps", type=float, default=4.0, help="snapshots per second of the GIF (at the usual snapshot interval)")
     s.add_argument("--tmin", type=float, default=-np.inf, help="first time [s]")
     s.add_argument("--tmax", type=float, default=np.inf, help="last time [s]")
@@ -957,6 +1012,7 @@ def main():
     s.add_argument("--xlim", type=pair, default=(-12.75, 12.75))
     s.add_argument("--ylim", type=pair, default=(-3.0, 19.5))
     s.add_argument("--clim", type=pair, default=None, help="colour limits (default: the field's)")
+    s.add_argument("--linear", action="store_true", help="a DynSGS coefficient itself, not its log10")
     s.add_argument("--nlines", type=int, default=45, help="field lines (0: none)")
     s.add_argument("--arrows", type=lambda t: [float(v) for v in t.split(",")] if t else [],
                    default=[3.0, 11.0, 16.0], help="heights [Mm] of the B_x arrows of the density frames ('' for none)")
@@ -994,7 +1050,7 @@ def main():
     s.add_argument("--tmin", type=float, default=None, help="only snapshots from TMIN s")
     s.add_argument("--tfloor", type=float, default=0.1, help="the run's temperature floor (T_ph): count the nodes at it")
     a = p.parse_args()
-    FOLLOW_CHAIN, NEAREST, LINE_WIDTH = not a.no_chain, a.nearest, a.lw
+    FOLLOW_CHAIN, NEAREST, LINE_WIDTH, PREFIX = not a.no_chain, a.nearest, a.lw, a.prefix
     os.makedirs(a.outdir, exist_ok=True)
     a.fn(a)
 
