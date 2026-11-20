@@ -588,6 +588,8 @@ matplotlib). `RUN` is `output/MHD/fluxEmergenceLeake2010/output-<date>`.
 ```bash
 python3 tools/plot_leake2010.py density  $RUN            # Erratum Fig. 3: log rho, field lines, B_x arrows, 920-2530 s
 python3 tools/plot_leake2010.py shear    $RUN            # Erratum Fig. 1: B_z (G) and field lines, 920-2254 s
+python3 tools/plot_leake2010.py dsgs     $RUN            # the DynSGS viscosity at the times of Fig. 3 (--which eta: the resistivity)
+python3 tools/plot_leake2010.py movie    $RUN            # one image per snapshot and a GIF of them (--field density | mu | eta)
 python3 tools/plot_leake2010.py dome     tube2=$RUN      # top of the dense dome on x = 0 vs time, with the erratum's Fig. 3 values
 python3 tools/plot_leake2010.py axis     tube2=$RUN      # Erratum Fig. 2(a): axis height vs time, with the erratum's curves
 python3 tools/plot_leake2010.py eshear   tube2=$RUN      # Erratum Figs. 2(b,c), 5: E_shear above 1.2 and 5 Mm (Eq. 20)
@@ -597,6 +599,19 @@ python3 tools/plot_leake2010.py null     base=$RUN       # on x = 0 vs time: the
 python3 tools/plot_leake2010.py mass     $RUN            # the plasma above 3 Mm: mass budget, temperature, pressure, draining, heating time
 ```
 
+Every map has a title and a labelled colour bar naming what its colours show.
+`dsgs` draws log₁₀ of the DynSGS coefficient in code units ($L_0v_0$ = 970 km² s⁻¹)
+on a one-hue scale, palest where there is none (the paper's explicit viscosity,
+0.013 above the photosphere, is in it). `movie` writes
+`frames_<field>/<field>_NNNN_t<seconds>s.png` for every snapshot (`--tmin`,
+`--tmax`, `--every`), all with the same window, colour limits and field-line
+levels (those of the run's first snapshot, so that a line is the same flux
+surface in every frame), and `<field>.gif` (`--fps`, default 4; a frame lasts in
+proportion to the time to the next snapshot, which are not equally spaced;
+needs Pillow, which matplotlib installs). `--lw` before the command sets the
+width of the field lines (0.9 pt); a limit that begins with a minus sign is
+written with `=`, `--ylim=-3,19.5`.
+
 The density panels use the paper's window ($\lvert x\rvert < 12.75$ Mm,
 $-3 < y < 19.5$ Mm), colour scale ($\log_{10}\rho$ from −16 to −5.3 g cm$^{-3}$, jet),
 field lines as equally spaced contours of $A_z$ (integrated from $B_x$, $B_y$
@@ -605,6 +620,9 @@ $B_x$ at $x = 0$, $y$ = 3, 11, 16 Mm. The axis of the tube is where $B_x$ on
 $x = 0$ changes sign from − to + (the paper's definition), the crossing nearest
 the peak of $B_z$. `axis`, `dome` and `eshear` write one CSV per run.
 
+`RUN` may also be a list, `DIR1,DIR2`, and `DIR@T` uses a directory only up to
+`T` seconds: `BASE@920,NEW` is `BASE` to 920 s and `NEW` from there, for a
+`NEW` whose records do not lead back to `BASE`.
 `RUN` is the last directory of a run continued by restarts: the script reads
 the runs it was restarted from through the `lk10_case.txt` files, each up to
 the snapshot its successor continued (`--no-chain`: only the directories
