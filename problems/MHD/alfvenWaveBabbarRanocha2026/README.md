@@ -197,11 +197,21 @@ From every record stored for the same final time, the run then:
   dashed with a larger hollow one, so that a DynSGS point equal to the Galerkin one (the
   cutoff makes ν zero on the resolved wave) shows inside its ring. The measured rate p of
   every curve is in its legend, the dotted reference slopes O(h^(N+1)) of the lowest and
-  the highest order bracket the data, and the title carries the final time.
+  the highest order bracket the data, and the title carries the final time;
+- draws what DSGS did, from the run maxima of the DSGS records:
+  - `convergence_rmax-it<n>.png`: max r of every run against #DOFs, with the cutoff c as
+    a dashed line. A point below the line is a run in which μ = C_R Δ² max(0, r − c) was
+    exactly zero throughout, so that there DSGS is Galerkin because of the cutoff;
+  - `convergence_mumax-it<n>.png`: max μ of every run. Zero has no place on a log axis,
+    so each legend entry says on how many of its meshes μ was exactly zero. The dotted
+    guide is O(h⁴), the scaling of the residual's BDF2 floor without the cutoff (item 4
+    of "What this test found");
+  - `convergence_paper-it<n>.png`: the three panels the smooth-wave test needs, side by
+    side: the L² error of B⊥ for every variant, max r against the cutoff, and max μ.
 
-`tools/alfven_wave_plot.jl` draws the same figure and table from the store without
-running anything, as `convergence-it0.png` (`3,5,7` for a subset of the orders,
-`--visc=dsgs,galerkin` for a subset of the records, `--out=DIR` elsewhere).
+`tools/alfven_wave_plot.jl` draws the same figures and table from the store without
+running anything, as `convergence-it0.png` and the files above (`3,5,7` for a subset of
+the orders, `--visc=dsgs,galerkin` for a subset of the records, `--out=DIR` elsewhere).
 
 **Mass and energy** are tracked at every step, as for the rotor: the discrete totals
 Σ_K Σ_ij ω_iω_j J ρ and Σ_K Σ_ij ω_iω_j J ρE over all elements and ranks go to

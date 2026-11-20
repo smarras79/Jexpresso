@@ -14,7 +14,17 @@
 # run writes) and uses the case's own plotting code, so the figure is the one
 # a run draws. It is written as convergence-it0.png (convergence_nop3-5-7-it0.png
 # for a subset) in output/MHD/alfvenWaveBabbarRanocha2026/output unless --out
-# says otherwise.
+# says otherwise, with beside it:
+#
+#   convergence_Bperp, _uperp, _rho, _L2, _Linf   each error panel alone
+#   convergence_rmax    the largest residual r of every DSGS run, before the
+#                       cutoff, against the cutoff c: a point below c is a run
+#                       in which μ was exactly zero throughout
+#   convergence_mumax   the largest DSGS coefficient μ of every run; the legend
+#                       says on how many meshes it was exactly zero
+#   convergence_paper   the error of B⊥ | max r | max μ, side by side
+#
+# (all -it0.png). A Galerkin-only selection has no rmax, mumax or paper figure.
 #
 #   --visc=TAGS   only these records, by the tag of their file name: dsgs (the
 #                 deck as committed), dsgs_nocut (cutoff 0), galerkin, dsgs_perstage, ...

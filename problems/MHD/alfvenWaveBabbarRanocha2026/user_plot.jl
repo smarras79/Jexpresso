@@ -317,7 +317,8 @@ function _aw_load(tnom)
                      rho = l2["ρ"], state = sqrt(sum(abs2, l2[n] for n in AW_QVARS)),
                      state_inf = maximum(linf[n] for n in AW_QVARS),
                      r_max  = something(tryparse(Float64, get(meta, "r_max",  "")), NaN),
-                     mu_max = something(tryparse(Float64, get(meta, "mu_max", "")), NaN)))
+                     mu_max = something(tryparse(Float64, get(meta, "mu_max", "")), NaN),
+                     cutoff = something(tryparse(Float64, get(meta, "cutoff", "")), NaN)))
     end
     return sort!(rows, by = r -> (r.visc, r.nop, r.ndofs))
 end
@@ -372,13 +373,150 @@ const AW_PANELS = [   # (field, ylabel, title, file)
     (:state_inf, "\\Vert\\mathbf{q}_h-\\mathbf{q}\\Vert_{L^\\infty}", "L^\\infty\\mathrm{-error\\ of\\ the\\ state}", "Linf"),
 ]
 
-# <name>-it<iout>.png, the five panels side by side, and <name>_Bperp, _uperp,
-# _rho, _L2 and _Linf, one each. Returns the first, or nothing when no
-# order/tag has two meshes yet.
-_aw_plot(rows, OUTPUT_DIR, iout; name = "convergence") =
-    _conv_figure(rows, AW_PANELS, OUTPUT_DIR, iout; prefix = name,
-                 tags = sort(unique(r.visc for r in rows)), label = _aw_label, line = _aw_line,
-                 galerkin = t -> startswith(t, "galerkin"))
+#---------------------------------------------------------------------------------
+# WHAT DSGS DID, against #DOFs, from the run maxima every record stores:
+#
+#   :r_max   the largest normalized residual r of the run, BEFORE the cutoff,
+#            with the cutoff c drawn as a horizontal line. A point below the line
+#            is a run in which μ = C_R Δ² max(0, r − c) was exactly zero
+#            throughout: there DSGS is Galerkin because of the cutoff.
+#   :mu_max  the largest coefficient μ of the run. μ = 0 has no place on a log
+#            axis, so each curve's legend entry says on how many of its meshes μ
+#            was exactly zero, and a curve that was zero on all of them has only
+#            its entry. The dotted guide is O(h⁴), the scaling of the BDF2 floor
+#            of the residual that sets μ without the cutoff (README, "What this
+#            test found", item 4).
+#
+# One colour and marker per order and one line style per variant, as in the
+# error panels. Galerkin records (r = NaN, μ = 0) are left out, and so are the
+# records stored before the run maxima existed (r = NaN).
+#---------------------------------------------------------------------------------
+_aw_tex_num(c) = (e = log10(c); isapprox(e, round(e); atol = 1.0e-9) ?
+                  string("10^{", round(Int, e), "}") : @sprintf("%.1e", c))
+
+function _aw_diag_axes!(pl, xs, ys)
+    x1, x2 = extrema(xs)
+    xu  = sort(unique(xs))
+    idx = length(xu) <= 4 ? eachindex(xu) : unique(round.(Int, range(1, length(xu); length = 4)))
+    xt  = xu[idx]
+    Plots.plot!(pl; xlims = (0.75*x1, 1.35*x2),
+                xticks = (xt, [LaTeXStrings.latexstring(@sprintf("%d", round(Int, x))) for x in xt]))
+    if isempty(ys)                     # μ panel with μ = 0 in every run drawn
+        Plots.plot!(pl; ylims = (1.0e-8, 1.0e-2))
+        Plots.annotate!(pl, sqrt(x1*x2), 1.0e-5,
+                        Plots.text(LaTeXStrings.L"\mu = 0\ \mathrm{in\ every\ run}", CONV_FS_LEGEND, :gray25))
+        return pl
+    end
+    ylo = 0.2*minimum(ys); yhi = 5.0*maximum(ys)
+    decs = collect(ceil(Int, log10(ylo)):floor(Int, log10(yhi)))
+    stp  = max(1, cld(length(decs), 7))
+    Plots.plot!(pl; ylims = (ylo, yhi),
+                yticks = ([10.0^e for e in decs[1:stp:end]],
+                          [LaTeXStrings.latexstring(string("10^{", e, "}")) for e in decs[1:stp:end]]))
+    return pl
+end
+
+function _aw_diag_panel(rows, fld::Symbol, ylab, title; tags, label, line, galerkin)
+    dtags = [t for t in tags if !galerkin(t)]
+    rs    = filter(r -> r.visc in dtags && isfinite(getfield(r, fld)), rows)
+    isempty(rs) && return nothing
+    lmu   = fld == :mu_max
+    pl = Plots.plot(; xscale = :log10, yscale = :log10,
+                    xlabel = LaTeXStrings.L"\#\mathrm{DOFs}",
+                    ylabel = LaTeXStrings.latexstring(ylab),
+                    framestyle = :box, grid = true, gridalpha = 0.25,
+                    background_color_legend = Plots.RGBA(1, 1, 1, 0.72),
+                    foreground_color_legend = :gray60,
+                    legend = :outertopright, legendfontsize = CONV_FS_LEGEND,
+                    titlefontsize = CONV_FS_TITLE, guidefontsize = CONV_FS_GUIDE,
+                    tickfontsize = CONV_FS_TICK,
+                    left_margin = 14Plots.mm, bottom_margin = 10Plots.mm,
+                    top_margin = 4Plots.mm, right_margin = 6Plots.mm,
+                    title = LaTeXStrings.latexstring(string(title, ",\\ t = ", rs[1].t)),
+                    show = false)
+    allx = Float64[]; ally = Float64[]
+    base(t) = line(t, dtags) == :solid
+    nops = sort(unique(r.nop for r in rs))
+    curves = Dict{Tuple{Int,String},Tuple{Vector{Float64},Vector{Float64}}}()
+    for nop in nops, tag in dtags
+        g = sort(filter(r -> r.nop == nop && r.visc == tag, rs), by = r -> r.ndofs)
+        isempty(g) || (curves[(nop, string(tag))] = ([Float64(r.ndofs) for r in g], [Float64(getfield(r, fld)) for r in g]))
+    end
+    attrs(nop, tag) = (c = _conv_style(nop);
+                       (line = (c[1], CONV_LW, line(tag, dtags)),
+                        marker = (c[2], base(tag) ? CONV_MS : CONV_MS + 2),
+                        markerstrokecolor = c[1], markerstrokewidth = 1.0,
+                        markercolor = base(tag) ? c[1] : :white, color = c[1]))
+    # drawn: the variants first, as hollow markers, and the deck's DSGS last,
+    # filled, so that where the two coincide it shows inside the ring
+    for nop in nops, tag in vcat(filter(t -> !base(t), dtags), filter(base, dtags))
+        haskey(curves, (nop, string(tag))) || continue
+        xs, ys = curves[(nop, string(tag))]
+        pos = ys .> 0
+        any(pos) || continue
+        Plots.plot!(pl, xs[pos], ys[pos]; label = "", attrs(nop, tag)...)
+        append!(allx, xs[pos]); append!(ally, ys[pos])
+    end
+    # listed: the deck's DSGS first; an entry also for a curve that is zero on every mesh
+    for nop in nops, tag in vcat(filter(base, dtags), filter(t -> !base(t), dtags))
+        haskey(curves, (nop, string(tag))) || continue
+        xs, ys = curves[(nop, string(tag))]
+        pos  = ys .> 0
+        at   = attrs(nop, tag)
+        p    = count(pos) >= 2 ? _conv_rate(xs[pos], ys[pos]) : NaN
+        nz   = count(!, pos)
+        note = (!lmu || nz == 0) ? "" :
+               nz == length(ys) ? ",\\ \\mu\\equiv 0\\ \\mathrm{on\\ every\\ mesh}" :
+               string(",\\ \\mu\\equiv 0\\ \\mathrm{on\\ ", nz, "\\ of\\ ", length(ys), "\\ meshes}")
+        lab  = LaTeXStrings.latexstring(string("\\mathbb{P}_", nop, "\\ \\mathrm{", _conv_mathrm(label(tag)), "}",
+                                               isfinite(p) ? string("\\ (p=", round(p; digits = 2), ")") : "", note))
+        Plots.plot!(pl, [NaN], [NaN]; label = lab, at...)
+    end
+    if !lmu
+        # the cutoff of the runs drawn: r below the line means μ ≡ 0 for that run
+        for c in sort(unique(r.cutoff for r in rs if isfinite(r.cutoff) && r.cutoff > 0))
+            Plots.hline!(pl, [c]; line = (:gray25, 2.0, :dash),
+                         label = LaTeXStrings.latexstring(string("\\mathrm{cutoff}\\ c = ", _aw_tex_num(c))))
+            push!(ally, c)
+        end
+    elseif length(allx) >= 2
+        # O(h⁴), drawn above every point: μ ≈ C_R Δ² (Δt²/3)|∂ₜ³q|/(ρ̄c̄) at a fixed Courant number
+        A = 2.0*maximum(ally[i]*allx[i]^2 for i in eachindex(allx))
+        x1, x2 = extrema(allx)
+        Plots.plot!(pl, [x1, x2], [A/x1^2, A/x2^2]; line = (:gray40, 1.2, :dot),
+                    label = LaTeXStrings.L"\mathcal{O}(h^4)")
+    end
+    _aw_diag_axes!(pl, isempty(allx) ? Float64[r.ndofs for r in rs] : allx, ally)
+    return pl
+end
+
+# <name>-it<iout>.png, the five error panels side by side, and <name>_Bperp,
+# _uperp, _rho, _L2 and _Linf, one each. Then what DSGS did: <name>_rmax and
+# _mumax (_aw_diag_panel), and <name>_paper, the three panels the paper's
+# smooth-wave test needs side by side: the error of the wave (B⊥) for every
+# variant, max r against the cutoff, and max μ. Returns the first file, or
+# nothing when no order/tag has two meshes yet.
+function _aw_plot(rows, OUTPUT_DIR, iout; name = "convergence")
+    kw = (tags = sort(unique(r.visc for r in rows)), label = _aw_label, line = _aw_line,
+          galerkin = t -> startswith(t, "galerkin"))
+    f = _conv_figure(rows, AW_PANELS, OUTPUT_DIR, iout; prefix = name, kw...)
+    f === nothing && return nothing
+    pr = _aw_diag_panel(rows, :r_max,  "\\max_t\\, r",
+                        "\\mathrm{largest\\ residual\\ before\\ the\\ cutoff}"; kw...)
+    pm = _aw_diag_panel(rows, :mu_max, "\\max_t\\, \\mu",
+                        "\\mathrm{largest\\ DSGS\\ coefficient}"; kw...)
+    (pr === nothing || pm === nothing) && return f       # no DSGS record with the run maxima
+    out(s) = string(OUTPUT_DIR, "/", name, "_", s, "-it", iout, ".png")
+    _conv_savefig(Plots.plot(pr; size = CONV_PANEL_SIZE, show = false), out("rmax"))
+    _conv_savefig(Plots.plot(pm; size = CONV_PANEL_SIZE, show = false), out("mumax"))
+    pb = _conv_panel(rows, AW_PANELS[1][1], AW_PANELS[1][2], AW_PANELS[1][3]; kw...)
+    _conv_savefig(Plots.plot(pb, pr, pm; layout = (1, 3),
+                             size = (3*CONV_PANEL_SIZE[1], CONV_PANEL_SIZE[2]),
+                             left_margin = 22Plots.mm, bottom_margin = 20Plots.mm,
+                             top_margin = 13Plots.mm, right_margin = 6Plots.mm, show = false),
+                  out("paper"))
+    return f
+end
 
 function user_plot_2d(mesh, q, t, outvar, inputs, OUTPUT_DIR, iout; Minv = nothing)
     isfinite(t) && t > 0.0 || return nothing          # a final-time product
