@@ -19,6 +19,9 @@ t0 = 23.1946 s), the density in g cm^-3 and B_z in G, as in the paper.
   python3 tools/plot_leake2010.py axis RUN [RUN2 ...]         # Erratum Figs. 2(a), 7(a): height of the tube axis vs time
   python3 tools/plot_leake2010.py eshear RUN [RUN2 ...]       # Erratum Figs. 2(b,c), 5: E_shear above 1.2 and 5 Mm (Eq. 20)
   python3 tools/plot_leake2010.py profiles RUN                # Fig. 3(a,b): T, p, p_mag and beta at x = 0, t = 0
+  python3 tools/plot_leake2010.py forces RUN                  # Erratum Fig. 4: vertical forces on x = 0 at 2185 s (gravity,
+                                                              #   magnetic tension and pressure, gas pressure, their sum);
+                                                              #   --rope: on the line through the flux rope, wherever it is
   python3 tools/plot_leake2010.py mass RUN                    # the plasma lifted above 3 Mm: its mass budget (with the flow
                                                               #   or not), temperature, pressure, draining speed, heating time
   python3 tools/plot_leake2010.py null RUN [RUN2 ...]         # on x = 0 vs time: the top of the emerged flux (the null
@@ -921,6 +924,106 @@ def cmd_mass(a):
         prev = (t, r)
 
 
+def find_opoints(A, X, Y, xlim=(-12.75, 12.75), ylim=(3.0, 19.5), k=6):
+    """O-points of the in-plane field in a window: nodes where the flux function A (grid (ny, nx)) is the largest or
+    the smallest of its (2k+1)^2 neighbours (an X-point is a saddle of A and is not one). Returns
+    [(x, y, depth)], deepest first; depth = |A - mean of A on the square 2k nodes away|, the flux it encloses
+    at that scale, which ranks a rope above a ripple."""
+    ny, nx = A.shape
+    hi = np.full_like(A, -np.inf); lo = np.full_like(A, np.inf)
+    P = np.pad(A, k, mode="edge")
+    for dj in range(2 * k + 1):
+        for di in range(2 * k + 1):
+            W = P[dj:dj + ny, di:di + nx]
+            np.maximum(hi, W, out=hi); np.minimum(lo, W, out=lo)
+    ext = (A >= hi) | (A <= lo)
+    inwin = ((Y > ylim[0]) & (Y < ylim[1]))[:, None] & ((X > xlim[0]) & (X < xlim[1]))[None, :]
+    out = []
+    for j, i in zip(*np.where(ext & inwin)):
+        j0, j1, i0, i1 = max(j - 2 * k, 0), min(j + 2 * k, ny - 1), max(i - 2 * k, 0), min(i + 2 * k, nx - 1)
+        ring = np.concatenate([A[j0, i0:i1 + 1], A[j1, i0:i1 + 1], A[j0:j1 + 1, i0], A[j0:j1 + 1, i1]])
+        out.append((float(X[i]), float(Y[j]), float(abs(A[j, i] - ring.mean()))))
+    out.sort(key=lambda o: -o[2])
+    # one entry per rope: drop those within 0.5 Mm of a deeper one
+    keep = []
+    for o in out:
+        if all(np.hypot(o[0] - q[0], o[1] - q[1]) > 0.5 for q in keep):
+            keep.append(o)
+    return keep
+
+
+FORCE_UNIT = 10 ** 4.927 / 1.5e7 / 1e-5      # code force density p_ph/L0, in 1e-5 dyn cm^-3
+G_SUN = 2.74e4                               # cm s^-2
+
+
+def vertical_forces(g, x):
+    """The four vertical force densities of the erratum's Fig. 4 on the lattice column nearest x [Mm], in
+    1e-5 dyn cm^-3 (heights Y [Mm]): gravity -rho g, magnetic tension (B.grad)B_y/4pi, magnetic pressure
+    -d(B^2/8pi)/dy, gas pressure -dP/dy (2.5D: no z derivatives). Derivatives by differences on the LGL nodes."""
+    G = lambda n: grid2d(g, g["fields"][n])
+    Xc, Yc = g["xc"], g["yc"]
+    Bx, By, Bz, P = G("Bx"), G("By"), G("Bz"), G("p")
+    dx = lambda f: np.gradient(f, Xc, axis=1)
+    dy = lambda f: np.gradient(f, Yc, axis=0)
+    i = int(np.argmin(np.abs(g["X"] - x)))
+    grav = -(10.0 ** G("log10rho_cgs")[:, i]) * G_SUN / 1e-5
+    tens = (Bx * dx(By) + By * dy(By))[:, i] * FORCE_UNIT
+    magp = -dy(0.5 * (Bx ** 2 + By ** 2 + Bz ** 2))[:, i] * FORCE_UNIT
+    gasp = -dy(P)[:, i] * FORCE_UNIT
+    return g["X"][i], g["Y"], grav, tens, magp, gasp
+
+
+def cmd_forces(a):
+    """Erratum Fig. 4 (Fig. 11 of the paper): the vertical forces along a vertical line at one time, against height,
+    and their sum. The paper's is x = 0 at 2185 s, through its flux rope at 13.7 Mm, over 10-17 Mm (the defaults).
+    --rope puts the line through the flux rope of this run at that time, wherever it is (the deepest O-point of the
+    field in the corona, find_opoints), with 7 Mm of height around it; --x, --time, --ylim choose by hand."""
+    items = runs_of(a.run)
+    (t, f), = nearest(items, [a.time])
+    g = load(f, ["log10rho_cgs", "p", "Bz"])
+    x, ylim = a.x, a.ylim
+    if a.rope:
+        ropes = find_opoints(a_grid(g), g["X"], g["Y"])
+        if not ropes:
+            raise SystemExit(f"   no O-point of the field between 3 and 19.5 Mm at t = {t:.0f} s: no flux rope then; "
+                             "give --x and --ylim, or another --time")
+        print("   O-points of the field above 3 Mm (x, y [Mm], enclosed flux [B0 Mm]), deepest first:")
+        for xo, yo, d in ropes[:5]:
+            print(f"      ({xo:6.2f}, {yo:5.2f})   {d:.3g}")
+        x = ropes[0][0]
+        ylim = (ropes[0][1] - 3.5, ropes[0][1] + 3.5)
+    xi, Y, grav, tens, magp, gasp = vertical_forces(g, x)
+    m = (Y >= ylim[0]) & (Y <= ylim[1])
+    tot = grav + tens + magp + gasp
+    np.savetxt(fig_path(a, "forces", "csv"), np.c_[Y[m], grav[m], tens[m], magp[m], gasp[m], tot[m]], delimiter=",",
+               header=f"x = {xi:.3f} Mm, t = {t:.1f} s; height [Mm], -rho g, (B.grad)B_y/4pi, -d(B^2/8pi)/dy, -dP/dy, total "
+                      "[1e-5 dyn cm^-3]")
+    fig, (a1, a2) = plt.subplots(2, 1, figsize=(6.4, 6.2), sharex=True, gridspec_kw=dict(height_ratios=[3.2, 1], hspace=0.30))
+    ink = "#0b0b0b"
+    for v, c, ls, lab in ((grav, "#2a78d6", (0, (5, 2)), r"$-\rho g$"),
+                          (tens, "#eb6834", (0, (5, 1.5, 1, 1.5)), r"$+\mathbf{B}\cdot\nabla B_y/4\pi$"),
+                          (magp, "#1baf7a", (0, (5, 1.5, 1, 1.5, 1, 1.5)), r"$-\partial_y(B^2/8\pi)$"),
+                          (gasp, ink, "solid", r"$-\partial_y P$")):
+        a1.plot(Y[m], v[m], color=c, ls=ls, lw=1.8, label=lab, solid_capstyle="round")
+    a2.plot(Y[m], tot[m], color=ink, lw=1.8)
+    top = 1.15 * max(np.nanmax(np.abs(np.c_[grav[m], tens[m], magp[m], gasp[m]])), 1e-12)
+    for ax, lim in ((a1, top), (a2, 1.15 * max(np.nanmax(np.abs(tot[m])), 1e-12))):
+        ax.axhline(0.0, color="#c9c8c2", lw=0.8, zorder=0)
+        ax.set_ylim(-lim, lim); ax.set_xlim(ylim); ax.tick_params(labelsize=8)
+        for sp in ("top", "right"):
+            ax.spines[sp].set_visible(False)
+    a1.set_ylabel(r"Force (10$^{-5}$ dyn cm$^{-3}$)", fontsize=9)
+    a1.legend(fontsize=9, frameon=False, loc="upper right", handlelength=3.2)
+    a1.set_title("(a) the four forces", loc="left", fontsize=9, color=INK)
+    a2.set_title("(b) their sum", loc="left", fontsize=9, color=INK)
+    a2.set_ylabel(r"(10$^{-5}$ dyn cm$^{-3}$)", fontsize=9); a2.set_xlabel("Height (Mm)", fontsize=9)
+    fig.suptitle(f"Vertical forces on the line x = {xi:.1f} Mm at t = {t:.0f} s", y=0.975, fontsize=11, weight="bold", color=INK)
+    fig.subplots_adjust(left=0.13, right=0.97, top=0.90, bottom=0.09)
+    out = fig_path(a, "forces")
+    fig.savefig(out, dpi=a.dpi); plt.close(fig)
+    print("wrote", out)
+
+
 def cmd_profiles(a):
     items = runs_of(a.run)
     t, f = items[0]
@@ -1026,6 +1129,12 @@ def main():
     s = sub.add_parser("dome", parents=[common]); s.set_defaults(fn=cmd_dome)
     s.add_argument("runs", nargs="+", help="RUN or LABEL=RUN")
     s.add_argument("--thr", type=float, default=-13.0, help="log10 rho threshold [g cm^-3]")
+    s = sub.add_parser("forces", parents=[common]); s.set_defaults(fn=cmd_forces)
+    s.add_argument("run")
+    s.add_argument("--time", type=float, default=2185.0, help="time [s] (default 2185, the paper's)")
+    s.add_argument("--x", type=float, default=0.0, help="the vertical line, x [Mm] (default 0)")
+    s.add_argument("--ylim", type=lambda t: tuple(map(float, t.split(","))), default=(10.0, 17.0), help="heights [Mm] (default 10,17)")
+    s.add_argument("--rope", action="store_true", help="the line through this run's flux rope at that time, 7 Mm around it")
     s = sub.add_parser("mass", parents=[common]); s.set_defaults(fn=cmd_mass)
     s.add_argument("run")
     s.add_argument("--ref", default="", help="run whose first snapshot (t = 0) gives the initial pressure and the unit "
