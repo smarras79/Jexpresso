@@ -1234,6 +1234,9 @@ end
 # The sensor. The "legacy" sensor reads |R| = 1.5(1 − cᵢ)|∂ₜq| at stage i: 1.5|∂ₜq| at the first
 # stage, Σbᵢ·1.5(1 − cᵢ) = 0.75|∂ₜq| in the stage mean of any scheme of order ≥ 2 (Σbᵢcᵢ = ½).
 # The same coefficient needs :dsgs_CR halved (the "residual" sensor, a residual at tⁿ, does not).
+# That is the leading order: R = −1.5(1 − cᵢ)∂ₜq + V with V the viscous tendency, which weighs
+# more at the later stages, so where the DynSGS is at work the five-stage mean is nearer 0.9
+# (problems/MHD/fluxEmergenceLeake2010/README.md: 0.6 C_R reproduces the five-stage run best).
 #
 # The step clock. "The first stage of a step" cannot be read off `time` alone: the time loop
 # shortens a step to land on an output time, and the grid of the steps after it is shifted. The

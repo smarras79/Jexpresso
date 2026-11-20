@@ -554,7 +554,11 @@ the momentum and field diffusion.
 The DynSGS term is then first order in time, which a regularization can
 afford. Two things follow. The legacy sensor is read where it is largest,
 $1.5\lvert\partial_t q\rvert$ against a stage mean of 0.75: the same coefficient
-needs `:dsgs_CR` halved. And the diffusion is integrated by another scheme
+needs `:dsgs_CR` halved (to leading order: the sensor is
+$-1.5(1 - c_i)\,\partial_tq + V$ with $V$ the viscous tendency, which weighs
+more at the later stages, and where the DynSGS is at work the five-stage mean
+is nearer 0.9; in the kick test of the Leake 2010 case 0.6 times the
+five-stage $C_R$ reproduces the five-stage run best). And the diffusion is integrated by another scheme
 than the rest: by forward Euler with `(1,)`, stable on degree-4 elements in 2D
 to a viscous number $\mu\Delta t/\Delta x_{min}^2$ of 0.18 (the five-stage
 scheme: 0.42); with `(1, 5)` by $1 + z + b_5c_5z^2$, $b_5c_5 = 0.147$, close to

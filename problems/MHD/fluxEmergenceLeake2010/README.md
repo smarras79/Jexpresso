@@ -567,7 +567,6 @@ integrated as before. Four things make it the same model:
   $\lvert\partial_tq\rvert$ instead of 0.75, a coefficient up to 1.5 times larger
   until the next output time (DSGS.md §4.4; 1.14 times in the mean over the
   cluster run of Verification from 1508 s, 1.20 from 920 s).
-  `JEXPRESSO_LK10_CR=1.15` gives a stage-list run that mean.
 
 Measured here:
 
@@ -594,7 +593,12 @@ Measured here:
   little smaller: at its later stages the five-stage sensor also reads the
   tendency of its own viscous term, which the $1.5\,(1 - c_i)$ of the
   calibration leaves out (its last-stage coefficient is 0.11 of the
-  first-stage one in this test, not 0.04). For scale: the same five-stage run
+  first-stage one in this test, not 0.04). With `JEXPRESSO_LK10_CR` = 1.15
+  and 1.3 the stage list ends with flows of 14.31 and 14.18 km/s, on either
+  side of the 14.25 of the five stages, and 0.037 and 0.045 km/s rms from
+  them: 1.2 is the constant that reproduces a five-stage run whose history is
+  in phase, and 1.2 times the factor of the step clock above, 1.4, one like
+  the cluster run. For scale: the same five-stage run
   with the default snapshot times instead, which shorten ten of its steps and
   move its history from stage to stage (a mean sensor of 0.98 instead of
   0.75), ends with flows of 14.07 km/s and differs from the first by 0.061 km/s rms
@@ -617,6 +621,11 @@ Measured here:
   its 3 s snapshot with `JEXPRESSO_LK10_DSGS_STAGES=1,5`: the log says
   `numerical switches changed: dsgs_stages: all there, 1,5 here` and the run
   goes on.
+- *The other switches.* The kick test to 2.4 s with stages 1 and 5 and, in
+  turn, `JEXPRESSO_LK10_SENSOR=residual` ($C_R$ not halved: that sensor is a
+  residual at the first stage already), `_ENERGY=total` (the energy slot held
+  whole), `_ETA=all` and `_CURLB=0`: all run, with flows of 18.9–19.0 km/s at
+  the end as with the defaults.
 
 Not run here: the emergence itself on REF 4 with the stage list. The check
 that costs least on a cluster is a restart of a completed run over its hardest
@@ -627,7 +636,10 @@ largest, the stability cap acts), against the snapshot it already has:
 JEXPRESSO_LK10_RESTART_DIR=$RUN JEXPRESSO_LK10_RESTART_TIME=1610 JEXPRESSO_LK10_TEND=1955 JEXPRESSO_LK10_DSGS_STAGES=1,5 mpiexec -n <ranks> julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2010
 ```
 
-(with the mesh, the rank count and the `JEXPRESSO_LK10_DT` of that run).
+(with the mesh, the rank count and the `JEXPRESSO_LK10_DT` of that run; add
+`JEXPRESSO_LK10_CR=1.4` for the coefficient that run had, see *The same
+solution* above: without it the stage list runs with about 30 % less DynSGS,
+which is a second change).
 
 **Subnormal numbers** are flushed to zero on every rank
 (`set_zero_subnormals(true)` in `initialize.jl`; `JEXPRESSO_LK10_SUBNORMALS=keep`
