@@ -26,7 +26,6 @@ function user_inputs()
         :lvisc                => true,
         :visc_model           => DSGS(),  # residual-based; cleaner than SMAG + modal filter (no spurious cloud aloft)
         :dsgs_CR              => 0.1,     # residual coefficient; the default 1 damped the plume out (12x12x16)
-        :ivisc_equations      => [1, 2, 3, 4, 5, 6, 7],
         :μ                    => [0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],   # as BOMEX
         :lmoist               => true,   # activates SAM microphysics + RT flux injection
         :lprecip              => true,   # deep convection can produce ice and precipitation
