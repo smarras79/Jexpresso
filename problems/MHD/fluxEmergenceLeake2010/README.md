@@ -602,6 +602,7 @@ python3 tools/plot_leake2010.py dome     tube2=$RUN      # top of the dense dome
 python3 tools/plot_leake2010.py axis     tube2=$RUN      # Erratum Fig. 2(a): axis height vs time, with the erratum's curves
 python3 tools/plot_leake2010.py eshear   tube2=$RUN      # Erratum Figs. 2(b,c), 5: E_shear above 1.2 and 5 Mm (Eq. 20)
 python3 tools/plot_leake2010.py profiles $RUN            # Fig. 3(a,b) at t = 0, with the paper's values
+python3 tools/plot_leake2010.py forces   $RUN --rope     # Erratum Fig. 4: vertical forces through the flux rope (default: x = 0, 2185 s, 10-17 Mm)
 python3 tools/plot_leake2010.py diag     $RUN --dt <Δt>  # per snapshot: largest speed, CFL, current; smallest p/p0, beta
 python3 tools/plot_leake2010.py null     base=$RUN       # on x = 0 vs time: the null above the dome, the flux below it, the mass lifted
 python3 tools/plot_leake2010.py mass     $RUN            # the plasma above 3 Mm: mass budget, temperature, pressure, draining, heating time
@@ -613,6 +614,18 @@ Figures are written to `figs_leake2010/` (`--outdir`) as
 `…_mu_dsgs_mass_energy`, `…_dome`, `…_axis`, `…_null`, `…_eshear`, `…_atmos`,
 `…_profiles`. Every map has a title and a labelled colour bar naming what its
 colours show.
+
+`forces` draws the erratum's Fig. 4: on a vertical line at one time, gravity
+$-\rho g$, the magnetic tension $(\mathbf B\cdot\nabla)B_y/4\pi$, the magnetic
+pressure force $-\partial_y(B^2/8\pi)$ and the gas pressure force
+$-\partial_yP$ in 10⁻⁵ dyn cm⁻³ against height, and their sum (and a CSV of
+them). The defaults are the paper's ($x = 0$, 2185 s, 10–17 Mm); `--rope` puts
+the line through the run's own flux rope at `--time` (the deepest O-point of
+the field above 3 Mm, from the flux function; it lists what it finds) with
+7 Mm of height around it, and `--x`, `--ylim` set them by hand. Checked on the
+initial state, where they must cancel: gravity against the gas pressure to
+3 % at 2 Mm (differences on the LGL nodes across a 150 km scale height) and
+0.5 % above 3 Mm, tension against magnetic pressure to 0.1 %.
 
 **Which DynSGS coefficient.** The solver has one coefficient $\mu$ per element,
 from the largest normalized residual of the eight equations ($\rho$, $\rho u$,
@@ -850,6 +863,32 @@ Short runs on 4 cores; the full runs are for a cluster (above).
   happens some 5 Mm lower and 200 s earlier than in the erratum, and the $B_x$
   arrow at 11 Mm still does not turn. `JEXPRESSO_LK10_HEAT=shock` and
   `JEXPRESSO_LK10_ETA=induction` are the defaults since this run.
+
+  *Sharpness: the same nodes as the paper, five times its edge.* In the
+  figure window REF 4 has a node every 47–49 km on average (elements of
+  187–197 km, degree 4, gaps of 32–64 km; 544 × 480 nodes across the window);
+  the paper has 37.5 km at the surface and 150 km at the top of its 90 Mm box,
+  some 38–62 km in the window if its stretching is linear (it does not say).
+  Outside the window this mesh is coarser than the paper's coarsest (a node
+  every ~470 km beyond 30 Mm from the axis and above 60 Mm). Yet the paper's
+  dome has an edge, ripples along its top and curls at its flanks, and this
+  one a gradient. Measured on the two published images (colour turned back
+  into log ρ along vertical lines at $x = \pm2, \pm3$ Mm): the top edge of the
+  dome, log ρ from −12 down to −14, is 0.06–0.17 Mm thick in the erratum at
+  1380 and 1610 s (one to three pixels of the image: at most three or four of
+  its cells) and 0.6–0.8 Mm here, 13–17 nodes. That is the DynSGS mass
+  diffusion: the ρ slot carries the element's $\mu$, 0.2–0.5 $L_0v_0$ at the top
+  of the dome (`null`), and an edge that has diffused for 300 s with 0.16
+  $L_0v_0$ is 0.7 Mm thick (two decades of an error-function profile,
+  $3.2\sqrt{\mu t}$). Lare does not diffuse mass at all: its Lagrangian step
+  carries the density with the flow and its remap is limited, so a contact
+  stays three cells wide. `JEXPRESSO_LK10_RHOFAC=0.1` would bring the edge to
+  ~0.2 Mm, one element, which is what this mesh can hold; the kick test of
+  "Positivity" runs the same with 1, 0.1 and 0 (smallest density 0.91 of the
+  initial one, smallest pressure 0.62, flows of 13.8–14.0 km/s, no floor
+  needed), but it has no such contact, and the test is a restart of the run
+  from 920 s. Beyond that, half the element size in the window is 2.4 times
+  the elements and twice the steps.
 
   Here: the switches act, are recorded, and a restart that changes them
   reports it and continues; the first 40 s of the run on REF 1 (the corona is
