@@ -621,6 +621,11 @@ Measured here:
   its 3 s snapshot with `JEXPRESSO_LK10_DSGS_STAGES=1,5`: the log says
   `numerical switches changed: dsgs_stages: all there, 1,5 here` and the run
   goes on.
+- *The default problem* (tube 2, medium quadrupole, floors on; REF 1, 2
+  ranks) from $t = 0$ to 10 s, five stages / stages 1 and 5: flows of 1.010 /
+  1.022 km/s as the tube starts to rise, smallest pressure 0.880 / 0.878 of the
+  initial one, 0.005 km/s rms apart (0.018 at most), pressure 0.05 % rms, no
+  floor hit in either.
 - *The other switches.* The kick test to 2.4 s with stages 1 and 5 and, in
   turn, `JEXPRESSO_LK10_SENSOR=residual` ($C_R$ not halved: that sensor is a
   residual at the first stage already), `_ENERGY=total` (the energy slot held
