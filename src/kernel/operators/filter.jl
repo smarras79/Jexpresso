@@ -154,6 +154,12 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D, ::TOTAL;
         DSS_rhs!(B, b, connijk, nelem, ngl, neqs, SD, AD)
     end
 
+    # Semi-infinite (Laguerre) elements: same perturbation, same assembly as PERT.
+    if params.laguerre
+        ladapt && @mystop("not yet implemented for 2D Laguerre with AMR!")
+        _filter_laguerre_2D!(B, uaux, params, connijk_lag, Je_lag, neqs, TF)
+    end
+
     DSS_global_RHS!(B, params.g_dss_cache, neqs)
     for ieq = 1:neqs
         divide_by_mass_matrix!(@view(B[:,ieq]), params.vaux, params.Minv, neqs, npoin, AD)
@@ -251,63 +257,9 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D, ::PERT;
         DSS_rhs!(B, b, connijk, nelem, ngl, neqs, SD, AD)
     end
 
-    if (params.laguerre)
-
-        ngr        = Int64(params.mesh.ngr)
-        nelem_semi = Int64(params.mesh.nelem_semi_inf)
-        ω_lag      = params.ω_lag
-        q_t_lag    = params.q_t_lag
-        q_ti_lag   = params.q_ti_lag
-        fqf_lag    = params.fqf_lag
-        fy_t_lag   = params.fy_t_lag
-        B_lag      = params.B_lag
-
-        @inbounds for e = 1:nelem_semi
-
-            for j = 1:ngr, i = 1:ngl
-                ip = connijk_lag[e,i,j]
-                for m = 1:neqs
-                    q_t_lag[m,i,j] = uaux[ip,m]
-                end
-            end
-
-            ### Construct local derivatives for prognostic variables
-            for m = 1:neqs
-
-                for j = 1:ngr, i = 1:ngl
-                    acc = zero(TF)
-                    for k = 1:ngl
-                        acc += fx[i,k] * q_t_lag[m,k,j]
-                    end
-                    q_ti_lag[i,j] = acc
-                end
-
-                ## ETA Derivative
-                for j = 1:ngr, i = 1:ngl
-                    acc = zero(TF)
-                    for k = 1:ngr
-                        acc += q_ti_lag[i,k] * fy_t_lag[k,j]
-                    end
-                    fqf_lag[m,i,j] = acc
-                end
-            end
-
-            ## Numerical integration + DSS of the Laguerre block, fused.
-            ## (2D Laguerre + AMR is not supported, see the @mystop below, so
-            ##  `b_lag` is never needed and is not written at all.)
-            for j = 1:ngr, i = 1:ngl
-                ip = connijk_lag[e,i,j]
-                for m = 1:neqs
-                    B_lag[ip,m] += fqf_lag[m,i,j] * ω[i]*ω_lag[j]*Je_lag[e,i,j]
-                end
-            end
-        end
-
-        if ladapt == true
-            @mystop("not yet implemented for 2D Laguerre with AMR!")
-        end
-
-        B .+= B_lag
+    if params.laguerre
+        ladapt && @mystop("not yet implemented for 2D Laguerre with AMR!")
+        _filter_laguerre_2D!(B, uaux, params, connijk_lag, Je_lag, neqs, TF)
     end
 
     DSS_global_RHS!(B, params.g_dss_cache, neqs)
@@ -320,6 +272,70 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D, ::PERT;
     uaux2u!(u, @view(uaux[:,:]), neqs, npoin)
 end
 
+
+#
+# Filter contribution of the 2D semi-infinite (Laguerre) elements, added to the
+# assembled B of the finite elements: tensor filter fx (along the base edge) x
+# fy_lag (Laguerre direction), integrated with ω x ω_lag and summed into B_lag
+# (zeroed by reset_laguerre_filters!). Shared by the TOTAL and PERT methods; uaux
+# holds whatever those filter (the perturbation from qe for TOTAL).
+#
+function _filter_laguerre_2D!(B, uaux, params, connijk_lag, Je_lag, neqs, TF)
+    ngl        = Int64(params.mesh.ngl)
+    ngr        = Int64(params.mesh.ngr)
+    nelem_semi = Int64(params.mesh.nelem_semi_inf)
+    ω          = params.ω
+    ω_lag      = params.ω_lag
+    fx         = params.fx
+    q_t_lag    = params.q_t_lag
+    q_ti_lag   = params.q_ti_lag
+    fqf_lag    = params.fqf_lag
+    fy_t_lag   = params.fy_t_lag
+    B_lag      = params.B_lag
+
+    @inbounds for e = 1:nelem_semi
+
+        for j = 1:ngr, i = 1:ngl
+            ip = connijk_lag[e,i,j]
+            for m = 1:neqs
+                q_t_lag[m,i,j] = uaux[ip,m]
+            end
+        end
+
+        ### Construct local derivatives for prognostic variables
+        for m = 1:neqs
+
+            for j = 1:ngr, i = 1:ngl
+                acc = zero(TF)
+                for k = 1:ngl
+                    acc += fx[i,k] * q_t_lag[m,k,j]
+                end
+                q_ti_lag[i,j] = acc
+            end
+
+            ## ETA Derivative
+            for j = 1:ngr, i = 1:ngl
+                acc = zero(TF)
+                for k = 1:ngr
+                    acc += q_ti_lag[i,k] * fy_t_lag[k,j]
+                end
+                fqf_lag[m,i,j] = acc
+            end
+        end
+
+        ## Numerical integration + DSS of the Laguerre block, fused.
+        ## (2D Laguerre + AMR is not supported, so `b_lag` is never needed.)
+        for j = 1:ngr, i = 1:ngl
+            ip = connijk_lag[e,i,j]
+            for m = 1:neqs
+                B_lag[ip,m] += fqf_lag[m,i,j] * ω[i]*ω_lag[j]*Je_lag[e,i,j]
+            end
+        end
+    end
+
+    B .+= B_lag
+    return nothing
+end
 
 function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D, ::PERT;
                  connijk_lag = FILTER_NO_CONN_LAG_3D, Je_lag = FILTER_NO_JE_LAG_3D, ladapt = false)
@@ -712,12 +728,17 @@ function init_filter(nop,xgl,mu_x,mesh,inputs, rank)
         end
     elseif (nop+1 == mesh.ngr)
         
+        # Modes of the scaled Laguerre basis with the SAME β as the solution
+        # basis and the nodes (xgl are the LGR nodes for :laguerre_beta):
+        # exp(-βξ/2) (L_j(βξ) - L_{j-1}(βξ)). With β fixed to 1 here, the filter
+        # kept exp(-ξ/2) exactly instead of the basis' own decay when β != 1.
+        β_lag = Float128(inputs[:laguerre_beta])
         Laguerre = St_Laguerre(Polynomial(Float128(2.0)),Polynomial(Float128(2.0)),Polynomial(Float128(2.0)),Polynomial(Float128(2.0)))
         for i=1:nop+1
             ξ = xgl[i]
             for j=1:nop+1
                 jj = j-1
-                ScaledLaguerreAndDerivative!(jj,Laguerre,1.0,inputs[:backend])
+                ScaledLaguerreAndDerivative!(jj,Laguerre,β_lag,inputs[:backend])
                 leg[i,j] = Laguerre.Laguerre(ξ)
             end
         end
@@ -727,10 +748,10 @@ function init_filter(nop,xgl,mu_x,mesh,inputs, rank)
         leg2 .= leg
         for i=1:nop+1
             ξ = xgl[i]
-            leg2[i,1] = exp(-ξ/2)
+            leg2[i,1] = exp(-β_lag*ξ/2)
             if (nop +1 > 1)
                 for j=2:nop+1
-                    leg2[i,j] = exp(-ξ/2)*(leg[i,j] - leg[i,j-1])
+                    leg2[i,j] = exp(-β_lag*ξ/2)*(leg[i,j] - leg[i,j-1])
                 end
             end
         end

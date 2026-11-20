@@ -24,6 +24,14 @@
     
     @inbounds source[ie, i_ngl, i_ngr, :] .= user_source_gpu(uip,qeip,x[ip],y[ip],PhysConst, xmax, xmin, ymax, ymin,lpert)
 
+    # TOTAL variables: the layer works on the departure from the reference state
+    # (F(q) - F(qe), S(q) - S(qe)), see _lag_subtract_reference in rhs_laguerre.jl.
+    if !lpert
+        qref = @view(qe[ip,1:neq])
+        @inbounds flux[ie, i_ngl, i_ngr, :] .-= user_flux_gpu(qref,qeip,PhysConst,lpert)
+        @inbounds source[ie, i_ngl, i_ngr, :] .-= user_source_gpu(qref,qeip,x[ip],y[ip],PhysConst, xmax, xmin, ymax, ymin,lpert)
+    end
+
     @synchronize()
     ### do numerical integration
     for ieq =1:neq
@@ -75,6 +83,9 @@ end
     U = @localmem eltype(RHS_diff) (DIM_1+1, DIM_2+1)
 
     @inbounds uprimitive[ie, i_ngl, i_ngr, 1:neq] .= user_primitives_gpu(@view(u[ip,1:neq]),@view(qe[ip,1:neq]),lpert)
+    if !lpert   # TOTAL: diffuse the departure from the reference primitives
+        @inbounds uprimitive[ie, i_ngl, i_ngr, 1:neq] .-= user_primitives_gpu(@view(qe[ip,1:neq]),@view(qe[ip,1:neq]),lpert)
+    end
 
     @inbounds ωJac = ω[i_ngl]*ω_lag[i_ngr]*Je[ie,i_ngl,i_ngr]
 
