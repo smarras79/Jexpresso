@@ -62,9 +62,31 @@ function _build_rhs_laguerre!(RHS, u, params, time)
     # mass division, which act on the sum.
 end
 
+#
+# Semi-infinite elements and TOTAL variables.
+#
+# Every function of the scaled Laguerre basis decays, exp(-βξ/2) p(ξ): the layer
+# can only represent fields that vanish at infinity (its derivative of a
+# constant is not zero). Perturbations do; total fields -- the hydrostatic ρ and
+# p, θ, and the fluxes made of them -- do not. With TOTAL variables the Laguerre
+# elements therefore work on the departure from the reference state qe:
+#
+#     ∇·(F(q) - F(qe)) - (S(q) - S(qe))   (inviscid),
+#     ∇·(ν ∇(prim(q) - prim(qe)))          (viscous),
+#
+# which is the same as the TOTAL equations wherever qe is a steady state
+# (∇·F(qe) = S(qe), e.g. hydrostatic balance), the same assumption PERT makes.
+# The finite elements are unchanged. PERT needs nothing: q is already the
+# perturbation.
+#
+_lag_subtract_reference(::TOTAL) = true
+_lag_subtract_reference(::Any)   = false
+
 function inviscid_rhs_el_laguerre!(u, params, connijk_lag, qe, x, y, lsource, SD::NSD_1D)
 
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
+    lref = _lag_subtract_reference(params.SOL_VARS_TYPE)
+    Fr = zeros(eltype(params.F_lag), params.neqs); Gr = similar(Fr); Sr = similar(Fr)
     
     xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
     for iel=1:params.mesh.nelem_semi_inf
@@ -86,6 +108,21 @@ function inviscid_rhs_el_laguerre!(u, params, connijk_lag, qe, x, y, lsource, SD
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
                              neqs=params.neqs, x=x[ip],y=y[ip],xmax=xmax,xmin=xmin)
             end
+            if lref
+                user_flux!(Fr, Gr, SD, @view(qe[ip,:]), @view(qe[ip,:]), params.mesh,
+                           params.CL, params.SOL_VARS_TYPE; neqs=params.neqs)
+                for ieq = 1:params.neqs
+                    params.F_lag[i,ieq] -= Fr[ieq]
+                end
+                if lsource
+                    user_source!(Sr, @view(qe[ip,:]), @view(qe[ip,:]),
+                                 params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
+                                 neqs=params.neqs, x=x[ip],y=y[ip],xmax=xmax,xmin=xmin)
+                    for ieq = 1:params.neqs
+                        params.S_lag[i,ieq] -= Sr[ieq]
+                    end
+                end
+            end
         end
 
         _expansion_inviscid_laguerre!(u, params.neqs, params.mesh.ngr, params.basis_lag.dψ, params.ω_lag, params.F_lag, params.S_lag,
@@ -98,6 +135,8 @@ end
 function inviscid_rhs_el_laguerre!(u, params, connijk_lag, qe, x, y, lsource, SD::NSD_2D)
     
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
+    lref = _lag_subtract_reference(params.SOL_VARS_TYPE)
+    Fr = zeros(eltype(params.F_lag), params.neqs); Gr = similar(Fr); Sr = similar(Fr)
 
     xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
     for iel=1:params.mesh.nelem_semi_inf
@@ -118,6 +157,22 @@ function inviscid_rhs_el_laguerre!(u, params, connijk_lag, qe, x, y, lsource, SD
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
                              neqs=params.neqs, x=x[ip],y=y[ip], xmax = xmax, xmin=xmin, ymax=ymax)
             end
+            if lref
+                user_flux!(Fr, Gr, SD, @view(qe[ip,:]), @view(qe[ip,:]), params.mesh,
+                           params.CL, params.SOL_VARS_TYPE; neqs=params.neqs)
+                for ieq = 1:params.neqs
+                    params.F_lag[i,j,ieq] -= Fr[ieq]
+                    params.G_lag[i,j,ieq] -= Gr[ieq]
+                end
+                if lsource
+                    user_source!(Sr, @view(qe[ip,:]), @view(qe[ip,:]),
+                                 params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
+                                 neqs=params.neqs, x=x[ip],y=y[ip], xmax = xmax, xmin=xmin, ymax=ymax)
+                    for ieq = 1:params.neqs
+                        params.S_lag[i,j,ieq] -= Sr[ieq]
+                    end
+                end
+            end
         end
         _expansion_inviscid_laguerre!(u, params.neqs, params.mesh.ngl, params.mesh.ngr, params.basis.dψ, params.basis_lag.dψ, params.ω, params.ω_lag, params.F_lag, params.G_lag, params.S_lag, 
         params.metrics_lag.Je, params.metrics_lag.dξdx,params.metrics_lag.dξdy, params.metrics_lag.dηdx, params.metrics_lag.dηdy, params.rhs_el_lag, iel, params.CL, params.QT, SD, params.AD)
@@ -127,10 +182,18 @@ end
 
 function viscous_rhs_el_laguerre!(u, params, connijk_lag, qe, SD::NSD_2D)
     
+    lref = _lag_subtract_reference(params.SOL_VARS_TYPE)
+    pr   = zeros(eltype(params.uprimitive_lag), size(params.uprimitive_lag, 3))
     for iel=1:params.mesh.nelem_semi_inf
         for j=1:params.mesh.ngr, i=1:params.mesh.ngl
             ip = connijk_lag[iel,i,j]
             user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive_lag[i,j,:]),params.SOL_VARS_TYPE)
+            if lref
+                # diffuse the departure from the reference primitives (see
+                # _lag_subtract_reference)
+                user_primitives!(@view(qe[ip,:]),@view(qe[ip,:]),pr,params.SOL_VARS_TYPE)
+                @views params.uprimitive_lag[i,j,:] .-= pr
+            end
         end
         
         for ieq = 1:params.neqs    
