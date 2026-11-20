@@ -16,7 +16,8 @@
           (run the `generate-ci-ref` workflow to create them)
    FAIL : the run produced no HDF5 output (crash, or non-hdf5 :outformat)
    FAIL : a reference file has no counterpart in the run's output
-   FAIL : any field differs from the reference by more than the case `atol`
+   FAIL : any field differs from the reference by more than the case
+          tolerance, ‖Δ‖₂ > max(atol, rtol·‖ref‖₂) over the whole field
    PASS : every field of every file matches within tolerance
 ==============================================================================#
 module CICompare
@@ -45,15 +46,17 @@ read_h5(path::AbstractString) =
     end
 
 """
-    compare_h5_files(ref_path, gen_path; atol) -> Bool
+    compare_h5_files(ref_path, gen_path; atol, rtol = 0) -> Bool
 
 `true` when every dataset of the reference file is present in the generated
-file and matches it within `atol` (floating point) or exactly (everything
-else). Differences are reported with `@error` so the CI log points at the
+file and matches it within tolerance (floating point) or exactly (everything
+else). Floating-point arrays are compared with
+`isapprox(ref, gen; atol, rtol)`, i.e. on the 2-norm of the whole array:
+`‖gen − ref‖₂ ≤ max(atol, rtol·max(‖gen‖₂, ‖ref‖₂))`. Differences are reported with `@error` so the CI log points at the
 offending field.
 """
 function compare_h5_files(ref_path::AbstractString, gen_path::AbstractString;
-                          atol::Real = 1e-5)
+                          atol::Real = 1e-5, rtol::Real = 0.0)
     ref_data = read_h5(ref_path)
     gen_data = read_h5(gen_path)
 
@@ -70,9 +73,14 @@ function compare_h5_files(ref_path::AbstractString, gen_path::AbstractString;
             if size(vref) != size(vgen)
                 @error "field '$key' has size $(size(vgen)), reference is $(size(vref))"
                 ok = false
-            elseif !isapprox(vref, vgen; atol = atol)
-                @error "field '$key' differs from the reference beyond atol=$atol " *
-                       "(max |Δ| = $(maximum(abs.(vgen .- vref))))"
+            elseif !isapprox(vref, vgen; atol = atol, rtol = rtol)
+                Δ    = vgen .- vref
+                nΔ   = sqrt(sum(abs2, Δ))
+                nref = sqrt(sum(abs2, vref))
+                @error "field '$key' differs from the reference beyond " *
+                       "atol=$atol, rtol=$rtol: ‖Δ‖₂ = $nΔ, " *
+                       "‖Δ‖₂/‖ref‖₂ = $(nref > 0 ? nΔ/nref : Inf), " *
+                       "max |Δ| = $(maximum(abs, Δ))"
                 ok = false
             end
         elseif vref != vgen
@@ -278,7 +286,8 @@ function compare_case(c::CICase; root::AbstractString = CICases.project_root(),
                         @test false
                     else
                         @test compare_h5_files(ref_file, gen_by_name[name];
-                                               atol = c.atol)
+                                               atol = c.atol,
+                                               rtol = case_rtol(c, name))
                     end
                 end
             end
