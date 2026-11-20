@@ -1235,6 +1235,14 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #                      slots keep the max over all equations. For low-β plasmas, where one
     #                      coefficient makes the field as resistive as an acoustic front makes the gas
     #                      viscous (SGS.jl, linduction; problems/MHD/fluxEmergenceLeake2010). Default false.
+    #   :dsgs_stab_cap     DSGS_MHD 2D, element form: the coefficient never above stab·Δx²/Δt, Δx the
+    #                      smallest LGL gap of the element (0, the default: no cap). The first-order
+    #                      cap C_max Δ (|v| + c_f) follows the fast speed, and an explicit step
+    #                      integrates a diffusivity only up to a viscous number μ Δt/Δx² of ~0.4
+    #                      (CarpenterKennedy2N54, degree 4, 2D): where the fast speed has more than
+    #                      doubled since Δt was chosen the capped coefficient alone makes the run
+    #                      unstable, from a fast CFL number of ~0.6. 0.2 keeps it stable to ~1.4
+    #                      (SGS.jl; problems/MHD/fluxEmergenceLeake2010).
     #   :dsgs_eta_flow_cap  DSGS_MHD 2D, element form: the coefficient of the B slots capped at
     #                      C_max Δ ‖v‖∞,e (the flow speed: the first-order diffusivity of a field carried
     #                      by v) instead of C_max Δ (‖v‖ + c_f)∞,e, which at a coronal current sheet is a

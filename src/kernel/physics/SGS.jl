@@ -742,6 +742,21 @@ const _DSGS_RUN_STATS = zeros(Float64, 2)
     return nothing
 end
 dsgs_run_stats_reset!() = (fill!(_DSGS_RUN_STATS, 0.0); nothing)
+
+# :dsgs_stab_cap — the first time a rank holds a coefficient at the stability cap it says so
+# (the cap changes nothing until then), and again each time the excess passes a new power of two.
+const _DSGS_STAB_SEEN = Ref{Float64}(0.0)
+function _dsgs_stab_report(μ, μ_stab, μ_max)
+    x = Float64(μ)/Float64(μ_stab)
+    if x > 2.0*max(_DSGS_STAB_SEEN[], 0.5)
+        _DSGS_STAB_SEEN[] = x
+        println(" # DynSGS coefficient held at the stability cap on rank ", MPI.Comm_rank(MPI.COMM_WORLD),
+                ": ", round(Float64(μ_stab), sigdigits = 4), " instead of ", round(Float64(μ), sigdigits = 4),
+                " (first-order cap there ", round(Float64(μ_max), sigdigits = 4), "; :dsgs_stab_cap)")
+        flush(stdout)
+    end
+    return nothing
+end
 dsgs_run_stats(comm) = MPI.Allreduce(copy(_DSGS_RUN_STATS), MPI.MAX, comm)
 
 # :dsgs_freeze_stage — the coefficient is computed ONCE PER TIME STEP, at the
@@ -1680,6 +1695,9 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  lthermal::Bool=false,
                                  linduction::Bool=false,
                                  lflowcap::Bool=false,
+                                 stab::TT=zero(TT),
+                                 Δgap::Union{Nothing,AbstractVector{TT}}=nothing,
+                                 Δt::TT=zero(TT),
                                  νphys::Union{Nothing,AbstractVector{TT}}=nothing,
                                  ηphys::Union{Nothing,AbstractVector{TT}}=nothing) where {TT<:AbstractFloat, TI<:Integer}
     _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
@@ -1905,9 +1923,21 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         # resolved structure by only √(Cmin Δ c t) ≈ 1 H₀ over the whole run.
         μ_floor = Cmin > zero(TT) ? Cmin*Δ*wmax : zero(TT)
         μ = max(μ, μ_floor)
+        # Stability cap (:dsgs_stab_cap = stab): never more than the explicit time step integrates,
+        # μ ≤ stab·Δx²/Δt with Δx the smallest LGL gap of the element. The first-order cap above grows
+        # with the fast speed, and where that has grown since the time step was chosen it passes the
+        # limit of the explicit scheme: with CarpenterKennedy2N54 on degree-4 elements, μ = C_max Δ c_f
+        # with C_max = 0.5 is unstable from a fast CFL number of ~0.6 (viscous number 0.36), far below
+        # the 1.6 of the advection alone (problems/MHD/fluxEmergenceLeake2010, README, "Time step").
+        μ_stab = (stab > zero(TT) && Δgap !== nothing && Δt > zero(TT)) ? stab*Δgap[ie]*Δgap[ie]/Δt : TT(Inf)
+        if μ > μ_stab
+            _dsgs_stab_report(μ, μ_stab, μ_max)
+            μ = μ_stab
+        end
         _dsgs_record!(ratio, μ)          # running maxima over the run (_DSGS_RUN_STATS)
         # resistivity: the same μ, or (linduction) the one of the induction residuals alone
         μ_B = linduction ? max(max(zero(TT), min(μ_max, CR*Δ*Δ*_dsgs_cut(ratioB, cutoff))), μ_floor) : μ
+        μ_B = min(μ_B, μ_stab)
         # (lflowcap, :dsgs_eta_flow_cap) capped at the first-order diffusivity of the frozen-in field,
         # C_max Δ ‖v‖∞,e, the flow speed alone: B is carried by v, and the fast speed of the cap above
         # is the momentum's (problems/MHD/fluxEmergenceLeake2010: at a coronal current sheet

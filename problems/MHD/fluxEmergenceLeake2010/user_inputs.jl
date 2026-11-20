@@ -45,6 +45,8 @@
 #                            as in Lare (README, "The heat of the DynSGS")           [1]
 #   JEXPRESSO_LK10_ETAFAC    factor on the DynSGS resistivity (the :μ multiplier of the B
 #                            slots), a sensitivity test of the reconnection          [1]
+#   JEXPRESSO_LK10_STABCAP   the DynSGS coefficient never above this viscous number, μ Δt/Δx²,
+#                            which the explicit step still integrates (0: no cap)    [0.2]
 #   JEXPRESSO_LK10_ETACAP    fast | flow: the DynSGS resistivity capped at C_max Δ (|v| + c_f)
 #                            like the viscosity, or at C_max Δ |v|, the flow speed alone [fast]
 #   JEXPRESSO_LK10_SENSOR    legacy | residual: the DynSGS coefficient from |∂ₜq| (the
@@ -303,6 +305,9 @@ function user_inputs()
         # ... and capped at the first-order diffusivity of a field carried by the flow, C_max Δ |v|,
         # instead of the viscosity's C_max Δ (|v| + c_f) (SGS.jl, lflowcap): opt-in while under test
         :dsgs_eta_flow_cap    => lowercase(_lk10_env("ETACAP", "fast")) == "flow",
+        # Never more diffusivity than the explicit step integrates (SGS.jl, :dsgs_stab_cap): the
+        # first-order cap C_max Δ c_f follows the Alfvén speed, which doubles as the dome drains
+        :dsgs_stab_cap        => _lk10_num("STABCAP", 0.2),
         :dsgs_norms           => "element",
         :dsgs_local_rel       => 1.0,
         :dsgs_conserved       => true,

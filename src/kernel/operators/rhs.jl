@@ -1737,6 +1737,9 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                     lthermal        = get(params.inputs, :dsgs_thermal_residual, false)::Bool,
                                     linduction      = get(params.inputs, :dsgs_induction_sensor, false)::Bool,
                                     lflowcap        = get(params.inputs, :dsgs_eta_flow_cap, false)::Bool,
+                                    stab            = TT(get(params.inputs, :dsgs_stab_cap, 0.0)),
+                                    Δgap            = get(params.inputs, :dsgs_stab_cap, 0.0) > 0 ? _dsgs_elem_gap(params.mesh, TT) : nothing,
+                                    Δt              = TT(params.Δt),
                                     νphys = νphys2d, ηphys = ηphys2d)
             broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
                                      params.mesh.connijk,
@@ -2445,6 +2448,33 @@ end
 
 # The wall nodes of the curl-form resistivity (E = 0 there; SGS.jl, _dsgs_curl_resistive_2d!):
 # the nodes of the non-periodic boundary edges of this rank's mesh, cached per mesh.
+# :dsgs_stab_cap: the smallest gap between two adjacent LGL nodes of each element, the length of
+# the explicit diffusion limit μ Δt/Δx² (cached per mesh).
+const _DSGS_ELEM_GAP = Ref{Any}(nothing)
+function _dsgs_elem_gap(mesh, ::Type{TT}) where {TT}
+    c = _DSGS_ELEM_GAP[]
+    nelem = Int(mesh.nelem)
+    (c !== nothing && c[1] === mesh && length(c[2]) == nelem) && return c[2]::Vector{TT}
+    g = _dsgs_fill_elem_gap(mesh.connijk, mesh.coords, nelem, Int(mesh.ngl), TT)
+    _DSGS_ELEM_GAP[] = (mesh, g)
+    return g
+end
+function _dsgs_fill_elem_gap(connijk, coords, nelem::Int, ngl::Int, ::Type{TT}) where {TT}
+    g = fill(TT(Inf), nelem)
+    @inbounds for ie = 1:nelem, j = 1:ngl, i = 1:ngl
+        ip = connijk[ie,i,j,1]
+        if i < ngl
+            iq = connijk[ie,i+1,j,1]
+            g[ie] = min(g[ie], TT(hypot(coords[1,iq] - coords[1,ip], coords[2,iq] - coords[2,ip])))
+        end
+        if j < ngl
+            iq = connijk[ie,i,j+1,1]
+            g[ie] = min(g[ie], TT(hypot(coords[1,iq] - coords[1,ip], coords[2,iq] - coords[2,ip])))
+        end
+    end
+    return g
+end
+
 const _DSGS_CURL_WALL = Ref{Any}(nothing)
 function _dsgs_curl_wall_mask(mesh)
     c = _DSGS_CURL_WALL[]

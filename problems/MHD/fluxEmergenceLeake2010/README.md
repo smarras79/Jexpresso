@@ -86,6 +86,7 @@ editing the deck:
 | `JEXPRESSO_LK10_TFLOOR` | default 0.1 | temperature floor, in $T_{ph}$ = 5700 K |
 | `JEXPRESSO_LK10_ETA` | `all` (default), `induction` | DynSGS resistivity from the max over all residuals (one coefficient), or from the induction residuals alone (DynSGS in the corona, below) |
 | `JEXPRESSO_LK10_ENERGY` | `thermal` (default), `total` | energy-consistent DynSGS (Positivity, below), or $E$ diffused as a whole (the parent case) |
+| `JEXPRESSO_LK10_STABCAP` | default 0.2; 0: none | the DynSGS coefficient never above this viscous number $\mu\Delta t/\Delta x^2$, which the explicit step still integrates (Meshes, time step and cost) |
 | `JEXPRESSO_LK10_ETACAP` | `fast` (default), `flow` | DynSGS resistivity capped at $C_{max}\Delta(\lvert v\rvert + c_f)$ like the viscosity, or at $C_{max}\Delta\lvert v\rvert$ (Verification, the REF 4 run) |
 | `JEXPRESSO_LK10_ETAFAC` | default 1 | factor on the DynSGS resistivity (the `:μ` multipliers of the B slots), a sensitivity test |
 | `JEXPRESSO_LK10_RHOFAC` | default 1 | factor on the DynSGS mass diffusion (the `:μ` multiplier of the ρ slot), a sensitivity test |
@@ -466,6 +467,36 @@ inside each rank, and with it $\psi$ reached $3\times10^{-5}$ in 300 steps where
 it stays at round-off here (the discrete curl of `initialize.jl` now counts
 every element once whatever the partition).
 
+**The time step and the DynSGS cap.** $\Delta t$ is fixed, $c_h\Delta t/\Delta x_{min} = 0.25$
+with $\Delta x_{min}$ the smallest LGL gap and $c_h$ the largest fast speed of
+the initial state (274.7 for the medium quadrupole). The fast speed does not
+stay there: the cluster's log has a fast CFL number of 0.25 at the start, 0.34
+at 928 s and 0.64 at 1624 s (702 $v_0$, 4500 km/s, in the draining dome, where
+the density falls and the field is compressed). For `CarpenterKennedy2N54` on
+degree-4 elements the linear limits are, in the numbers the log prints
+(scratch computation of the spectra of the 1D operators, 2D by tensor product):
+a fast CFL number of 1.64 for the advection alone and a viscous number
+$\mu\Delta t/\Delta x_{min}^2$ of 0.43 for the diffusion alone. The DynSGS
+coefficient at its first-order cap, $C_{max}\Delta(\lvert v\rvert + c_f)$ with
+$C_{max} = 0.5$ and $\Delta = \Delta_{elem}/5$, has a viscous number of
+$0.58\times$ the fast CFL number, so that with it the scheme is unstable from a
+fast CFL number of **0.62**, not 1.64: a run whose fast speed has grown 2.5-fold
+blows up at the first strong front in that region (the `JEXPRESSO_LK10_HEAT=shock`
+restart did, at 1713 s, in the top of the dome, with a largest coefficient of
+107 = a viscous number of 0.46; Verification). `:dsgs_stab_cap`
+(`JEXPRESSO_LK10_STABCAP`, default 0.2; `src/kernel/physics/SGS.jl`) therefore
+holds the coefficient at or below $0.2\,\Delta x_{min,e}^2/\Delta t$, with
+$\Delta x_{min,e}$ the smallest LGL gap of the element: nothing changes where the
+coefficient is below it (everywhere at the design CFL number, where the
+first-order cap is 0.145), and the scheme stays linearly stable to a fast CFL
+number of 1.4. The log names the rank the first time the cap acts. If the fast
+CFL number of the log approaches 1, restart with a smaller `JEXPRESSO_LK10_DT`.
+Here, the kick test at five times the time step (fast CFL number 1.13) with the
+coefficient driven to its cap ($C_R$ = 1000): non-finite at 0.39 $t_0$ without
+the stability cap, with a viscous number of 0.71 at the snapshot before; with
+it, 0.26 and a clean run to 2 $t_0$ (flows decaying from 32 to 1.2 km/s,
+smallest pressure, density and temperature unchanged, $\psi$ at round-off).
+
 **Subnormal numbers** are flushed to zero on every rank
 (`set_zero_subnormals(true)` in `initialize.jl`; `JEXPRESSO_LK10_SUBNORMALS=keep`
 for IEEE underflow). $\rho\mathbf u$, $\rho w$, $B_z$ and $\psi$ are zero in the
@@ -741,6 +772,26 @@ Short runs on 4 cores; the full runs are for a cluster (above).
   1140 s, of 260, so the DynSGS mass diffusion does not feed it. See "The heat of the DynSGS" above; the tests are
   restarts of this run from 920 s with `JEXPRESSO_LK10_HEAT=shock` and
   `JEXPRESSO_LK10_HEAT=0`.
+
+  *The restart with `JEXPRESSO_LK10_HEAT=shock`* (from 920 s; cluster). Against
+  the run above, in the same units:
+
+  | t (s) | 1380 | 1508 | 1610 | 1624 |
+  |---|---|---|---|---|
+  | mass / mass(0): all heat, `shock` | 362, 363 | 272, 240 | 258, 201 | 259, 202 |
+  | fraction below 2 × 10⁴ K | 0.88, 0.96 | 0.52, 0.70 | 0.23, 0.42 | 0.21, 0.39 |
+  | $p$ / initial $p$ (median) | 2.0, 1.5 | 21, 1.8 | 76, 19 | 78, 21 |
+  | mean $v_y$ (km/s) | −4.0, −4.4 | −5.0, −7.7 | −1.9, −5.7 | −1.4, −5.0 |
+
+  (The restart's pressure is against its 920 s state, the initial one above
+  ~4 Mm.) The heating comes a hundred seconds later and is four times weaker at
+  1624 s, and the plasma is still draining at 5 km/s where it had stopped. The
+  run then failed at 1713 s (non-finite, in the top of the dome, 1.5 < x < 4.7,
+  6.7 < y < 11 Mm), of the time step and not of the heating: the fast CFL
+  number had reached 0.64 at 1624 s, above the 0.62 at which the DynSGS
+  coefficient on its first-order cap is unstable (Meshes, time step and cost).
+  `:dsgs_stab_cap` is the remedy, on by default since; the run is to be
+  continued from its 1508 s snapshot.
 
   Here: the switches act, are recorded, and a restart that changes them
   reports it and continues; the first 40 s of the run on REF 1 (the corona is

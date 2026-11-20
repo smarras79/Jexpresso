@@ -578,7 +578,7 @@ lk10_restart_fields() = ["ρ", "u", "v", "w", "p", "Bx", "By", "Bz", "ψ"]
 # switches of lk10_numeric_keys (to continue past a failure from an earlier snapshot);
 # the restart says which changed.
 lk10_numeric_keys() = ("curl_resistivity", "Cmin", "floors", "dsgs_energy", "eta_sensor", "dsgs_sensor", "eta_cap", "eta_factor",
-                         "rho_factor", "heating")
+                         "rho_factor", "heating", "stab_cap")
 
 function lk10_case_record(inputs)
     return Pair{String,String}[
@@ -600,6 +600,7 @@ function lk10_case_record(inputs)
         "eta_cap"          => get(inputs, :dsgs_eta_flow_cap, false) == true ? "flow" : "fast",
         "eta_factor"       => string(Float64(get(inputs, :μ, ones(9))[6])),
         "rho_factor"       => string(Float64(get(inputs, :μ, ones(9))[1])),
+        "stab_cap"         => string(Float64(get(inputs, :dsgs_stab_cap, 0.0))),
         "heating"          => (h = get(inputs, :dsgs_heating, 1.0); h isa Number ? string(Float64(h)) : String(h)),
         "mesh"             => basename(String(get(inputs, :gmsh_filename, ""))),
         "partition"        => get(inputs, :lxy_partition, true) != true ? "metis" :
@@ -647,7 +648,7 @@ function lk10_record_mismatch(old::Dict{String,String}, rec; numerics::Bool=fals
         # (runs made before the partition was recorded had the uniform bins)
         # (and the legacy DynSGS sensor)
         w = get(old, k, k == "partition" ? "uniform" : k == "dsgs_sensor" ? "legacy" : k == "eta_cap" ? "fast" :
-                        k in ("eta_factor", "rho_factor", "heating") ? "1.0" : "(not recorded)")
+                        k in ("eta_factor", "rho_factor", "heating") ? "1.0" : k == "stab_cap" ? "0.0" : "(not recorded)")
         w == v || push!(bad, "$(k): $(w) there, $(v) here" *
                              (k == "partition" ? " (JEXPRESSO_LK10_PARTITION=$(w) to continue that run)" : ""))
     end

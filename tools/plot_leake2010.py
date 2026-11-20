@@ -686,14 +686,22 @@ def cmd_mass(a):
     would supply its internal energy. Plasma that is hot and in no hurry to drain is held up by its own pressure."""
     items = runs_of(a.run)
     rows = []
-    p0 = None
+    p0 = M0 = None
+    if a.ref:
+        # the initial atmosphere and the unit of mass from the first snapshot of another run (the one this
+        # run was restarted from, when its directory is not found through lk10_case.txt)
+        t0, f0 = runs_of(a.ref)[0]
+        g0 = load(f0, ["log10rho_cgs", "ρ", "p", "T", "u", "v", "w", "Bz", MU_NAME, *ETA_NAMES])
+        p0 = grid2d(g0, g0["fields"]["p"])
+        M0 = mass_row(g0, p0)["M"]
     for t, f in items:
         g = load(f, ["log10rho_cgs", "ρ", "p", "T", "u", "v", "w", "Bz", MU_NAME, *ETA_NAMES])
         if p0 is None:
             p0 = grid2d(g, g["fields"]["p"])
         rows.append((t, mass_row(g, p0)))
-    M0 = rows[0][1]["M"]
-    print("box 3 < y < 20 Mm, |x| < 13 Mm; masses in units of the first snapshot's (" + f"{M0:.3g} g/cm)")
+    whose = "the reference run's first snapshot" if M0 is not None else "the first snapshot"
+    M0 = rows[0][1]["M"] if M0 is None else M0
+    print(f"box 3 < y < 20 Mm, |x| < 13 Mm; masses in units of {whose}'s ({M0:.3g} g/cm)")
     print(f"{'t [s]':>7} {'mass':>8} {'change':>8} {'advect.':>8} {'other':>8} | {'<2e4 K':>6} {'2e4-2e5':>7} {'>2e5 K':>6} | "
           f"{'p/p_init':>8} {'v_y km/s':>8} | {'heat visc s':>11} {'heat Ohm s':>10}")
     prev = None
@@ -776,6 +784,8 @@ def main():
     s.add_argument("--thr", type=float, default=-13.0, help="log10 rho threshold [g cm^-3]")
     s = sub.add_parser("mass"); s.set_defaults(fn=cmd_mass)
     s.add_argument("run")
+    s.add_argument("--ref", default="", help="run whose first snapshot (t = 0) gives the initial pressure and the unit "
+                                             "of mass, for a restarted run listed from its restart time on")
     s = sub.add_parser("null"); s.set_defaults(fn=cmd_null)
     s.add_argument("runs", nargs="+", help="RUN or LABEL=RUN")
     s.add_argument("--thr", type=float, default=-13.0, help="log10 rho threshold of the dome top [g cm^-3]")
