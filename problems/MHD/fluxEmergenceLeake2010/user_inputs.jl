@@ -47,6 +47,15 @@
 #                            slots), a sensitivity test of the reconnection          [1]
 #   JEXPRESSO_LK10_STABCAP   the DynSGS coefficient never above this viscous number, μ Δt/Δx²,
 #                            which the explicit step still integrates (0: no cap)    [0.2]
+#   JEXPRESSO_LK10_DSGS_STAGES  all | 1,5 | 1: the stages of the Runge-Kutta scheme at which
+#                            the DynSGS terms are evaluated: all five; the first and the
+#                            last, held in between (the step costs 0.52 of the five-stage one);
+#                            or the first alone (0.47, and the default of
+#                            JEXPRESSO_LK10_STABCAP becomes 0.08). The coefficient is then that
+#                            of the first stage, with half the C_R (README, "The DynSGS at
+#                            two stages of the five")                                [all]
+#   JEXPRESSO_LK10_CR        the DynSGS constant C_R (the coefficient is C_R Δ² × the largest
+#                            normalized residual, up to its caps)                    [1]
 #   JEXPRESSO_LK10_ETACAP    fast | flow: the DynSGS resistivity capped at C_max Δ (|v| + c_f)
 #                            like the viscosity, or at C_max Δ |v|, the flow speed alone [fast]
 #   JEXPRESSO_LK10_SENSOR    legacy | residual: the DynSGS coefficient from |∂ₜq| (the
@@ -85,6 +94,15 @@ function _lk10_word(k, allowed...)
     return w
 end
 # JEXPRESSO_LK10_HEAT: "shock" (default) or the fraction of the dissipated heat kept
+# JEXPRESSO_LK10_DSGS_STAGES: nothing (all: every stage), (1, 5) or (1,)
+function _lk10_stages()
+    w = replace(lowercase(strip(_lk10_env("DSGS_STAGES", "all"))), " " => "")
+    w == "all" && return nothing
+    w in ("1,5", "15") && return (1, 5)
+    w == "1" && return (1,)
+    error(" problems/MHD/fluxEmergenceLeake2010: JEXPRESSO_LK10_DSGS_STAGES = \"$(w)\", expected all, 1,5 or 1.")
+end
+
 function _lk10_heat()
     h = lowercase(_lk10_env("HEAT", "shock"))
     h == "shock" && return "shock"
@@ -238,6 +256,9 @@ function user_inputs()
     dout = _lk10_num("DOUT", 5.0*LK10_T0)/LK10_T0          # JEXPRESSO_LK10_DOUT: snapshot interval in s
     tout = sort(unique(round.(vcat(collect(0.0:dout:tend), filter(t -> t <= tend + 1e-9, tfig), [tend]), digits = 6)))
     floors = !(_lk10_env("FLOORS", "1") in ("0", "false", "no", "off"))
+    # JEXPRESSO_LK10_DSGS_STAGES: the stages at which the DynSGS block is evaluated (rhs.jl, :dsgs_stages)
+    stages = _lk10_stages()
+    sensor = lowercase(_lk10_env("SENSOR", "legacy")) == "residual" ? "residual" : "legacy"
     lk10_floor_Tmin[] = _lk10_num("TFLOOR", 0.1)
     lk10_floor_hits[] = 0; lk10_floor_next[] = 1
     lk10_progress[] = (0.0, 0.0, 0.0); lk10_progress_tend[] = tend
@@ -301,8 +322,12 @@ function user_inputs()
         # "legacy" (DSGS.md §1.2): the assembled RHS against a BDF2 of the RK stage state, which
         # reads -∂ₜq/2 at the first stage — R ≈ |∂ₜq|, so every moving structure is diffused,
         # the corona's waves included. "residual": the element residual, frozen once per step.
-        :dsgs_sensor          => lowercase(_lk10_env("SENSOR", "legacy")) == "residual" ? "residual" : "legacy",
-        :dsgs_CR              => 1.0,
+        :dsgs_sensor          => sensor,
+        # JEXPRESSO_LK10_DSGS_STAGES=1,5 or 1: the coefficient is that of the first stage, where the
+        # legacy sensor reads twice its mean over the stages: half the C_R, same coefficient.
+        :dsgs_stages          => stages,
+        :lk10_CR              => _lk10_num("CR", 1.0),
+        :dsgs_CR              => _lk10_num("CR", 1.0)*((stages !== nothing && sensor == "legacy") ? 0.5 : 1.0),
         :dsgs_Cmax            => 0.5,
         :dsgs_Cmin            => _lk10_num("CMIN", 0.0),
         :dsgs_gamma           => 5.0/3.0,
@@ -323,8 +348,10 @@ function user_inputs()
         # instead of the viscosity's C_max Δ (|v| + c_f) (SGS.jl, lflowcap): opt-in while under test
         :dsgs_eta_flow_cap    => lowercase(_lk10_env("ETACAP", "fast")) == "flow",
         # Never more diffusivity than the explicit step integrates (SGS.jl, :dsgs_stab_cap): the
-        # first-order cap C_max Δ c_f follows the Alfvén speed, which doubles as the dome drains
-        :dsgs_stab_cap        => _lk10_num("STABCAP", 0.2),
+        # first-order cap C_max Δ c_f follows the Alfvén speed, which doubles as the dome drains.
+        # The scheme takes a viscous number of 0.42; with the DynSGS at stages 1 and 5, 0.6; at
+        # stage 1 alone, 0.18 (rhs.jl, :dsgs_stages).
+        :dsgs_stab_cap        => _lk10_num("STABCAP", stages == (1,) ? 0.08 : 0.2),
         :dsgs_norms           => "element",
         :dsgs_local_rel       => 1.0,
         :dsgs_conserved       => true,

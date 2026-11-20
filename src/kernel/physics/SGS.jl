@@ -779,6 +779,10 @@ dsgs_run_stats(comm) = MPI.Allreduce(copy(_DSGS_RUN_STATS), MPI.MAX, comm)
 # Set from rhs.jl once per RHS call; when it is true the kernels below return
 # at once and leave μ_dsgs as the step's stage-zero value.
 const _DSGS_FROZEN = Ref(false)
+# :dsgs_stages (rhs.jl, _visc_lag): true at a listed stage after the first of the step, where the
+# operators are applied again with the coefficient of the step. _DSGS_FROZEN is then true as well;
+# this one tells the 2D DSGS_MHD assembly not to evaluate the sensor it would not use.
+const _DSGS_HELD   = Ref(false)
 
 function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  ::DSGS, ::NSD_1D,

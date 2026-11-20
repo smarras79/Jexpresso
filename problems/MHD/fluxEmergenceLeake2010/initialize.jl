@@ -537,6 +537,13 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         println(" Subnormal numbers: ", get_zero_subnormals() ? "flushed to zero" : "kept (IEEE; slow where the solution is ~1e-308)")
         println(" Dissipation: ν = $(round(LK10_NU, sigdigits=4)) ($(get(inputs, :lk10_nu_mode, "kinematic"))), anomalous η₀ = $(round(LK10_ETA0, sigdigits=4)), ",
                 "j_crit = $(round(LK10_JCRIT, sigdigits=4)) (code units)")
+        let st = get(inputs, :dsgs_stages, nothing)
+            println(" DynSGS: C_R = $(get(inputs, :dsgs_CR, 1.0)), ",
+                    st === nothing ? "evaluated at every stage of the scheme" :
+                    string("coefficient at the first stage of each step, operators at stage", length(st) > 1 ? "s " : " ",
+                           join(st, " and "), length(st) > 1 ? ", held in between" : ", held over the step"),
+                    "; never above a viscous number of $(get(inputs, :dsgs_stab_cap, 0.0)) (JEXPRESSO_LK10_DSGS_STAGES, _STABCAP)")
+        end
         println(" Initialize fields for 2.5D GLM-MHD flux emergence (Leake et al. 2010) ........... DONE")
         flush(stdout)
     end
@@ -578,7 +585,7 @@ lk10_restart_fields() = ["ρ", "u", "v", "w", "p", "Bx", "By", "Bz", "ψ"]
 # switches of lk10_numeric_keys (to continue past a failure from an earlier snapshot);
 # the restart says which changed.
 lk10_numeric_keys() = ("curl_resistivity", "Cmin", "floors", "dsgs_energy", "eta_sensor", "dsgs_sensor", "eta_cap", "eta_factor",
-                         "rho_factor", "heating", "stab_cap")
+                         "rho_factor", "heating", "stab_cap", "dsgs_stages", "CR")
 
 function lk10_case_record(inputs)
     return Pair{String,String}[
@@ -601,6 +608,8 @@ function lk10_case_record(inputs)
         "eta_factor"       => string(Float64(get(inputs, :μ, ones(9))[6])),
         "rho_factor"       => string(Float64(get(inputs, :μ, ones(9))[1])),
         "stab_cap"         => string(Float64(get(inputs, :dsgs_stab_cap, 0.0))),
+        "dsgs_stages"      => (st = get(inputs, :dsgs_stages, nothing); st === nothing ? "all" : join(st, ",")),
+        "CR"               => string(Float64(get(inputs, :lk10_CR, 1.0))),
         "heating"          => (h = get(inputs, :dsgs_heating, 1.0); h isa Number ? string(Float64(h)) : String(h)),
         "mesh"             => basename(String(get(inputs, :gmsh_filename, ""))),
         "partition"        => get(inputs, :lxy_partition, true) != true ? "metis" :
@@ -648,7 +657,8 @@ function lk10_record_mismatch(old::Dict{String,String}, rec; numerics::Bool=fals
         # (runs made before the partition was recorded had the uniform bins)
         # (and the legacy DynSGS sensor)
         w = get(old, k, k == "partition" ? "uniform" : k == "dsgs_sensor" ? "legacy" : k == "eta_cap" ? "fast" :
-                        k in ("eta_factor", "rho_factor", "heating") ? "1.0" : k == "stab_cap" ? "0.0" : "(not recorded)")
+                        k in ("eta_factor", "rho_factor", "heating", "CR") ? "1.0" : k == "stab_cap" ? "0.0" :
+                        k == "dsgs_stages" ? "all" : "(not recorded)")
         w == v || push!(bad, "$(k): $(w) there, $(v) here" *
                              (k == "partition" ? " (JEXPRESSO_LK10_PARTITION=$(w) to continue that run)" : ""))
     end

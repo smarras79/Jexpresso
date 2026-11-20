@@ -642,7 +642,23 @@ function time_loop!(inputs, params, u, args...)
             DiscreteCallback((u, t, integrator) -> integrator.iter % ncons == 0, cons_affect!; save_positions = (false, false)) :
             nothing
 
+        # :dsgs_stages — the right-hand side is told where every step starts (rhs.jl,
+        # _visc_lag_step!): the stage times alone do not say, since a step is shortened to land on
+        # an output time. Nothing is added to the callback set unless the option is on.
+        cb_visclag = nothing
+        if get(inputs, :dsgs_stages, nothing) !== nothing && get(inputs, :lvisc, false) == true
+            OrdinaryDiffEq.isfsal(inputs[:ode_solver]) &&
+                error(" :dsgs_stages needs a Runge-Kutta scheme that evaluates the right-hand side at the start of every step (", nameof(typeof(inputs[:ode_solver])), " reuses the last stage of the step before).")
+            get(inputs, :ode_adaptive_solver, false) == true &&
+                error(" :dsgs_stages needs a fixed time step (:ode_adaptive_solver => false).")
+            cb_visclag = DiscreteCallback((u, t, integrator) -> true,
+                                          integrator -> (_visc_lag_step!(integrator.p, integrator.t); u_modified!(integrator, false));
+                                          initialize = (c, u, t, integrator) -> _visc_lag_step!(integrator.p, t),
+                                          save_positions = (false, false))
+        end
+
         _cbs = Any[cb, cb_restart, cb_les_stat, cb_les_online]
+        cb_visclag !== nothing                 && pushfirst!(_cbs, cb_visclag)
         cb_pod !== nothing                     && push!(_cbs, cb_pod)
         lrad                                  && push!(_cbs, cb_rad)
         is_coupled && cb_coupling !== nothing  && push!(_cbs, cb_coupling)

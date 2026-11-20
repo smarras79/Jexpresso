@@ -1235,6 +1235,17 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #                      slots keep the max over all equations. For low-β plasmas, where one
     #                      coefficient makes the field as resistive as an acoustic front makes the gas
     #                      viscous (SGS.jl, linduction; problems/MHD/fluxEmergenceLeake2010). Default false.
+    #   :dsgs_stages       DSGS_MHD 2D: the Runge-Kutta stages at which the DynSGS block is evaluated,
+    #                      a list of stage numbers that starts with 1, e.g. (1, 5) (rhs.jl, _visc_lag).
+    #                      The sensor and the coefficient are computed at the first stage of the step
+    #                      only; the operators are applied at the listed stages with that coefficient;
+    #                      at the other stages the right-hand side of the last listed stage is held
+    #                      (the work term of the :dsgs_thermal_energy slot is still taken at each). The
+    #                      block is two thirds of a DynSGS-MHD stage. The deck must then halve :dsgs_CR
+    #                      with the "legacy" sensor (it reads twice its stage mean at the first stage)
+    #                      and keep :dsgs_stab_cap below the stable viscous number of the list, with
+    #                      CarpenterKennedy2N54 on degree-4 elements: 0.6 for (1, 5), 0.18 for (1,)
+    #                      (0.42 with every stage). CPU, time loop without AMR. Default: every stage.
     #   :dsgs_stab_cap     DSGS_MHD 2D, element form: the coefficient never above stab·Δx²/Δt, Δx the
     #                      smallest LGL gap of the element (0, the default: no cap). The first-order
     #                      cap C_max Δ (|v| + c_f) follows the fast speed, and an explicit step

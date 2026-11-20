@@ -1045,9 +1045,21 @@ function _build_rhs!(RHS, u, params, time)
     # broadcast npoin×neqs into the 1×1 dummies and die with
     # DimensionMismatch on the first RHS call. Keep this condition in step
     # with the allocation condition in params_setup.jl.
+    lag   = nothing     # :dsgs_stages (_visc_lag below), whether its step clock covers this call,
+    lagc  = false       # and whether this is a stage of the list after the first
+    lagre = false
     if params.inputs[:lvisc] == true &&
         (params.VT == DSGS_MHD() || params.VT == DSGS() || params.VT == DSGS_SW())
-        if time - params.dsgs_thist[] >= 0.999*params.Δt
+        lag  = _visc_lag(params)
+        lagc = lag !== nothing && _visc_lag_clock(lag, time, params.Δt)::Bool
+        (lag !== nothing && !lagc) && _visc_lag_lost(lag, time, params.Δt)
+        # A new step: `time` has moved a full Δt past the last rotation or, with :dsgs_stages, sits
+        # on the step start that the time loop's callback stamped. The first is one stage of every
+        # step: the first stage until a step is shortened to land on an output time, some other
+        # stage after it. The second is the first stage always, which a coefficient computed once
+        # per step needs.
+        if (lagc ? _visc_lag_newstep(lag, time, params.dsgs_thist[], params.Δt)::Bool :
+                   time - params.dsgs_thist[] >= 0.999*params.Δt)
             # BDF-k, k > 2 (:dsgs_bdf_order): qⁿ⁻³ … qⁿ⁻ᵏ first, oldest out
             qh = params.dsgs_qhist
             for j = length(qh):-1:2
@@ -1111,12 +1123,21 @@ function _build_rhs!(RHS, u, params, time)
         # three values are step-level states and the residual is the BDF2
         # truncation error, O(Δt²) — O(Δtᵏ) with :dsgs_bdf_order = k.
         _DSGS_FROZEN[] = frozen
+        # :dsgs_stages: count the stage; at a listed stage after the first the operators are applied
+        # again with the coefficient of the step (frozen), and the sensor is not evaluated
+        lagre = lagc && _visc_lag_stage!(lag, time, params.dsgs_thist[], params.Δt)::Bool
+        lagre && (_DSGS_FROZEN[] = true)
+        _DSGS_HELD[] = lagre
     end
 
     #-----------------------------------------------------------------------------------
     # Viscous rhs:
     #-----------------------------------------------------------------------------------
-    if (params.inputs[:lvisc] == true)
+    if (params.inputs[:lvisc] == true) && lagc && !lagre && _visc_lag_held(lag, time, params.dsgs_thist[], params.Δt)::Bool
+        # :dsgs_stages, a stage that is not listed: the viscous right-hand side of the last listed
+        # stage, with the energy slot's work term taken again on this stage's state
+        @timeit_debug JEXPRESSO_TIMER "visc_held" _visc_lag_apply!(params.RHS, lag, params.uaux, Int(npoin), Int(neqs))
+    elseif (params.inputs[:lvisc] == true)
 
         @timeit_debug JEXPRESSO_TIMER "resetRHS_visc" resetRHSToZero_viscous!(params, SD)
         
@@ -1134,6 +1155,8 @@ function _build_rhs!(RHS, u, params, time)
         
         @timeit_debug JEXPRESSO_TIMER "DSS_rhs_visc" DSS_rhs!(params.RHS_visc, params.rhs_diff_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
         params.RHS[:,:] .= @view(params.RHS[:,:]) .+ @view(params.RHS_visc[:,:])
+        lagc && _visc_lag_store!(lag, params.RHS_visc, params.uaux, Int(npoin), params.dsgs_thist[],
+                                 params.VT == DSGS_MHD() && dsgs_thermal_energy[])
     end
     @timeit_debug JEXPRESSO_TIMER "BC_neumann" apply_boundary_conditions_neumann!(u, params.uaux, time, params.qp.qe,
                                        params.mesh.coords,
@@ -1174,6 +1197,150 @@ function _build_rhs!(RHS, u, params, time)
     end
 end
 # end
+
+# ================================================================================
+# :dsgs_stages — the RK stages at which the DynSGS block is evaluated.
+#
+# By default the viscous right-hand side of a DynSGS model (sensor, coefficient, diffusion
+# operator, curl-form resistivity, energy slot) is computed at every stage. It is two thirds of a
+# stage of a DynSGS-MHD run (problems/MHD/fluxEmergenceLeake2010, REF 4: 229 of 344 ms).
+# :dsgs_stages => (1, 5), a list of stage numbers that starts with 1, computes
+#   *  the sensor and the coefficient at the first stage of the step only, at tⁿ;
+#   *  the operators at the listed stages, on the stage's state, with that coefficient;
+#   *  nothing at the other stages: the right-hand side of the last listed stage is held.
+# The DynSGS is a regularization: first-order accuracy in time of ITS term costs nothing that its
+# coefficient does not already cost.
+#
+# What is held is the rank-local assembled RHS_visc, added to RHS before the global assembly as
+# it always was. The energy slot of the energy-consistent DynSGS-MHD (:dsgs_thermal_energy,
+# SGS.jl) is the exception. Of its three parts — the diffusion of the internal energy, the heat Q
+# and the work
+#     W = u·R_ρu − ½|u|²R_ρ + B·R_B + ψR_ψ
+# that the other slots' terms do on the kinetic, magnetic and ψ energies — the first two are held
+# and W is taken again at every stage from the held rates R and the stage's own u, B, ψ. W is a
+# nodal product (u, B, ψ are nodal), so this costs a loop over the nodes and is exact: at every
+# stage the pressure sees nothing of the momentum and field diffusion, as it does when the block
+# is recomputed. With W held too it would see (u − uⁿ)·R, which is not small against p at low β.
+#
+# Stability (linear, degree-4 elements in 2D, CarpenterKennedy2N54; the viscous number is
+# μΔt/Δx² on the smallest gap between two nodes). Every stage: 0.42 up to a fast CFL number of
+# 1.2, 0.2 at 1.4. (1,): the diffusion is integrated by forward Euler, 0.18 (0.15 at CFL 1, 0.13
+# at 1.4). (1, 5): the amplification factor of the diffusion is 1 + z + b₅c₅z², b₅c₅ = 0.147,
+# close to the two-stage Chebyshev polynomial 1 + z + z²/8, and stable on the real axis to
+# |z| = 6.8 where the scheme itself reaches 4.7: 0.6 at every fast CFL number up to 1.6. Of the
+# pairs, (1, 5) is the widest ((1, 2): 0.59 to CFL 0.5, 0.27 at 1; (1, 3): 0.37; (1, 4): 0.23).
+# :dsgs_stab_cap must be set below these numbers.
+#
+# The sensor. The "legacy" sensor reads |R| = 1.5(1 − cᵢ)|∂ₜq| at stage i: 1.5|∂ₜq| at the first
+# stage, Σbᵢ·1.5(1 − cᵢ) = 0.75|∂ₜq| in the stage mean of any scheme of order ≥ 2 (Σbᵢcᵢ = ½).
+# The same coefficient needs :dsgs_CR halved (the "residual" sensor, a residual at tⁿ, does not).
+#
+# The step clock. "The first stage of a step" cannot be read off `time` alone: the time loop
+# shortens a step to land on an output time, and the grid of the steps after it is shifted. The
+# time loop therefore stamps every step start (_visc_lag_step!, a callback added when the option
+# is on), and the DynSGS history is rotated there too. Where no stamp covers `time` — the
+# precompile warm-up, which runs without callbacks — the block is computed at every stage.
+# ================================================================================
+mutable struct ViscLag{TT}
+    owner::Any            # the params.RHS_visc it belongs to
+    R::Matrix{TT}         # the held right-hand side (energy slot without the work term)
+    stages::Vector{Int}   # :dsgs_stages
+    k::Int                # the stage of the step in progress
+    tstep::Float64        # start of the step in progress, stamped by the time loop (NaN: none)
+    theld::Float64        # start of the step R belongs to (NaN: none)
+    lwork::Bool           # the energy slot's work term is taken at every stage
+end
+const _VISC_LAG = Ref{Any}(nothing)
+
+function _visc_lag(params)
+    st = get(params.inputs, :dsgs_stages, nothing)
+    st === nothing && return nothing
+    c = _VISC_LAG[]
+    (c !== nothing && c.owner === params.RHS_visc) && return c
+    (params.VT == DSGS_MHD() && params.SD == NSD_2D()) ||
+        error(" :dsgs_stages is implemented for the 2D DSGS_MHD model only.")
+    params.RHS_visc isa Matrix ||
+        error(" :dsgs_stages is implemented for the CPU backend only.")
+    get(params.inputs, :ladapt, false) == true &&
+        error(" :dsgs_stages is not implemented with mesh adaptation (:ladapt).")
+    stages = try collect(Int, st) catch; Int[] end
+    (!isempty(stages) && stages[1] == 1 && all(diff(stages) .> 0)) ||
+        error(" :dsgs_stages must be a list of increasing stage numbers that starts with 1, e.g. (1, 5) (got ", st, ").")
+    c = ViscLag(params.RHS_visc, zeros(eltype(params.RHS_visc), size(params.RHS_visc)), stages, 0, NaN, NaN, false)
+    _VISC_LAG[] = c
+    return c
+end
+
+# The time loop's callback (TimeIntegrators.jl): a step starts at t.
+function _visc_lag_step!(params, t)
+    get(params.inputs, :lvisc, false) == true || return nothing
+    c = _visc_lag(params)
+    c === nothing || (c.tstep = Float64(t))
+    return nothing
+end
+
+# `time` is a stage of the step that was stamped (c_i ∈ [0, 1], and a step is never longer than Δt)
+_visc_lag_clock(c::ViscLag, time, Δt) = (time - c.tstep >= -1.0e-9*Δt) && (time - c.tstep <= 1.0001*Δt)
+# ... its first stage, with the DynSGS history not yet rotated there
+_visc_lag_newstep(c::ViscLag, time, thist, Δt) = (time - c.tstep <= 1.0e-9*Δt) && abs(time - thist) > 1.0e-9*Δt
+# ... a later stage, with a right-hand side of this step in store
+_visc_lag_held(c::ViscLag, time, thist, Δt) = (time - c.tstep > 1.0e-9*Δt) && c.theld == thist
+
+# A call past the stamped step (not before it: a new solve starts there), after the time loop has
+# begun to stamp: the block is computed at every stage, with the coefficient of the stage list.
+# Said once.
+const _VISC_LAG_WARNED = Ref{Bool}(false)
+function _visc_lag_lost(c::ViscLag, time, Δt)
+    (isnan(c.tstep) || time - c.tstep <= 1.0001*Δt || _VISC_LAG_WARNED[]) && return nothing
+    _VISC_LAG_WARNED[] = true
+    MPI.Comm_rank(MPI.COMM_WORLD) == 0 &&
+        @warn " :dsgs_stages: right-hand side called at t = $(time), outside the step the time loop stamped (from t = $(c.tstep)); the DynSGS block is computed at every stage there."
+    return nothing
+end
+
+# Count the stage (one right-hand side call per stage); true at a listed stage after the first.
+function _visc_lag_stage!(c::ViscLag, time, thist, Δt)
+    if time - c.tstep <= 1.0e-9*Δt
+        c.k = 1
+        return false
+    end
+    c.k += 1
+    return c.theld == thist && (c.k in c.stages)
+end
+
+@inline function _visc_lag_work(R::AbstractMatrix{TT}, q::AbstractMatrix, ip::Int) where {TT}
+    ρ = q[ip,1]; u = q[ip,2]/ρ; v = q[ip,3]/ρ; w = q[ip,5]/ρ
+    return u*R[ip,2] + v*R[ip,3] + w*R[ip,5] - TT(0.5)*(u*u + v*v + w*w)*R[ip,1] +
+           q[ip,6]*R[ip,6] + q[ip,7]*R[ip,7] + q[ip,8]*R[ip,8] + q[ip,9]*R[ip,9]
+end
+
+function _visc_lag_store!(c::ViscLag{TT}, RHS_visc::AbstractMatrix, q::AbstractMatrix, npoin::Int, thist, lwork::Bool) where {TT}
+    R = c.R
+    copyto!(R, RHS_visc)
+    c.lwork = lwork && size(R, 2) >= 9
+    if c.lwork
+        @inbounds for ip = 1:npoin
+            R[ip,4] -= _visc_lag_work(R, q, ip)      # the energy slot without the work term
+        end
+    end
+    c.theld = Float64(thist)
+    return nothing
+end
+
+function _visc_lag_apply!(RHS::AbstractMatrix, c::ViscLag{TT}, q::AbstractMatrix, npoin::Int, neqs::Int) where {TT}
+    R = c.R
+    @inbounds for ieq = 1:neqs
+        @simd for ip = 1:npoin
+            RHS[ip,ieq] += R[ip,ieq]
+        end
+    end
+    if c.lwork
+        @inbounds for ip = 1:npoin
+            RHS[ip,4] += _visc_lag_work(R, q, ip)    # ... and the work of the held rates on this stage's state
+        end
+    end
+    return nothing
+end
 
 function inviscid_rhs_el!(u, params,
                           connijk::Array{Int64,4},
@@ -1682,8 +1849,13 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
             error(" :dsgs_thermal_energy needs the conserved element form of DSGS_MHD (:dsgs_conserved => true, ",
                   ":ldsgs_nodal => false) without the split energy flux (:dsgs_nazarov_energy => false).")
         dsgs_qA, dsgs_qB, dsgs_wt = _dsgs_stencil(params, TT)
+        # :dsgs_stages, a listed stage after the first (rhs!): the coefficient of the step is kept
+        # (the kernel returns at once, _DSGS_FROZEN), so its sensor is not evaluated, and the
+        # explicit ν, η are the step's, which that coefficient contains
+        lheld = _DSGS_HELD[]
         # (the sections below are timed with JEXPRESSO_ALLOC_SUMMARY=1, under viscous_rhs_el)
-        dsgs_rhs = @timeit_debug JEXPRESSO_TIMER "dsgs: residual rhs" _dsgs_residual_rhs!(u, params, SD)
+        dsgs_rhs = lheld ? params.dsgs_rhs_res :
+                   @timeit_debug JEXPRESSO_TIMER "dsgs: residual rhs" _dsgs_residual_rhs!(u, params, SD)
         νphys2d = nothing; ηphys2d = nothing     # the explicit ν, η of the element form (below)
         if lnodal_mhd2d
             # Nodal (Dao & Nazarov) form: ν at every node (SGS.jl); the
@@ -1711,7 +1883,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                           lnazarov_energy = get(params.inputs, :dsgs_nazarov_energy, false) ||
                                                             get(params.inputs, :dsgs_conserved_prandtl, false))
         else
-            νphys2d, ηphys2d = @timeit_debug JEXPRESSO_TIMER "dsgs: explicit nu, eta" _mhd_dissipation_2d(params, TT)
+            νphys2d, ηphys2d = @timeit_debug JEXPRESSO_TIMER "dsgs: explicit nu, eta" _mhd_dissipation_2d(params, TT; held = lheld)
             @timeit_debug JEXPRESSO_TIMER "dsgs: coefficient" compute_dsgs_viscosity!(params.μ_dsgs, DSGS_MHD(), SD,
                                     params.uaux, dsgs_qA, dsgs_qB,
                                     dsgs_rhs, params.ω, params.metrics.Je, params.visc_coeff,
@@ -2522,13 +2694,16 @@ end
 # re-evaluated at every call. (nothing, nothing) when the deck sets neither.
 const _MHD_DISS2D_CACHE = Ref{Any}(nothing)
 const _MHD_ANOM_REPORTED = Ref{Bool}(false)
-function _mhd_dissipation_2d(params, ::Type{TT}) where {TT}
+function _mhd_dissipation_2d(params, ::Type{TT}; held::Bool=false) where {TT}
     f  = get(params.inputs, :mhd_dissipation, nothing)
     an = get(params.inputs, :mhd_anomalous_eta, nothing)
     f === nothing && an === nothing && return nothing, nothing
     nelem = Int(params.mesh.nelem)
     ngl   = Int(params.mesh.ngl)
     c = _MHD_DISS2D_CACHE[]
+    # held (:dsgs_stages, a listed stage after the first): what the last call returned
+    (held && c !== nothing && c[1] === params.mesh && length(c[2]) == nelem) &&
+        return c[2], (an === nothing ? c[3] : c[4])
     if c === nothing || c[1] !== params.mesh || length(c[2]) != nelem
         νe = zeros(TT, nelem); ηe = zeros(TT, nelem)
         f === nothing || _mhd_fill_dissipation_2d!(νe, ηe, f, params.mesh.connijk, params.mesh.coords, nelem, ngl)

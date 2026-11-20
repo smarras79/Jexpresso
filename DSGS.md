@@ -465,6 +465,20 @@ end
 stage of every step, where `uaux` is $q^n$. The three buffers are initialized
 to the initial state in `params_setup.jl`.
 
+That holds while the steps sit on the grid $t^0 + n\Delta t$. The time loop
+shortens a step to land on an output time (its `tstops`) and the steps after it
+start from there, so the gate, which waits for a full $\Delta t$, then fires at
+another stage of every step: the first one a full $\Delta t$ after its last
+firing. The history holds the states of that stage, one $\Delta t$ apart, and
+the sensors still difference over $\Delta t$. What changes is the phase $\tau$
+of the stages against the history, and with it the legacy sensor's stage
+factors $1.5(1 - \tau/\Delta t)$ (§1.2): their mean over the stages of
+`CarpenterKennedy2N54`, weighted with the $b_i$, is 0.75 in phase and 0.78,
+0.92, 0.97 or 1.11 with the history taken at stage 3, 5, 2 or 4; the
+coefficient left in the output is the last stage's, 0.06 to 1.5 times
+$\lvert\partial_t q\rvert$. `:dsgs_stages` (below) does not rely on the gate: the
+time loop stamps the start of every step.
+
 **The first two steps.** With the history seeded from the initial condition the
 BDF2 returns $0$ on the first step and $1.5\,\partial_t q$ on the second: it is
 not a time derivative yet. A zero time term does **not** make the residual zero
@@ -527,6 +541,28 @@ larger in $L^1$ (0.8% in $L^2$), with a pressure dip of 0.8% of the ambient valu
 ahead of the shock that the per-stage run does not have. The
 legacy sensor below must not be frozen (its stencil reads $-\tfrac12\partial_t q$ at
 $\tau = 0$), and an explicit request for it is ignored.
+
+**Selected stages: `:dsgs_stages`** (2D `DSGS_MHD`; `rhs.jl`, `_visc_lag`). The
+DynSGS block is two thirds of a stage of a DynSGS-MHD run, and it is computed
+at every stage. `:dsgs_stages => (1, 5)` computes the sensor and the coefficient
+at the first stage of the step only, applies the operators at the listed stages
+with that coefficient, and holds the assembled viscous right-hand side of the
+last listed stage at the others; the work term of the `:dsgs_thermal_energy`
+slot (`SGS.jl`, `_dsgs_energy_consistent_2d!`) is a nodal product of the held
+rates and is taken again at every stage, so the pressure still sees nothing of
+the momentum and field diffusion.
+The DynSGS term is then first order in time, which a regularization can
+afford. Two things follow. The legacy sensor is read where it is largest,
+$1.5\lvert\partial_t q\rvert$ against a stage mean of 0.75: the same coefficient
+needs `:dsgs_CR` halved. And the diffusion is integrated by another scheme
+than the rest: by forward Euler with `(1,)`, stable on degree-4 elements in 2D
+to a viscous number $\mu\Delta t/\Delta x_{min}^2$ of 0.18 (the five-stage
+scheme: 0.42); with `(1, 5)` by $1 + z + b_5c_5z^2$, $b_5c_5 = 0.147$, close to
+the two-stage Chebyshev polynomial $1 + z + z^2/8$ and stable to 0.6 at every
+fast CFL number up to 1.6. `:dsgs_stab_cap` must stay below these. The step
+clock is a callback of the time loop, not the gate above. Measured in
+`problems/MHD/fluxEmergenceLeake2010/README.md`, *The DynSGS at two stages of
+the five*.
 
 **The order of the time difference: `:dsgs_bdf_order`.** `:dsgs_bdf_order => k`
 (1 to 6, default 2) takes $\partial_t q$ at $\tau = 0$ with the backward-difference

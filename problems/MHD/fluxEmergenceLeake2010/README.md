@@ -87,6 +87,8 @@ editing the deck:
 | `JEXPRESSO_LK10_ETA` | `induction` (default), `all` | DynSGS resistivity from the induction residuals alone, or from the max over all residuals (one coefficient, the parent case) (DynSGS in the corona, below) |
 | `JEXPRESSO_LK10_ENERGY` | `thermal` (default), `total` | energy-consistent DynSGS (Positivity, below), or $E$ diffused as a whole (the parent case) |
 | `JEXPRESSO_LK10_STABCAP` | default 0.2; 0: none | the DynSGS coefficient never above this viscous number $\mu\Delta t/\Delta x^2$, which the explicit step still integrates (Meshes, time step and cost) |
+| `JEXPRESSO_LK10_DSGS_STAGES` | `all` (default), `1,5`, `1` | the stages of the Runge–Kutta scheme at which the DynSGS terms are evaluated: all five; the first and the last, held in between; or the first alone (the default of `JEXPRESSO_LK10_STABCAP` is then 0.08). The coefficient is that of the first stage, with half the $C_R$ (Meshes, time step and cost: The DynSGS at two stages of the five) |
+| `JEXPRESSO_LK10_CR` | default 1 | the DynSGS constant $C_R$ |
 | `JEXPRESSO_LK10_ETACAP` | `fast` (default), `flow` | DynSGS resistivity capped at $C_{max}\Delta(\lvert v\rvert + c_f)$ like the viscosity, or at $C_{max}\Delta\lvert v\rvert$ (Verification, the REF 4 run) |
 | `JEXPRESSO_LK10_ETAFAC` | default 1 | factor on the DynSGS resistivity (the `:μ` multipliers of the B slots), a sensitivity test |
 | `JEXPRESSO_LK10_RHOFAC` | default 1 | factor on the DynSGS mass diffusion (the `:μ` multiplier of the ρ slot), a sensitivity test |
@@ -516,6 +518,117 @@ snapshot); the same 128 ranks on two nodes the second, if the node's memory
 bandwidth is what the 2.5 is; and the DynSGS block, two thirds of a stage and
 evaluated at each of the five, the third.
 
+**The DynSGS at two stages of the five** (`JEXPRESSO_LK10_DSGS_STAGES`;
+`:dsgs_stages`, `src/kernel/operators/rhs.jl`). With
+`JEXPRESSO_LK10_DSGS_STAGES=1,5` the sensor and the coefficient are computed at
+the first stage of the step only; the operators (diffusion, curl-form
+resistivity, energy slot) are applied at the first and at the last stage, with
+that coefficient; over stages 2–4 the assembled right-hand side of the first
+stage is held. `=1` holds it over the whole step. The DynSGS term is then
+first order in time, which a regularization can afford; everything else is
+integrated as before. Four things make it the same model:
+
+- *The work term, at every stage.* Of the three parts of the energy slot
+  (Positivity) — the diffusion of the internal energy, the heat, and the work
+  $W = \mathbf u\cdot R_{\rho\mathbf u} - \tfrac12\lvert\mathbf u\rvert^2R_\rho + \mathbf B\cdot R_{\mathbf B} + \psi R_\psi$
+  that the other slots' terms $R$ do on the kinetic, magnetic and $\psi$
+  energies — the first two are held and $W$ is taken again at every stage from
+  the held $R$ and the stage's own $\mathbf u$, $\mathbf B$, $\psi$. It is a
+  product of nodal values, so this is exact and costs one loop over the nodes,
+  and the pressure sees nothing of the momentum and field diffusion at any
+  stage, as before. Held, it would see $(\mathbf u - \mathbf u^n)\cdot R$,
+  which is not small against $p$ at $\beta = 10^{-3}$.
+- *The coefficient.* The legacy sensor at stage $i$ reads
+  $1.5\,(1 - c_i)\lvert\partial_tq\rvert$: 1.5 at the first stage, 0.75 in the mean
+  over the five (weights $b_i$). $C_R$ is halved (`:dsgs_CR` is 0.5
+  `JEXPRESSO_LK10_CR`).
+- *The stability cap.* The diffusion is no longer integrated by the scheme
+  itself, and what the step takes changes (linear analysis on degree-4 elements
+  in 2D; viscous number $\mu\Delta t/\Delta x_{min}^2$):
+
+  | DynSGS at stages | fast CFL $\le$ 1.2 | 1.4 | 1.6 | `JEXPRESSO_LK10_STABCAP` |
+  |---|---|---|---|---|
+  | all five | 0.42 | 0.27 | 0.1 | 0.2 |
+  | 1 and 5 | 0.6 | 0.6 | 0.6 | 0.2 |
+  | 1 | 0.18 to 0.14 | 0.13 | – | 0.08 |
+
+  With stage 1 alone the diffusion is a forward-Euler step, hence the smaller
+  cap. With stages 1 and 5 its amplification factor is $1 + z + b_5c_5z^2$,
+  $b_5c_5 = 0.147$, close to the two-stage Chebyshev polynomial
+  $1 + z + z^2/8$: stable on the real axis to $\lvert z\rvert = 6.8$, where the
+  five-stage scheme reaches 4.7. Of the pairs it is the widest (stages 1 and 3:
+  0.37; 1 and 4: 0.23).
+- *The step clock.* The first stage of a step cannot be told from the stage
+  times, because a step is shortened to land on every output time and the steps
+  after it start from there. The time loop stamps each step start (a callback,
+  added only with this option). The five-stage run has no such stamp: after a
+  shortened step its DynSGS history is taken at another stage of every step,
+  and its sensor's mean over the stages is 0.78 to 1.11
+  $\lvert\partial_tq\rvert$ instead of 0.75, a coefficient up to 1.5 times larger
+  until the next output time (DSGS.md §4.4; 1.14 times in the mean over the
+  cluster run of Verification from 1508 s, 1.20 from 920 s).
+  `JEXPRESSO_LK10_CR=1.15` gives a stage-list run that mean.
+
+Measured here:
+
+- *Cost* (REF 4, 4 ranks, 74 steps, `JEXPRESSO_ALLOC_SUMMARY=1`). A stage takes
+  351 ms with the DynSGS at every stage (233 ms of it the block), 181 ms on
+  average with stages 1 and 5, 164 ms with stage 1 alone: the step costs 0.52
+  and 0.47 of the five-stage one, 1.94 and 2.14 times faster. With stages 1
+  and 5 the block is computed 150 times instead of 372, 76 of them with the
+  sensor (one a step, and one where each solve begins), and the held
+  right-hand side with its work term is added 222 times at 3.2 ms; with stage
+  1, 76 and 296. The counts are the check of the step clock: the 74 steps
+  include one shortened to an output time and the ones after it.
+- *The same solution.* The kick test of "Positivity" (REF 1, 2 ranks, floors
+  off) with a time step that is exact in binary, $3/8192\,t_0$, and a snapshot
+  every 128 steps, so that no step is shortened and the five-stage run takes
+  its history at the first stage throughout. At 10.9 s, five stages / stages 1
+  and 5: flows of 14.25 / 14.44 km/s (32 at the start), smallest pressure 0.653
+  / 0.646 of the initial one, smallest density 0.918 / 0.916; pointwise the
+  velocity differs by 0.064 km/s rms over the disturbed region (0.5 km/s at
+  most), the pressure by 0.17 % rms (5 % at most), the field by 0.02 % rms.
+  Stage 1 alone is stages 1 and 5 to four digits (0.0013 km/s rms): at these
+  viscous numbers how the diffusion is integrated does not matter, and what
+  separates the stage list from the five stages is the coefficient. It is a
+  little smaller: at its later stages the five-stage sensor also reads the
+  tendency of its own viscous term, which the $1.5\,(1 - c_i)$ of the
+  calibration leaves out (its last-stage coefficient is 0.11 of the
+  first-stage one in this test, not 0.04). For scale: the same five-stage run
+  with the default snapshot times instead, which shorten ten of its steps and
+  move its history from stage to stage (a mean sensor of 0.98 instead of
+  0.75), ends with flows of 14.07 km/s and differs from the first by 0.061 km/s rms
+  (0.43 at most; pressure 0.11 % rms, 1.7 % at most). The stage list changes
+  the solution as much as the choice of the output times changes the
+  five-stage one, in the other direction.
+- *Stability.* The kick test at five times the time step (fast CFL number
+  1.13) with the coefficient driven to its caps ($C_R\times1000$), to 2 $t_0$:
+  five stages with the cap at 0.2 and at 0.5, stages 1 and 5 at 0.2 and 0.5,
+  stage 1 at 0.08 and 0.2 all complete, with flows decaying from 32 km/s to
+  1.2–1.3 km/s and a smallest pressure of 0.95 of the initial one (2.2 km/s
+  and 0.91 with the cap at 0.08, which is what holds the coefficient in this
+  test), $\psi$ at round-off. None fails, those beyond their linear limit
+  included (five stages at 0.5, stage 1 at 0.2): the defaults are set from the
+  linear analysis, not from these runs.
+- *The default is untouched.* Without the switch the kick test is bit for bit
+  that of the source before the change (every field of its eleven snapshots,
+  the DynSGS coefficients and `conservation.dat` included).
+- *Restart.* A five-stage run of the default problem (REF 1) continued from
+  its 3 s snapshot with `JEXPRESSO_LK10_DSGS_STAGES=1,5`: the log says
+  `numerical switches changed: dsgs_stages: all there, 1,5 here` and the run
+  goes on.
+
+Not run here: the emergence itself on REF 4 with the stage list. The check
+that costs least on a cluster is a restart of a completed run over its hardest
+stretch, 1610 s to 1955 s (the dome drains, the fast CFL number is at its
+largest, the stability cap acts), against the snapshot it already has:
+
+```bash
+JEXPRESSO_LK10_RESTART_DIR=$RUN JEXPRESSO_LK10_RESTART_TIME=1610 JEXPRESSO_LK10_TEND=1955 JEXPRESSO_LK10_DSGS_STAGES=1,5 mpiexec -n <ranks> julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2010
+```
+
+(with the mesh, the rank count and the `JEXPRESSO_LK10_DT` of that run).
+
 **Subnormal numbers** are flushed to zero on every rank
 (`set_zero_subnormals(true)` in `initialize.jl`; `JEXPRESSO_LK10_SUBNORMALS=keep`
 for IEEE underflow). $\rho\mathbf u$, $\rho w$, $B_z$ and $\psi$ are zero in the
@@ -557,8 +670,11 @@ stops at once ("nothing to continue"), so a spare job in the chain is harmless.
   rank count to `lk10_case.txt` in its output directory, and a restart from a
   run with another record stops with the list of differences. The time step
   (`JEXPRESSO_LK10_DT`), the end time, the snapshot interval and the numerical
-  switches `JEXPRESSO_LK10_FLOORS`, `_CMIN` and `_CURLB` may change (the log
-  says which did): that is how a run continues past a failure (below).
+  switches may change (`JEXPRESSO_LK10_FLOORS`, `_CMIN`, `_CURLB` and those of
+  the DynSGS: `_ETA`, `_ETACAP`, `_ETAFAC`, `_RHOFAC`, `_HEAT`, `_STABCAP`,
+  `_SENSOR`, `_ENERGY`, `_DSGS_STAGES`, `_CR`; the log says which did): that is
+  how a run continues past a failure (below), or with another setting from the
+  snapshot where it starts to matter.
 - **Which run.** `JEXPRESSO_LK10_RESTART_DIR` is the output directory
   (`output/MHD/fluxEmergenceLeake2010/output-<date>`), or `latest`: the most
   recently written run with the same record under
@@ -655,6 +771,29 @@ group of equations with the same coefficient, named after them:
 | `mu_dsgs_ρu_ρv_ρw` | momentum | $\mu$ plus the paper's explicit viscosity (0.013 above the photosphere) | `momentum` (default; `mu`) |
 | `mu_dsgs_Bx_By_Bz` | induction | its own coefficient $\eta$, from the induction residuals alone (`JEXPRESSO_LK10_ETA=induction`), plus the anomalous resistivity where it is active | `induction` (`eta`) |
 | `mu_dsgs_ρ_ρE_ψ` | mass, energy, $\psi$ | $\mu$ itself | `energy` (`rho`) |
+
+**Which stage.** A snapshot holds the coefficient of the last evaluation
+before it. With the DynSGS at every stage (the default) that is the last stage
+of the last step, and the legacy sensor is not the same at every stage: to
+leading order it reads $1.5\,(1 - \tau/\Delta t)\,\lvert\partial_tq\rvert$, with
+$\tau$ the time since the DynSGS history was last taken, anything up to a step
+(DSGS.md §4.4). The mean over the stages, which is what acts, is 0.75 to 1.11
+$\lvert\partial_tq\rvert$ depending on where in the step the history is taken, and
+that changes at every snapshot, because the step before a snapshot is
+shortened to land on it. The factor of the value written is anywhere between
+0 and 1.5: for a run with $\Delta t = 1.5\times10^{-4}$ continued from 1508 s
+the gate's logic gives 0.69 at 1610 s, 0.76 at 1955 s, 1.39 at 2185 s and 0.02
+at 2530 s, against acting means of 0.75, 0.92, 0.75 and 0.92. Maps of the
+coefficient at different times of such a run are therefore not on one scale:
+the one at 2185 s is 1.8 times too high, the one at 2530 s several times too
+low (not forty: where the factor is small the sensor reads what is left, the
+tendency of its own viscous term; in the kick test of "Positivity" a factor of
+0.06 against a mean of 0.75 left the snapshot's coefficient four to five
+times below the acting one, and one of 1.05 against 0.92, 1.14 times above it,
+as predicted). Values on a cap, the explicit viscosity and the anomalous
+resistivity are not affected. With `JEXPRESSO_LK10_DSGS_STAGES=1,5` or `1`
+(Meshes, time step and cost) the snapshot holds the coefficient of the step,
+the one that acts, at every time.
 
 (With `JEXPRESSO_LK10_ETA=all` the induction equations share $\mu$ and the last
 two are one field, `mu_dsgs_ρ_ρE_Bx_By_Bz_ψ`.) All are kinematic, in code units
@@ -940,4 +1079,7 @@ are unchanged):
 - `:dsgs_curl_resistivity`: `_dsgs_curl_resistive_2d!` (`SGS.jl`), called from
   `viscous_rhs_el!(…, ::NSD_2D)`, replaces the Laplacian of $B_x$, $B_y$ by
   the strong-form curl of the nodal $\eta j_z$ (section "Divergence of B").
+- `:dsgs_stages`: the DynSGS block at selected stages of the Runge–Kutta
+  scheme (`rhs.jl`, `_visc_lag`; the step-start callback in
+  `TimeIntegrators.jl`; section "Meshes, time step and cost").
 - The keys are documented in `src/io/mod_inputs.jl`.
