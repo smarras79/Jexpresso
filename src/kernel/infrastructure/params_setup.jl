@@ -251,6 +251,10 @@ function params_setup(sem,
     if sgs isa AbstractSGSModel
         sgs.lrichardson = get(inputs, :lrichardson, true)  # default true for SMAG/VREM
         sgs.ltheta_eqn  = !(haskey(inputs, :energy_equation) && inputs[:energy_equation] == "energy")
+        # Turbulent Prandtl (energy/θ, ieq 5) and Schmidt (other scalars) numbers of SMAG/VREM:
+        # scalar eddy diffusivity = μ_turb/(ρ Pr_t) or μ_turb/(ρ Sc_t). Default PhysConst values (0.7).
+        haskey(inputs, :Pr_t) && (sgs.Pr_t = TFloat(inputs[:Pr_t]))
+        haskey(inputs, :Sc_t) && (sgs.Sc_t = TFloat(inputs[:Sc_t]))
     end
     sgs_stress = zeros(TFloat, Int64(sem.mesh.npoin), 12)
     

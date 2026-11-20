@@ -2055,7 +2055,14 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                 Cmin = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_Cmin, 0.0)),
                                 cutoff = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_cutoff, 0.0)),
                                 ltheta = (params.inputs[:energy_equation] == "theta"),
-                                lglobal_norms = params.dsgs_global_norms)
+                                lglobal_norms = params.dsgs_global_norms,
+                                lpert  = (params.SOL_VARS_TYPE == PERT()),
+                                lmoist = params.inputs[:lmoist]::Bool,
+                                coords = params.mesh.coords,
+                                Pr_t   = TT(get(params.inputs, :Pr_t, PHYS_CONST.Pr_t)),
+                                Sc_t   = TT(get(params.inputs, :Sc_t, PHYS_CONST.Sc_t)),
+                                avg    = params.dsgs_avg,
+                                den    = params.dsgs_denom)
 
         broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
                                  params.mesh.connijk,
@@ -2074,7 +2081,9 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                  params.mesh.coords, params.mesh.poin_in_bdy_face,
                                  params.mesh.elem_to_face, params.mesh.bdy_face_type,
                                  Int64(params.mesh.nelem), Int64(params.neqs),
-                                 connijk, params.QT, params.AD, params.SOL_VARS_TYPE)
+                                 connijk, params.QT, params.AD, params.SOL_VARS_TYPE;
+                                 lref_prim = (params.SOL_VARS_TYPE == TOTAL() &&
+                                              get(params.inputs, :dsgs_reference, false)::Bool))
         return
     end
 
@@ -2188,7 +2197,18 @@ function _viscous_rhs_el_3d_dsgs!(uaux, qe, uprimitive,
                                   coords, poin_in_bdy_face,
                                   elem_to_face, bdy_face_type,
                                   nelem, neqs,
-                                  connijk, QT, AD, SOL_VARS_TYPE)
+                                  connijk, QT, AD, SOL_VARS_TYPE;
+                                  lref_prim::Bool = false)
+
+    # lref_prim (TOTAL variables with :dsgs_reference): diffuse the DEPARTURE of the
+    # primitives from those of the reference state qe, as the PERT form does. Diffusing
+    # the full primitives acts on the curvature of the stratified background (hl, θ, qt
+    # of a hydrostatic column): a residual-based ν of O(10³-10⁴) m²/s while the flow
+    # spins up then heats/cools the column spuriously (measured on Lasher-Trapp, TOTAL
+    # moist: ∂ₜ(ρhl) ~ 500 W m⁻³ within three stages against 1.5 W m⁻³ of forcing, and a
+    # blow-up at 0.9 s, where PERT stays at ~55). The Smagorinsky ν is ~0 at rest, which
+    # is why TOTAL+SMAG does not see it.
+    prim_e = lref_prim ? zeros(eltype(uaux), size(uprimitive, 4)) : nothing
 
     for iel = 1:nelem
         for ieq = 1:neqs
@@ -2201,6 +2221,12 @@ function _viscous_rhs_el_3d_dsgs!(uaux, qe, uprimitive,
                              @view(qe[ip,:]),
                              @view(uprimitive[i,j,k,:]),
                              SOL_VARS_TYPE)
+            if lref_prim
+                user_primitives!(@view(qe[ip,:]), @view(qe[ip,:]), prim_e, SOL_VARS_TYPE)
+                for ieq = 2:neqs
+                    uprimitive[i,j,k,ieq] -= prim_e[ieq]
+                end
+            end
         end
 
         for ieq = 1:neqs
