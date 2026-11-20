@@ -57,11 +57,9 @@ function _build_rhs_laguerre!(RHS, u, params, time)
         
         params.RHS_lag[:,:] .= @view(params.RHS_lag[:,:]) .+ @view(params.RHS_visc_lag[:,:])
     end
-    DSS_global_RHS!(@view(params.RHS_lag[:,:]), params.g_dss_cache, params.neqs) 
-    for ieq=1:neqs
-        divide_by_mass_matrix!(@view(params.RHS_lag[:,ieq]), params.vaux, params.Minv, neqs, npoin, params.AD)
-    end
-    
+    # Locally assembled only: the caller (_build_rhs!) adds RHS_lag to the
+    # finite-element RHS before the global DSS, the boundary constraints and the
+    # mass division, which act on the sum.
 end
 
 function inviscid_rhs_el_laguerre!(u, params, connijk_lag, qe, x, y, lsource, SD::NSD_1D)

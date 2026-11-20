@@ -122,66 +122,77 @@ end
 
 end
 
-@kernel function apply_boundary_conditions_lag_gpu!(uaux,u,qe,x,y,t,connijk,qbdy,ngl,ngr,neq,npoin,nelem_semi_inf,lperiodic,lpert)
+#
+# Dirichlet conditions on the 2D semi-infinite layer (GPU). One work-group per
+# element, one thread per node (i_ngl, i_ngr).
+#   * far end (i_ngr == ngr): normal far_n[ie, i_ngl, :] (the column direction);
+#   * column sides: side_n[ie, s, :] is the outward normal of side s (i = 1 / ngl)
+#     when it continues a boundary of the finite domain, (0, 0) otherwise -- see
+#     laguerre_bc_normals_gpu / laguerre_side_columns_2D. Threads i_ngl = 1, 2
+#     handle sides 1, 2 of their column level i_ngr.
+#   * the corner node of a boundary side (side and far end) is handled by the
+#     side thread only, side condition first and then the far-end one on the
+#     updated state -- as the CPU paths compose them -- so no two threads race.
+#
+@kernel function apply_boundary_conditions_lag_gpu!(uaux,u,qe,x,y,t,connijk,qbdy,ngl,ngr,neq,npoin,side_n,far_n,lpert)
 
     ie = @index(Group, Linear)
     il = @index(Local, NTuple)
     i_ngl = il[1]
     i_ngr = il[2]
     T = eltype(uaux)
-    Ti = eltype(connijk)
+
     if (i_ngr == ngr)
-        ip = connijk[ie,i_ngl,ngr]
-        @inbounds qbdy[ie, i_ngl, i_ngr, 1:neq] .= T(1234567)
-        @inbounds qbdy[ie, i_ngl, i_ngr, 1:neq] .= user_bc_dirichlet_gpu(@view(uaux[ip,:]),@view(qe[ip,:]),x[ip],y[ip],t,T(0.0),T(1.0),@view(qbdy[ie, i_ngl, i_ngr, :]),lpert)
-        for ieq =1:neq
-            if !(qbdy[ie, i_ngl, i_ngr, ieq] == T(1234567)) && !(qbdy[ie, i_ngl, i_ngr, ieq] == uaux[ip,ieq])
-            # if use the commented line in CUDA, somehow get errors
-            # @inbounds KernelAbstractions.@atomic u[(ieq-1)*npoin+ip] = qbdy[iedge, ik, ieq] 
-                @inbounds u[(ieq-1)*npoin+ip] = qbdy[ie, i_ngl, i_ngr, ieq]
-            end
-        end
-    end
-    
-    if !(lperiodic)
-        if (ie == Ti(1))
-            ip = connijk[ie,1,i_ngr]
-            @inbounds qbdy[ie, i_ngl, i_ngr, 1:neq] .= T(1234567)
-            @inbounds qbdy[ie, i_ngl, i_ngr, 1:neq] .= user_bc_dirichlet_gpu(@view(uaux[ip,:]),@view(qe[ip,:]),x[ip],y[ip],t,T(-1.0),T(0.0),@view(qbdy[ie, i_ngl, i_ngr, :]),lpert)
-            for ieq =1:neq
-                if !(qbdy[ie, i_ngl, i_ngr, ieq] == T(1234567)) && !(qbdy[ie, i_ngl, i_ngr, ieq] == uaux[ip,ieq])
-                # if use the commented line in CUDA, somehow get errors
-                # @inbounds KernelAbstractions.@atomic u[(ieq-1)*npoin+ip] = qbdy[iedge, ik, ieq] 
-                    @inbounds u[(ieq-1)*npoin+ip] = qbdy[ie, i_ngl, i_ngr, ieq]
-                end
-            end
-        end
-
-        if (ie == nelem_semi_inf)
-            ip = connijk[ie,ngl,i_ngr]
-            @inbounds qbdy[ie, i_ngl, i_ngr, 1:neq] .= T(1234567)
-            @inbounds qbdy[ie, i_ngl, i_ngr, 1:neq] .= user_bc_dirichlet_gpu(@view(uaux[ip,:]),@view(qe[ip,:]),x[ip],y[ip],t,T(1.0),T(0.0),@view(qbdy[ie, i_ngl, i_ngr, :]),lpert)
-            for ieq =1:neq
-                if !(qbdy[ie, i_ngl, i_ngr, ieq] == T(1234567)) && !(qbdy[ie, i_ngl, i_ngr, ieq] == uaux[ip,ieq])
-                # if use the commented line in CUDA, somehow get errors
-                # @inbounds KernelAbstractions.@atomic u[(ieq-1)*npoin+ip] = qbdy[iedge, ik, ieq]
-                    @inbounds u[(ieq-1)*npoin+ip] = qbdy[ie, i_ngl, i_ngr, ieq]
-                end
-            end
+        # columns 1 and ngl belong to the side threads when that side is a boundary
+        s = (i_ngl == 1) ? 1 : ((i_ngl == ngl) ? 2 : 0)
+        if s == 0 || (side_n[ie,s,1] == T(0) && side_n[ie,s,2] == T(0))
+            ip = connijk[ie,i_ngl,ngr]
+            _lag_gpu_dirichlet_node!(uaux,u,qe,x,y,t,ip,@view(qbdy[ie, i_ngl, i_ngr, :]),
+                                     far_n[ie,i_ngl,1],far_n[ie,i_ngl,2],neq,npoin,lpert,false)
         end
     end
 
-
+    if (i_ngr > 1 && i_ngl <= 2)
+        nxs = side_n[ie,i_ngl,1]
+        nys = side_n[ie,i_ngl,2]
+        if !(nxs == T(0) && nys == T(0))
+            i  = (i_ngl == 1) ? 1 : ngl
+            ip = connijk[ie,i,i_ngr]
+            corner = (i_ngr == ngr)
+            _lag_gpu_dirichlet_node!(uaux,u,qe,x,y,t,ip,@view(qbdy[ie, i_ngl, i_ngr, :]),
+                                     nxs,nys,neq,npoin,lpert,corner)
+            if corner
+                _lag_gpu_dirichlet_node!(uaux,u,qe,x,y,t,ip,@view(qbdy[ie, i_ngl, i_ngr, :]),
+                                         far_n[ie,i,1],far_n[ie,i,2],neq,npoin,lpert,false)
+            end
+        end
+    end
 end
 
-@kernel function apply_boundary_conditions_lag_gpu_lin_solve!(RHS, A, connijk,ngl,ngr,npoin,nelem_semi_inf,lperiodic)
+# Impose user_bc_dirichlet_gpu at node ip (writes u; also uaux when `update_aux`,
+# so that a second condition at the same node sees the first one).
+@inline function _lag_gpu_dirichlet_node!(uaux,u,qe,x,y,t,ip,qb,nx,ny,neq,npoin,lpert,update_aux)
+    T = eltype(uaux)
+    @inbounds qb[1:neq] .= T(1234567)
+    @inbounds qb[1:neq] .= user_bc_dirichlet_gpu(@view(uaux[ip,:]),@view(qe[ip,:]),x[ip],y[ip],t,nx,ny,qb,lpert)
+    for ieq =1:neq
+        if !(qb[ieq] == T(1234567)) && !(qb[ieq] == uaux[ip,ieq])
+            # if use the commented line in CUDA, somehow get errors
+            # @inbounds KernelAbstractions.@atomic u[(ieq-1)*npoin+ip] = qbdy[iedge, ik, ieq]
+            @inbounds u[(ieq-1)*npoin+ip] = qb[ieq]
+            update_aux && (@inbounds uaux[ip,ieq] = qb[ieq])
+        end
+    end
+    nothing
+end
+
+@kernel function apply_boundary_conditions_lag_gpu_lin_solve!(RHS, A, connijk,ngl,ngr,npoin,side_n)
 
     ie = @index(Group, Linear)
     il = @index(Local, NTuple)
     i_ngl = il[1]
     i_ngr = il[2]
     T = eltype(A)
-    Ti = eltype(connijk)
     if (i_ngr == ngr)
         ip = connijk[ie,i_ngl,ngr]
         for jp = 1:npoin
@@ -191,24 +202,14 @@ end
         RHS[ip,:] .= T(0.0)
     end
 
-    if !(lperiodic)
-        if (ie == Ti(1))
-            ip = connijk[ie,1,i_ngr]
-            for jp = 1:npoin
-                A[ip,jp] = T(0.0)
-            end
-            A[ip,ip] = T(1.0)
-            RHS[ip,:] .= T(0.0)
+    if (i_ngr > 1 && i_ngl <= 2) && !(side_n[ie,i_ngl,1] == T(0) && side_n[ie,i_ngl,2] == T(0))
+        i  = (i_ngl == 1) ? 1 : ngl
+        ip = connijk[ie,i,i_ngr]
+        for jp = 1:npoin
+            A[ip,jp] = T(0.0)
         end
-
-        if (ie == nelem_semi_inf)
-            ip = connijk[ie,ngl,i_ngr]
-            for jp = 1:npoin
-                A[ip,jp] = T(0.0)
-            end
-            A[ip,ip] = T(1.0)
-            RHS[ip,:] .= T(0.0)
-        end
+        A[ip,ip] = T(1.0)
+        RHS[ip,:] .= T(0.0)
     end
 end
 
