@@ -499,6 +499,23 @@ the stability cap, with a viscous number of 0.71 at the snapshot before; with
 it, 0.26 and a clean run to 2 $t_0$ (flows decaying from 32 to 1.2 km/s,
 smallest pressure, density and temperature unchanged, $\psi$ at round-off).
 
+**Where the time goes.** The cost is the number of steps: the fast speed of
+the corona (4500 km/s when the dome drains) over the smallest gap between two
+nodes (32 km) is 7 ms, the step 3.5–4.6 ms, and 1610 s from the emergence to
+the end are 350,000–460,000 steps of five stages. A stage on REF 4 (4 ranks,
+`JEXPRESSO_ALLOC_SUMMARY=1`, which also times the pieces of the DynSGS block
+since) takes 344 ms: 69 ms the inviscid right-hand side, 229 ms the DynSGS —
+its diffusion operator on the nine equations 100 ms, the coefficient 38 ms,
+the curl-form resistivity 35 ms, the energy slot 24 ms, the residual of the
+legacy sensor 23 ms — and 46 ms the rest (assembly, exchanges, resets). On the
+cluster the run makes 0.11–0.12 s a step on 128 ranks of one node, 270
+elements a rank: 2.5 times the cost per element and core measured here on 4
+ranks. A larger step is the first lever (the stability cap above keeps the
+scheme linearly stable to a fast CFL number of 1.4; the log prints it at every
+snapshot); the same 128 ranks on two nodes the second, if the node's memory
+bandwidth is what the 2.5 is; and the DynSGS block, two thirds of a stage and
+evaluated at each of the five, the third.
+
 **Subnormal numbers** are flushed to zero on every rank
 (`set_zero_subnormals(true)` in `initialize.jl`; `JEXPRESSO_LK10_SUBNORMALS=keep`
 for IEEE underflow). $\rho\mathbf u$, $\rho w$, $B_z$ and $\psi$ are zero in the

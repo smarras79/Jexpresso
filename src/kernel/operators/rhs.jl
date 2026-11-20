@@ -1682,7 +1682,8 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
             error(" :dsgs_thermal_energy needs the conserved element form of DSGS_MHD (:dsgs_conserved => true, ",
                   ":ldsgs_nodal => false) without the split energy flux (:dsgs_nazarov_energy => false).")
         dsgs_qA, dsgs_qB, dsgs_wt = _dsgs_stencil(params, TT)
-        dsgs_rhs = _dsgs_residual_rhs!(u, params, SD)
+        # (the sections below are timed with JEXPRESSO_ALLOC_SUMMARY=1, under viscous_rhs_el)
+        dsgs_rhs = @timeit_debug JEXPRESSO_TIMER "dsgs: residual rhs" _dsgs_residual_rhs!(u, params, SD)
         νphys2d = nothing; ηphys2d = nothing     # the explicit ν, η of the element form (below)
         if lnodal_mhd2d
             # Nodal (Dao & Nazarov) form: ν at every node (SGS.jl); the
@@ -1710,8 +1711,8 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                           lnazarov_energy = get(params.inputs, :dsgs_nazarov_energy, false) ||
                                                             get(params.inputs, :dsgs_conserved_prandtl, false))
         else
-            νphys2d, ηphys2d = _mhd_dissipation_2d(params, TT)
-            compute_dsgs_viscosity!(params.μ_dsgs, DSGS_MHD(), SD,
+            νphys2d, ηphys2d = @timeit_debug JEXPRESSO_TIMER "dsgs: explicit nu, eta" _mhd_dissipation_2d(params, TT)
+            @timeit_debug JEXPRESSO_TIMER "dsgs: coefficient" compute_dsgs_viscosity!(params.μ_dsgs, DSGS_MHD(), SD,
                                     params.uaux, dsgs_qA, dsgs_qB,
                                     dsgs_rhs, params.ω, params.metrics.Je, params.visc_coeff,
                                     params.dsgs_avg, params.dsgs_denom,
@@ -1763,7 +1764,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                 params.μ_dsgs[ie,7] = zero(TT)
             end
         end
-        _viscous_rhs_el_2d_dsgs!(params.uaux, qe, params.uprimitive,
+        @timeit_debug JEXPRESSO_TIMER "dsgs: diffusion operator" _viscous_rhs_el_2d_dsgs!(params.uaux, qe, params.uprimitive,
                                  params.rhs_diffξ_el, params.rhs_diffη_el,
                                  params.rhs_diff_el,
                                  params.visc_coeff_dsgs, params.μ_dsgs,
@@ -1786,7 +1787,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                 params.μ_dsgs[ie,6] = ηcurl[ie]
                 params.μ_dsgs[ie,7] = ηcurl[ie]
             end
-            _dsgs_curl_resistive_2d!(params.rhs_diff_el, params.RHS_visc, ηcurl, params.uaux, qe,
+            @timeit_debug JEXPRESSO_TIMER "dsgs: curl resistivity" _dsgs_curl_resistive_2d!(params.rhs_diff_el, params.RHS_visc, ηcurl, params.uaux, qe,
                                      params.mesh.connijk, params.ω, params.basis.dψ, params.metrics.Je,
                                      params.metrics.dξdx, params.metrics.dξdy,
                                      params.metrics.dηdx, params.metrics.dηdy,
@@ -1795,7 +1796,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                      _dsgs_curl_wall_mask(params.mesh))
         end
         if dsgs_thermal_energy[]
-            _dsgs_energy_consistent_2d!(params.rhs_diff_el, params.μ_dsgs, params.uaux, qe,
+            @timeit_debug JEXPRESSO_TIMER "dsgs: energy slot" _dsgs_energy_consistent_2d!(params.rhs_diff_el, params.μ_dsgs, params.uaux, qe,
                                         params.mesh.connijk, params.ω, params.basis.dψ, params.metrics.Je,
                                         params.metrics.dξdx, params.metrics.dξdy,
                                         params.metrics.dηdx, params.metrics.dηdy,
