@@ -27,11 +27,20 @@
 #     Bz     the out-of-plane field: its equations are scalar advection along
 #            e∥, so this is the plain CG-SEM error, the reference
 #
-# Switches (first argument):
-#     full           the deck, linearized
-#     noglm          c_h = 0: no GLM cleaning (ψ stays 0)
-#     powell         + the Godunov-Powell term −B0 (∇·b) on the momentum
-#     powell_noglm   both
+# Switches (first argument): "full", or any of these joined by "_"
+# (powell_noglm, noglm_nogasp_nomagp, ...). Each removes one coupling of the
+# in-plane wave to the rest of the linear system, at the Jacobian level:
+#     noglm      c_h = 0: no GLM cleaning (ψ stays 0)
+#     powell     + the Godunov-Powell term −B0 (∇·b) on the momentum, which
+#                cancels the spurious divergence force of the conservative form
+#     nogasp     no gas-pressure force: ∂p/∂q (the deck's pressure_mhd) taken
+#                out of the x-flux of ρu and the y-flux of ρv
+#     nomagp     no magnetic-pressure force: ∂(½|B|²)/∂q taken out of the same
+#     noinddiv   no field compression in the induction: + B0 (∇·u) cancels the
+#                −B0 (∇·u) of the flux, the term that turns a discrete ∇·u into b∥
+# With all five, u_t = (B0·D) b and b_t = (B0·D) u: the in-plane pair obeys the
+# out-of-plane equations, so ⊥/Bz must come out ~1 and ∥/Bz ~0 (a check of the
+# switches themselves).
 #
 #   julia --project=. tools/alfven_linear_model.jl full 4,5,6 8,16
 #   julia --project=. tools/alfven_linear_model.jl noglm 4 8,16,32
@@ -102,7 +111,19 @@ function jacobians(ch)
         end
         return J
     end
-    return cjac(fx), cjac(fy), cjac(fs), q0
+    # gradients of the gas pressure and of the magnetic pressure ½|B|², the two
+    # pressures in the momentum fluxes (F[2], G[3] of user_flux.jl)
+    gas(q) = [pressure_mhd(q[1], q[2], q[3], q[5], q[4], q[6], q[7], q[8], q[9])]
+    mag(q) = [0.5*(q[6]*q[6] + q[7]*q[7] + q[8]*q[8])]
+    function cgrad(f)
+        g = zeros(9); hc = 1.0e-30
+        for k = 1:9
+            qc = complex.(q0); qc[k] += im*hc
+            g[k] = imag(f(qc)[1])/hc
+        end
+        return g
+    end
+    return cjac(fx), cjac(fy), cjac(fs), q0, cgrad(gas), cgrad(mag)
 end
 
 # assembled scalar CG derivatives on the periodic [0, L]² mesh
@@ -137,10 +158,18 @@ const NAMES = ("ρ", "ρu", "ρv", "ρE", "ρw", "Bx", "By", "Bz", "ψ")
 
 function run(N, nel; variant = "full", t = 2.0)
     ch = occursin("noglm", variant) ? 0.0 : CH_DECK
-    Ax, Ay, As, q0 = jacobians(ch)
+    Ax, Ay, As, q0, gp, gm = jacobians(ch)
+    # the pressure forces: p and ½|B|² enter the momentum only through F[2], G[3]
+    occursin("nogasp", variant) && (Ax[2, :] .-= gp; Ay[3, :] .-= gp)
+    occursin("nomagp", variant) && (Ax[2, :] .-= gm; Ay[3, :] .-= gm)
     Dx, Dy, xn, yn, gid, ξ, J1, h = cg_ops(N, nel)
     np = length(xn)
     Lop = -(kron(sparse(Ax), Dx) + kron(sparse(Ay), Dy)) + kron(sparse(As), sparse(I, np, np))
+    if occursin("noinddiv", variant)        # + B0 (∇·u) on Bx, By (u = ρu at ρ0 = 1)
+        Qx = spzeros(9, 9); Qy = spzeros(9, 9)
+        Qx[6,2] = q0[6]; Qx[7,2] = q0[7]; Qy[6,3] = q0[6]; Qy[7,3] = q0[7]
+        Lop += kron(Qx, Dx) + kron(Qy, Dy)
+    end
     if occursin("powell", variant)          # −B0 (∇·b) on ρu, ρv
         Px = spzeros(9, 9); Py = spzeros(9, 9)
         Px[2,6] = q0[6]; Px[3,6] = q0[7]; Py[2,7] = q0[6]; Py[3,7] = q0[7]
@@ -180,11 +209,11 @@ end
 variant = length(ARGS) > 0 ? ARGS[1] : "full"
 Ns   = length(ARGS) > 1 ? parse.(Int, split(ARGS[2], ",")) : [4, 5, 6]
 nels = length(ARGS) > 2 ? parse.(Int, split(ARGS[3], ",")) : [8, 16]
-@printf("%-13s %2s %4s %11s %11s %11s %7s %7s %10s %10s\n", "variant", "N", "nel",
+@printf("%-36s %2s %4s %11s %11s %11s %7s %7s %10s %10s\n", "variant", "N", "nel",
         "b·e⊥ (wave)", "b·e∥ (=0)", "Bz (scalar)", "⊥/Bz", "∥/Bz", "ψ", "ρE")
 for N in Ns, nel in nels
     e = run(N, nel; variant = variant)
-    @printf("%-13s %2d %4d %11.4e %11.4e %11.4e %7.2f %7.2f %10.3e %10.3e\n",
+    @printf("%-36s %2d %4d %11.4e %11.4e %11.4e %7.2f %7.2f %10.3e %10.3e\n",
             variant, N, nel, e[10], e[11], e[8], e[10]/e[8], e[11]/e[8], e[9], e[4])
     flush(stdout)
 end
