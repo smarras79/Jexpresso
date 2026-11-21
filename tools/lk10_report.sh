@@ -15,7 +15,7 @@
 #
 # It writes lk10_report_<last directory of RUN>.txt in the current directory and reads the snapshots
 # only: it changes nothing in the run. A few minutes on a full REF 4 run.
-set -u
+# No `set -u`: bash before 4.4 calls an empty array unset under it ("REF[@]: unbound variable").
 RUN=""; BASE=""; PY=python3; TIMES="1380,1610,1955,2185"; LOGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
