@@ -329,6 +329,12 @@ compares the coefficient computed at every stage (`JEXPRESSO_AW_FREEZE=0`).
    - Even N: 4.0 for N = 4 on every pair, and 6.0 for N = 6 on the finest pair.
    - Order N is what the standard error estimate guarantees for unstabilized Galerkin on a
      hyperbolic problem; the odd orders do better on these uniform meshes.
+   - At t = 2 the out-of-plane field B_z converges faster than this for even N (5.5 at
+     N = 4 from 16² to 32², in the linearized model). B_z obeys plain scalar advection, and
+     t = 2 is one whole crossing of the box along e∥. At whole crossings the O(h^N) part of
+     CG's even-N error cancels. The in-plane field B⊥ is coupled to ψ and the pressures and
+     does not get that cancellation. At other times both converge at N.
+     `tools/alfven_linear_model.jl` (its `--field` and `--t` options) shows this.
    - N = 7 reaches 5.5e-12 on 16², and N = 6 reaches 3.75e-12 on 32².
 2. **DynSGS as committed is Galerkin wherever the wave is resolved.** With the cutoff the
    normalized residual enters ν as max(0, ratio − 10⁻³), and its floor on this wave is 4e-6
