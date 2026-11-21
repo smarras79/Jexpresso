@@ -207,6 +207,16 @@ function run(N, nel; variant = "full", t = 2.0)
 end
 
 variant = length(ARGS) > 0 ? ARGS[1] : "full"
+# every word of the variant must be a switch: an unknown one is an error, not a
+# silent "full" (an older copy of this tool, without nogasp/nomagp/noinddiv,
+# ran those as full and gave full's numbers)
+const SWITCHES = ("noglm", "powell", "nogasp", "nomagp", "noinddiv")
+active = variant == "full" ? String[] : String.(split(variant, "_"))
+for f in active
+    f in SWITCHES || error("unknown switch \"$f\" in \"$variant\": use full, or any of " *
+                           join(SWITCHES, ", ") * " joined by _")
+end
+println("# switches: ", isempty(active) ? "none (the deck, linearized)" : join(active, ", "))
 Ns   = length(ARGS) > 1 ? parse.(Int, split(ARGS[2], ",")) : [4, 5, 6]
 nels = length(ARGS) > 2 ? parse.(Int, split(ARGS[3], ",")) : [8, 16]
 @printf("%-36s %2s %4s %11s %11s %11s %7s %7s %10s %10s\n", "variant", "N", "nel",
