@@ -6,8 +6,9 @@
 #
 #   RUN      the output directory of the run (output/MHD/fluxEmergenceLeake2010/output-<date>);
 #            DIR1,DIR2 for a run made in several jobs
-#   --base   the run that started at t = 0, when RUN is a restart: its first snapshot is the initial
-#            atmosphere and the unit of mass of the tables (so that runs can be compared)
+#   --base   a run whose FIRST snapshot is the unit of mass of the tables and the pressure they are compared
+#            with, so that the tables of several restarts can be compared: the run from t = 0, or the earliest
+#            run of the chain that is still on disk. Without it, the first snapshot of RUN itself.
 #   --log    the job's standard output (the file the queue wrote); may be given several times
 #   --py     the Python to use (default python3; it needs numpy and matplotlib, as the figures do)
 #   --times  the times [s] of the vertical profiles (default 1380,1610,1955,2185: those the run has)
@@ -53,10 +54,10 @@ run() { echo "\$ $*"; "$@" 2>&1; echo "[exit $?]"; }
   done
 
   sec "drain: why the lifted plasma drains or does not"
-  run $P drain "$RUN" "${REF[@]}" --outdir "$FIGS"
+  run $P drain "$RUN" ${REF[@]+"${REF[@]}"} --outdir "$FIGS"
 
   sec "mass: the plasma above 3 Mm"
-  run $P mass "$RUN" "${REF[@]}" --outdir "$FIGS"
+  run $P mass "$RUN" ${REF[@]+"${REF[@]}"} --outdir "$FIGS"
 
   sec "null: the top of the emerged flux on x = 0"
   run $P null "$RUN" --outdir "$FIGS"
@@ -70,8 +71,7 @@ run() { echo "\$ $*"; "$@" 2>&1; echo "[exit $?]"; }
     run $P column "$RUN" --times "$TIMES" --x $x --outdir "$FIGS"
   done
 
-  for L in "${LOGS[@]:-}"; do
-    [ -n "$L" ] || continue
+  for L in ${LOGS[@]+"${LOGS[@]}"}; do
     sec "log $L"
     if [ ! -f "$L" ]; then echo "(not found)"; continue; fi
     echo "--- how the run was set up"
