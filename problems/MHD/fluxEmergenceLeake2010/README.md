@@ -757,6 +757,7 @@ python3 tools/plot_leake2010.py diag     $RUN --dt <Δt>  # per snapshot: larges
 python3 tools/plot_leake2010.py null     base=$RUN       # on x = 0 vs time: the null above the dome, the flux below it, the mass lifted
 python3 tools/plot_leake2010.py mass     $RUN            # the plasma above 3 Mm: mass budget, temperature, pressure, draining, heating time
 python3 tools/plot_leake2010.py drain    $RUN            # why that plasma drains or not: temperature, field it sits on, speed and support along the field
+python3 tools/plot_leake2010.py heat     $RUN            # what changes its temperature: each term as the code applies it, against the observed rate
 python3 tools/plot_leake2010.py column   $RUN --times 1380,1610 --x 0   # the state on a vertical line, as a table
 bash tools/lk10_report.sh $RUN --base $RUN0 --log job.out            # all of these tables and the log's lines in one text file
 ```
@@ -800,9 +801,30 @@ $\beta > 1$; or cold on steep field with no support and yet slow, which leaves
 the viscosity. On the initial atmosphere the support is 1.00 in the corona and
 1.11 in the chromosphere of REF 1 (one and a half nodes per scale height).
 
+`heat` says what changes the temperature of that plasma. For the plasma denser
+than $10^{-13}$ g cm⁻³ above 3 Mm, split into the center ($|x| < 2.5$ Mm, where
+the dome's field lies flat) and the flanks, each term of its temperature
+equation as the code applies it with `JEXPRESSO_LK10_HEAT=shock`, as a
+mass-weighted mean $DT/Dt$ in K per 100 s: compression and expansion
+($-p\nabla\cdot\mathbf v$, ideal), the case's viscosity (in full), the
+DynSGS viscosity where the flow is compressed, the case's anomalous
+resistivity (in full; zero while $|\nabla\times\mathbf B| < j_{crit}$, a
+40 G reversal thinner than about 50 m), the DynSGS diffusion of the internal
+energy's departure from the reference atmosphere, and the DynSGS mass
+diffusion, which leaves the internal energy where it is, so that
+$T = p/\rho$ rises where it takes mass away. Each is evaluated from the
+snapshot with the code's operators (the reference-weighted
+$\nabla\cdot(\rho_e\mu\nabla((q - q_e)/\rho_e))$, the reference atmosphere
+rebuilt from its formula), by finite differences on the mesh's lattice. Then
+what the DynSGS dissipates and `shock` does not heat. Where two snapshots are
+close (the off-grid outputs, 12–17 s apart) the observed $DT/Dt$, node by node,
+is set against the budget: the difference is what the budget misses (the
+temperature floor, and its own error). On REF 1 at 920–928 s the two agree to
+25 %.
+
 `tools/lk10_report.sh RUN [--base RUN0] [--log FILE] [--py PYTHON]` writes
 `lk10_report_<run>.txt`: the configuration of each directory of the run, the
-`drain`, `mass`, `null` and `dome` tables, `column` at $x$ = 0, 5 and 10 Mm at
+`drain`, `heat`, `mass`, `null` and `dome` tables, `column` at $x$ = 0, 5 and 10 Mm at
 1380, 1610, 1955 and 2185 s, and from the job's log the set-up, the reports of
 the positivity floors and of the stability cap, the CFL numbers at each
 snapshot and the end of the run. It reads the snapshots only. `--base` is the

@@ -9,7 +9,8 @@
 #   --base   a run whose FIRST snapshot is the unit of mass of the tables and the pressure they are compared
 #            with, so that the tables of several restarts can be compared: the run from t = 0, or the earliest
 #            run of the chain that is still on disk. Without it, the first snapshot of RUN itself.
-#   --log    the job's standard output (the file the queue wrote); may be given several times
+#   --log    the job's standard output (the file the queue wrote, e.g. slurm-<jobid>.out, on the machine
+#            that ran it); may be given several times
 #   --py     the Python to use (default python3; it needs numpy and matplotlib, as the figures do)
 #   --times  the times [s] of the vertical profiles (default 1380,1610,1955,2185: those the run has)
 #
@@ -56,6 +57,9 @@ run() { echo "\$ $*"; "$@" 2>&1; echo "[exit $?]"; }
   sec "drain: why the lifted plasma drains or does not"
   run $P drain "$RUN" ${REF[@]+"${REF[@]}"} --outdir "$FIGS"
 
+  sec "heat: what changes the temperature of the lifted plasma (each term as the code applies it)"
+  run $P heat "$RUN" --outdir "$FIGS"
+
   sec "mass: the plasma above 3 Mm"
   run $P mass "$RUN" ${REF[@]+"${REF[@]}"} --outdir "$FIGS"
 
@@ -74,6 +78,9 @@ run() { echo "\$ $*"; "$@" 2>&1; echo "[exit $?]"; }
   for L in ${LOGS[@]+"${LOGS[@]}"}; do
     sec "log $L"
     if [ ! -f "$L" ]; then echo "(not found)"; continue; fi
+    if [ "$L" -ef "$OUT" ] || head -1 "$L" | grep -q '^lk10_report:'; then
+      echo "(this is a report, not the run's log: --log takes the file the queue wrote for the job, e.g. slurm-<jobid>.out)"; continue
+    fi
     echo "--- how the run was set up"
     grep -E 'DynSGS: C_R|Restart:|Subnormal|Dissipation:|Fastest wave|GLM: c_h|Δt *=>|dsgs_|lk10_|mhd_anomalous|Time loop running' "$L" | grep -v '^ *#' | head -80
     echo "--- positivity floors (first 15 and last 15 reports)"
@@ -83,7 +90,12 @@ run() { echo "\$ $*"; "$@" 2>&1; echo "[exit $?]"; }
     echo "--- stability cap, anomalous resistivity, failures"
     grep -E 'held at the stability cap|anomalous resistivity|non-finite|ERROR|Killed|BAD TERMINATION|:dsgs_stages' "$L" | head -40
     echo "--- CFL numbers at each snapshot (time, fast, viscous)"
-    grep -E 'writing .*pvtu|Fast +CFL|Viscous +CFL|GLM +CFL' "$L" | sed -E 's/.*(iter_[0-9]+\.pvtu at t=[0-9.e+-]+).*/\1/' | paste -sd' ' | sed -E 's/ (iter_)/\n\1/g' | cut -c1-240 | tail -60
+    # one line per snapshot: its name and time, then the CFL lines that follow it (awk: BSD paste and sed lack what this needs)
+    grep -E 'writing .*pvtu|Fast +CFL|Viscous +CFL|GLM +CFL' "$L" | awk '
+      /writing .*pvtu/ { if (s != "") print substr(s, 1, 240)
+                         if (match($0, /iter_[0-9]+\.pvtu at t=[0-9.e+-]+/)) s = substr($0, RSTART, RLENGTH); else s = $0; next }
+      { s = (s == "" ? $0 : s " " $0) }
+      END { if (s != "") print substr(s, 1, 240) }' | tail -60
     echo "--- progress and the end of the run"
     grep -E 'progress:|DSGS over the run|Solving ODE|seconds \(' "$L" | tail -8
   done
