@@ -952,7 +952,7 @@ def drain_row(g, thr=-13.0, ymin=3.0, tfloor=0.1, rhofac=1.0, viscfac=1.0):
     M = integ(np.where(d, rho, 0.0))
     if not np.any(d) or M <= 0:
         return dict(M=0.0, floor=np.nan, cold=np.nan, warm=np.nan, beta=np.nan, flat=np.nan, vpar=np.nan, sup=np.nan,
-                    vsup=np.nan, nsup=np.nan, ssup=np.nan, tsup=np.nan, mud=np.nan, T=np.nan)
+                    vsup=np.nan, nsup=np.nan, ssup=np.nan, tsup=np.nan, mud=np.nan, mufl=np.nan, muoff=np.nan, T=np.nan)
     fr = lambda sel: integ(np.where(d & sel, rho, 0.0)) / M
     T = G("T")                                                    # in T_ph = 5700 K
     P, r = G("p"), G("ρ")                                         # code units
@@ -992,7 +992,9 @@ def drain_row(g, thr=-13.0, ymin=3.0, tfloor=0.1, rhofac=1.0, viscfac=1.0):
                 beta=fr(beta > 1.0), flat=fr(~incl),
                 vpar=float(np.sum(w[k] * vdown[k]) / np.sum(w[k])) if np.any(k) else np.nan,
                 sup=_wmedian(sup[k], w[k]), vsup=_wmedian(vsup[k], w[k]), nsup=_wmedian(nsup[k], w[k]),
-                ssup=_wmedian(ssup[k], w[k]), tsup=_wmedian((sup + vsup)[k], w[k]), mud=_wmedian(mud[k], w[k]),
+                ssup=_wmedian(ssup[k], w[k]), tsup=_wmedian((sup + vsup)[k], w[k]), mud=_wmedian(mud[d], w[d]),
+                mufl=_wmedian(mud[d & (T < 1.2 * tfloor)], w[d & (T < 1.2 * tfloor)]),
+                muoff=_wmedian(mud[d & (T >= 1.2 * tfloor)], w[d & (T >= 1.2 * tfloor)]),
                 T=_wmedian(T[d] * 5700.0, w[d]))
 
 
@@ -1015,8 +1017,10 @@ def cmd_drain(a):
                 velocity would give (the rest is momentum the diffusion carries out of dense plasma moving as a
                 block, with no mass diffusion to match it);  p+visc: pressure and visc, whose shortfall from 1 is
                 what accelerates it down the field;
-      mu        the median DynSGS momentum coefficient applied there [L0 v0 = 970 km^2/s] (after
-                JEXPRESSO_LK10_VISCFAC; the case's nu, 0.0133, not included).
+      mu        the median DynSGS momentum coefficient applied in this plasma [L0 v0 = 970 km^2/s] (after
+                JEXPRESSO_LK10_VISCFAC; the case's nu, 0.0133, not included);  @floor, off: the same in its part at
+                the temperature floor and in the rest (the floor resets the energy each step, which a sensor built
+                on the residual of the equations reads as one).
     Nothing along a field line but pressure, gravity and viscosity acts on the plasma, so a dome that does not
     drain shows up here as one of: warm and support ~ 1; flat; beta > 1; or cold, steep, support ~ 0 and slow."""
     items = runs_of(a.run)
@@ -1035,17 +1039,17 @@ def cmd_drain(a):
     print(f"plasma with log10 rho > {a.thr:g} in {a.ymin:g} < y < 20 Mm, |x| < 13 Mm; mass in units of the "
           f"{'reference run' if a.ref else 'first snapshot'}'s whole box ({M0:.3g} g/cm); fractions of its mass")
     print(f"{'t [s]':>7} {'mass':>8} | {'T med K':>8} {'floor':>6} {'<2e4 K':>6} {'>=2e4':>6} | {'beta>1':>6} {'flat':>6} | "
-          f"{'v down':>7} {'support':>7} {'visc':>6} {'nu':>6} {'shear':>6} {'p+visc':>6} {'mu':>7}")
+          f"{'v down':>7} {'support':>7} {'visc':>6} {'nu':>6} {'shear':>6} {'p+visc':>6} | {'mu':>7} {'@floor':>7} {'off':>7}")
     for t, r in rows:
         print(f"{t:7.0f} {r['M'] / M0:8.2f} | {r['T']:8.3g} {r['floor']:6.2f} {r['cold']:6.2f} {r['warm']:6.2f} | "
               f"{r['beta']:6.2f} {r['flat']:6.2f} | {r['vpar']:7.2f} {r['sup']:7.2f} {r['vsup']:6.2f} {r['nsup']:6.2f} "
-              f"{r['ssup']:6.2f} {r['tsup']:6.2f} {r['mud']:7.3g}")
+              f"{r['ssup']:6.2f} {r['tsup']:6.2f} | {r['mud']:7.3g} {r['mufl']:7.3g} {r['muoff']:7.3g}")
     np.savetxt(os.path.join(a.outdir, "drain.csv"),
                np.array([[t, r["M"] / M0, r["T"], r["floor"], r["cold"], r["warm"], r["beta"], r["flat"], r["vpar"], r["sup"],
-                          r["vsup"], r["nsup"], r["ssup"], r["tsup"], r["mud"]] for t, r in rows]),
+                          r["vsup"], r["nsup"], r["ssup"], r["tsup"], r["mud"], r["mufl"], r["muoff"]] for t, r in rows]),
                header="t [s], mass, median T [K], at the floor, < 2e4 K, >= 2e4 K, beta > 1, flat field, v down the field [km/s], "
                       "pressure support, viscous support, of it the case's nu, the shear part, pressure + viscous, "
-                      "median DynSGS momentum coefficient [L0 v0]", delimiter=",")
+                      "median DynSGS momentum coefficient [L0 v0], the same at the temperature floor, off it", delimiter=",")
     print("wrote", os.path.join(a.outdir, "drain.csv"))
 
 
