@@ -689,7 +689,7 @@ stops at once ("nothing to continue"), so a spare job in the chain is harmless.
   (`JEXPRESSO_LK10_DT`), the end time, the snapshot interval and the numerical
   switches may change (`JEXPRESSO_LK10_FLOORS`, `_CMIN`, `_CURLB` and those of
   the DynSGS: `_ETA`, `_ETACAP`, `_ETAFAC`, `_RHOFAC`, `_HEAT`, `_STABCAP`,
-  `_SENSOR`, `_ENERGY`, `_DSGS_STAGES`, `_CR`; the log says which did): that is
+  `_SENSOR`, `_ENERGY`, `_DSGS_STAGES`, `_CR`, and `_TFLOOR`; the log says which did): that is
   how a run continues past a failure (below), or with another setting from the
   snapshot where it starts to matter.
 - **Which run.** `JEXPRESSO_LK10_RESTART_DIR` is the output directory
@@ -757,6 +757,8 @@ python3 tools/plot_leake2010.py diag     $RUN --dt <Δt>  # per snapshot: larges
 python3 tools/plot_leake2010.py null     base=$RUN       # on x = 0 vs time: the null above the dome, the flux below it, the mass lifted
 python3 tools/plot_leake2010.py mass     $RUN            # the plasma above 3 Mm: mass budget, temperature, pressure, draining, heating time
 python3 tools/plot_leake2010.py drain    $RUN            # why that plasma drains or not: temperature, field it sits on, speed and support along the field
+python3 tools/plot_leake2010.py column   $RUN --times 1380,1610 --x 0   # the state on a vertical line, as a table
+bash tools/lk10_report.sh $RUN --base $RUN0 --log job.out            # all of these tables and the log's lines in one text file
 ```
 
 Figures are written to `figs_leake2010/` (`--outdir`) as
@@ -797,6 +799,15 @@ that keeps its plasma shows as one of: warm with a support near 1; flat field;
 $\beta > 1$; or cold on steep field with no support and yet slow, which leaves
 the viscosity. On the initial atmosphere the support is 1.00 in the corona and
 1.11 in the chromosphere of REF 1 (one and a half nodes per scale height).
+
+`tools/lk10_report.sh RUN [--base RUN0] [--log FILE] [--py PYTHON]` writes
+`lk10_report_<run>.txt`: the configuration of each directory of the run, the
+`drain`, `mass`, `null` and `dome` tables, `column` at $x$ = 0, 5 and 10 Mm at
+1380, 1610, 1955 and 2185 s, and from the job's log the set-up, the reports of
+the positivity floors and of the stability cap, the CFL numbers at each
+snapshot and the end of the run. It reads the snapshots only. `--base` is the
+run that started at $t = 0$, whose first snapshot is the unit of mass, so that
+the tables of two restarts can be compared.
 
 `forces` draws the erratum's Fig. 4: on a vertical line at one time, gravity
 $-\rho g$, the magnetic tension $(\mathbf B\cdot\nabla)B_y/4\pi$, the magnetic

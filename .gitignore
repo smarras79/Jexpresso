@@ -44,3 +44,7 @@ problems/*/smoothVortex/errors.prev/
 # ... and of the Alfvén-wave sweeps (tools/alfven_wave_scan.sh; AW_KEEP=1 appends)
 problems/*/alfvenWaveBabbarRanocha2026/errors/
 __pycache__/
+
+# written by tools/lk10_report.sh (problems/MHD/fluxEmergenceLeake2010): a diagnostic report to send, and its tables
+lk10_report_*.txt
+lk10_report_files/

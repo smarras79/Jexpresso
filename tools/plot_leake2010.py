@@ -27,6 +27,8 @@ t0 = 23.1946 s), the density in g cm^-3 and B_z in G, as in the paper.
   python3 tools/plot_leake2010.py drain RUN                   # why the lifted plasma drains or does not: how cold it is,
                                                               #   the field it sits on (flat, weak), its speed along the
                                                               #   field and how much of its weight its pressure carries
+  python3 tools/plot_leake2010.py column RUN --times 1380,1610 --x 0   # the profiles on a vertical line as a table: density,
+                                                              #   temperature, pressure, field, beta, velocity, DynSGS
   python3 tools/plot_leake2010.py null RUN [RUN2 ...]         # on x = 0 vs time: the top of the emerged flux (the null
                                                               #   above it), the flux between the tube axis and it, the
                                                               #   mass lifted, and the DynSGS coefficients at the null
@@ -1013,6 +1015,42 @@ def cmd_drain(a):
     print("wrote", os.path.join(a.outdir, "drain.csv"))
 
 
+B0_GAUSS = 1030.6       # code field unit, G
+P_PH_CGS = 10 ** 4.927  # code pressure unit, dyn cm^-2
+
+
+def cmd_column(a):
+    """The state on a vertical line, as a table: at each requested time (a snapshot the run has; --nearest for the
+    nearest one) and every --dy Mm of height between --ymin and --ymax, at the mesh column nearest x = --x:
+    log10 rho [g cm^-3], T [K], p [dyn cm^-2], the in-plane field and B_z [G], beta, v_x and v_y [km/s], the
+    angle of the in-plane field to the horizontal [deg], and the DynSGS coefficients of the snapshot for the
+    momentum and for the field [L0 v0 = 970 km^2/s]. Where the dense plasma is, how warm it is and what field it
+    sits in, in numbers that can be pasted."""
+    items = runs_of(a.run)
+    sel = nearest(items, a.times)
+    for t, f in sel:
+        g = load(f, ["log10rho_cgs", "p", "T", "u", "v", "Bz", MU_NAME, *ETA_NAMES])
+        X, Y = g["X"], g["Y"]
+        G = lambda n: grid2d(g, g["fields"][n])
+        i = int(np.argmin(np.abs(X - a.x)))
+        L, T, P = G("log10rho_cgs")[:, i], G("T")[:, i] * 5700.0, G("p")[:, i]
+        Bx, By, Bz = G("Bx")[:, i], G("By")[:, i], G("Bz")[:, i]
+        u, v = G("u")[:, i] * V0_KMS, G("v")[:, i] * V0_KMS
+        mu = G(MU_NAME)[:, i] if MU_NAME in g["fields"] else np.full(len(Y), np.nan)
+        en = next((n for n in ETA_NAMES if n in g["fields"]), None)
+        eta = G(en)[:, i] if en else np.full(len(Y), np.nan)
+        Bp = np.hypot(Bx, By)
+        beta = P / np.maximum(0.5 * (Bp ** 2 + Bz ** 2), 1e-300)
+        ang = np.degrees(np.arctan2(np.abs(By), np.abs(Bx)))
+        print(f"--- t = {t:.0f} s, x = {X[i]:.2f} Mm ({os.path.basename(f)})")
+        print(f"{'y Mm':>6} {'log rho':>8} {'T K':>9} {'p cgs':>9} {'|Bp| G':>8} {'Bx G':>8} {'Bz G':>8} {'beta':>9} "
+              f"{'vx km/s':>8} {'vy km/s':>8} {'angle':>6} {'mu':>8} {'eta':>8}")
+        for yq in np.arange(a.ymin, a.ymax + 1e-9, a.dy):
+            j = int(np.argmin(np.abs(Y - yq)))
+            print(f"{Y[j]:6.2f} {L[j]:8.2f} {T[j]:9.3g} {P[j] * P_PH_CGS:9.3g} {Bp[j] * B0_GAUSS:8.2f} {Bx[j] * B0_GAUSS:8.2f} "
+                  f"{Bz[j] * B0_GAUSS:8.2f} {beta[j]:9.3g} {u[j]:8.2f} {v[j]:8.2f} {ang[j]:6.1f} {mu[j]:8.3g} {eta[j]:8.3g}")
+
+
 def find_opoints(A, X, Y, xlim=(-12.75, 12.75), ylim=(3.0, 19.5), k=6):
     """O-points of the in-plane field in a window: nodes where the flux function A (grid (ny, nx)) is the largest or
     the smallest of its (2k+1)^2 neighbours (an X-point is a saddle of A and is not one). Returns
@@ -1228,6 +1266,13 @@ def main():
     s.add_argument("run")
     s.add_argument("--ref", default="", help="run whose first snapshot (t = 0) gives the initial pressure and the unit "
                                              "of mass, for a restarted run listed from its restart time on")
+    s = sub.add_parser("column", parents=[common]); s.set_defaults(fn=cmd_column)
+    s.add_argument("run")
+    s.add_argument("--times", type=lambda t: [float(x) for x in t.split(",")], default=[1380.0, 1610.0, 1955.0, 2185.0],
+                   help="times [s], comma-separated (default 1380,1610,1955,2185)")
+    s.add_argument("--x", type=float, default=0.0, help="the vertical line, x [Mm] (default 0)")
+    s.add_argument("--ymin", type=float, default=0.0); s.add_argument("--ymax", type=float, default=16.0)
+    s.add_argument("--dy", type=float, default=0.5, help="height step of the table [Mm]")
     s = sub.add_parser("drain", parents=[common]); s.set_defaults(fn=cmd_drain)
     s.add_argument("run")
     s.add_argument("--ref", default="", help="run whose first snapshot (t = 0) gives the unit of mass, for a restarted run")
