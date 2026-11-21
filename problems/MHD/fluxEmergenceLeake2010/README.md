@@ -756,6 +756,7 @@ python3 tools/plot_leake2010.py forces   $RUN --rope     # Erratum Fig. 4: verti
 python3 tools/plot_leake2010.py diag     $RUN --dt <Δt>  # per snapshot: largest speed, CFL, current; smallest p/p0, beta
 python3 tools/plot_leake2010.py null     base=$RUN       # on x = 0 vs time: the null above the dome, the flux below it, the mass lifted
 python3 tools/plot_leake2010.py mass     $RUN            # the plasma above 3 Mm: mass budget, temperature, pressure, draining, heating time
+python3 tools/plot_leake2010.py drain    $RUN            # why that plasma drains or not: temperature, field it sits on, speed and support along the field
 ```
 
 Figures are written to `figs_leake2010/` (`--outdir`) as
@@ -764,6 +765,38 @@ Figures are written to `figs_leake2010/` (`--outdir`) as
 `…_mu_dsgs_mass_energy`, `…_dome`, `…_axis`, `…_null`, `…_eshear`, `…_atmos`,
 `…_profiles`. Every map has a title and a labelled colour bar naming what its
 colours show.
+
+`axis` draws the height of the tube's axis (where $B_x$ on $x = 0$ changes sign,
+the paper's definition) against time, with the two curves of the erratum's
+Fig. 2(a). It is the check of the first phase, the rise through the convection
+zone to the surface, which the axis reaches at about 920 s and where it stays;
+the erratum's curves are for a field-free corona, which makes no difference
+below the surface. The curve has one point for every snapshot of the
+directories given, so a run made in several jobs is `axis LABEL=DIR1,DIR2,...`
+(the command prints the snapshots it read from each); `--tmax` is only the
+limit of the time axis.
+
+`dome` follows the highest dense plasma on $x = 0$ ($\log_{10}\rho > -13$), whatever
+it is. In the erratum's Fig. 3 that is the top of the emerging dome to 1610 s
+(3.5, 7.5, 10.4 Mm), then the flux rope that forms at its apex and rises (13.1
+Mm at 1955 s, 14.7 Mm at 2185 s), and at 2530 s the base of a column that has
+emptied (3.65 Mm), the rope having slid to $x$ = 4.5 Mm. Between 1610 and
+1955 s the erratum's dome loses most of its plasma (its density falls about
+thirtyfold): the rise to 12–13 Mm is that of a dome that has drained.
+
+`drain` says why the lifted plasma drains or does not. For the plasma denser
+than $10^{-13}$ g cm⁻³ above 3 Mm, per snapshot: its mass; its median
+temperature and the mass fractions at the temperature floor, below and above
+$2\times10^4$ K; the fraction in field too weak to guide it ($\beta > 1$) and
+the fraction on field lines within 15° of the horizontal, where gravity has
+no component along the field; and, on the steeper field lines, its mean speed
+down the field and the share of its weight along the field that its pressure
+gradient carries (1: hydrostatic, held by its own pressure; 0: nothing in the
+way). Along a field line only pressure, gravity and viscosity act, so a dome
+that keeps its plasma shows as one of: warm with a support near 1; flat field;
+$\beta > 1$; or cold on steep field with no support and yet slow, which leaves
+the viscosity. On the initial atmosphere the support is 1.00 in the corona and
+1.11 in the chromosphere of REF 1 (one and a half nodes per scale height).
 
 `forces` draws the erratum's Fig. 4: on a vertical line at one time, gravity
 $-\rho g$, the magnetic tension $(\mathbf B\cdot\nabla)B_y/4\pi$, the magnetic

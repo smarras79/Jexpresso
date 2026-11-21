@@ -24,6 +24,9 @@ t0 = 23.1946 s), the density in g cm^-3 and B_z in G, as in the paper.
                                                               #   --rope: on the line through the flux rope, wherever it is
   python3 tools/plot_leake2010.py mass RUN                    # the plasma lifted above 3 Mm: its mass budget (with the flow
                                                               #   or not), temperature, pressure, draining speed, heating time
+  python3 tools/plot_leake2010.py drain RUN                   # why the lifted plasma drains or does not: how cold it is,
+                                                              #   the field it sits on (flat, weak), its speed along the
+                                                              #   field and how much of its weight its pressure carries
   python3 tools/plot_leake2010.py null RUN [RUN2 ...]         # on x = 0 vs time: the top of the emerged flux (the null
                                                               #   above it), the flux between the tube axis and it, the
                                                               #   mass lifted, and the DynSGS coefficients at the null
@@ -924,6 +927,92 @@ def cmd_mass(a):
         prev = (t, r)
 
 
+G_CODE = 0.98273        # gravity in code units, g_sun L0 / v0^2 (README, Units)
+
+
+def _wmedian(x, w):
+    """Weighted median of x (1D) with weights w; nan if there is no weight."""
+    if x.size == 0 or not np.any(w > 0):
+        return np.nan
+    o = np.argsort(x); cw = np.cumsum(w[o])
+    return float(x[o][min(np.searchsorted(cw, 0.5 * cw[-1]), x.size - 1)])
+
+
+def drain_row(g, thr=-13.0, ymin=3.0, tfloor=0.1):
+    """The dense plasma (log10 rho > thr) of the box ymin < y < 20 Mm, |x| < 13 Mm (cmd_drain)."""
+    X, Y = g["X"], g["Y"]
+    G = lambda n: grid2d(g, g["fields"][n])
+    L = G("log10rho_cgs"); rho = 10.0 ** L
+    d = ((Y > ymin) & (Y < 20.0))[:, None] & ((X > -13.0) & (X < 13.0))[None, :] & (L > thr)
+    cm = 1e8
+    integ = lambda f: np.trapezoid(np.trapezoid(f, X * cm, axis=1), Y * cm)
+    M = integ(np.where(d, rho, 0.0))
+    if not np.any(d) or M <= 0:
+        return dict(M=0.0, floor=np.nan, cold=np.nan, warm=np.nan, beta=np.nan, flat=np.nan, vpar=np.nan, sup=np.nan, T=np.nan)
+    fr = lambda sel: integ(np.where(d & sel, rho, 0.0)) / M
+    T = G("T")                                                    # in T_ph = 5700 K
+    P, r = G("p"), G("ρ")                                         # code units
+    Bx, By, Bz = G("Bx"), G("By"), G("Bz")
+    Bp = np.sqrt(Bx * Bx + By * By)
+    beta = P / np.maximum(0.5 * (Bp * Bp + Bz * Bz), 1e-300)
+    sg = np.where(By < 0, -1.0, 1.0)                              # the in-plane unit vector, taken upward
+    bx = sg * Bx / np.maximum(Bp, 1e-300); by = sg * By / np.maximum(Bp, 1e-300)
+    incl = by > np.sin(np.radians(15.0))                          # field lines steeper than 15 degrees
+    Xc, Yc = g["xc"], g["yc"]
+    dpds = bx * np.gradient(P, Xc, axis=1) + by * np.gradient(P, Yc, axis=0)   # along the field, upward
+    sup = -dpds / np.maximum(r * G_CODE * by, 1e-300)             # 1: hydrostatic along the field; 0: nothing holds it
+    vdown = -(G("u") * bx + G("v") * by) * V0_KMS                 # km/s down the field line
+    # cell weights of the mass (for the medians)
+    wx = np.gradient(X); wy = np.gradient(Y)
+    w = rho * wy[:, None] * wx[None, :]
+    k = d & incl
+    return dict(M=M, floor=fr(T < 1.2 * tfloor), cold=fr(T * 5700.0 < 2e4), warm=fr(T * 5700.0 >= 2e4),
+                beta=fr(beta > 1.0), flat=fr(~incl),
+                vpar=float(np.sum(w[k] * vdown[k]) / np.sum(w[k])) if np.any(k) else np.nan,
+                sup=_wmedian(sup[k], w[k]), T=_wmedian(T[d] * 5700.0, w[d]))
+
+
+def cmd_drain(a):
+    """Why the plasma lifted into the corona drains, or does not. In the erratum's Fig. 3 the dome loses most of
+    its plasma between 1610 and 1955 s, down its arched field lines, and only then rises to 12-13 Mm; a dome that
+    keeps its plasma keeps its weight and stays where the field can carry it. Per snapshot, for the plasma denser
+    than 10^thr g cm^-3 in the box ymin < y < 20 Mm, |x| < 13 Mm (fractions are of its mass):
+      mass      in units of the first snapshot's whole box (as `mass`; --ref RUN0 for a restarted run);
+      T med     its median temperature [K];  floor: within 20 % of the temperature floor;  <2e4, >=2e4 K;
+      beta>1    in field too weak to guide it (the layer between the emerged field and the field above it);
+      flat      on field lines within 15 degrees of the horizontal, where gravity has no component to drain it;
+      v down    its mean speed down the field lines [km/s], on the steeper field lines (free fall from 10 Mm: 74);
+      support   the median share of its weight along the field that its pressure gradient carries, on the same
+                field lines: 1 is hydrostatic (it is held by its own pressure, it is too warm to drain), 0 is
+                nothing in the way (it falls, or something that is not pressure holds it: viscosity).
+    Nothing along a field line but pressure, gravity and viscosity acts on the plasma, so a dome that does not
+    drain shows up here as one of: warm and support ~ 1; flat; beta > 1; or cold, steep, support ~ 0 and slow."""
+    items = runs_of(a.run)
+    M0 = None
+    if a.ref:
+        g0 = load(runs_of(a.ref)[0][1], ["log10rho_cgs", "ρ", "p", "T", "u", "v", "Bz"])
+        M0 = drain_row(g0, -99.0, a.ymin, a.tfloor)["M"]
+    rows = []
+    for t, f in items:
+        g = load(f, ["log10rho_cgs", "ρ", "p", "T", "u", "v", "Bz"])
+        if M0 is None:
+            M0 = drain_row(g, -99.0, a.ymin, a.tfloor)["M"]
+        rows.append((t, drain_row(g, a.thr, a.ymin, a.tfloor)))
+    print(f"plasma with log10 rho > {a.thr:g} in {a.ymin:g} < y < 20 Mm, |x| < 13 Mm; mass in units of the "
+          f"{'reference run' if a.ref else 'first snapshot'}'s whole box ({M0:.3g} g/cm); fractions of its mass")
+    print(f"{'t [s]':>7} {'mass':>8} | {'T med K':>8} {'floor':>6} {'<2e4 K':>6} {'>=2e4':>6} | {'beta>1':>6} {'flat':>6} | "
+          f"{'v down':>7} {'support':>7}")
+    for t, r in rows:
+        print(f"{t:7.0f} {r['M'] / M0:8.2f} | {r['T']:8.3g} {r['floor']:6.2f} {r['cold']:6.2f} {r['warm']:6.2f} | "
+              f"{r['beta']:6.2f} {r['flat']:6.2f} | {r['vpar']:7.2f} {r['sup']:7.2f}")
+    np.savetxt(os.path.join(a.outdir, "drain.csv"),
+               np.array([[t, r["M"] / M0, r["T"], r["floor"], r["cold"], r["warm"], r["beta"], r["flat"], r["vpar"], r["sup"]]
+                         for t, r in rows]),
+               header="t [s], mass, median T [K], at the floor, < 2e4 K, >= 2e4 K, beta > 1, flat field, v down the field [km/s], "
+                      "pressure support", delimiter=",")
+    print("wrote", os.path.join(a.outdir, "drain.csv"))
+
+
 def find_opoints(A, X, Y, xlim=(-12.75, 12.75), ylim=(3.0, 19.5), k=6):
     """O-points of the in-plane field in a window: nodes where the flux function A (grid (ny, nx)) is the largest or
     the smallest of its (2k+1)^2 neighbours (an X-point is a saddle of A and is not one). Returns
@@ -1139,6 +1228,12 @@ def main():
     s.add_argument("run")
     s.add_argument("--ref", default="", help="run whose first snapshot (t = 0) gives the initial pressure and the unit "
                                              "of mass, for a restarted run listed from its restart time on")
+    s = sub.add_parser("drain", parents=[common]); s.set_defaults(fn=cmd_drain)
+    s.add_argument("run")
+    s.add_argument("--ref", default="", help="run whose first snapshot (t = 0) gives the unit of mass, for a restarted run")
+    s.add_argument("--thr", type=float, default=-13.0, help="log10 rho above which the plasma counts as lifted [g cm^-3]")
+    s.add_argument("--ymin", type=float, default=3.0, help="bottom of the box [Mm]")
+    s.add_argument("--tfloor", type=float, default=0.1, help="the run's temperature floor in T_ph (JEXPRESSO_LK10_TFLOOR)")
     s = sub.add_parser("null", parents=[common]); s.set_defaults(fn=cmd_null)
     s.add_argument("runs", nargs="+", help="RUN or LABEL=RUN")
     s.add_argument("--thr", type=float, default=-13.0, help="log10 rho threshold of the dome top [g cm^-3]")
