@@ -45,6 +45,9 @@
 #                            put into the plasma (1: all, energy conserving; 0: none) [shock]
 #   JEXPRESSO_LK10_ETAFAC    factor on the DynSGS resistivity (the :μ multiplier of the B
 #                            slots), a sensitivity test of the reconnection          [1]
+#   JEXPRESSO_LK10_VISCFAC   factor on the DynSGS viscosity (the :μ multipliers of the ρu,
+#                            ρv, ρw slots; after its caps, the case's ν untouched), a test
+#                            of its drag on the plasma that drains from the dome     [1]
 #   JEXPRESSO_LK10_STABCAP   the DynSGS coefficient never above this viscous number, μ Δt/Δx²,
 #                            which the explicit step still integrates (0: no cap)    [0.2]
 #   JEXPRESSO_LK10_DSGS_STAGES  all | 1,5 | 1: the stages of the Runge-Kutta scheme at which
@@ -316,8 +319,10 @@ function user_inputs()
         # would be a diffusivity of ~4 L0 v0 (README, "DynSGS").
         #---------------------------------------------------------------------------
         :lvisc                => true,
-        # (slots ρ, ρu, ρv, E, ρw, Bx, By, Bz, ψ; JEXPRESSO_LK10_ETAFAC scales the resistivity)
-        :μ                    => [_lk10_num("RHOFAC", 1.0), 1.0, 1.0, 1.0, 1.0, fill(_lk10_num("ETAFAC", 1.0), 3)..., 1.0],
+        # (slots ρ, ρu, ρv, E, ρw, Bx, By, Bz, ψ; JEXPRESSO_LK10_VISCFAC scales the viscosity, _ETAFAC
+        # the resistivity, _RHOFAC the mass diffusion)
+        :μ                    => [_lk10_num("RHOFAC", 1.0), _lk10_num("VISCFAC", 1.0), _lk10_num("VISCFAC", 1.0), 1.0,
+                                  _lk10_num("VISCFAC", 1.0), fill(_lk10_num("ETAFAC", 1.0), 3)..., 1.0],
         :visc_model           => DSGS_MHD(),
         # "legacy" (DSGS.md §1.2): the assembled RHS against a BDF2 of the RK stage state, which
         # reads -∂ₜq/2 at the first stage — R ≈ |∂ₜq|, so every moving structure is diffused,

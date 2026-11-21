@@ -92,6 +92,7 @@ editing the deck:
 | `JEXPRESSO_LK10_ETACAP` | `fast` (default), `flow` | DynSGS resistivity capped at $C_{max}\Delta(\lvert v\rvert + c_f)$ like the viscosity, or at $C_{max}\Delta\lvert v\rvert$ (Verification, the REF 4 run) |
 | `JEXPRESSO_LK10_ETAFAC` | default 1 | factor on the DynSGS resistivity (the `:μ` multipliers of the B slots), a sensitivity test |
 | `JEXPRESSO_LK10_RHOFAC` | default 1 | factor on the DynSGS mass diffusion (the `:μ` multiplier of the ρ slot), a sensitivity test |
+| `JEXPRESSO_LK10_VISCFAC` | default 1 | factor on the DynSGS viscosity (the `:μ` multipliers of the momentum slots, applied after its caps; the case's ν is not scaled), a test of its drag on the plasma that drains from the dome (`drain`, its `visc` column) |
 | `JEXPRESSO_LK10_HEAT` | `shock` (default), a fraction | what the heat the DynSGS dissipates does (`:dsgs_heating`): `shock`, only the explicit ν, η and the DynSGS viscosity in compression heat, as in Lare (The heat of the DynSGS, below); or that fraction of it into the plasma (1 conserves energy, 0 loses it all) |
 | `JEXPRESSO_LK10_SENSOR` | `legacy` (default), `residual` | DynSGS sensor: $\lvert\partial_tq\rvert$ against the assembled RHS (the parent case's), or the element residual once per step (DSGS.md §1.2) |
 
@@ -688,7 +689,7 @@ stops at once ("nothing to continue"), so a spare job in the chain is harmless.
   run with another record stops with the list of differences. The time step
   (`JEXPRESSO_LK10_DT`), the end time, the snapshot interval and the numerical
   switches may change (`JEXPRESSO_LK10_FLOORS`, `_CMIN`, `_CURLB` and those of
-  the DynSGS: `_ETA`, `_ETACAP`, `_ETAFAC`, `_RHOFAC`, `_HEAT`, `_STABCAP`,
+  the DynSGS: `_ETA`, `_ETACAP`, `_ETAFAC`, `_VISCFAC`, `_RHOFAC`, `_HEAT`, `_STABCAP`,
   `_SENSOR`, `_ENERGY`, `_DSGS_STAGES`, `_CR`, and `_TFLOOR`; the log says which did): that is
   how a run continues past a failure (below), or with another setting from the
   snapshot where it starts to matter.

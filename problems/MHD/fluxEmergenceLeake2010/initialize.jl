@@ -584,7 +584,7 @@ lk10_restart_fields() = ["ρ", "u", "v", "w", "p", "Bx", "By", "Bz", "ψ"]
 # Δt, the end time and the snapshot interval may change, and so may the numerical
 # switches of lk10_numeric_keys (to continue past a failure from an earlier snapshot);
 # the restart says which changed.
-lk10_numeric_keys() = ("curl_resistivity", "Cmin", "floors", "dsgs_energy", "eta_sensor", "dsgs_sensor", "eta_cap", "eta_factor",
+lk10_numeric_keys() = ("curl_resistivity", "Cmin", "floors", "dsgs_energy", "eta_sensor", "dsgs_sensor", "eta_cap", "eta_factor", "visc_factor",
                          "rho_factor", "heating", "stab_cap", "dsgs_stages", "CR", "tfloor")
 
 function lk10_case_record(inputs)
@@ -606,6 +606,7 @@ function lk10_case_record(inputs)
         "dsgs_sensor"      => String(get(inputs, :dsgs_sensor, "legacy")),
         "eta_cap"          => get(inputs, :dsgs_eta_flow_cap, false) == true ? "flow" : "fast",
         "eta_factor"       => string(Float64(get(inputs, :μ, ones(9))[6])),
+        "visc_factor"      => string(Float64(get(inputs, :μ, ones(9))[2])),
         "rho_factor"       => string(Float64(get(inputs, :μ, ones(9))[1])),
         "stab_cap"         => string(Float64(get(inputs, :dsgs_stab_cap, 0.0))),
         "dsgs_stages"      => (st = get(inputs, :dsgs_stages, nothing); st === nothing ? "all" : join(st, ",")),
@@ -658,7 +659,7 @@ function lk10_record_mismatch(old::Dict{String,String}, rec; numerics::Bool=fals
         # (runs made before the partition was recorded had the uniform bins)
         # (and the legacy DynSGS sensor)
         w = get(old, k, k == "partition" ? "uniform" : k == "dsgs_sensor" ? "legacy" : k == "eta_cap" ? "fast" :
-                        k in ("eta_factor", "rho_factor", "heating", "CR") ? "1.0" : k == "stab_cap" ? "0.0" :
+                        k in ("eta_factor", "visc_factor", "rho_factor", "heating", "CR") ? "1.0" : k == "stab_cap" ? "0.0" :
                         k == "dsgs_stages" ? "all" : k == "tfloor" ? "0.1" : "(not recorded)")
         w == v || push!(bad, "$(k): $(w) there, $(v) here" *
                              (k == "partition" ? " (JEXPRESSO_LK10_PARTITION=$(w) to continue that run)" : ""))
