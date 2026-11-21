@@ -57,8 +57,7 @@ On the CPU with continuous Galerkin, in 1D, 2D and 3D, the kernel no longer trea
 
 1. **Value constraint.** A component is constrained if `user_bc_dirichlet!` *changes* its value. The test is run on the initial state and on probe states (the initial state plus distinct, non-zero offsets on every component), so a constraint that the current state already satisfies — e.g. `w = 0` at a wall for a fluid at rest — is still detected. A component that is returned unchanged (passthrough, or tangential momentum on an axis-aligned wall) is *not* constrained.
 2. **No-penetration (free slip; 2D and 3D).** If the returned *total* momentum (equations 2:3 in 2D, 2:4 in 3D, adding `qe` in `PERT` form) equals the tangential projection of the input momentum, $\mathbf m - (\mathbf m\cdot\mathbf n)\,\mathbf n$, with $\mathbf n$ the boundary normal, the node is treated as a no-penetration node. This covers flat walls and walls with topography. Such nodes get a **node normal** built from all incident constrained boundary edges (2D) or faces (3D): the kernel accumulates $\sum \mathbf n\mathbf n^T$, eigen-decomposes it, and removes every direction whose eigenvalue exceeds 20 % of the largest. Nearly parallel normals (smooth terrain) therefore merge into one averaged normal, while distinct walls meeting at a corner (2D) or an edge or corner (3D) are all removed. In 1D a wall is simply ρu = 0, which rule 1 already covers.
-3. **Robin tags.** Tags whose name contains `robin` (any case, e.g. `"robin_bottom"`, `"ROBIN"`) are value + flux conditions: the values returned by `user_bc_dirichlet!` are applied, but **no tendency is constrained**, so a flux from `user_bc_neumann!` on the same tag acts.
-4. Periodic tags (`periodicx/y/z`, `periodic1/2/3`) and `Laguerre` edges are skipped, as before. In 1D the boundary nodes are the two end points, with tags `"left"` and `"right"`.
+3. Periodic tags (`periodicx/y/z`, `periodic1/2/3`) and `Laguerre` edges are skipped, as before. In 1D the boundary nodes are the two end points, with tags `"left"` and `"right"`.
 
 The resulting masks are assembled across MPI ranks and periodic copies, so every copy of a node is treated identically.
 
@@ -77,7 +76,6 @@ Neumann contributions (`user_bc_neumann!`, MOST, bulk fluxes, `S_flux`) are unch
 | `qbdy[2:4] = 0` | no-slip (all momentum components fixed) |
 | `qbdy[5] = f(q, x, t)` on a tag | component 5 fixed to the returned value on that tag |
 | `qbdy[k] = q[k]` | nothing (passthrough) |
-| any assignment on a tag named `*robin*` | values applied, no tendency constraint |
 
 **Limitations to be aware of:**
 
