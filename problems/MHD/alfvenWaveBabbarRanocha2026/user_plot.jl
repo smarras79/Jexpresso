@@ -262,7 +262,10 @@ function _aw_save(e, inputs, tnom, tnum, st)
     nop  = Int(get(inputs, :nop, 0))
     nelx = _aw_nelx_of(inputs)
     try
-        f = joinpath(AW_ERR_DIR, string("nop", nop, "_nelx", nelx, "_", _aw_tag(inputs), ".dat"))
+        # a final time other than the deck's 2 goes in the name, so that it does not
+        # overwrite the t = 2 record of the same run (the loader reads t from the header)
+        tsuf = abs(tnom - 2.0) > 1.0e-12 ? string("_t", tnom) : ""
+        f = joinpath(AW_ERR_DIR, string("nop", nop, "_nelx", nelx, "_", _aw_tag(inputs), tsuf, ".dat"))
         _aw_atomic(f, tmp -> open(tmp, "w") do io
             println(io, "# smooth Alfvén wave: e(q) = sqrt((1/|Ω|) ∫ (q_h − q)² dΩ) against the exact solution,",
                         " N+4 Gauss points per direction; Linf at those points.",
