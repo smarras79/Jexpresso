@@ -33,6 +33,9 @@
 #   JEXPRESSO_AW_FREEZE 1 or 0 forces :dsgs_freeze_stage (the coefficient once
 #                       per step, or at every stage); unset, mod_inputs.jl's
 #                       default applies: on with the residual sensor
+#   JEXPRESSO_AW_BDF    :dsgs_bdf_order, the order of the residual sensor's
+#                       backward difference (default 2); 4 or 5 lower the BDF2
+#                       floor that caps DSGS without the cutoff near order 4
 #   JEXPRESSO_AW_SOLVER ck54, vern7, vern9, dp8, ssprk54 — the time integrator;
 #                       unset, the rule below (ck54 up to N = 5, vern7 above)
 #
@@ -82,6 +85,9 @@ _aw_nelx() = something(tryparse(Int,     get(ENV, "JEXPRESSO_AW_NELX", "")), AW_
 _aw_tend() = something(tryparse(Float64, get(ENV, "JEXPRESSO_AW_TEND", "")), 2.0)
 _aw_cmin() = something(tryparse(Float64, get(ENV, "JEXPRESSO_AW_CMIN", "")), 0.0)
 _aw_cutoff() = something(tryparse(Float64, get(ENV, "JEXPRESSO_AW_CUTOFF", "")), AW_CUTOFF)
+# :dsgs_bdf_order (mod_inputs.jl): the BDF2 floor above becomes −Δtᵏ/(k+1)∂ₜᵏ⁺¹q
+# with BDF-k (plus the integrator's own defect); records "<tag>_bdf<k>".
+_aw_bdf() = something(tryparse(Int, get(ENV, "JEXPRESSO_AW_BDF", "")), 2)
 _aw_visc() = lowercase(strip(get(ENV, "JEXPRESSO_AW_VISC", "dsgs")))
 _aw_sensor() = lowercase(strip(get(ENV, "JEXPRESSO_AW_SENSOR", "residual")))
 _aw_freeze() = (v = strip(get(ENV, "JEXPRESSO_AW_FREEZE", ""));
@@ -155,6 +161,7 @@ function user_inputs()
         :dsgs_Cmax        => 0.5,
         :dsgs_Cmin        => _aw_cmin(),   # 0: a floor would add an O(h) error
         :dsgs_cutoff      => _aw_cutoff(), # the BDF2 floor of the residual, see AW_CUTOFF
+        :dsgs_bdf_order   => _aw_bdf(),    # the order of that time difference (2: BDF2)
         :dsgs_gamma       => 5.0/3.0,
         :dsgs_Prt         => 1.0,
         :dsgs_conserved      => false,     # physical form, as user_primitives.jl

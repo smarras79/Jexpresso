@@ -23,9 +23,11 @@
 #     B⊥ = (B·e⊥, Bz),   u⊥ = (u·e⊥, w),   e⊥ = (−sin α, cos α),
 #
 # e(B⊥) = sqrt((1/|Ω|) ∫ |B⊥,h − B⊥|² dΩ) and the same for u⊥; the wave is
-# 0.1 (sin, cos)(2π(x∥ + t)) in both. The figure has five panels: B⊥ and u⊥,
-# the wave's own error; ρ, the paper's measure; the full state,
-# sqrt(Σ_k e(q_k)²); and the L∞ error of the state.
+# 0.1 (sin, cos)(2π(x∥ + t)) in both. The figure has seven panels: B⊥ and u⊥
+# in L² and L∞ (the largest |B⊥,h − B⊥| over the Gauss points), the wave's own
+# error; ρ, the paper's measure; the full state, sqrt(Σ_k e(q_k)²); and the L∞
+# error of the state. The wave's L∞ is in every record written since 17 Nov
+# 2026, so the panels draw from a store of that age without a new run.
 #
 # WHAT DSGS DID. Each record also stores the largest normalized residual r
 # (before the cutoff) and the largest coefficient μ over the whole run
@@ -235,6 +237,11 @@ function _aw_tag(inputs)
           "" : string("_", lowercase(string(nameof(typeof(s)))))
     tryparse(Float64, get(ENV, "JEXPRESSO_AW_DT", "")) === nothing ||
         (ode *= @sprintf("_dt%.3g", Float64(get(inputs, :Δt, 0.0))))
+    # the diagnostics of initialize.jl: another GLM speed, another amplitude
+    let ch = tryparse(Float64, get(ENV, "JEXPRESSO_AW_CH", ""))
+        ch === nothing || (ode *= @sprintf("_ch%g", ch))
+    end
+    (isdefined(@__MODULE__, :AW_AMP) && AW_AMP != 0.1) && (ode *= @sprintf("_amp%g", AW_AMP))
     get(inputs, :lvisc, true) || return string("galerkin", ode)
     tag    = "dsgs"
     legacy = lowercase(string(get(inputs, :dsgs_sensor, "residual"))) == "legacy"
@@ -243,6 +250,7 @@ function _aw_tag(inputs)
     cut = Float64(get(inputs, :dsgs_cutoff, 0.0))
     cut == AW_DSGS_CUTOFF || (tag *= cut > 0 ? @sprintf("_cut%.0e", cut) : "_nocut")
     !legacy && get(inputs, :dsgs_freeze_stage, false) != true && (tag *= "_perstage")
+    tag *= _conv_bdf_suffix(inputs)      # "_bdf<k>" for :dsgs_bdf_order = k ≠ 2
     return string(tag, ode)
 end
 
@@ -314,6 +322,7 @@ function _aw_load(tnom)
         push!(rows, (nop = nop, nelx = nelx, ndofs = (nelx*nop)^2, visc = get(meta, "visc", "dsgs"),
                      t = tc, dt = something(tryparse(Float64, get(meta, "dt", "")), NaN),
                      bperp = get(l2, "Bperp", NaN), uperp = get(l2, "uperp", NaN),
+                     bperp_inf = get(linf, "Bperp", NaN), uperp_inf = get(linf, "uperp", NaN),
                      rho = l2["ρ"], state = sqrt(sum(abs2, l2[n] for n in AW_QVARS)),
                      state_inf = maximum(linf[n] for n in AW_QVARS),
                      r_max  = something(tryparse(Float64, get(meta, "r_max",  "")), NaN),
@@ -330,18 +339,19 @@ function _aw_report(rows)
     println(" # alfvenWaveBabbarRanocha2026: L2 error at t = ", rows[1].t,
             " (B⊥, u⊥: the wave; rho: the paper's Fig. 13 measure, exact rho = 1;",
             " r, mu: largest normalized residual before the cutoff and largest DSGS coefficient over the run)")
-    println(" #   visc         N  nelx    DOFs     L2(B⊥)  order     L2(u⊥)  order    L2(rho)  order       max r      max mu")
+    println(" #   visc         N  nelx    DOFs     L2(B⊥)  order   Linf(B⊥)  order     L2(u⊥)  order    L2(rho)  order       max r      max mu")
     _o(p) = isfinite(p) ? @sprintf("%.2f", p) : ""
     _g(x) = isfinite(x) ? @sprintf("%.3e", x) : "-"
     prev = nothing
     for r in rows
         same = prev !== nothing && prev.visc == r.visc && prev.nop == r.nop
         pb = same ? _aw_rate(prev.ndofs, prev.bperp, r.ndofs, r.bperp) : NaN
+        pbi = same ? _aw_rate(prev.ndofs, prev.bperp_inf, r.ndofs, r.bperp_inf) : NaN
         pu = same ? _aw_rate(prev.ndofs, prev.uperp, r.ndofs, r.uperp) : NaN
         pr = same ? _aw_rate(prev.ndofs, prev.rho,   r.ndofs, r.rho)   : NaN
-        println(@sprintf(" #   %-11s %2d  %4d  %6d  %10s  %5s %10s  %5s %10.3e  %5s  %10s  %10s",
+        println(@sprintf(" #   %-11s %2d  %4d  %6d  %10s  %5s %10s  %5s %10s  %5s %10.3e  %5s  %10s  %10s",
                          r.visc, r.nop, r.nelx, r.ndofs,
-                         _g(r.bperp), _o(pb), _g(r.uperp), _o(pu), r.rho, _o(pr),
+                         _g(r.bperp), _o(pb), _g(r.bperp_inf), _o(pbi), _g(r.uperp), _o(pu), r.rho, _o(pr),
                          _g(r.r_max), _g(r.mu_max)))
         prev = r
     end
@@ -364,10 +374,12 @@ function _aw_line(tag, tags)
 end
 _aw_label(tag) = startswith(tag, "galerkin") ? replace(tag, "galerkin" => "Galerkin", "_" => " ") :
                  replace(tag, "dsgs" => "DSGS", "_nocut" => ", no cutoff",
-                         r"_cut([0-9.e+-]+)" => s", cutoff \1", "_" => " ")
+                         r"_cut([0-9.e+-]+)" => s", cutoff \1", r"_bdf(\d+)" => s", BDF\1", "_" => " ")
 const AW_PANELS = [   # (field, ylabel, title, file)
     (:bperp,     "\\Vert\\mathbf{B}_{\\perp,h}-\\mathbf{B}_\\perp\\Vert_{L^2}", "L^2\\mathrm{-error\\ of}\\ \\mathbf{B}_\\perp", "Bperp"),
+    (:bperp_inf, "\\Vert\\mathbf{B}_{\\perp,h}-\\mathbf{B}_\\perp\\Vert_{L^\\infty}", "L^\\infty\\mathrm{-error\\ of}\\ \\mathbf{B}_\\perp", "Bperp_Linf"),
     (:uperp,     "\\Vert\\mathbf{u}_{\\perp,h}-\\mathbf{u}_\\perp\\Vert_{L^2}", "L^2\\mathrm{-error\\ of}\\ \\mathbf{u}_\\perp", "uperp"),
+    (:uperp_inf, "\\Vert\\mathbf{u}_{\\perp,h}-\\mathbf{u}_\\perp\\Vert_{L^\\infty}", "L^\\infty\\mathrm{-error\\ of}\\ \\mathbf{u}_\\perp", "uperp_Linf"),
     (:rho,       "\\Vert\\rho_h-\\rho\\Vert_{L^2}",                  "L^2\\mathrm{-error\\ of}\\ \\rho",               "rho"),
     (:state,     "\\Vert\\mathbf{q}_h-\\mathbf{q}\\Vert_{L^2}",      "L^2\\mathrm{-error\\ of\\ the\\ state}",       "L2"),
     (:state_inf, "\\Vert\\mathbf{q}_h-\\mathbf{q}\\Vert_{L^\\infty}", "L^\\infty\\mathrm{-error\\ of\\ the\\ state}", "Linf"),
@@ -490,8 +502,8 @@ function _aw_diag_panel(rows, fld::Symbol, ylab, title; tags, label, line, galer
     return pl
 end
 
-# <name>-it<iout>.png, the five error panels side by side, and <name>_Bperp,
-# _uperp, _rho, _L2 and _Linf, one each. Then what DSGS did: <name>_rmax and
+# <name>-it<iout>.png, the seven error panels side by side, and <name>_Bperp,
+# _Bperp_Linf, _uperp, _uperp_Linf, _rho, _L2 and _Linf, one each. Then what DSGS did: <name>_rmax and
 # _mumax (_aw_diag_panel), and <name>_paper, the three panels the paper's
 # smooth-wave test needs side by side: the error of the wave (B⊥) for every
 # variant, max r against the cutoff, and max μ. Returns the first file, or
