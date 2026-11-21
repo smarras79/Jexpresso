@@ -802,25 +802,31 @@ the viscosity. On the initial atmosphere the support is 1.00 in the corona and
 1.11 in the chromosphere of REF 1 (one and a half nodes per scale height).
 
 `heat` says what changes the temperature of that plasma. For the plasma denser
-than $10^{-13}$ g cm⁻³ above 3 Mm, split into the center ($|x| < 2.5$ Mm, where
-the dome's field lies flat) and the flanks, each term of its temperature
-equation as the code applies it with `JEXPRESSO_LK10_HEAT=shock`, as a
-mass-weighted mean $DT/Dt$ in K per 100 s: compression and expansion
-($-p\nabla\cdot\mathbf v$, ideal), the case's viscosity (in full), the
-DynSGS viscosity where the flow is compressed, the case's anomalous
-resistivity (in full; zero while $|\nabla\times\mathbf B| < j_{crit}$, a
-40 G reversal thinner than about 50 m), the DynSGS diffusion of the internal
-energy's departure from the reference atmosphere, and the DynSGS mass
-diffusion, which leaves the internal energy where it is, so that
-$T = p/\rho$ rises where it takes mass away. Each is evaluated from the
-snapshot with the code's operators (the reference-weighted
-$\nabla\cdot(\rho_e\mu\nabla((q - q_e)/\rho_e))$, the reference atmosphere
-rebuilt from its formula), by finite differences on the mesh's lattice. Then
-what the DynSGS dissipates and `shock` does not heat. Where two snapshots are
-close (the off-grid outputs, 12–17 s apart) the observed $DT/Dt$, node by node,
-is set against the budget: the difference is what the budget misses (the
-temperature floor, and its own error). On REF 1 at 920–928 s the two agree to
-25 %.
+than $10^{-13}$ g cm⁻³ above 3 Mm (`--ymin`, `--ymax`, `--thr`; `--thr -99` for
+all of it), split into the center ($|x| < 2.5$ Mm, where the dome's field lies
+flat) and the flanks, each term of its temperature equation as the code applies
+it with `JEXPRESSO_LK10_HEAT=shock`, as a mass-weighted mean $DT/Dt$ in K per
+100 s: compression and expansion ($-p\nabla\cdot\mathbf v$, ideal), the case's
+viscosity (in full), the DynSGS viscosity where the flow is compressed, the
+case's anomalous resistivity (in full; zero while
+$|\nabla\times\mathbf B| < j_{crit}$, a 40 G reversal thinner than about 50 m),
+the DynSGS diffusion of the internal energy's departure from the reference
+atmosphere, the DynSGS mass diffusion (which leaves the internal energy where it
+is, so that $T = p/\rho$ rises where it takes mass away and falls where it
+brings it), the energy relaxation, and the GLM damping of $\psi$, whose energy
+$\tfrac12\psi^2$ the pressure gains ($\alpha_p c_h/\Delta h\,\psi^2$; `--ch`,
+the run's log). Each is evaluated from the snapshot with the code's operators
+(the reference-weighted $\nabla\cdot(\rho_e\mu\nabla((q - q_e)/\rho_e))$, the
+reference atmosphere rebuilt from its formula: on the $t = 0$ snapshot every
+term is below $10^{-4}$ K per 100 s), by finite differences on the mesh's
+lattice. Then what the DynSGS dissipates and `shock` does not heat. Where two
+snapshots are at most 20 s apart (the off-grid outputs, 12–17 s apart) the
+observed $DT/Dt = \partial_tT + \mathbf v\cdot\nabla T$, node by node, is set
+against the budget on the nodes that stay in the set, below $2\times10^5$ K,
+and change by less than 30 % (a front sweeping over a node is not an advection a
+finite difference follows): the difference is what the budget misses, the
+temperature floor and its own error. On REF 1 at 920–928 s it is 1 % on the
+flanks.
 
 `tools/lk10_report.sh RUN [--base RUN0] [--log FILE] [--py PYTHON]` writes
 `lk10_report_<run>.txt`: the configuration of each directory of the run, the

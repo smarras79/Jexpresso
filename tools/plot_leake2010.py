@@ -1019,7 +1019,9 @@ def cmd_drain(a):
 GAMMA = 5.0 / 3.0
 NU_CODE = 0.01326                       # the case's explicit kinematic viscosity above the photosphere (user_flux.jl, LK10_NU)
 ETA0_CODE, JCRIT_CODE = 1.18e-4, 126.3  # its anomalous resistivity eta0 max(0, |curl B|/jcrit - 1) (user_flux.jl), code units
-HEAT_TERMS = ["p dV", "nu", "shock", "anom eta", "E diff", "rho diff"]
+HEAT_TERMS = ["p dV", "nu", "shock", "anom eta", "E diff", "rho diff", "relax", "GLM psi"]
+CH_DEFAULT = 274.655                    # the GLM speed of the tube + quadrupole case (its log: "GLM: c_h = ...")
+TAU0_CODE, TAU_EXP, RELAX_RHOMIN = 23.0 / 23.1946, 1.43, 1.0e-5   # the energy relaxation (user_source.jl)
 G_EXACT = 2.74e4 * 1.5e7 / (1.380649e-16 * 5700.0 / (1.125 * 1.67262192e-24))   # gravity, code (user_flux.jl, LK10_G)
 LOST_TERMS = ["DSGS visc", "DSGS eta"]
 
@@ -1061,7 +1063,7 @@ def _ref_atmos(yc, mcz):
     return p / T, p
 
 
-def heat_fields(g, thr, ymin, rhofac, mcz):
+def heat_fields(g, thr, ymin, ymax, rhofac, mcz, ch, relax=True, relax_ymin=-np.inf):
     """Every term of the temperature equation of the plasma of one snapshot, as the code applies it with
     JEXPRESSO_LK10_HEAT=shock, on the mesh's own lattice (cmd_heat). The DynSGS diffuses each slot q as
     div(rho_e mu grad((q - q_e)/rho_e)) (:dsgs_ref_weight, the case's user_primitives!), q_e the reference state
@@ -1069,7 +1071,7 @@ def heat_fields(g, thr, ymin, rhofac, mcz):
     X, Y = g["X"], g["Y"]
     G = lambda n: grid2d(g, g["fields"][n])
     L = G("log10rho_cgs")
-    box = ((Y > ymin) & (Y < 20.0))[:, None] & ((X > -13.0) & (X < 13.0))[None, :]
+    box = ((Y > ymin) & (Y < ymax))[:, None] & ((X > -13.0) & (X < 13.0))[None, :]
     dense = box & (L > thr)
     xc, yc = g["xc"], g["yc"]
     dx = lambda f: np.gradient(f, xc, axis=1)
@@ -1096,16 +1098,28 @@ def heat_fields(g, thr, ymin, rhofac, mcz):
     j2 = (dx(By) - dy(Bx)) ** 2 + dx(Bz) ** 2 + dy(Bz) ** 2
     eta_an = ETA0_CODE * np.maximum(np.sqrt(j2) / JCRIT_CODE - 1.0, 0.0)
     Rr = div2(re * rhofac * mud, r / re)                 # the DynSGS mass diffusion
+    # the energy relaxation to the internal energy the reference atmosphere has at the height of the same density
+    yt = np.linspace(min(float(np.min(yc)), -200.0), float(np.max(yc)), 20001)
+    rt, pt = _ref_atmos(yt, mcz)
+    T0r = np.interp(np.log(np.maximum(r, 1e-300)), np.log(rt[::-1]), (pt / rt)[::-1])
+    on = relax & (r > RELAX_RHOMIN) & (yc[:, None] > relax_ymin)
+    qrel = np.where(on, -(np.maximum(r, 0.0) ** TAU_EXP / TAU0_CODE) * (p - r * T0r) / (GAMMA - 1.0), 0.0)
+    # GLM: the damping of psi (user_source.jl) takes its energy 1/2 psi^2 out of psi but not out of E, so that
+    # the pressure p = (gamma - 1)(E - ... - 1/2 psi^2) gains it
+    dh = min(float(np.min(np.diff(xc))), float(np.min(np.diff(yc))))
+    psi = G("ψ") if "ψ" in g["fields"] else np.zeros_like(u)
     q = {"p dV": -p * div,                               # compression heats, expansion cools: ideal
          "nu": Dp,
          "shock": shock,                                 # the DynSGS viscosity, in compression only
          "anom eta": eta_an * j2,                        # the case's anomalous resistivity, in full
          "E diff": div2(re * mud, (e - ee) / re),        # the DynSGS diffusion of the internal energy departure
          "rho diff": -(e / r) * Rr,                      # it leaves e in place: T = p/rho rises where mass is taken away
+         "relax": qrel,
+         "GLM psi": (ch / dh) * psi * psi,
          "DSGS visc": np.maximum(Dm - Dp, 0.0) - shock,  # dissipated, not heated
          "DSGS eta": np.maximum(etaB - eta_an, 0.0) * j2}
     W = _trapw(yc)[:, None] * _trapw(xc)[None, :]
-    return dict(X=X, dense=dense, W=W, r=r, T=T, u=u, v=v, q=q, dx=dx, dy=dy,
+    return dict(X=X, dense=dense, W=W, r=r, T=T, u=u, v=v, q=q, dx=dx, dy=dy, dh=dh,
                 Mbox=np.sum(np.where(box, W * r, 0.0)))     # all the plasma of the box: the unit of mass, as drain's
 
 
@@ -1123,17 +1137,27 @@ def heat_means(F, sel):
     return out
 
 
-def heat_lagrangian(F1, F2, t1, t2, sel):
-    """The observed DT/Dt between two close snapshots, dT/dt + v.grad T at each node (both averaged over the pair),
-    as a mass-weighted mean over the nodes sel [K per 100 s]."""
-    Tm = 0.5 * (F1["T"] + F2["T"])
-    dTdt = (F2["T"] - F1["T"]) / ((t2 - t1) / T0_S)
-    adv = 0.5 * (F1["u"] + F2["u"]) * F2["dx"](Tm) + 0.5 * (F1["v"] + F2["v"]) * F2["dy"](Tm)
+def heat_lagrangian(F1, F2, t1, t2, sel1, sel2, tcut=2.0e5, jump=0.3):
+    """The observed DT/Dt between two close snapshots, dT/dt + v.grad T at each node (fields averaged over the pair),
+    against the budget (the mean of the two snapshots' terms), as mass-weighted means [K per 100 s] over the nodes
+    that are in the set in both, below tcut [K] in both and whose T changed by less than `jump` of itself: a front
+    that sweeps over a node (the hot layer above the dome) is not an advection a finite difference can follow.
+    Returns (observed, budget, share of the set's mass compared)."""
+    T1, T2 = F1["T"], F2["T"]
+    Tm = 0.5 * (T1 + T2)
+    c = sel1 & sel2 & (np.maximum(T1, T2) * 5700.0 < tcut) & (np.abs(T2 - T1) < jump * Tm)
     rm = 0.5 * (F1["r"] + F2["r"])
-    m = np.sum(np.where(sel, F2["W"] * rm, 0.0))
-    if m <= 0:
-        return np.nan
-    return np.sum(np.where(sel, F2["W"] * rm * (dTdt + adv), 0.0)) / m * 5700.0 / T0_S * 100.0
+    W = F2["W"]
+    m = np.sum(np.where(c, W * rm, 0.0))
+    mall = np.sum(np.where(sel2, W * F2["r"], 0.0))
+    if m <= 0 or mall <= 0:
+        return np.nan, np.nan, 0.0
+    dTdt = (T2 - T1) / ((t2 - t1) / T0_S)
+    adv = 0.5 * (F1["u"] + F2["u"]) * F2["dx"](Tm) + 0.5 * (F1["v"] + F2["v"]) * F2["dy"](Tm)
+    obs = np.sum(np.where(c, W * rm * (dTdt + adv), 0.0)) / m * 5700.0 / T0_S * 100.0
+    qs = sum(0.5 * (F1["q"][n] + F2["q"][n]) for n in HEAT_TERMS)
+    bud = np.sum(np.where(c, W * qs, 0.0)) / m * KPER100
+    return obs, bud, m / mall
 
 
 def cmd_heat(a):
@@ -1148,37 +1172,43 @@ def cmd_heat(a):
       E diff    the DynSGS diffusion of the internal energy's departure from the reference atmosphere;
       rho diff  the DynSGS mass diffusion (rho_factor x mu, lk10_case.txt): it leaves the internal energy where it
                 is, so T = p/rho rises where it takes mass away and falls where it brings it;
-      sum       of these: DT/Dt of the plasma, but for the temperature floor (JEXPRESSO_LK10_TFLOOR) and the
-                relaxation (negligible above the photosphere), which a snapshot does not show.
+      relax     the energy relaxation (user_source.jl) to the reference's temperature at the same density;
+      GLM psi   the GLM damping of psi, whose energy 1/2 psi^2 the pressure gains (alpha_p c_h/dh psi^2; --ch);
+      sum       of these: DT/Dt of the plasma, but for the temperature floor (JEXPRESSO_LK10_TFLOOR), which a
+                snapshot does not show.
     Then what the DynSGS dissipates and 'shock' does not heat (heating = 1 would): its viscosity outside
     compression, and its resistivity. Where two snapshots are close (the run's off-grid outputs, 12-17 s apart),
-    the observed DT/Dt = dT/dt + v.grad T, node by node, is set against the mean of the two budgets: what the
-    budget misses (the floor, and its own errors) is their difference. The gradients are finite differences on
+    the observed DT/Dt = dT/dt + v.grad T, node by node, is set against the mean of the two budgets on the nodes
+    that stay in the set, below 2e5 K, and change by less than 30 % (fronts sweeping over a node excluded): what
+    the budget misses (the floor, and its own errors) is their difference. The gradients are finite differences on
     the mesh's own LGL lattice, so each term is an estimate to a factor ~2: enough to tell which one heats."""
+    if a.ymin < 0.0:
+        raise SystemExit("heat: --ymin must be >= 0: below the photosphere the case's viscosity is dynamic (nu/rho_e)")
     items = runs_of(a.run)
-    names = ["log10rho_cgs", "ρ", "p", "T", "u", "v", "w", "Bz", MU_NAME, *ETA_NAMES]
+    names = ["log10rho_cgs", "ρ", "p", "T", "u", "v", "w", "Bz", "ψ", MU_NAME, *ETA_NAMES]
     seen, rows, pairs = {}, [], []
     prev = None
     for t, f in items:
         d = os.path.dirname(f)
         if d not in seen:
             seen[d] = (float(_case_value(d, "rho_factor", "1.0")) if a.rhofac is None else a.rhofac,
-                       _case_value(d, "heating", "not recorded"), float(_case_value(d, "mcz", "1.3")))
-        rf, _, mcz = seen[d]
-        F = heat_fields(load(f, names), a.thr, a.ymin, rf, mcz)
+                       _case_value(d, "heating", "not recorded"), float(_case_value(d, "mcz", "1.3")),
+                       _case_value(d, "relax", "true") == "true", float(_case_value(d, "relax_ymin", "-Inf")))
+        rf, _, mcz, rl, rly = seen[d]
+        F = heat_fields(load(f, names), a.thr, a.ymin, a.ymax, rf, mcz, a.ch, rl, rly)      # relax_ymin: in L0
         regs = {"center": F["dense"] & (np.abs(F["X"]) < a.xsplit)[None, :],
                 "flanks": F["dense"] & (np.abs(F["X"]) >= a.xsplit)[None, :]}
         rows.append((t, {k: heat_means(F, s) for k, s in regs.items()}))
         M0 = F["Mbox"] if not rows[:-1] else M0
         if prev is not None and 0.0 < t - prev[0] <= a.pair and prev[1]["T"].shape == F["T"].shape:
-            pairs.append((prev[0], t, {k: heat_lagrangian(prev[1], F, prev[0], t, s) for k, s in regs.items()}))
-        prev = (t, {k: F[k] for k in ("T", "u", "v", "r")})
-        prev[1].update(dx=F["dx"], dy=F["dy"], W=F["W"])
+            pairs.append((prev[0], t, {k: heat_lagrangian(prev[1], F, prev[0], t, prev[2][k], s) for k, s in regs.items()}))
+        prev = ({k: F[k] for k in ("T", "u", "v", "r", "q", "dx", "dy", "W")}, regs)
+        prev = (t, prev[0], prev[1])
     if not rows:
         raise SystemExit("heat: no snapshots")
-    print(f"plasma with log10 rho > {a.thr:g} in {a.ymin:g} < y < 20 Mm, |x| < 13 Mm: each term of DT/Dt as applied with "
-          f"heating = shock, mass-weighted mean [K per 100 s]")
-    for d, (rf, h, _) in seen.items():
+    print(f"plasma with log10 rho > {a.thr:g} in {a.ymin:g} < y < {a.ymax:g} Mm, |x| < 13 Mm: each term of DT/Dt as applied "
+          f"with heating = shock, mass-weighted mean [K per 100 s]; GLM: c_h = {a.ch:g}, dh = {F['dh']:.4g} (lattice)")
+    for d, (rf, h, *_) in seen.items():
         print(f"   {os.path.basename(os.path.normpath(d))}: heating = {h}, rho_factor = {rf:g}"
               + ("" if h in ("shock", "not recorded") else "  (not shock: there the 'not heated' columns heated too)"))
     hdr = (f"{'t [s]':>7} {'mass':>7} {'T K':>8} | " + " ".join(f"{n:>8}" for n in HEAT_TERMS)
@@ -1196,12 +1226,11 @@ def cmd_heat(a):
                   + f" {s:8.3g} | " + " ".join(f"{x[n]:9.3g}" for n in LOST_TERMS))
             csv.append([ir, t, x["M"], x["T"], *(x[n] for n in HEAT_TERMS), s, *(x[n] for n in LOST_TERMS)])
         for t1, t2, ob in pairs:
-            r1 = dict(rows)[t1][reg]; r2 = dict(rows)[t2][reg]
-            if r1 is None or r2 is None:
+            o, b, fr = ob[reg]
+            if not fr > 0:
                 continue
-            bud = 0.5 * (sum(r1[n] for n in HEAT_TERMS) + sum(r2[n] for n in HEAT_TERMS))
-            print(f"   {t1:.0f}-{t2:.0f} s: observed DT/Dt {ob[reg]:9.3g}, budget {bud:9.3g} (mean of the two), "
-                  f"not in the budget {ob[reg] - bud:9.3g}")
+            print(f"   {t1:.0f}-{t2:.0f} s, on the {100 * fr:.0f} % of the mass that changed smoothly: observed DT/Dt {o:9.3g}, "
+                  f"budget {b:9.3g}, not in the budget {o - b:9.3g}")
     out = os.path.join(a.outdir, "heat.csv")
     np.savetxt(out, np.array(csv), delimiter=",",
                header="region (0 center, 1 flanks), t [s], mass [code], mean T [K], "
@@ -1477,10 +1506,12 @@ def main():
     s.add_argument("run")
     s.add_argument("--thr", type=float, default=-13.0, help="log10 rho above which the plasma counts as lifted [g cm^-3]")
     s.add_argument("--ymin", type=float, default=3.0, help="bottom of the box [Mm] (above the photosphere)")
+    s.add_argument("--ymax", type=float, default=20.0, help="top of the box [Mm]")
+    s.add_argument("--ch", type=float, default=CH_DEFAULT, help="the run's GLM speed c_h, code units (its log: 'GLM: c_h = ...')")
     s.add_argument("--xsplit", type=float, default=2.5, help="|x| [Mm] between the center and the flanks (default 2.5)")
     s.add_argument("--rhofac", type=float, default=None,
                    help="the factor on the DynSGS mass diffusion (default: rho_factor of each directory's lk10_case.txt)")
-    s.add_argument("--pair", type=float, default=30.0, help="snapshots at most this far apart [s] are compared with the budget")
+    s.add_argument("--pair", type=float, default=20.0, help="snapshots at most this far apart [s] are compared with the budget")
     s = sub.add_parser("null", parents=[common]); s.set_defaults(fn=cmd_null)
     s.add_argument("runs", nargs="+", help="RUN or LABEL=RUN")
     s.add_argument("--thr", type=float, default=-13.0, help="log10 rho threshold of the dome top [g cm^-3]")
