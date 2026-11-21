@@ -941,7 +941,7 @@ def _wmedian(x, w):
     return float(x[o][min(np.searchsorted(cw, 0.5 * cw[-1]), x.size - 1)])
 
 
-def drain_row(g, thr=-13.0, ymin=3.0, tfloor=0.1):
+def drain_row(g, thr=-13.0, ymin=3.0, tfloor=0.1, rhofac=1.0, viscfac=1.0):
     """The dense plasma (log10 rho > thr) of the box ymin < y < 20 Mm, |x| < 13 Mm (cmd_drain)."""
     X, Y = g["X"], g["Y"]
     G = lambda n: grid2d(g, g["fields"][n])
@@ -952,7 +952,7 @@ def drain_row(g, thr=-13.0, ymin=3.0, tfloor=0.1):
     M = integ(np.where(d, rho, 0.0))
     if not np.any(d) or M <= 0:
         return dict(M=0.0, floor=np.nan, cold=np.nan, warm=np.nan, beta=np.nan, flat=np.nan, vpar=np.nan, sup=np.nan,
-                    vsup=np.nan, tsup=np.nan, T=np.nan)
+                    vsup=np.nan, nsup=np.nan, ssup=np.nan, tsup=np.nan, mud=np.nan, T=np.nan)
     fr = lambda sel: integ(np.where(d & sel, rho, 0.0)) / M
     T = G("T")                                                    # in T_ph = 5700 K
     P, r = G("p"), G("ρ")                                         # code units
@@ -967,16 +967,23 @@ def drain_row(g, thr=-13.0, ymin=3.0, tfloor=0.1):
     sup = -dpds / np.maximum(r * G_CODE * by, 1e-300)             # 1: hydrostatic along the field; 0: nothing holds it
     u, v = G("u"), G("v")
     vdown = -(u * bx + v * by) * V0_KMS                           # km/s down the field line
-    # the viscous force along the field (the DynSGS mu + the case's nu, the momentum coefficient written), with the
-    # code's reference-weighted operator div(rho_e mu grad(rho v/rho_e)) (:dsgs_ref_weight), as the same share
+    # the force of the diffusion terms on the VELOCITY along the field, rho dv/dt = R_rhov - v R_rho, as the same share:
+    # the momentum slots diffuse rho v/rho_e with rho_e (mu + nu) (:dsgs_ref_weight; the coefficient written, after
+    # JEXPRESSO_LK10_VISCFAC), the mass slot rho/rho_e with rho_e rho_factor mu. Split into the case's nu alone, and
+    # the shear part div(rho (mu + nu) grad v), which a viscosity acting on the velocity would give: the rest is
+    # momentum carried by the diffusion out of dense plasma moving as a block, with no mass to match it.
     if MU_NAME in g["fields"]:
         mu = G(MU_NAME)
+        mud = np.maximum(mu - NU_CODE, 0.0)
         re = _ref_atmos(Yc, 1.3)[0][:, None] * np.ones_like(u)
-        dv2 = lambda c, q: _sem_dcd(c, q, Xc, 1) + _sem_dcd(c, q, Yc, 0)
-        fvs = bx * dv2(re * mu, r * u / re) + by * dv2(re * mu, r * v / re)
-        vsup = fvs / np.maximum(r * G_CODE * by, 1e-300)
+        L2 = lambda c, q: _sem_dcd(c, q, Xc, 1) + _sem_dcd(c, q, Yc, 0)
+        Rr = L2(re * (rhofac / viscfac) * mud, r / re)
+        along = lambda fx, fy: (bx * fx + by * fy) / np.maximum(r * G_CODE * by, 1e-300)
+        vsup = along(L2(re * mu, r * u / re) - u * Rr, L2(re * mu, r * v / re) - v * Rr)
+        nsup = along(L2(re * NU_CODE, r * u / re), L2(re * NU_CODE, r * v / re))
+        ssup = along(L2(r * mu, u), L2(r * mu, v))
     else:
-        vsup = np.full_like(u, np.nan)
+        vsup = nsup = ssup = mud = np.full_like(u, np.nan)
     # cell weights of the mass (for the medians)
     wx = np.gradient(X); wy = np.gradient(Y)
     w = rho * wy[:, None] * wx[None, :]
@@ -984,7 +991,8 @@ def drain_row(g, thr=-13.0, ymin=3.0, tfloor=0.1):
     return dict(M=M, floor=fr(T < 1.2 * tfloor), cold=fr(T * 5700.0 < 2e4), warm=fr(T * 5700.0 >= 2e4),
                 beta=fr(beta > 1.0), flat=fr(~incl),
                 vpar=float(np.sum(w[k] * vdown[k]) / np.sum(w[k])) if np.any(k) else np.nan,
-                sup=_wmedian(sup[k], w[k]), vsup=_wmedian(vsup[k], w[k]), tsup=_wmedian((sup + vsup)[k], w[k]),
+                sup=_wmedian(sup[k], w[k]), vsup=_wmedian(vsup[k], w[k]), nsup=_wmedian(nsup[k], w[k]),
+                ssup=_wmedian(ssup[k], w[k]), tsup=_wmedian((sup + vsup)[k], w[k]), mud=_wmedian(mud[k], w[k]),
                 T=_wmedian(T[d] * 5700.0, w[d]))
 
 
@@ -1001,9 +1009,14 @@ def cmd_drain(a):
       support   the median share of its weight along the field that its pressure gradient carries, on the same
                 field lines: 1 is hydrostatic (it is held by its own pressure, it is too warm to drain), 0 is
                 nothing in the way (it falls, or something that is not pressure holds it: viscosity);
-      visc      the same share carried by the viscous force (the DynSGS and the case's nu, with the code's
-                reference-weighted operator; > 0: a drag on plasma that falls);  p+visc: their sum, whose shortfall
-                from 1 is what accelerates it down the field.
+      visc      the same share carried by the diffusion terms' force on the velocity (rho dv/dt = R_rhov - v R_rho,
+                the DynSGS and the case's nu, with the code's operators; > 0: a drag on plasma that falls), and of it:
+                nu, the case's explicit viscosity alone; shear, div(rho mu grad v), what a viscosity acting on the
+                velocity would give (the rest is momentum the diffusion carries out of dense plasma moving as a
+                block, with no mass diffusion to match it);  p+visc: pressure and visc, whose shortfall from 1 is
+                what accelerates it down the field;
+      mu        the median DynSGS momentum coefficient applied there [L0 v0 = 970 km^2/s] (after
+                JEXPRESSO_LK10_VISCFAC; the case's nu, 0.0133, not included).
     Nothing along a field line but pressure, gravity and viscosity acts on the plasma, so a dome that does not
     drain shows up here as one of: warm and support ~ 1; flat; beta > 1; or cold, steep, support ~ 0 and slow."""
     items = runs_of(a.run)
@@ -1016,19 +1029,23 @@ def cmd_drain(a):
         g = load(f, ["log10rho_cgs", "ρ", "p", "T", "u", "v", "Bz", MU_NAME])
         if M0 is None:
             M0 = drain_row(g, -99.0, a.ymin, a.tfloor)["M"]
-        rows.append((t, drain_row(g, a.thr, a.ymin, a.tfloor)))
+        d = os.path.dirname(f)
+        rows.append((t, drain_row(g, a.thr, a.ymin, a.tfloor, float(_case_value(d, "rho_factor", "1.0")),
+                                  float(_case_value(d, "visc_factor", "1.0")))))
     print(f"plasma with log10 rho > {a.thr:g} in {a.ymin:g} < y < 20 Mm, |x| < 13 Mm; mass in units of the "
           f"{'reference run' if a.ref else 'first snapshot'}'s whole box ({M0:.3g} g/cm); fractions of its mass")
     print(f"{'t [s]':>7} {'mass':>8} | {'T med K':>8} {'floor':>6} {'<2e4 K':>6} {'>=2e4':>6} | {'beta>1':>6} {'flat':>6} | "
-          f"{'v down':>7} {'support':>7} {'visc':>6} {'p+visc':>6}")
+          f"{'v down':>7} {'support':>7} {'visc':>6} {'nu':>6} {'shear':>6} {'p+visc':>6} {'mu':>7}")
     for t, r in rows:
         print(f"{t:7.0f} {r['M'] / M0:8.2f} | {r['T']:8.3g} {r['floor']:6.2f} {r['cold']:6.2f} {r['warm']:6.2f} | "
-              f"{r['beta']:6.2f} {r['flat']:6.2f} | {r['vpar']:7.2f} {r['sup']:7.2f} {r['vsup']:6.2f} {r['tsup']:6.2f}")
+              f"{r['beta']:6.2f} {r['flat']:6.2f} | {r['vpar']:7.2f} {r['sup']:7.2f} {r['vsup']:6.2f} {r['nsup']:6.2f} "
+              f"{r['ssup']:6.2f} {r['tsup']:6.2f} {r['mud']:7.3g}")
     np.savetxt(os.path.join(a.outdir, "drain.csv"),
                np.array([[t, r["M"] / M0, r["T"], r["floor"], r["cold"], r["warm"], r["beta"], r["flat"], r["vpar"], r["sup"],
-                          r["vsup"], r["tsup"]] for t, r in rows]),
+                          r["vsup"], r["nsup"], r["ssup"], r["tsup"], r["mud"]] for t, r in rows]),
                header="t [s], mass, median T [K], at the floor, < 2e4 K, >= 2e4 K, beta > 1, flat field, v down the field [km/s], "
-                      "pressure support, viscous support, their sum", delimiter=",")
+                      "pressure support, viscous support, of it the case's nu, the shear part, pressure + viscous, "
+                      "median DynSGS momentum coefficient [L0 v0]", delimiter=",")
     print("wrote", os.path.join(a.outdir, "drain.csv"))
 
 

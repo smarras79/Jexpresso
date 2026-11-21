@@ -796,9 +796,17 @@ the fraction on field lines within 15° of the horizontal, where gravity has
 no component along the field; and, on the steeper field lines, its mean speed
 down the field and the share of its weight along the field that its pressure
 gradient carries (1: hydrostatic, held by its own pressure; 0: nothing in the
-way), the share the viscous force carries (the DynSGS and the case's $\nu$, with
-the code's operator: a drag on plasma that falls), and their sum, whose
-shortfall from 1 accelerates it down the field. Along a field line only
+way), the share the diffusion terms' force on the velocity carries
+($\rho\,dv/dt = R_{\rho v} - vR_\rho$, the DynSGS and the case's $\nu$, with
+the code's operators: a drag on plasma that falls), of it the case's $\nu$
+alone and the shear part $\nabla\cdot(\rho\mu\nabla v)$ that a viscosity
+acting on the velocity would give, the sum of pressure and viscous shares,
+whose shortfall from 1 accelerates it down the field, and the median DynSGS
+momentum coefficient applied there. The case diffuses the momentum
+$\rho v/\rho_e$, not the velocity: what is not shear is momentum carried out
+of dense plasma that moves as a block, which the mass equation does not match
+(no mass diffusion goes with $\nu$, and `JEXPRESSO_LK10_RHOFAC` times the
+DynSGS one). Along a field line only
 pressure, gravity and viscosity act, so a dome that keeps its plasma shows as
 one of: warm with a support near 1; flat field; $\beta > 1$; or cold on steep
 field with no pressure support and yet slow, held by the viscosity. The
