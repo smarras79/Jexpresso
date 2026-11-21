@@ -32,6 +32,30 @@ function apply_direction_precond!(flat::Vector{Float64}, scales_flat::Vector{Flo
 end
 
 
+# Mixed-precision Arnoldi kernels (Float64 work vector, basis vector of any float type): explicit SIMD loops
+# accumulating in Float64. LinearAlgebra.dot / broadcasting on (Vector{Float64}, Vector{Float32}) fall back to slow
+# generic code (local SW 2x2O3: 3.6x slower solves with a Float32 basis).
+@inline function kdot(a::Vector{Float64}, b::Vector{T}) where {T<:AbstractFloat}
+    T === Float64 && return dot(a, b)
+    s = 0.0
+    @inbounds @simd for k in eachindex(a, b)
+        s += a[k] * Float64(b[k])
+    end
+    return s
+end
+@inline function kaxpy!(w::Vector{Float64}, h::Float64, v::Vector{T}) where {T<:AbstractFloat}   # w -= h v
+    @inbounds @simd for k in eachindex(w, v)
+        w[k] -= h * Float64(v[k])
+    end
+    return w
+end
+@inline function kaxpy_add!(x::Vector{Float64}, h::Float64, v::Vector{T}) where {T<:AbstractFloat}   # x += h v
+    @inbounds @simd for k in eachindex(x, v)
+        x[k] += h * Float64(v[k])
+    end
+    return x
+end
+
 """
 Core restarted GMRES(restart) on an EXPLICIT matvec/RHS pair — no
 knowledge of apply_G or preconditioning, so both plain and
@@ -39,7 +63,10 @@ preconditioned callers share this exact implementation.
 """
 function gmres_core(matvec::Function, b::Vector{Float64}, x0::Vector{Float64}, comm;
                      restart::Int=20, max_restarts::Int=10, tol::Float64=1e-5, verbose::Bool=true,
-                     monitor::Union{Nothing,Function}=nothing)
+                     monitor::Union{Nothing,Function}=nothing, basis::Type{<:AbstractFloat}=Float64)
+    # basis: element type of the stored Krylov vectors. Float32 halves the basis memory (the dominant growing term at
+    # high angular order). Everything else (w, H, x, dots, the outer TRUE residual) stays Float64, so each restart
+    # re-measures the real residual; the cost is a ~1e-7 relative perturbation of the Arnoldi relation per cycle.
     # monitor (collective, optional): monitor(kind, residual, x) with kind = :outer (x = current iterate, residual = TRUE
     # ‖b - A x‖) or :inner (x = the iterate GMRES would return now, residual = its Arnoldi estimate). For studies only:
     # forming x at every inner step costs O(n·j).
@@ -47,8 +74,12 @@ function gmres_core(matvec::Function, b::Vector{Float64}, x0::Vector{Float64}, c
     n = length(x0)
     gdot(a,c) = MPI.Allreduce(dot(a,c), MPI.SUM, comm)
     gnorm(a) = sqrt(gdot(a,a))
+    gkdot(a, v) = MPI.Allreduce(kdot(a, v), MPI.SUM, comm)
 
     x = copy(x0)
+    vbuf = basis === Float64 ? Float64[] : Vector{Float64}(undef, n)   # Float64 copy of V[j] for the matvec (not kept)
+    store(v::Vector{Float64}, h::Float64) = basis === Float64 ? v ./ h :
+        (u = Vector{basis}(undef, n); @inbounds(@simd(for k = 1:n; u[k] = basis(v[k] / h); end)); u)
     for outer = 1:max_restarts
         r0 = b .- matvec(x)
         β = gnorm(r0)
@@ -56,24 +87,24 @@ function gmres_core(matvec::Function, b::Vector{Float64}, x0::Vector{Float64}, c
         monitor === nothing || monitor(:outer, β, x)
         β < tol && (rank==0 && println("GMRES converged (outer residual)"); return x)
 
-        V = Vector{Vector{Float64}}(undef, restart+1)
-        V[1] = r0 ./ β
+        V = Vector{Vector{basis}}(undef, restart+1)
+        V[1] = store(r0, β)
         H = zeros(restart+1, restart)
         cs = zeros(restart); sn = zeros(restart)
         g = zeros(restart+1); g[1] = β
 
         m_used = restart
         for j = 1:restart
-            w = matvec(V[j])
+            w = matvec(basis === Float64 ? V[j] : (copyto!(vbuf, V[j]); vbuf))
             for i = 1:j
-                H[i,j] = gdot(w, V[i])
-                w .-= H[i,j] .* V[i]
+                H[i,j] = gkdot(w, V[i])
+                kaxpy!(w, H[i,j], V[i])
             end
             H[j+1,j] = gnorm(w)
             if H[j+1,j] < 1e-14
                 m_used = j; break
             end
-            V[j+1] = w ./ H[j+1,j]
+            V[j+1] = store(w, H[j+1,j])
 
             for i = 1:j-1
                 temp      =  cs[i]*H[i,j] + sn[i]*H[i+1,j]
@@ -91,7 +122,7 @@ function gmres_core(matvec::Function, b::Vector{Float64}, x0::Vector{Float64}, c
                 for i = j:-1:1
                     yj[i] = (g[i] - sum(H[i,k]*yj[k] for k = i+1:j; init=0.0)) / H[i,i]
                 end
-                xj = copy(x); for i = 1:j; xj .+= yj[i] .* V[i]; end
+                xj = copy(x); for i = 1:j; kaxpy_add!(xj, yj[i], V[i]); end
                 monitor(:inner, abs(g[j+1]), xj)
             end
             abs(g[j+1]) < tol && (m_used = j; break)
@@ -102,7 +133,7 @@ function gmres_core(matvec::Function, b::Vector{Float64}, x0::Vector{Float64}, c
             y[i] = (g[i] - sum(H[i,k]*y[k] for k = i+1:m_used; init=0.0)) / H[i,i]
         end
         for i = 1:m_used
-            x .+= y[i] .* V[i]
+            kaxpy_add!(x, y[i], V[i])
         end
     end
     rank==0 && println("GMRES: reached max_restarts without meeting tol")
@@ -111,7 +142,8 @@ end
 
 function gmres_fixed_point_solve(apply_G::Function, x0::Vector{Float64}, comm;
                                   restart::Int=20, max_restarts::Int=10, tol::Float64=1e-5, rtol::Float64=0.0,
-                                  verbose::Bool=true, monitor::Union{Nothing,Function}=nothing)
+                                  verbose::Bool=true, monitor::Union{Nothing,Function}=nothing,
+                                  basis::Type{<:AbstractFloat}=Float64)
     b = apply_G(zeros(length(x0)))
     matvec(v) = v .- (apply_G(v) .- b)
     # tol is absolute on the global residual 2-norm; rtol > 0 relaxes it to max(tol, rtol·‖b‖)
@@ -122,7 +154,7 @@ function gmres_fixed_point_solve(apply_G::Function, x0::Vector{Float64}, comm;
         MPI.Comm_rank(comm) == 0 && verbose && println("  GMRES tolerance: max(abs $(tol), rtol $(rtol) × ‖b‖ $(bn)) = $(tol_eff)")
     end
     return gmres_core(matvec, b, x0, comm; restart=restart, max_restarts=max_restarts, tol=tol_eff, verbose=verbose,
-                      monitor=monitor)
+                      monitor=monitor, basis=basis)
 end
 
 function gmres_fixed_point_solve_precond(apply_G::Function, x0::Vector{Float64}, scales_flat::Vector{Float64}, comm;

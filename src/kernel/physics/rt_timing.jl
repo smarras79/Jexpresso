@@ -147,12 +147,12 @@ end
 
 rows_lookup(rows, q) = (i = findfirst(r -> r[1] == q, rows); i === nothing ? NaN : rows[i][2])
 
-# ── Tolerance study (:RT_lw_tol_study => true) ────────────────────────────────────────────────────────────────────────
-# For every GMRES iterate of the LW solve (outer = true residual at a restart, inner = Arnoldi residual estimate), the LW
-# heating it would give, compared with the converged solve's heating: relative L2 and max |diff| over nodes [K/day], and
+# ── Tolerance study (:RT_lw_tol_study / :RT_sw_tol_study => true) ────────────────────────────────────────────────────────────────────────
+# For every recorded GMRES iterate of the LW or SW solve (outer = true residual at a restart, inner = Arnoldi residual estimate), the LW
+# heating it would give (SW: diffuse + direct), compared with the converged solve's heating: relative L2 and max |diff| over nodes [K/day], and
 # the relative difference of the mass-weighted domain-mean heating. Nodes shared by ranks count once per rank (fine for
 # a study). Written to the log and <output_dir>/profile/rt_tol_study.csv:
-#   call, cold, kind, matvecs, residual, l2_rel, max_kday, mean_rel
+#   band, call, cold, kind, matvecs, residual, l2_rel, max_kday, mean_rel
 
 struct RTTolStudyPoint
     kind::Symbol
@@ -164,7 +164,7 @@ end
 const RT_TOL_STUDY_ROWS = String[]
 
 function rt_tol_study_report!(pts::Vector{RTTolStudyPoint}, dTdt_final::AbstractVector, ρ::AbstractVector, npoin::Int,
-                              comm, inputs; cold::Bool=false)
+                              comm, inputs; cold::Bool=false, band::String="LW")
     call = RT_TIMING_NCALLS[] + 1                   # this call's number in rt_timing.csv (reported after this)
     rank = MPI.Comm_rank(comm)
     f = view(dTdt_final, 1:npoin); r = view(ρ, 1:npoin)
@@ -178,12 +178,12 @@ function rt_tol_study_report!(pts::Vector{RTTolStudyPoint}, dTdt_final::Abstract
         push!(rows, (p.kind, p.nmv, p.residual, sqrt(h[1]) / nrm, mx * 86400, abs(h[2] / g[3]) / abs(mean_f)))
     end
     rank == 0 || return nothing
-    println("LW tolerance study (call $call, $(cold ? "cold" : "warm") solve): heating at each GMRES iterate vs converged; " *
+    println("$band tolerance study (call $call, $(cold ? "cold" : "warm") solve): heating at each GMRES iterate vs converged; " *
             "mass-weighted mean heating $(@sprintf("%.4g", mean_f * 86400)) K/day")
     println("   kind   matvecs   residual     L2 rel     max K/day   mean rel")
     for (k, n, res, l2, mx, mr) in rows
         @printf("  %-6s %6d   %10.3e   %9.2e   %9.2e   %9.2e\n", k, n, res, l2, mx, mr)
-        push!(RT_TOL_STUDY_ROWS, @sprintf("%d,%d,%s,%d,%.6g,%.6g,%.6g,%.6g", call, cold, k, n, res, l2, mx, mr))
+        push!(RT_TOL_STUDY_ROWS, @sprintf("%s,%d,%d,%s,%d,%.6g,%.6g,%.6g,%.6g", band, call, cold, k, n, res, l2, mx, mr))
     end
     flush(stdout)
     od = get(inputs, :output_dir, "none")
@@ -191,12 +191,78 @@ function rt_tol_study_report!(pts::Vector{RTTolStudyPoint}, dTdt_final::Abstract
         try
             dir = joinpath(od, "profile"); mkpath(dir)
             open(joinpath(dir, "rt_tol_study.csv"), "w") do io
-                println(io, "call,cold,kind,matvecs,residual,l2_rel,max_kday,mean_rel")
+                println(io, "band,call,cold,kind,matvecs,residual,l2_rel,max_kday,mean_rel")
                 foreach(x -> println(io, x), RT_TOL_STUDY_ROWS)
             end
         catch err
             @warn "RT tolerance study: could not write rt_tol_study.csv" exception=err
         end
     end
+    return nothing
+end
+
+# ── Negative-radiance check (:RT_neg_radiance_check, default true) ────────────────────────────────────────────────────
+# Upwind DG can undershoot below 0 inside elements whose source or extinction varies steeply. After each solve this
+# counts the negative nodal radiances (every (element, direction, node) value of the solution) and splits them by
+# element class, from the nodal extinction κ_ext = κ + σ and, for SW, the direct beam F_dir:
+#   cloud top : κ steep (max/min κ_ext > 4) and the element's top node layer is much clearer (mean < 1/4) than its bottom
+#   cloud edge: other κ-steep elements (sides, bases)
+#   beam steep: (SW, F_dir given) κ smooth but F_dir varies steeply (max > 4 min, max > 1% of the global max F_dir):
+#               slant cloud-shadow edges in clear air
+#   smooth    : the rest (clear air, cloud interiors)
+# Reports count, fraction, and the most negative value relative to the largest radiance, per class. One line per class.
+# A target list for adaptive refinement: the classes are element-level, so the steep elements are where it would act.
+function rt_negative_radiance_report(mesh, I::Dict{Tuple{Int,Int},Vector{Float64}}, κ_ext::AbstractVector, comm;
+                                     band::String="", F_dir=nothing, limited=nothing)
+    # limited (optional): per local element, the number of directions the final-sweep positivity limiter acted on
+    ngl = mesh.ngl
+    Fmax = F_dir === nothing ? 0.0 : MPI.Allreduce(maximum(F_dir; init=0.0), MPI.MAX, comm)
+    cls = zeros(Int, mesh.nelem)                              # 1 cloud top, 2 cloud edge, 3 beam steep, 4 smooth
+    for iel = 1:mesh.nelem
+        ids = [mesh.connijk[iel, i, j, l] for i = 1:ngl, j = 1:ngl, l = 1:ngl]
+        vals = κ_ext[ids]
+        if maximum(vals) > 4 * max(minimum(vals), 1e-300)
+            top = sum(vals[:, :, ngl]) / ngl^2; bot = sum(vals[:, :, 1]) / ngl^2
+            cls[iel] = top < 0.25 * bot ? 1 : 2
+        elseif F_dir !== nothing && (fv = F_dir[ids]; maximum(fv) > 4 * minimum(fv) && maximum(fv) > 0.01 * Fmax)
+            cls[iel] = 3
+        else
+            cls[iel] = 4
+        end
+    end
+    # per class: n values, n negative, min value; global max value
+    nc = 4
+    st = zeros(3, nc); st[3, :] .= Inf; imax = 0.0
+    nel = zeros(nc); lel = zeros(nc); ldir = zeros(nc)
+    for iel = 1:mesh.nelem
+        nel[cls[iel]] += 1
+        if limited !== nothing && length(limited) == mesh.nelem && limited[iel] > 0
+            lel[cls[iel]] += 1; ldir[cls[iel]] += limited[iel]
+        end
+    end
+    for ((iel, d), v) in I
+        c = cls[iel]
+        st[1, c] += length(v)
+        @inbounds for x in v
+            x < 0 && (st[2, c] += 1; st[3, c] = min(st[3, c], x))
+            imax = max(imax, x)
+        end
+    end
+    tot = MPI.Allreduce(vcat(st[1, :], st[2, :], nel, lel, ldir), MPI.SUM, comm)
+    mn = MPI.Allreduce(st[3, :], MPI.MIN, comm); imax = MPI.Allreduce(imax, MPI.MAX, comm)
+    MPI.Comm_rank(comm) == 0 || return nothing
+    names = ("cloud top", "cloud edge", "beam steep", "smooth")
+    nneg = sum(tot[nc+1:2nc])
+    println("$band negative radiances: $(Int(nneg)) of $(Int(sum(tot[1:nc]))) values " *
+            "($(@sprintf("%.2e", nneg / max(sum(tot[1:nc]), 1)))), max radiance $(@sprintf("%.4g", imax))")
+    for c = 1:nc
+        (c == 3 && F_dir === nothing) && continue
+        n = tot[c]; neg = tot[nc+c]
+        lim = limited === nothing ? "" : @sprintf("; limited: %d elements (%.2e of class), %d element-directions",
+                                                 Int(tot[3nc+c]), tot[3nc+c] / max(tot[2nc+c], 1), Int(tot[4nc+c]))
+        println(@sprintf("  %-10s %7d elements: %10d negative (%.2e of its values), most negative %.3e of max",
+                         names[c], Int(tot[2nc+c]), Int(neg), neg / max(n, 1), isfinite(mn[c]) ? mn[c] / imax : 0.0) * lim)
+    end
+    flush(stdout)
     return nothing
 end

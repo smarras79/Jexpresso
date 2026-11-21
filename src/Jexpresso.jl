@@ -183,6 +183,7 @@ include(joinpath( "kernel", "physics", "longwave_rad.jl"))
 include(joinpath( "kernel", "physics", "radiative_heating.jl"))
 
 include(joinpath( "kernel", "physics", "optical_depth_integral.jl"))
+include(joinpath( "kernel", "physics", "sw_direct_beam.jl"))    # SW direct beam: slant ray tracing through the elements
 
 include(joinpath( "kernel", "physics", "RT_sweep.jl"))
 

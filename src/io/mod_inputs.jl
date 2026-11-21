@@ -172,10 +172,12 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:RT_compute_sw] = false
     end
     # Discrete scattering operator C[k,m] = Φ(Ω_k,Ω_m) w_m and the direct-beam source:
-    #   :none (raw quadrature), :row (each row sums to 1: energy-conserving), :symmetric (unit row sums AND symmetric kernel)
-    inputs[:RT_sw_phase_normalization] = Symbol(get(inputs, :RT_sw_phase_normalization, :symmetric))
-    inputs[:RT_sw_phase_normalization] in (:none, :row, :symmetric) ||
-        error(":RT_sw_phase_normalization must be :none, :row or :symmetric")
+    #   :none (raw quadrature), :row (each row sums to 1: energy-conserving), :symmetric (unit row sums AND symmetric kernel),
+    #   :symmetric_g (default: :symmetric with the HG parameter chosen per angular grid so the discrete asymmetry equals g;
+    #   median-column tests 2026-11-20: in-cloud absorption bias vs ICA 4x4O4 +3.3% -> +1.4%, 6x6O4 converges to ~0)
+    inputs[:RT_sw_phase_normalization] = Symbol(get(inputs, :RT_sw_phase_normalization, :symmetric_g))
+    inputs[:RT_sw_phase_normalization] in (:none, :row, :symmetric, :symmetric_g) ||
+        error(":RT_sw_phase_normalization must be :none, :row, :symmetric or :symmetric_g")
     # Forward-peak truncation of the shortwave phase function:
     #   :none, :delta_eddington (f = g^2), or :delta_m (f = g^M, M = number of Legendre moments the angular mesh resolves)
     inputs[:RT_sw_delta_scaling] = Symbol(get(inputs, :RT_sw_delta_scaling, :delta_m))

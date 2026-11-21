@@ -308,8 +308,9 @@ I_ss is the exact single-scattering radiance (sw_single_scatter_column: keeps th
 ΔI is the multiply scattered part, from the 1D reference solver (SWRef1D.solve_column, azimuth-averaged, at its
 Gauss μ_i) minus the azimuth mean of I_ss at the same μ_i, taken independent of azimuth. ΔI is interpolated linearly
 in z and in μ within each hemisphere (constant beyond the outermost Gauss nodes). μ here is the 1D convention:
-μ > 0 = downward travel = -cosθ. NOTE: the 1D solve reflects the TOTAL downward flux at a Lambertian surface; the 3D
-bottom condition currently reflects only the direct beam, so the two agree only for albedo = 0.
+μ > 0 = downward travel = -cosθ. The 1D solve reflects the TOTAL downward flux at a Lambertian surface, as does the 3D
+bottom condition with :RT_sw_surface_diffuse_reflection = true (default; RadiativeCase.surface_reflection). With it
+false the 3D surface reflects only the direct beam and the two agree only for albedo = 0.
 """
 struct SWLateralPlaneParallel
     ss::SWLateralSingleScatter

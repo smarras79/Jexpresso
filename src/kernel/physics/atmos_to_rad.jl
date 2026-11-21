@@ -161,7 +161,8 @@ should be set consistently with the dominant scatterer:
 A single g cannot represent both Rayleigh and cloud scattering simultaneously.
 For clear-sky problems use g = 0; for overcast scenes use g = 0.85.
 """
-function atmos_to_rad_shortwave(atmos_data, npoin; delta_scaling::Symbol = :none, delta_m_moments::Int = 0)
+# clouds = false (DIAGNOSTIC :RT_sw_clear_sky): liquid and ice ignored (clear-sky optics on the same thermodynamic state).
+function atmos_to_rad_shortwave(atmos_data, npoin; delta_scaling::Symbol = :none, delta_m_moments::Int = 0, clouds::Bool = true)
 
     PhysConst = PhysicalConst{Float64}()
 
@@ -215,8 +216,8 @@ function atmos_to_rad_shortwave(atmos_data, npoin; delta_scaling::Symbol = :none
         P    = atmos_data.p_lay[ip]     # Pa
         vmr  = atmos_data.vmr_h2o[ip]  # mol/mol
         vmro = atmos_data.vmr_o3[ip]   # mol/mol  (add this field if not present)
-        qliq = atmos_data.q_liq[ip]    # kg/kg
-        qice = atmos_data.q_ice[ip]    # kg/kg
+        qliq = clouds ? atmos_data.q_liq[ip] : 0.0    # kg/kg
+        qice = clouds ? atmos_data.q_ice[ip] : 0.0    # kg/kg
         ρ    = atmos_data.rho[ip]      # kg/m³
 
         # VMR → mass mixing ratio

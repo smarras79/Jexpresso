@@ -823,7 +823,7 @@ function debug_compare_scatter_construction(mesh, case::RadiativeCase, iel_targe
                                              I_manuf::Function, g_val::Float64, σ_val::Float64)
     rank = MPI.Comm_rank(get_mpi_comm())
 
-    C_iel_all = build_phase_coupling_matrices_elementwise(mesh, case)
+    C_iel_all, _ = build_phase_coupling_matrices_elementwise(mesh, case)
     C_iel = C_iel_all[iel_target]
 
     em = mesh.extra_mesh[iel_target]

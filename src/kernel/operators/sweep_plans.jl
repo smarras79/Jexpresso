@@ -827,6 +827,10 @@ function run_dg_sweep_async!(mesh, metrics, ψ, dψ, ω,
     if D === nothing
         t0 = gtic(prof); D = discover!(); ASYNC_DEPS[angular_deps] = D
         gtoc!(prof, :async_discover, t0)
+        # discover! leaves a solution-sized zero field and per-face closure garbage (bubble 40x40x60 6x6O6: +16.6 GB
+        # live per rank). With GC off during the solve (gc_mode :sync) it was only freed at the end of the first matvec,
+        # on top of that sweep's own transient: collect it now (once per angular mesh), restoring the GC state.
+        gc_was = GC.enable(true); GC.gc(true); GC.enable(gc_was)
 	memprobe("after discover!", comm)
     end
     consume_auto_budget!(cache)

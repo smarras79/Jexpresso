@@ -16,6 +16,14 @@ Base.@kwdef struct RadiativeCase
     # (iel,d) => (lidx, values). Used to turn periodic faces into walls with a prescribed inflow
     # (lw_lateral_prev_override). nothing = ordinary periodic coupling.
     prev_override::Union{Nothing,Dict{Tuple{Int,Int},Tuple{Vector{Int},Vector{Float64}}}} = nothing
+    # Lambertian reflection of the DIFFUSE downward flux at the bottom boundary: (albedo = A, is_bottom = z -> Bool).
+    # Adds (A/π) F↓(x,y) to the inflow of every upward direction at bottom nodes, with F↓ = Σ_{Ωz<0} w |Ωz| I taken
+    # from the iterate apply_G is called with (element-local), so G stays affine. Any fixed part of the reflected
+    # radiance (e.g. A F_dir / π for the direct beam) stays in bc_fn. nothing = no diffuse reflection.
+    surface_reflection::Union{Nothing,NamedTuple} = nothing
+    # Asymmetry used for the scattering matrix: :element (one σ-weighted g per element) or :nodal (each node's own g;
+    # nodes sharing a g share one matrix, so only cloud-edge nodes add matrices)
+    phase_g_mode::Symbol = :element
 end
 
 Base.@kwdef struct SweepOptions
@@ -96,10 +104,13 @@ function build_case_fields(mesh, case::RadiativeCase)
             em = mesh.extra_mesh[iel]; nd = em.extra_npoin; w = w_all[iel]
             θd = em.extra_coords[1,1:nd]; ϕd = em.extra_coords[2,1:nd]
             Φd = zeros(nd)
+            gtab = case.phase_norm == :symmetric_g ? phase_g_beam_table(θd, ϕd, w, Float64(bs.θ), Float64(bs.ϕ), phase_function_hg) : nothing
             for k=1:ngl, j=1:ngl, i=1:ngl
                 gip = mesh.connijk[iel,i,j,k]
-                c = bs.coeff[gip]; c == 0.0 && continue
-                for d = 1:nd; Φd[d] = phase_function_hg(θd[d], bs.θ, ϕd[d], bs.ϕ, bs.g[gip]); end
+                c = (haskey(bs, :coeff_elem) && bs.coeff_elem !== nothing) ? bs.coeff_elem[lidx(i,j,k,ngl), iel] : bs.coeff[gip]
+                c == 0.0 && continue
+                gb = gtab === nothing ? bs.g[gip] : phase_g_lookup(gtab, Float64(bs.g[gip]))
+                for d = 1:nd; Φd[d] = phase_function_hg(θd[d], bs.θ, ϕd[d], bs.ϕ, gb); end
                 N = bs.normalize ? sum(w[d]*Φd[d] for d = 1:nd) : 1.0
                 l = lidx(i,j,k,ngl)
                 for d = 1:nd; q_ext_all[(iel,d)][l] += c * Φd[d] / N; end
@@ -107,6 +118,60 @@ function build_case_fields(mesh, case::RadiativeCase)
         end
     end
     return κ, σ, bc_fn_all, q_ext_all
+end
+
+"""
+    surface_reflection_setup!(bc_fn_all, mesh, case) -> state or nothing
+
+For case.surface_reflection = (albedo A, is_bottom): finds, per element, the nodes on the bottom boundary, the downward
+directions with weights w_d |cos θ_d| (Ωz = cos θ) and wraps bc_fn_all[(iel,d)] of every upward direction so its bottom
+inflow gains (A/π) F↓[iel][node]. F↓ is filled by surface_reflection_update! from the iterate (element-local values,
+so no communication). Upward-direction inflow at a bottom node is only read when that node is on an inflow face.
+"""
+function surface_reflection_setup!(bc_fn_all, mesh, case::RadiativeCase)
+    sr = case.surface_reflection
+    sr === nothing && return nothing
+    A = sr.albedo; isb = sr.is_bottom; ngl = mesh.ngl
+    w_all = build_angular_quadrature_weights(mesh)
+    elems = Dict{Int, NamedTuple}()
+    for iel = 1:mesh.nelem
+        lids = Int[]; gips = Int[]
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            gip = mesh.connijk[iel,i,j,k]
+            isb(mesh.z[gip]) && (push!(lids, lidx(i,j,k,ngl)); push!(gips, gip))
+        end
+        isempty(lids) && continue
+        em = mesh.extra_mesh[iel]; nd = em.extra_npoin; w = w_all[iel]
+        dn = Int[]; wdn = Float64[]
+        for d = 1:nd
+            μ = cos(em.extra_coords[1,d])
+            μ < 0.0 && (push!(dn, d); push!(wdn, w[d] * (-μ)))
+        end
+        Fdn = Dict{Int,Float64}(g => 0.0 for g in gips)
+        elems[iel] = (lids = lids, gips = gips, dn = dn, wdn = wdn, Fdn = Fdn)
+        for d = 1:nd
+            cos(em.extra_coords[1,d]) > 0.0 || continue
+            base = bc_fn_all[(iel,d)]
+            bc_fn_all[(iel,d)] = (x,y,z,ip,nx,ny,nz) -> begin
+                v = base(x,y,z,ip,nx,ny,nz)
+                isb(z) ? v + A / π * get(Fdn, ip, 0.0) : v
+            end
+        end
+    end
+    return (albedo = A, elems = elems)
+end
+
+function surface_reflection_update!(refl, I_cg_all)
+    for (iel, e) in refl.elems
+        for q in eachindex(e.lids)
+            l = e.lids[q]; F = 0.0
+            for m in eachindex(e.dn)
+                F += e.wdn[m] * I_cg_all[(iel, e.dn[m])][l]
+            end
+            e.Fdn[e.gips[q]] = F
+        end
+    end
+    return nothing
 end
 
 """
@@ -121,7 +186,7 @@ function normalize_phase_matrix(C::Matrix{Float64}, w::Vector{Float64}, mode::Sy
     mode == :none && return C
     if mode == :row
         return C ./ sum(C; dims=2)
-    elseif mode == :symmetric
+    elseif mode == :symmetric || mode == :symmetric_g
         K = C ./ transpose(w)
         d = ones(length(w))
         for it = 1:500
@@ -134,48 +199,172 @@ function normalize_phase_matrix(C::Matrix{Float64}, w::Vector{Float64}, mode::Sy
     end
 end
 
+# :symmetric_g (asymmetry-preserving normalisation). A pointwise-sampled, Sinkhorn-normalised HG kernel on the angular
+# grid conserves energy but scatters too far forward when the peak is narrow compared with the node spacing: its discrete
+# asymmetry Σ_m C_km Ω_k·Ω_m exceeds g (HG g' = 0.840 -> 0.864 on 4x4O4, +15 % of 1-g'; 6x6O4 +5 %; 6x6O6 +1.2 %), and
+# σ(1-g) controls diffusion through the cloud. For each distinct angular grid this tabulates the discrete asymmetry of
+# the normalised kernel as a function of the HG parameter, then builds each kernel with the parameter whose discrete
+# asymmetry equals the target g, so the 0th and 1st moments are both exact (Hunter & Guo-type normalisation).
+const PHASE_GMAP_CACHE = Dict{UInt, Tuple{Vector{Float64}, Vector{Float64}}}()
+function phase_g_table(thetas, phis, w, phase_fn)
+    key = hash((thetas, phis, w))
+    return get!(PHASE_GMAP_CACHE, key) do
+        n = length(w)
+        X = [sin(thetas[k])*cos(phis[k]) for k = 1:n]; Y = [sin(thetas[k])*sin(phis[k]) for k = 1:n]; Z = cos.(thetas)
+        cosm = [clamp(X[k]*X[m] + Y[k]*Y[m] + Z[k]*Z[m], -1.0, 1.0) for k = 1:n, m = 1:n]
+        gs = collect(0.0:0.025:0.975); χ = similar(gs); W = sum(w)
+        for (i, gin) in enumerate(gs)
+            C = [phase_fn(thetas[k], thetas[m], phis[k], phis[m], gin) * w[m] for k = 1:n, m = 1:n]
+            Cn = normalize_phase_matrix(C, w, :symmetric)
+            χ[i] = sum(w[k] * Cn[k,m] * cosm[k,m] for k = 1:n, m = 1:n) / W
+        end
+        all(diff(χ) .> 0) || @warn "phase_g_table: discrete asymmetry not monotone in g on this grid" χ
+        (χ, gs)
+    end
+end
+# Beam-source analogue of phase_g_table: the direct-beam scattering source Φ(Ω_k, Ω_beam; g)/N over the grid nodes has
+# its own discrete asymmetry Σ_k w_k Φ Ω_k·Ω_beam / N, which the matrix table does not fix: the beam direction need not be
+# a grid node, and when it falls on one (μ0 = 0.5 is a θ element boundary of the 6x6 grids) the sampled peak is biased
+# (6x6O4 with the matrix map: <cos> 0.836 for g' 0.847, -7.5 % of 1-g'; median-column in-cloud absorption -0.8 %).
+# Tabulated per (grid, beam direction) and inverted with phase_g_lookup.
+const PHASE_BEAM_GMAP_CACHE = Dict{UInt, Tuple{Vector{Float64}, Vector{Float64}}}()
+function phase_g_beam_table(thetas, phis, w, θb::Float64, ϕb::Float64, phase_fn)
+    key = hash((thetas, phis, w, θb, ϕb))
+    return get!(PHASE_BEAM_GMAP_CACHE, key) do
+        n = length(w)
+        c = [clamp(sin(thetas[k])*sin(θb)*cos(phis[k] - ϕb) + cos(thetas[k])*cos(θb), -1.0, 1.0) for k = 1:n]
+        gs = collect(0.0:0.025:0.975); χ = similar(gs); Φ = zeros(n)
+        for (i, gin) in enumerate(gs)
+            for k = 1:n; Φ[k] = phase_fn(thetas[k], θb, phis[k], ϕb, gin); end
+            χ[i] = sum(w .* Φ .* c) / sum(w .* Φ)
+        end
+        all(diff(χ) .> 0) || @warn "phase_g_beam_table: discrete beam asymmetry not monotone in g" χ
+        (χ, gs)
+    end
+end
+
+# HG parameter whose normalised discrete kernel has asymmetry gt (linear interpolation; clamped at the table ends).
+function phase_g_lookup(tab, gt::Float64)
+    χ, gs = tab
+    gt <= χ[1] && return max(gt - χ[1] + gs[1], 0.0)
+    gt >= χ[end] && return gs[end]
+    i = searchsortedlast(χ, gt)
+    return gs[i] + (gs[i+1] - gs[i]) * (gt - χ[i]) / (χ[i+1] - χ[i])
+end
+
+# Phase matrices shared between elements: C depends only on the element's angular grid, its g, the phase function and
+# the normalisation, so elements with the same key share ONE matrix (read-only everywhere). LW (isotropic): one matrix for
+# all elements instead of one per element (6x6O6: 1332^2 x 8 B = 14 MB each, 13.6 GB/rank at 960 elements); SW: all
+# clear-air elements (Rayleigh, g = 0) share one, cloud-interior elements another. The previous call's matrices are kept
+# and reused when the key repeats; only the current call's set is retained, so memory stays bounded.
+const PHASE_MATRIX_CACHE = Ref(Dict{Tuple{UInt,Float64,Symbol,UInt},Matrix{Float64}}())
+
+# One cached matrix per (grid, g, normalisation, phase function); see PHASE_MATRIX_CACHE.
+# g is rounded to PHASE_G_QUANTUM before keying and building: nodal and σ-weighted g vary continuously (cloud/Rayleigh mix:
+# 0.8449-0.8471 in the BOMEX median cloud), which would otherwise give one matrix per cloud node or element. 1e-3 changes
+# 1-g by <= 0.3 % in cloud (1-g ~ 0.15).
+const PHASE_G_QUANTUM = 1e-3
+function _phase_matrix!(cur, prev, case::RadiativeCase, thetas, phis, w_ext, gridkey::UInt, g::Float64, cnt)
+    g = round(g / PHASE_G_QUANTUM) * PHASE_G_QUANTUM
+    key = (gridkey, g, case.phase_norm, objectid(case.phase_fn))
+    C = get(cur, key, nothing)
+    C === nothing || return C
+    C = get(prev, key, nothing)
+    if C === nothing
+        npd = length(w_ext)
+        g_use = case.phase_norm == :symmetric_g ?
+                phase_g_lookup(phase_g_table(thetas, phis, w_ext, case.phase_fn), g) : g
+        Cr = zeros(npd, npd)
+        for dk = 1:npd, m = 1:npd
+            Cr[dk,m] = case.phase_fn(thetas[dk], thetas[m], phis[dk], phis[m], g_use) * w_ext[m]
+        end
+        C = normalize_phase_matrix(Cr, w_ext, case.phase_norm); cnt[1] += 1
+    else
+        cnt[2] += 1
+    end
+    cur[key] = C
+    return C
+end
+
+function _angular_grid(em)
+    npd = em.extra_npoin
+    w_ext = zeros(Float64, npd)
+    for e_ext = 1:em.extra_nelem
+        nop = em.extra_nop[e_ext]
+        for iθ=1:nop+1, iϕ=1:nop+1
+            ip_ext = em.extra_connijk[e_ext,iθ,iϕ]
+            w_ext[ip_ext] += em.extra_metrics.Je[e_ext,iθ,iϕ] * em.ωθ[iθ] * em.ωθ[iϕ]
+        end
+    end
+    thetas = em.extra_coords[1,1:npd]; phis = em.extra_coords[2,1:npd]
+    return thetas, phis, w_ext, hash((thetas, phis, w_ext))
+end
+
+"""
+    build_phase_coupling_matrices_elementwise(mesh, case) -> (C_iel_all, node_groups)
+
+C_iel_all[iel]: the element's scattering matrix C[k,m] = Φ(Ω_k·Ω_m; g) w_m (normalised per case.phase_norm), with g the
+σ-weighted mean of the nodal g. node_groups (case.phase_g_mode == :nodal, else nothing): node_groups[iel] = list of
+(local node indices, matrix) with each node's own g; nodes with σ = 0 join the first group (their source is zero).
+"""
 function build_phase_coupling_matrices_elementwise(mesh, case::RadiativeCase)
     ngl = mesh.ngl
     C_iel_all = Dict{Int, Matrix{Float64}}()
+    nodal = case.phase_g_mode == :nodal && case.g_field !== nothing
+    case.phase_g_mode in (:element, :nodal) || error("phase_g_mode must be :element or :nodal")
+    groups = nodal ? Dict{Int, Vector{Tuple{Vector{Int},Matrix{Float64}}}}() : nothing
+    prev = PHASE_MATRIX_CACHE[]; cur = Dict{Tuple{UInt,Float64,Symbol,UInt},Matrix{Float64}}()
+    cnt = [0, 0]; ngroups_max = 0
+    gn = zeros(ngl^3); sn = zeros(ngl^3)
 
     for iel = 1:mesh.nelem
-        em = mesh.extra_mesh[iel]
-        npd = em.extra_npoin
-        w_ext = zeros(Float64, npd)
-        for e_ext = 1:em.extra_nelem
-            nop = em.extra_nop[e_ext]
-            for iθ=1:nop+1, iϕ=1:nop+1
-                ip_ext = em.extra_connijk[e_ext,iθ,iϕ]
-                w_ext[ip_ext] += em.extra_metrics.Je[e_ext,iθ,iϕ] * em.ωθ[iθ] * em.ωθ[iϕ]
-            end
-        end
-        thetas = em.extra_coords[1,:]; phis = em.extra_coords[2,:]
+        thetas, phis, w_ext, gridkey = _angular_grid(mesh.extra_mesh[iel])
 
+        # Element asymmetry: σ-weighted mean of the nodal g (the scattering-weighted value the element's scattering
+        # actually has). An unweighted mean in an element straddling a cloud edge mixed cloud g = 0.85 with Rayleigh
+        # g = 0 at nodes that scatter 10^3-10^4 times less, giving g ~ 0.4 where nearly all scattering is cloud.
         g_iel = if case.g_field !== nothing
-            gsum = 0.0
-            for k=1:ngl,j=1:ngl,i=1:ngl
-                gip = mesh.connijk[iel,i,j,k]
-                gsum += case.g_field(mesh.x[gip], mesh.y[gip], mesh.z[gip], gip)
+            for k=1:ngl, j=1:ngl, i=1:ngl
+                gip = mesh.connijk[iel,i,j,k]; l = lidx(i,j,k,ngl)
+                gn[l] = case.g_field(mesh.x[gip], mesh.y[gip], mesh.z[gip], gip)
+                sn[l] = case.sigma_fn(mesh.x[gip], mesh.y[gip], mesh.z[gip], gip)
             end
-            gsum / ngl^3
+            ws = sum(sn); ws > 0 ? sum(sn .* gn) / ws : sum(gn) / ngl^3
         else
             case.g_const
         end
+        C_iel_all[iel] = _phase_matrix!(cur, prev, case, thetas, phis, w_ext, gridkey, Float64(g_iel), cnt)
 
-        C = zeros(npd, npd)
-        for dk = 1:npd, m = 1:npd
-            C[dk,m] = case.phase_fn(thetas[dk], thetas[m], phis[dk], phis[m], g_iel) * w_ext[m]
+        if nodal
+            byg = Dict{Float64, Vector{Int}}(); zero_nodes = Int[]
+            for l = 1:ngl^3
+                sn[l] > 0 ? push!(get!(byg, round(gn[l] / PHASE_G_QUANTUM) * PHASE_G_QUANTUM, Int[]), l) : push!(zero_nodes, l)
+            end
+            gl = Tuple{Vector{Int},Matrix{Float64}}[]
+            for (g, nodes) in byg
+                push!(gl, (nodes, _phase_matrix!(cur, prev, case, thetas, phis, w_ext, gridkey, g, cnt)))
+            end
+            if isempty(gl)
+                push!(gl, (zero_nodes, C_iel_all[iel]))
+            else
+                append!(gl[1][1], zero_nodes)
+            end
+            groups[iel] = gl; ngroups_max = max(ngroups_max, length(gl))
         end
-        C_iel_all[iel] = normalize_phase_matrix(C, w_ext, case.phase_norm)
     end
-    return C_iel_all
+    PHASE_MATRIX_CACHE[] = cur
+    PHASE_MATRIX_STATS[] = (elements = mesh.nelem, distinct = length(cur), built = cnt[1], reused_from_previous = cnt[2],
+                            max_groups = ngroups_max)
+    return C_iel_all, groups
 end
+const PHASE_MATRIX_STATS = Ref{Any}(nothing)
 
 # lateral_cols (LWLateralColumns, lw_lateral.jl): if given, real lateral walls get the plane-parallel radiance of the
 #   local column instead of the blackbody σT_back⁴/π of user_rad_bc_longwave.
 # prev_override: see RadiativeCase (periodic faces treated as walls with that inflow).
 function build_longwave_case(atmos_data, κ_lw::Vector{Float64}, σ_lw::Vector{Float64}, bdy;
-                              ε_surface=0.97, T_space=0.0, lateral_cols=nothing, prev_override=nothing)
+                              ε_surface=0.97, T_space=0.0, lateral_cols=nothing, prev_override=nothing,
+                              surface_reflection::Bool=false)
     lw = LWParams(ε_surface, T_space)
     kappa_fn = (x,y,z,ip) -> κ_lw[ip] + σ_lw[ip]
     sigma_fn = (x,y,z,ip) -> σ_lw[ip]
@@ -190,7 +379,12 @@ function build_longwave_case(atmos_data, κ_lw::Vector{Float64}, σ_lw::Vector{F
     # MAGNITUDE into σ, only the ANGULAR redistribution is assumed isotropic).
     return RadiativeCase(kappa_fn=kappa_fn, sigma_fn=sigma_fn,
                           phase_fn=(θ,θ1,ϕ,ϕ1,g) -> 1/(4π), g_const=0.0,
-                          bc_fn=bc_fn, source_fn=source_fn, prev_override=prev_override)
+                          bc_fn=bc_fn, source_fn=source_fn, prev_override=prev_override,
+                          # surface_reflection: Lambertian reflection of the downward LW flux with albedo 1 - ε at the
+                          # bottom (bc_fn keeps the emission ε B); off by default, as the offline ICA reference in
+                          # lw_lean.py (reflect=False) and the 1D lateral/initial columns (lw_lateral.jl) assume.
+                          surface_reflection = (surface_reflection && ε_surface < 1.0) ?
+                              (albedo = 1.0 - Float64(ε_surface), is_bottom = bdy.is_bottom) : nothing)
 end
 
 """
@@ -215,15 +409,18 @@ end
 function build_shortwave_diffuse_case(κ_sw::Vector{Float64}, σ_sw::Vector{Float64}, g_eff::Vector{Float64},
                                        sw::SWParams, F_dir::Vector{Float64}, bdy; surface_albedo=0.15,
                                        phase_norm::Symbol=:none, lateral_bc::Symbol=:plane_parallel,
-                                       mesh=nothing, periodic_walls::Bool=false, comm=nothing)
+                                       mesh=nothing, periodic_walls::Bool=false, comm=nothing, beam_coeff=nothing,
+                                       beam_coeff_elem=nothing, diffuse_reflection::Bool=true,
+                                       phase_g_mode::Symbol=:element)
     κ_ext_sw = κ_sw .+ σ_sw
     ω0_lateral = sum(σ_sw) / sum(max.(κ_ext_sw, 1e-30))   # domain-mean SSA, per user_rad_bc_shortwave_diffuse's docstring
 
     kappa_fn = (x,y,z,ip) -> κ_ext_sw[ip]
     sigma_fn = (x,y,z,ip) -> σ_sw[ip]
     g_field  = (x,y,z,ip) -> g_eff[ip]
-    # Boundary inflow of DIFFUSE radiance. Top: none. Bottom: Lambertian reflection of the direct beam (diffuse
-    # reflection is not included yet). Lateral walls (non-periodic meshes only):
+    # Boundary inflow of DIFFUSE radiance. Top: none. Bottom: Lambertian reflection of the direct beam here, plus
+    # (diffuse_reflection, default) the reflected diffuse downward flux via RadiativeCase.surface_reflection.
+    # Lateral walls (non-periodic meshes only):
     #   :single_scatter  plane-parallel single-scattering radiance of the reference column (SWLateralSingleScatter)
     #   :none            no inflow
     #   :legacy          the old user_rad_bc_shortwave_diffuse estimate ω̄ Φ S₀ (1 - e^{-τ/μ₀})
@@ -264,7 +461,8 @@ function build_shortwave_diffuse_case(κ_sw::Vector{Float64}, σ_sw::Vector{Floa
     # phase function as the scattering operator (phase_function_hg) and, unless phase_norm = :none, normalised per node.
     θ_sun, ϕ_sun = rt_sun_angles(sw)
     beam = sw.μ₀ > 0.0 ?
-        (θ = θ_sun, ϕ = ϕ_sun, coeff = σ_sw .* F_dir ./ sw.μ₀, g = g_eff, normalize = phase_norm != :none) : nothing
+        (θ = θ_sun, ϕ = ϕ_sun, coeff = beam_coeff === nothing ? σ_sw .* F_dir ./ sw.μ₀ : beam_coeff, g = g_eff, normalize = phase_norm != :none,
+         coeff_elem = beam_coeff_elem) : nothing
 
     # periodic_walls: periodic faces become walls whose diffuse inflow is the lateral_bc radiance (prev_override)
     ovr = nothing
@@ -276,7 +474,10 @@ function build_shortwave_diffuse_case(κ_sw::Vector{Float64}, σ_sw::Vector{Floa
     end
     return RadiativeCase(kappa_fn=kappa_fn, sigma_fn=sigma_fn,
                           phase_fn=phase_function_hg, g_field=g_field,
-                          bc_fn=bc_fn, phase_norm=phase_norm, beam_source=beam, prev_override=ovr)
+                          bc_fn=bc_fn, phase_norm=phase_norm, beam_source=beam, prev_override=ovr,
+                          phase_g_mode=phase_g_mode,
+                          surface_reflection = (diffuse_reflection && surface_albedo > 0.0) ?
+                              (albedo = Float64(surface_albedo), is_bottom = bdy.is_bottom) : nothing)
 end
 
 function compute_rt_radiative_heating_unified(mesh, I_cg_all::Dict{Tuple{Int,Int},Vector{Float64}},
@@ -333,7 +534,11 @@ function compute_rt_radiative_heating_unified(mesh, I_cg_all::Dict{Tuple{Int,Int
         end
     end
 
-    if MPI.Comm_size(comm) > 1
+    # Always reduce over global node ids, also on ONE rank: node_div counts every element sharing the global node,
+    # and on a periodic mesh the two faces' nodes share one global id even within a rank. Skipping this on one rank
+    # halved G on periodic-face nodes and quartered it on corner nodes (local uniform-cloud test: -3647 / -5473 K/day
+    # there vs -1 K/day inside).
+    begin
         gnpoin = mesh.gnpoin
         g_G = zeros(gnpoin); g_Fx = zeros(gnpoin); g_Fy = zeros(gnpoin); g_Fz = zeros(gnpoin)
         for ip = 1:npoin
@@ -501,11 +706,30 @@ function build_unified_ncf_infrastructure(mesh, sem, comm)
             gid_exch=gid_exch, periodic_gid_exch=periodic_gid_exch, n_dirs=n_dirs)
 end
 
+const LIMITED_ELEMS = Ref{Vector{Int32}}(Int32[])   # per local element: directions limited in the last final sweep
+# The GMRES solution BEFORE the final limited sweep (nothing if no limited sweep ran). It solves the linear system, so
+# it is the right warm start for the next solve; the limited field is not (warm-starting from it cost 102 matvecs
+# instead of 21 on a same-state re-solve, local 2x2O3).
+const UNLIMITED_SOLUTION = Ref{Any}(nothing)
+
+# Jacobi step statistics in one pass and without allocation: max |xn - x|, ‖xn - x‖², ‖xn‖². A separate function so the
+# loop is type-stable (inline in run_unified_case_solve, whose locals are boxed by its closures, it allocated per element
+# with GC disabled: +34 GB live heap per rank on bubble 40x40x60 6x6O6, job 1378743 OOM).
+function _jacobi_step_stats(xn::Vector{Float64}, x::Vector{Float64})
+    dm = 0.0; ss = 0.0; sx = 0.0
+    @inbounds @simd for i in eachindex(xn, x)
+        d = xn[i] - x[i]; dm = max(dm, abs(d)); ss += d * d; sx += xn[i] * xn[i]
+    end
+    return dm, ss, sx
+end
+
 function run_unified_case_solve(setup, metrics, comm, case::RadiativeCase;
                                  max_iter::Int=200, tol::Float64=1e-5,
                                  I_cg_all_init::Union{Dict{Tuple{Int,Int},Vector{Float64}},Nothing}=nothing,
                                  solver::Symbol=:jacobi,
                                  gmres_restart::Int=20, gmres_max_restarts::Int=10,
+                                 gmres_basis::Type{<:AbstractFloat}=Float64,
+                                 final_limited_sweep::Bool=false, limited_sweeps::Int=1, limiter_mode::Symbol=:posthoc,
                                  rtol::Float64=0.0,
                                  monitor::Union{Nothing,Function}=nothing,
                                  opts::SweepOptions=SweepOptions(),
@@ -519,7 +743,10 @@ function run_unified_case_solve(setup, metrics, comm, case::RadiativeCase;
 
     t_setup0 = time_ns()
     κ, σ, bc_fn_all, q_ext_all = build_case_fields(mesh, case)
-    C_iel_all = build_phase_coupling_matrices_elementwise(mesh, case)
+    t_s1 = time_ns()
+    C_iel_all, C_groups = build_phase_coupling_matrices_elementwise(mesh, case)
+    t_s2 = time_ns()
+    refl = surface_reflection_setup!(bc_fn_all, mesh, case)        # nothing unless case.surface_reflection
 
     I_cg_init = Dict{Tuple{Int,Int}, Vector{Float64}}()
     for iel = 1:mesh.nelem, dd = 1:n_dirs[iel]
@@ -535,15 +762,22 @@ function run_unified_case_solve(setup, metrics, comm, case::RadiativeCase;
     if cache_mb < 0
         ni_ = node_info(comm)
         AUTO_BUDGET_FN[] = () -> begin
-            mb, lines = auto_cache_budget_mb(setup, ni_, comm; krylov_vectors=krylov)
+            mb, lines = auto_cache_budget_mb(setup, ni_, comm; krylov_vectors=krylov, krylov_bytes=sizeof(gmres_basis))
             MPI.Comm_rank(comm) == 0 && (foreach(println, lines); flush(stdout))
             mb
         end
         cache_mb = 0.0                              # the sweep sets the real budget after discovery
     end
+    t_s3 = time_ns()
     cache = make_elem_cache(mesh, metrics, setup.n_dirs, ngl; budget_mb=cache_mb)
     memprobe("after make_elem_cache", comm)
     t_setup = (time_ns() - t_setup0) * 1e-9          # case fields, phase matrices, element cache (before the solve)
+    # setup breakdown (max over ranks) and phase-matrix sharing
+    tb = MPI.Allreduce(Float64[t_s1 - t_setup0, t_s2 - t_s1, t_s3 - t_s2, time_ns() - t_s3] .* 1e-9, MPI.MAX, comm)
+    ps = PHASE_MATRIX_STATS[]
+    pd = ps === nothing ? zeros(4) : MPI.Allreduce(Float64[ps.distinct, ps.built, ps.reused_from_previous, ps.max_groups], MPI.MAX, comm)
+    rank == 0 && println(@sprintf("  setup: case fields %.1f s, phase matrices %.1f s (g per %s; max per rank: %d distinct, %d built, %d reused from the previous call, %d node groups per element), reflection + initial guess %.1f s, element cache %.1f s",
+                                  tb[1], tb[2], case.phase_g_mode, Int(pd[1]), Int(pd[2]), Int(pd[3]), Int(pd[4]), tb[3], tb[4]))
 
     t_src = Float64[]; t_swp = Float64[]; t_tot = Float64[]
     gc_prev = ro.gc_mode == :sync ? GC.enable(false) : true      # sync mode: the sweep collects on a schedule
@@ -552,6 +786,7 @@ function run_unified_case_solve(setup, metrics, comm, case::RadiativeCase;
         t_a = time_ns()
         I_cg_all = Dict{Tuple{Int,Int}, Vector{Float64}}()
         unflatten_I!(I_cg_all, flat, order, len_each)
+        refl === nothing || surface_reflection_update!(refl, I_cg_all)   # F↓ of this iterate -> bottom inflow
         extra_source_all = Dict{Tuple{Int,Int}, Vector{Float64}}()
         for iel = 1:mesh.nelem
             em = mesh.extra_mesh[iel]; nd = em.extra_npoin; C_iel = C_iel_all[iel]
@@ -559,7 +794,13 @@ function run_unified_case_solve(setup, metrics, comm, case::RadiativeCase;
             σ_loc = σ[gips]
             Imat = Matrix{Float64}(undef, ngl^3, nd)
             for m = 1:nd; Imat[:,m] .= I_cg_all[(iel,m)]; end
-            S = Imat * transpose(C_iel)
+            S = if C_groups === nothing || length(C_groups[iel]) == 1
+                Imat * transpose(C_groups === nothing ? C_iel : C_groups[iel][1][2])
+            else                                          # :nodal: each node group with its own g's matrix
+                Sg = Matrix{Float64}(undef, ngl^3, nd)
+                for (nodes, Cg) in C_groups[iel]; Sg[nodes, :] = Imat[nodes, :] * transpose(Cg); end
+                Sg
+            end
             for dk = 1:nd
                 extra_source_all[(iel,dk)] = q_ext_all[(iel,dk)] .+ σ_loc .* view(S,:,dk)
             end
@@ -617,9 +858,7 @@ function run_unified_case_solve(setup, metrics, comm, case::RadiativeCase;
             end
             x_final = gmres_fixed_point_solve(apply_G, flatten_I(I_cg_init, order), comm;
                                                restart=gmres_restart, max_restarts=gmres_max_restarts, tol=tol, rtol=rtol,
-                                               monitor=gmon)
-            I_cg_all = Dict{Tuple{Int,Int}, Vector{Float64}}(); unflatten_I!(I_cg_all, x_final, order, len_each)
-            result = (I_cg_all, κ, σ)
+                                               monitor=gmon, basis=gmres_basis)
         elseif solver == :gmres_precond
             κ_mean = sum(κ)/max(length(κ),1)
             periodic_axes = detect_periodic_axes(mesh)
@@ -627,32 +866,96 @@ function run_unified_case_solve(setup, metrics, comm, case::RadiativeCase;
             scales_flat = build_scales_flat(compute_direction_preconditioner_scales(mesh, κ_mean, periodic_axes), order, len_each)
             x_final = gmres_fixed_point_solve_precond(apply_G, flatten_I(I_cg_init, order), scales_flat, comm;
                                                    restart=gmres_restart, max_restarts=gmres_max_restarts, tol=tol)
-            I_cg_all = Dict{Tuple{Int,Int}, Vector{Float64}}(); unflatten_I!(I_cg_all, x_final, order, len_each)
-            result = (I_cg_all, κ, σ)
         elseif solver == :jacobi_extrap || solver == :jacobi_extrap_block
             mode = solver == :jacobi_extrap ? :global : :block
             x_final = jacobi_with_extrapolation(apply_G, flatten_I(I_cg_init, order), comm;
                                              len_each=len_each, max_iter=max_iter, tol=tol, mode=mode)
-            I_cg_all = Dict{Tuple{Int,Int}, Vector{Float64}}(); unflatten_I!(I_cg_all, x_final, order, len_each)
-            result = (I_cg_all, κ, σ)
-        else                                                                   # plain Jacobi
-            I_cg_all = I_cg_init; result = (I_cg_all, κ, σ)
+        elseif solver == :jacobi                                               # plain Jacobi (source iteration)
+            # x ← G(x) on flat vectors: two solution-sized vectors, no Krylov basis (memory-lean alternative to GMRES).
+            # x_{k+1} - x_k = G(x_k) - x_k is exactly the residual of (I - G)x = b that GMRES tests, so the stop is the
+            # same: ‖x_{k+1} - x_k‖₂ < max(tol, rtol·‖b‖) with b = G(0) (one extra sweep, as in GMRES) when rtol > 0.
+            # ρ = ratio of successive residuals; err_est = res·ρ/(1-ρ) is the estimated distance to the fixed point.
+            x = flatten_I(I_cg_init, order); empty!(I_cg_init)
+            gnorm(v) = sqrt(MPI.Allreduce(sum(abs2, v), MPI.SUM, comm))
+            tol_eff = tol
+            if rtol > 0
+                bn = gnorm(apply_G(zeros(length(x))))
+                tol_eff = max(tol, rtol * bn)
+                rank == 0 && println("  Jacobi tolerance: max(abs $(tol), rtol $(rtol) × ‖b‖ $(bn)) = $(tol_eff)")
+            end
+            res_prev = NaN; conv = false
             for it = 1:max_iter
-                flat_new = apply_G(flatten_I(I_cg_all, order))
-                x_dg = Dict{Tuple{Int,Int}, Vector{Float64}}(); unflatten_I!(x_dg, flat_new, order, len_each)
-                max_delta_local = 0.0
-                for iel = 1:mesh.nelem, dd = 1:n_dirs[iel]
-                    max_delta_local = max(max_delta_local, maximum(abs.(x_dg[(iel,dd)] .- I_cg_all[(iel,dd)])))
-                    I_cg_all[(iel,dd)] = copy(x_dg[(iel,dd)])
+                xn = apply_G(x)
+                dm, ss, sx = _jacobi_step_stats(xn, x)           # function barrier: no allocation (GC is off here)
+                x = xn; xn = Float64[]                           # old iterate is garbage from here
+                dmax = MPI.Allreduce(dm, MPI.MAX, comm)
+                rs = MPI.Allreduce([ss, sx], MPI.SUM, comm); res = sqrt(rs[1]); xnrm = sqrt(rs[2])
+                ρ = isnan(res_prev) ? NaN : res / res_prev; res_prev = res
+                err_est = (isnan(ρ) || ρ >= 1) ? NaN : res * ρ / (1 - ρ)
+                rank == 0 && println(@sprintf("  Jacobi iter %d: residual %.4e (rel ‖x‖ %.3e), max |Δ| %.4e, ρ %.4f, est. error %.3e (rel %.3e)",
+                                              it, res, res / max(xnrm, 1e-300), dmax, ρ, err_est, err_est / max(xnrm, 1e-300)))
+                if monitor !== nothing
+                    Id = Dict{Tuple{Int,Int}, Vector{Float64}}(); unflatten_I!(Id, x, order, len_each)
+                    monitor(:jacobi, res, length(t_tot), Id, κ, σ)
                 end
-                max_delta_global = MPI.Allreduce(max_delta_local, MPI.MAX, comm)
-                rank == 0 && println("  RT iter $it: max_delta=$max_delta_global")
-                if max_delta_global < tol
-                    rank == 0 && println("RT converged after $it iterations")
-                    break
+                if res < tol_eff
+                    rank == 0 && println("  Jacobi converged after $it iterations ($(length(t_tot)) sweeps)")
+                    conv = true; break
                 end
             end
+            conv || (rank == 0 && println("  Jacobi NOT converged after $max_iter iterations"))
+            x_final = x
+        else
+            error("unknown RT solver $(solver)")
         end
+        if final_limited_sweep
+            # One more sweep with the converged scattering source and the positivity limiter on in every
+            # (element, direction) solve, so downstream elements receive the limited inflow. GMRES itself stays
+            # linear. Reports how active the limiter was (to show it fades with resolution).
+            # limited_sweeps > 1 (diagnostic, :RT_sw_limited_sweeps): repeat the limited sweep from its own result,
+            # so periodic wrap inflow and scattering source also come from the limited field.
+            x_lim = x_final; st = zeros(7)
+            if limiter_mode == :posthoc
+                # Post-hoc: the same Zhang-Shu scaling applied to every (element, direction) block of the converged
+                # GMRES solution, without a sweep. A horizontally uniform solution stays uniform (the in-sweep
+                # limiter feeds limited inflow, which is not a discrete transport solution, to the next element).
+                cache.lim_pairs = 0; cache.lim_zero = 0; cache.lim_moved = 0.0; cache.lim_total = 0.0
+                fill!(cache.lim_elem, 0)
+                x_lim = copy(x_final); blk = zeros(len_each)
+                for (q, key) in enumerate(order)
+                    r = (q-1)*len_each+1 : q*len_each
+                    copyto!(blk, 1, x_lim, first(r), len_each)
+                    positivity_limit!(blk, cache, key[1], ngl, ω, metrics.Je)
+                    copyto!(x_lim, first(r), blk, 1, len_each)
+                end
+                st = MPI.Allreduce(Float64[cache.lim_pairs, cache.lim_zero, cache.lim_moved, cache.lim_total,
+                                           length(order), count(>(0), cache.lim_elem), mesh.nelem], MPI.SUM, comm)
+                dn = MPI.Allreduce(Float64[sum(abs2, x_lim .- x_final), sum(abs2, x_final)], MPI.SUM, comm)
+                rank == 0 && println(@sprintf("  positivity limiter (post-hoc): %d of %d pairs limited (%.2e), %d with mean <= 0; elements touched %d of %d (%.2e); radiance moved %.2e of total; limited vs solver solution L2 rel %.2e",
+                    Int(st[1]), Int(st[5]), st[1] / max(st[5], 1), Int(st[2]), Int(st[6]), Int(st[7]), st[6] / max(st[7], 1),
+                    st[3] / max(st[4], 1e-300), sqrt(dn[1] / max(dn[2], 1e-300))))
+            end
+            limiter_mode == :sweep || limiter_mode == :posthoc || error("unknown limiter_mode $(limiter_mode)")
+            for ls = 1:(limiter_mode == :sweep ? max(limited_sweeps, 1) : 0)
+                cache.limit = true; cache.lim_pairs = 0; cache.lim_zero = 0; cache.lim_moved = 0.0; cache.lim_total = 0.0
+                fill!(cache.lim_elem, 0)
+                x_prev = x_lim
+                x_lim = apply_G(x_prev)
+                cache.limit = false
+                st = MPI.Allreduce(Float64[cache.lim_pairs, cache.lim_zero, cache.lim_moved, cache.lim_total,
+                                           length(order), count(>(0), cache.lim_elem), mesh.nelem], MPI.SUM, comm)
+                dn = MPI.Allreduce(Float64[sum(abs2, x_lim .- x_final), sum(abs2, x_final), sum(abs2, x_lim .- x_prev)], MPI.SUM, comm)
+                rank == 0 && println(@sprintf("  positivity limiter (final sweep %d): %d of %d pairs limited (%.2e), %d with mean <= 0; elements touched %d of %d (%.2e); radiance moved %.2e of total; final sweep vs GMRES iterate L2 rel %.2e; vs previous sweep %.2e",
+                    ls, Int(st[1]), Int(st[5]), st[1] / max(st[5], 1), Int(st[2]), Int(st[6]), Int(st[7]), st[6] / max(st[7], 1),
+                    st[3] / max(st[4], 1e-300), sqrt(dn[1] / max(dn[2], 1e-300)), sqrt(dn[3] / max(dn[2], 1e-300))))
+            end
+            LIMITED_ELEMS[] = copy(cache.lim_elem)
+            Iu = Dict{Tuple{Int,Int}, Vector{Float64}}(); unflatten_I!(Iu, x_final, order, len_each)
+            UNLIMITED_SOLUTION[] = Iu
+            x_final = x_lim
+        end
+        I_cg_all = Dict{Tuple{Int,Int}, Vector{Float64}}(); unflatten_I!(I_cg_all, x_final, order, len_each)
+        result = (I_cg_all, κ, σ)
     finally
         GC.enable(gc_prev)
     end

@@ -138,6 +138,21 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
     rt_lap!(tm, :atmos_infra)                                           # dycore -> atmos data, sweep infrastructure
 
     do_sw = inputs[:RT_compute_sw]; do_lw = inputs[:RT_compute_lw]
+    # Solver and diagnostic switches read below (each is documented where it is read):
+    #   solvers      :RT_sw_solver, :RT_lw_solver (:gmres | :jacobi), :RT_{sw,lw}_gmres_restart, :RT_gmres_max_matvecs,
+    #                :RT_gmres_basis, :RT_sw_rtol, :RT_lw_rtol, :RT_lw_cold_rtol
+    #   SW phase     :RT_sw_phase_normalization (:symmetric_g, mod_inputs.jl), :RT_sw_phase_g (:element | :nodal)
+    #   SW limiter   :RT_sw_positivity_limiter (true), :RT_sw_limiter_mode (:posthoc | :sweep), :RT_sw_limited_sweeps
+    #   reflection   :RT_sw_surface_diffuse_reflection (true), :RT_lw_surface_reflection (false; albedo 1 - ε)
+    #   DIAGNOSTICS (not for production runs; used in the uniform-column SW study, Nov 2026):
+    #                :RT_sw_g_override (fixed asymmetry, no δ scaling), :RT_sw_clear_sky (cloud optics off),
+    #                :RT_sw_no_scattering (σ = 0), :RT_sw_limited_sweeps > 1, :RT_lw_tol_study / :RT_sw_tol_study
+    #   :RT_sw_gmres_restart / :RT_lw_gmres_restart   Krylov vectors per GMRES cycle (default 60 each)
+    #   :RT_gmres_max_matvecs   cap per solve (default 600 = the old 10 × 60); max restarts = ceil(cap / restart)
+    #   :RT_gmres_basis         :Float32 (default) | :Float64: storage of the Krylov basis (Float32 halves its memory; Arnoldi dots accumulate in Float64)
+    gm_cap = Int(get(inputs, :RT_gmres_max_matvecs, 600))
+    gm_basis = Symbol(get(inputs, :RT_gmres_basis, :Float32)) == :Float64 ? Float64 : Float32
+    sw_restart = Int(get(inputs, :RT_sw_gmres_restart, 60)); lw_restart = Int(get(inputs, :RT_lw_gmres_restart, 60))
     adaptive = get(inputs, :RT_adaptive_angular, false)
 
     # Shortwave optics and direct beam: needed for the SW solve, and by the adaptive angular regrid (it refines
@@ -145,12 +160,57 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
     if do_sw || adaptive
         M_dm = inputs[:RT_sw_delta_m_moments] > 0 ? inputs[:RT_sw_delta_m_moments] :
                inputs[:extra_dimensions_nelemx] * inputs[:extra_dimensions_order] + 1     # polar nodes of the angular mesh
+        #   :RT_sw_clear_sky     true: DIAGNOSTIC, cloud liquid/ice ignored in the SW optics (clear sky, same state)
+        sw_clouds = get(inputs, :RT_sw_clear_sky, false) != true
         κ_sw, σ_sw, g_eff = atmos_to_rad_shortwave(atmos_data, mesh.npoin;
-                                                   delta_scaling=inputs[:RT_sw_delta_scaling], delta_m_moments=M_dm)
+                                                   delta_scaling=inputs[:RT_sw_delta_scaling], delta_m_moments=M_dm,
+                                                   clouds=sw_clouds)
+        #   :RT_sw_g_override   nothing (default) | g: DIAGNOSTIC, unscaled optics (no δ scaling) with asymmetry g
+        #                       everywhere (0 = isotropic scattering), to separate phase-function effects
+        g_ovr = get(inputs, :RT_sw_g_override, nothing)
+        if g_ovr !== nothing
+            κ_sw, σ_sw, g_eff = atmos_to_rad_shortwave(atmos_data, mesh.npoin; delta_scaling=:none, delta_m_moments=M_dm,
+                                                       clouds=sw_clouds)
+            g_eff .= Float64(g_ovr)
+            MPI.Comm_rank(comm) == 0 && println("SW DIAGNOSTIC: g overridden to $(g_ovr), no delta scaling")
+        end
+        #   :RT_sw_no_scattering true: DIAGNOSTIC, σ = 0 (absorption only; the diffuse field then comes from surface
+        #                        reflection alone, a pure-transport test of the sweep)
+        sw_clouds || (MPI.Comm_rank(comm) == 0 && println("SW DIAGNOSTIC: clear-sky optics (cloud liquid/ice ignored)"))
+        if get(inputs, :RT_sw_no_scattering, false) == true
+            σ_sw .= 0.0; g_eff .= 0.0
+            MPI.Comm_rank(comm) == 0 && println("SW DIAGNOSTIC: no scattering (σ = 0)")
+        end
         κ_ext_sw = κ_sw .+ σ_sw
         z_prof, τ_from_TOA = build_sw_lateral_bc_profile(mesh, κ_ext_sw, mesh.ngl)
         sw = SWParams(inputs[:RT_S0_flux], inputs[:RT_μ0], inputs[:RT_ϕ0], 0.35, z_prof, τ_from_TOA)
-        F_dir, G_dir, Q_dir = compute_direct_beam(mesh, κ_sw, σ_sw, sw)
+        #   :RT_sw_direct_beam   :slant (default: 3D path toward the sun traced element by element through the polynomial
+        #                        extinction, sw_direct_beam.jl; adaptive / hanging-node / periodic box meshes) |
+        #                        :reference_column (one central column's vertical τ for every node; exact only for
+        #                        horizontally uniform atmospheres; the behaviour before 2026-11-18)
+        beam_mode = Symbol(get(inputs, :RT_sw_direct_beam, :slant))
+        beam_mode in (:slant, :reference_column) || error(":RT_sw_direct_beam must be :slant or :reference_column")
+        if beam_mode == :slant
+            tb = time()
+            src_mode = Symbol(get(inputs, :RT_sw_beam_source, :projected))
+            F_dir, G_dir, Q_dir, binfo = compute_direct_beam_raytrace(mesh, κ_sw, σ_sw, sw, comm;
+                                                                      project_source = src_mode == :projected)
+            tb = MPI.Allreduce(time() - tb, MPI.MAX, comm)
+            fr = MPI.Allreduce(Float64[maximum(F_dir; init=0.0), -minimum(F_dir; init=Inf)], MPI.MAX, comm)
+            beam_src_elem = haskey(binfo, :source_elem) ? binfo.source_elem : nothing
+            if haskey(binfo, :source_stats) && binfo.source_stats !== nothing && MPI.Comm_rank(comm) == 0
+                st = binfo.source_stats
+                println("SW beam source projection: $(st.projected_elements) of $(st.elements) elements integrated exactly " *
+                        "(steep F_dir or σ), $(st.limited_elements) limited to non-negative, " *
+                        "source moved $(@sprintf("%.2e", st.moved_fraction)) of total")
+                binfo = Base.structdiff(binfo, NamedTuple{(:source_elem,)})
+            end
+            MPI.Comm_rank(comm) == 0 && println("SW direct beam ($beam_mode): $(binfo), F_dir range " *
+                "[$(round(-fr[2]; digits=2)), $(round(fr[1]; digits=2))] W/m², $(round(tb; digits=2)) s")
+        else
+            F_dir, G_dir, Q_dir = compute_direct_beam(mesh, κ_sw, σ_sw, sw)
+            beam_src_elem = nothing
+        end
         rt_lap!(tm, :sw_optics)                                         # optics, reference column, direct beam
     end
 
@@ -174,8 +234,35 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
 
     # ── Shortwave: diffuse field from the sweep, direct beam analytic (G_dir, Q_dir added in the heating) ──────────
     if do_sw
-        sw_case = build_shortwave_diffuse_case(κ_sw, σ_sw, g_eff, sw, F_dir, bdy;
+        #   :RT_sw_beam_source  :projected (default; :slant beam only): the scattered-beam source σ F_dir / μ₀ with
+        #                       the EXACT element load (F_dir traced at quadrature points where it or σ is steep) and
+        #                       a positivity limiter (sw_beam_projected_source). Otherwise falls back to :nodal.
+        #                       :nodal: nodal collocation (undershoots/overshoots where F_dir drops steeply in an element)
+        #                       :element_mean: DIAGNOSTIC, per-element mean of the nodal source (nodes shared by
+        #                       elements get the average of those means; local elements only)
+        beam_coeff = nothing
+        if Symbol(get(inputs, :RT_sw_beam_source, :nodal)) == :element_mean
+            c = σ_sw .* F_dir ./ sw.μ₀
+            acc = zeros(mesh.npoin); cnt = zeros(mesh.npoin); ngl = mesh.ngl
+            for e = 1:mesh.nelem
+                ids = [mesh.connijk[e, i, j, k] for i = 1:ngl, j = 1:ngl, k = 1:ngl]
+                m = sum(c[ids]) / length(ids)
+                for ip in ids
+                    acc[ip] += m; cnt[ip] += 1
+                end
+            end
+            beam_coeff = [cnt[ip] > 0 ? acc[ip] / cnt[ip] : c[ip] for ip = 1:mesh.npoin]
+            MPI.Comm_rank(comm) == 0 && println("SW DIAGNOSTIC: beam source replaced by element means")
+        end
+        sw_case = build_shortwave_diffuse_case(κ_sw, σ_sw, g_eff, sw, F_dir, bdy; beam_coeff=beam_coeff,
+                                               beam_coeff_elem = beam_coeff === nothing ? beam_src_elem : nothing,
                                                surface_albedo=inputs[:RT_surface_albedo],
+                                               # :RT_sw_surface_diffuse_reflection (default true): Lambertian reflection
+                                               # of the diffuse downward flux too (false = direct beam only, old behaviour)
+                                               diffuse_reflection = get(inputs, :RT_sw_surface_diffuse_reflection, true) == true,
+            # :RT_sw_phase_g  :element (default: one σ-weighted g per element) | :nodal (each node's own g; nodes with
+            #                 equal g share a matrix, so only cloud-edge nodes add matrices)
+            phase_g_mode = Symbol(get(inputs, :RT_sw_phase_g, :element)),
                                                phase_norm=inputs[:RT_sw_phase_normalization],
                                                lateral_bc=inputs[:RT_sw_lateral_bc], mesh=mesh,
                                                # :RT_sw_periodic_mode :periodic | :walls (periodic faces read the
@@ -183,18 +270,58 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
                                                periodic_walls = Symbol(get(inputs, :RT_sw_periodic_mode, :periodic)) == :walls,
                                                comm=comm)
         rt_lap!(tm, :sw_case)
+        #   :RT_sw_rtol          0 = off; > 0 relaxes every SW solve to max(rt_tol, rtol·‖b‖) (as :RT_lw_rtol)
+        #   :RT_sw_tol_study     true: SW heating (diffuse + direct) at GMRES iterates vs the converged one. Records every
+        #                        restart and each inner iterate whose residual fell by √10 since the last recorded one
+        #                        (the SW cold solve takes hundreds of matvecs). Costs one heating evaluation per point.
+        sw_cold = !micro.rt_sol_sw_available
+        sw_rtol = Float64(get(inputs, :RT_sw_rtol, 0.0))
+        sw_study_on = get(inputs, :RT_sw_tol_study, false) == true
+        sw_study = RTTolStudyPoint[]
+        sw_last = Ref(Inf)
+        sw_monitor = !sw_study_on ? nothing : (kind, res, nmv, Id, κu, σu) -> begin
+            (kind == :outer || res <= sw_last[] / sqrt(10.0)) || return nothing
+            sw_last[] = res
+            _, dT, _, _ = compute_rt_radiative_heating_unified(mesh, Id, atmos_data, κu, σu, false, comm;
+                                                              G_dir=G_dir, Q_dir=Q_dir, sw_μ₀=sw.μ₀, sw_φ₀=sw.φ₀)
+            push!(sw_study, RTTolStudyPoint(kind, res, nmv, copy(dT)))
+        end
+        UNLIMITED_SOLUTION[] = nothing
         I_cg_sw, κ_sw_used, σ_sw_used = run_unified_case_solve(infra, metrics, comm, sw_case;
             max_iter=rt_max_iter, tol=rt_tol,
-            solver=:gmres,
-            gmres_restart=60, gmres_max_restarts=10,
+            # :RT_sw_solver :gmres (default) | :jacobi (source iteration: no Krylov basis, same residual stop; SW
+            #               scattering is strong in cloud, so expect many more sweeps than GMRES: memory fallback only)
+            solver = Symbol(get(inputs, :RT_sw_solver, :gmres)),
+            gmres_restart=sw_restart, gmres_max_restarts=cld(gm_cap, sw_restart), gmres_basis=gm_basis,
+            # :RT_sw_positivity_limiter (default true): Zhang-Shu positivity limiter per (element, direction) after the solve
+            final_limited_sweep = get(inputs, :RT_sw_positivity_limiter, true) == true,
+            limited_sweeps = Int(get(inputs, :RT_sw_limited_sweeps, 1)),   # DIAGNOSTIC (:sweep mode): repeat the limited sweep
+            # :RT_sw_limiter_mode :posthoc (default: Zhang-Shu limiter applied to the converged solution, no sweep;
+            #                    keeps horizontally uniform solutions uniform, 200-12.5 m tests 2026-11-19/20) |
+            #                    :sweep (one more sweep with the limiter on; limited inflow breaks uniformity)
+            limiter_mode = Symbol(get(inputs, :RT_sw_limiter_mode, :posthoc)),
             I_cg_all_init = micro.rt_sol_sw_available ? micro.rt_sol_sw : nothing,
+            rtol = sw_rtol,
+            monitor = sw_monitor,
             report = rt_solve_report!(tm, :sw))
         rt_lap!(tm, :sw_solve)
-        micro.rt_sol_sw = I_cg_sw
+        if get(inputs, :RT_neg_radiance_check, true) == true      # diagnostic only: never stops the run
+            try
+                rt_negative_radiance_report(mesh, I_cg_sw, κ_sw_used .+ σ_sw_used, comm; band="SW diffuse", F_dir=F_dir,
+                    limited = get(inputs, :RT_sw_positivity_limiter, true) == true ? LIMITED_ELEMS[] : nothing)
+            catch err
+                @warn "negative-radiance check failed (diagnostic only)" exception=err
+            end
+        end
+        # warm start from the GMRES solution, not the limited one (UNLIMITED_SOLUTION); heating uses the limited field
+        micro.rt_sol_sw = UNLIMITED_SOLUTION[] === nothing ? I_cg_sw : UNLIMITED_SOLUTION[]
+        UNLIMITED_SOLUTION[] = nothing
         Q_sw, dTdt_sw, F_net_sw, G_sw = compute_rt_radiative_heating_unified(
             mesh, I_cg_sw, atmos_data, κ_sw_used, σ_sw_used, false, comm;
             G_dir=G_dir, Q_dir=Q_dir, sw_μ₀=sw.μ₀, sw_φ₀=sw.φ₀)
         micro.flux_sw .= to_flux(dTdt_sw)
+        sw_study_on && rt_tol_study_report!(sw_study, dTdt_sw, atmos_data.rho, mesh.npoin, comm, inputs;
+                                            cold=sw_cold, band="SW")
         micro.rt_sol_sw_available = true
         rt_lap!(tm, :sw_heat)
     else
@@ -212,6 +339,7 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
         #                        | :column_mean (cold solve starts from the plane-parallel horizontal-mean column; default)
         #                        | :column_local (cold solve starts from each node's own column: ICA)
         #   :RT_lw_solver        :gmres | :gmres_precond (direction scaling by periodic path length, sweep_gmres.jl)
+        #                        | :jacobi (source iteration: no Krylov basis, same residual stop as GMRES; memory-lean)
         #   :RT_lw_rtol          relaxes EVERY LW solve to max(rt_tol, rtol·‖b‖); 0 = off. Default 2.6e-8 ≈ absolute 0.1
         #                        on BOMEX 32x32x30 4x4O4 (‖b‖ 3.8e6): heating error ≲3e-7 rel L2, ≲2e-3 K/day max
         #                        (tolerance study, 2026-11-18), ~1e4 below the 3D−ICA difference
@@ -222,13 +350,16 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
         cold_init = Symbol(get(inputs, :RT_lw_cold_init, :column_mean))
         lw_rtol   = Float64(get(inputs, :RT_lw_rtol, 2.6e-8))
         cold_rtol = Float64(get(inputs, :RT_lw_cold_rtol, lw_rtol))
+        #   :RT_lw_surface_reflection  false (default) | true: Lambertian reflection of the downward LW flux at the
+        #                              surface with albedo 1 - ε (RadiativeCase.surface_reflection)
+        lw_refl = get(inputs, :RT_lw_surface_reflection, false) == true
         need_cols = lat_bc == :plane_parallel || per_mode == :walls || (cold && cold_init == :walls)
         cols = need_cols ? build_lw_lateral_columns(mesh, κ_lw .+ σ_lw, atmos_data.t_current, comm;
                                                     ε_surface=lw.ε_surface, T_space=lw.T_space) : nothing
         ovr = (per_mode == :walls || (cold && cold_init == :walls)) ? lw_lateral_prev_override(mesh, cols) : nothing
         lw_case = build_longwave_case(atmos_data, κ_lw, σ_lw, bdy; ε_surface=lw.ε_surface, T_space=lw.T_space,
                                       lateral_cols = lat_bc == :plane_parallel ? cols : nothing,
-                                      prev_override = per_mode == :walls ? ovr : nothing)
+                                      prev_override = per_mode == :walls ? ovr : nothing, surface_reflection = lw_refl)
         rt_lap!(tm, :lw_case)                                           # optics, lateral columns and case
         I_init_lw = micro.rt_sol_lw_available ? micro.rt_sol_lw : nothing
         lw_solver = Symbol(get(inputs, :RT_lw_solver, :gmres))
@@ -252,7 +383,7 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
         if cold && cold_init == :walls && per_mode == :periodic
             walls_case = build_longwave_case(atmos_data, κ_lw, σ_lw, bdy; ε_surface=lw.ε_surface, T_space=lw.T_space,
                                              lateral_cols = lat_bc == :plane_parallel ? cols : nothing,
-                                             prev_override = ovr)
+                                             prev_override = ovr, surface_reflection = lw_refl)
             I_init_lw, _, _ = run_unified_case_solve(infra, metrics, comm, walls_case;
                 max_iter=rt_max_iter, tol=rt_tol, solver=:gmres, gmres_restart=60, gmres_max_restarts=10,
                 rtol=cold_rtol, report = rt_solve_report!(tm, :lw_walls_init))
@@ -260,13 +391,20 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
         end
         I_cg_lw, κ_lw_used, σ_lw_used = run_unified_case_solve(infra, metrics, comm, lw_case;
             max_iter=rt_max_iter, tol=rt_tol,
-            gmres_restart=60, gmres_max_restarts=10,
+            gmres_restart=lw_restart, gmres_max_restarts=cld(gm_cap, lw_restart), gmres_basis=gm_basis,
             I_cg_all_init = I_init_lw,
             solver = lw_solver,
             rtol = cold ? cold_rtol : lw_rtol,
             monitor = lw_monitor,
             report = rt_solve_report!(tm, :lw))
         rt_lap!(tm, :lw_solve)
+        if get(inputs, :RT_neg_radiance_check, true) == true      # diagnostic only: never stops the run
+            try
+                rt_negative_radiance_report(mesh, I_cg_lw, κ_lw_used .+ σ_lw_used, comm; band="LW")
+            catch err
+                @warn "negative-radiance check failed (diagnostic only)" exception=err
+            end
+        end
         micro.rt_sol_lw = I_cg_lw
         Q_lw, dTdt_lw, F_net_lw, G_lw = compute_rt_radiative_heating_unified(
             mesh, I_cg_lw, atmos_data, κ_lw_used, σ_lw_used, true, comm)

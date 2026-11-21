@@ -19,6 +19,39 @@ mutable struct ElemCache
     ws_br::Vector{Symbol}
     ord_iel::Vector{Int32}          # NEW: scan order of the (iel,d) pairs
     ord_d::Vector{Int32}
+    # Positivity limiter on each solved (element, direction) polynomial (Zhang-Shu scaling toward the element mean,
+    # weights ω_i ω_j ω_k J): off during the GMRES iterations (it is nonlinear), switched on for one final sweep.
+    limit::Bool
+    lim_pairs::Int                  # pairs limited (some nodal value < 0)
+    lim_zero::Int                   # of those, pairs whose element mean was <= 0 (set to 0: not conservative)
+    lim_moved::Float64              # Σ over limited pairs of ∫|x_new − x_old| (radiance × volume moved)
+    lim_total::Float64              # Σ over all pairs of ∫|x| (normaliser)
+    lim_elem::Vector{Int32}         # per element: number of limited directions
+end
+
+function positivity_limit!(x::Vector{Float64}, cache::ElemCache, iel::Int, ngl::Int, ω, Je)
+    sw = 0.0; sm = 0.0; mn = Inf; tot = 0.0
+    @inbounds for k = 1:ngl, j = 1:ngl, i = 1:ngl
+        p = lidx(i, j, k, ngl); w = ω[i] * ω[j] * ω[k] * Je[iel, i, j, k]
+        sw += w; sm += w * x[p]; mn = min(mn, x[p]); tot += w * abs(x[p])
+    end
+    cache.lim_total += tot
+    mn >= 0 && return x
+    m = sm / sw; moved = 0.0
+    if m <= 0
+        @inbounds for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            p = lidx(i, j, k, ngl); moved += ω[i] * ω[j] * ω[k] * Je[iel, i, j, k] * abs(x[p]); x[p] = 0.0
+        end
+        cache.lim_zero += 1
+    else
+        θ = m / (m - mn)
+        @inbounds for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            p = lidx(i, j, k, ngl); xn = m + θ * (x[p] - m)
+            moved += ω[i] * ω[j] * ω[k] * Je[iel, i, j, k] * abs(xn - x[p]); x[p] = xn
+        end
+    end
+    cache.lim_pairs += 1; cache.lim_moved += moved; cache.lim_elem[iel] += 1
+    return x
 end
 
 @inline mask_inflow(m::UInt16, fid::Int) = ((m >> (fid-1)) & UInt16(1)) == UInt16(1)
@@ -76,7 +109,8 @@ function make_elem_cache(mesh, metrics, n_dirs::Vector{Int}, ngl::Int; budget_mb
 
     bpp = 8.0*(n3*n3 + n3 + 6*ngl*ngl) + 200.0
     return ElemCache(faceinfo, Dict{Tuple{Int,Int},ElemFactor}(), budget_mb*1e6, 0.0, bpp, 0.0,
-                     zeros(n3, n3), Vector{Any}(nothing, 6), fill(:none, 6), ord_iel, ord_d)
+                     zeros(n3, n3), Vector{Any}(nothing, 6), fill(:none, 6), ord_iel, ord_d,
+                     false, 0, 0, 0.0, 0.0, zeros(Int32, mesh.nelem))
 end
 
 function elem_factor_build(mesh, metrics, ψ, dψ, ω, κ, iel::Int, d::Int, ngl::Int, m::UInt16)
@@ -147,6 +181,7 @@ function solve_pair!(cache::ElemCache, mesh, metrics, ψ, dψ, ω, κ, iel::Int,
             ldiv!(ef.F, x)
         end
         gtoc!(prof, :solve, t0)
+        cache.limit && positivity_limit!(x, cache, iel, ngl, ω, metrics.Je)
         return x
     end
 
@@ -177,6 +212,7 @@ function solve_pair!(cache::ElemCache, mesh, metrics, ψ, dψ, ω, κ, iel::Int,
         F = lu!(A); ldiv!(F, x)
     end
     gtoc!(prof, :solve, t0)
+    cache.limit && positivity_limit!(x, cache, iel, ngl, ω, metrics.Je)
     return x
 end
 

@@ -2477,16 +2477,26 @@ function node_memory_limit_bytes()
     return lim
 end
 
-function auto_cache_budget_mb(setup, ni, comm; krylov_vectors::Int=0, min_pairs_per_rank::Int=0,
+const AUTO_BUDGET_OVERHEAD = Ref(-1.0)          # non-GC memory per rank, measured on the first auto budget
+
+function auto_cache_budget_mb(setup, ni, comm; krylov_vectors::Int=0, krylov_bytes::Int=8, min_pairs_per_rank::Int=0,
                               margin_gb::Float64=3.0)
     rank = MPI.Comm_rank(comm); np = MPI.Comm_size(comm)
     ngl = setup.mesh.ngl; n3 = ngl^3
     pairs = Float64(sum(setup.n_dirs))
     bpp = 8.0*(n3*n3 + n3 + 6*ngl*ngl) + 200.0
     GC.gc()
-    base = max(Float64(Sys.maxrss()), 1e9*Base.gc_live_bytes()/1e9)
+    # Baseline footprint. Sys.maxrss() is the process PEAK, which never decreases: from the second solve on it still holds
+    # the previous solve's (now freed) element cache and Krylov basis, which were then counted twice and shrank the
+    # budget ~5x (BOMEX 4x4O4: 6653 -> 582-1208 MB/rank, steady matvec 9.7 -> 18.5 s). The first call measures the
+    # non-GC overhead (libraries, MPI buffers, startup peaks) as maxrss - live; later calls use live + that overhead.
+    live = Float64(Base.gc_live_bytes())
+    if AUTO_BUDGET_OVERHEAD[] < 0
+        AUTO_BUDGET_OVERHEAD[] = max(Float64(Sys.maxrss()) - live, 0.0)
+    end
+    base = live + AUTO_BUDGET_OVERHEAD[]
     total_pairs = MPI.Allreduce(pairs, +, comm)
-    kry = krylov_vectors > 0 ? (krylov_vectors + 6) * 8.0 * n3 * pairs : 0.0   # basis + matvec temporaries
+    kry = krylov_vectors > 0 ? ((krylov_vectors + 1) * krylov_bytes + 5 * 8.0) * n3 * pairs : 0.0   # basis + Float64 temporaries
     graph = 200.0 * total_pairs                      # replicated GS graph build (measured ~100-190 B per global pair)
     reserve = base + kry + graph + margin_gb*1e9
     all = reshape(gather_all(Float64[reserve, pairs, node_memory_limit_bytes()], comm), 3, np)
@@ -2507,7 +2517,9 @@ function auto_cache_budget_mb(setup, ni, comm; krylov_vectors::Int=0, min_pairs_
         push!(lines, "auto cache budget: ranks/node $nper, usable fraction $usable_frac, reserve per fullest node " *
             "$(round(need_max/1e9; digits=1)) GB (baseline + Krylov $(krylov_vectors>0) + graph $(round(graph/1e9; digits=2)) GB/rank + margin), " *
             "budget per rank min $(round(bmin/1e6; digits=0)) max $(round(bmax/1e6; digits=0)) MB (full cache up to $(round(full_max/1e6; digits=0)) MB), " *
-            "projected node total $(round(proj/1e9; digits=0)) GB of $(round(node_lim/1e9; digits=0)) GB")
+            "projected node total $(round(proj/1e9; digits=0)) GB of $(round(node_lim/1e9; digits=0)) GB; " *
+            "rank 0 live $(round(live/1e9; digits=2)) GB + non-GC $(round(AUTO_BUDGET_OVERHEAD[]/1e9; digits=2)) GB, " *
+            "peak RSS $(round(Sys.maxrss()/1e9; digits=2)) GB")
     end
     return budget/1e6, lines
 end
