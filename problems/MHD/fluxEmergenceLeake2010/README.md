@@ -795,11 +795,16 @@ the fraction on field lines within 15° of the horizontal, where gravity has
 no component along the field; and, on the steeper field lines, its mean speed
 down the field and the share of its weight along the field that its pressure
 gradient carries (1: hydrostatic, held by its own pressure; 0: nothing in the
-way). Along a field line only pressure, gravity and viscosity act, so a dome
-that keeps its plasma shows as one of: warm with a support near 1; flat field;
-$\beta > 1$; or cold on steep field with no support and yet slow, which leaves
-the viscosity. On the initial atmosphere the support is 1.00 in the corona and
-1.11 in the chromosphere of REF 1 (one and a half nodes per scale height).
+way), the share the viscous force carries (the DynSGS and the case's $\nu$, with
+the code's operator: a drag on plasma that falls), and their sum, whose
+shortfall from 1 accelerates it down the field. Along a field line only
+pressure, gravity and viscosity act, so a dome that keeps its plasma shows as
+one of: warm with a support near 1; flat field; $\beta > 1$; or cold on steep
+field with no pressure support and yet slow, held by the viscosity. The
+derivatives are those of the elements (the LGL differentiation matrix, and the
+CG weak form with the lumped mass for the viscous operator): on the initial
+atmosphere of REF 1 the support is 1.00 in the corona and 0.99 in the
+chromosphere (1.11 with the finite differences used before 21 Nov 2026).
 
 `heat` says what changes the temperature of that plasma. For the plasma denser
 than $10^{-13}$ g cm⁻³ above 3 Mm (`--ymin`, `--ymax`, `--thr`; `--thr -99` for
@@ -818,15 +823,18 @@ $\tfrac12\psi^2$ the pressure gains ($\alpha_p c_h/\Delta h\,\psi^2$; `--ch`,
 the run's log). Each is evaluated from the snapshot with the code's operators
 (the reference-weighted $\nabla\cdot(\rho_e\mu\nabla((q - q_e)/\rho_e))$, the
 reference atmosphere rebuilt from its formula: on the $t = 0$ snapshot every
-term is below $10^{-4}$ K per 100 s), by finite differences on the mesh's
-lattice. Then what the DynSGS dissipates and `shock` does not heat. Where two
+term is below $10^{-4}$ K per 100 s), with the elements' derivatives and the CG
+weak form on the mesh's lattice of rectangles, where the 2D operator is exactly
+the sum of the 1D ones along the rows and the columns (60 times closer to the
+exact operator than finite differences on a graded test lattice). Then what the
+DynSGS dissipates and `shock` does not heat. Where two
 snapshots are at most 20 s apart (the off-grid outputs, 12–17 s apart) the
 observed $DT/Dt = \partial_tT + \mathbf v\cdot\nabla T$, node by node, is set
 against the budget on the nodes that stay in the set, below $2\times10^5$ K,
 and change by less than 30 % (a front sweeping over a node is not an advection a
 finite difference follows): the difference is what the budget misses, the
 temperature floor and its own error. On REF 1 at 920–928 s it is 1 % on the
-flanks.
+flanks and 5 % in the center above 3 Mm.
 
 `tools/lk10_report.sh RUN [--base RUN0] [--log FILE] [--py PYTHON]` writes
 `lk10_report_<run>.txt`: the configuration of each directory of the run, the

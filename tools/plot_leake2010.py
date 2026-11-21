@@ -951,7 +951,8 @@ def drain_row(g, thr=-13.0, ymin=3.0, tfloor=0.1):
     integ = lambda f: np.trapezoid(np.trapezoid(f, X * cm, axis=1), Y * cm)
     M = integ(np.where(d, rho, 0.0))
     if not np.any(d) or M <= 0:
-        return dict(M=0.0, floor=np.nan, cold=np.nan, warm=np.nan, beta=np.nan, flat=np.nan, vpar=np.nan, sup=np.nan, T=np.nan)
+        return dict(M=0.0, floor=np.nan, cold=np.nan, warm=np.nan, beta=np.nan, flat=np.nan, vpar=np.nan, sup=np.nan,
+                    vsup=np.nan, tsup=np.nan, T=np.nan)
     fr = lambda sel: integ(np.where(d & sel, rho, 0.0)) / M
     T = G("T")                                                    # in T_ph = 5700 K
     P, r = G("p"), G("ρ")                                         # code units
@@ -962,9 +963,20 @@ def drain_row(g, thr=-13.0, ymin=3.0, tfloor=0.1):
     bx = sg * Bx / np.maximum(Bp, 1e-300); by = sg * By / np.maximum(Bp, 1e-300)
     incl = by > np.sin(np.radians(15.0))                          # field lines steeper than 15 degrees
     Xc, Yc = g["xc"], g["yc"]
-    dpds = bx * np.gradient(P, Xc, axis=1) + by * np.gradient(P, Yc, axis=0)   # along the field, upward
+    dpds = bx * _sem_d(P, Xc, 1) + by * _sem_d(P, Yc, 0)         # along the field, upward (element derivatives)
     sup = -dpds / np.maximum(r * G_CODE * by, 1e-300)             # 1: hydrostatic along the field; 0: nothing holds it
-    vdown = -(G("u") * bx + G("v") * by) * V0_KMS                 # km/s down the field line
+    u, v = G("u"), G("v")
+    vdown = -(u * bx + v * by) * V0_KMS                           # km/s down the field line
+    # the viscous force along the field (the DynSGS mu + the case's nu, the momentum coefficient written), with the
+    # code's reference-weighted operator div(rho_e mu grad(rho v/rho_e)) (:dsgs_ref_weight), as the same share
+    if MU_NAME in g["fields"]:
+        mu = G(MU_NAME)
+        re = _ref_atmos(Yc, 1.3)[0][:, None] * np.ones_like(u)
+        dv2 = lambda c, q: _sem_dcd(c, q, Xc, 1) + _sem_dcd(c, q, Yc, 0)
+        fvs = bx * dv2(re * mu, r * u / re) + by * dv2(re * mu, r * v / re)
+        vsup = fvs / np.maximum(r * G_CODE * by, 1e-300)
+    else:
+        vsup = np.full_like(u, np.nan)
     # cell weights of the mass (for the medians)
     wx = np.gradient(X); wy = np.gradient(Y)
     w = rho * wy[:, None] * wx[None, :]
@@ -972,7 +984,8 @@ def drain_row(g, thr=-13.0, ymin=3.0, tfloor=0.1):
     return dict(M=M, floor=fr(T < 1.2 * tfloor), cold=fr(T * 5700.0 < 2e4), warm=fr(T * 5700.0 >= 2e4),
                 beta=fr(beta > 1.0), flat=fr(~incl),
                 vpar=float(np.sum(w[k] * vdown[k]) / np.sum(w[k])) if np.any(k) else np.nan,
-                sup=_wmedian(sup[k], w[k]), T=_wmedian(T[d] * 5700.0, w[d]))
+                sup=_wmedian(sup[k], w[k]), vsup=_wmedian(vsup[k], w[k]), tsup=_wmedian((sup + vsup)[k], w[k]),
+                T=_wmedian(T[d] * 5700.0, w[d]))
 
 
 def cmd_drain(a):
@@ -987,7 +1000,10 @@ def cmd_drain(a):
       v down    its mean speed down the field lines [km/s], on the steeper field lines (free fall from 10 Mm: 74);
       support   the median share of its weight along the field that its pressure gradient carries, on the same
                 field lines: 1 is hydrostatic (it is held by its own pressure, it is too warm to drain), 0 is
-                nothing in the way (it falls, or something that is not pressure holds it: viscosity).
+                nothing in the way (it falls, or something that is not pressure holds it: viscosity);
+      visc      the same share carried by the viscous force (the DynSGS and the case's nu, with the code's
+                reference-weighted operator; > 0: a drag on plasma that falls);  p+visc: their sum, whose shortfall
+                from 1 is what accelerates it down the field.
     Nothing along a field line but pressure, gravity and viscosity acts on the plasma, so a dome that does not
     drain shows up here as one of: warm and support ~ 1; flat; beta > 1; or cold, steep, support ~ 0 and slow."""
     items = runs_of(a.run)
@@ -997,22 +1013,22 @@ def cmd_drain(a):
         M0 = drain_row(g0, -99.0, a.ymin, a.tfloor)["M"]
     rows = []
     for t, f in items:
-        g = load(f, ["log10rho_cgs", "ρ", "p", "T", "u", "v", "Bz"])
+        g = load(f, ["log10rho_cgs", "ρ", "p", "T", "u", "v", "Bz", MU_NAME])
         if M0 is None:
             M0 = drain_row(g, -99.0, a.ymin, a.tfloor)["M"]
         rows.append((t, drain_row(g, a.thr, a.ymin, a.tfloor)))
     print(f"plasma with log10 rho > {a.thr:g} in {a.ymin:g} < y < 20 Mm, |x| < 13 Mm; mass in units of the "
           f"{'reference run' if a.ref else 'first snapshot'}'s whole box ({M0:.3g} g/cm); fractions of its mass")
     print(f"{'t [s]':>7} {'mass':>8} | {'T med K':>8} {'floor':>6} {'<2e4 K':>6} {'>=2e4':>6} | {'beta>1':>6} {'flat':>6} | "
-          f"{'v down':>7} {'support':>7}")
+          f"{'v down':>7} {'support':>7} {'visc':>6} {'p+visc':>6}")
     for t, r in rows:
         print(f"{t:7.0f} {r['M'] / M0:8.2f} | {r['T']:8.3g} {r['floor']:6.2f} {r['cold']:6.2f} {r['warm']:6.2f} | "
-              f"{r['beta']:6.2f} {r['flat']:6.2f} | {r['vpar']:7.2f} {r['sup']:7.2f}")
+              f"{r['beta']:6.2f} {r['flat']:6.2f} | {r['vpar']:7.2f} {r['sup']:7.2f} {r['vsup']:6.2f} {r['tsup']:6.2f}")
     np.savetxt(os.path.join(a.outdir, "drain.csv"),
-               np.array([[t, r["M"] / M0, r["T"], r["floor"], r["cold"], r["warm"], r["beta"], r["flat"], r["vpar"], r["sup"]]
-                         for t, r in rows]),
+               np.array([[t, r["M"] / M0, r["T"], r["floor"], r["cold"], r["warm"], r["beta"], r["flat"], r["vpar"], r["sup"],
+                          r["vsup"], r["tsup"]] for t, r in rows]),
                header="t [s], mass, median T [K], at the floor, < 2e4 K, >= 2e4 K, beta > 1, flat field, v down the field [km/s], "
-                      "pressure support", delimiter=",")
+                      "pressure support, viscous support, their sum", delimiter=",")
     print("wrote", os.path.join(a.outdir, "drain.csv"))
 
 
@@ -1046,6 +1062,59 @@ def _trapw(x):
     return w
 
 
+def _lgl(nop):
+    """LGL nodes, weights and differentiation matrix D[i, j] = l_j'(x_i) of degree nop on [-1, 1]."""
+    P = np.polynomial.legendre.Legendre.basis(nop)
+    x = np.concatenate([[-1.0], np.sort(np.real(P.deriv().roots())), [1.0]])
+    w = 2.0 / (nop * (nop + 1) * P(x) ** 2)
+    c = np.array([np.prod([x[i] - x[j] for j in range(nop + 1) if j != i]) for i in range(nop + 1)])
+    D = np.zeros((nop + 1, nop + 1))
+    for i in range(nop + 1):
+        for j in range(nop + 1):
+            if i != j:
+                D[i, j] = c[i] / (c[j] * (x[i] - x[j]))
+        D[i, i] = -np.sum(D[i, :])
+    return x, w, D
+
+
+def _sem_ok(coords, nop=4):
+    return (len(coords) - 1) % nop == 0 and len(coords) > nop
+
+
+def _sem_d(f, coords, axis, nop=4):
+    """d f/d(coord) along `axis` on the mesh's tensor-product LGL lattice (elements every nop nodes, affine), element
+    by element with the LGL differentiation matrix and averaged at the nodes two elements share, as the code's
+    element derivatives assembled (DSS); np.gradient on a lattice that is not one."""
+    if not _sem_ok(coords, nop):
+        return np.gradient(f, coords, axis=axis)
+    _, _, D = _lgl(nop)
+    fa = np.moveaxis(f, axis, -1)
+    out = np.zeros_like(fa); cnt = np.zeros(fa.shape[-1])
+    for e in range(0, fa.shape[-1] - 1, nop):
+        sl = slice(e, e + nop + 1)
+        out[..., sl] += fa[..., sl] @ D.T / (0.5 * (coords[e + nop] - coords[e]))
+        cnt[sl] += 1.0
+    return np.moveaxis(out / cnt, -1, axis)
+
+
+def _sem_dcd(c, q, coords, axis, nop=4):
+    """d/dx (c dq/dx) along `axis` as the code's CG weak form: -sum_e D^T W (c D q) over the elements, assembled
+    and divided by the lumped LGL mass. On this lattice of rectangles the 2D operator div(c grad q) is exactly the
+    sum of this along x on every row and along y on every column."""
+    if not _sem_ok(coords, nop):
+        return np.gradient(c * np.gradient(q, coords, axis=axis), coords, axis=axis)
+    _, w, D = _lgl(nop)
+    qa = np.moveaxis(q, axis, -1); ca = np.moveaxis(c, axis, -1)
+    A = np.zeros_like(qa); m = np.zeros(qa.shape[-1])
+    for e in range(0, qa.shape[-1] - 1, nop):
+        sl = slice(e, e + nop + 1)
+        h = 0.5 * (coords[e + nop] - coords[e])
+        F = ca[..., sl] * (qa[..., sl] @ D.T / h) * w      # w_k c_k (dq/dx)_k
+        A[..., sl] -= F @ D                                 # -sum_k w_k c_k (dq/dx)_k D[k, i]  (dphi_i/dx = D[k,i]/h, J = h)
+        m[sl] += w * h
+    return np.moveaxis(A / m, -1, axis)
+
+
 def _ref_atmos(yc, mcz):
     """The case's reference atmosphere at the heights yc [L0], as initialize.jl builds it (lk10_temperature,
     lk10_pressure): (rho_e, p_e) in code units. Above the photosphere T = 1 + (T_cor - 1)/2 [tanh((y - y_tr)/w_tr) + 1]
@@ -1074,9 +1143,9 @@ def heat_fields(g, thr, ymin, ymax, rhofac, mcz, ch, relax=True, relax_ymin=-np.
     box = ((Y > ymin) & (Y < ymax))[:, None] & ((X > -13.0) & (X < 13.0))[None, :]
     dense = box & (L > thr)
     xc, yc = g["xc"], g["yc"]
-    dx = lambda f: np.gradient(f, xc, axis=1)
-    dy = lambda f: np.gradient(f, yc, axis=0)
-    div2 = lambda c, f: dx(c * dx(f)) + dy(c * dy(f))            # div(c grad f)
+    dx = lambda f: _sem_d(f, xc, 1)
+    dy = lambda f: _sem_d(f, yc, 0)
+    div2 = lambda c, f: _sem_dcd(c, f, xc, 1) + _sem_dcd(c, f, yc, 0)      # div(c grad f), the code's weak form
     r, p, T = G("ρ"), G("p"), G("T")
     u, v, w = G("u"), G("v"), G("w")
     Bx, By, Bz = G("Bx"), G("By"), G("Bz")
