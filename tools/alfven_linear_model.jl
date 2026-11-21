@@ -46,8 +46,16 @@
 #   julia --project=. tools/alfven_linear_model.jl noglm 4 8,16,32
 #
 # What it found (Nov 2026): the even-N excess of the in-plane error is linear
-# and the Powell term does not touch it; at N = 6 it goes with the GLM coupling
-# (c_h = 0: 2.40x -> 0.71x on 16²), at N = 4 mostly not (12.9x -> 9.4x on 32²).
+# and the Powell term does not touch it. It reaches the WAVE (b·e⊥) through
+# three gradient forces, any one of which suffices: −∇p, −∇(½|B|²) and the GLM
+# −c_h∇ψ. With all three off (noglm_nogasp_nomagp) b·e⊥ equals the scalar
+# reference to every printed digit at N = 4, 5, 6 on 8² and 16², and the field
+# compression (noinddiv) changes b∥ but not the wave; GLM alone
+# (nogasp_nomagp) carries the whole excess (⊥/Bz on 16²: 3.08, 0.80, 2.57 for
+# N = 4, 5, 6, against 3.23, 0.56, 2.11 in full). p', b∥ and ψ are zero in the
+# exact solution: what those forces push back into the wave is driven by the
+# O(h^N) discrete divergence of the in-plane fields. Why that comes back at
+# O(h^N) for even N only is not settled.
 #---------------------------------------------------------------------------------
 using LinearAlgebra, SparseArrays, Printf
 using OrdinaryDiffEq
