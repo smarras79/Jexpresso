@@ -48,6 +48,10 @@
 #   JEXPRESSO_LK10_VISCFAC   factor on the DynSGS viscosity (the :μ multipliers of the ρu,
 #                            ρv, ρw slots; after its caps, the case's ν untouched), a test
 #                            of its drag on the plasma that drains from the dome     [1]
+#   JEXPRESSO_LK10_VISC      momentum | velocity: the viscosity (DynSGS and ν) diffuses the
+#                            momentum ρv/ρ_e, or acts on the velocity gradient, with the
+#                            momentum of the mass the DynSGS diffuses (README, "The
+#                            viscosity on the velocity")                       [momentum]
 #   JEXPRESSO_LK10_STABCAP   the DynSGS coefficient never above this viscous number, μ Δt/Δx²,
 #                            which the explicit step still integrates (0: no cap)    [0.2]
 #   JEXPRESSO_LK10_DSGS_STAGES  all | 1,5 | 1: the stages of the Runge-Kutta scheme at which
@@ -349,6 +353,9 @@ function user_inputs()
         # Resistivity from the induction residuals alone (SGS.jl, linduction; README, "DynSGS in
         # the corona"): acoustic fronts in the low-β corona then do not make the field resistive.
         :dsgs_induction_sensor => _lk10_word("ETA", "induction", "all") == "induction",
+        # The viscosity on the velocity gradient instead of the diffusion of ρv/ρ_e (SGS.jl,
+        # _dsgs_velocity_viscosity_2d!; README, "The viscosity on the velocity"): opt-in while under test
+        :dsgs_velocity_viscosity => _lk10_word("VISC", "momentum", "velocity") == "velocity",
         # ... and capped at the first-order diffusivity of a field carried by the flow, C_max Δ |v|,
         # instead of the viscosity's C_max Δ (|v| + c_f) (SGS.jl, lflowcap): opt-in while under test
         :dsgs_eta_flow_cap    => lowercase(_lk10_env("ETACAP", "fast")) == "flow",

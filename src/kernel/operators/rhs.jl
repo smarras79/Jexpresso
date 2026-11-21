@@ -1955,6 +1955,39 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                  DSGS_MHD();
                                  μ_pnode = lnodal_mhd2d ? params.μ_dsgs_pnode : nothing,
                                  μloc    = params.dsgs_μloc)
+        # :dsgs_velocity_viscosity: the contributions of ρu, ρv, ρw are replaced by those of a
+        # viscosity on the velocity and of the momentum the mass diffusion carries (SGS.jl,
+        # _dsgs_velocity_viscosity_2d!); the energy slot below returns what that stress dissipates
+        lvelvisc = get(params.inputs, :dsgs_velocity_viscosity, false)::Bool
+        if lvelvisc
+            (lnodal_mhd2d || !dsgs_ref_weight[] || !dsgs_thermal_energy[]) &&
+                error(" :dsgs_velocity_viscosity needs the reference-weighted conserved element form of DSGS_MHD with the ",
+                      "energy-consistent slot (:dsgs_conserved, :dsgs_ref_weight, :dsgs_thermal_energy => true; :ldsgs_nodal => false).")
+            lchk = !_DSGS_VELVISC_CHECKED[]
+            verr, vref, serr, sref = @timeit_debug JEXPRESSO_TIMER "dsgs: velocity viscosity" _dsgs_velocity_viscosity_2d!(params.rhs_diff_el, params.μ_dsgs, params.uaux, qe,
+                                        params.mesh.connijk, params.ω, params.basis.dψ, params.metrics.Je,
+                                        params.metrics.dξdx, params.metrics.dξdy,
+                                        params.metrics.dηdx, params.metrics.dηdy,
+                                        nelemB, Int(params.mesh.ngl); check = lchk)
+            if lchk && vref > 0
+                verr <= 1.0e-9*vref ||
+                    error(" :dsgs_velocity_viscosity: the mass flux rebuilt from the state differs from the one assembled (", verr,
+                          " against ", vref, "): the case's user_primitives! is not the reference-weighted (q − q_e)/ρ_e this option assumes.")
+                serr <= 1.0e-9*sref ||
+                    error(" :dsgs_velocity_viscosity: where ρ/ρ_e is uniform the stress on the velocity differs from the diffusion of ρv/ρ_e it replaces (",
+                          serr, " against ", sref, ").")
+                _DSGS_VELVISC_CHECKED[] = true
+                MPI.Comm_rank(get_mpi_comm()) == 0 &&
+                    println(" # DynSGS viscosity on the velocity (:dsgs_velocity_viscosity), rank 0: the mass slot's flux is reproduced to ",
+                            round(Float64(verr/vref), sigdigits = 2), " of its largest contribution; where ρ/ρ_e is uniform the stress ",
+                            sref > 0 ? string("equals the one it replaces to ", round(Float64(serr/sref), sigdigits = 2)) :
+                                       "could not be compared (no such element with a flow)")
+            elseif lchk
+                # (a rank whose mass slot has no flux yet: try again at the next call, 200 times at most)
+                _DSGS_VELVISC_TRIES[] += 1
+                _DSGS_VELVISC_TRIES[] >= 200 && (_DSGS_VELVISC_CHECKED[] = true)
+            end
+        end
         if lcurlB
             # restore the coefficient of the in-plane field (output, and a
             # coefficient held by :dsgs_freeze_stage), then add the curl term
@@ -1976,7 +2009,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                         params.metrics.dξdx, params.metrics.dξdy,
                                         params.metrics.dηdx, params.metrics.dηdy,
                                         nelemB, Int(params.mesh.ngl), lcurlB;
-                                        νphys = νphys2d, ηphys = ηphys2d)
+                                        νphys = νphys2d, ηphys = ηphys2d, lvel = lvelvisc)
         end
         return
     end

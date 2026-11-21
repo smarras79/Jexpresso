@@ -2142,12 +2142,17 @@ function _dsgs_energy_consistent_2d!(rhs_diff_el::AbstractArray{TT}, μ_dsgs::Ab
                                      dηdx::AbstractArray, dηdy::AbstractArray,
                                      nelem::Int, ngl::Int, lcurlB::Bool;
                                      νphys::Union{Nothing,AbstractVector}=nothing,
-                                     ηphys::Union{Nothing,AbstractVector}=nothing) where {TT<:AbstractFloat, TI<:Integer}
+                                     ηphys::Union{Nothing,AbstractVector}=nothing,
+                                     lvel::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
     fheat  = TT(dsgs_heat_factor[])
     lshock = dsgs_heat_shock[]
     @inbounds for ie = 1:nelem
         μu = μ_dsgs[ie,2]; μv = μ_dsgs[ie,3]; μw = μ_dsgs[ie,5]
         ηx = μ_dsgs[ie,6]; ηy = μ_dsgs[ie,7]; ηz = μ_dsgs[ie,8]; μψ = μ_dsgs[ie,9]
+        # (lvel, :dsgs_velocity_viscosity: the momentum is diffused with the mass slot's coefficient μ_ρ and
+        # the rest of the viscosity is the stress ρ_e s_min (μ − μ_ρ)₊ ∇v, _dsgs_velocity_viscosity_2d! below)
+        smin = lvel ? _dsgs_smin_2d(q, qe, connijk, ie, ngl) : one(TT)
+        μρ   = lvel ? μ_dsgs[ie,1] : zero(TT)
         # the explicit ν, η riding in μ_dsgs (dsgs_heat_shock: they heat, the DynSGS part by compression only)
         νp = (lshock && νphys !== nothing) ? TT(νphys[ie]) : zero(TT)
         ηp = (lshock && ηphys !== nothing) ? TT(ηphys[ie]) : zero(TT)
@@ -2186,17 +2191,29 @@ function _dsgs_energy_consistent_2d!(rhs_diff_el::AbstractArray{TT}, μ_dsgs::Ab
             dpdx  = dpξ*ξx + dpη*ηxk;   dpdy  = dpξ*ξy + dpη*ηyk
             ip  = connijk[ie,k,l,1]
             ρe  = TT(qe[ip,1])
-            Dm  = ρe*(μu*(dudx*dmudx + dudy*dmudy) + μv*(dvdx*dmvdx + dvdy*dmvdy) +
-                      μw*(dwdx*dmwdx + dwdy*dmwdy))
+            if lvel
+                # what the two terms dissipate: (ρ μ_ρ + ρ_e s_min (μ − μ_ρ)₊) |∇v|², never negative
+                ρe *= smin
+                dmudx = dudx; dmudy = dudy; dmvdx = dvdx; dmvdy = dvdy; dmwdx = dwdx; dmwdy = dwdy
+                gu = dudx*dudx + dudy*dudy; gv = dvdx*dvdx + dvdy*dvdy; gw = dwdx*dwdx + dwdy*dwdy
+                Dm = q[ip,1]*μρ*(gu + gv + gw) +
+                     ρe*(max(μu - μρ, zero(TT))*gu + max(μv - μρ, zero(TT))*gv + max(μw - μρ, zero(TT))*gw)
+            else
+                Dm = ρe*(μu*(dudx*dmudx + dudy*dmudy) + μv*(dvdx*dmvdx + dvdy*dmvdy) +
+                         μw*(dwdx*dmwdx + dwdy*dmwdy))
+            end
             jz  = dbydx - dbxdy
             QB  = lcurlB ? ηx*jz*jz : ηx*(dbxdx*dbxdx + dbxdy*dbxdy) + ηy*(dbydx*dbydx + dbydy*dbydy)
             ρ   = q[ip,1]; u = q[ip,2]/ρ; v = q[ip,3]/ρ; w = q[ip,5]/ρ
             if lshock
-                Dp  = max(ρe*νp*((dudx*dmudx + dudy*dmudy) + (dvdx*dmvdx + dvdy*dmvdy) + (dwdx*dmwdx + dwdy*dmwdy)), zero(TT))
+                # (lvel: the explicit ν is part of the stress on the velocity gradient, as far as μ − μ_ρ holds it)
+                νe  = lvel ? min(νp, max(μu - μρ, zero(TT))) : νp
+                Dp  = max(ρe*νe*((dudx*dmudx + dudy*dmudy) + (dvdx*dmvdx + dvdy*dmvdy) + (dwdx*dmwdx + dwdy*dmwdy)), zero(TT))
                 QBp = (lcurlB ? ηp*jz*jz : ηp*(dbxdx*dbxdx + dbxdy*dbxdy + dbydx*dbydx + dbydy*dbydy)) +
                       ηp*(dbzdx*dbzdx + dbzdy*dbzdy)
                 dv  = min(dudx + dvdy, zero(TT))
-                Q   = Dp + QBp + min(ρ*max(μu - νp, zero(TT))*dv*dv, max(max(Dm, zero(TT)) - Dp, zero(TT)))
+                wsh = lvel ? ρ*μρ + ρe*max(μu - μρ - νe, zero(TT)) : ρ*max(μu - νp, zero(TT))
+                Q   = Dp + QBp + min(wsh*dv*dv, max(max(Dm, zero(TT)) - Dp, zero(TT)))
             else
                 Q   = fheat*(max(Dm, zero(TT)) + QB + ηz*(dbzdx*dbzdx + dbzdy*dbzdy) + μψ*(dpdx*dpdx + dpdy*dpdy))
             end
@@ -2208,6 +2225,166 @@ function _dsgs_energy_consistent_2d!(rhs_diff_el::AbstractArray{TT}, μ_dsgs::Ab
         end
     end
     return nothing
+end
+
+# ================================================================================
+# _dsgs_velocity_viscosity_2d!: the DynSGS viscosity on the VELOCITY (:dsgs_velocity_viscosity),
+# 2D conserved element form with the reference weight (:dsgs_conserved, :dsgs_ref_weight).
+#
+# The conserved form diffuses the momentum as every other slot, ∇·(ρ_e μ ∇(ρv/ρ_e)). With
+# s = ρ/ρ_e that is
+#
+#     ∇·(ρ_e μ ∇(s v)) = ∇·(ρ μ ∇v) + ∇·(v ρ_e μ ∇s) ,
+#
+# a viscous stress on the velocity gradient and the momentum of a mass flux ρ_e μ ∇s: a
+# viscosity only where the mass slot diffuses with the same coefficient (Guermond & Popov,
+# SIAM J. Appl. Math. 74:284, 2014: the mass flux f of the regularization carries f ⊗ v, and
+# only then is the velocity of a uniform flow left alone). Where the mass coefficient μ_ρ is
+# smaller (:μ[1] < 1, and the explicit ν of :mhd_dissipation, which has none), the difference
+# is momentum taken out of dense plasma that moves through thin plasma, with no mass to go
+# with it: the operator relaxes ρv/ρ_e, not v, and a sheet of thickness δ, 10³ times denser
+# than what it falls through, is braked at ~ μ|v|/δ². In problems/MHD/fluxEmergenceLeake2010
+# (REF 4, :μ[1] = 0.1) the cold plasma that the emerging field lifts into the corona was held
+# that way: on its steep field lines, at 1160 s, the diffusion terms carried 1.25 times its
+# weight along the field, the stress on the velocity gradient -1.4 of it, the pressure none,
+# and it slid down at 6 km/s where free fall gives 50 (tools/plot_leake2010.py drain). It was
+# compressed and heated there until its own pressure held it, and the dome it loaded stopped
+# at 9 Mm (the erratum's: 13 Mm). A quarter of the coefficient (:μ of the momentum slots)
+# changed nothing: the sensor made it up within 100 s.
+#
+# This kernel REPLACES the element contributions of ρu, ρv, ρw by those of
+#
+#     R_ρv = ∇·(ρ_e μ_ρ ∇(ρv/ρ_e)) + ∇·(ρ_e s_min (μ − μ_ρ)₊ ∇v) ,
+#
+# the diffusion of the momentum with the MASS slot's coefficient (μ_dsgs[:,1]) — the momentum
+# of the mass that slot diffuses, with the stress ρ μ_ρ ∇v that belongs to it — and the rest
+# of the viscosity as a stress on the velocity gradient. A velocity uniform across any
+# density contrast is then left alone to round-off (the first term is v R_ρ node by node, the
+# second zero), whatever the two coefficients are. Both terms are diffusions with a
+# non-negative coefficient, which the two obvious alternatives are not:
+#   - the stress with the density of each quadrature node, ρ (μ − μ_ρ) ∇v, relaxes a light
+#     node beside a dense one at μ ρ_dense/ρ_light, past the explicit limit that the
+#     coefficient was capped for (:dsgs_stab_cap) wherever the contrast across an element
+#     exceeds ~2; hence ρ_e s_min, s_min the smallest ρ/ρ_e of the element, with which no node
+#     is diffused faster than by the operator this replaces (in an atmosphere that is the
+#     reference's, s = 1, it is ρ μ ∇v exactly);
+#   - the mass flux written by itself, ∇·(v F_ρ) + ∇·(ρ_e s_min μ ∇v), is the above with the
+#     stress coefficient ρ_e s_min μ − ρ μ_ρ, negative at the dense nodes of an element whose
+#     contrast exceeds μ/μ_ρ: a blob 10³ times the coronal density went non-finite at its
+#     edge in 33 s (REF 1) that way.
+# The price is a weaker stress where the density jumps inside an element. What the two
+# terms dissipate is (ρ μ_ρ + ρ_e s_min (μ − μ_ρ)₊) |∇v|² ≥ 0, which
+# _dsgs_energy_consistent_2d!(lvel = true) returns as heat. Called after the generic
+# assembly and before the energy slot, which reads the rates this leaves.
+#
+# `check`: the mass slot's contributions are rebuilt from μ_ρ ρ_e ∇((ρ − ρ_e)/ρ_e) and
+# compared with what the generic assembly left in rhs_diff_el[:,:,:,1], and in the elements
+# where ρ/ρ_e is uniform to 10⁻¹² (there the two forms are one operator) the new momentum
+# contributions with the ones they replace; returns the largest difference and the largest
+# contribution of each (rhs.jl checks them once per run, _DSGS_VELVISC_CHECKED: a case whose
+# user_primitives! or weights are not the reference-weighted ones this kernel assumes stops
+# there).
+# ================================================================================
+const _DSGS_VELVISC_CHECKED = Ref{Bool}(false)
+const _DSGS_VELVISC_TRIES   = Ref{Int}(0)      # calls made in check mode (a rank with no mass flux gives up after 200)
+@inline function _dsgs_smin_2d(q::AbstractMatrix{TT}, qe::AbstractMatrix, connijk::AbstractArray{TI,4},
+                               ie::Int, ngl::Int) where {TT<:AbstractFloat, TI<:Integer}
+    smin = typemax(TT)
+    @inbounds for l = 1:ngl, k = 1:ngl
+        ip = connijk[ie,k,l,1]
+        smin = min(smin, q[ip,1]/TT(qe[ip,1]))
+    end
+    return smin
+end
+
+function _dsgs_velocity_viscosity_2d!(rhs_diff_el::AbstractArray{TT}, μ_dsgs::AbstractMatrix{TT},
+                                      q::AbstractMatrix{TT}, qe::AbstractMatrix,
+                                      connijk::AbstractArray{TI,4}, ω::AbstractVector, dψ::AbstractMatrix,
+                                      Je::AbstractArray, dξdx::AbstractArray, dξdy::AbstractArray,
+                                      dηdx::AbstractArray, dηdy::AbstractArray,
+                                      nelem::Int, ngl::Int; check::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
+    errmax = zero(TT); refmax = zero(TT); errs = zero(TT); refs = zero(TT)
+    chk = check ? zeros(TT, ngl, ngl) : zeros(TT, 0, 0)
+    old = check ? zeros(TT, ngl, ngl, 3) : zeros(TT, 0, 0, 0)
+    @inbounds for ie = 1:nelem
+        μρ = μ_dsgs[ie,1]
+        μu = max(μ_dsgs[ie,2] - μρ, zero(TT)); μv = max(μ_dsgs[ie,3] - μρ, zero(TT)); μw = max(μ_dsgs[ie,5] - μρ, zero(TT))
+        smin = _dsgs_smin_2d(q, qe, connijk, ie, ngl)
+        if check
+            for l = 1:ngl, k = 1:ngl
+                old[k,l,1] = rhs_diff_el[ie,k,l,2]; old[k,l,2] = rhs_diff_el[ie,k,l,3]; old[k,l,3] = rhs_diff_el[ie,k,l,5]
+            end
+            fill!(chk, zero(TT))
+        end
+        for l = 1:ngl, k = 1:ngl
+            rhs_diff_el[ie,k,l,2] = zero(TT); rhs_diff_el[ie,k,l,3] = zero(TT); rhs_diff_el[ie,k,l,5] = zero(TT)
+        end
+        for l = 1:ngl, k = 1:ngl
+            # element-local ξ and η derivatives at node (k, l) of the velocity (u, v, w), of the momentum
+            # m̃ = ρv/ρ_e and (check) of (ρ − ρ_e)/ρ_e
+            duξ = zero(TT); duη = zero(TT); dvξ = zero(TT); dvη = zero(TT); dwξ = zero(TT); dwη = zero(TT)
+            dmuξ = zero(TT); dmuη = zero(TT); dmvξ = zero(TT); dmvη = zero(TT); dmwξ = zero(TT); dmwη = zero(TT)
+            dsξ = zero(TT); dsη = zero(TT)
+            for m = 1:ngl
+                aξ = dψ[m,k]; aη = dψ[m,l]
+                iξ = connijk[ie,m,l,1]; iη = connijk[ie,k,m,1]
+                rξ = one(TT)/q[iξ,1]; rη = one(TT)/q[iη,1]
+                eξ = one(TT)/TT(qe[iξ,1]); eη = one(TT)/TT(qe[iη,1])
+                duξ += aξ*q[iξ,2]*rξ; duη += aη*q[iη,2]*rη
+                dvξ += aξ*q[iξ,3]*rξ; dvη += aη*q[iη,3]*rη
+                dwξ += aξ*q[iξ,5]*rξ; dwη += aη*q[iη,5]*rη
+                dmuξ += aξ*q[iξ,2]*eξ; dmuη += aη*q[iη,2]*eη
+                dmvξ += aξ*q[iξ,3]*eξ; dmvη += aη*q[iη,3]*eη
+                dmwξ += aξ*q[iξ,5]*eξ; dmwη += aη*q[iη,5]*eη
+                if check
+                    dsξ += aξ*(q[iξ,1] - TT(qe[iξ,1]))*eξ; dsη += aη*(q[iη,1] - TT(qe[iη,1]))*eη
+                end
+            end
+            ξx = dξdx[ie,k,l]; ξy = dξdy[ie,k,l]; ηxk = dηdx[ie,k,l]; ηyk = dηdy[ie,k,l]
+            ip  = connijk[ie,k,l,1]
+            ρe  = TT(qe[ip,1])
+            cm  = μρ*ρe                    # the momentum with the mass slot's coefficient
+            cs  = ρe*smin                  # the stress on the velocity gradient
+            ωJ  = ω[k]*ω[l]*Je[ie,k,l]
+            fx = cm*(dmuξ*ξx + dmuη*ηxk) + cs*μu*(duξ*ξx + duη*ηxk); fy = cm*(dmuξ*ξy + dmuη*ηyk) + cs*μu*(duξ*ξy + duη*ηyk)
+            aξu = (ξx*fx + ξy*fy)*ωJ; aηu = (ηxk*fx + ηyk*fy)*ωJ
+            fx = cm*(dmvξ*ξx + dmvη*ηxk) + cs*μv*(dvξ*ξx + dvη*ηxk); fy = cm*(dmvξ*ξy + dmvη*ηyk) + cs*μv*(dvξ*ξy + dvη*ηyk)
+            aξv = (ξx*fx + ξy*fy)*ωJ; aηv = (ηxk*fx + ηyk*fy)*ωJ
+            fx = cm*(dmwξ*ξx + dmwη*ηxk) + cs*μw*(dwξ*ξx + dwη*ηxk); fy = cm*(dmwξ*ξy + dmwη*ηyk) + cs*μw*(dwξ*ξy + dwη*ηyk)
+            aξw = (ξx*fx + ξy*fy)*ωJ; aηw = (ηxk*fx + ηyk*fy)*ωJ
+            for i = 1:ngl
+                hξ = dψ[i,k]; hη = dψ[i,l]
+                rhs_diff_el[ie,i,l,2] -= hξ*aξu; rhs_diff_el[ie,k,i,2] -= hη*aηu
+                rhs_diff_el[ie,i,l,3] -= hξ*aξv; rhs_diff_el[ie,k,i,3] -= hη*aηv
+                rhs_diff_el[ie,i,l,5] -= hξ*aξw; rhs_diff_el[ie,k,i,5] -= hη*aηw
+            end
+            if check
+                Fx = cm*(dsξ*ξx + dsη*ηxk); Fy = cm*(dsξ*ξy + dsη*ηyk)          # the mass slot's flux
+                aξ1 = (ξx*Fx + ξy*Fy)*ωJ; aη1 = (ηxk*Fx + ηyk*Fy)*ωJ
+                for i = 1:ngl
+                    chk[i,l] -= dψ[i,k]*aξ1; chk[k,i] -= dψ[i,l]*aη1
+                end
+            end
+        end
+        if check
+            smax = zero(TT)
+            for l = 1:ngl, k = 1:ngl
+                errmax = max(errmax, abs(chk[k,l] - rhs_diff_el[ie,k,l,1]))
+                refmax = max(refmax, abs(rhs_diff_el[ie,k,l,1]))
+                ip = connijk[ie,k,l,1]
+                smax = max(smax, q[ip,1]/TT(qe[ip,1]))
+            end
+            # ρ/ρ_e uniform in the element and μ ≥ μ_ρ: the two forms are one operator
+            if smax - smin <= TT(1.0e-12)*smin && min(μ_dsgs[ie,2], μ_dsgs[ie,3], μ_dsgs[ie,5]) >= μρ
+                for l = 1:ngl, k = 1:ngl
+                    errs = max(errs, abs(rhs_diff_el[ie,k,l,2] - old[k,l,1]), abs(rhs_diff_el[ie,k,l,3] - old[k,l,2]),
+                               abs(rhs_diff_el[ie,k,l,5] - old[k,l,3]))
+                    refs = max(refs, abs(old[k,l,1]), abs(old[k,l,2]), abs(old[k,l,3]))
+                end
+            end
+        end
+    end
+    return errmax, refmax, errs, refs
 end
 
 # ================================================================================

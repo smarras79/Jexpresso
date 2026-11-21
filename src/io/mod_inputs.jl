@@ -1246,6 +1246,14 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #                      and keep :dsgs_stab_cap below the stable viscous number of the list, with
     #                      CarpenterKennedy2N54 on degree-4 elements: 0.6 for (1, 5), 0.18 for (1,)
     #                      (0.42 with every stage). CPU, time loop without AMR. Default: every stage.
+    #   :dsgs_velocity_viscosity  DSGS_MHD 2D, with :dsgs_conserved, :dsgs_ref_weight and
+    #                      :dsgs_thermal_energy: the momentum slots get a viscous stress on the VELOCITY
+    #                      gradient, ∇·(ρ_e s_min μ ∇v), plus the momentum of the mass the DynSGS diffuses,
+    #                      ∇·(v F_ρ), instead of the diffusion of ρv/ρ_e (SGS.jl,
+    #                      _dsgs_velocity_viscosity_2d!; Guermond & Popov 2014). The two are the same only
+    #                      where mass and momentum diffuse with one coefficient; with :μ[1] < 1, or an
+    #                      explicit ν, the diffusion of ρv/ρ_e takes momentum out of dense plasma moving
+    #                      through thin plasma (problems/MHD/fluxEmergenceLeake2010). Default false.
     #   :dsgs_stab_cap     DSGS_MHD 2D, element form: the coefficient never above stab·Δx²/Δt, Δx the
     #                      smallest LGL gap of the element (0, the default: no cap). The first-order
     #                      cap C_max Δ (|v| + c_f) follows the fast speed, and an explicit step

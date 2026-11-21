@@ -941,7 +941,7 @@ def _wmedian(x, w):
     return float(x[o][min(np.searchsorted(cw, 0.5 * cw[-1]), x.size - 1)])
 
 
-def drain_row(g, thr=-13.0, ymin=3.0, tfloor=0.1, rhofac=1.0, viscfac=1.0):
+def drain_row(g, thr=-13.0, ymin=3.0, tfloor=0.1, rhofac=1.0, viscfac=1.0, vform="momentum"):
     """The dense plasma (log10 rho > thr) of the box ymin < y < 20 Mm, |x| < 13 Mm (cmd_drain)."""
     X, Y = g["X"], g["Y"]
     G = lambda n: grid2d(g, g["fields"][n])
@@ -977,11 +977,25 @@ def drain_row(g, thr=-13.0, ymin=3.0, tfloor=0.1, rhofac=1.0, viscfac=1.0):
         mud = np.maximum(mu - NU_CODE, 0.0)
         re = _ref_atmos(Yc, 1.3)[0][:, None] * np.ones_like(u)
         L2 = lambda c, q: _sem_dcd(c, q, Xc, 1) + _sem_dcd(c, q, Yc, 0)
-        Rr = L2(re * (rhofac / viscfac) * mud, r / re)
+        mur = (rhofac / viscfac) * mud                          # the mass slot's coefficient
+        Rr = L2(re * mur, r / re)
         along = lambda fx, fy: (bx * fx + by * fy) / np.maximum(r * G_CODE * by, 1e-300)
-        vsup = along(L2(re * mu, r * u / re) - u * Rr, L2(re * mu, r * v / re) - v * Rr)
-        nsup = along(L2(re * NU_CODE, r * u / re), L2(re * NU_CODE, r * v / re))
-        ssup = along(L2(r * mu, u), L2(r * mu, v))
+        if vform == "velocity" and _sem_ok(Xc) and _sem_ok(Yc):
+            # JEXPRESSO_LK10_VISC=velocity (SGS.jl, _dsgs_velocity_viscosity_2d!): the momentum is diffused with the
+            # mass slot's coefficient, the rest of the viscosity is a stress rho_e s_min (mu - mu_rho)+ grad v
+            sr = r / re
+            smin = np.array([[sr[j:j + 5, i:i + 5].min() for i in range(0, sr.shape[1] - 1, 4)]
+                             for j in range(0, sr.shape[0] - 1, 4)])            # per element (nely, nelx)
+            fx, fy = _el_factor(smin, Xc, Yc)
+            S2 = lambda c, q: _sem_dcd(c, q, Xc, 1, cel=fx) + _sem_dcd(c, q, Yc, 0, cel=fy)
+            ex = np.maximum(mu - mur, 0.0)
+            vsup = along(L2(re * mur, r * u / re) - u * Rr + S2(re * ex, u), L2(re * mur, r * v / re) - v * Rr + S2(re * ex, v))
+            nsup = along(S2(re * np.minimum(NU_CODE, ex), u), S2(re * np.minimum(NU_CODE, ex), v))
+            ssup = along(L2(r * mur, u) + S2(re * ex, u), L2(r * mur, v) + S2(re * ex, v))
+        else:
+            vsup = along(L2(re * mu, r * u / re) - u * Rr, L2(re * mu, r * v / re) - v * Rr)
+            nsup = along(L2(re * NU_CODE, r * u / re), L2(re * NU_CODE, r * v / re))
+            ssup = along(L2(r * mu, u), L2(r * mu, v))
     else:
         vsup = nsup = ssup = mud = np.full_like(u, np.nan)
     # cell weights of the mass (for the medians)
@@ -1025,6 +1039,7 @@ def cmd_drain(a):
     drain shows up here as one of: warm and support ~ 1; flat; beta > 1; or cold, steep, support ~ 0 and slow."""
     items = runs_of(a.run)
     M0 = None
+    forms = {}
     if a.ref:
         g0 = load(runs_of(a.ref)[0][1], ["log10rho_cgs", "ρ", "p", "T", "u", "v", "Bz"])
         M0 = drain_row(g0, -99.0, a.ymin, a.tfloor)["M"]
@@ -1035,9 +1050,13 @@ def cmd_drain(a):
             M0 = drain_row(g, -99.0, a.ymin, a.tfloor)["M"]
         d = os.path.dirname(f)
         rows.append((t, drain_row(g, a.thr, a.ymin, a.tfloor, float(_case_value(d, "rho_factor", "1.0")),
-                                  float(_case_value(d, "visc_factor", "1.0")))))
+                                  float(_case_value(d, "visc_factor", "1.0")), _case_value(d, "visc_form", "momentum"))))
+        forms[os.path.basename(os.path.normpath(d))] = _case_value(d, "visc_form", "momentum")
     print(f"plasma with log10 rho > {a.thr:g} in {a.ymin:g} < y < 20 Mm, |x| < 13 Mm; mass in units of the "
           f"{'reference run' if a.ref else 'first snapshot'}'s whole box ({M0:.3g} g/cm); fractions of its mass")
+    if any(v == "velocity" for v in forms.values()):
+        print("   viscosity on the velocity (JEXPRESSO_LK10_VISC=velocity) in: " + ", ".join(k for k, v in forms.items() if v == "velocity")
+              + "; visc, nu and shear are those of that operator there")
     print(f"{'t [s]':>7} {'mass':>8} | {'T med K':>8} {'floor':>6} {'<2e4 K':>6} {'>=2e4':>6} | {'beta>1':>6} {'flat':>6} | "
           f"{'v down':>7} {'support':>7} {'visc':>6} {'nu':>6} {'shear':>6} {'p+visc':>6} | {'mu':>7} {'@floor':>7} {'off':>7}")
     for t, r in rows:
@@ -1118,22 +1137,45 @@ def _sem_d(f, coords, axis, nop=4):
     return np.moveaxis(out / cnt, -1, axis)
 
 
-def _sem_dcd(c, q, coords, axis, nop=4):
+def _sem_dcd(c, q, coords, axis, nop=4, cel=None):
     """d/dx (c dq/dx) along `axis` as the code's CG weak form: -sum_e D^T W (c D q) over the elements, assembled
     and divided by the lumped LGL mass. On this lattice of rectangles the 2D operator div(c grad q) is exactly the
-    sum of this along x on every row and along y on every column."""
+    sum of this along x on every row and along y on every column. cel: a factor of c that is constant in each
+    element, one value per line and per element along `axis` (_el_factor)."""
     if not _sem_ok(coords, nop):
         return np.gradient(c * np.gradient(q, coords, axis=axis), coords, axis=axis)
     _, w, D = _lgl(nop)
     qa = np.moveaxis(q, axis, -1); ca = np.moveaxis(c, axis, -1)
+    ce = None if cel is None else np.moveaxis(cel, axis, -1)
     A = np.zeros_like(qa); m = np.zeros(qa.shape[-1])
     for e in range(0, qa.shape[-1] - 1, nop):
         sl = slice(e, e + nop + 1)
         h = 0.5 * (coords[e + nop] - coords[e])
         F = ca[..., sl] * (qa[..., sl] @ D.T / h) * w      # w_k c_k (dq/dx)_k
+        if ce is not None:
+            F = F * ce[..., e // nop][..., None]
         A[..., sl] -= F @ D                                 # -sum_k w_k c_k (dq/dx)_k D[k, i]  (dphi_i/dx = D[k,i]/h, J = h)
         m[sl] += w * h
     return np.moveaxis(A / m, -1, axis)
+
+
+def _el_factor(f, xc, yc, nop=4):
+    """For a factor that is constant in each element (f: (nely, nelx)), what the assembled operator sees on each
+    lattice line: (per row and x-element, per y-element and column). A line shared by two elements gets their
+    mean weighted by the element sizes across it, as the sum of the two elements' contributions over the lumped mass."""
+    hy = np.diff(yc[::nop]); hx = np.diff(xc[::nop])
+    def lines(g, h, n):                      # g: (nel_across, ...) -> (n_lines_across, ...)
+        out = np.empty((n,) + g.shape[1:])
+        for j in range(n):
+            e = min(j // nop, g.shape[0] - 1)
+            if j % nop == 0 and 0 < j < n - 1:
+                out[j] = (h[e - 1] * g[e - 1] + h[e] * g[e]) / (h[e - 1] + h[e])
+            else:
+                out[j] = g[e]
+        return out
+    fx = lines(f, hy, len(yc))                               # (ny, nelx): the x-pass, row by row
+    fy = lines(f.T, hx, len(xc)).T                           # (nely, nx): the y-pass, column by column
+    return fx, fy
 
 
 def _ref_atmos(yc, mcz):
@@ -1298,6 +1340,10 @@ def cmd_heat(a):
         raise SystemExit("heat: no snapshots")
     print(f"plasma with log10 rho > {a.thr:g} in {a.ymin:g} < y < {a.ymax:g} Mm, |x| < 13 Mm: each term of DT/Dt as applied "
           f"with heating = shock, mass-weighted mean [K per 100 s]; GLM: c_h = {a.ch:g}, dh = {F['dh']:.4g} (lattice)")
+    for d in seen:
+        if _case_value(d, "visc_form", "momentum") == "velocity":
+            print(f"   {os.path.basename(os.path.normpath(d))}: viscosity on the velocity (JEXPRESSO_LK10_VISC=velocity); the nu and shock "
+                  f"columns below are those of the momentum form, an upper bound there (rho for rho_e s_min)")
     for d, (rf, h, *_) in seen.items():
         print(f"   {os.path.basename(os.path.normpath(d))}: heating = {h}, rho_factor = {rf:g}"
               + ("" if h in ("shock", "not recorded") else "  (not shock: there the 'not heated' columns heated too)"))

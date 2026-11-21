@@ -737,6 +737,31 @@ density spans eight decades between the photosphere and the corona:
   viscous stability limit as soon as the model switches on there. With this
   option the `mu_dsgs_ρu`, `mu_dsgs_ρv`, `mu_dsgs_ρw` and `mu_dsgs_ρE` output
   fields hold the kinematic coefficient, like the magnetic slots.
+- **`:dsgs_velocity_viscosity => true`** (2D, with `:dsgs_conserved`,
+  `:dsgs_ref_weight` and `:dsgs_thermal_energy`; `_dsgs_velocity_viscosity_2d!`
+  in SGS.jl). The conserved form's momentum flux,
+  $\rho_e\mu\nabla(\rho\mathbf v/\rho_e) = \rho\mu\nabla\mathbf v + \mathbf v\,\rho_e\mu\nabla(\rho/\rho_e)$,
+  is a viscous stress plus the momentum of a mass flux, and is a viscosity
+  only where the mass slot diffuses with the same coefficient (Guermond &
+  Popov 2014). With `:μ[1]` below the momentum multipliers, or an explicit ν
+  (`:mhd_dissipation`), the excess is momentum taken out of dense plasma that
+  moves through thin plasma: the operator relaxes $\rho\mathbf v/\rho_e$, not
+  $\mathbf v$, and a structure of thickness $\delta$ is braked at
+  $\sim\mu\lvert\mathbf v\rvert/\delta^2$. Scaling the coefficient does not
+  remove it; the sensor makes the factor up. The option replaces the momentum
+  contributions by
+  $\nabla\cdot(\rho_e\mu_\rho\nabla(\rho\mathbf v/\rho_e)) + \nabla\cdot(\rho_e s_{min}(\mu-\mu_\rho)_+\nabla\mathbf v)$:
+  the momentum diffused with the mass slot's coefficient $\mu_\rho$, and the
+  rest of the viscosity as a stress on the velocity gradient, weighted with
+  the element's smallest $\rho/\rho_e$ so that no node is diffused faster than
+  before. A uniform velocity is left alone to round-off; both terms have
+  non-negative coefficients (writing the mass flux's momentum by itself does
+  not, and failed); the heat returned is what the two dissipate. The kernel
+  verifies itself at the first right-hand side with a mass flux. Measured on
+  `problems/MHD/fluxEmergenceLeake2010` (README, "The viscosity on the
+  velocity"): a cold blob 10³ times the coronal density falls along the field
+  at 14.2 km/s after 93 s where free fall gives 14.7 and the default form
+  11.2. Default false: every other case is unchanged to the bit.
 
 ### 4.6 The 1D kernel: `brioWu1d`
 

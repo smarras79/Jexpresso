@@ -92,6 +92,7 @@ editing the deck:
 | `JEXPRESSO_LK10_ETACAP` | `fast` (default), `flow` | DynSGS resistivity capped at $C_{max}\Delta(\lvert v\rvert + c_f)$ like the viscosity, or at $C_{max}\Delta\lvert v\rvert$ (Verification, the REF 4 run) |
 | `JEXPRESSO_LK10_ETAFAC` | default 1 | factor on the DynSGS resistivity (the `:μ` multipliers of the B slots), a sensitivity test |
 | `JEXPRESSO_LK10_RHOFAC` | default 1 | factor on the DynSGS mass diffusion (the `:μ` multiplier of the ρ slot), a sensitivity test |
+| `JEXPRESSO_LK10_VISC` | `momentum` (default), `velocity` | the viscosity (DynSGS and ν) as the diffusion of the momentum $\rho\mathbf v/\rho_e$, or as a stress on the velocity gradient with the momentum of the mass the DynSGS diffuses (Equations and dissipation: The viscosity on the velocity). Opt-in while the cluster test runs |
 | `JEXPRESSO_LK10_VISCFAC` | default 1 | factor on the DynSGS viscosity (the `:μ` multipliers of the momentum slots, applied after its caps; the case's ν is not scaled), a test of its drag on the plasma that drains from the dome (`drain`, its `visc` column) |
 | `JEXPRESSO_LK10_HEAT` | `shock` (default), a fraction | what the heat the DynSGS dissipates does (`:dsgs_heating`): `shock`, only the explicit ν, η and the DynSGS viscosity in compression heat, as in Lare (The heat of the DynSGS, below); or that fraction of it into the plasma (1 conserves energy, 0 loses it all) |
 | `JEXPRESSO_LK10_SENSOR` | `legacy` (default), `residual` | DynSGS sensor: $\lvert\partial_tq\rvert$ against the assembled RHS (the parent case's), or the element residual once per step (DSGS.md §1.2) |
@@ -331,6 +332,90 @@ paper's dissipation and its energy relaxation:
   there `shock` keeps a quarter, the compressed half of a kick whose velocity
   gradient is half compression. A restart that changes the mode reports it
   and continues.
+
+- **The viscosity on the velocity** (`JEXPRESSO_LK10_VISC=velocity`;
+  `:dsgs_velocity_viscosity`, `src/kernel/physics/SGS.jl`,
+  `_dsgs_velocity_viscosity_2d!`). The conserved form diffuses the momentum
+  like every other slot, $\nabla\cdot(\rho_e\mu\nabla(\rho\mathbf v/\rho_e))$.
+  With $s = \rho/\rho_e$ that is
+  $\nabla\cdot(\rho\mu\nabla\mathbf v) + \nabla\cdot(\mathbf v\,\rho_e\mu\nabla s)$:
+  a viscous stress, and the momentum of a mass flux $\rho_e\mu\nabla s$. It
+  is a viscosity only where the mass slot diffuses with the same coefficient
+  (Guermond & Popov 2014, *SIAM J. Appl. Math.* 74:284: the mass flux of the
+  regularization carries its momentum, and only then is the velocity of a
+  uniform flow left alone). Here it does not: the REF 4 runs have
+  `JEXPRESSO_LK10_RHOFAC=0.1`, and the paper's ν has no mass diffusion at all.
+  The difference is momentum taken out of dense plasma that moves through
+  thin plasma with no mass to go with it; the operator relaxes
+  $\rho\mathbf v/\rho_e$, not $\mathbf v$. That is what held the cold plasma
+  the emerging field lifts into the corona (REF 4, cluster; `drain`): on its
+  steep field lines at 1160 s the diffusion terms carried 1.25 times its
+  weight along the field while the stress on the velocity gradient alone was
+  −1.4 of it and the pressure none, the paper's ν 0.03; it slid down at
+  6 km/s where free fall gives 50, was compressed (the `heat` table:
+  $-p\nabla\cdot\mathbf v$ is 10⁴ K per 100 s on the flanks, ten times the
+  DynSGS heat and a hundred times that of ν) until its own pressure held it,
+  and the dome it loaded stopped at 9 Mm. A quarter of the DynSGS viscosity
+  (`JEXPRESSO_LK10_VISCFAC=0.25`, from 1044 s) changed nothing: the
+  coefficient applied was a quarter at the restart (0.017 against 0.075 $L_0v_0$)
+  and the parent's again 116 s later (0.446 against 0.477); the sensor makes
+  up the factor.
+
+  With `VISC=velocity` the momentum slots get instead
+
+  $$R_{\rho\mathbf v} = \nabla\cdot\big(\rho_e\mu_\rho\nabla(\rho\mathbf v/\rho_e)\big) + \nabla\cdot\big(\rho_e s_{min}(\mu - \mu_\rho)_+\nabla\mathbf v\big),$$
+
+  the diffusion of the momentum with the *mass* slot's coefficient
+  $\mu_\rho$ (the momentum of the mass that slot diffuses, and the stress
+  $\rho\mu_\rho\nabla\mathbf v$ that goes with it), and the rest of the
+  viscosity, DynSGS and ν, as a stress on the velocity gradient. A velocity
+  uniform across any density contrast is left alone to round-off, whatever
+  the coefficients. $s_{min}$ is the smallest $\rho/\rho_e$ of the element:
+  with the density of each quadrature node in the stress, a light node beside
+  a dense one is relaxed at $\mu\rho_{dense}/\rho_{light}$, past the explicit
+  limit the coefficient is capped for; with $\rho_e s_{min}$ no node is
+  diffused faster than by the operator this replaces, and where the
+  atmosphere is the reference's it is $\rho\mu\nabla\mathbf v$ exactly. The
+  price is a weaker stress where the density jumps inside an element. Both
+  terms are diffusions with a non-negative coefficient; the mass flux written
+  by itself, $\nabla\cdot(\mathbf v F_\rho) + \nabla\cdot(\rho_e s_{min}\mu\nabla\mathbf v)$,
+  is not (its stress coefficient is negative at the dense nodes of an element
+  whose contrast exceeds $\mu/\mu_\rho$): that first version went non-finite
+  at the edge of the test blob below in 33 s. What the two terms dissipate,
+  $(\rho\mu_\rho + \rho_e s_{min}(\mu - \mu_\rho)_+)\lvert\nabla\mathbf v\rvert^2 \ge 0$,
+  is the heat of the energy slot (`shock`: its ν part in full, its DynSGS
+  part in compression). At the first right-hand side with a mass flux the
+  kernel checks itself and stops the run otherwise: the mass slot's flux is
+  rebuilt from the state and compared with the assembled one (10⁻¹⁵ here),
+  and where $\rho/\rho_e$ is uniform in an element the new momentum terms are
+  compared with those they replace (10⁻¹³).
+
+  *Test* (a copy of the case, REF 1, no tube; `JEXPRESSO_LK10_RHOFAC=0.1`,
+  two-stage DynSGS, fast CFL 1): a blob at rest in pressure balance in the
+  corona at (3.0, 5.55) Mm, 10³ times the coronal density, Gaussian radius
+  0.3 Mm, on field inclined 35°; free fall along the field is
+  $g\,b_y t$.
+
+  | $t$ (s) | free fall (km/s) | `momentum` | `velocity` |
+  |---|---|---|---|
+  | 23 | 3.50 | 3.46 | 3.49 |
+  | 58 | 8.97 | 7.75 | 8.91 |
+  | 93 | 14.7 | 11.2 | 14.2 |
+  | 116 | 18.6 | 12.4 | 17.7 |
+
+  With `momentum` the blob levels off: from 100 s the diffusion terms carry
+  0.8–1.0 of its weight with the shear part opposite (−0.4 to −0.9), the
+  signature of the cluster run, and it is heated twofold (mean 6.7 × 10³ K
+  against 3.8 × 10³ K). With `velocity` they carry 0.00 ± 0.02 throughout (what
+  is left of the lag at 116 s is the pressure the blob builds ahead of it,
+  0.10 of its weight), the DynSGS coefficient in the blob is the same in both
+  (0.6–0.7 $L_0v_0$ at 93 s), and the run meets the stability cap once where
+  `momentum` meets it three times. The default is unchanged to the bit (this case in its five-stage
+  and two-stage settings, `fluxEmergenceSon2025DSGS` and
+  `orszagTangBormanis2024`, 40–100 steps with an off-grid output, every file
+  and the totals of every variable at every step). `velocity` is opt-in until
+  the cluster run from 1044 s shows what it does to the dome; `drain` reads
+  the form from `lk10_case.txt` and evaluates that operator.
 
 ## What is not in the paper, and what was done
 
@@ -689,7 +774,7 @@ stops at once ("nothing to continue"), so a spare job in the chain is harmless.
   run with another record stops with the list of differences. The time step
   (`JEXPRESSO_LK10_DT`), the end time, the snapshot interval and the numerical
   switches may change (`JEXPRESSO_LK10_FLOORS`, `_CMIN`, `_CURLB` and those of
-  the DynSGS: `_ETA`, `_ETACAP`, `_ETAFAC`, `_VISCFAC`, `_RHOFAC`, `_HEAT`, `_STABCAP`,
+  the DynSGS: `_ETA`, `_ETACAP`, `_ETAFAC`, `_VISC`, `_VISCFAC`, `_RHOFAC`, `_HEAT`, `_STABCAP`,
   `_SENSOR`, `_ENERGY`, `_DSGS_STAGES`, `_CR`, and `_TFLOOR`; the log says which did): that is
   how a run continues past a failure (below), or with another setting from the
   snapshot where it starts to matter.
