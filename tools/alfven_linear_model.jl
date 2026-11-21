@@ -72,8 +72,10 @@
 #     −∇(½|B|²) to ψ, p and B0·b, and does not cancel. With those three couplings
 #     off (noglm_nogasp_nomagp) b·e⊥ equals Bz at every time; GLM alone carries
 #     most of the difference. Off the crossing times there is no excess: at
-#     t = 1.5, ⊥/Bz = 0.42, 0.60 (N = 4 on 8², 16²), 1.23, 1.10 (N = 5) and 1.23,
-#     0.94 (N = 6), and both converge at about N for N = 4.
+#     t = 1.5, ⊥/Bz on 8², 16², 32² is 0.42, 0.60, 0.68 for N = 4, 1.23, 1.10,
+#     1.07 for N = 5 and 1.23, 0.94, 0.88 for N = 6. From 16² to 32², b·e⊥ and
+#     Bz converge at 3.9 and 4.1 for N = 4, 5.5 and 5.5 for N = 5, and 6.0 and
+#     5.9 for N = 6.
 #   - The wave itself is computed equally well in both polarizations: its
 #     Fourier mode holds under 0.01% of the error, and its amplitude and phase
 #     errors are nearly equal for b·e⊥ and Bz (N = 4 on 32²: phase −8.7e-13 and
