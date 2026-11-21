@@ -28,7 +28,10 @@
 # initial condition at every integer time: t = 2 is two periods.
 #---------------------------------------------------------------------------------
 const AW_ALPHA = π/4     # propagation angle
-const AW_AMP   = 0.1     # wave amplitude, in v and in B
+# wave amplitude, in v and in B; JEXPRESSO_AW_AMP changes it (a diagnostic:
+# the nonlinear terms' share of the error scales with it; such a run is tagged
+# "_amp<A>", user_plot.jl _aw_tag)
+const AW_AMP   = something(tryparse(Float64, get(ENV, "JEXPRESSO_AW_AMP", "")), 0.1)
 const AW_RHO0  = 1.0
 const AW_P0    = 0.1
 
@@ -96,6 +99,12 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     # smoothVortex: 0.1 + sqrt(γ p + |B|²) = 1.185 here. ψ = 0 and ∇·B = 0 in
     # the exact solution, so c_h only shapes the discretization error.
     c_h_mhd[] = MPI.Allreduce(ch_local, MPI.MAX, comm)
+    # JEXPRESSO_AW_CH overrides it (a diagnostic: 0 switches the GLM cleaning
+    # off — ψ starts at 0 with no source, so it stays 0 and B never sees ∇ψ;
+    # such a run is tagged "_ch<c>", user_plot.jl _aw_tag)
+    let ch = tryparse(Float64, get(ENV, "JEXPRESSO_AW_CH", ""))
+        ch === nothing || (c_h_mhd[] = ch)
+    end
 
     if rank == 0
         # The wave is periodic on [0, 1/cos α] × [0, 1/sin α] only; on any other

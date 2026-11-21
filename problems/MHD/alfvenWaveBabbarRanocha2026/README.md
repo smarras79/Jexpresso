@@ -152,6 +152,8 @@ the discretization's own ∇·B and ψ errors.
 | `JEXPRESSO_AW_CMIN` | `:dsgs_Cmin` | 0 |
 | `JEXPRESSO_AW_FREEZE` | `1` or `0` forces `:dsgs_freeze_stage` (the coefficient once per step, or at every stage) | unset: `mod_inputs.jl`'s default, on |
 | `JEXPRESSO_AW_SOLVER` | `ck54`, `vern7`, `vern9`, `dp8`, `ssprk54` | `ck54` up to N = 5, `vern7` above |
+| `JEXPRESSO_AW_CH` | GLM cleaning speed c_h, a diagnostic: `0` switches the cleaning off (ψ stays 0) | the fast speed of the initial condition, 1.185 |
+| `JEXPRESSO_AW_AMP` | wave amplitude A in v and B, a diagnostic: the nonlinear terms' share of the error scales with it | 0.1 |
 
 The paper's N = 1 and 2 are not part of the sweep, since Jexpresso is run at N ≥ 3.
 (N = 1 would not build a periodic 2D mesh in any case: `add_high_order_nodes_edges!`
@@ -176,22 +178,27 @@ above and the largest pointwise error at the Gauss points. It also holds:
 runs it (with the cutoff `AW_CUTOFF = 1e-3`). Anything else a run changes is added to it,
 so that no variant replaces the record of another: `nocut` (`AW_CUTOFF = 0`) or `cut<x>`
 (another value), `perstage` (`JEXPRESSO_AW_FREEZE=0`), `legacy`, `cmin`, an integrator
-other than the deck's for that N (`vern9`, ...), or a time step of its own (`dt0.00124`).
+other than the deck's for that N (`vern9`, ...), a time step of its own (`dt0.00124`),
+another GLM speed (`ch0`) or another amplitude (`amp0.01`).
 Stores written before 16 Oct 2026 used `dsgs` for the run without the cutoff and
 `dsgs_cut1e-03` for the one with it; the sweep clears the store, so this only matters with
 `AW_KEEP=1`.
 
 From every record stored for the same final time, the run then:
 
-- prints a table with the errors of B⊥, u⊥ and ρ, their observed orders, and max r and
-  max μ of every run;
+- prints a table with the errors of B⊥ (L² and L∞), u⊥ and ρ, their observed orders, and
+  max r and max μ of every run;
 - draws `output/convergence-it<n>.png` with the convergence figure of the smooth vortex
   (`../smoothVortex/convergence_figure.jl`, shared by the two cases): the error against
-  #DOFs on log-log axes in five panels — the L² errors of B⊥ and u⊥ (the wave), of ρ (the
+  #DOFs on log-log axes in seven panels — the L² and L∞ errors of B⊥ and of u⊥ (the
+  wave; L∞ is the largest |B⊥,h − B⊥| over the Gauss points), the L² error of ρ (the
   measure of the paper's Fig. 13), of the whole state, and its L∞ error, the largest of
   the variables' maxima — and each panel on its own as `convergence_Bperp-it<n>.png`,
-  `convergence_uperp-it<n>.png`, `convergence_rho-it<n>.png`, `convergence_L2-it<n>.png`
-  and `convergence_Linf-it<n>.png`, at publication size.
+  `convergence_Bperp_Linf-it<n>.png`, `convergence_uperp-it<n>.png`,
+  `convergence_uperp_Linf-it<n>.png`, `convergence_rho-it<n>.png`,
+  `convergence_L2-it<n>.png` and `convergence_Linf-it<n>.png`, at publication size. The
+  wave's L∞ is in every record written since 17 Nov 2026, so
+  `tools/alfven_wave_plot.jl` draws those panels from such a store without a new run.
   Every order and stabilization is on the same axes: one colour and marker per order,
   DynSGS solid with a filled marker, its variants dash-dot with a hollow one, Galerkin
   dashed with a larger hollow one, so that a DynSGS point equal to the Galerkin one (the
