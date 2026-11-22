@@ -1430,6 +1430,29 @@ Short runs on 4 cores; the full runs are for a cluster (above).
   the 20 Nov run's table, at the axis at 1380 s, has 0.65 of the initial
   value and 1.19 times the atmosphere's density there).
 
+  *A tenth of the resistivity is not the fix.* The same REF 1 rise with
+  `ETAFAC=0.1` (and `RHOFAC=0.1`) to 1400 s: the axis keeps 0.79–0.87 of the
+  initial $B_z/\rho$ through 920 s (the 13 Nov run: 0.52) and reaches the
+  surface 0.15 Mm behind the erratum's curve (0.27 Mm in the 13 Nov run, and
+  0.15 Mm on REF 4 with the full resistivity): the lag from ~500 s on, at a
+  rise speed of 2.1 against 2.45 km/s, is not the resistivity's. Then the run
+  went non-finite at 1062 s, where the tube flattens against the surface
+  (first non-finite nodes on the axis at −0.37 Mm and at (−6.4, 0.75) Mm),
+  after the first-order cap had run to 10⁵⁸–10¹⁰⁰: the resistivity is needed
+  there.
+
+  *What the DynSGS sees in the rising tube.* The coefficient there is
+  0.02–0.07 $L_0v_0$, 10–40 times the paper's kinematic viscosity at those
+  depths (0.0013–0.008), so that the tube rises at a Reynolds number of ~10
+  against several hundred in the paper. The legacy sensor is the time
+  derivative, ~$1.5\lvert\partial_t q\rvert$ against its mean (DSGS.md, "Selected
+  stages"), so it fires on any structure that moves, resolved or not. A
+  count over the tube's elements ($\lvert B_z\rvert > 1$ kG, REF 1, first 140 s,
+  an instrumented copy of the kernel): the largest normalized residual is the
+  energy's (at 14 s) and then the thermal residual's in every one; the
+  induction residuals alone would give 0.01–0.03, the coefficient applied is
+  0.03–0.09.
+
 ## Files
 
 | file | content |

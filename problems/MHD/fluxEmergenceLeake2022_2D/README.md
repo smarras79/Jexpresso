@@ -324,10 +324,40 @@ python3 $P $RUN --var Bz --symmetric --steps 1,11,21    # iter_N numbers
   CompEuler layout and is wrong for MHD; the CFL monitor above is the one to
   read.
 
+## The DynSGS of the 2010 case
+
+`problems/MHD/fluxEmergenceLeake2010` runs with an energy-consistent energy
+slot, Lare-like heating, an induction-only resistivity sensor, a stability
+cap, the curl-form resistivity and a tenth of the mass diffusion
+(`LK2D_DSGS=lk10` here). On this case at `LK2D_REF = 1`, the cross-section of
+the 3D `LK22_REF = 2` mesh (22 Nov 2026, 2 ranks each, the default deck
+otherwise):
+
+| | default | `lk10` | `lk10`, `LK2D_RHOFAC=1` | `LK2D_ETA=induction` alone |
+|---|---|---|---|---|
+| floor hits: $10^3$ by $t$ = | 2.83 | 2.56 | 2.78 | 2.84 |
+| $10^4$ by $t$ = | not by 29 | 3.73 | 6.07 | not by 11 |
+| stage diagnostics with a node at a floor | 14 of 290 | 37 of 60 | 24 of 64 | 14 of 109 |
+| peak $\lvert B_z\rvert$ of the rope at $t$ = 5, 10 (5 at $t = 0$) | 4.18, 3.20 | — | 4.28, — | 4.22, 3.24 |
+
+With the whole set, from $t \approx 3.3$ three nodes of the photosphere above
+the rope, $(0, 2)$, sit at both floors and the largest temperature climbs to
+234 by $t = 6$ (166 in the default run): the tenth of the mass diffusion
+lets the density there fall to its floor, and with the full mass diffusion
+the pressure floor is still held two to three times as often as by default
+(Lare-like heating returns less of what the DynSGS dissipates). The
+induction-only sensor alone, which lowers the resistivity of the rope three-
+to fivefold, changes neither the floors nor the rope: its peak axial field
+falls by a third in $10t_0$ either way (by half in $15t_0$, to 1.9 at
+$t = 25$), much more than the explicit $\eta = 0.01$ would take (6 % in
+$10t_0$) and than the rope's own expansion. At this resolution (nodes 2 apart
+horizontally across a rope of radius $w = 2.5$) the rope is lost to the
+discretization, whatever the DynSGS. None of these switches is on by default.
+
 ## Verification here
 
 On 4 threads at `LK2D_REF = 1`, and 4 where stated; nothing was run here at
-2 or 3.
+2 or 3 before 22 Nov 2026 (above and below).
 
 - **Background at rest** (`:lk2d_rope => false`): with `:lwell_balanced`
   every field at $t = 0.1t_0$ (50 steps) is bitwise equal to the initial
