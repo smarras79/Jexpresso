@@ -761,6 +761,16 @@ density spans eight decades between the photosphere and the corona:
   velocity"): a cold blob 10³ times the coronal density falls along the field
   at 14.2 km/s after 93 s where free fall gives 14.7 and the default form
   11.2. Default false: every other case is unchanged to the bit.
+- **In 3D** (`compute_dsgs_viscosity!(::DSGS_MHD, ::NSD_3D)`, conserved form
+  only), `:dsgs_induction_sensor`, `:dsgs_stab_cap` and `:dsgs_thermal_energy`
+  with `:dsgs_heating` do what they do in 2D (`_dsgs_energy_consistent_3d!`;
+  it needs `:dsgs_ref_weight`, whose heat it adds, and the case's
+  `user_primitives!` must put the thermal departure in slot 4, as
+  `problems/MHD/fluxEmergenceLeake2022` does with `LK22_DSGS=lk10`). The B
+  slots stay component Laplacians (there is no curl form in 3D), so their
+  heat is $\sum_c\eta_c\lvert\nabla\delta B_c\rvert^2$; the explicit ν, η of
+  `:mhd_dissipation` are added after the stability cap. Off by default: the
+  3D cases are unchanged to the bit.
 
 ### 4.6 The 1D kernel: `brioWu1d`
 

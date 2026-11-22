@@ -223,6 +223,26 @@ function user_inputs()
     # Δt has to resolve; the pressure floor only adds heat (README, Notes).
     lk2d_rho_floor[] = parse(Float64, get(ENV, "LK2D_RHO_FLOOR", "0.2"))
     lk2d_p_floor[]   = parse(Float64, get(ENV, "LK2D_P_FLOOR", "0.2"))
+    # The DynSGS of problems/MHD/fluxEmergenceLeake2010 (its README, "Equations and dissipation"):
+    # LK2D_DSGS=lk10 turns on, together, its energy-consistent energy slot with Lare-like heating
+    # (shock: the explicit ν, η heat in full, the DynSGS viscosity only where the flow is
+    # compressed, the DynSGS resistivity not at all), the induction-only resistivity sensor, the
+    # stability cap, the divergence-preserving curl-form resistivity and a tenth of the mass
+    # diffusion. Each can also be set alone (README, "The DynSGS of the 2010 case"); unset, the
+    # deck is what it was.
+    lk10 = lowercase(strip(get(ENV, "LK2D_DSGS", "default"))) == "lk10"
+    lk2d_flag(k, d) = lowercase(strip(get(ENV, k, d ? "1" : "0"))) in ("1", "true", "yes", "on")
+    lk2d_thermal  = lowercase(strip(get(ENV, "LK2D_ENERGY", lk10 ? "thermal" : "total"))) == "thermal"
+    lk2d_heat     = let h = lowercase(strip(get(ENV, "LK2D_HEAT", lk10 ? "shock" : "1")))
+                        h == "shock" ? "shock" : parse(Float64, h)
+                    end
+    lk2d_induct   = lowercase(strip(get(ENV, "LK2D_ETA", lk10 ? "induction" : "all"))) == "induction"
+    lk2d_stabcap  = parse(Float64, get(ENV, "LK2D_STABCAP", lk10 ? "0.2" : "0.0"))
+    lk2d_curlB    = lk2d_flag("LK2D_CURLB", lk10)
+    lk2d_rhofac   = parse(Float64, get(ENV, "LK2D_RHOFAC", lk10 ? "0.1" : "1.0"))
+    lk2d_refw     = get(ENV, "LK2D_REF_WEIGHT", "1") == "1"
+    lk2d_thermal && !lk2d_refw &&
+        error(" problems/MHD/fluxEmergenceLeake2022_2D: LK2D_ENERGY=thermal (LK2D_DSGS=lk10) needs the reference-weighted operator (LK2D_REF_WEIGHT=1).")
 
     inputs = Dict(
         :ode_solver           => CarpenterKennedy2N54(stage_limiter! = lk2d_positivity_limiter!,
@@ -265,7 +285,7 @@ function user_inputs()
         # constants of the 3D Leake decks.
         #---------------------------------------------------------------------------
         :lvisc                => true,
-        :μ                    => [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        :μ                    => [lk2d_rhofac, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],   # LK2D_RHOFAC: the mass diffusion
         :visc_model           => DSGS_MHD(),
         :dsgs_sensor          => "legacy",
         :dsgs_CR              => 1.0,
@@ -279,13 +299,19 @@ function user_inputs()
         # Reference-weighted operator (user_primitives.jl, README): rho, rho v, E diffused as
         # (q - q_e)/rho_e with mu rho_e, which keeps the transition region from being evacuated and
         # heated by the diffused departure of the dense side (LK2D_REF_WEIGHT=0: the absolute form).
-        :dsgs_ref_weight      => get(ENV, "LK2D_REF_WEIGHT", "1") == "1",
+        :dsgs_ref_weight      => lk2d_refw,
         # Split energy flux (user_primitives.jl): the non-thermal part of E diffused with the
         # momentum coefficient, the thermal part with slot 4's (LK2D_ENERGY_SPLIT=1; in the emergence
         # it changed neither the floor activity nor the rope: README, Verification)
         :dsgs_nazarov_energy  => get(ENV, "LK2D_ENERGY_SPLIT", "0") == "1",
         :dsgs_fast_floors     => true,
         :dsgs_thermal_residual => true,
+        # The 2010 case's DynSGS (above; off unless LK2D_DSGS=lk10 or the switch alone):
+        :dsgs_thermal_energy  => lk2d_thermal,   # LK2D_ENERGY=thermal: the energy-consistent energy slot
+        :dsgs_heating         => lk2d_heat,      # LK2D_HEAT=shock or a factor on the DynSGS heat (1)
+        :dsgs_induction_sensor => lk2d_induct,   # LK2D_ETA=induction: the resistivity from the induction residuals
+        :dsgs_stab_cap        => lk2d_stabcap,   # LK2D_STABCAP=0.2: μ ≤ 0.2 Δx²/Δt (0: none)
+        :dsgs_curl_resistivity => lk2d_curlB,    # LK2D_CURLB=1: the in-plane field diffused in curl form
         :lrichardson          => false,
         :energy_equation      => "energy",
         :lkep                 => false,

@@ -18,6 +18,8 @@
 #   4: 128 x 128 x 192 elements (the paper's 512 x 512 x 768 cells; ref 4, LK22_128x128x192.msh)
 #   5:  32 x 32 x 96 elements  (the columns of 2, elements 2 tall at the bottom as 3: README,
 #       "Vertical resolution"; generate it first: gmsh -3 LK22.geo -setnumber ref 5 -o LK22_32x32x96.msh)
+#   6:  64 x 32 x 96 elements  (3 across a rope that lies along y, simulations 0 and 4, and in z; 2 along
+#       it: half of 3; generate it first: gmsh -3 LK22.geo -setnumber ref 6 -o LK22_64x32x96.msh)
 #---------------------------------------------------------------------------------
 
 # Positivity floors as the Runge-Kutta stage limiter (as problems/MHD/fluxEmergenceLeake2014):
@@ -141,12 +143,12 @@ function user_inputs()
 
     LK22_REF = parse(Int, get(ENV, "LK22_REF", "2"))
     mesh     = ("LK22_16x16x24.msh", "LK22_32x32x48.msh", "LK22_64x64x96.msh", "LK22_128x128x192.msh",
-                "LK22_32x32x96.msh")[LK22_REF]
+                "LK22_32x32x96.msh", "LK22_64x32x96.msh")[LK22_REF]
     # Δt for (|v| + c_f) Δt/Δh ≈ 0.25 at |v| + c_f ≈ 80 on the smallest LGL gap Δh of each mesh
-    # (0.173 of the 8, 4, 2, 1, 2 L₀ tall bottom elements): the fast speed just above the transition
+    # (0.173 of the 8, 4, 2, 1, 2, 2 L₀ tall bottom elements): the fast speed just above the transition
     # region is 45 at t = 0 and reconnection outflows reach tens of v₀ (README). The CFL monitor
     # reports the actual value.
-    Δt       = (4.0e-3, 2.0e-3, 1.0e-3, 5.0e-4, 1.0e-3)[LK22_REF]
+    Δt       = (4.0e-3, 2.0e-3, 1.0e-3, 5.0e-4, 1.0e-3, 1.0e-3)[LK22_REF]
     # Environment overrides (README, "Restart"): LK22_REF the mesh, LK22_TEND :tend,
     # LK22_OUT_DT a snapshot every LK22_OUT_DT (default 10, plus 142 and 184; only those after
     # the start are written), LK22_RESTART_DIR (+ LK22_RESTART_TIME) restarts from a snapshot.
@@ -157,6 +159,23 @@ function user_inputs()
     # Δt has to resolve; the pressure floor only adds heat (README).
     lk22_rho_floor[] = parse(Float64, get(ENV, "LK22_RHO_FLOOR", "0.2"))
     lk22_p_floor[]   = parse(Float64, get(ENV, "LK22_P_FLOOR", "0.2"))
+    # The DynSGS of problems/MHD/fluxEmergenceLeake2010 (README, "The DynSGS of the 2010 case"):
+    # LK22_DSGS=lk10 turns on, together, the reference-weighted operator, the energy-consistent energy
+    # slot with Lare-like heating (shock: the explicit ν, η heat in full, the DynSGS viscosity only
+    # where the flow is compressed, the DynSGS resistivity not at all), the induction-only resistivity
+    # sensor, the stability cap and a tenth of the mass diffusion. Each can also be set alone; unset,
+    # the deck is what it was.
+    lk10 = lowercase(strip(get(ENV, "LK22_DSGS", "default"))) == "lk10"
+    lk22_refw    = get(ENV, "LK22_REF_WEIGHT", lk10 ? "1" : "0") == "1"
+    lk22_thermal = lowercase(strip(get(ENV, "LK22_ENERGY", lk10 ? "thermal" : "total"))) == "thermal"
+    lk22_heat    = let h = lowercase(strip(get(ENV, "LK22_HEAT", lk10 ? "shock" : "1")))
+                       h == "shock" ? "shock" : parse(Float64, h)
+                   end
+    lk22_induct  = lowercase(strip(get(ENV, "LK22_ETA", lk10 ? "induction" : "all"))) == "induction"
+    lk22_stabcap = parse(Float64, get(ENV, "LK22_STABCAP", lk10 ? "0.2" : "0.0"))
+    lk22_rhofac  = parse(Float64, get(ENV, "LK22_RHOFAC", lk10 ? "0.1" : "1.0"))
+    lk22_thermal && !lk22_refw &&
+        error(" problems/MHD/fluxEmergenceLeake2022: LK22_ENERGY=thermal (LK22_DSGS=lk10) needs the reference-weighted operator (LK22_REF_WEIGHT=1).")
 
     inputs = Dict(
         :ode_solver           => CarpenterKennedy2N54(stage_limiter! = lk22_positivity_limiter!,
@@ -199,7 +218,7 @@ function user_inputs()
         # problems/MHD/fluxEmergenceLeake2014.
         #---------------------------------------------------------------------------
         :lvisc                => true,
-        :μ                    => [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        :μ                    => [lk22_rhofac, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],   # LK22_RHOFAC: the mass diffusion
         :visc_model           => DSGS_MHD(),
         :dsgs_sensor          => "legacy",
         :dsgs_CR              => 1.0,
@@ -213,13 +232,18 @@ function user_inputs()
         # Reference-weighted operator (user_primitives.jl, README): rho, rho v, E diffused as
         # (q - q_e)/rho_e with mu rho_e, which keeps the transition region from being evacuated and
         # heated by the diffused departure of the dense side (LK22_REF_WEIGHT=0: the absolute form).
-        :dsgs_ref_weight      => get(ENV, "LK22_REF_WEIGHT", "0") == "1", # being tested in 3D: LK22_REF_WEIGHT=1
+        :dsgs_ref_weight      => lk22_refw,  # LK22_REF_WEIGHT=1 (and with LK22_DSGS=lk10)
         # Split energy flux (user_primitives.jl): the non-thermal part of E diffused with the
         # momentum coefficient, the thermal part with slot 4's (LK22_ENERGY_SPLIT=1; in the 2.5D
         # emergence it changed neither the floor activity nor the rope: that case's README)
         :dsgs_nazarov_energy  => get(ENV, "LK22_ENERGY_SPLIT", "0") == "1",
         :dsgs_fast_floors     => true,
         :dsgs_thermal_residual => true,
+        # The 2010 case's DynSGS (above; off unless LK22_DSGS=lk10 or the switch alone):
+        :dsgs_thermal_energy  => lk22_thermal,   # LK22_ENERGY=thermal: the energy-consistent energy slot
+        :dsgs_heating         => lk22_heat,      # LK22_HEAT=shock or a factor on the DynSGS heat (1)
+        :dsgs_induction_sensor => lk22_induct,   # LK22_ETA=induction: the resistivity from the induction residuals
+        :dsgs_stab_cap        => lk22_stabcap,   # LK22_STABCAP=0.2: μ ≤ 0.2 Δx²/Δt (0: none)
         :lrichardson          => false,
         :energy_equation      => "energy",
         :lkep                 => false,

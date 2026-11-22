@@ -19,6 +19,11 @@
 # to ρ_e with :dsgs_ref_weight). Without the split, E with the weighting diffuses the magnetic
 # energy differently from B, and in the low-β transition region the pressure, the small
 # remainder E − ½ρ|v|² − ½|B|², takes the difference.
+#
+# With :dsgs_thermal_energy (the energy-consistent DynSGS of problems/MHD/fluxEmergenceLeake2010,
+# LK22_DSGS=lk10; needs :dsgs_ref_weight) slot 4 holds the thermal departure δ(p/(γ−1)) alone, and
+# SGS.jl's _dsgs_energy_consistent_3d! adds to the E slot the work of the other slots' terms and the
+# heat they dissipate: the DynSGS then changes p only by diffusing it and by heating.
 @inline function lk22_energy_split(u)
     eth = pressure_mhd(u[1], u[2], u[3], u[5], u[4], u[6], u[7], u[8], u[9])/(γ_mhd - 1.0)
     return u[4] - eth, eth      # (non-thermal, thermal) energy
@@ -37,13 +42,18 @@ function user_primitives!(u, qe, uprimitive, ::TOTAL)
         nthe, ethe = lk22_energy_split(qe)
         uprimitive[4]  = (nth - nthe)*w   # E: non-thermal part (the ρu slot's coefficient)
         uprimitive[11] = (eth - ethe)*w   #    thermal part (slot 4's coefficient)
+    elseif dsgs_thermal_energy[]
+        # energy-consistent DynSGS (:dsgs_thermal_energy, LK22_DSGS=lk10): slot 4 diffuses the thermal
+        # energy departure δ(p/(γ−1)) alone; _dsgs_energy_consistent_3d! adds the work and the heat
+        uprimitive[4]  = (lk22_energy_split(u)[2] - lk22_energy_split(qe)[2])*w
     end
     dsgs_ref_weight[] && (uprimitive[10] = qe[1])   # the weight, read by _expansion_visc!
 end
 
 function user_primitives(u, qe, uprimitive, ::TOTAL)
     w  = dsgs_ref_weight[] ? 1.0/qe[1] : 1.0
-    e4 = dsgs_split_energy[] ? (lk22_energy_split(u)[1] - lk22_energy_split(qe)[1])*w : (u[4] - qe[4])*w
+    e4 = dsgs_split_energy[]   ? (lk22_energy_split(u)[1] - lk22_energy_split(qe)[1])*w :
+         dsgs_thermal_energy[] ? (lk22_energy_split(u)[2] - lk22_energy_split(qe)[2])*w : (u[4] - qe[4])*w
     return SVector((u[1] - qe[1])*w, (u[2] - qe[2])*w, (u[3] - qe[3])*w, e4, (u[5] - qe[5])*w,
                    u[6] - qe[6], u[7] - qe[7], u[8] - qe[8], u[9] - qe[9])
 end

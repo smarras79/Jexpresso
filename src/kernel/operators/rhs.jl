@@ -2508,14 +2508,26 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
     dsgs_split_energy[] = lsplit3d
     if params.VT == DSGS_MHD()
         TT = eltype(params.μ_dsgs)
-        # the 2D-only nodal-ρ and thermal-energy switches read by the MHD user_primitives! must stay off
+        # the 2D-only nodal-ρ switch read by the MHD user_primitives! must stay off
         dsgs_nodal_rho[]    = false
-        dsgs_thermal_energy[] = false
-        get(params.inputs, :dsgs_thermal_energy, false) == true &&
-            error(" :dsgs_thermal_energy is implemented for 2D DSGS_MHD only.")
+        # Energy-consistent DynSGS (:dsgs_thermal_energy, as 2D: the case's user_primitives! puts the
+        # thermal departure in slot 4, _dsgs_energy_consistent_3d! below adds the work of the other
+        # slots and the heat): the conserved form with the reference weight, without the split flux.
+        dsgs_thermal_energy[] = get(params.inputs, :dsgs_thermal_energy, false)::Bool
+        if dsgs_thermal_energy[]
+            (dsgs_ref_weight[] && !lsplit3d) ||
+                error(" :dsgs_thermal_energy in 3D needs the reference-weighted conserved form (:dsgs_conserved, ",
+                      ":dsgs_ref_weight => true) without the split energy flux (:dsgs_nazarov_energy => false).")
+            let h = get(params.inputs, :dsgs_heating, 1.0)
+                dsgs_heat_shock[]  = h isa AbstractString && lowercase(h) == "shock"
+                dsgs_heat_factor[] = h isa Number ? Float64(h) : 1.0
+                (h isa Number || dsgs_heat_shock[]) || error(" :dsgs_heating must be a number (the fraction of the dissipated heat kept) or \"shock\" (got ", h, ").")
+            end
+        end
         dsgs_qA, dsgs_qB, dsgs_wt = _dsgs_stencil(params, TT)
         dsgs_rhs = _dsgs_residual_rhs!(u, params, SD)
         νphys, ηphys = _mhd_dissipation_3d(params, TT)
+        lstab3d = get(params.inputs, :dsgs_stab_cap, 0.0) > 0
         compute_dsgs_viscosity!(params.μ_dsgs, DSGS_MHD(), SD,
                                 params.uaux, dsgs_qA, dsgs_qB,
                                 dsgs_rhs, params.ω, params.metrics.Je, params.visc_coeff,
@@ -2536,6 +2548,10 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                 cutoff        = TT(get(params.inputs, :dsgs_cutoff, 0.0)),
                                 lfast_floors  = get(params.inputs, :dsgs_fast_floors, false)::Bool,
                                 lthermal      = get(params.inputs, :dsgs_thermal_residual, false)::Bool,
+                                linduction    = get(params.inputs, :dsgs_induction_sensor, false)::Bool,
+                                stab          = TT(get(params.inputs, :dsgs_stab_cap, 0.0)),
+                                Δgap          = lstab3d ? _dsgs_elem_gap(params.mesh, TT) : nothing,
+                                Δt            = TT(params.Δt),
                                 lnazarov_energy = lsplit3d,
                                 Pr_t          = TT(get(params.inputs, :dsgs_Prt, 0.7)),
                                 νphys = νphys, ηphys = ηphys)
@@ -2556,6 +2572,15 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                  params.mesh.elem_to_face, params.mesh.bdy_face_type,
                                  Int64(params.mesh.nelem), Int64(params.neqs),
                                  connijk, params.QT, params.AD, params.SOL_VARS_TYPE)
+        if dsgs_thermal_energy[]
+            _dsgs_energy_consistent_3d!(params.rhs_diff_el, params.μ_dsgs, params.uaux, qe,
+                                        params.mesh.connijk, params.ω, params.basis.dψ, params.metrics.Je,
+                                        params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz,
+                                        params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz,
+                                        params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz,
+                                        Int(params.mesh.nelem), Int(params.mesh.ngl);
+                                        νphys = νphys, ηphys = ηphys)
+        end
         return
     end
 
@@ -2664,8 +2689,20 @@ function _dsgs_elem_gap(mesh, ::Type{TT}) where {TT}
     c = _DSGS_ELEM_GAP[]
     nelem = Int(mesh.nelem)
     (c !== nothing && c[1] === mesh && length(c[2]) == nelem) && return c[2]::Vector{TT}
-    g = _dsgs_fill_elem_gap(mesh.connijk, mesh.coords, nelem, Int(mesh.ngl), TT)
+    g = size(mesh.connijk, 4) > 1 ? _dsgs_fill_elem_gap_3d(mesh.connijk, mesh.coords, nelem, Int(mesh.ngl), TT) :
+                                     _dsgs_fill_elem_gap(mesh.connijk, mesh.coords, nelem, Int(mesh.ngl), TT)
     _DSGS_ELEM_GAP[] = (mesh, g)
+    return g
+end
+function _dsgs_fill_elem_gap_3d(connijk, coords, nelem::Int, ngl::Int, ::Type{TT}) where {TT}
+    g = fill(TT(Inf), nelem)
+    dist(a, b) = TT(sqrt((coords[1,b] - coords[1,a])^2 + (coords[2,b] - coords[2,a])^2 + (coords[3,b] - coords[3,a])^2))
+    @inbounds for ie = 1:nelem, k = 1:ngl, j = 1:ngl, i = 1:ngl
+        ip = connijk[ie,i,j,k]
+        i < ngl && (g[ie] = min(g[ie], dist(ip, connijk[ie,i+1,j,k])))
+        j < ngl && (g[ie] = min(g[ie], dist(ip, connijk[ie,i,j+1,k])))
+        k < ngl && (g[ie] = min(g[ie], dist(ip, connijk[ie,i,j,k+1])))
+    end
     return g
 end
 function _dsgs_fill_elem_gap(connijk, coords, nelem::Int, ngl::Int, ::Type{TT}) where {TT}

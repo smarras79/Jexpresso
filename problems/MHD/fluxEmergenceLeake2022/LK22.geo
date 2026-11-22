@@ -29,6 +29,8 @@
 //   ref = 4  -> 128 x 128 x 192 elements (k = 4)   LK22_128x128x192.msh the paper's 512^2 x 768 at nop 4
 //   ref = 5  ->  32 x 32 x 96 elements   (kx = 16, kz = 8)  LK22_32x32x96.msh  ref 2 in x and y,
 //                ref 3 in z: elements 2 tall at the bottom (README, "Vertical resolution")
+//   ref = 6  ->  64 x 32 x 96 elements   (kx = 8, ky = 16, kz = 8)  LK22_64x32x96.msh  ref 3 across a
+//                rope that lies along y (simulations 0 and 4) and in z, ref 2 along it: half of ref 3
 //
 // Boundary tags (the strings user_bc_dirichlet! receives):
 //   "bottom" z = -30,  "top" z = Z,  "left" x = -X,  "right" x = X,
@@ -41,6 +43,7 @@
 //   gmsh -3 LK22.geo -setnumber ref 3 -o LK22_64x64x96.msh
 //   gmsh -3 LK22.geo -setnumber ref 4 -o LK22_128x128x192.msh
 //   gmsh -3 LK22.geo -setnumber ref 5 -o LK22_32x32x96.msh
+//   gmsh -3 LK22.geo -setnumber ref 6 -o LK22_64x32x96.msh
 // ============================================================
 
 DefineConstant[ ref = 1 ];
@@ -56,6 +59,10 @@ If (ref == 4)
 EndIf
 If (ref == 5)
   kx = 16; kz = 8;
+EndIf
+ky = kx;
+If (ref == 6)
+  kx = 8; ky = 16; kz = 8;
 EndIf
 
 // horizontal faces on [0, X]: 256 paper cells per half-width
@@ -81,6 +88,25 @@ For m In {1:2*nh}
   ox[m-1] = 1;
 EndFor
 
+// the same faces in y, every ky-th (ky = kx except for ref 6)
+acc = 0; nhy = 0;
+For i In {1:256}
+  s0 = 0.5*i;
+  acc = acc + 0.5*(1 + 6*(1 + Tanh((s0 - lx)/wx)));
+  If (Fmod(i, ky) == 0)
+    nhy = nhy + 1;
+    yh[nhy] = acc;
+  EndIf
+EndFor
+For m In {1:2*nhy}
+  If (m <= nhy)
+    fy[m-1] = (X - yh[nhy - m])/(2*X);
+  Else
+    fy[m-1] = (X + yh[m - nhy])/(2*X);
+  EndIf
+  oy[m-1] = 1;
+EndFor
+
 // vertical faces from z = -30: 768 paper cells
 acc = 0; nv = 0;
 For i In {1:768}
@@ -100,7 +126,7 @@ EndFor
 
 Point(1) = {-X, -X, -30};
 ex[] = Extrude {2*X, 0, 0} { Point{1}; Layers{ox[], fx[]}; };
-ey[] = Extrude {0, 2*X, 0} { Curve{ex[1]}; Layers{ox[], fx[]}; Recombine; };
+ey[] = Extrude {0, 2*X, 0} { Curve{ex[1]}; Layers{oy[], fy[]}; Recombine; };
 ez[] = Extrude {0, 0, H} { Surface{ey[1]}; Layers{oz[], fz[]}; Recombine; };
 
 e = 1e-6;

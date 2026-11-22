@@ -1415,12 +1415,20 @@ Short runs on 4 cores; the full runs are for a cluster (above).
   that the loss is 1.4 × 10⁻³ s⁻¹ with the full resistivity and nothing
   measurable with a tenth of it (0.87 at 46 and at 93 s; the density deficit
   stays at 20.7%, the value the relaxation leaves, where it shrinks to 18% and
-  17% in the other two). Lare has no resistivity there at all (the
-  anomalous one never switches on) and the erratum's figure shows it: its
-  line 17, within 3 G Mm of the axis at $t = 0$ (of 1044 G Mm), is there in
-  every panel to 2530 s. On REF 4 the in-plane flux between axis and null is 1044 G Mm at
-  $t = 0$, 1001 at 920 s and 983 at 1380 s; what its axis has kept of
-  $B_z/\rho$ is to be read with `core` on its snapshots.
+  17% in the other two). Lare has no explicit resistivity there (the
+  anomalous one never switches on), and the erratum's figure shows that its
+  numerical one hardly touches the tube's core: the flux function of the
+  analytic tube is −223.1 G Mm at its axis, its line 17 is the contour
+  −223.0 (to the 2.4 G Mm of the calibration), and that line is there, around
+  the axis, in every panel to 2530 s. The flux function at the paper's axis
+  has therefore changed by less than about 3 G Mm in 2530 s; at ours it has
+  risen by 230 G Mm by 920 s on REF 1 (field-free) and by 43 G Mm on REF 4
+  (1044 → 1001 G Mm between axis and null; 52 G Mm by 1380 s, where only
+  line 17 is gone). The B_z profile, peaked where the flux function is flat
+  (tube 2 has no current on its axis), loses more: what the REF 4 axis has
+  kept of $B_z/\rho$ is to be read with `core` on its snapshots (one node of
+  the 20 Nov run's table, at the axis at 1380 s, has 0.65 of the initial
+  value and 1.19 times the atmosphere's density there).
 
 ## Files
 

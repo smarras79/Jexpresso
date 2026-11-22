@@ -53,6 +53,7 @@ The simulation is chosen in `user_inputs.jl`:
 | `LK22_REF` (environment variable) | 1, 2 (default), 3, 4, 5 | mesh and time step (below); also `LK22_TEND`, `LK22_OUT_DT` and the restart (Restart) |
 | `LK22_RHO_FLOOR`, `LK22_P_FLOOR` (environment variables) | 0.2 (default) | the density and pressure floors as fractions of the reference atmosphere (Notes, "The floor fractions") |
 | `LK22_REF_WEIGHT`, `LK22_ENERGY_SPLIT` (environment variables) | 0 (default), 1 | the reference-weighted DynSGS operator of `fluxEmergenceLeake2022_2D` (its Deviations, item 5) and the split energy flux (`src/kernel/physics/SGS.jl`; in the 2.5D emergence it changed nothing, that README's Verification); `LK22_REF_WEIGHT=1` on any mesh (Meshes and time step, "Vertical resolution") |
+| `LK22_DSGS` (environment variable) | `default`, `lk10` | `lk10`: the DynSGS of `problems/MHD/fluxEmergenceLeake2010` (below, "The DynSGS of the 2010 case"): the reference-weighted operator, the energy-consistent energy slot with Lare-like heating, the induction-only resistivity sensor, the stability cap and a tenth of the mass diffusion; each also alone: `LK22_ENERGY=thermal`, `LK22_HEAT=shock`, `LK22_ETA=induction`, `LK22_STABCAP=0.2`, `LK22_RHOFAC=0.1` |
 
 ## Units
 
@@ -117,16 +118,20 @@ grid, so with `:nop => 4` the nodes follow its stretching:
 | 3 | $64\times64\times96$ | 8 | `LK22_64x64x96.msh` (generate) | 25 M | $10^{-3}$ |
 | 4 | $128\times128\times192$ | 4 | `LK22_128x128x192.msh` (generate) | 202 M | $5\times10^{-4}$ |
 | 5 | $32\times32\times96$ | 16 in $x$, $y$; 8 in $z$ | `LK22_32x32x96.msh` (generate, 12 MB) | 6.4 M | $10^{-3}$ |
+| 6 | $64\times32\times96$ | 8 in $x$, 16 in $y$, 8 in $z$ | `LK22_64x32x96.msh` (generate, 25 MB) | 12.6 M | $10^{-3}$ |
 
 ```bash
 cd problems/MHD/fluxEmergenceLeake2022
 gmsh -3 LK22.geo -setnumber ref 3 -o LK22_64x64x96.msh
 gmsh -3 LK22.geo -setnumber ref 4 -o LK22_128x128x192.msh
 gmsh -3 LK22.geo -setnumber ref 5 -o LK22_32x32x96.msh
+gmsh -3 LK22.geo -setnumber ref 6 -o LK22_64x32x96.msh
 ```
 
 `LK22_REF = 4` is the paper's resolution; 5 is the columns of 2 with the
-elements of 3 in the vertical (below, "Vertical resolution"). The smallest
+elements of 3 in the vertical (below, "Vertical resolution"); 6 is 3 across
+the rope of simulations 0 and 4, which lies along $y$, and in the vertical,
+and 2 along the rope (below, "Resolution across the rope"). The smallest
 LGL gap is 0.173 of the bottom elements' height ($8, 4, 2, 1, 2\,L_0$). The fast speed of the initial
 state peaks at 45 just above the transition region (the GLM speed $c_h$,
 printed at start-up), and the paper's reconnection outflows reach tens of
@@ -150,6 +155,19 @@ the rope ($T$ down to $0.35T_e$ at $t = 20$) and diffuse the rope more. The
 has elements 2 tall, and eight times the elements of 2. `LK22_REF = 5` is the
 3D counterpart of the 2.5D test's refined mesh (`LK2D_REF = 4`): the columns
 of 2 with elements 2 tall up to $z \approx 30$, twice the elements of 2.
+
+**Resolution across the rope.** The rope's field falls off as
+$e^{-r^2/w^2}$, $w = 2.5$; the paper's cells are 0.5 wide and 0.25 tall
+there, five and ten across $w$. At `LK22_REF = 2` the nodes are 2 apart
+horizontally and 1 vertically (1.25 and 2.5 across $w$), at 3 and 6 they are
+1 and 0.5 (2.5 and 5). In the 2.5D Leake 2010 case a tube with three nodes
+across its radius lost half of its axial field per unit mass to the DynSGS
+resistivity before it reached the surface, and with it the buoyancy that
+makes it emerge (that README, Verification, "The erratum's Fig. 3 line by
+line"): at `LK22_REF = 2` the rope is coarser still. Along the rope its
+density varies over $\lambda = 10$, so for a rope along $y$ (simulations 0
+and 4, whose $\theta$ is 0 or $\pi$) `LK22_REF = 6` keeps the columns of 2
+in $y$: 12.6 M nodes, half of 3, twice 5.
 
 **Cost.** `LK22_REF = 1` takes about 10 s per time step on 4 threads
 (0.41 M nodes; 13 s measured with other jobs on the machine). Scaling by

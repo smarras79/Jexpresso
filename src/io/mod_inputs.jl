@@ -1230,7 +1230,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #                      the component Laplacian, so that the DynSGS (and :mhd_dissipation) resistivity
     #                      keeps the discrete divergence of B (SGS.jl, _dsgs_curl_resistive_2d!).
     #                      Default false.
-    #   :dsgs_induction_sensor  DSGS_MHD 2D, element form: the coefficient of the B slots (the DynSGS
+    #   :dsgs_induction_sensor  DSGS_MHD 2D and 3D, element form: the coefficient of the B slots (the DynSGS
     #                      resistivity) from the residuals of the induction equation alone; the other
     #                      slots keep the max over all equations. For low-β plasmas, where one
     #                      coefficient makes the field as resistive as an acoustic front makes the gas
@@ -1254,7 +1254,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #                      where mass and momentum diffuse with one coefficient; with :μ[1] < 1, or an
     #                      explicit ν, the diffusion of ρv/ρ_e takes momentum out of dense plasma moving
     #                      through thin plasma (problems/MHD/fluxEmergenceLeake2010). Default false.
-    #   :dsgs_stab_cap     DSGS_MHD 2D, element form: the coefficient never above stab·Δx²/Δt, Δx the
+    #   :dsgs_stab_cap     DSGS_MHD 2D and 3D, element form: the coefficient never above stab·Δx²/Δt, Δx the
     #                      smallest LGL gap of the element (0, the default: no cap). The first-order
     #                      cap C_max Δ (|v| + c_f) follows the fast speed, and an explicit step
     #                      integrates a diffusivity only up to a viscous number μ Δt/Δx² of ~0.4
@@ -1262,18 +1262,21 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #                      doubled since Δt was chosen the capped coefficient alone makes the run
     #                      unstable, from a fast CFL number of ~0.6. 0.2 keeps it stable to ~1.4
     #                      (SGS.jl; problems/MHD/fluxEmergenceLeake2010). With :dsgs_conserved the cap
-    #                      also holds after the :μ multipliers, so that one above 1 cannot pass it.
+    #                      also holds after the :μ multipliers, so that one above 1 cannot pass it (in 3D,
+    #                      where only the conserved form exists, always; the explicit ν, η of
+    #                      :mhd_dissipation are added after it in both).
     #   :dsgs_eta_flow_cap  DSGS_MHD 2D, element form: the coefficient of the B slots capped at
     #                      C_max Δ ‖v‖∞,e (the flow speed: the first-order diffusivity of a field carried
     #                      by v) instead of C_max Δ (‖v‖ + c_f)∞,e, which at a coronal current sheet is a
     #                      Lundquist number of a few hundred (SGS.jl, lflowcap). Default false.
-    #   :dsgs_thermal_energy  DSGS_MHD 2D, conserved element form, no split energy flux: the E slot
+    #   :dsgs_thermal_energy  DSGS_MHD 2D and 3D, conserved element form, no split energy flux (in 3D
+    #                      also :dsgs_ref_weight, which the heat it adds assumes): the E slot
     #                      diffuses the thermal energy departure (the case's user_primitives! puts
     #                      δ(p/(γ−1)) in slot 4 when SGS.jl's dsgs_thermal_energy[] is set) and gets the
     #                      work of the other slots' DynSGS terms and the heat they dissipate, so that the
     #                      DynSGS changes p only by diffusing the internal energy and by heating
-    #                      (SGS.jl, _dsgs_energy_consistent_2d!; problems/MHD/fluxEmergenceLeake2010).
-    #                      Default false.
+    #                      (SGS.jl, _dsgs_energy_consistent_2d!, _3d!; problems/MHD/fluxEmergenceLeake2010,
+    #                      fluxEmergenceLeake2022 with LK22_DSGS=lk10). Default false.
     #   :dsgs_heating      with :dsgs_thermal_energy: what becomes of the heat the DynSGS dissipates
     #                      (SGS.jl, dsgs_heat_factor, dsgs_heat_shock). A number: the fraction that goes
     #                      into the internal energy (default 1, energy conserving; 0 loses it).

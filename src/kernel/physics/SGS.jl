@@ -2236,6 +2236,84 @@ function _dsgs_energy_consistent_2d!(rhs_diff_el::AbstractArray{TT}, μ_dsgs::Ab
 end
 
 # ================================================================================
+# _dsgs_energy_consistent_3d!: the same energy slot in 3D (:dsgs_thermal_energy with the 3D
+# conserved element form and the reference weight, :dsgs_ref_weight), for the 3D Leake cases.
+# rhs_diff_el[ie,i,j,k,s] holds the element contributions of every slot's DynSGS term (and of
+# the explicit ν, η riding in μ_dsgs), the E slot's being the diffusion of the thermal energy
+# departure; this adds, node by node,
+#
+#     W = u·R_ρu − ½|u|² R_ρ + B·R_B + ψ R_ψ      and      ω J Q,
+#
+#     Q = max(0, ρ_e Σ_i μ_i ∇m̃_i·∇u_i) + Σ_c η_c |∇δB_c|² + μ_ψ |∇δψ|²
+#
+# (m̃ = ρu/ρ_e; the B slots are component Laplacians in 3D, so their heat is the gradient
+# form). With :dsgs_heating => "shock" the explicit ν and η heat in full, the DynSGS viscosity
+# only where the flow is compressed and the DynSGS resistivity not at all (2D, above).
+# ================================================================================
+function _dsgs_energy_consistent_3d!(rhs_diff_el::AbstractArray{TT}, μ_dsgs::AbstractMatrix{TT},
+                                     q::AbstractMatrix{TT}, qe::AbstractMatrix,
+                                     connijk::AbstractArray{TI,4}, ω::AbstractVector, dψ::AbstractMatrix,
+                                     Je::AbstractArray,
+                                     dξdx::AbstractArray, dξdy::AbstractArray, dξdz::AbstractArray,
+                                     dηdx::AbstractArray, dηdy::AbstractArray, dηdz::AbstractArray,
+                                     dζdx::AbstractArray, dζdy::AbstractArray, dζdz::AbstractArray,
+                                     nelem::Int, ngl::Int;
+                                     νphys::Union{Nothing,AbstractVector}=nothing,
+                                     ηphys::Union{Nothing,AbstractVector}=nothing) where {TT<:AbstractFloat, TI<:Integer}
+    fheat  = TT(dsgs_heat_factor[])
+    lshock = dsgs_heat_shock[]
+    G  = zeros(TT, 3, 12)      # ξ, η, ζ derivatives of u, v, w, m̃u, m̃v, m̃w, δBx, δBy, δBz, δψ (10 used)
+    gx = zeros(TT, 3, 12)      # x, y, z derivatives
+    @inbounds for ie = 1:nelem
+        μu = μ_dsgs[ie,2]; μv = μ_dsgs[ie,3]; μw = μ_dsgs[ie,5]
+        ηx = μ_dsgs[ie,6]; ηy = μ_dsgs[ie,7]; ηz = μ_dsgs[ie,8]; μψ = μ_dsgs[ie,9]
+        νp = (lshock && νphys !== nothing) ? TT(νphys[ie]) : zero(TT)
+        ηp = (lshock && ηphys !== nothing) ? TT(ηphys[ie]) : zero(TT)
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            fill!(G, zero(TT))
+            for m = 1:ngl
+                for (d, a, ipm) in ((1, dψ[m,i], connijk[ie,m,j,k]), (2, dψ[m,j], connijk[ie,i,m,k]), (3, dψ[m,k], connijk[ie,i,j,m]))
+                    r = one(TT)/q[ipm,1]; e = one(TT)/TT(qe[ipm,1])
+                    G[d,1]  += a*q[ipm,2]*r;  G[d,2] += a*q[ipm,3]*r;  G[d,3] += a*q[ipm,5]*r
+                    G[d,4]  += a*q[ipm,2]*e;  G[d,5] += a*q[ipm,3]*e;  G[d,6] += a*q[ipm,5]*e
+                    G[d,7]  += a*(q[ipm,6] - TT(qe[ipm,6])); G[d,8] += a*(q[ipm,7] - TT(qe[ipm,7]))
+                    G[d,9]  += a*(q[ipm,8] - TT(qe[ipm,8])); G[d,10] += a*(q[ipm,9] - TT(qe[ipm,9]))
+                end
+            end
+            ξx = dξdx[ie,i,j,k]; ξy = dξdy[ie,i,j,k]; ξz = dξdz[ie,i,j,k]
+            hx = dηdx[ie,i,j,k]; hy = dηdy[ie,i,j,k]; hz = dηdz[ie,i,j,k]
+            zx = dζdx[ie,i,j,k]; zy = dζdy[ie,i,j,k]; zz = dζdz[ie,i,j,k]
+            for f = 1:10
+                gx[1,f] = G[1,f]*ξx + G[2,f]*hx + G[3,f]*zx
+                gx[2,f] = G[1,f]*ξy + G[2,f]*hy + G[3,f]*zy
+                gx[3,f] = G[1,f]*ξz + G[2,f]*hz + G[3,f]*zz
+            end
+            dot(a, b) = gx[1,a]*gx[1,b] + gx[2,a]*gx[2,b] + gx[3,a]*gx[3,b]
+            ip = connijk[ie,i,j,k]
+            ρe = TT(qe[ip,1])
+            Dm = ρe*(μu*dot(1, 4) + μv*dot(2, 5) + μw*dot(3, 6))
+            gb = (dot(7, 7), dot(8, 8), dot(9, 9))
+            ρ  = q[ip,1]; u = q[ip,2]/ρ; v = q[ip,3]/ρ; w = q[ip,5]/ρ
+            if lshock
+                Dp  = max(ρe*νp*(dot(1, 4) + dot(2, 5) + dot(3, 6)), zero(TT))
+                QBp = ηp*(gb[1] + gb[2] + gb[3])
+                dv  = min(gx[1,1] + gx[2,2] + gx[3,3], zero(TT))          # ∇·v where compressed
+                wsh = ρ*max(μu - νp, zero(TT))
+                Q   = Dp + QBp + min(wsh*dv*dv, max(max(Dm, zero(TT)) - Dp, zero(TT)))
+            else
+                Q   = fheat*(max(Dm, zero(TT)) + ηx*gb[1] + ηy*gb[2] + ηz*gb[3] + μψ*dot(10, 10))
+            end
+            W = u*rhs_diff_el[ie,i,j,k,2] + v*rhs_diff_el[ie,i,j,k,3] + w*rhs_diff_el[ie,i,j,k,5] -
+                TT(0.5)*(u*u + v*v + w*w)*rhs_diff_el[ie,i,j,k,1] +
+                q[ip,6]*rhs_diff_el[ie,i,j,k,6] + q[ip,7]*rhs_diff_el[ie,i,j,k,7] +
+                q[ip,8]*rhs_diff_el[ie,i,j,k,8] + q[ip,9]*rhs_diff_el[ie,i,j,k,9]
+            rhs_diff_el[ie,i,j,k,4] += W + ω[i]*ω[j]*ω[k]*Je[ie,i,j,k]*Q
+        end
+    end
+    return nothing
+end
+
+# ================================================================================
 # _dsgs_velocity_viscosity_2d!: the DynSGS viscosity on the VELOCITY (:dsgs_velocity_viscosity),
 # 2D conserved element form with the reference weight (:dsgs_conserved, :dsgs_ref_weight).
 #
@@ -2497,6 +2575,10 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  cutoff::TT=zero(TT),
                                  lfast_floors::Bool=false,
                                  lthermal::Bool=false,
+                                 linduction::Bool=false,
+                                 stab::TT=zero(TT),
+                                 Δgap::Union{Nothing,AbstractVector}=nothing,
+                                 Δt::TT=zero(TT),
                                  lnazarov_energy::Bool=false,
                                  Pr_t::TT=TT(0.7),
                                  νphys::Union{Nothing,AbstractVector{TT}}=nothing,
@@ -2622,13 +2704,16 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
             den_th = max(emax - eavg, eavg - emin, local_rel*γ*p_e) + eps
         end
 
-        ratio = zero(TT)
-        wmax  = zero(TT)
+        ratio  = zero(TT)
+        ratioB = zero(TT)     # the same over the B slots only (linduction, as 2D)
+        wmax   = zero(TT)
         for k = 1:ngl, j = 1:ngl, i = 1:ngl
             ip  = connijk[ie,i,j,k]
             imK = one(TT)/(ω[i]*ω[j]*ω[k]*Je[ie,i,j,k])   # element lumped mass at the node
             for ieq = 1:NRES
-                ratio = max(ratio, abs(_dsgs_rsig3(q, q1, q2, rhs_el, wt, imK, ip, ie, i, j, k, ieq))/den[ieq])
+                r = abs(_dsgs_rsig3(q, q1, q2, rhs_el, wt, imK, ip, ie, i, j, k, ieq))/den[ieq]
+                ratio = max(ratio, r)
+                (linduction && ieq >= 6) && (ratioB = max(ratioB, r))
             end
             ρl = max(q[ip,1], eps)
             ul = q[ip,2]/ρl; vl = q[ip,3]/ρl; wl = q[ip,5]/ρl
@@ -2651,28 +2736,52 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
             end
         end
 
+        μ_max   = Cmax*Δ*wmax
         μ_res   = CR*Δ*Δ*_dsgs_cut(ratio, cutoff)
-        μ_c     = max(zero(TT), min(Cmax*Δ*wmax, μ_res))     # kinematic, residual-based, capped
+        μ_c     = max(zero(TT), min(μ_max, μ_res))           # kinematic, residual-based, capped
         μ_floor = Cmin > zero(TT) ? Cmin*Δ*wmax : zero(TT)
         μ       = max(μ_c, μ_floor)
+        # Stability cap (:dsgs_stab_cap = stab, as 2D): never more than the explicit step integrates,
+        # μ ≤ stab·Δx²/Δt with Δx the smallest LGL gap of the element (Inf without it: nothing changes)
+        μ_stab = (stab > zero(TT) && Δgap !== nothing && Δt > zero(TT)) ? stab*TT(Δgap[ie])*TT(Δgap[ie])/Δt : TT(Inf)
+        if μ > μ_stab
+            _dsgs_stab_report(μ, μ_stab, μ_max)
+            μ = μ_stab
+        end
         _dsgs_record!(ratio, μ)
+        # resistivity: the same μ, or (linduction, :dsgs_induction_sensor) the one of the induction residuals
+        μ_B = linduction ? max(max(zero(TT), min(μ_max, CR*Δ*Δ*_dsgs_cut(ratioB, cutoff))), μ_floor) : μ
+        μ_B = min(μ_B, μ_stab)
         νp = νphys === nothing ? zero(TT) : νphys[ie]
         ηp = ηphys === nothing ? zero(TT) : ηphys[ie]
 
         μ_dsgs[ie,1] = visc_coeff[1]*μ                       # ρ
-        μ_dsgs[ie,2] = visc_coeff[2]*μ + νp                  # ρu
-        μ_dsgs[ie,3] = visc_coeff[3]*μ + νp                  # ρv
+        μ_dsgs[ie,2] = visc_coeff[2]*μ                       # ρu
+        μ_dsgs[ie,3] = visc_coeff[3]*μ                       # ρv
         # E: with the split energy flux (lnazarov_energy, as 2D) this coefficient acts on
         # the THERMAL part p/(γ−1) only, Dao & Nazarov's κ = ρν/Pr on the residual viscosity
         # with the full background floor; the non-thermal part is diffused with the ρu
         # slot's coefficient by the 3D _expansion_visc!.
         μ_dsgs[ie,4] = lnazarov_energy ? visc_coeff[4]*max(γ*γm1/Pr_t*μ_c, μ_floor) :
                                          visc_coeff[4]*μ     # E
-        μ_dsgs[ie,5] = visc_coeff[5]*μ + νp                  # ρw
+        μ_dsgs[ie,5] = visc_coeff[5]*μ                       # ρw
         for ieq = 6:8
-            μ_dsgs[ie,ieq] = visc_coeff[ieq]*μ + ηp          # B
+            μ_dsgs[ie,ieq] = visc_coeff[ieq]*μ_B             # B
         end
         μ_dsgs[ie,9] = visc_coeff[9]*μ                       # ψ
+        # a :μ multiplier above 1 must not carry a slot past the stability cap (as 2D)
+        if isfinite(μ_stab)
+            for ieq = 1:neqs
+                μ_dsgs[ie,ieq] = min(μ_dsgs[ie,ieq], μ_stab)
+            end
+        end
+        # the case's explicit kinematic ν and η (:mhd_dissipation) on top
+        μ_dsgs[ie,2] += νp
+        μ_dsgs[ie,3] += νp
+        μ_dsgs[ie,5] += νp
+        for ieq = 6:8
+            μ_dsgs[ie,ieq] += ηp
+        end
     end
 
     return nothing

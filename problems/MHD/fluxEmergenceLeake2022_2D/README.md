@@ -41,6 +41,15 @@ and the environment variables `LK2D_REF` (mesh, below), `LK2D_TEND`,
 `LK2D_OUT_DT` (snapshot interval), `LK2D_DIAG` (Notes), `LK2D_RHO_FLOOR`,
 `LK2D_P_FLOOR` (Notes, "Positivity floors") and the restart's (Restart).
 
+`LK2D_DSGS=lk10` turns on the DynSGS of `problems/MHD/fluxEmergenceLeake2010`
+("The DynSGS of the 2010 case", below): its energy-consistent energy slot with
+Lare-like heating, the induction-only resistivity sensor, the stability cap,
+the curl-form resistivity and a tenth of the mass diffusion; each can be set
+alone (`LK2D_ENERGY=thermal`, `LK2D_HEAT=shock`, `LK2D_ETA=induction`,
+`LK2D_STABCAP=0.2`, `LK2D_CURLB=1`, `LK2D_RHOFAC=0.1`). Unset, the deck is
+what it was (checked: 30 steps, every output file and the totals of every
+variable at every step).
+
 ## Coordinates
 
 The code's 2D plane is $(x, y)$ with $y$ **up**: it is the paper's $(x, z)$.
