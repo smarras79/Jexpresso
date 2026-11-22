@@ -2007,6 +2007,14 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         if neqs >= 9
             μ_dsgs[ie,9] = visc_coeff[9]*μ                         # ψ
         end
+        # A :μ multiplier above 1 (a resistivity factor, say) must not carry a slot past the stability
+        # cap that μ and μ_B were held to: the cap is the explicit step's, whatever the slot. With
+        # multipliers up to 1 this changes nothing. Conserved form only: every slot is kinematic there.
+        if lconserved && isfinite(μ_stab)
+            for ieq = 1:neqs
+                μ_dsgs[ie,ieq] = min(μ_dsgs[ie,ieq], μ_stab)
+            end
+        end
 
         # Explicit physical dissipation of a visco-resistive case (:mhd_dissipation, as the 3D
         # kernel below): kinematic ν on the momentum slots (ρu, ρv, ρw; the dynamic ρ̄ν in the

@@ -96,7 +96,7 @@ below).
 | `JEXPRESSO_LK10_DSGS_STAGES` | `all` (default), `1,5`, `1` | the stages of the Runge–Kutta scheme at which the DynSGS terms are evaluated: all five; the first and the last, held in between; or the first alone (the default of `JEXPRESSO_LK10_STABCAP` is then 0.08). The coefficient is that of the first stage, with half the $C_R$ (Meshes, time step and cost: The DynSGS at two stages of the five) |
 | `JEXPRESSO_LK10_CR` | default 1 | the DynSGS constant $C_R$ |
 | `JEXPRESSO_LK10_ETACAP` | `fast` (default), `flow` | DynSGS resistivity capped at $C_{max}\Delta(\lvert v\rvert + c_f)$ like the viscosity, or at $C_{max}\Delta\lvert v\rvert$ (Verification, the REF 4 run) |
-| `JEXPRESSO_LK10_ETAFAC` | default 1 | factor on the DynSGS resistivity (the `:μ` multipliers of the B slots), a sensitivity test |
+| `JEXPRESSO_LK10_ETAFAC` | default 1 | factor on the DynSGS resistivity (the `:μ` multipliers of the B slots), a sensitivity test; a factor above 1 never carries the coefficient past the stability cap (`JEXPRESSO_LK10_STABCAP`) |
 | `JEXPRESSO_LK10_RHOFAC` | default 1 | factor on the DynSGS mass diffusion (the `:μ` multiplier of the ρ slot), a sensitivity test |
 | `JEXPRESSO_LK10_VISC` | `momentum` (default), `velocity` | the viscosity (DynSGS and ν) as the diffusion of the momentum $\rho\mathbf v/\rho_e$, or as a stress on the velocity gradient with the momentum of the mass the DynSGS diffuses (Equations and dissipation: The viscosity on the velocity). Opt-in while the cluster test runs |
 | `JEXPRESSO_LK10_VISCFAC` | default 1 | factor on the DynSGS viscosity (the `:μ` multipliers of the momentum slots, applied after its caps; the case's ν is not scaled), a test of its drag on the plasma that drains from the dome (`drain`, its `visc` column) |

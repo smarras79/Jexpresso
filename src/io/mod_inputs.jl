@@ -1261,7 +1261,8 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #                      (CarpenterKennedy2N54, degree 4, 2D): where the fast speed has more than
     #                      doubled since Δt was chosen the capped coefficient alone makes the run
     #                      unstable, from a fast CFL number of ~0.6. 0.2 keeps it stable to ~1.4
-    #                      (SGS.jl; problems/MHD/fluxEmergenceLeake2010).
+    #                      (SGS.jl; problems/MHD/fluxEmergenceLeake2010). With :dsgs_conserved the cap
+    #                      also holds after the :μ multipliers, so that one above 1 cannot pass it.
     #   :dsgs_eta_flow_cap  DSGS_MHD 2D, element form: the coefficient of the B slots capped at
     #                      C_max Δ ‖v‖∞,e (the flow speed: the first-order diffusivity of a field carried
     #                      by v) instead of C_max Δ (‖v‖ + c_f)∞,e, which at a coronal current sheet is a
