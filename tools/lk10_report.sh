@@ -36,6 +36,9 @@ $PY -c "import numpy, matplotlib" 2>/dev/null || {
   echo "Give the Python you run the plots with, e.g. from the shell where they work:  --py \"\$(which python3)\"" >&2
   exit 2; }
 
+# a --base that is not on this machine: the tables are made without it rather than failing one by one
+NOBASE=""; B1=${BASE%%,*}; B1=${B1%%@*}
+if [ -n "$BASE" ] && [ ! -d "$B1" ]; then NOBASE="$BASE"; BASE=""; fi
 LAST=${RUN##*,}; LAST=${LAST%%@*}; LAST=${LAST%/}
 OUT="lk10_report_$(basename "$LAST").txt"
 FIGS="lk10_report_files"; mkdir -p "$FIGS"
@@ -49,7 +52,7 @@ run() { echo "\$ $*"; "$@" 2>&1; echo "[exit $?]"; }
   echo "lk10_report: $(date -u '+%Y-%m-%d %H:%M UTC')"
   echo "source: $(git log -1 --format='%h %ad %s' --date=short 2>/dev/null || echo 'not a git checkout')"
   echo "run: $RUN"
-  echo "base: ${BASE:-none given}"
+  echo "base: ${BASE:-none given}${NOBASE:+ ($NOBASE, given as --base, is not a directory here: the tables below are made without it)}"
   echo "python: $($PY --version 2>&1)"
 
   sec "configuration of each directory (lk10_case.txt) and its snapshots"
@@ -76,6 +79,13 @@ run() { echo "\$ $*"; "$@" 2>&1; echo "[exit $?]"; }
   rm -f lk10_report_files/dome_*.csv
   if [ -n "$BASE" ]; then run $P dome "run=$RUN" "base=$BASE" --outdir "$FIGS"; else run $P dome "$RUN" --outdir "$FIGS"; fi
   for f in "$FIGS"/dome_*.csv; do [ -f "$f" ] && { echo "--- $f"; cat "$f"; }; done
+
+  sec "lines: the erratum's Fig. 3 line by line (height on x = 0 of each of its field lines, run and figure)"
+  rm -f lk10_report_files/lines_*.csv
+  if [ -n "$BASE" ]; then run $P lines "run=$RUN" "base=$BASE" --outdir "$FIGS"; else run $P lines "run=$RUN" --outdir "$FIGS"; fi
+
+  sec "core: the plasma at the tube axis (height, density against the atmosphere, B_z/rho against the initial tube)"
+  run $P core "run=$RUN" --outdir "$FIGS"
 
   for x in 0 5; do
     sec "balance: the vertical forces on the line x = $x Mm (what holds the dome)"

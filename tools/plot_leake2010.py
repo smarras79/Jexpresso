@@ -32,6 +32,15 @@ t0 = 23.1946 s), the density in g cm^-3 and B_z in G, as in the paper.
   python3 tools/plot_leake2010.py null RUN [RUN2 ...]         # on x = 0 vs time: the top of the emerged flux (the null
                                                               #   above it), the flux between the tube axis and it, the
                                                               #   mass lifted, and the DynSGS coefficients at the null
+  python3 tools/plot_leake2010.py core RUN [RUN2 ...]         # the plasma at the tube axis vs time: height, density against
+                                                              #   the atmosphere's (buoyancy), B_z/rho against the initial
+                                                              #   tube's (kept in ideal MHD), the in-plane flux around it
+  python3 tools/plot_leake2010.py lines RUN [RUN2 ...]        # Erratum Fig. 3 line by line: its field lines are contours of
+                                                              #   A_z at known levels, so each is a line of the run; their
+                                                              #   heights on x = 0 in the run and in the figure, the tube
+                                                              #   axis, the flux reconnected at the null
+  python3 tools/plot_leake2010.py --paper-lines density RUN   # any map with exactly the erratum's field lines (not N
+                                                              #   equally spaced ones): the panels then compare line for line
 
 Every command takes --outdir (default figs_leake2010), --format (png), --dpi, --lw (the width of the field
 lines) and --prefix, before or after the command name. A figure is <prefix><variable>.<format>, by default
@@ -73,6 +82,33 @@ PAPER_FIG3A = np.array([
 # dense emerging dome (inverted from the figure's colour scale, +-0.1 Mm): t [s], height [Mm]. At 2530 s the
 # flux rope has moved to x = 4.5 Mm and the column is coronal above 3.65 Mm.
 ERRATUM_FIG3_DOME_TOP = np.array([[920, 3.50], [1380, 7.50], [1610, 10.40], [1955, 13.05], [2185, 14.70], [2530, 3.65]])
+# The field lines of the erratum's Fig. 3 are contours of A_z at a constant interval. Interval and levels were
+# found from panel (a) (920 s) against this case's own quadrupole: its analytic A_z (A_z -> 0 at infinity) at the
+# 83 places where the figure's lines cross x = +-8, +-9, ..., +-12 Mm falls on PAPER_A0 - k PAPER_DA with an rms
+# misfit of 2 G Mm (the figure's vertical scale, checked on its density far from the tube, is good to 0.07 Mm,
+# which is 2.4 G Mm on the levels). The quadrupole's null has A_z = 820.49 G Mm: line 0 hugs the separatrix, and
+# lines 1, 2, ... are crossed twice on x = 0, in the emerged flux below the null and in the overlying field.
+PAPER_DA = 61.35    # G Mm (6.135e9 Mx/cm)
+PAPER_A0 = 820.0    # G Mm
+# Heights [Mm] on x = 0 of the lines of the emerged flux (below the null), by line number, read off the figure
+# (+-0.03 Mm). Lines 1 (1955 s), 2 (2185 s), 7 (1380 s) and 9 (1610-2185 s) are behind a B_x arrow there: taken
+# from x = +-2.3 Mm and the offsets of their neighbours (+-0.1 Mm). At 1380 s lines 14-16 merge (+-0.06 Mm). The
+# lines missing at the top have reconnected at the null: line 1 between 1955 and 2185 s, 2 and 3 by 2530 s.
+ERRATUM_FIG3_LINES = {
+    1380: {1: 6.09, 2: 5.37, 3: 4.80, 4: 4.28, 5: 3.82, 6: 3.39, 7: 3.02, 8: 2.70, 9: 2.39, 10: 2.10, 11: 1.87,
+           12: 1.64, 13: 1.38, 14: 1.16, 15: 0.98, 16: 0.80, 17: 0.60},
+    1610: {1: 8.76, 2: 7.67, 3: 6.70, 4: 5.89, 5: 5.17, 6: 4.54, 7: 3.99, 8: 3.48, 9: 3.05, 10: 2.70, 11: 2.33,
+           12: 2.01, 13: 1.75, 14: 1.52, 15: 1.26, 16: 0.98, 17: 0.72},
+    1955: {1: 11.45, 2: 9.40, 3: 7.90, 4: 6.75, 5: 5.72, 6: 4.91, 7: 4.22, 8: 3.65, 9: 3.12, 10: 2.73, 11: 2.33,
+           12: 1.98, 13: 1.70, 14: 1.44, 15: 1.18, 16: 0.92, 17: 0.66},
+    2185: {2: 11.1, 3: 8.88, 4: 7.27, 5: 6.03, 6: 5.03, 7: 4.22, 8: 3.59, 9: 3.01, 10: 2.53, 11: 2.16, 12: 1.81,
+           13: 1.49, 14: 1.24, 15: 1.01, 16: 0.78, 17: 0.49},
+    2530: {4: 9.17, 5: 7.30, 6: 5.95, 7: 4.86, 8: 3.99, 9: 3.30, 10: 2.73, 11: 2.27, 12: 1.93, 13: 1.55, 14: 1.26,
+           15: 1.01, 16: 0.75, 17: 0.40}}
+# The same lines in the overlying field (above the null) on x = 0, and the O-point of the tube (its axis)
+ERRATUM_FIG3_OVERLYING = {920: {1: 9.74, 2: 13.68}, 1380: {1: 9.57, 2: 13.07, 3: 16.98},
+                          1610: {1: 11.64, 2: 14.63, 3: 18.19}, 1955: {1: 13.51, 2: 16.0, 3: 19.31}, 2185: {2: 16.41}}
+ERRATUM_FIG3_AXIS = {1380: 0.46, 1610: 0.52, 1955: 0.46, 2185: 0.29, 2530: 0.23}
 # log10 beta at x = 0 for the medium quadrupole ("98 G", long dashes of Fig. 3(b))
 PAPER_FIG3B_QUAD98 = np.array([
     [-3.0, 4.839], [-0.8, 4.394], [-0.5, 4.202], [0.0, 3.496], [0.5, 2.280], [1.0, 1.144], [1.5, 0.216],
@@ -182,6 +218,7 @@ def load(path, names):
     g = read_pvtu(path, set(names) | {"Bx", "By"})
     g["X"] = g["xc"] * L0_MM
     g["Y"] = g["yc"] * L0_MM
+    g["dir"] = os.path.dirname(os.path.abspath(path))
     return g
 
 
@@ -233,7 +270,39 @@ def a_grid(g):
     return A * L0_MM  # flux per unit length in B0 Mm (only the spacing matters)
 
 
+_GL600 = None
+
+
+def quadrupole_az(x, y, qd):
+    """A_z [G Mm] of the case's quadrupole at (x, y) [Mm] (initialize.jl, lk10_quadrupole): harmonic above the
+    source line y = -7.5 Mm, on which A_z = q_d (x/L0)^2 [1 - (x/x_a)^2] for |x| <= x_a = 21 Mm (q_d in G cm), and
+    zero at infinity; 600-point Gauss-Legendre quadrature of its Poisson integral."""
+    global _GL600
+    if _GL600 is None:
+        _GL600 = np.polynomial.legendre.leggauss(600)
+    xa, ys = 21.0, -7.5
+    xi, w = _GL600[0] * xa, _GL600[1] * xa
+    x, y = np.asarray(x, float), np.asarray(y, float)
+    h = (y - ys)[..., None]
+    As = w * (qd * 1e-8) * (xi / L0_MM) ** 2 * (1.0 - (xi / xa) ** 2)
+    return (As * h / ((x[..., None] - xi) ** 2 + h * h)).sum(-1) / np.pi
+
+
+def a_gauged(g):
+    """A_z [G Mm] on the lattice in the gauge of the initial state (A_z -> 0 at infinity), in which the erratum's
+    lines are PAPER_A0 - k PAPER_DA; None for a run without the quadrupole. The flux function of a_grid (zero at
+    the bottom left corner) is shifted so that the top of the column x = 0 has the quadrupole's value: that node
+    is on the closed top wall, where v = 0 keeps A_z at its initial value, 90 Mm from the tube."""
+    d = g.get("dir", "")
+    if _case_value(d, "field", "quadrupole") != "quadrupole":
+        return None
+    A = a_grid(g) * B0_GAUSS
+    ix0 = np.argmin(np.abs(g["X"]))
+    return A + (quadrupole_az(g["X"][ix0], g["Y"][-1], float(_case_value(d, "qd", "5.85e7"))) - A[-1, ix0])
+
+
 LINE_WIDTH = 0.9       # field lines, points (--lw)
+PAPER_LINES = False    # --paper-lines: the field lines of the maps are the erratum's (PAPER_A0 - k PAPER_DA)
 PREFIX = "flux_emergence_Leake2010_"   # every figure is <PREFIX><variable>.<format> (--prefix)
 
 
@@ -242,7 +311,14 @@ def fig_path(a, variable, ext=None):
 
 
 def field_lines(ax, g, levels, color="w", lw=None, alpha=1.0):
-    A = a_grid(g)
+    if isinstance(levels, str):            # "paper": the erratum's own lines, PAPER_A0 - k PAPER_DA (--paper-lines)
+        A = a_gauged(g)
+        if A is None:
+            raise SystemExit("--paper-lines: the erratum's levels (its Fig. 3) are those of a quadrupole run")
+        k = np.arange(np.floor((PAPER_A0 - np.nanmax(A)) / PAPER_DA), np.ceil((PAPER_A0 - np.nanmin(A)) / PAPER_DA) + 1)
+        levels = np.sort(PAPER_A0 - k * PAPER_DA)
+    else:
+        A = a_grid(g)
     ax.contour(g["X"], g["Y"], A, levels=levels, colors=color, linewidths=LINE_WIDTH if lw is None else lw,
                linestyles="solid", alpha=alpha)
     return A
@@ -346,7 +422,10 @@ def draw_map(ax, g, spec, clim, levels, xlim, ylim, arrows=()):
 
 
 def a_levels(g, xlim, ylim, n):
-    """n equally spaced levels of A_z over the window of the first snapshot ("constant contour intervals")."""
+    """n equally spaced levels of A_z over the window of the first snapshot ("constant contour intervals"); with
+    --paper-lines the erratum's own levels instead (field_lines draws them in the gauge of a_gauged)."""
+    if PAPER_LINES:
+        return "paper"
     A = a_grid(g)
     mx = (g["X"] >= xlim[0]) & (g["X"] <= xlim[1])
     my = (g["Y"] >= ylim[0]) & (g["Y"] <= ylim[1])
@@ -584,6 +663,96 @@ def cmd_axis(a):
     ax.legend(fontsize=7); ax.grid(alpha=0.3)
     fig.tight_layout()
     out = fig_path(a, "axis")
+    fig.savefig(out, dpi=a.dpi); plt.close(fig)
+    print("wrote", out)
+
+
+def tube_axis_initial(tube, mcz=1.3):
+    """B_z/rho [G per photospheric density] at the axis of the initial tube (initialize.jl, lk10_tube_field, the
+    tube in thermal equilibrium at y_t = -1.8 Mm): what the plasma at the axis keeps in ideal 2.5D MHD."""
+    g = G_EXACT
+    B0, a, c1, c2, yt = 7800.0 / B0_GAUSS, 2.0, 1.0, 10.0, -12.0
+    T = 1.0 - g * yt / (mcz + 1.0)
+    k0, c = 2.0 / a ** 2, 1.0 / a
+    I = {1: 1.0 / k0, 2: 1.0 / k0 - 2.0 / (k0 + 1.0 / c1 ** 2) + 1.0 / (k0 + 2.0 / c1 ** 2),
+         3: 1.0 / (k0 + 2.0 / c2 ** 2)}.get(tube)
+    if I is None:
+        return np.nan
+    p = T ** (mcz + 1.0) - 0.5 * B0 ** 2 + 0.5 * c * c * B0 * B0 * I
+    return 7800.0 / (p / T)
+
+
+def core_row(g, mcz=1.3):
+    """The plasma at the tube axis (the O-point of the in-plane field on x = 0): height [Mm], log10 rho, its
+    density over the reference atmosphere's at that height, T [K], B_z [G], B_z/rho [G per photospheric density],
+    the in-plane flux around the axis (A_z far above minus A_z at the axis, G Mm), and over the tube (B_z above
+    2 % of its peak) int B_z^2 dA [G^2 Mm^2] and the flux-weighted mean of B_z/rho. In ideal 2.5D MHD the plasma
+    at the O-point keeps its B_z/rho (no in-plane field there to shear it), the in-plane flux around the axis is
+    kept, and so are the axial flux and the mass inside every closed field line; the density deficit against
+    the atmosphere is the buoyancy."""
+    ix0 = np.argmin(np.abs(g["X"])); Y = g["Y"]
+    ya = axis_height(g)
+    L = grid2d(g, g["fields"]["log10rho_cgs"])
+    BZ = grid2d(g, g["fields"]["Bz"]) * B0_GAUSS
+    A = a_grid(g)[:, ix0] * B0_GAUSS
+    if not np.isfinite(ya):
+        return None
+    at = lambda F: float(np.interp(ya, Y, F[:, ix0]))
+    rho = 10.0 ** at(L) / 2.02e-7
+    rhoe = _ref_atmos(np.array([ya / L0_MM]), mcz)[0][0]
+    R = 10.0 ** L / 2.02e-7
+    tube = BZ > 0.02 * BZ.max()
+    w = np.outer(_trapw(Y), _trapw(g["X"]))
+    T = at(grid2d(g, g["fields"]["T"])) * 5700.0 if "T" in g["fields"] else np.nan
+    return dict(axis=ya, logrho=at(L), dens=rho / rhoe, T=T, bz=at(BZ), q=at(BZ) / rho,
+                flux=A[-1] - float(np.interp(ya, Y, A)), ebz=float((w * BZ ** 2)[tube].sum()),
+                qmean=float((w * BZ * BZ / R)[tube].sum() / (w * BZ)[tube].sum()))
+
+
+def cmd_core(a):
+    """What the tube keeps on its way up (core_row), snapshot by snapshot, against the initial tube and against
+    the erratum's axis (its Fig. 2(a), field-free corona, and the O-point of its Fig. 3)."""
+    fig, axs = plt.subplots(1, 3, figsize=(12.5, 3.8))
+    for spec in a.runs:
+        lab, _, path = spec.rpartition("=")
+        lab = lab or os.path.basename(path.rstrip("/"))
+        items = runs_of(path)
+        d0 = os.path.dirname(os.path.abspath(items[0][1]))
+        mcz = float(_case_value(d0, "mcz", "1.3"))
+        tube = int(float(_case_value(d0, "tube", "2")))
+        q0 = tube_axis_initial(tube, mcz) if _case_value(d0, "tube_eq", "thermal") == "thermal" else np.nan
+        rows = [(t, core_row(load(f, ["Bz", "log10rho_cgs", "T"]), mcz)) for t, f in items]
+        rows = [(t, r) for t, r in rows if r is not None]
+        if not rows:
+            print(f"--- {lab}: no tube axis found"); continue
+        T = np.array([t for t, _ in rows]); col = lambda k: np.array([r[k] for _, r in rows])
+        first = rows[0][1]
+        np.savetxt(os.path.join(a.outdir, f"core_{lab.replace(' ', '_')}.csv"),
+                   np.c_[T, col("axis"), col("logrho"), col("dens"), col("T"), col("bz"), col("q"), col("flux"), col("ebz"), col("qmean")],
+                   header="t [s], axis [Mm], log10 rho, rho/rho_e, T [K], B_z [G], B_z/rho [G per rho_ph], in-plane flux "
+                          "around the axis [G Mm], int B_z^2 dA over the tube [G^2 Mm^2], flux-weighted mean B_z/rho", delimiter=",")
+        print(f"--- {lab}: the plasma at the tube axis; B_z/rho of the initial tube {q0:.0f} G per photospheric density "
+              f"(tube {tube}), kept at the axis in ideal MHD")
+        print(f"{'t [s]':>7} {'axis Mm':>8} {'log rho':>8} {'rho/rho_e':>9} {'T K':>8} {'Bz G':>7} {'Bz/rho':>8} {'/initial':>8} "
+              f"{'in-plane flux G Mm':>19} {'/first':>6} {'int Bz^2':>9} {'mean Bz/rho':>11}")
+        for t, r in rows:
+            print(f"{t:7.0f} {r['axis']:8.2f} {r['logrho']:8.2f} {r['dens']:9.3f} {r['T']:8.0f} {r['bz']:7.0f} {r['q']:8.0f} "
+                  f"{r['q'] / q0:8.2f} {r['flux']:19.1f} {r['flux'] / first['flux']:6.3f} {r['ebz'] / first['ebz']:9.3f} "
+                  f"{r['qmean'] / first['qmean']:11.3f}")
+        axs[0].plot(T, col("axis"), "-o", ms=3, label=lab)
+        axs[1].plot(T, col("q") / q0, "-o", ms=3, label=lab)
+        axs[2].plot(T, col("dens"), "-o", ms=3, label=lab)
+    axs[0].plot(*ERRATUM_FIG2A_TUBE2.T, "g--", lw=1.2, label="Erratum Fig. 2(a), low tension")
+    axs[0].plot(list(ERRATUM_FIG3_AXIS), list(ERRATUM_FIG3_AXIS.values()), "ks", mfc="none", ms=6, label="Erratum Fig. 3, O-point")
+    axs[0].set_ylabel("height of the axis (Mm)"); axs[0].set_ylim(-2.0, 1.0)
+    axs[1].axhline(1.0, color="k", lw=0.6)
+    axs[1].set_ylabel(r"$B_z/\rho$ at the axis / initial tube (1 in ideal MHD)"); axs[1].set_ylim(0, 1.2)
+    axs[2].axhline(1.0, color="k", lw=0.6)
+    axs[2].set_ylabel(r"$\rho$ at the axis / atmosphere at that height"); axs[2].set_yscale("log")
+    for ax in axs:
+        ax.set_xlabel("Time (s)"); ax.set_xlim(0, a.tmax); ax.grid(alpha=0.3); ax.legend(fontsize=6)
+    fig.tight_layout()
+    out = fig_path(a, "core")
     fig.savefig(out, dpi=a.dpi); plt.close(fig)
     print("wrote", out)
 
@@ -836,6 +1005,115 @@ def cmd_null(a):
         ax.set_xlabel("Time (s)"); ax.set_xlim(0, 2700); ax.grid(alpha=0.3); ax.legend(fontsize=6)
     fig.tight_layout()
     out = fig_path(a, "null")
+    fig.savefig(out, dpi=a.dpi); plt.close(fig)
+    print("wrote", out)
+
+
+def lines_row(g):
+    """On x = 0, in the gauge of a_gauged: the tube axis and the top of the emerged flux (as null_row), A_z there,
+    and the heights of the erratum's field lines PAPER_A0 - k PAPER_DA: in the emerged flux (between the axis and
+    the top, where A_z rises with height) and in the overlying field (from the top to 40 Mm, where it falls)."""
+    A2 = a_gauged(g)
+    if A2 is None:
+        raise SystemExit("lines: the erratum's levels (its Fig. 3) are those of a quadrupole run")
+    ix0 = np.argmin(np.abs(g["X"]))
+    Y, A = g["Y"], A2[:, ix0]
+    Bx = grid2d(g, g["fields"]["Bx"])[:, ix0]
+    axis = axis_height(g)
+    tops = [y for y in _bx_crossings(Y, Bx, -1) if y > max(axis if np.isfinite(axis) else 0.0, 1.0) and y < 40.0]
+    top = tops[0] if tops else np.nan
+    out = dict(axis=axis, top=top, Atop=np.nan, Aaxis=np.nan, dome={}, over={}, ntop=len(tops))
+    if not (np.isfinite(top) and np.isfinite(axis)):
+        return out
+    Ai = lambda y: float(np.interp(y, Y, A))
+    out["Atop"], out["Aaxis"] = Ai(top), Ai(axis)
+
+    def cross(level, lo, hi, rising):
+        m = (Y > lo) & (Y < hi)
+        y, v = np.r_[lo, Y[m], hi], np.r_[Ai(lo), A[m], Ai(hi)]
+        for i in range(len(y) - 1):
+            if (v[i] < level <= v[i + 1]) if rising else (v[i] > level >= v[i + 1]):
+                return y[i] + (level - v[i]) * (y[i + 1] - y[i]) / (v[i + 1] - v[i])
+        return np.nan
+    for k in range(0, 30):
+        lev = PAPER_A0 - k * PAPER_DA
+        if out["Aaxis"] < lev < out["Atop"]:
+            out["dome"][k] = cross(lev, axis, top, True)
+        if lev < out["Atop"] and k <= 6:
+            out["over"][k] = cross(lev, top, 40.0, False)
+    return out
+
+
+def cmd_lines(a):
+    """The erratum's Fig. 3 line by line. Its field lines are contours of A_z at a constant interval, at levels
+    known in this case's gauge (PAPER_DA, PAPER_A0), so each line of the figure is a line of the run: this prints
+    the height on x = 0 of every one of them in the run beside the height read off the figure, at the figure's
+    times, with the height of the tube axis, the top of the emerged flux and the flux reconnected there (the fall
+    of A_z at the top from the null's 820.49 G Mm); writes them for every snapshot (CSV) and draws both."""
+    cmap = plt.get_cmap("viridis")
+    col = lambda k: cmap((k - 1) / 16.0)
+    fig, axs = plt.subplots(1, 2, figsize=(11.5, 4.6))
+    ptimes = sorted(ERRATUM_FIG3_LINES)
+    want = [float(t) for t in a.times.split(",")] if a.times else ptimes
+    for ir, spec in enumerate(a.runs):
+        lab, _, path = spec.rpartition("=")
+        lab = lab or os.path.basename(path.rstrip("/"))
+        ls = ("-", "--", ":", "-.")[ir % 4]
+        rows = [(t, lines_row(load(f, ["Bz"]))) for t, f in runs_of(path)]
+        T = np.array([t for t, _ in rows])
+        H = np.array([[r["dome"].get(k, np.nan) for k in range(1, 18)] for _, r in rows])
+        O = np.array([[r["over"].get(k, np.nan) for k in range(1, 4)] for _, r in rows])
+        name = lab.replace(" ", "_")
+        np.savetxt(os.path.join(a.outdir, f"lines_{name}.csv"),
+                   np.c_[T, [r["axis"] for _, r in rows], [r["top"] for _, r in rows], [r["Atop"] for _, r in rows], H, O],
+                   header="t [s], axis [Mm], top of the emerged flux [Mm], A_z there [G Mm], heights on x = 0 [Mm] of the "
+                          "erratum's lines 1..17 in the emerged flux, and of lines 1..3 in the overlying field", delimiter=",")
+        print(f"--- {lab}: the erratum's field lines (A_z = {PAPER_A0:g} - {PAPER_DA:g} k G Mm) on x = 0, heights in Mm")
+        for tq in want:
+            i = int(np.argmin(np.abs(T - tq)))
+            if abs(T[i] - tq) > 1.0 and not NEAREST:
+                print(f"   no snapshot at {tq:g} s (the snapshots run from {T[0]:.0f} to {T[-1]:.0f} s)")
+                continue
+            r = rows[i][1]
+            tp = min(ptimes, key=lambda t: abs(t - tq))
+            pl = ERRATUM_FIG3_LINES[tp] if abs(tp - tq) <= 1.0 else {}
+            po = ERRATUM_FIG3_OVERLYING.get(tp, {}) if abs(tp - tq) <= 1.0 else {}
+            pa = ERRATUM_FIG3_AXIS.get(tp, np.nan) if abs(tp - tq) <= 1.0 else np.nan
+            print(f"   t = {T[i]:.0f} s: axis {r['axis']:.2f} (erratum {pa:.2f}); top of the emerged flux {r['top']:.2f}"
+                  f"{' (+ a rope in the sheet)' if r['ntop'] > 1 else ''}; reconnected there {820.49 - r['Atop']:.0f} G Mm "
+                  f"({(820.49 - r['Atop']) / PAPER_DA:.1f} lines); between axis and top {r['Atop'] - r['Aaxis']:.0f} G Mm")
+            print("     line    A_z   emerged flux: run  erratum   diff  |  overlying: run  erratum   diff")
+            for k in range(1, 18):
+                hr, hp = r["dome"].get(k, np.nan), pl.get(k, np.nan)
+                orr, op = r["over"].get(k, np.nan), po.get(k, np.nan)
+                if not (np.isfinite(hr) or np.isfinite(hp) or np.isfinite(orr) or np.isfinite(op)):
+                    continue
+                f = lambda v, w=7: f"{v:{w}.2f}" if np.isfinite(v) else " " * (w - 1) + "-"
+                print(f"     {k:4d}  {PAPER_A0 - k * PAPER_DA:6.0f}             {f(hr)}  {f(hp)} {f(hr - hp, 6)}  |"
+                      f"         {f(orr) if k <= 6 else '':>7}  {f(op) if k <= 6 else '':>7} {f(orr - op, 6) if k <= 6 else ''}")
+            # the run minus the erratum, line by line
+            ks = [k for k in range(1, 18) if np.isfinite(r["dome"].get(k, np.nan)) and k in pl]
+            if ks:
+                axs[1].plot(ks, [r["dome"][k] - pl[k] for k in ks], ls, marker="o", ms=3,
+                            color=plt.get_cmap("plasma")(ptimes.index(tp) / len(ptimes)), label=f"{lab}, {tp} s")
+        for k in range(1, 18):
+            axs[0].plot(T, H[:, k - 1], ls, color=col(k), lw=1.0, label=lab if k == 1 else None)
+        axs[0].plot(T, [r["axis"] for _, r in rows], ls, color="k", lw=1.4)
+    for tp in ptimes:
+        for k, h in ERRATUM_FIG3_LINES[tp].items():
+            axs[0].plot(tp, h, "s", color=col(k), mfc="none", ms=5)
+        axs[0].plot(tp, ERRATUM_FIG3_AXIS[tp], "ks", ms=5)
+    axs[0].plot([], [], "s", color="0.4", mfc="none", ms=5, label="Erratum Fig. 3 (same colours)")
+    axs[0].plot([], [], "ks", ms=5, label="tube axis (black)")
+    axs[0].set_xlabel("Time (s)"); axs[0].set_ylabel("height on x = 0 of field lines 1 (top) to 17 (Mm)")
+    axs[0].set_xlim(900, 2600); axs[0].set_ylim(0, 12); axs[0].grid(alpha=0.3); axs[0].legend(fontsize=7, loc="upper left")
+    axs[1].axhline(0.0, color="k", lw=0.6)
+    axs[1].set_xlabel("field line (1: next to the null; 17: next to the axis)"); axs[1].set_ylabel("run - erratum (Mm)")
+    axs[1].grid(alpha=0.3)
+    if axs[1].get_legend_handles_labels()[0]:
+        axs[1].legend(fontsize=7)
+    fig.tight_layout()
+    out = fig_path(a, "lines")
     fig.savefig(out, dpi=a.dpi); plt.close(fig)
     print("wrote", out)
 
@@ -1599,7 +1877,7 @@ def cmd_profiles(a):
 
 
 def main():
-    global FOLLOW_CHAIN, NEAREST, LINE_WIDTH, PREFIX
+    global FOLLOW_CHAIN, NEAREST, LINE_WIDTH, PREFIX, PAPER_LINES
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--outdir", default="figs_leake2010")
     p.add_argument("--format", default="png")
@@ -1608,6 +1886,8 @@ def main():
     p.add_argument("--nearest", action="store_true", help="the nearest snapshot for a time the run has none at")
     p.add_argument("--lw", type=float, default=LINE_WIDTH, help="width of the field lines, in points")
     p.add_argument("--prefix", default=PREFIX, help="start of every figure's file name (default flux_emergence_Leake2010_)")
+    p.add_argument("--paper-lines", action="store_true",
+                   help="the field lines of the maps are the erratum's own (A_z = 820 - 61.35 k G Mm; quadrupole runs)")
     # the same options after the command name (they keep the value given before it, if any)
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--outdir", default=argparse.SUPPRESS)
@@ -1617,6 +1897,7 @@ def main():
     common.add_argument("--nearest", action="store_true", default=argparse.SUPPRESS)
     common.add_argument("--lw", type=float, default=argparse.SUPPRESS)
     common.add_argument("--prefix", default=argparse.SUPPRESS)
+    common.add_argument("--paper-lines", action="store_true", default=argparse.SUPPRESS)
     sub = p.add_subparsers(dest="cmd", required=True)
     for name, fn in (("density", cmd_density), ("shear", cmd_shear)):
         s = sub.add_parser(name, parents=[common]); s.set_defaults(fn=fn)
@@ -1715,6 +1996,12 @@ def main():
     s = sub.add_parser("null", parents=[common]); s.set_defaults(fn=cmd_null)
     s.add_argument("runs", nargs="+", help="RUN or LABEL=RUN")
     s.add_argument("--thr", type=float, default=-13.0, help="log10 rho threshold of the dome top [g cm^-3]")
+    s = sub.add_parser("core", parents=[common]); s.set_defaults(fn=cmd_core)
+    s.add_argument("runs", nargs="+", help="RUN or LABEL=RUN")
+    s.add_argument("--tmax", type=float, default=2600.0, help="limit of the time axis [s]")
+    s = sub.add_parser("lines", parents=[common]); s.set_defaults(fn=cmd_lines)
+    s.add_argument("runs", nargs="+", help="RUN or LABEL=RUN")
+    s.add_argument("--times", default="", help="comma-separated times in s of the tables (default: those of the erratum's Fig. 3)")
     s = sub.add_parser("eshear", parents=[common]); s.set_defaults(fn=cmd_eshear)
     s.add_argument("runs", nargs="+", help="RUN or LABEL=RUN")
     s = sub.add_parser("profiles", parents=[common]); s.set_defaults(fn=cmd_profiles)
@@ -1732,7 +2019,7 @@ def main():
     s.add_argument("--tmin", type=float, default=None, help="only snapshots from TMIN s")
     s.add_argument("--tfloor", type=float, default=0.1, help="the run's temperature floor (T_ph): count the nodes at it")
     a = p.parse_args()
-    FOLLOW_CHAIN, NEAREST, LINE_WIDTH, PREFIX = not a.no_chain, a.nearest, a.lw, a.prefix
+    FOLLOW_CHAIN, NEAREST, LINE_WIDTH, PREFIX, PAPER_LINES = not a.no_chain, a.nearest, a.lw, a.prefix, a.paper_lines
     os.makedirs(a.outdir, exist_ok=True)
     a.fn(a)
 

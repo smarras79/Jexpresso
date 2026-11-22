@@ -425,9 +425,11 @@ paper's dissipation and its energy relaxation:
   `momentum` meets it three times. The default is unchanged to the bit (this case in its five-stage
   and two-stage settings, `fluxEmergenceSon2025DSGS` and
   `orszagTangBormanis2024`, 40–100 steps with an off-grid output, every file
-  and the totals of every variable at every step). `velocity` is opt-in until
-  the cluster run from 1044 s shows what it does to the dome; `drain` reads
-  the form from `lk10_case.txt` and evaluates that operator.
+  and the totals of every variable at every step). On the cluster (REF 4, from
+  1044 s) `velocity` halves the plasma left above 3 Mm and keeps it cold, and
+  the dome is no higher for it ("The erratum's Fig. 3 line by line" in
+  Verification): it stays opt-in. `drain` reads the form from `lk10_case.txt`
+  and evaluates that operator.
 
 ## What is not in the paper, and what was done
 
@@ -853,6 +855,9 @@ python3 tools/plot_leake2010.py profiles $RUN            # Fig. 3(a,b) at t = 0,
 python3 tools/plot_leake2010.py forces   $RUN --rope     # Erratum Fig. 4: vertical forces through the flux rope (default: x = 0, 2185 s, 10-17 Mm)
 python3 tools/plot_leake2010.py diag     $RUN --dt <Δt>  # per snapshot: largest speed, CFL, current; smallest p/p0, beta
 python3 tools/plot_leake2010.py null     base=$RUN       # on x = 0 vs time: the null above the dome, the flux below it, the mass lifted
+python3 tools/plot_leake2010.py lines    run=$RUN        # Erratum Fig. 3 line by line: the height on x = 0 of each of its field lines, in the run and in the figure
+python3 tools/plot_leake2010.py core     run=$RUN        # the plasma at the tube axis vs time: height, density against the atmosphere's, B_z/rho against the initial tube's
+python3 tools/plot_leake2010.py --paper-lines density $RUN   # the density figure with exactly the erratum's field lines (any map takes --paper-lines)
 python3 tools/plot_leake2010.py mass     $RUN            # the plasma above 3 Mm: mass budget, temperature, pressure, draining, heating time
 python3 tools/plot_leake2010.py drain    $RUN            # why that plasma drains or not: temperature, field it sits on, speed and support along the field
 python3 tools/plot_leake2010.py heat     $RUN            # what changes its temperature: each term as the code applies it, against the observed rate
@@ -864,16 +869,19 @@ bash tools/lk10_report.sh $RUN --base $RUN0 --log job.out            # all of th
 Figures are written to `figs_leake2010/` (`--outdir`) as
 `flux_emergence_Leake2010_<variable>.png` (`--prefix`, `--format`):
 `…_density`, `…_Bz`, `…_mu_dsgs_momentum`, `…_mu_dsgs_induction`,
-`…_mu_dsgs_mass_energy`, `…_dome`, `…_axis`, `…_null`, `…_eshear`, `…_atmos`,
+`…_mu_dsgs_mass_energy`, `…_dome`, `…_axis`, `…_null`, `…_lines`, `…_core`, `…_eshear`, `…_atmos`,
 `…_profiles`. Every map has a title and a labelled colour bar naming what its
 colours show.
 
 `axis` draws the height of the tube's axis (where $B_x$ on $x = 0$ changes sign,
 the paper's definition) against time, with the two curves of the erratum's
 Fig. 2(a). It is the check of the first phase, the rise through the convection
-zone to the surface, which the axis reaches at about 920 s and where it stays;
-the erratum's curves are for a field-free corona, which makes no difference
-below the surface. The curve has one point for every snapshot of the
+zone to the surface, which the erratum's axis reaches at about 920 s; it then
+climbs on, to 0.41 Mm at 1380 s and 0.48 Mm at 1610–1955 s (the same heights
+as the O-point of its Fig. 3, `lines` below), and how far the axis gets above
+the surface is a measure of how much of the tube has emerged. The erratum's
+curves are for a field-free corona, which makes no difference below the
+surface. The curve has one point for every snapshot of the
 directories given, so a run made in several jobs is `axis LABEL=DIR1,DIR2,...`
 (the command prints the snapshots it read from each); `--tmax` is only the
 limit of the time axis.
@@ -885,6 +893,43 @@ Mm at 1955 s, 14.7 Mm at 2185 s), and at 2530 s the base of a column that has
 emptied (3.65 Mm), the rope having slid to $x$ = 4.5 Mm. Between 1610 and
 1955 s the erratum's dome loses most of its plasma (its density falls about
 thirtyfold): the rise to 12–13 Mm is that of a dome that has drained.
+
+`lines` compares the run with the erratum's Fig. 3 field line by field line.
+The figure's lines are contours of $A_z$ at a constant interval, and their
+levels are known in this case's gauge ($A_z\to0$ at infinity, 820.49 G Mm at the
+quadrupole's null): at the 83 places where the lines of panel (a) cross
+$x = \pm8,\dots,\pm12$ Mm, far from the tube at 920 s, the case's analytic
+quadrupole takes the values $820.0 - 61.35\,k$ G Mm to 2 G Mm (rms) — which
+also says that the quadrupole here is the paper's. Line 0 hugs the separatrix;
+lines 1, 2, … lie below it in the emerged flux and above it in the overlying
+field, and the initial tube holds 17 of them (1044 G Mm between its axis and
+the null). A line is a material line until it reconnects, so its height on
+$x = 0$ in the figure is a measurement of the paper's run. The tool holds them
+for 1380–2530 s (`ERRATUM_FIG3_LINES`; the lines hidden by the figure's $B_x$
+arrows are taken from $x = \pm2.3$ Mm) with the O-point of the tube
+(`ERRATUM_FIG3_AXIS`: 0.46, 0.52, 0.46 Mm at 1380, 1610, 1955 s, against 0.41,
+0.48, 0.48 Mm in the erratum's Fig. 2(a)). The command prints, at the figure's
+times, the height of every line in the run beside the figure's, the axis, the
+top of the emerged flux and the flux reconnected there ($820.49 - A_z$ at the
+top); it writes the heights for every snapshot (`lines_<label>.csv`) and draws
+them against time. The run's $A_z$ is the flux function of its field, shifted
+so that the top of the column $x = 0$ (on the closed wall, where it cannot
+change) has the quadrupole's value: on the initial state it is the analytic
+$A_z$ to 0.03 G Mm, on REF 1 and on REF 4. `--paper-lines`, before or after
+the name of any map's command, draws exactly these lines instead of 45
+equally spaced ones, so that a panel compares with the erratum's line for line.
+
+`core` follows the plasma at the tube axis (the O-point of the in-plane field
+on $x = 0$): its height, with the erratum's Fig. 2(a) and the O-point of its
+Fig. 3; its density over the atmosphere's at that height, which is the tube's
+buoyancy (below 1: lighter); its $B_z/\rho$ over that of the initial tube
+(1094 G per photospheric density for tube 2); the in-plane flux around the
+axis; and over the whole tube $\int B_z^2\,dA$ and the flux-weighted mean of
+$B_z/\rho$. In ideal 2.5D MHD the plasma at the O-point keeps its $B_z/\rho$
+(there is no in-plane field there to carry $B_z$ away along it) and the flux
+around the axis is kept: what a run loses of them, it loses to its
+resistivity and its mass diffusion. A table, `core_<label>.csv` and
+`…_core.png`.
 
 `drain` says why the lifted plasma drains or does not. For the plasma denser
 than $10^{-13}$ g cm⁻³ above 3 Mm, per snapshot: its mass; its median
@@ -1279,6 +1324,102 @@ Short runs on 4 cores; the full runs are for a cluster (above).
   with `ETA=induction`, the resistivity 0.25 against 0.018 — the element
   residual of the induction equation is larger than the legacy sensor's
   assembled one.
+
+- **The erratum's Fig. 3 line by line: less of the tube emerges here**
+  (22 Nov 2026; `lines`, `core`). Two cluster runs on REF 4 continue the same
+  run from 920 s: with the DynSGS viscosity on the momentum (20 Nov, to 2530 s)
+  and, from 1044 s, on the velocity (`JEXPRESSO_LK10_VISC=velocity`, 22 Nov, to
+  2530 s).
+
+  *The velocity form drains the dome and does not raise it.* Against the
+  momentum form, the plasma above 3 Mm (in units of 7.64 × 10⁴ g cm⁻¹) is 110
+  against 166 at 1380 s, 75 against 130 at 1610 s and 66 against 133 at 1955 s,
+  its flanks stay at 0.3–3 × 10⁴ K where they had reached 3.5–6.6 × 10⁴ K, and
+  the interior of the dome falls to log ρ = −12.3 to −12.8 by 1955 s, the
+  erratum's level (−12.6). The top of the dome is at 8.0, 8.4, 8.3, 9.0 Mm at
+  1380, 1610, 1955, 2185 s (momentum form: 7.7, 8.9, 9.6, 8.5; erratum: 7.5,
+  10.4, 13.05, 14.7): the drained dome does not rise either.
+
+  *Weight is not what holds it.* The erratum's density on the centre line
+  (its colours turned back into log ρ, median over $\lvert x\rvert \le 3$ Mm; the
+  figure's atmosphere far from the tube is the case's to 0.07 Mm in height) is
+  −10.5 inside the dome and −10.1 in a shell under its top at 1380 s, −11.4 and
+  −11.0 at 1610 s, −12.6 and −12.0 at 1955 s: the plasma above 3 Mm weighs
+  440, 120, 23 and 7 dyn cm⁻² at 1380, 1610, 1955 and 2185 s. In the runs it
+  weighs 276, 210 and 8 dyn cm⁻² (velocity form) and 185, 35 and 87
+  (momentum form) at the first three. The erratum's dome is the heaviest of the
+  three at 1380 s and rises 3 Mm in the next 230 s; the momentum-form dome has
+  a third of its weight at 1610 s and has stopped.
+
+  *The field lines.* Heights on $x = 0$ of the erratum's lines (`lines` above;
+  line 1 is next to the null, 17 next to the axis), read off its figure, and
+  the same lines in the two runs (from the $x = 0$ tables of their reports,
+  $B_x$ every 0.5 Mm; `lines` on the snapshots is exact):
+
+  | line | 2 | 4 | 6 | 8 | 10 | 12 | 14 | axis |
+  |---|---|---|---|---|---|---|---|---|
+  | 1380 s, erratum | 5.37 | 4.28 | 3.39 | 2.70 | 2.10 | 1.64 | 1.16 | 0.46 |
+  | velocity form | 5.36 | 3.88 | 2.87 | 2.14 | 1.59 | 1.12 | 0.69 | 0.08 |
+  | momentum form | 5.16 | 3.74 | 2.79 | 2.09 | 1.56 | 1.12 | 0.70 | 0.00 |
+  | 1610 s, erratum | 7.67 | 5.89 | 4.54 | 3.48 | 2.70 | 2.01 | 1.52 | 0.52 |
+  | velocity form | 5.69 | 3.96 | 2.85 | 2.08 | 1.53 | 1.10 | 0.68 | 0.07 |
+  | momentum form | 5.99 | 4.06 | 2.90 | 2.12 | 1.55 | 1.12 | 0.71 | 0.07 |
+  | 1955 s, erratum | 9.40 | 6.75 | 4.91 | 3.65 | 2.73 | 1.98 | 1.44 | 0.46 |
+  | velocity form | 6.69 | 3.56 | 2.30 | 1.58 | 1.13 | 0.79 | 0.47 | 0.04 |
+  | momentum form | 5.34 | 3.24 | 2.18 | 1.52 | 1.11 | 0.78 | 0.45 | 0.01 |
+
+  At 1380 s, when the tops of the three domes agree, every line from the
+  fourth down already lies 0.4–0.6 Mm lower in the runs, and so does the axis
+  (0.0–0.1 Mm against 0.46 Mm; the erratum's Fig. 2(a) has 0.41 Mm). From then
+  on the erratum's lines all rise, the low ones too (line 13 from 1.38 to
+  1.75 Mm by 1610 s), and its axis reaches 0.5 Mm; the runs' lines stay where
+  they are to 1610 s and sink afterwards. The flux of the emerged system above
+  3 Mm (up to the null) is 318–341 G Mm in the runs at 1380 s and 321–332 at
+  1610 s, where the erratum has 433 and 561 less what has reconnected (less
+  than one line, 61 G Mm, through 1955 s: its line 1 is still there); above
+  5 Mm at 1955 s, 55–61 against 361. The dome of the runs is the top of a tube
+  that has come up 0.4 Mm less and then stops emerging; its field at 3–6 Mm is
+  0.7 of the erratum's at 1380 s (133 G against ~180 G at 3 Mm, from the line
+  spacing), and at 1955 s half of it at 5 Mm and a fifth at 7–8 Mm. Reconnection is not ahead of the
+  erratum's until then: the runs have reconnected 7–18 G Mm at 1380 s, 15–33
+  at 1610 s and 79–108 at 1955 s. The shear field is not what lifts the
+  erratum's dome either: the erratum has 0.3–0.5% of the magnetic energy above
+  5 Mm in $B_z$.
+
+  *Why: the tube loses its buoyancy on the way up* (REF 1, field-free corona,
+  4 ranks; `core`). At the O-point of the tube there is no in-plane field, so
+  in ideal 2.5D MHD the plasma there keeps its $B_z/\rho$, and with it the
+  magnetic pressure that makes it lighter than its surroundings. In the REF 1
+  run of "Rise through the convection zone" above it has 0.77 of the initial
+  value at 46 s, 0.61 at 420 s and 0.51 at 1000 s; the in-plane flux around
+  the axis falls to 0.74; and the density at the axis, 0.69 of the atmosphere's
+  at $t = 0$, is 0.91 of it at 420 s — where the axis leaves the erratum's
+  curve — 0.98 at 742 s and 1.05 at 1000 s: the tube reaches the surface with
+  no buoyancy left. The rate is that of the DynSGS resistivity at the tube
+  (0.018–0.03 $L_0v_0$, 17–29 km² s⁻¹, with either sensor): the peak of a
+  Gaussian of radius $a$ decays at $4\eta/a^2$, which summed over the run gives
+  a fall of $\ln(B_z/\rho)$ of 0.80 against the 0.62 measured. With today's
+  deck the first 93 s are
+
+  | at 93 s | $B_z/\rho$ at the axis / initial | in-plane flux / initial | $\rho/\rho_e$ at the axis |
+  |---|---|---|---|
+  | `RHOFAC=1` | 0.76 | 0.981 | 0.831 |
+  | `RHOFAC=0.1` | 0.78 | 0.968 | 0.819 |
+  | `RHOFAC=0.1`, `ETAFAC=0.1` | 0.87 | 1.018 | 0.793 |
+
+  (0.96 at $t = 0$ is the discrete axis of REF 1). The first seconds cost the
+  most: the tube contracts when the relaxation cools it, the DynSGS
+  coefficients are 0.15–0.18 while it does, and a REF 1 run of 17 Nov had lost
+  7.5% after 6 s; at 46 s the three variants have lost 17, 13 and 9%. After
+  that the loss is 1.4 × 10⁻³ s⁻¹ with the full resistivity and nothing
+  measurable with a tenth of it (0.87 at 46 and at 93 s; the density deficit
+  stays at 20.7%, the value the relaxation leaves, where it shrinks to 18% and
+  17% in the other two). Lare has no resistivity there at all (the
+  anomalous one never switches on) and the erratum's figure shows it: its
+  line 17, within 3 G Mm of the axis at $t = 0$ (of 1044 G Mm), is there in
+  every panel to 2530 s. On REF 4 the in-plane flux between axis and null is 1044 G Mm at
+  $t = 0$, 1001 at 920 s and 983 at 1380 s; what its axis has kept of
+  $B_z/\rho$ is to be read with `core` on its snapshots.
 
 ## Files
 
