@@ -1516,6 +1516,55 @@ def cmd_forces(a):
     print("wrote", out)
 
 
+def cmd_balance(a):
+    """What holds the dome: the vertical force balance on a vertical line, as a table. At each requested time and
+    every --dy Mm between --ymin and --ymax on the mesh column nearest x = --x: log10 rho, B_x [G], v_y [km/s], and
+    the four vertical force densities of the erratum's Fig. 4 [1e-5 dyn cm^-3] (gravity -rho g, the magnetic tension
+    (B.grad)B_y/4pi, the magnetic pressure force -d(B^2/8pi)/dy, the gas pressure force -dP/dy) with their sum, the
+    derivatives being those of the elements. Below it, each force integrated over three layers [dyn cm^-2]: from
+    --ybase (3 Mm: the lifted plasma) to the top of the dense plasma (log10 rho > --thr), from there to where B_x
+    changes sign (the top of the emerged field on this line), and from there to ymax (the field above). A dome at rest has a sum near zero in
+    each; the terms say what carries the weight of the lifted plasma and what presses on it from above."""
+    items = runs_of(a.run)
+    for t, f in nearest(items, a.times):
+        g = load(f, ["log10rho_cgs", "p", "v", "Bz"])
+        G = lambda n: grid2d(g, g["fields"][n])
+        Xc, Yc, X, Y = g["xc"], g["yc"], g["X"], g["Y"]
+        i = int(np.argmin(np.abs(X - a.x)))
+        Bx, By, Bz, P, L = G("Bx"), G("By"), G("Bz"), G("p"), G("log10rho_cgs")
+        dx = lambda q: _sem_d(q, Xc, 1)
+        dy = lambda q: _sem_d(q, Yc, 0)
+        grav = -(10.0 ** L[:, i]) * G_SUN / 1e-5
+        tens = (Bx * dx(By) + By * dy(By))[:, i] * FORCE_UNIT
+        magp = -dy(0.5 * (Bx ** 2 + By ** 2 + Bz ** 2))[:, i] * FORCE_UNIT
+        gasp = -dy(P)[:, i] * FORCE_UNIT
+        tot = grav + tens + magp + gasp
+        vy = G("v")[:, i] * V0_KMS
+        bx = Bx[:, i] * B0_GAUSS
+        col = (Y >= a.ymin) & (Y <= a.ymax)
+        dense = col & (L[:, i] > a.thr) & (Y > 1.0)
+        ydome = float(Y[dense].max()) if np.any(dense) else np.nan
+        k = np.where(col & (Y > 1.0) & (bx > 0))[0]            # the emerged field: B_x > 0 above the photosphere
+        yflux = float(Y[k].max()) if k.size else np.nan
+        print(f"--- t = {t:.0f} s, x = {X[i]:.2f} Mm ({os.path.basename(f)}): top of log10 rho > {a.thr:g} at {ydome:.2f} Mm, "
+              f"B_x changes sign at {yflux:.2f} Mm")
+        print(f"{'y Mm':>6} {'log rho':>8} {'Bx G':>8} {'vy km/s':>8} | {'gravity':>9} {'tension':>9} {'mag pres':>9} {'gas pres':>9} {'sum':>9}   [1e-5 dyn cm^-3]")
+        for y in np.arange(a.ymin, a.ymax + 1e-9, a.dy):
+            j = int(np.argmin(np.abs(Y - y)))
+            print(f"{Y[j]:6.2f} {L[j, i]:8.2f} {bx[j]:8.2f} {vy[j]:8.2f} | {grav[j]:9.3g} {tens[j]:9.3g} {magp[j]:9.3g} {gasp[j]:9.3g} {tot[j]:9.3g}")
+        w = _trapw(Y) * 1e3                                    # (1e-5 dyn cm^-3) x Mm -> dyn cm^-2
+        layers = [("ybase to the top of the dense plasma", a.ybase, ydome), ("from there to the sign change of B_x", ydome, yflux),
+                  ("from there to ymax", yflux, a.ymax)]
+        print(f"   integrals [dyn cm^-2]:{'':24} {'gravity':>9} {'tension':>9} {'mag pres':>9} {'gas pres':>9} {'sum':>9}")
+        for name, y0, y1 in layers:
+            if not (np.isfinite(y0) and np.isfinite(y1)) or y1 <= y0:
+                print(f"   {name:<45} (none)")
+                continue
+            m = (Y >= y0) & (Y <= y1)
+            I = [float(np.sum(w[m] * q[m])) for q in (grav, tens, magp, gasp, tot)]
+            print(f"   {name + f' ({y0:.2f}-{y1:.2f} Mm)':<45} " + " ".join(f"{v:9.3g}" for v in I))
+
+
 def cmd_profiles(a):
     items = runs_of(a.run)
     t, f = items[0]
@@ -1627,6 +1676,15 @@ def main():
     s.add_argument("--x", type=float, default=0.0, help="the vertical line, x [Mm] (default 0)")
     s.add_argument("--ylim", type=lambda t: tuple(map(float, t.split(","))), default=(10.0, 17.0), help="heights [Mm] (default 10,17)")
     s.add_argument("--rope", action="store_true", help="the line through this run's flux rope at that time, 7 Mm around it")
+    s = sub.add_parser("balance", parents=[common]); s.set_defaults(fn=cmd_balance)
+    s.add_argument("run")
+    s.add_argument("--times", type=lambda t: [float(x) for x in t.split(",")], default=[1380.0, 1610.0, 1955.0, 2185.0],
+                   help="times [s], comma-separated (default 1380,1610,1955,2185)")
+    s.add_argument("--x", type=float, default=0.0, help="the vertical line, x [Mm] (default 0)")
+    s.add_argument("--ymin", type=float, default=0.0); s.add_argument("--ymax", type=float, default=14.0)
+    s.add_argument("--dy", type=float, default=0.5, help="height step of the table [Mm]")
+    s.add_argument("--thr", type=float, default=-13.0, help="log10 rho of the dense plasma [g cm^-3]")
+    s.add_argument("--ybase", type=float, default=3.0, help="bottom of the first layer of the integrals [Mm]")
     s = sub.add_parser("mass", parents=[common]); s.set_defaults(fn=cmd_mass)
     s.add_argument("run")
     s.add_argument("--ref", default="", help="run whose first snapshot (t = 0) gives the initial pressure and the unit "

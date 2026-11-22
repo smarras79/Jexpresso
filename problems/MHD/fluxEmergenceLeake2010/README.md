@@ -857,6 +857,7 @@ python3 tools/plot_leake2010.py mass     $RUN            # the plasma above 3 Mm
 python3 tools/plot_leake2010.py drain    $RUN            # why that plasma drains or not: temperature, field it sits on, speed and support along the field
 python3 tools/plot_leake2010.py heat     $RUN            # what changes its temperature: each term as the code applies it, against the observed rate
 python3 tools/plot_leake2010.py column   $RUN --times 1380,1610 --x 0   # the state on a vertical line, as a table
+python3 tools/plot_leake2010.py balance  $RUN --times 1380,1610 --x 0   # the vertical forces on that line, and their integrals over the dome
 bash tools/lk10_report.sh $RUN --base $RUN0 --log job.out            # all of these tables and the log's lines in one text file
 ```
 
@@ -942,9 +943,21 @@ finite difference follows): the difference is what the budget misses, the
 temperature floor and its own error. On REF 1 at 920–928 s it is 1 % on the
 flanks and 5 % in the center above 3 Mm.
 
+`balance` is the erratum's Fig. 4 as a table, for the question of what holds
+the dome: on a vertical line, at each time, gravity, the magnetic tension, the
+magnetic pressure force and the gas pressure force against height (10⁻⁵ dyn
+cm⁻³, the elements' derivatives), their sum, and each integrated over three
+layers (dyn cm⁻²): from 3 Mm to the top of the dense plasma, from there to
+where $B_x$ changes sign (the top of the emerged field on that line), and from
+there to 14 Mm (the field above). A dome at rest has a sum near zero in each;
+the terms say what carries the weight of the lifted plasma and what presses on
+it from above. In the initial potential field the tension and the magnetic
+pressure force cancel to six digits.
+
 `tools/lk10_report.sh RUN [--base RUN0] [--log FILE] [--py PYTHON]` writes
 `lk10_report_<run>.txt`: the configuration of each directory of the run, the
-`drain`, `heat`, `mass`, `null` and `dome` tables, `column` at $x$ = 0, 5 and 10 Mm at
+`drain`, `heat`, `mass`, `null` and `dome` tables (the last two with the base
+run beside it), `balance` at $x$ = 0 and 5 Mm, `column` at $x$ = 0, 5 and 10 Mm at
 1380, 1610, 1955 and 2185 s, and from the job's log the set-up, the reports of
 the positivity floors and of the stability cap, the CFL numbers at each
 snapshot and the end of the run. It reads the snapshots only. `--base` is the

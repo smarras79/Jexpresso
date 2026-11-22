@@ -12,7 +12,8 @@
 #   --log    the job's standard output (the file the queue wrote, e.g. slurm-<jobid>.out, on the machine
 #            that ran it); may be given several times
 #   --py     the Python to use (default python3; it needs numpy and matplotlib, as the figures do)
-#   --times  the times [s] of the vertical profiles (default 1380,1610,1955,2185: those the run has)
+#   --times  the times [s] of the vertical profiles and force balances (default 1380,1610,1955,2185: those the
+#            run has)
 #
 # It writes lk10_report_<last directory of RUN>.txt in the current directory and reads the snapshots
 # only: it changes nothing in the run. A few minutes on a full REF 4 run.
@@ -24,12 +25,16 @@ while [ $# -gt 0 ]; do
     --log)   LOGS+=("$2"); shift 2;;
     --py)    PY="$2"; shift 2;;
     --times) TIMES="$2"; shift 2;;
-    -h|--help) sed -n 2,18p "$0"; exit 0;;
+    -h|--help) sed -n 2,19p "$0"; exit 0;;
     *) if [ -z "$RUN" ]; then RUN="$1"; shift; else echo "unknown argument: $1" >&2; exit 2; fi;;
   esac
 done
-[ -n "$RUN" ] || { sed -n 2,18p "$0"; exit 2; }
+[ -n "$RUN" ] || { sed -n 2,19p "$0"; exit 2; }
 [ -f tools/plot_leake2010.py ] || { echo "run this from the top of the repository (tools/plot_leake2010.py not found here)" >&2; exit 2; }
+$PY -c "import numpy, matplotlib" 2>/dev/null || {
+  echo "$PY ($($PY --version 2>&1)) has no numpy or matplotlib: every table would fail." >&2
+  echo "Give the Python you run the plots with, e.g. from the shell where they work:  --py \"\$(which python3)\"" >&2
+  exit 2; }
 
 LAST=${RUN##*,}; LAST=${LAST%%@*}; LAST=${LAST%/}
 OUT="lk10_report_$(basename "$LAST").txt"
@@ -63,12 +68,19 @@ run() { echo "\$ $*"; "$@" 2>&1; echo "[exit $?]"; }
   sec "mass: the plasma above 3 Mm"
   run $P mass "$RUN" ${REF[@]+"${REF[@]}"} --outdir "$FIGS"
 
+  # (with --base, the base run beside it: the same quantities of the run this one is compared with)
   sec "null: the top of the emerged flux on x = 0"
-  run $P null "$RUN" --outdir "$FIGS"
+  if [ -n "$BASE" ]; then run $P null "run=$RUN" "base=$BASE" --outdir "$FIGS"; else run $P null "$RUN" --outdir "$FIGS"; fi
 
   sec "dome: top of log rho > -13 on x = 0"
-  run $P dome "$RUN" --outdir "$FIGS"
+  rm -f lk10_report_files/dome_*.csv
+  if [ -n "$BASE" ]; then run $P dome "run=$RUN" "base=$BASE" --outdir "$FIGS"; else run $P dome "$RUN" --outdir "$FIGS"; fi
   for f in "$FIGS"/dome_*.csv; do [ -f "$f" ] && { echo "--- $f"; cat "$f"; }; done
+
+  for x in 0 5; do
+    sec "balance: the vertical forces on the line x = $x Mm (what holds the dome)"
+    run $P balance "$RUN" --times "$TIMES" --x $x --outdir "$FIGS"
+  done
 
   for x in 0 5 10; do
     sec "column: the state on the vertical line x = $x Mm"
@@ -82,7 +94,8 @@ run() { echo "\$ $*"; "$@" 2>&1; echo "[exit $?]"; }
       echo "(this is a report, not the run's log: --log takes the file the queue wrote for the job, e.g. slurm-<jobid>.out)"; continue
     fi
     echo "--- how the run was set up"
-    grep -E 'DynSGS: C_R|Restart:|Subnormal|Dissipation:|Fastest wave|GLM: c_h|Δt *=>|dsgs_|lk10_|mhd_anomalous|Time loop running' "$L" | grep -v '^ *#' | head -80
+    grep -E 'DynSGS: C_R|Restart:|Subnormal|Dissipation:|Fastest wave|GLM: c_h|Δt *=>|dsgs_|lk10_|mhd_anomalous|Time loop running|Switches set|Viscosity \(DynSGS' "$L" | grep -v '^ *#' | head -80
+    grep -E 'DynSGS viscosity on the velocity|DSGS over the run' "$L" | head -4
     echo "--- positivity floors (first 15 and last 15 reports)"
     grep 'positivity floors' "$L" | head -15
     echo "   ..."
