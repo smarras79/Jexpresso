@@ -1346,8 +1346,9 @@ Short runs on 4 cores; the full runs are for a cluster (above).
   −10.5 inside the dome and −10.1 in a shell under its top at 1380 s, −11.4 and
   −11.0 at 1610 s, −12.6 and −12.0 at 1955 s: the plasma above 3 Mm weighs
   440, 120, 23 and 7 dyn cm⁻² at 1380, 1610, 1955 and 2185 s. In the runs it
-  weighs 276, 210 and 8 dyn cm⁻² (velocity form) and 185, 35 and 87
-  (momentum form) at the first three. The erratum's dome is the heaviest of the
+  weighs 272, 250 and 9 dyn cm⁻² (velocity form, `balance`) and about 185, 35
+  and 87 (momentum form, from the 0.5 Mm table of its report) at the first
+  three. The erratum's dome is the heaviest of the
   three at 1380 s and rises 3 Mm in the next 230 s; the momentum-form dome has
   a third of its weight at 1610 s and has stopped.
 
