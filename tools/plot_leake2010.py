@@ -733,6 +733,7 @@ def cmd_core(a):
                           "around the axis [G Mm], int B_z^2 dA over the tube [G^2 Mm^2], flux-weighted mean B_z/rho", delimiter=",")
         print(f"--- {lab}: the plasma at the tube axis; B_z/rho of the initial tube {q0:.0f} G per photospheric density "
               f"(tube {tube}), kept at the axis in ideal MHD")
+        print("    (read between the nodes, the axis of the initial state has 0.96 of it on REF 1 and 0.95 on REF 2 and 4)")
         print(f"{'t [s]':>7} {'axis Mm':>8} {'log rho':>8} {'rho/rho_e':>9} {'T K':>8} {'Bz G':>7} {'Bz/rho':>8} {'/initial':>8} "
               f"{'in-plane flux G Mm':>19} {'/first':>6} {'int Bz^2':>9} {'mean Bz/rho':>11}")
         for t, r in rows:
