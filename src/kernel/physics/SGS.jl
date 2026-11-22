@@ -2244,13 +2244,13 @@ end
 # is momentum taken out of dense plasma that moves through thin plasma, with no mass to go
 # with it: the operator relaxes ρv/ρ_e, not v, and a sheet of thickness δ, 10³ times denser
 # than what it falls through, is braked at ~ μ|v|/δ². In problems/MHD/fluxEmergenceLeake2010
-# (REF 4, :μ[1] = 0.1) the cold plasma that the emerging field lifts into the corona was held
-# that way: on its steep field lines, at 1160 s, the diffusion terms carried 1.25 times its
-# weight along the field, the stress on the velocity gradient -1.4 of it, the pressure none,
-# and it slid down at 6 km/s where free fall gives 50 (tools/plot_leake2010.py drain). It was
-# compressed and heated there until its own pressure held it, and the dome it loaded stopped
-# at 9 Mm (the erratum's: 13 Mm). A quarter of the coefficient (:μ of the momentum slots)
-# changed nothing: the sensor made it up within 100 s.
+# (REF 4, :μ[1] = 0.1) that is the force on the cold plasma that the emerging field lifts
+# into the corona: on its steep field lines, at 1160 s, the diffusion terms carry 1.24 times
+# its weight along the field, the stress on the velocity gradient -1.42 of it, the pressure
+# none, and it slides down at 6.5 km/s where free fall gives 50 (tools/plot_leake2010.py
+# drain). It is compressed and heated there until its own pressure holds it, and the dome it
+# loads stops at 9 Mm (the erratum's: 13 Mm); whether removing this force lets it drain is
+# what the option is for (the case's README, "The viscosity on the velocity").
 #
 # This kernel REPLACES the element contributions of ρu, ρv, ρw by those of
 #

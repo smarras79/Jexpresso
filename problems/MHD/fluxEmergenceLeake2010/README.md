@@ -60,7 +60,13 @@ carry the time too; `conservation.dat` in the output directory gets a line
 (`t` in $t_0$, step, mass, energy) every 100 steps.
 
 All the simulations of the paper are selected from the environment, without
-editing the deck:
+editing the deck. The log lists what was read
+(`Switches set in the environment (JEXPRESSO_LK10_*): ...`), and a
+`JEXPRESSO_LK10_*` variable that the code does not read stops the run with the
+list of those it does: a misspelling, or a switch newer than the checkout the
+job runs from, would otherwise be ignored without a word and the run be the
+one it was meant to change (that happened: The viscosity on the velocity,
+below).
 
 | variable | values | meaning |
 |---|---|---|
@@ -347,19 +353,25 @@ paper's dissipation and its energy relaxation:
   `JEXPRESSO_LK10_RHOFAC=0.1`, and the paper's ν has no mass diffusion at all.
   The difference is momentum taken out of dense plasma that moves through
   thin plasma with no mass to go with it; the operator relaxes
-  $\rho\mathbf v/\rho_e$, not $\mathbf v$. That is what held the cold plasma
-  the emerging field lifts into the corona (REF 4, cluster; `drain`): on its
-  steep field lines at 1160 s the diffusion terms carried 1.25 times its
-  weight along the field while the stress on the velocity gradient alone was
-  −1.4 of it and the pressure none, the paper's ν 0.03; it slid down at
-  6 km/s where free fall gives 50, was compressed (the `heat` table:
-  $-p\nabla\cdot\mathbf v$ is 10⁴ K per 100 s on the flanks, ten times the
-  DynSGS heat and a hundred times that of ν) until its own pressure held it,
-  and the dome it loaded stopped at 9 Mm. A quarter of the DynSGS viscosity
-  (`JEXPRESSO_LK10_VISCFAC=0.25`, from 1044 s) changed nothing: the
-  coefficient applied was a quarter at the restart (0.017 against 0.075 $L_0v_0$)
-  and the parent's again 116 s later (0.446 against 0.477); the sensor makes
-  up the factor.
+  $\rho\mathbf v/\rho_e$, not $\mathbf v$. In the REF 4 run on the cluster
+  (`drain`) that is the force on the cold plasma the emerging field lifts into
+  the corona: on its steep field lines at 1160 s the diffusion terms carry
+  1.24 times its weight along the field, while the stress on the velocity
+  gradient alone is −1.42 of it, the pressure none and the paper's ν 0.03; it
+  slides down at 6.5 km/s where free fall gives 50, is compressed (the `heat`
+  table: $-p\nabla\cdot\mathbf v$ is 10⁴ K per 100 s on the flanks, ten times
+  the DynSGS heat and a hundred times that of ν) until its own pressure holds
+  it from 1610 s on, and the dome it loads stops at 9 Mm. That this force is
+  what keeps the plasma there, and the plasma what stops the dome, is the
+  reading to be tested by the cluster run with `VISC=velocity`; the test
+  below shows the force and its removal on a blob. Whether a smaller DynSGS
+  viscosity alone would do (`JEXPRESSO_LK10_VISCFAC`) is not known: the two
+  restarts from 1044 s made on 21 Nov 2026 to test it, and then this option,
+  ran from a checkout older than both switches, which ignored them (no
+  `visc_factor` or `visc_form` in their `lk10_case.txt`), and are one run to
+  every digit of the `drain` table. What they do show is what a restart alone
+  changes: at 1160 s the plasma slides at 5.9 km/s against the uninterrupted
+  run's 6.5, with 154.7 against 154.2 units of mass above 3 Mm.
 
   With `VISC=velocity` the momentum slots get instead
 
@@ -985,6 +997,15 @@ as predicted). Values on a cap, the explicit viscosity and the anomalous
 resistivity are not affected. With `JEXPRESSO_LK10_DSGS_STAGES=1,5` or `1`
 (Meshes, time step and cost) the snapshot holds the coefficient of the step,
 the one that acts, at every time.
+
+*The first snapshot of a restart* is written with the coefficient of the
+first evaluation, made before the sensor has a history: on REF 1 it is 0.05 of
+what the run it continues wrote at the same instant, with the state equal to
+round-off, and at the next snapshot the two runs' coefficients agree to four
+digits (a restart at 3.75 s with every switch unchanged, compared at 4.5 s;
+the states then differ by 10⁻⁶). In the REF 4 run the dense lifted plasma has
+0.017 $L_0v_0$ in the first snapshot of a restart at 1044 s against 0.075 in
+the run's own: that is this, not a setting.
 
 (With `JEXPRESSO_LK10_ETA=all` the induction equations share $\mu$ and the last
 two are one field, `mu_dsgs_ρ_ρE_Bx_By_Bz_ψ`.) All are kinematic, in code units

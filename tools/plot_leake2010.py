@@ -123,8 +123,11 @@ FOLLOW_CHAIN = True    # --no-chain: only the directories given
 def runs_of(spec):
     """[(t [s], iter_N.pvtu)] of RUN (DIR or DIR1,DIR2,...), by time. Unless --no-chain, each DIR stands for
     the run that ends in it: the runs it was restarted from are read too, each up to the snapshot its
-    successor continued (_chain). A later directory wins a repeated time. DIR@T uses DIR only up to T seconds:
-    BASE@920,NEW is BASE to 920 s and then NEW, for a NEW whose lk10_case.txt does not lead back to BASE."""
+    successor continued (_chain). A later directory wins a repeated time, except with its FIRST snapshot: that
+    is the state it was restarted from, written with a DynSGS coefficient evaluated before the sensor had a
+    history (0.05 of the true one on REF 1), so the snapshot of the run it continues is kept there. DIR@T uses
+    DIR only up to T seconds: BASE@920,NEW is BASE to 920 s and then NEW, for a NEW whose lk10_case.txt does not
+    lead back to BASE."""
     dirs = []
     for d in spec.split(","):
         d, _, cap = d.partition("@")                       # DIR@T: this directory only up to T seconds
@@ -143,7 +146,10 @@ def runs_of(spec):
         used = [it for it in items if it[0] <= tmax + 0.5]
         note = "" if len(used) == len(items) else f"; used to {tmax:.0f} s, where the next run continued it"
         print(f"   {d}: {len(items)} snapshots, t = {min(items)[0]:.0f} to {max(items)[0]:.0f} s{note}")
+        t0 = min(items)[0]
         for t, f in used:
+            if t == t0 and round(t, 6) in out:
+                continue                                   # the first snapshot of a restart: keep the parent's
             out[round(t, 6)] = f
     return sorted(out.items())
 

@@ -747,8 +747,7 @@ density spans eight decades between the photosphere and the corona:
   (`:mhd_dissipation`), the excess is momentum taken out of dense plasma that
   moves through thin plasma: the operator relaxes $\rho\mathbf v/\rho_e$, not
   $\mathbf v$, and a structure of thickness $\delta$ is braked at
-  $\sim\mu\lvert\mathbf v\rvert/\delta^2$. Scaling the coefficient does not
-  remove it; the sensor makes the factor up. The option replaces the momentum
+  $\sim\mu\lvert\mathbf v\rvert/\delta^2$. The option replaces the momentum
   contributions by
   $\nabla\cdot(\rho_e\mu_\rho\nabla(\rho\mathbf v/\rho_e)) + \nabla\cdot(\rho_e s_{min}(\mu-\mu_\rho)_+\nabla\mathbf v)$:
   the momentum diffused with the mass slot's coefficient $\mu_\rho$, and the

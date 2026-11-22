@@ -91,8 +91,25 @@
 #                            [the last complete one]
 #
 # Times are in t0 = 23.19 s inside the code (user_flux.jl).
+#
+# A JEXPRESSO_LK10_* variable that this deck does not read STOPS the run (lk10_check_env):
+# a misspelled switch, or a switch newer than the checkout the job runs from, would
+# otherwise be ignored without a word, and the run be the one it was meant to change.
 #---------------------------------------------------------------------------------
-_lk10_env(k, d) = strip(get(ENV, "JEXPRESSO_LK10_" * k, d))
+if !@isdefined(_LK10_ASKED)
+    const _LK10_ASKED = Set{String}(("SUBNORMALS",))     # every switch asked for (SUBNORMALS: in initialize.jl)
+end
+_lk10_env(k, d) = (push!(_LK10_ASKED, String(k)); strip(get(ENV, "JEXPRESSO_LK10_" * k, d)))
+# the JEXPRESSO_LK10_* variables of the environment, "NAME=value, ..."; an error if one was not asked for
+function lk10_check_env()
+    set = sort!([String(k)[16:end] for k in keys(ENV) if startswith(String(k), "JEXPRESSO_LK10_")])
+    bad = [k for k in set if !(k in _LK10_ASKED)]
+    isempty(bad) ||
+        error(" problems/MHD/fluxEmergenceLeake2010: ", join("JEXPRESSO_LK10_" .* bad, ", "), length(bad) > 1 ? " are" : " is",
+              " not read by this code: misspelled, or this checkout is older than the switch (git log -1; git pull where the job runs).",
+              " It reads: ", join(sort!(collect(_LK10_ASKED)), ", "), ".")
+    return join(("$(k)=$(ENV["JEXPRESSO_LK10_" * k])" for k in set), ", ")
+end
 _lk10_num(k, d) = something(tryparse(Float64, _lk10_env(k, "")), d)
 # one of the words `allowed` (the first is the default), in lower case; anything else is an error, not the default
 function _lk10_word(k, allowed...)
@@ -404,5 +421,6 @@ function user_inputs()
     rt = _lk10_num("RESTART_TIME", NaN)              # seconds
     isnan(rt) || (inputs[:lk10_restart_time] = rt/LK10_T0)
 
+    inputs[:lk10_env_set] = lk10_check_env()         # after every switch has been asked for
     return inputs
 end
