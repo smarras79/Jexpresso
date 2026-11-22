@@ -354,6 +354,30 @@ $10t_0$) and than the rope's own expansion. At this resolution (nodes 2 apart
 horizontally across a rope of radius $w = 2.5$) the rope is lost to the
 discretization, whatever the DynSGS. None of these switches is on by default.
 
+On `LK2D_REF = 2`, the cross-section of the 3D `LK22_REF = 3` and of its
+`LK22_REF = 6` (nodes 1 apart horizontally, 0.5 vertically), the default deck
+keeps the rope (4 ranks, 22 Nov 2026):
+
+| $t$ | 0 | 5 | 10 |
+|---|---|---|---|
+| peak $\lvert B_z\rvert$, `LK2D_REF = 1` | 5.00 | 4.18 | 3.20 |
+| peak $\lvert B_z\rvert$, `LK2D_REF = 2` | 5.00 | 4.87 | 4.11 |
+| kinetic energy above $h = 0$, 1 / 2 | 0 | 0.17 / 0.009 | 0.19 / 0.086 |
+| nodes at a floor (hits over the run), 1 / 2 | 0 | 1000 by 2.8 / none | / none |
+| largest $T$, 1 / 2 | 150 | 167 / 197 | 168 / 245 |
+
+The explicit $\eta$ takes 6 % of the peak in $10t_0$ and the rope's rise
+from $h = -12$ to $-10.3$ some 10 % more by expansion: on `LK2D_REF = 2` the
+rope loses about what it should, on `LK2D_REF = 1` twice that. The axis rises
+alike on both ($-10.36$, $-10.27$ at $t = 10$). The largest temperature of
+the finer run is in the corona, at $h = 45$–53, $x = 5$–20 (7.7–9 Mm up,
+above one side of the rope, before anything has emerged): 115 nodes above
+180 at $t = 10$, in hot spots and vertical stripes that sit in the elements
+where the DynSGS coefficient is 0.3–0.55 (waves from the start that the
+sensor follows; `snap --var T`, `snap --var mu`). The coarse run damps the
+same waves with a larger coefficient everywhere and shows none by $t = 10$;
+the `LK2D_REF = 4` run of "Resolution study" has them from $t \approx 35$.
+
 ## Verification here
 
 On 4 threads at `LK2D_REF = 1`, and 4 where stated; nothing was run here at
