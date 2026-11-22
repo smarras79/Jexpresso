@@ -378,6 +378,27 @@ sensor follows; `snap --var T`, `snap --var mu`). The coarse run damps the
 same waves with a larger coefficient everywhere and shows none by $t = 10$;
 the `LK2D_REF = 4` run of "Resolution study" has them from $t \approx 35$.
 
+They are the DynSGS's own heat: the default energy slot diffuses $E$ as a
+whole, so every bit of kinetic and magnetic energy the DynSGS removes from a
+passing wave stays as heat in those elements. With the energy-consistent slot
+and Lare-like heating (`LK2D_ENERGY=thermal LK2D_HEAT=shock`; the DynSGS then
+heats only where it compresses, the explicit $\nu$, $\eta$ in full), same mesh,
+same times:
+
+| $t = 10$ | default | `LK2D_ENERGY=thermal LK2D_HEAT=shock` |
+|---|---|---|
+| largest $T$; nodes above 180 | 245; 115 (at $h$ = 42–53) | 182; 3 |
+| peak $\lvert B_z\rvert$ of the rope (5 at $t = 0$) | 4.11 | 4.21 |
+| rope axis on $x = 0$ | $-10.27$ | $-10.31$ |
+| kinetic energy above $h = 0$; max $\lvert\mathbf v\rvert$ | 0.086; 6.6 | 0.085; 4.6 |
+| nodes at a floor | none | none |
+
+(at $t = 5$: 197 against 178, 4.87 against 4.90). On this mesh the two switches
+are what the 3D run of Fig. 4 should use (`fluxEmergenceLeake2022`, "Fig. 4:
+what to run"); on `LK2D_REF = 1` the whole set of the 2010 case was worse than
+the default (above), and its tenth of the mass diffusion and its
+induction-only sensor are left out.
+
 ## Verification here
 
 On 4 threads at `LK2D_REF = 1`, and 4 where stated; nothing was run here at

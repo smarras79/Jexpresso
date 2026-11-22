@@ -242,6 +242,42 @@ take 33 GB at `LK22_REF = 2`, 66 GB at 5. The paper's figures use $t = 70, 100, 
 184, 190, 240, 260, 380, 400t_0$; all but 142 and 184 are on the default
 10 $t_0$ cadence.
 
+## Fig. 4: what to run
+
+Fig. 4 is simulation 4 at $t = 100$, 142 and $184t_0$: the rope after it has
+emerged, the breakout sheet above it and the flare sheet below. The rope has
+to reach the surface with its field for any of that to happen, and on the
+2.5D cross-section of this case (`fluxEmergenceLeake2022_2D`, "The DynSGS of
+the 2010 case") it does not on the cross-section of `LK22_REF = 2`: its peak
+axial field is 0.84 of the initial one at $t = 5$, 0.64 at 10 and 0.38 at
+25, with or without the 2010 case's switches. On the cross-section of
+`LK22_REF = 3` and 6 it is 0.97 and 0.82 at 5 and 10, what the explicit
+$\eta$ and the rope's expansion account for, with no node at a floor.
+There the default energy slot heats the corona at 7.7–9 Mm with the DynSGS's
+own dissipation of the start's waves (245 against 150 by $t = 10$); the
+energy-consistent slot with Lare-like heating does not (182) and keeps a
+little more of the rope (that README, "The DynSGS of the 2010 case"). So:
+`LK22_REF = 6` (or 3), the reference-weighted operator, the energy-consistent
+slot with Lare-like heating, and the stability cap as a safety net (it acts
+only if the fast CFL number grows well beyond the step's design, which it
+did not in these tests); not the rest of `LK22_DSGS=lk10`.
+
+```bash
+cd problems/MHD/fluxEmergenceLeake2022
+gmsh -3 LK22.geo -setnumber ref 6 -o LK22_64x32x96.msh     # once (or the gmsh of GridapGmsh's artifact)
+cd ../../..
+LK22_REF=6 LK22_REF_WEIGHT=1 LK22_ENERGY=thermal LK22_HEAT=shock LK22_STABCAP=0.2 LK22_TEND=60 mpiexec -n N julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2022
+```
+
+then, with the same `N` and switches, `LK22_RESTART_DIR=output/MHD/fluxEmergenceLeake2022/output-<previous job>`
+and `LK22_TEND=130`, then 190. Before the second job, `tools/plot_leake2022.py
+height` on the first gives the rope's height against time, to set beside the
+paper's Fig. 8 (simulation 4). Cost, at
+~100 core-seconds per step per million nodes (Cost, above): 12.6 M nodes and
+$1.9\times10^5$ steps to $t = 190$, about $6.6\times10^4$ core-hours ($2\times10^4$
+to $t = 60$), eight times `LK22_REF = 2`; 3 GB per snapshot, 66 GB to 190.
+`LK22_REF = 3` resolves the rope's length twice as finely for twice that.
+
 ## Restart
 
 Any snapshot of this case restarts the run, so a long run can be split into
