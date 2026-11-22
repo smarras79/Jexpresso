@@ -389,6 +389,22 @@ Short runs on 4 threads at `LK22_REF = 1`; the full runs are for a cluster.
   $c_h = 45.4$) and three steps run with no floor; the peak memory is
   8.8 GB, the whole run 8 minutes.
 
+- **The DynSGS of the 2010 case** (`LK22_DSGS=lk10`; 22 Nov 2026, `LK22_REF = 1`,
+  8 steps, 1 process). The default deck is unchanged by the port to the bit
+  (every output file and the totals of every variable at every step, against
+  the code before it; the same for `fluxEmergenceLeake2014`, 10 steps). With
+  `LK22_REF_WEIGHT=1` the total energy falls by 0.20 in 8 steps (of
+  $2.6\times10^9$; the damping layers and the floors); with the energy-
+  consistent slot added and all its heat kept (`LK22_ENERGY=thermal`,
+  `LK22_HEAT=1`) by 0.22, so the slot returns as heat what the DynSGS
+  dissipates; with `LK22_DSGS=lk10`, whose Lare-like heating does not return
+  the DynSGS resistive heat and its viscous heat outside compressions, by
+  2.7×10³. The mass is the same to the last digit in the three.
+  Whether the set helps was tested on the 2.5D cross-section
+  (`fluxEmergenceLeake2022_2D`, "The DynSGS of the 2010 case"): at the
+  resolution of `LK22_REF = 2` it does not (more floor activity, and the rope
+  lost as fast), so it is not on by default.
+
 Nothing else was run here at `LK22_REF` ≥ 2.
 
 ## Notes
