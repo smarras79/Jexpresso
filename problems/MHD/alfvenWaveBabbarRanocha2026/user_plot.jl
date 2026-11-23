@@ -403,7 +403,7 @@ _aw_norm_tex(n) = n == "L2" ? "L^2" : n == "L1" ? "L^1" : "L^\\infty"
 const AW_PANELS = [   # (field, ylabel, title, file)
     (Symbol(f, sfx),
      string("\\Vert", h, "\\Vert_{", _aw_norm_tex(n), "}"),
-     string(_aw_norm_tex(n), "\\mathrm{-error\\ of", st ? "\\ the\\ state}" : "}\\ " * tt),
+     string(_aw_norm_tex(n), "\\mathrm{-error\\ of", st ? "\\ the\\ state}\\ \\mathbf{q}" : "}\\ " * tt),
      n == "L2" ? key : string(key, "_", n == "L1" ? "L1" : "Linf"))
     for (f, h, tt, key, st) in (
         ("bperp", "\\mathbf{B}_{\\perp,h}-\\mathbf{B}_\\perp", "\\mathbf{B}_\\perp", "Bperp", false),
@@ -577,9 +577,14 @@ function _aw_cmp_attrs(nop, tag, tags)
             markerstrokewidth = 1.2, color = col)
 end
 
-function _aw_cmp_panel(rows, fld, ylab, title, tags)
+# xlab, ylab_on: whether to draw the axis labels. In a grid the title names the
+# panel and the #DOFs label goes under the bottom panel of each column only:
+# GR places a label from its own estimate of the tick labels' size, and with
+# some fonts that puts it into the neighbouring panel or off the page.
+function _aw_cmp_panel(rows, fld, ylab, title, tags; xlab = true, ylab_on = true)
     pl = Plots.plot(; xscale = :log10, yscale = :log10,
-                    xlabel = "#DOFs = (nelx N)²", ylabel = LaTeXStrings.latexstring(ylab),
+                    xlabel = xlab ? "#DOFs = (nelx N)²" : "",
+                    ylabel = ylab_on ? LaTeXStrings.latexstring(ylab) : "",
                     title = title, framestyle = :box, grid = true, gridalpha = 0.25,
                     legend = false, titlefontsize = AW_CMP_FS.title,
                     guidefontsize = AW_CMP_FS.guide, tickfontsize = AW_CMP_FS.tick, show = false)
@@ -635,8 +640,10 @@ function _aw_cmp_panel(rows, fld, ylab, title, tags)
     return pl
 end
 
-# the legend entries of a comparison, as empty series (they draw nothing else)
-function _aw_cmp_legend!(pl, rows, tags)
+# the legend entries of a comparison, as empty series (they draw nothing else);
+# with `state`, a line that says what q is
+const AW_Q_NOTE = ("q, the state:", "(ρ, ρu, ρv, ρE, ρw, Bx, By, Bz, ψ)")
+function _aw_cmp_legend!(pl, rows, tags; state = false)
     listed = sort(tags, by = t -> (_aw_line(t, tags) != :solid, t))  # the deck's DSGS first
     for n in sort(unique(r.nop for r in rows)), tag in listed
         any(r -> r.nop == n && r.visc == tag, rows) || continue
@@ -645,13 +652,15 @@ function _aw_cmp_legend!(pl, rows, tags)
     end
     Plots.plot!(pl, [NaN], [NaN]; line = (AW_INK, 1.0, :dot),
                 label = "h^(N+1), dotted, one per order")
+    state && foreach(l -> Plots.plot!(pl, [NaN], [NaN]; linealpha = 0, label = l), AW_Q_NOTE)
     return pl
 end
-_aw_cmp_legend(rows, tags) =
+_aw_cmp_legend(rows, tags; state = false) =
     _aw_cmp_legend!(Plots.plot(; framestyle = :none, grid = false, xticks = false, yticks = false,
                                xlims = (0, 1), ylims = (0, 1), legend = :left,
                                legendfontsize = AW_CMP_FS.legend, foreground_color_legend = nothing,
-                               background_color_legend = nothing, show = false), rows, tags)
+                               background_color_legend = nothing, show = false), rows, tags;
+                    state = state)
 
 # Returns the files written. `panels`, a selection of AW_PANELS, draws the
 # comparisons with those panels alone, as <stem>_panels_<label>-it<iout>.png
@@ -671,37 +680,39 @@ function _aw_compare(rows, OUTPUT_DIR, iout; name = AW_FIG_NAME, panels = AW_PAN
         end
         stem = isempty(suffix) ? name : string(name, "_", suffix)
         full || (stem = string(stem, "_panels_", label))
+        # the panels in a grid (one row up to four; else three wide when they
+        # come in threes, as the quantity × norm matrix does, four otherwise)
+        np = length(panels)
+        nc = np <= 4 ? np : (np % 3 == 0 ? 3 : 4); nr = cld(np, nc)
+        st = any(p -> startswith(p[4], "state"), panels)
         pls = Any[_aw_cmp_panel(rs, fld, ylab,
                                 LaTeXStrings.latexstring(string("\\mathrm{(", 'a' + (i - 1), ")}\\ ", ttl)),
-                                tags)
+                                tags; xlab = i + nc > np, ylab_on = false)
                   for (i, (fld, ylab, ttl, _)) in enumerate(panels)]
         if singles && full                             # each panel alone, with its legend
             for (i, (fld, ylab, ttl, fname)) in enumerate(AW_PANELS)
                 p1 = _aw_cmp_legend!(_aw_cmp_panel(rs, fld, ylab, LaTeXStrings.latexstring(
-                                         string(ttl, ",\\ t = ", rs[1].t)), tags), rs, tags)
+                                         string(ttl, ",\\ t = ", rs[1].t)), tags), rs, tags;
+                                     state = startswith(fname, "state"))
                 Plots.plot!(p1; legend = :outertopright, legendfontsize = AW_CMP_FS.legend)
                 _conv_savefig(Plots.plot(p1; size = (1180, 700), left_margin = 8Plots.mm,
                                          bottom_margin = 6Plots.mm, show = false),
                               string(OUTPUT_DIR, "/", stem, "_", fname, "-it", iout, ".png"))
             end
         end
-        # the panels in a grid (one row up to four; else three wide when they
-        # come in threes, as the quantity × norm matrix does, four otherwise), and
         # the legend a narrower column on the right
-        np = length(pls)
-        nc = np <= 4 ? np : (np % 3 == 0 ? 3 : 4); nr = cld(np, nc)
         while length(pls) < nr*nc                      # an empty cell keeps the grid
             push!(pls, Plots.plot(; framestyle = :none, grid = false, show = false))
         end
-        push!(pls, _aw_cmp_legend(rs, tags))
-        wl  = 0.55                                     # the legend column, in panel widths
+        push!(pls, _aw_cmp_legend(rs, tags; state = st))
+        wl  = 0.65                                     # the legend column, in panel widths
         lay = Plots.grid(1, 2; widths = [nc/(nc + wl), wl/(nc + wl)])
         lay[1, 1] = Plots.grid(nr, nc)
         sz  = (round(Int, (nc + wl)*AW_CMP_CELL[1]), nr*AW_CMP_CELL[2] + 60)
         plt = Plots.plot(pls...; layout = lay, size = sz,
                          plot_title = string(title, ", t = ", rs[1].t), plot_titlefontsize = 19,
-                         left_margin = 12Plots.mm, bottom_margin = 10Plots.mm,
-                         top_margin = 3Plots.mm, right_margin = 3Plots.mm, show = false)
+                         left_margin = 10Plots.mm, bottom_margin = 12Plots.mm,
+                         top_margin = 5Plots.mm, right_margin = 4Plots.mm, show = false)
         f = string(OUTPUT_DIR, "/", stem, "-it", iout, ".png")
         _conv_savefig(plt, f)
         push!(files, f)
