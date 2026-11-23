@@ -394,10 +394,8 @@ function rhs!(du, u, params, time)
     if (backend == CPU())
         @timeit_debug JEXPRESSO_TIMER "build_rhs" _build_rhs!(@view(params.RHS[:,:]), u, params, time)
 
-        if (params.laguerre)
-            @timeit_debug JEXPRESSO_TIMER "build_rhs_laguerre" build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
-            params.RHS .= @views(params.RHS .+ params.RHS_lag)
-        end
+        # The Laguerre (semi-infinite) elements are assembled inside _build_rhs!,
+        # before the global DSS and the boundary constraints (see there).
 
         @timeit_debug JEXPRESSO_TIMER "RHStoDU" RHStoDU!(du, @view(params.RHS[:,:]), params.neqs, params.mesh.npoin)
     else
@@ -611,8 +609,8 @@ function rhs!(du, u, params, time)
                   params.mesh.connijk_lag,
                   params.qbdy_lag_gpu,
                   params.mesh.ngl, params.mesh.ngr,
-                  TInt(params.neqs), params.mesh.npoin, params.mesh.nelem_semi_inf, 
-                  params.inputs[:lperiodic_laguerre], lpert;
+                  TInt(params.neqs), params.mesh.npoin,
+                  params.lag_side_n, params.lag_far_n, lpert;
                   ndrange = (params.mesh.nelem_semi_inf*params.mesh.ngl,params.mesh.ngr),
                   workgroupsize = (params.mesh.ngl,params.mesh.ngr))
                 
@@ -950,6 +948,16 @@ function _build_rhs!(RHS, u, params, time)
                                        params.WM.τ_f, params.WM.wθ, params.WM.wqv,
                                        params.mp.Tabs, params.mp.qn,
                                        params.ω, neqs, params.inputs, AD, SD) 
+
+    # Semi-infinite (Laguerre) elements: their element contributions are added to
+    # the same locally assembled RHS as the finite elements, so the global DSS,
+    # the boundary constraints and the mass division below act on the complete
+    # tendency. (Adding them after the constraints undid the constraint at every
+    # node shared with a Laguerre element.)
+    if params.laguerre
+        @timeit_debug JEXPRESSO_TIMER "build_rhs_laguerre" build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
+        params.RHS .+= params.RHS_lag
+    end
 
     @timeit_debug JEXPRESSO_TIMER "DSS_global_RHS" DSS_global_RHS!(@view(params.RHS[:,:]), params.g_dss_cache, params.neqs)
     params.bc_cons === nothing || apply_bc_constraints_rhs!(params.RHS, params.bc_cons)
@@ -2047,7 +2055,14 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                 Cmin = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_Cmin, 0.0)),
                                 cutoff = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_cutoff, 0.0)),
                                 ltheta = (params.inputs[:energy_equation] == "theta"),
-                                lglobal_norms = params.dsgs_global_norms)
+                                lglobal_norms = params.dsgs_global_norms,
+                                lpert  = (params.SOL_VARS_TYPE == PERT()),
+                                lmoist = params.inputs[:lmoist]::Bool,
+                                coords = params.mesh.coords,
+                                Pr_t   = TT(get(params.inputs, :Pr_t, PHYS_CONST.Pr_t)),
+                                Sc_t   = TT(get(params.inputs, :Sc_t, PHYS_CONST.Sc_t)),
+                                avg    = params.dsgs_avg,
+                                den    = params.dsgs_denom)
 
         broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
                                  params.mesh.connijk,
@@ -2066,7 +2081,9 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                  params.mesh.coords, params.mesh.poin_in_bdy_face,
                                  params.mesh.elem_to_face, params.mesh.bdy_face_type,
                                  Int64(params.mesh.nelem), Int64(params.neqs),
-                                 connijk, params.QT, params.AD, params.SOL_VARS_TYPE)
+                                 connijk, params.QT, params.AD, params.SOL_VARS_TYPE;
+                                 lref_prim = (params.SOL_VARS_TYPE == TOTAL() &&
+                                              get(params.inputs, :dsgs_reference, false)::Bool))
         return
     end
 
@@ -2180,7 +2197,18 @@ function _viscous_rhs_el_3d_dsgs!(uaux, qe, uprimitive,
                                   coords, poin_in_bdy_face,
                                   elem_to_face, bdy_face_type,
                                   nelem, neqs,
-                                  connijk, QT, AD, SOL_VARS_TYPE)
+                                  connijk, QT, AD, SOL_VARS_TYPE;
+                                  lref_prim::Bool = false)
+
+    # lref_prim (TOTAL variables with :dsgs_reference): diffuse the DEPARTURE of the
+    # primitives from those of the reference state qe, as the PERT form does. Diffusing
+    # the full primitives acts on the curvature of the stratified background (hl, θ, qt
+    # of a hydrostatic column): a residual-based ν of O(10³-10⁴) m²/s while the flow
+    # spins up then heats/cools the column spuriously (measured on Lasher-Trapp, TOTAL
+    # moist: ∂ₜ(ρhl) ~ 500 W m⁻³ within three stages against 1.5 W m⁻³ of forcing, and a
+    # blow-up at 0.9 s, where PERT stays at ~55). The Smagorinsky ν is ~0 at rest, which
+    # is why TOTAL+SMAG does not see it.
+    prim_e = lref_prim ? zeros(eltype(uaux), size(uprimitive, 4)) : nothing
 
     for iel = 1:nelem
         for ieq = 1:neqs
@@ -2193,6 +2221,12 @@ function _viscous_rhs_el_3d_dsgs!(uaux, qe, uprimitive,
                              @view(qe[ip,:]),
                              @view(uprimitive[i,j,k,:]),
                              SOL_VARS_TYPE)
+            if lref_prim
+                user_primitives!(@view(qe[ip,:]), @view(qe[ip,:]), prim_e, SOL_VARS_TYPE)
+                for ieq = 2:neqs
+                    uprimitive[i,j,k,ieq] -= prim_e[ieq]
+                end
+            end
         end
 
         for ieq = 1:neqs
