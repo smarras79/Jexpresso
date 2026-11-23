@@ -1127,11 +1127,30 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  CR::TT=TT(1.0), Cmax::TT=TT(0.5), Cmin::TT=zero(TT),
                                  cutoff::TT=zero(TT),
                                  ltheta::Bool=true,
-                                 lglobal_norms::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
+                                 lglobal_norms::Bool=false,
+                                 lpert::Bool=false,
+                                 lmoist::Bool=false,
+                                 coords::Union{Nothing,AbstractMatrix}=nothing,
+                                 Pr_t::TT=TT(0.7), Sc_t::TT=TT(0.7),
+                                 avg::Union{Nothing,AbstractVector{TT}}=nothing,
+                                 den::Union{Nothing,AbstractVector{TT}}=nothing) where {TT<:AbstractFloat, TI<:Integer}
     _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
-    ltheta || error(" compute_dsgs_viscosity!(::DSGS, ::NSD_3D): only the θ form is implemented in 3D.\n" *
-                    "   Set :energy_equation => \"theta\", or use :visc_model => SMAG() / VREM() / AV().")
+    # PERT θ, and the moist hl form (TOTAL or PERT): _dsgs_3d_general! below.
+    # The TOTAL θ form keeps the original kernel that follows, unchanged.
+    if lpert || !ltheta
+        ltheta || lmoist ||
+            error(" compute_dsgs_viscosity!(::DSGS, ::NSD_3D): :energy_equation => \"energy\" is implemented\n" *
+                  "   for the moist hl system only (:lmoist => true). Dry total energy has no 3D DSGS kernel.")
+        (ltheta || coords !== nothing) ||
+            error(" compute_dsgs_viscosity!(::DSGS, ::NSD_3D): the moist form needs the node coordinates (sound speed).")
+        (avg !== nothing && den !== nothing && length(avg) >= size(μ_dsgs, 2) && length(den) >= size(μ_dsgs, 2)) ||
+            error(" compute_dsgs_viscosity!(::DSGS, ::NSD_3D): avg/den scratch of length neqs required.")
+        _dsgs_3d_general!(μ_dsgs, q, q1, q2, qe, rhs_el, ω, Je, visc_coeff, wt, connijk, Δelem,
+                          PhysConst, Pr, Pr_t, Sc_t, coords, avg, den, nelem, ngl,
+                          lglobal_norms, lpert, ltheta; CR = CR, Cmax = Cmax, Cmin = Cmin, cutoff = cutoff)
+        return nothing
+    end
 
     neqs  = size(μ_dsgs, 2)
     invnp = one(TT)/(nelem*ngl*ngl*ngl)
@@ -1250,6 +1269,210 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         μ_dsgs[ie,5] = visc_coeff[5] * (Pr/γm1) * μ_dyn     # ρθ (eq. 10b)
         for ieq = 6:neqs                                    # passive tracers: kinematic ν
             μ_dsgs[ie,ieq] = visc_coeff[ieq] * μ
+        end
+    end
+
+    return nothing
+end
+
+# ---------------- 3D: PERT θ and the moist hl system -------------------
+#
+# The same coefficient as the TOTAL θ kernel above,
+#
+#     ν_K = max(C_min Δ λ_K, min(C_max Δ λ_K, C_R Δ² max_i ‖R_i‖∞,K / D_i)),   Δ = Δ_K/(k+1),
+#
+# for three more forms of the 3D system:
+#
+#   PERT θ      q = (ρ', (ρu)', (ρv)', (ρw)', (ρθ)', tracers...)
+#   TOTAL moist q = (ρ, ρu, ρv, ρw, ρhl, ρqt, ρqp, ...),  hl = cp T + g z − L qn
+#   PERT moist  the perturbations of the TOTAL moist state
+#
+# One rule makes PERT and TOTAL the same model: every SCALE is taken from the
+# full state q + qe (q alone for TOTAL) — the domain mean and spread D_i of each
+# conserved variable, the velocities and sound speed of λ_K = ‖|u| + c‖∞,K, and
+# the element density ρ̄_K. The residual R_i is formed from q itself: qe is
+# steady, so it adds nothing to ∂ₜq, and the PERT element RHS is that of the
+# perturbation equations, which carries no discrete hydrostatic imbalance of the
+# reference. Normalising a PERT residual by the spread of the perturbation
+# instead would divide by ~0 in an atmosphere at rest.
+#
+# Floors on D_i (all with the machine eps of the θ kernel):
+#   momenta     1e-3·|⟨ρ⟩|·⟨c⟩, as in the θ kernel (the flow starts at rest);
+#   moist only  slots ≥ 7 (ρqp, further species) at least the ρqt spread: rain
+#               starts at zero everywhere and is part of the total water.
+#
+# Sensor: equations 1-5 in the θ forms (as the TOTAL θ kernel; tracers are
+# passive there) and ALL equations in the moist form, where qt and qp are not
+# passive (latent heating, loading).
+#
+# Sound speed: θ forms c² = γ p/ρ with p = C0 (ρθ)^γ, as above; moist form
+# c² = γ R T with T = (hl − g z)/cp. The condensate term L qn is left out of T:
+# a few K at most, under 1% of c, and c only enters the cap and the momentum
+# floor.
+#
+# Per-equation coefficients (μ_dsgs[ie, ieq], scaled by the deck's :μ[ieq]):
+#   θ forms     as the TOTAL θ kernel: 0 on ρ, ρ̄ν on the momenta,
+#               ρ̄ν·Pr/(γ−1) on ρθ (Marras eq. 10b, :Pr artificial), ν on tracers;
+#   moist form  0 on ρ, ρ̄ν on the momenta, ν/Pr_t on hl and ν/Sc_t on qt, qp and
+#               further species: the turbulent Prandtl/Schmidt numbers (:Pr_t,
+#               :Sc_t) and the kinematic diffusivities of the Smagorinsky/Vreman
+#               3D path (SGS_diffusion(::AbstractSGSModel)), so that switching
+#               :visc_model between SMAG() and DSGS() changes the coefficient
+#               and nothing else.
+#
+# avg and den are the neqs-long dsgs_avg / dsgs_denom scratch of params.
+#
+@inline _dsgs_full(q, qe, ip, i, lpert) = lpert ? q[ip,i] + qe[ip,i] : q[ip,i]
+
+function _dsgs_3d_general!(μ_dsgs::AbstractMatrix{TT},
+                           q::AbstractMatrix{TT},
+                           q1::AbstractMatrix{TT},
+                           q2::AbstractMatrix{TT},
+                           qe::AbstractMatrix{TT},
+                           rhs_el::AbstractArray{TT},
+                           ω::AbstractVector{TT},
+                           Je::AbstractArray{TT},
+                           visc_coeff::AbstractVector{TT},
+                           wt::NTuple{3,TT},
+                           connijk::AbstractArray{TI,4},
+                           Δelem::AbstractVector{TT},
+                           PhysConst::PhysicalConst{TT},
+                           Pr::TT, Pr_t::TT, Sc_t::TT,
+                           coords,
+                           avg::AbstractVector{TT},
+                           den::AbstractVector{TT},
+                           nelem::Int, ngl::Int,
+                           lglobal_norms::Bool, lpert::Bool, ltheta::Bool;
+                           CR::TT=TT(1.0), Cmax::TT=TT(0.5), Cmin::TT=zero(TT),
+                           cutoff::TT=zero(TT)) where {TT<:AbstractFloat, TI<:Integer}
+
+    neqs  = size(μ_dsgs, 2)
+    nsens = ltheta ? min(5, neqs) : neqs      # equations in the sensor
+    γ     = PhysConst.γ
+    C0    = PhysConst.C0
+    Rgas  = PhysConst.Rair
+    cp    = PhysConst.cp
+    grav  = PhysConst.g
+    γm1   = γ - one(TT)
+    eps   = TT(1.0e-16)
+
+    # node sound speed from the full state (see the header)
+    @inline function c_node(ip, ρf)
+        if ltheta
+            pl = C0 * max(_dsgs_full(q, qe, ip, 5, lpert), zero(TT))^γ
+            return sqrt(max(γ*pl/ρf, zero(TT)))
+        else
+            T = (_dsgs_full(q, qe, ip, 5, lpert)/ρf - grav*TT(coords[3,ip]))/cp
+            return sqrt(max(γ*Rgas*T, zero(TT)))
+        end
+    end
+
+    # --- Pass 1: domain means of the full conserved state, and of c --------
+    for ieq = 1:neqs
+        avg[ieq] = zero(TT)
+    end
+    csum = zero(TT)
+    @inbounds for ie = 1:nelem
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            ip = connijk[ie,i,j,k]
+            for ieq = 1:neqs
+                avg[ieq] += _dsgs_full(q, qe, ip, ieq, lpert)
+            end
+            csum += c_node(ip, _dsgs_full(q, qe, ip, 1, lpert))
+        end
+    end
+    npt = TT(nelem*ngl*ngl*ngl)
+    if lglobal_norms
+        sums = Vector{TT}(undef, neqs + 2)
+        for ieq = 1:neqs
+            sums[ieq] = avg[ieq]
+        end
+        sums[neqs+1] = csum; sums[neqs+2] = npt
+        MPI.Allreduce!(sums, MPI.SUM, get_mpi_comm())
+        for ieq = 1:neqs
+            avg[ieq] = sums[ieq]
+        end
+        csum = sums[neqs+1]; npt = sums[neqs+2]
+    end
+    invnp = one(TT)/max(npt, one(TT))
+    for ieq = 1:neqs
+        avg[ieq] *= invnp
+    end
+    c_avg = csum*invnp
+
+    # --- Pass 2: L∞ spread of each full conserved variable ----------------
+    for ieq = 1:neqs
+        den[ieq] = zero(TT)
+    end
+    @inbounds for ie = 1:nelem
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            ip = connijk[ie,i,j,k]
+            for ieq = 1:neqs
+                den[ieq] = max(den[ieq], abs(_dsgs_full(q, qe, ip, ieq, lpert) - avg[ieq]))
+            end
+        end
+    end
+    if lglobal_norms
+        MPI.Allreduce!(den, MPI.MAX, get_mpi_comm())
+    end
+    for ieq = 1:neqs
+        den[ieq] += eps
+    end
+    mom_floor = TT(1.0e-3) * abs(avg[1]) * c_avg
+    for ieq = 2:min(4, neqs)
+        den[ieq] = max(den[ieq], mom_floor)
+    end
+    if !ltheta
+        for ieq = 7:neqs
+            den[ieq] = max(den[ieq], den[6])
+        end
+    end
+
+    # --- Pass 3: element residual, wave-speed cap, μ_dsgs[ie,:] -----------
+    @inbounds for ie = 1:nelem
+        Δ = Δelem[ie]/ngl
+
+        ratio = zero(TT)
+        uTmx  = zero(TT)
+        ρ_el  = zero(TT)
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            ip  = connijk[ie,i,j,k]
+            imK = one(TT)/(ω[i]*ω[j]*ω[k]*Je[ie,i,j,k])  # element lumped mass at the node
+
+            for ieq = 1:nsens
+                R = abs((wt[1]*q[ip,ieq] + wt[2]*q1[ip,ieq] + wt[3]*q2[ip,ieq]) - imK*rhs_el[ie,i,j,k,ieq])
+                ratio = max(ratio, R/den[ieq])
+            end
+
+            ρf = _dsgs_full(q, qe, ip, 1, lpert)
+            ul = _dsgs_full(q, qe, ip, 2, lpert)/ρf
+            vl = _dsgs_full(q, qe, ip, 3, lpert)/ρf
+            wl = _dsgs_full(q, qe, ip, 4, lpert)/ρf
+            uTmx = max(uTmx, sqrt(ul*ul + vl*vl + wl*wl) + c_node(ip, ρf))
+            ρ_el += ρf
+        end
+        ρ_el /= TT(ngl*ngl*ngl)
+
+        μ_res = CR*Δ*Δ*_dsgs_cut(ratio, cutoff)
+        μ_max = Cmax*Δ*uTmx
+        μ_fl  = Cmin > zero(TT) ? Cmin*Δ*uTmx : zero(TT)
+        μ     = max(μ_fl, min(μ_max, μ_res))   # kinematic, m²/s
+        μ_dyn = ρ_el*μ
+
+        μ_dsgs[ie,1] = zero(TT)                                    # no mass diffusion
+        for ieq = 2:min(4, neqs)
+            μ_dsgs[ie,ieq] = visc_coeff[ieq] * μ_dyn               # momenta
+        end
+        if ltheta
+            neqs >= 5 && (μ_dsgs[ie,5] = visc_coeff[5] * (Pr/γm1) * μ_dyn)   # ρθ (Marras 10b)
+            for ieq = 6:neqs
+                μ_dsgs[ie,ieq] = visc_coeff[ieq] * μ                # passive tracers
+            end
+        else
+            neqs >= 5 && (μ_dsgs[ie,5] = visc_coeff[5] * μ / Pr_t)  # hl
+            for ieq = 6:neqs
+                μ_dsgs[ie,ieq] = visc_coeff[ieq] * μ / Sc_t         # qt, qp, species
+            end
         end
     end
 

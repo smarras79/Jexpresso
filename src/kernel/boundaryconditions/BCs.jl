@@ -321,65 +321,38 @@ function build_custom_bcs_dirichlet!(::NSD_2D, t,
         end
     end
 
-    if(inputs[:llaguerre_bc])
-        if (nelem_semi_inf >0)
-            for e=1:nelem_semi_inf
-                for i=1:ngl
-                    ip = connijk_lag[e,i,ngr]
-                    ny_l = 1.0
-                    nx_l = 0.0
-                    fill!(qbdy, 4325789.0)
-                    tag = inputs[:laguerre_tag]
-                    user_bc_dirichlet!(@view(uaux[ip,:]), @view(coords[:, ip]), t, tag, qbdy, nx_l, ny_l, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
-
-                    for ieq =1:neqs
-                        if bc_value_changed(qbdy[ieq], uaux[ip,ieq], qe[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
-                            #@info mesh.coords[1,ip],mesh.coords[2,ip],ieq,qbdy[ieq]
-                            uaux[ip,ieq] = qbdy[ieq]
-                            RHS[ip, ieq] = 0.0
-                        end
-                    end
-                end
-                ip_test = connijk_lag[e,1,1]
-                if (coords[1, ip_test] == xmin)
-                    for k=1:ngr
-                        ip = connijk_lag[e,1,k]
-                        ny_l = 0.0
-                        nx_l = -1.0
-                        fill!(qbdy, 4325789.0)
-                        tag = inputs[:laguerre_tag]
-                        user_bc_dirichlet!(@view(uaux[ip,:]), @view(coords[:, ip]), t, tag, qbdy, nx_l, ny_l, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
-                        for ieq =1:neqs
-                            if bc_value_changed(qbdy[ieq], uaux[ip,ieq], qe[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0)
-                                uaux[ip,ieq] = qbdy[ieq]
-                                RHS[ip, ieq] = 0.0
-                            end
-                        end
-                    end
-                end
-                ip_test = connijk_lag[e,ngl,1]
-                if (coords[1, ip_test] == xmax)
-                    for k =1:ngr
-                        ip = connijk_lag[nelem_semi_inf,ngl,k]
-                        ny_l = 0.0
-                        nx_l = 1.0
-                        fill!(qbdy, 4325789.0)
-                        tag = inputs[:laguerre_tag]
-                        user_bc_dirichlet!(@view(uaux[ip,:]), @view(coords[:, ip]), t, tag, qbdy, nx_l, ny_l, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
-
-                        for ieq =1:neqs
-                            if bc_value_changed(qbdy[ieq], uaux[ip,ieq], qe[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0)
-                                uaux[ip,ieq] = qbdy[ieq]
-                                RHS[ip, ieq] = 0.0
-                            end
-                        end
-                    end
-                end
+    if nelem_semi_inf > 0
+        # Semi-infinite layer (see laguerre_side_columns_2D in bc_constraints.jl):
+        # a column side continuing a boundary of the finite domain inherits its
+        # tag; the far end takes :laguerre_tag when :llaguerre_bc is on.
+        sides = laguerre_side_columns_2D(connijk_lag, coords, poin_in_bdy_edge, bdy_edge_type,
+                                         nedges_bdy, nelem_semi_inf, ngl, ngr)
+        for (e, i, tag, nx_l, ny_l) in sides, k = 2:ngr
+            _laguerre_dirichlet_node!(uaux, RHS, qbdy, qe, coords, t, connijk_lag[e,i,k],
+                                      tag, nx_l, ny_l, neqs, inputs)
+        end
+        if inputs[:llaguerre_bc]
+            tag = inputs[:laguerre_tag]
+            for e = 1:nelem_semi_inf, i = 1:ngl
+                nx_l, ny_l = laguerre_far_normal(connijk_lag, coords, e, i, ngr)
+                _laguerre_dirichlet_node!(uaux, RHS, qbdy, qe, coords, t, connijk_lag[e,i,ngr],
+                                          tag, nx_l, ny_l, neqs, inputs)
             end
         end
     end
     uaux2u!(u, uaux, neqs, npoin)
 end
+function _laguerre_dirichlet_node!(uaux, RHS, qbdy, qe, coords, t, ip, tag, nx_l, ny_l, neqs, inputs)
+    fill!(qbdy, 4325789.0)
+    user_bc_dirichlet!(@view(uaux[ip,:]), @view(coords[:, ip]), t, tag, qbdy, nx_l, ny_l, @view(qe[ip,:]), inputs[:SOL_VARS_TYPE])
+    for ieq = 1:neqs
+        if bc_value_changed(qbdy[ieq], uaux[ip,ieq], qe[ip,ieq]) && !AlmostEqual(qbdy[ieq], 4325789.0)
+            uaux[ip,ieq] = qbdy[ieq]
+            RHS[ip, ieq] = 0.0
+        end
+    end
+end
+
 function build_custom_bcs_neumann!(::NSD_2D, t,
                                    coords,
                                    nx, ny, nz, npoin,
@@ -566,24 +539,28 @@ function build_custom_bcs_lin_solve_sparse!(::NSD_2D, t, coords, nx, ny, nz,
     end
 
     if ("Laguerre" in bdy_edge_type)
-        for k=1:ngr
-            ip = connijk_lag[1, 1, k]
+        # Column sides continuing a boundary of the finite domain inherit its
+        # tag and Dirichlet value (see laguerre_side_columns_2D); the far end
+        # j = ngr is homogeneous (decay at infinity).
+        sides = laguerre_side_columns_2D(connijk_lag, coords, poin_in_bdy_edge, bdy_edge_type,
+                                         nedges_bdy, nelem_semi_inf, ngl, ngr)
+        # k = 1 included: the base corner node is a finite-boundary node, but the
+        # sparse path does not replace the finite-boundary rows of L when a
+        # Laguerre layer is present.
+        for (e, i, tag, nx_l, ny_l) in sides, k = 1:ngr
+            ip = connijk_lag[e, i, k]
+            fill!(qbdy, 4325789.0)
+            user_bc_dirichlet!(@view(RHS[ip,:]), @view(coords[:, ip]), t, tag, qbdy,
+                               nx_l, ny_l, @view(qe[ip,:]), inputs[:SOL_VARS_TYPE])
             for ip1 = 1:npoin
                 L[ip,ip1] = 0.0
             end
             L[ip,ip] = 1.0
-            RHS[ip] = 0.0
+            for ieq = 1:neqs
+                RHS[ip,ieq] = qbdy[ieq]
+            end
         end
 
-        for k=1:ngr
-            ip = connijk_lag[nelem_semi_inf, ngl, k]
-            for ip1 = 1:npoin
-                L[ip,ip1] = 0.0
-            end
-            L[ip,ip] = 1.0
-            RHS[ip] = 0.0
-        end
-        
         for e=1:nelem_semi_inf
             for i=1:ngl
                 ip = connijk_lag[e, i, ngr]
@@ -676,24 +653,28 @@ function build_custom_bcs_lin_solve!(::NSD_2D, t, coords,
     end
     
     if ("Laguerre" in bdy_edge_type)
-        for k=1:ngr
-            ip = connijk_lag[1, 1, k]
+        # Column sides continuing a boundary of the finite domain inherit its
+        # tag and Dirichlet value (see laguerre_side_columns_2D); the far end
+        # j = ngr is homogeneous (decay at infinity).
+        sides = laguerre_side_columns_2D(connijk_lag, coords, poin_in_bdy_edge, bdy_edge_type,
+                                         nedges_bdy, nelem_semi_inf, ngl, ngr)
+        # k = 1 included: the base corner node is a finite-boundary node, but the
+        # sparse path does not replace the finite-boundary rows of L when a
+        # Laguerre layer is present.
+        for (e, i, tag, nx_l, ny_l) in sides, k = 1:ngr
+            ip = connijk_lag[e, i, k]
+            fill!(qbdy, 4325789.0)
+            user_bc_dirichlet!(@view(RHS[ip,:]), @view(coords[:, ip]), t, tag, qbdy,
+                               nx_l, ny_l, @view(qe[ip,:]), inputs[:SOL_VARS_TYPE])
             for ip1 = 1:npoin
                 L[ip,ip1] = 0.0
             end
             L[ip,ip] = 1.0
-            RHS[ip] = 0.0
+            for ieq = 1:neqs
+                RHS[ip,ieq] = qbdy[ieq]
+            end
         end
 
-        for k=1:ngr
-            ip = connijk_lag[nelem_semi_inf, ngl, k]
-            for ip1 = 1:npoin
-                L[ip,ip1] = 0.0
-            end
-            L[ip,ip] = 1.0
-            RHS[ip] = 0.0
-        end
-        
         for e=1:nelem_semi_inf
             for i=1:ngl
                 ip = connijk_lag[e, i, ngr]

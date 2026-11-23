@@ -67,8 +67,8 @@ function user_flux!(F, G, H,
     u  = ρu/ρ
     v  = ρv/ρ
     w  = ρw/ρ
-    ρqt = ρqt/ρ
-    ρqp = ρqp/ρ
+    # (ρqt, ρqp keep their meaning: the fluxes below are ρqt·u, ρqp·u. Overwriting them with ρqt/ρ, ρqp/ρ
+    # made the moisture fluxes qt·u, qp·u, a factor ρ off: rising air lost total water, ~1.6 g/kg per km.)
 
     Pressure = q[end]#perfectGasLaw_ρhltoP(PhysConst, ρ=ρ, hl=hl, qt=qt, qp=qp)
     Pressure = Pressure - qe[end]
