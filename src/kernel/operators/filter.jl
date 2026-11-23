@@ -733,13 +733,11 @@ function init_filter(nop,xgl,mu_x,mesh,inputs, rank)
         # exp(-βξ/2) (L_j(βξ) - L_{j-1}(βξ)). With β fixed to 1 here, the filter
         # kept exp(-ξ/2) exactly instead of the basis' own decay when β != 1.
         β_lag = Float128(inputs[:laguerre_beta])
-        Laguerre = St_Laguerre(Polynomial(Float128(2.0)),Polynomial(Float128(2.0)),Polynomial(Float128(2.0)),Polynomial(Float128(2.0)))
         for i=1:nop+1
             ξ = xgl[i]
             for j=1:nop+1
-                jj = j-1
-                ScaledLaguerreAndDerivative!(jj,Laguerre,β_lag,inputs[:backend])
-                leg[i,j] = Laguerre.Laguerre(ξ)
+                # L_{j-1}(βξ) by the recurrence (stable at the far nodes)
+                leg[i,j] = _laguerre_rec(j-1, β_lag*ξ)[1]
             end
         end
         

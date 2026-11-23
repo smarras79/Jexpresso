@@ -190,6 +190,8 @@ const _CACHE_FINGERPRINT_KEYS = (
     :llump, :ldss_laplace, :ldss_differentiation,
     :llaguerre_1d_right, :llaguerre_1d_left,
     :laguerre_beta, :llaguerre_bc, :nop_laguerre,
+    # the layer's stretching sets its node coordinates, metrics and mass
+    :xfac_laguerre, :yfac_laguerre,
     :lperiodic_1d, :lperiodic_laguerre,
     :lphysics_grid, :nlay_pg, :nx_pg, :ny_pg,
     :ladapt, :linitial_refine, :init_refine_lvl, :lamr,
@@ -222,7 +224,12 @@ const _CACHE_FINGERPRINT_KEYS = (
 # rebuilt.
 # v4: cache identity reworked — per-case paths, adaptive runs never read a
 # cache, struct-shape signature added to the fingerprint.
-const _CACHE_SCHEMA_VERSION = 4
+# v5: Laguerre layers — the LGR nodes/weights are now evaluated by recurrence
+# (they were inaccurate past ~25 nodes) and the layer global ids no longer
+# collide when an edge runs towards decreasing coordinate (the global mass
+# summed unrelated nodes); cached metrics and mass of Laguerre meshes are
+# wrong. :xfac_laguerre/:yfac_laguerre added to the fingerprint.
+const _CACHE_SCHEMA_VERSION = 5
 
 # Signature of the field sets of the structs that get serialized into the
 # caches (St_mesh in the mesh cache, St_metrics in the SEM cache).

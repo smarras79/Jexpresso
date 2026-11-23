@@ -17,7 +17,9 @@ function initialize(SD, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
     
     if (inputs[:backend] == CPU())        
         for ip=1:mesh.npoin
-             z0 = 10
+             # centred so that q(x = 0) = exp(-26^2/18) ~ 5e-17: the inflow value
+             # q = 0 then matches the initial state to machine precision
+             z0 = 26
              sigma = 3.0
              q.qn[ip,1] =exp(-((mesh.coords[1,ip]-z0)^2)/(2*sigma^2))
 
@@ -26,10 +28,8 @@ function initialize(SD, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
             
         end
 
-        varnames = ["q"]
-        write_output(NSD_1D(), q.qn, mesh, OUTPUT_DIR, inputs, varnames, PNG())
     else
-        z0 = TFloat(10)
+        z0 = TFloat(26)
         sigma = TFloat(3.0)
         k = initialize_gpu!(inputs[:backend])
         k(q.qn, q.qe, @view(mesh.coords[1,:]), z0, sigma; ndrange = (mesh.npoin))

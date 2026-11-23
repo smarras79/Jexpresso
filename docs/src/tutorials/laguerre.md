@@ -80,3 +80,47 @@ the base edge and `:mu_y` in the Laguerre direction (the reference directions
 ξ and η of the element), for TOTAL and PERT. The Laguerre modes of the filter
 use the same `:laguerre_beta` as the basis. With TOTAL the filter acts on
 `q - qe`.
+
+## Viscosity
+
+With `:lvisc => true` the semi-infinite elements diffuse with the constant
+coefficients `:μ` (one per equation), in 1D and 2D. Turbulence models
+(`:visc_model`) are not used in the layer yet. The layer nodes are at
+`x = xmax + yfac_laguerre*ξ` (1D, right end), so a smaller `:yfac_laguerre`
+packs the nodes near the interface and, with explicit time stepping, needs a
+smaller `:Δt` for the diffusion to stay stable.
+`problems/AdvDiff/laguerre1d_visc` advects and diffuses a Gaussian into the
+layer and stores the exact solution in `qe` for comparison.
+
+## Boundary fluxes
+
+`:bdy_fluxes => true` works on meshes with a Laguerre layer: fluxes are applied
+on the boundary edges of the finite domain. They are not applied on the sides
+of the layer.
+
+## Linear solves (Helmholtz, Elliptic)
+
+Both storage modes (`:lsparse`) impose Dirichlet rows on the boundary edges of
+the finite domain (periodic and `"Laguerre"` interface edges excluded) and on
+the layer: inherited sides as above, homogeneous far end.
+
+## Accuracy
+
+The layer converges spectrally in both `:nop` and `:nop_laguerre`. A
+manufactured Helmholtz solution decaying into the layer
+(``\sin(x/2)e^{-x/2}\cos y``) is recovered to ``10^{-13}``, and the 1D
+advection-diffusion test above to ``10^{-13}`` (`:nop` 8), with
+`:nop_laguerre` up to at least 63; nothing measurable is reflected at the
+interface. Three practical points:
+
+* Check the initial state against the inflow boundary values: a Gaussian
+  whose tail is ``10^{-10}`` at a Dirichlet boundary held at 0 leaves an
+  error of that size behind it, whatever the resolution.
+
+* The layer must reach far enough for the solution to have decayed at its
+  last node, which is homogeneous: the nodes are at ξ times the stretching
+  factor (`:xfac_laguerre`/`:yfac_laguerre`) from the base, with
+  ``\xi_{max} \approx 3.5\,`` `nop_laguerre`. A short layer (small factor,
+  few nodes) truncates the solution and converges slowly in `:nop_laguerre`.
+* The basis decays like ``e^{-\beta\xi/2}``; a solution decaying much more
+  slowly than that in ``\xi`` needs more Laguerre nodes.

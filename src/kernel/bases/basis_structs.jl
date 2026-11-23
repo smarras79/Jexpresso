@@ -662,6 +662,32 @@ function LagrangeInterpolatingPolynomials_classic(ξ, ξq, TFloat, backend)
 end
 
 #
+# L_n(t) and its first three derivatives at t, by the three-term recurrence
+# L_k = ((2k-1-t) L_{k-1} - (k-1) L_{k-2})/k, which is stable for t >= 0, and
+#   L_n^(1) = n (L_n - L_{n-1})/t,
+#   L_n^(2) = ((t-1) L_n^(1) - n L_n)/t,           (Laguerre ODE)
+#   L_n^(3) = ((t-2) L_n^(2) - (n-1) L_n^(1))/t    (its derivative), t > 0.
+# The monomial coefficients of L_n alternate in sign and grow like
+# binomial(n,k)/k!, so evaluating L_n from them (Polynomials.Polynomial) loses
+# every digit at the far nodes once n is past ~25, even in Float128: the LGR
+# nodes, weights and derivative matrix were then wrong (derivative errors
+# 3e-2 at 31 nodes, O(1) at 40).
+#
+function _laguerre_rec(n::Integer, t)
+    t = Float128(t)
+    n == 0 && return (one(t), zero(t), zero(t), zero(t))
+    Lm1 = one(t); L = 1 - t
+    for k = 2:n
+        Lm1, L = L, ((2k - 1 - t)*L - (k - 1)*Lm1)/k
+    end
+    iszero(t) && return (L, -Float128(n), zero(t), zero(t))
+    d1 = n*(L - Lm1)/t
+    d2 = ((t - 1)*d1 - n*L)/t
+    d3 = ((t - 2)*d2 - (n - 1)*d1)/t
+    return (L, d1, d2, d3)
+end
+
+#
 # L_nop(beta*x), the Laguerre polynomial of degree nop in the scaled variable
 # beta*x (the scaled Laguerre functions are exp(-beta*x/2) L_n(beta*x)), and its
 # derivatives. The recurrence L_k = ((2k-1 - beta x) L_{k-1} - (k-1) L_{k-2})/k
@@ -768,40 +794,20 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
         thresh = 1e-5
     end
         
-    x0 = 0.0
-    x1 = 0.0
-    for k=1:ngr
-      x0 = ξ[k]
+    # Refine the interior nodes, zeros of L'_{nop+1}(beta x), by a Halley-type
+    # step in t = beta x with the recurrence (_laguerre_rec); node 1 is x = 0.
+    for k=2:ngr
+      t0 = beta*ξ[k]
       diff1 = 1.0
-      stuck = 1.0
-      while(diff1 > thresh)
-          ScaledLaguerreAndDerivative!(nop+1,Laguerre,beta,backend)
-          L1 = Laguerre.Laguerre
-          L3 = Laguerre.dLaguerre
-          L4 = Laguerre.d2Laguerre
-          L5 = Laguerre.d3Laguerre
-          ScaledLaguerreAndDerivative!(nop,Laguerre,beta,backend)
-          L2 = Laguerre.Laguerre
-          #x1 = x0 - L1(x0)/L3(x0)#+ (L1(x0) - L2(x0))/L2(x0)
-          #x1 = x0 -  L3(x0)/L4(x0) 
-          # Laguerre root finder
-          x1 = x0 - L3(x0)/L4(x0) - L3(x0)*L5(x0)/(2*(L4(x0)^2)) 
-          diff1 = abs(x1 -x0)
-          x0 = x1
-          repeat = 1.0
-          #=for k1=1:k
-            if AlmostEqual(x1,gr.ξ[k1])
-              repeat = 0.0
-            end
-          end
-          if (repeat == 0.0)
-             stuck +=1
-             x0 = gr.ξ[k]*stuck
-             diff = 1.0
-          end=#
-          
+      it = 0
+      while (diff1 > thresh && it < 100)
+          _, f, fp, fpp = _laguerre_rec(nop+1, t0)
+          t1 = t0 - f/fp - f*fpp/(2*fp^2)
+          diff1 = abs(t1 - t0)/max(1, abs(t0))
+          t0 = t1
+          it += 1
       end
-      ξ[k] = x1
+      ξ[k] = t0/beta
     end
     ξ[1] = 0
     #ScaledLaguerreAndDerivative!(nop+1,Laguerre,beta)
@@ -876,10 +882,7 @@ end
 
 
 function scaled_laguerre(x,n,beta,backend)
-    Laguerre = St_Laguerre(Polynomial(TFloat(2.0)),Polynomial(TFloat(2.0)),Polynomial(TFloat(2.0)),Polynomial(TFloat(2.0)))
-    ScaledLaguerreAndDerivative!(n,Laguerre,beta,CPU())
-    #Lkx = Laguerre.Laguerre(x)
-    Lkx = Real(Laguerre.Laguerre(x))
-    y = exp(-(beta*x)/2)*Lkx#exp(-x)*Lkx
-    return y
+    # exp(-beta x/2) L_n(beta x), evaluated by the recurrence (see _laguerre_rec)
+    t = Float128(beta)*Float128(x)
+    return exp(-t/2)*_laguerre_rec(n, t)[1]
 end

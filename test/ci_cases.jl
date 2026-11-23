@@ -116,6 +116,7 @@ const CI_CASES = CICase[
     CICase(eqs = "RadiativeTransfer", case = "2d_extra_coords", timeout = 30),
     CICase(eqs = "RadiativeTransfer", case = "3d_extra_coords", timeout = 30),
     CICase(eqs = "CompEuler", case = "theta_laguerre_total", timeout = 24),
+    CICase(eqs = "AdvDiff", case = "laguerre1d_visc", timeout = 14),
     #<< test/generate_ci_ref.jl inserts new cases above this line >>
 
     #--------------------------------------------------------------------------

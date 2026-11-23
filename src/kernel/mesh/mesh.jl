@@ -3167,17 +3167,28 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                     
                     bdy_normals[e_iter,:] .= nor
                     bdy_tangents[e_iter,:] .= tan
+                    # Global ids of the layer nodes: edge `ord` (counted from the low
+                    # end of the face) owns the columns i' = 1..ngl, i' running in
+                    # the INCREASING coordinate along the face, so that its column
+                    # i' = ngl and column i' = 1 of edge ord+1 (the same nodes) get
+                    # the same ids. With i in the edge's own node order, an edge
+                    # running towards decreasing coordinate gave its non-shared
+                    # columns the ids of another edge's columns: unrelated nodes were
+                    # then summed by the global (MPI) assembly, even in serial.
                     if (dot(tan,[1,0]) == 0)
                         ord = Int64(round((max(y,yend)-mesh.ymin)/abs(y-yend)))
+                        ascending = y < yend
                     else
                         ord = Int64(round((max(x,xend)-mesh.xmin)/abs(x-xend)))
+                        ascending = x < xend
                     end
                     
                     for i=1:mesh.ngl
                         ip = mesh.poin_in_bdy_edge[iedge,i]
                         mesh.connijk_lag[e_iter,i,1] = ip
+                        ia = ascending ? i : mesh.ngl + 1 - i
                         for j=2:mesh.ngr
-                            gip = Int64(mesh.gnpoin + (ord-1)*(mesh.ngl-1)*(mesh.ngr-1) + (mesh.ngr-1)*(i-1) + j-1)
+                            gip = Int64(mesh.gnpoin + (ord-1)*(mesh.ngl-1)*(mesh.ngr-1) + (mesh.ngr-1)*(ia-1) + j-1)
 			    #@info ord, gip, mesh.gnpoin, x, xend, mesh.xmax, mesh.xmin
                             if (inputs[:xscale]==1.0)
                                 x_temp = mesh.x[ip] + nor[1]*gr.ξ[j]*factorx
