@@ -211,7 +211,9 @@ From every record stored for the same final time, the run then:
     `Bperp_Linf`, `uperp`, `uperp_L1`, `uperp_Linf`, `rho`, `rho_L1`, `rho_Linf` (no
     suffix: L²);
   - `output/alfven-convergence_dsgs_nocut-it<n>.png`: DynSGS with and without its cutoff, the
-    same way;
+    same way. DynSGS without the cutoff is left out of every figure unless asked for
+    (`tools/alfven_wave_plot.jl --nocut`, or a `--visc` that names it): on this wave it is
+    another method, held at order 4 (item 4 of "What this test found"). The table lists it;
   - `output/alfven-convergence_all-it<n>.png`: every variant stored, five panels side by side
     (B⊥ and u⊥ in L² and L∞, and ρ) with the convergence figure of the smooth vortex (`../smoothVortex/convergence_figure.jl`,
     shared by the two cases): the measured rate p of every curve in its legend, and the
@@ -238,10 +240,11 @@ From every record stored for the same final time, the run then:
 
 `tools/alfven_wave_plot.jl` draws the same figures and table from the store without
 running anything, as `alfven-convergence-it0.png` and the files above (`3,5,7` for a subset of
-the orders, `--visc=dsgs,galerkin` for a subset of the records, `--out=DIR` elsewhere).
-With `--panels` it draws instead the two comparisons with only the L² errors of B⊥, u⊥
+the orders, `--visc=dsgs,galerkin` for a subset of the records, `--out=DIR` elsewhere,
+`--nocut` to draw DynSGS without the cutoff too).
+With `--panels` it draws instead the comparisons with only the L² errors of B⊥, u⊥
 and ρ, in one row with one legend for the three, as `alfven-convergence_panels_L2-it0.png`
-and `alfven-convergence_dsgs_nocut_panels_L2-it0.png`. `--panels=L1` and `--panels=Linf`
+(and `alfven-convergence_dsgs_nocut_panels_L2-it0.png` with `--nocut`). `--panels=L1` and `--panels=Linf`
 draw the same three in L¹ and in L∞, `--panels=L2,L1` both, one norm per row, and panel
 keys (`--panels=rho,state_L1`: the keys above, and `state`, `state_L1`, `state_Linf` for
 the state q) any other choice.

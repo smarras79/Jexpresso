@@ -561,6 +561,13 @@ end
 # filled, drawn last so that it shows inside a hollow marker it coincides with;
 # Galerkin dashed with a larger hollow marker; the variant dash-dot.
 #---------------------------------------------------------------------------------
+# DSGS without the cutoff ("dsgs_nocut", and its variants "dsgs_nocut_bdf5",
+# ...): on this wave another method, held at order 4 by the floor of its
+# residual (README, "What this test found", item 4). The figures leave it out
+# unless asked for (tools/alfven_wave_plot.jl --nocut); the table lists it.
+_aw_is_nocut(tag) = startswith(string(tag), "dsgs_nocut")
+_aw_drop_nocut(rows) = filter(r -> !_aw_is_nocut(r.visc), rows)
+
 const AW_COMPARISONS = [   # (tags, file suffix, title, each panel alone too)
     (["dsgs", "galerkin"],   "",           "DSGS (the deck) and Galerkin",                true),
     (["dsgs", "dsgs_nocut"], "dsgs_nocut", "DSGS (the deck) and DSGS without the cutoff", false),
@@ -707,11 +714,12 @@ end
 # defaults to the panels' file keys joined by "-". Without it, the full
 # figures: AW_PANELS, and each panel alone.
 function _aw_compare(rows, OUTPUT_DIR, iout; name = AW_FIG_NAME, panels = nothing,
-                     label = panels === nothing ? "" : join(last.(panels), "-"))
+                     label = panels === nothing ? "" : join(last.(panels), "-"), nocut = true)
     full   = panels === nothing
     panels = full ? AW_PANELS : panels
     files = String[]
     for (tags, suffix, title, singles) in AW_COMPARISONS
+        (!nocut && any(_aw_is_nocut, tags)) && continue    # not asked for
         rs = filter(r -> r.visc in tags, rows)
         nops = unique(r.nop for r in rs)
         if !all(any(count(r -> r.visc == tag && r.nop == n, rs) >= 2 for n in nops) for tag in tags)
@@ -769,14 +777,16 @@ end
 # smooth-wave test needs side by side: the error of the wave (B⊥) for every
 # variant, max r against the cutoff, and max μ. Returns the first file, or
 # nothing when no order/tag has two meshes yet.
-function _aw_plot(rows, OUTPUT_DIR, iout; name = AW_FIG_NAME)
+# nocut = false leaves DSGS without the cutoff out of every figure.
+function _aw_plot(rows, OUTPUT_DIR, iout; name = AW_FIG_NAME, nocut = true)
+    nocut || (rows = _aw_drop_nocut(rows))
     kw = (tags = sort(unique(r.visc for r in rows)), label = _aw_label, line = _aw_line,
           galerkin = t -> startswith(t, "galerkin"))
     # every variant stored, side by side (the shared convergence figure)
     fall = _conv_figure(rows, AW_ALL_PANELS, OUTPUT_DIR, iout; prefix = string(name, "_all"),
                         singles = false, kw...)
     fall === nothing && return nothing
-    cmp = _aw_compare(rows, OUTPUT_DIR, iout; name = name)
+    cmp = _aw_compare(rows, OUTPUT_DIR, iout; name = name, nocut = nocut)
     f = isempty(cmp) ? fall : first(cmp)
     pr = _aw_diag_panel(rows, :r_max,  "\\max_t\\, r",
                         "\\mathrm{largest\\ residual\\ before\\ the\\ cutoff}"; kw...)
@@ -811,7 +821,7 @@ function user_plot_2d(mesh, q, t, outvar, inputs, OUTPUT_DIR, iout; Minv = nothi
     if MPI.Comm_rank(get_mpi_comm()) == 0
         _aw_save(e, inputs, tnom, t, st)
         rows = _aw_load(tnom)
-        isempty(rows) || (_aw_report(rows); _aw_plot(rows, OUTPUT_DIR, iout))
+        isempty(rows) || (_aw_report(rows); _aw_plot(rows, OUTPUT_DIR, iout; nocut = false))
     end
     return nothing
 end
