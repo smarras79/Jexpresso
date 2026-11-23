@@ -21,6 +21,7 @@
 #   BW_NOPS="4 7" tools/brio_wu_order_scan.sh
 #   BW_CMIN=0.0 tools/brio_wu_order_scan.sh           # with the DynSGS floor off
 #   BW_CUTOFF="0 1e-3" tools/brio_wu_order_scan.sh    # without and with the smoothness cutoff
+#   BW_CR="1 4" tools/brio_wu_order_scan.sh           # the DynSGS residual coefficient C_R
 #   BW_HSCALE=nop tools/brio_wu_order_scan.sh         # Dao & Nazarov's Δ_K/k instead of h_e/(N+1)
 #   BW_NODAL=1 tools/brio_wu_order_scan.sh            # the nodal coefficient
 #   JEXPRESSO_BW_FREEZE=0 tools/brio_wu_order_scan.sh # DynSGS per stage, as before b956ccd
@@ -30,8 +31,9 @@
 # C_min acts on the deck's length scale, the paper's h_e/(N+1) unless
 # BW_HSCALE=nop. With BW_HSCALE or BW_NODAL set, the store and the figure
 # directory carry it in their name too (Cmin0.06_nop, Cmin0.06_nodal), so that
-# different methods never share a figure. So does a smoothness cutoff c > 0
-# (:dsgs_cutoff, BW_CUTOFF, a list like BW_CMIN): Cmin0.06_cut1e-3.
+# different methods never share a figure. So do a smoothness cutoff c > 0
+# (:dsgs_cutoff, BW_CUTOFF, a list like BW_CMIN): Cmin0.06_cut1e-3, and a
+# residual coefficient other than 1 (:dsgs_CR, BW_CR, a list): Cmin0.06_CR4.
 #
 # At ~M DOFs order N runs on M/N elements (150, 120, 100, 86 at 600 DOFs) with
 # Δt = 5e-5·600/M, so every order costs about the same.
@@ -55,6 +57,7 @@ DOFS=${BW_DOFS:-"600 1200"}
 NOPS=${BW_NOPS:-"4 5 6 7"}
 CMINS=${BW_CMIN:-0.06}
 CUTOFFS=${BW_CUTOFF:-0}
+CRS=${BW_CR:-1}
 JOBS=${BW_JOBS:-1}
 export BW_DOFS="$DOFS"     # for the per-order children of a parallel sweep
 # the length scale: the deck's default (the paper's h_e/(N+1)) unless BW_HSCALE says otherwise
@@ -94,7 +97,7 @@ for r in runs
     n, d = split(r, ":")
     ENV["JEXPRESSO_BW_NOP"] = n; ENV["JEXPRESSO_BW_DOFS"] = d
     println("=== Brio-Wu: N = ", n, ", ~", d, " DOFs, C_min = ", ENV["JEXPRESSO_BW_CMIN"],
-            ", cutoff = ", get(ENV, "JEXPRESSO_BW_CUTOFF", "0"))
+            ", cutoff = ", get(ENV, "JEXPRESSO_BW_CUTOFF", "0"), ", C_R = ", get(ENV, "JEXPRESSO_BW_CR", "1"))
     t0 = time()
     try
         Jexpresso.run_case("MHD", "brioWu1d")
@@ -125,13 +128,16 @@ rm -f "$OUT"/output/density_dof*-it* "$OUT"/output/density_nu*-it* "$OUT"/output
 suffix="${BW_HSCALE:+_$BW_HSCALE}${BW_NODAL:+_nodal}"
 for c in $CMINS; do
   for k in $CUTOFFS; do
+   for r in $CRS; do
     export JEXPRESSO_BW_CMIN="$c"
     export JEXPRESSO_BW_CUTOFF="$k"
+    export JEXPRESSO_BW_CR="$r"
     case "$k" in 0|0.0|0e0|0e-0) cut="" ;; *) cut="_cut$k" ;; esac
-    export JEXPRESSO_BW_STORE="Cmin$c$suffix$cut"
+    case "$r" in 1|1.0) crs="" ;; *) crs="_CR$r" ;; esac
+    export JEXPRESSO_BW_STORE="Cmin$c$suffix$crs$cut"
     figs="$OUT/output/$JEXPRESSO_BW_STORE"
     [ "${BW_KEEP:-0}" = "1" ] || rm -rf "$CASE/curves/$JEXPRESSO_BW_STORE" "$figs"
-    echo "=== Brio-Wu order scan, C_min = $c, cutoff $k: N [$NOPS] x DOFs [$DOFS], length scale \
+    echo "=== Brio-Wu order scan, C_min = $c, cutoff $k, C_R $r: N [$NOPS] x DOFs [$DOFS], length scale \
 $([ "${JEXPRESSO_BW_HSCALE:-ngl}" = nop ] && echo 'Delta_K/k' || echo 'Delta_K/(k+1)')\
 ${BW_NODAL:+, nodal coefficient}, $JOBS session(s)"
     if [ "$JOBS" -gt 1 ]; then
@@ -139,7 +145,8 @@ ${BW_NODAL:+, nodal coefficient}, $JOBS session(s)"
     else
         run_orders $NOPS
     fi
-    echo "=== C_min = $c, cutoff $k, the whole sweep, in $figs:"
+    echo "=== C_min = $c, cutoff $k, C_R $r, the whole sweep, in $figs:"
     "$JULIA" --project=. tools/brio_wu_plot.jl --out="$figs"
+   done
   done
 done
