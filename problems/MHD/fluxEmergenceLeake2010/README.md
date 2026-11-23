@@ -344,11 +344,29 @@ paper's dissipation and its energy relaxation:
   hit brakes and heats its node, and a row of nodes held at the floor drains
   differently from the rows beside it. `velocity`: the added mass moves with the
   node's velocity and has its temperature, as more of the same plasma (momentum and
-  energy added with it). Not yet shown to matter: in the drained-hole test with the
-  centre below the floor (0.12 of the density, 4 s, `lowbeta`) the floor fires where
-  the plasma is nearly at rest, and the two give the same statistics to 2 %; a
-  restart reports the change (`rho_floor`). For the case where rows of nodes at the
-  density floor remain once `EINT` is on.
+  energy added with it), as long as that is at most the node's own mass
+  ($\rho \ge \rho_{min}/2$); a node that nearly emptied in one stage has no
+  velocity or temperature worth keeping ($m/\rho$, $p/\rho$ of a vanishing $\rho$) and is
+  braked and cooled as by the default, by $2\rho/\rho_{min}$ instead of $\rho/\rho_{min}$.
+  Without that bound a restart of the run below from 2185 s went non-finite in four
+  steps. Evidence for it (`elements` on the `EINT=lowbeta` run of 23 Nov at 2530 s):
+  where the elements on the lines $x = -2, 0, 2$ Mm hold nodes at the density floor
+  (1–8 of their 25), the node-to-node part of the vertical velocity is 9–29 km/s,
+  where they hold none 0.1–8 km/s, while the velocity form's stress varies by
+  0.6–1.5 from one element to the next there: the floor brakes the rows it holds
+  against the draining rows beside them. In the drained-hole tests the floor fires
+  on plasma nearly at rest and the two give the same statistics; a restart reports
+  the change (`rho_floor`).
+
+  *Restarts* hold no DynSGS steps with the legacy sensor (`:dsgs_hold_steps`). A run
+  starts with the coefficient at zero for two steps while the history of the
+  sensor fills; at a restart that left a developed flow without DynSGS until its
+  third step (the restart above was at its fourth when it failed, the coefficient
+  on its cap). The legacy sensor reads $|\partial_tq|$, and on the history seeded
+  with the restart state that is its first reading too. Restarting a REF 1 run at
+  920 s, both ways end as far from the uninterrupted run at 974 s (velocity rms
+  0.081 and 0.086 km/s, $\log\rho$ rms 0.0052 and 0.0050 dex, the same largest
+  coefficient): the difference is the restart's, not the hold's.
 
 - **DynSGS in the corona.** The DynSGS has one coefficient per element,
   from the largest normalized residual of all equations, used as viscosity,

@@ -193,7 +193,9 @@ end
 # the kinetic energy is 5-50 times the internal energy (dome of a velocity-form run, 2185-2530 s):
 # every hit brakes and heats that node, and the rows of nodes that sit at the floor drain
 # differently from the rows beside them. "velocity": the added mass moves with the node's velocity
-# and has its temperature (ρv and the internal energy scaled with ρ), as more of the same plasma.
+# and has its temperature (ρv and the internal energy scaled with ρ), as more of the same plasma, as
+# long as it is at most the node's own mass (ρ ≥ ρ_min/2); a node that nearly emptied in one stage is
+# braked and cooled as by the default, by 2ρ/ρ_min instead of ρ/ρ_min.
 if !@isdefined(lk10_floor_keepv)
     const lk10_floor_keepv = Ref{Bool}(false)
 end
@@ -238,13 +240,18 @@ function lk10_positivity_limiter!(u, integrator, p, t)
             d = 1.0 - ρ/ρmin
             d > worst[1] && (worst = (d, 1.0, X[1,ip], X[2,ip], ρ/ρmin))
             if lk10_floor_keepv[] && ρ > 0.0
-                # the added mass at the node's velocity and temperature (JEXPRESSO_LK10_RHOFLOOR=velocity)
+                # the added mass at the node's velocity and temperature (JEXPRESSO_LK10_RHOFLOOR=velocity), up to
+                # twice the node's own mass: a node that nearly emptied in one stage has neither (m/ρ and p/ρ of a
+                # vanishing ρ), and keeping them would inject them amplified by ρmin/ρ (a restart from 2185 s went
+                # non-finite in 4 steps that way). Beyond that the velocity and temperature fall as 2ρ/ρmin, the
+                # default floor's ρ/ρmin doubled.
                 s   = ρmin/ρ
+                se  = min(s, 2.0)
                 ke0 = 0.5*(u[iρu]^2 + u[iρv]^2 + u[iρw]^2)/ρ
                 me0 = 0.5*(u[iBx]^2 + u[iBy]^2 + u[iBz]^2) + 0.5*u[iψ]^2
                 ei0 = u[iE] - ke0 - me0
-                u[iρu] *= s; u[iρv] *= s; u[iρw] *= s
-                u[iE] = s*(ei0 + ke0) + me0
+                u[iρu] *= se; u[iρv] *= se; u[iρw] *= se
+                u[iE] = se*ei0 + se*se/s*ke0 + me0
             end
             u[iρ] = ρmin; ρ = ρmin; nhit += 1
         end
@@ -380,6 +387,12 @@ function user_inputs()
         # reads -∂ₜq/2 at the first stage — R ≈ |∂ₜq|, so every moving structure is diffused,
         # the corona's waves included. "residual": the element residual, frozen once per step.
         :dsgs_sensor          => sensor,
+        # The DynSGS coefficient is held at zero for the first steps of a run while the BDF2 history fills
+        # (:dsgs_hold_steps, rhs.jl). At a restart that leaves a developed flow with no DynSGS for two steps
+        # (a restart from 2185 s of a drained-dome run went non-finite at its fourth step, the coefficient
+        # on its cap). The legacy sensor needs no hold there: on the history seeded with the restart state
+        # its first reading is |∂ₜq| itself, the gradient it always reads. Restarts with it hold none.
+        :dsgs_hold_steps      => (sensor == "legacy" && !isempty(strip(_lk10_env("RESTART_DIR", "")))) ? 0 : 2,
         # JEXPRESSO_LK10_DSGS_STAGES=1,5 or 1: the coefficient is that of the first stage, where the
         # legacy sensor reads twice its mean over the stages: half the C_R, same coefficient.
         :dsgs_stages          => stages,
