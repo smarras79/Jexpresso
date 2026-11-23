@@ -19,7 +19,7 @@
 #   5:  32 x 32 x 96 elements  (the columns of 2, elements 2 tall at the bottom as 3: README,
 #       "Vertical resolution"; generate it first: gmsh -3 LK22.geo -setnumber ref 5 -o LK22_32x32x96.msh)
 #   6:  64 x 32 x 96 elements  (3 across a rope that lies along y, simulations 0 and 4, and in z; 2 along
-#       it: half of 3; generate it first: gmsh -3 LK22.geo -setnumber ref 6 -o LK22_64x32x96.msh)
+#       it: half of 3; shipped, LK22_64x32x96.msh = gmsh -3 LK22.geo -setnumber ref 6)
 #---------------------------------------------------------------------------------
 
 # Positivity floors as the Runge-Kutta stage limiter (as problems/MHD/fluxEmergenceLeake2014):

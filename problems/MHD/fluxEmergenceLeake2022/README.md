@@ -118,7 +118,7 @@ grid, so with `:nop => 4` the nodes follow its stretching:
 | 3 | $64\times64\times96$ | 8 | `LK22_64x64x96.msh` (generate) | 25 M | $10^{-3}$ |
 | 4 | $128\times128\times192$ | 4 | `LK22_128x128x192.msh` (generate) | 202 M | $5\times10^{-4}$ |
 | 5 | $32\times32\times96$ | 16 in $x$, $y$; 8 in $z$ | `LK22_32x32x96.msh` (generate, 12 MB) | 6.4 M | $10^{-3}$ |
-| 6 | $64\times32\times96$ | 8 in $x$, 16 in $y$, 8 in $z$ | `LK22_64x32x96.msh` (generate, 25 MB) | 12.6 M | $10^{-3}$ |
+| 6 | $64\times32\times96$ | 8 in $x$, 16 in $y$, 8 in $z$ | `LK22_64x32x96.msh` (shipped, 25 MB) | 12.6 M | $10^{-3}$ |
 
 ```bash
 cd problems/MHD/fluxEmergenceLeake2022
@@ -266,9 +266,6 @@ only if the fast CFL number grows well beyond the step's design, which it
 did not in these tests); not the rest of `LK22_DSGS=lk10`.
 
 ```bash
-cd problems/MHD/fluxEmergenceLeake2022
-gmsh -3 LK22.geo -setnumber ref 6 -o LK22_64x32x96.msh     # once (or the gmsh of GridapGmsh's artifact)
-cd ../../..
 LK22_REF=6 LK22_REF_WEIGHT=1 LK22_ENERGY=thermal LK22_HEAT=shock LK22_STABCAP=0.2 LK22_TEND=60 mpiexec -n N julia --project=. src/Jexpresso.jl MHD fluxEmergenceLeake2022
 ```
 
