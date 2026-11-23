@@ -613,8 +613,12 @@ _aw_cmp_legend(rows, tags) =
                                legendfontsize = AW_CMP_FS.legend, foreground_color_legend = nothing,
                                background_color_legend = nothing, show = false), rows, tags)
 
-# Returns the files written.
-function _aw_compare(rows, OUTPUT_DIR, iout; name = "convergence")
+# Returns the files written. `panels`, a selection of AW_PANELS, draws the
+# comparisons with those panels alone, in one row with the legend as the last,
+# narrower cell (up to four panels), as <stem>_panels_<file>-<file>...-it<iout>.png
+# beside the full figures (tools/alfven_wave_plot.jl --panels).
+function _aw_compare(rows, OUTPUT_DIR, iout; name = "convergence", panels = AW_PANELS)
+    full  = length(panels) == length(AW_PANELS)
     files = String[]
     for (tags, suffix, title, singles) in AW_COMPARISONS
         rs = filter(r -> r.visc in tags, rows)
@@ -625,11 +629,12 @@ function _aw_compare(rows, OUTPUT_DIR, iout; name = "convergence")
             continue
         end
         stem = isempty(suffix) ? name : string(name, "_", suffix)
+        full || (stem = string(stem, "_panels_", join(last.(panels), "-")))
         pls = Any[_aw_cmp_panel(rs, fld, ylab,
                                 LaTeXStrings.latexstring(string("\\mathrm{(", 'a' + (i - 1), ")}\\ ", ttl)),
                                 tags)
-                  for (i, (fld, ylab, ttl, _)) in enumerate(AW_PANELS)]
-        if singles                                     # each panel alone, with its legend
+                  for (i, (fld, ylab, ttl, _)) in enumerate(panels)]
+        if singles && full                             # each panel alone, with its legend
             for (i, (fld, ylab, ttl, fname)) in enumerate(AW_PANELS)
                 p1 = _aw_cmp_legend!(_aw_cmp_panel(rs, fld, ylab, LaTeXStrings.latexstring(
                                          string(ttl, ",\\ t = ", rs[1].t)), tags), rs, tags)
@@ -640,12 +645,18 @@ function _aw_compare(rows, OUTPUT_DIR, iout; name = "convergence")
             end
         end
         push!(pls, _aw_cmp_legend(rs, tags))
-        nc = 4; nr = cld(length(pls), nc)
-        while length(pls) < nr*nc                      # an empty cell keeps the grid
-            push!(pls, Plots.plot(; framestyle = :none, grid = false, show = false))
+        if length(pls) <= 5        # up to four panels: one row, the legend a narrower last cell
+            np = length(pls) - 1; wl = 0.55
+            lay = Plots.grid(1, np + 1; widths = [fill(1.0/(np + wl), np); wl/(np + wl)])
+            sz  = (round(Int, (np + wl)*AW_CMP_CELL[1]), AW_CMP_CELL[2] + 60)
+        else                       # a grid four wide, the legend in the last cell
+            nc = 4; nr = cld(length(pls), nc)
+            while length(pls) < nr*nc                  # an empty cell keeps the grid
+                push!(pls, Plots.plot(; framestyle = :none, grid = false, show = false))
+            end
+            lay = (nr, nc); sz = (nc*AW_CMP_CELL[1], nr*AW_CMP_CELL[2])
         end
-        plt = Plots.plot(pls...; layout = (nr, nc),
-                         size = (nc*AW_CMP_CELL[1], nr*AW_CMP_CELL[2]),
+        plt = Plots.plot(pls...; layout = lay, size = sz,
                          plot_title = string(title, ", t = ", rs[1].t), plot_titlefontsize = 19,
                          left_margin = 12Plots.mm, bottom_margin = 10Plots.mm,
                          top_margin = 3Plots.mm, right_margin = 3Plots.mm, show = false)

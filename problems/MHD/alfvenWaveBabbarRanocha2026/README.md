@@ -229,6 +229,10 @@ From every record stored for the same final time, the run then:
 `tools/alfven_wave_plot.jl` draws the same figures and table from the store without
 running anything, as `convergence-it0.png` and the files above (`3,5,7` for a subset of
 the orders, `--visc=dsgs,galerkin` for a subset of the records, `--out=DIR` elsewhere).
+With `--panels` it draws instead the two comparisons with only the L² errors of B⊥, u⊥
+and ρ, in one row with one legend for the three, as `convergence_panels_Bperp-uperp-rho-it0.png`
+and `convergence_dsgs_nocut_panels_Bperp-uperp-rho-it0.png`; `--panels=rho,L2` (any of
+`Bperp`, `Bperp_Linf`, `uperp`, `uperp_Linf`, `rho`, `L2`, `Linf`) chooses the panels.
 
 **Mass and energy** are tracked at every step, as for the rotor: the discrete totals
 Σ_K Σ_ij ω_iω_j J ρ and Σ_K Σ_ij ω_iω_j J ρE over all elements and ranks go to

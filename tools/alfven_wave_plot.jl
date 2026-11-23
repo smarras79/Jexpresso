@@ -9,6 +9,7 @@
 #   julia --project=. tools/alfven_wave_plot.jl 3,5,7            # N = 3, 5, 7 alone
 #   julia --project=. tools/alfven_wave_plot.jl --visc=dsgs,galerkin --out=figs
 #   julia --project=. tools/alfven_wave_plot.jl --t=1.0          # another final time
+#   julia --project=. tools/alfven_wave_plot.jl --panels         # L² of B⊥, u⊥, ρ, one legend
 #
 # It reads problems/MHD/alfvenWaveBabbarRanocha2026/errors/*.dat (what every
 # run writes) and uses the case's own plotting code, so the figure is the one
@@ -38,6 +39,12 @@
 #   --visc=TAGS   only these records, by the tag of their file name: dsgs (the
 #                 deck as committed), dsgs_nocut (cutoff 0), galerkin, dsgs_perstage, ...
 #                 (comma list)
+#   --panels[=P]  instead of the figures above, the two comparisons with only
+#                 the panels P (comma list of Bperp, Bperp_Linf, uperp,
+#                 uperp_Linf, rho, L2, Linf; without "=P": Bperp,uperp,rho, the
+#                 L² errors of B⊥, u⊥ and ρ) in one row and one legend for all,
+#                 as convergence_panels_Bperp-uperp-rho-it0.png and
+#                 convergence_dsgs_nocut_panels_Bperp-uperp-rho-it0.png
 using Plots, LaTeXStrings, Printf, LinearAlgebra
 
 const CASE = joinpath(@__DIR__, "..", "problems", "MHD", "alfvenWaveBabbarRanocha2026")
@@ -56,12 +63,17 @@ function main(args)
     nops  = Int[]
     viscs = String[]
     t     = nothing
+    panels = nothing
     out   = joinpath(@__DIR__, "..", "output", "MHD", "alfvenWaveBabbarRanocha2026", "output")
     for a in args
         if startswith(a, "--t=")
             t = parse(Float64, split(a, '='; limit = 2)[2])
         elseif startswith(a, "--out=")
             out = split(a, '='; limit = 2)[2]
+        elseif a == "--panels"
+            panels = ["Bperp", "uperp", "rho"]
+        elseif startswith(a, "--panels=")
+            panels = String.(filter(!isempty, split(split(a, '='; limit = 2)[2], r"[,\s]+")))
         elseif startswith(a, "--visc=")
             append!(viscs, filter(!isempty, split(split(a, '='; limit = 2)[2], r"[,\s]+")))
         elseif startswith(a, "--")
@@ -94,6 +106,17 @@ function main(args)
     isempty(rows) && error("no stored errors at t = $t for these orders/tags (times present: $(sort(unique(times))))")
     _aw_report(rows)
     name = isempty(nops) ? "convergence" : string("convergence_nop", join(sort(unique(nops)), "-"))
+    if panels !== nothing
+        keys = [p[4] for p in AW_PANELS]
+        sel  = map(panels) do k
+            i = findfirst(x -> lowercase(x) == lowercase(k), keys)
+            i === nothing && error("unknown panel \"$k\": the panels are $(join(keys, ", "))")
+            AW_PANELS[i]
+        end
+        isempty(_aw_compare(rows, out, 0; name = name, panels = sel)) &&
+            println(" # no figure: no comparison has both of its variants on two meshes")
+        return nothing
+    end
     _aw_plot(rows, out, 0; name = name) === nothing &&
         println(" # no figure: every order/tag has fewer than two meshes")
     return nothing
