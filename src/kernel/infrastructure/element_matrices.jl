@@ -1467,26 +1467,6 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
     else
         nothing
     end
-    
-    if (inputs[:bdy_fluxes])
-        if SD == NSD_3D()
-            M_surf = build_surface_mass_matrix(mesh.nfaces_bdy, mesh.npoin, ω, basis.ψ, mesh.ngl, metrics.Jef, mesh.poin_in_bdy_face, TFloat, mesh.Δx, inputs)
-            assemble_mpi!(M_surf,g_dss_cache)
-            M_surf_inv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
-            mass_inverse!(M_surf_inv, M_surf, QT)
-            M_edge_inv = KernelAbstractions.zeros(backend, TFloat, 1)
-            
-        else
-            M_surf_inv = KernelAbstractions.zeros(backend, TFloat, 1)
-            M_edge = build_segment_mass_matrix(mesh.nedges_bdy, mesh.npoin, ω, basis.ψ, mesh.ngl, metrics.Jef, mesh.poin_in_bdy_edge, TFloat, mesh.Δx, inputs)
-            assemble_mpi!(M_edge,g_dss_cache)
-            M_edge_inv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
-            mass_inverse!(M_edge_inv, M_edge, QT)
-        end
-    else
-        M_surf_inv = KernelAbstractions.zeros(backend, TFloat, 1)
-        M_edge_inv = KernelAbstractions.zeros(backend, TFloat, 1)
-    end
 
     if typeof(SD) == NSD_1D
         M_lag = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.ngr*mesh.ngr), Int64(mesh.nelem_semi_inf))
@@ -1508,7 +1488,6 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
         end
         
         @time DSS_mass_Laguerre!(M, SD, Me, M_lag, mesh, N, TFloat; llump=inputs[:llump])
-        g_dss_cache = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
     else
         if (typeof(SD) == NSD_1D)
             k = build_mass_matrix_1d_gpu!(backend)
@@ -1547,6 +1526,31 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
             
             KernelAbstractions.synchronize(backend)
         end
+    end
+    # Global (MPI) assembly of the mass on both backends, as in matrix_wrapper;
+    # it was CPU-only here, leaving g_dss_cache undefined on GPU.
+    g_dss_cache = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
+
+    # Boundary-flux masses: built after g_dss_cache exists, from the finite-
+    # element basis, weights and edge Jacobians (basis, ω and metrics are
+    # (finite, Laguerre) pairs here; boundary edges are finite-element edges).
+    if (inputs[:bdy_fluxes])
+        if SD == NSD_3D()
+            M_surf = build_surface_mass_matrix(mesh.nfaces_bdy, mesh.npoin, ω[1], basis[1].ψ, mesh.ngl, metrics[1].Jef, mesh.poin_in_bdy_face, TFloat, mesh.Δx, inputs)
+            assemble_mpi!(M_surf,g_dss_cache)
+            M_surf_inv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
+            mass_inverse!(M_surf_inv, M_surf, QT)
+            M_edge_inv = KernelAbstractions.zeros(backend, TFloat, 1)
+        else
+            M_surf_inv = KernelAbstractions.zeros(backend, TFloat, 1)
+            M_edge = build_segment_mass_matrix(mesh.nedges_bdy, mesh.npoin, ω[1], basis[1].ψ, mesh.ngl, metrics[1].Jef, mesh.poin_in_bdy_edge, TFloat, mesh.Δx, inputs)
+            assemble_mpi!(M_edge,g_dss_cache)
+            M_edge_inv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
+            mass_inverse!(M_edge_inv, M_edge, QT)
+        end
+    else
+        M_surf_inv = KernelAbstractions.zeros(backend, TFloat, 1)
+        M_edge_inv = KernelAbstractions.zeros(backend, TFloat, 1)
     end
 
     mass_inverse!(Minv, M, QT)

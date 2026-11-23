@@ -180,6 +180,29 @@ function inviscid_rhs_el_laguerre!(u, params, connijk_lag, qe, x, y, lsource, SD
     uaux2u!(u, @view(params.uaux[:,:]), params.neqs, params.mesh.npoin)
 end
 
+function viscous_rhs_el_laguerre!(u, params, connijk_lag, qe, SD::NSD_1D)
+
+    lref = _lag_subtract_reference(params.SOL_VARS_TYPE)
+    pr   = zeros(eltype(params.uprimitive_lag), size(params.uprimitive_lag, 2))
+    for iel=1:params.mesh.nelem_semi_inf
+        for i=1:params.mesh.ngr
+            ip = connijk_lag[iel,i,1]
+            user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive_lag[i,:]),params.SOL_VARS_TYPE)
+            if lref
+                user_primitives!(@view(qe[ip,:]),@view(qe[ip,:]),pr,params.SOL_VARS_TYPE)
+                @views params.uprimitive_lag[i,:] .-= pr
+            end
+        end
+        for ieq = 1:params.neqs
+            _expansion_visc_laguerre!(params.rhs_diffξ_el_lag, params.uprimitive_lag, params.visc_coeff,
+                                      params.ω_lag, params.mesh.ngr, params.basis_lag.dψ,
+                                      params.metrics_lag.Je, params.metrics_lag.dξdx,
+                                      iel, ieq, params.QT, SD, params.AD)
+        end
+    end
+    params.rhs_diff_el_lag .= params.rhs_diffξ_el_lag
+end
+
 function viscous_rhs_el_laguerre!(u, params, connijk_lag, qe, SD::NSD_2D)
     
     lref = _lag_subtract_reference(params.SOL_VARS_TYPE)
@@ -490,6 +513,32 @@ function _expansion_inviscid_laguerre!(params, iel, ::NCL, QT::Exact, SD::NSD_2D
 end
 
 
+
+function _expansion_visc_laguerre!(rhs_diffξ_el, uprimitiveieq, visc_coeffieq, ω_lag, ngr, dψ_lag,
+                                   Je, dξdx, iel, ieq, QT::Inexact, SD::NSD_1D, ::FD)
+    nothing
+end
+
+#
+# 1D: weak form -∫ (dψ_i/dx) μ (dq/dx) dx over the semi-infinite element,
+# the same as _expansion_visc!(..., NSD_1D, ContGal) in rhs.jl with the
+# Laguerre basis and metrics (Je = dx/dξ, dξdx = 1/Je with its sign for a
+# left or right layer).
+#
+function _expansion_visc_laguerre!(rhs_diffξ_el, uprimitiveieq, visc_coeffieq, ω_lag, ngr, dψ_lag,
+                                   Je, dξdx, iel, ieq, QT::Inexact, SD::NSD_1D, ::ContGal)
+    for k = 1:ngr
+        dqdξ = 0.0
+        for ii = 1:ngr
+            dqdξ += dψ_lag[ii,k]*uprimitiveieq[ii,ieq]
+        end
+        dξdx_k    = dξdx[iel,k]
+        integrand = ω_lag[k]*Je[iel,k]*dξdx_k*visc_coeffieq[ieq]*dqdξ*dξdx_k
+        for i = 1:ngr
+            rhs_diffξ_el[iel,i,ieq] -= dψ_lag[i,k]*integrand
+        end
+    end
+end
 
 function _expansion_visc_laguerre!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq,
                                    visc_coeffieq, ω, ω_lag, mesh, basis, basis_lag,

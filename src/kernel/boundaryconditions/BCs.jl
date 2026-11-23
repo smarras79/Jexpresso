@@ -538,84 +538,91 @@ function build_custom_bcs_lin_solve_sparse!(::NSD_2D, t, coords, nx, ny, nz,
         end
     end
 
+    # Dirichlet rows of L for the finite-boundary nodes whose RHS was set above
+    # (same edges: periodic and Laguerre interface edges skipped). This used to
+    # be skipped entirely when a Laguerre layer was present, and otherwise
+    # replaced the rows of every boundary edge, periodic seams included.
+    apply_dirichlet_bc_inplace!(L, poin_in_bdy_edge, bdy_edge_type, nedges_bdy, ngl)
+
     if ("Laguerre" in bdy_edge_type)
-        # Column sides continuing a boundary of the finite domain inherit its
-        # tag and Dirichlet value (see laguerre_side_columns_2D); the far end
-        # j = ngr is homogeneous (decay at infinity).
-        sides = laguerre_side_columns_2D(connijk_lag, coords, poin_in_bdy_edge, bdy_edge_type,
-                                         nedges_bdy, nelem_semi_inf, ngl, ngr)
-        # k = 1 included: the base corner node is a finite-boundary node, but the
-        # sparse path does not replace the finite-boundary rows of L when a
-        # Laguerre layer is present.
-        for (e, i, tag, nx_l, ny_l) in sides, k = 1:ngr
-            ip = connijk_lag[e, i, k]
-            fill!(qbdy, 4325789.0)
-            user_bc_dirichlet!(@view(RHS[ip,:]), @view(coords[:, ip]), t, tag, qbdy,
-                               nx_l, ny_l, @view(qe[ip,:]), inputs[:SOL_VARS_TYPE])
-            for ip1 = 1:npoin
-                L[ip,ip1] = 0.0
-            end
-            L[ip,ip] = 1.0
-            for ieq = 1:neqs
-                RHS[ip,ieq] = qbdy[ieq]
-            end
-        end
-
-        for e=1:nelem_semi_inf
-            for i=1:ngl
-                ip = connijk_lag[e, i, ngr]
-                for ip1 = 1:npoin
-                    L[ip,ip1] = 0.0
-                end
-                L[ip,ip] = 1.0
-                RHS[ip] = 0.0
-            end
-        end
-
-    else
-        # Replace bdy rows in global L (in sparse storage):
-        apply_dirichlet_bc_inplace!(L, poin_in_bdy_edge, ngl)
+        _laguerre_lin_solve_rows!(L, RHS, qbdy, qe, coords, t, connijk_lag, poin_in_bdy_edge,
+                                  bdy_edge_type, nedges_bdy, nelem_semi_inf, ngl, ngr, npoin,
+                                  neqs, inputs)
     end
-    
 end
 
-function apply_dirichlet_bc_inplace!(L::SparseMatrixCSC, poin_in_bdy_edge, ngl)
- """
-    Apply Dirichlet boundary conditions by modifying sparse matrix in-place
-    Sets boundary rows to: L[ip, :] = 0, L[ip, ip] = 1
-    
-    This is efficient when the number of boundary nodes is small relative to matrix size.
-    """
-    
-    # Get boundary node indices
-    boundary_nodes = Int[]
-    for iedge = 1:size(poin_in_bdy_edge, 1)
-        for k = 1:ngl
-            ip = poin_in_bdy_edge[iedge, k]
-            if ip > 0  # Valid node index
-                push!(boundary_nodes, ip)
-            end
+#
+# Laguerre rows of the linear system (dense and sparse paths). Column sides
+# continuing a boundary of the finite domain inherit its tag and Dirichlet
+# value (see laguerre_side_columns_2D); the far end j = ngr is homogeneous
+# (decay at infinity). k = 1 is the base node, already a finite-boundary
+# Dirichlet row; it is set again with the same tag.
+#
+function _laguerre_lin_solve_rows!(L, RHS, qbdy, qe, coords, t, connijk_lag, poin_in_bdy_edge,
+                                   bdy_edge_type, nedges_bdy, nelem_semi_inf, ngl, ngr, npoin,
+                                   neqs, inputs)
+    sides = laguerre_side_columns_2D(connijk_lag, coords, poin_in_bdy_edge, bdy_edge_type,
+                                     nedges_bdy, nelem_semi_inf, ngl, ngr)
+    rows = Int[]
+    for (e, i, tag, nx_l, ny_l) in sides, k = 1:ngr
+        ip = connijk_lag[e, i, k]
+        fill!(qbdy, 4325789.0)
+        user_bc_dirichlet!(@view(RHS[ip,:]), @view(coords[:, ip]), t, tag, qbdy,
+                           nx_l, ny_l, @view(qe[ip,:]), inputs[:SOL_VARS_TYPE])
+        push!(rows, ip)
+        for ieq = 1:neqs
+            RHS[ip,ieq] = qbdy[ieq]
         end
     end
-    
-    # Remove duplicates and sort
-    boundary_nodes = unique!(sort!(boundary_nodes))
-    
-    #println("Applying boundary conditions to $(length(boundary_nodes)) nodes")
-    
-    # Method 1a: Direct modification (works but not most efficient)
-    for ip in boundary_nodes
-        # Zero out entire row
-        for j = 1:size(L, 2)
-            L[ip, j] = 0.0
+    for e = 1:nelem_semi_inf, i = 1:ngl
+        ip = connijk_lag[e, i, ngr]
+        push!(rows, ip)
+        for ieq = 1:neqs
+            RHS[ip,ieq] = 0.0
         end
-        # Set diagonal to 1
+    end
+    _dirichlet_rows!(L, rows)
+end
+
+# Rows `rows` of L -> identity rows. Sparse: one pass over the stored entries.
+function _dirichlet_rows!(L::SparseMatrixCSC, rows)
+    isempty(rows) && return L
+    mask = falses(size(L, 1)); mask[rows] .= true
+    rv = rowvals(L); nz = nonzeros(L)
+    for idx in eachindex(rv)
+        mask[rv[idx]] && (nz[idx] = 0.0)
+    end
+    for ip in rows
         L[ip, ip] = 1.0
     end
-    
+    return L
+end
+function _dirichlet_rows!(L::AbstractMatrix, rows)
+    for ip in rows
+        @views L[ip, :] .= 0.0
+        L[ip, ip] = 1.0
+    end
     return L
 end
 
+_is_periodic_or_laguerre_tag(tag) = tag in ("periodicx", "periodic1", "periodicz", "periodic3", "Laguerre")
+
+#
+# Dirichlet rows of L for the finite-boundary edges (periodic and Laguerre
+# interface edges skipped), matching the edges whose RHS
+# build_custom_bcs_lin_solve_sparse! sets.
+#
+function apply_dirichlet_bc_inplace!(L, poin_in_bdy_edge, bdy_edge_type, nedges_bdy, ngl)
+    rows = Int[]
+    for iedge = 1:nedges_bdy
+        _is_periodic_or_laguerre_tag(bdy_edge_type[iedge]) && continue
+        for k = 1:ngl
+            ip = poin_in_bdy_edge[iedge, k]
+            ip > 0 && push!(rows, ip)
+        end
+    end
+    return _dirichlet_rows!(L, unique!(sort!(rows)))
+end
 
 function build_custom_bcs_lin_solve!(::NSD_2D, t, coords,
                                      nx, ny, nz,
@@ -653,38 +660,9 @@ function build_custom_bcs_lin_solve!(::NSD_2D, t, coords,
     end
     
     if ("Laguerre" in bdy_edge_type)
-        # Column sides continuing a boundary of the finite domain inherit its
-        # tag and Dirichlet value (see laguerre_side_columns_2D); the far end
-        # j = ngr is homogeneous (decay at infinity).
-        sides = laguerre_side_columns_2D(connijk_lag, coords, poin_in_bdy_edge, bdy_edge_type,
-                                         nedges_bdy, nelem_semi_inf, ngl, ngr)
-        # k = 1 included: the base corner node is a finite-boundary node, but the
-        # sparse path does not replace the finite-boundary rows of L when a
-        # Laguerre layer is present.
-        for (e, i, tag, nx_l, ny_l) in sides, k = 1:ngr
-            ip = connijk_lag[e, i, k]
-            fill!(qbdy, 4325789.0)
-            user_bc_dirichlet!(@view(RHS[ip,:]), @view(coords[:, ip]), t, tag, qbdy,
-                               nx_l, ny_l, @view(qe[ip,:]), inputs[:SOL_VARS_TYPE])
-            for ip1 = 1:npoin
-                L[ip,ip1] = 0.0
-            end
-            L[ip,ip] = 1.0
-            for ieq = 1:neqs
-                RHS[ip,ieq] = qbdy[ieq]
-            end
-        end
-
-        for e=1:nelem_semi_inf
-            for i=1:ngl
-                ip = connijk_lag[e, i, ngr]
-                for ip1 = 1:npoin
-                    L[ip,ip1] = 0.0
-                end
-                L[ip,ip] = 1.0
-                RHS[ip] = 0.0
-            end
-        end
+        _laguerre_lin_solve_rows!(L, RHS, qbdy, qe, coords, t, connijk_lag, poin_in_bdy_edge,
+                                  bdy_edge_type, nedges_bdy, nelem_semi_inf, ngl, ngr, npoin,
+                                  neqs, inputs)
     end
     
 end
