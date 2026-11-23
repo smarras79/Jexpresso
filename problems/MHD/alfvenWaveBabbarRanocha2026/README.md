@@ -16,8 +16,8 @@ JEXPRESSO_AW_NOP=3 JEXPRESSO_AW_NELX=32 \
     julia --project=. src/Jexpresso.jl MHD alfvenWaveBabbarRanocha2026    # one run
 ```
 
-The sweep ends with `output/MHD/alfvenWaveBabbarRanocha2026/output/convergence-it0.png`
-(DynSGS and Galerkin), `convergence_dsgs_nocut-it0.png` (DynSGS with and without its
+The sweep ends with `output/MHD/alfvenWaveBabbarRanocha2026/output/alfven-convergence-it0.png`
+(DynSGS and Galerkin), `alfven-convergence_dsgs_nocut-it0.png` (DynSGS with and without its
 cutoff) and the table of errors and orders; see [The sweep](#the-sweep).
 
 ## The problem
@@ -189,26 +189,29 @@ From every record stored for the same final time, the run then:
 
 - prints a table with the errors of B⊥ (L² and L∞), u⊥ and ρ, their observed orders, and
   max r and max μ of every run;
-- draws the error against #DOFs on log-log axes in seven panels: the L² and L∞ errors of
-  B⊥ and of u⊥ (the wave; L∞ is the largest |B⊥,h − B⊥| over the Gauss points), the L²
-  error of ρ (the measure of the paper's Fig. 13), of the whole state, and its L∞ error,
-  the largest of the variables' maxima. The wave's L∞ is in every record written since
-  17 Nov 2026, so `tools/alfven_wave_plot.jl` draws those panels from such a store
-  without a new run. One colour and marker per order; DynSGS as the deck runs it solid
-  with a filled marker, drawn last so that where it equals another run (the cutoff makes
-  ν zero on the resolved wave) it shows inside that run's hollow marker; Galerkin dashed
-  with a larger hollow marker; the other variants dash-dot. Three figures:
-  - `output/convergence-it<n>.png`: DynSGS and Galerkin alone, the seven panels in a grid
-    with the legend in the last cell, and one dotted h^(N+1) reference slope per order in
-    the order's colour, labelled at its end (the reference slopes of the October 2026
-    figure). Each panel also on its own, at publication size and with its legend, as
-    `convergence_Bperp-it<n>.png`, `convergence_Bperp_Linf-it<n>.png`,
-    `convergence_uperp-it<n>.png`, `convergence_uperp_Linf-it<n>.png`,
-    `convergence_rho-it<n>.png`, `convergence_L2-it<n>.png` and `convergence_Linf-it<n>.png`;
-  - `output/convergence_dsgs_nocut-it<n>.png`: DynSGS with and without its cutoff, the
+- draws the error against #DOFs on log-log axes, in a matrix of panels: rows B⊥ and u⊥
+  (the wave), ρ (the measure of the paper's Fig. 13) and the whole state; columns L², L¹
+  and L∞. L¹ is (1/|Ω|) ∫ |q_h − q| dΩ, the norm of most MHD accuracy tests (with
+  |B⊥,h − B⊥| for the wave), and L∞ the largest error over the Gauss points; the state
+  is sqrt(Σ_k e(q_k)²) in L² and L¹ and the largest e(q_k) in L∞. The wave's L∞ is in
+  every record written since 17 Nov 2026 and L¹ in every record written since
+  23 Nov 2026: an older record leaves those panels without its point. One colour and
+  marker per order; DynSGS as the deck runs it solid with a filled marker, drawn last so
+  that where it equals another run (the cutoff makes ν zero on the resolved wave) it shows
+  inside that run's hollow marker; Galerkin dashed with a larger hollow marker; the other
+  variants dash-dot. Three figures:
+  - `output/alfven-convergence-it<n>.png`: DynSGS and Galerkin alone, the twelve panels
+    with the legend in a column on the right, and one dotted h^(N+1) reference slope per
+    order in the order's colour, labelled at its end (the reference slopes of the October
+    2026 figure). Each panel also on its own, at publication size and with its legend, as
+    `alfven-convergence_<key>-it<n>.png`, the key one of `Bperp`, `Bperp_L1`,
+    `Bperp_Linf`, `uperp`, `uperp_L1`, `uperp_Linf`, `rho`, `rho_L1`, `rho_Linf`,
+    `state`, `state_L1`, `state_Linf` (no suffix: L²);
+  - `output/alfven-convergence_dsgs_nocut-it<n>.png`: DynSGS with and without its cutoff, the
     same way;
-  - `output/convergence_all-it<n>.png`: every variant stored, the seven panels side by side
-    with the convergence figure of the smooth vortex (`../smoothVortex/convergence_figure.jl`,
+  - `output/alfven-convergence_all-it<n>.png`: every variant stored, seven panels side by side
+    (B⊥ and u⊥ in L² and L∞, ρ, the state in L² and L∞) with the convergence figure of the
+    smooth vortex (`../smoothVortex/convergence_figure.jl`,
     shared by the two cases): the measured rate p of every curve in its legend, and the
     dotted reference slopes O(h^(N+1)) of the lowest and the highest order bracketing the
     data.
@@ -216,23 +219,24 @@ From every record stored for the same final time, the run then:
   A comparison is drawn once both of its variants have a curve of two meshes; the titles
   carry the final time;
 - draws what DSGS did, from the run maxima of the DSGS records:
-  - `convergence_rmax-it<n>.png`: max r of every run against #DOFs, with the cutoff c as
+  - `alfven-convergence_rmax-it<n>.png`: max r of every run against #DOFs, with the cutoff c as
     a dashed line. A point below the line is a run in which μ = C_R Δ² max(0, r − c) was
     exactly zero throughout, so that there DSGS is Galerkin because of the cutoff;
-  - `convergence_mumax-it<n>.png`: max μ of every run. Zero has no place on a log axis,
+  - `alfven-convergence_mumax-it<n>.png`: max μ of every run. Zero has no place on a log axis,
     so each legend entry says on how many of its meshes μ was exactly zero. The dotted
     guide is O(h⁴), the scaling of the residual's BDF2 floor without the cutoff (item 4
     of "What this test found");
-  - `convergence_paper-it<n>.png`: the three panels the smooth-wave test needs, side by
+  - `alfven-convergence_paper-it<n>.png`: the three panels the smooth-wave test needs, side by
     side: the L² error of B⊥ for every variant, max r against the cutoff, and max μ.
 
 `tools/alfven_wave_plot.jl` draws the same figures and table from the store without
-running anything, as `convergence-it0.png` and the files above (`3,5,7` for a subset of
+running anything, as `alfven-convergence-it0.png` and the files above (`3,5,7` for a subset of
 the orders, `--visc=dsgs,galerkin` for a subset of the records, `--out=DIR` elsewhere).
 With `--panels` it draws instead the two comparisons with only the L² errors of B⊥, u⊥
-and ρ, in one row with one legend for the three, as `convergence_panels_Bperp-uperp-rho-it0.png`
-and `convergence_dsgs_nocut_panels_Bperp-uperp-rho-it0.png`; `--panels=rho,L2` (any of
-`Bperp`, `Bperp_Linf`, `uperp`, `uperp_Linf`, `rho`, `L2`, `Linf`) chooses the panels.
+and ρ, in one row with one legend for the three, as `alfven-convergence_panels_L2-it0.png`
+and `alfven-convergence_dsgs_nocut_panels_L2-it0.png`. `--panels=L1` and `--panels=Linf`
+draw the same three in L¹ and in L∞, `--panels=L2,L1` both, one norm per row, and panel
+keys (`--panels=rho,state_L1`, the keys above) any other choice.
 
 **Mass and energy** are tracked at every step, as for the rotor: the discrete totals
 Σ_K Σ_ij ω_iω_j J ρ and Σ_K Σ_ij ω_iω_j J ρE over all elements and ranks go to
@@ -262,8 +266,8 @@ To start a fresh comparison, run `rm -r problems/MHD/alfvenWaveBabbarRanocha2026
 `tools/alfven_wave_scan.sh` runs every order on its meshes, with DynSGS as the deck runs it
 (cutoff 10⁻³), DynSGS without the cutoff (`nocut`: `JEXPRESSO_AW_CUTOFF=0`, records
 `dsgs_nocut`) and Galerkin, and ends with `tools/alfven_wave_plot.jl`: the figures of the whole
-sweep in `output/MHD/alfvenWaveBabbarRanocha2026/output/` (`convergence-it0.png`, DynSGS and
-Galerkin; `convergence_dsgs_nocut-it0.png`; `convergence_all-it0.png`, every variant), and its table.
+sweep in `output/MHD/alfvenWaveBabbarRanocha2026/output/` (`alfven-convergence-it0.png`, DynSGS and
+Galerkin; `alfven-convergence_dsgs_nocut-it0.png`; `alfven-convergence_all-it0.png`, every variant), and its table.
 
 Each order gets the meshes that take its Galerkin error from the coarse-mesh range down to
 about 1e-12, short of round-off, so the five curves cover about the same span of #DOFs:

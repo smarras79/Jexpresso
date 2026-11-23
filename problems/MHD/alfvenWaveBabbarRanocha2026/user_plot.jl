@@ -23,11 +23,14 @@
 #     B⊥ = (B·e⊥, Bz),   u⊥ = (u·e⊥, w),   e⊥ = (−sin α, cos α),
 #
 # e(B⊥) = sqrt((1/|Ω|) ∫ |B⊥,h − B⊥|² dΩ) and the same for u⊥; the wave is
-# 0.1 (sin, cos)(2π(x∥ + t)) in both. The figure has seven panels: B⊥ and u⊥
-# in L² and L∞ (the largest |B⊥,h − B⊥| over the Gauss points), the wave's own
-# error; ρ, the paper's measure; the full state, sqrt(Σ_k e(q_k)²); and the L∞
-# error of the state. The wave's L∞ is in every record written since 17 Nov
-# 2026, so the panels draw from a store of that age without a new run.
+# 0.1 (sin, cos)(2π(x∥ + t)) in both. Each is also stored in L¹,
+# (1/|Ω|) ∫ |q_h − q| dΩ (|B⊥,h − B⊥| for the wave), the norm of most MHD
+# accuracy tests, and in L∞, the largest error over the Gauss points. The
+# figures are a matrix of panels: rows B⊥, u⊥ (the wave's own error), ρ (the
+# paper's measure) and the full state, sqrt(Σ_k e(q_k)²) in L² and L¹, the
+# largest e(q_k) in L∞; columns L², L¹, L∞. The wave's L∞ is in every record
+# written since 17 Nov 2026 and L¹ in every record written since 23 Nov 2026;
+# an older record leaves those panels without its point.
 #
 # WHAT DSGS DID. Each record also stores the largest normalized residual r
 # (before the cutoff) and the largest coefficient μ over the whole run
@@ -51,6 +54,8 @@
 #   t        simulation time
 #---------------------------------------------------------------------------------
 const AW_ERR_DIR = joinpath(@__DIR__, "errors")
+# the stem of every figure this case writes: alfven-convergence-it<n>.png, ...
+const AW_FIG_NAME = "alfven-convergence"
 
 # The convergence figure: the smooth vortex's, shared.
 include(joinpath(@__DIR__, "..", "smoothVortex", "convergence_figure.jl"))
@@ -133,6 +138,7 @@ function _aw_errors(mesh, q, t, outvar)
 
     nv  = length(AW_QVARS)
     s2  = zeros(nv)
+    s1  = zeros(nv)
     sm  = zeros(nv)
     area = 0.0
     X = zeros(ngl, ngl); Y = zeros(ngl, ngl)
@@ -146,6 +152,7 @@ function _aw_errors(mesh, q, t, outvar)
     T  = zeros(ngl, ngl, 3)
     Tq = zeros(nq, nq, 3)
     sp2 = zeros(2)
+    sp1 = zeros(2)
     spm = zeros(2)
     out(k, ip) = q[(iv[k] - 1)*npoin + ip]
 
@@ -187,21 +194,23 @@ function _aw_errors(mesh, q, t, outvar)
             for k = 1:nv
                 e = Uq[a,b,k] - se[k]
                 s2[k] += wab*e*e
+                s1[k] += wab*abs(e)
                 sm[k]  = max(sm[k], abs(e))
             end
             # the wave's transverse field and velocity against the exact ones
             eB2 = (Tq[a,b,1] - (-sα*se[6] + cα*se[7]))^2 + (Uq[a,b,8] - se[8])^2
             eU2 = (Tq[a,b,2] - (-sα*se[2] + cα*se[3])/se[1])^2 + (Tq[a,b,3] - se[5]/se[1])^2
-            sp2[1] += wab*eB2;  spm[1] = max(spm[1], sqrt(eB2))
-            sp2[2] += wab*eU2;  spm[2] = max(spm[2], sqrt(eU2))
+            sp2[1] += wab*eB2;  sp1[1] += wab*sqrt(eB2);  spm[1] = max(spm[1], sqrt(eB2))
+            sp2[2] += wab*eU2;  sp1[2] += wab*sqrt(eU2);  spm[2] = max(spm[2], sqrt(eU2))
             area += wab
         end
     end
 
     comm = get_mpi_comm()
     if MPI.Comm_size(comm) > 1
-        r = MPI.Allreduce(vcat(s2, sp2, area), MPI.SUM, comm)
-        s2 .= r[1:nv]; sp2 .= r[nv+1:nv+2]; area = r[end]
+        r = MPI.Allreduce(vcat(s2, sp2, s1, sp1, area), MPI.SUM, comm)
+        s2 .= r[1:nv]; sp2 .= r[nv+1:nv+2]; s1 .= r[nv+3:2nv+2]; sp1 .= r[2nv+3:2nv+4]
+        area = r[end]
         sm  .= MPI.Allreduce(sm,  MPI.MAX, comm)
         spm .= MPI.Allreduce(spm, MPI.MAX, comm)
     end
@@ -209,8 +218,8 @@ function _aw_errors(mesh, q, t, outvar)
     # geometry (and the unwrapping above) is right
     abs(area - Lx*Ly) <= 1.0e-10*Lx*Ly ||
         @warn "alfvenWaveBabbarRanocha2026: the error quadrature integrates $(area), not the box area $(Lx*Ly)"
-    return (l2 = sqrt.(s2 ./ area), linf = sm,
-            perp_l2 = sqrt.(sp2 ./ area), perp_linf = spm,    # (B⊥, u⊥)
+    return (l2 = sqrt.(s2 ./ area), l1 = s1 ./ area, linf = sm,
+            perp_l2 = sqrt.(sp2 ./ area), perp_l1 = sp1 ./ area, perp_linf = spm,   # (B⊥, u⊥)
             area = area)
 end
 
@@ -268,7 +277,7 @@ function _aw_save(e, inputs, tnom, tnum, st)
         f = joinpath(AW_ERR_DIR, string("nop", nop, "_nelx", nelx, "_", _aw_tag(inputs), tsuf, ".dat"))
         _aw_atomic(f, tmp -> open(tmp, "w") do io
             println(io, "# smooth Alfvén wave: e(q) = sqrt((1/|Ω|) ∫ (q_h − q)² dΩ) against the exact solution,",
-                        " N+4 Gauss points per direction; Linf at those points.",
+                        " N+4 Gauss points per direction; Linf at those points; L1 = (1/|Ω|) ∫ |q_h − q| dΩ.",
                         " Bperp = (B·e⊥, Bz), uperp = (u·e⊥, w): the wave, as vectors.",
                         " r_max, mu_max: the largest normalized residual (before the cutoff) and DSGS coefficient over the run")
             println(io, "# nop=", nop, " nelx=", nelx, " ndofs=", (nelx*nop)^2,
@@ -279,12 +288,12 @@ function _aw_save(e, inputs, tnom, tnum, st)
                         " solver=", nameof(typeof(get(inputs, :ode_solver, nothing))),
                         " area=", e.area,
                         " r_max=", st[1], " mu_max=", st[2])
-            println(io, "# var L2 Linf")
+            println(io, "# var L2 Linf L1")
             for (k, n) in enumerate(AW_QVARS)
-                println(io, n, " ", e.l2[k], " ", e.linf[k])
+                println(io, n, " ", e.l2[k], " ", e.linf[k], " ", e.l1[k])
             end
-            println(io, "Bperp ", e.perp_l2[1], " ", e.perp_linf[1])
-            println(io, "uperp ", e.perp_l2[2], " ", e.perp_linf[2])
+            println(io, "Bperp ", e.perp_l2[1], " ", e.perp_linf[1], " ", e.perp_l1[1])
+            println(io, "uperp ", e.perp_l2[2], " ", e.perp_linf[2], " ", e.perp_l1[2])
         end)
     catch err
         @warn "alfvenWaveBabbarRanocha2026: could not store the error" exception=err
@@ -298,6 +307,7 @@ function _aw_load(tnom)
     for fname in readdir(AW_ERR_DIR)
         (startswith(fname, "nop") && endswith(fname, ".dat")) || continue
         meta = Dict{String,String}(); l2 = Dict{String,Float64}(); linf = Dict{String,Float64}()
+        l1 = Dict{String,Float64}()
         try
             for line in eachline(joinpath(AW_ERR_DIR, fname))
                 tok = split(line)
@@ -310,6 +320,7 @@ function _aw_load(tnom)
                 elseif length(tok) >= 3
                     l2[tok[1]]   = parse(Float64, tok[2])
                     linf[tok[1]] = parse(Float64, tok[3])
+                    length(tok) >= 4 && (l1[tok[1]] = parse(Float64, tok[4]))
                 end
             end
         catch err
@@ -328,6 +339,11 @@ function _aw_load(tnom)
                      bperp_inf = get(linf, "Bperp", NaN), uperp_inf = get(linf, "uperp", NaN),
                      rho = l2["ρ"], state = sqrt(sum(abs2, l2[n] for n in AW_QVARS)),
                      state_inf = maximum(linf[n] for n in AW_QVARS),
+                     rho_inf = linf["ρ"],
+                     bperp_l1 = get(l1, "Bperp", NaN), uperp_l1 = get(l1, "uperp", NaN),
+                     rho_l1 = get(l1, "ρ", NaN),
+                     state_l1 = all(haskey(l1, n) for n in AW_QVARS) ?
+                                sqrt(sum(abs2, l1[n] for n in AW_QVARS)) : NaN,
                      r_max  = something(tryparse(Float64, get(meta, "r_max",  "")), NaN),
                      mu_max = something(tryparse(Float64, get(meta, "mu_max", "")), NaN),
                      cutoff = something(tryparse(Float64, get(meta, "cutoff", "")), NaN)))
@@ -342,19 +358,22 @@ function _aw_report(rows)
     println(" # alfvenWaveBabbarRanocha2026: L2 error at t = ", rows[1].t,
             " (B⊥, u⊥: the wave; rho: the paper's Fig. 13 measure, exact rho = 1;",
             " r, mu: largest normalized residual before the cutoff and largest DSGS coefficient over the run)")
-    println(" #   visc         N  nelx    DOFs     L2(B⊥)  order   Linf(B⊥)  order     L2(u⊥)  order    L2(rho)  order       max r      max mu")
+    println(" #   visc         N  nelx    DOFs     L2(B⊥)  order     L1(B⊥)  order   Linf(B⊥)  order     L2(u⊥)  order    L2(rho)  order    L1(rho)  order       max r      max mu")
     _o(p) = isfinite(p) ? @sprintf("%.2f", p) : ""
     _g(x) = isfinite(x) ? @sprintf("%.3e", x) : "-"
     prev = nothing
     for r in rows
         same = prev !== nothing && prev.visc == r.visc && prev.nop == r.nop
         pb = same ? _aw_rate(prev.ndofs, prev.bperp, r.ndofs, r.bperp) : NaN
+        pb1 = same ? _aw_rate(prev.ndofs, prev.bperp_l1, r.ndofs, r.bperp_l1) : NaN
+        pr1 = same ? _aw_rate(prev.ndofs, prev.rho_l1, r.ndofs, r.rho_l1) : NaN
         pbi = same ? _aw_rate(prev.ndofs, prev.bperp_inf, r.ndofs, r.bperp_inf) : NaN
         pu = same ? _aw_rate(prev.ndofs, prev.uperp, r.ndofs, r.uperp) : NaN
         pr = same ? _aw_rate(prev.ndofs, prev.rho,   r.ndofs, r.rho)   : NaN
-        println(@sprintf(" #   %-11s %2d  %4d  %6d  %10s  %5s %10s  %5s %10s  %5s %10.3e  %5s  %10s  %10s",
+        println(@sprintf(" #   %-11s %2d  %4d  %6d  %10s  %5s %10s  %5s %10s  %5s %10s  %5s %10.3e  %5s %10s  %5s  %10s  %10s",
                          r.visc, r.nop, r.nelx, r.ndofs,
-                         _g(r.bperp), _o(pb), _g(r.bperp_inf), _o(pbi), _g(r.uperp), _o(pu), r.rho, _o(pr),
+                         _g(r.bperp), _o(pb), _g(r.bperp_l1), _o(pb1), _g(r.bperp_inf), _o(pbi),
+                         _g(r.uperp), _o(pu), r.rho, _o(pr), _g(r.rho_l1), _o(pr1),
                          _g(r.r_max), _g(r.mu_max)))
         prev = r
     end
@@ -378,15 +397,29 @@ end
 _aw_label(tag) = startswith(tag, "galerkin") ? replace(tag, "galerkin" => "Galerkin", "_" => " ") :
                  replace(tag, "dsgs" => "DSGS", "_nocut" => ", no cutoff",
                          r"_cut([0-9.e+-]+)" => s", cutoff \1", r"_bdf(\d+)" => s", BDF\1", "_" => " ")
+# The error panels, a matrix: rows B⊥, u⊥, ρ and the state; columns L², L¹
+# and L∞. The file key names the quantity and, but for L², the norm.
+_aw_norm_tex(n) = n == "L2" ? "L^2" : n == "L1" ? "L^1" : "L^\\infty"
 const AW_PANELS = [   # (field, ylabel, title, file)
-    (:bperp,     "\\Vert\\mathbf{B}_{\\perp,h}-\\mathbf{B}_\\perp\\Vert_{L^2}", "L^2\\mathrm{-error\\ of}\\ \\mathbf{B}_\\perp", "Bperp"),
-    (:bperp_inf, "\\Vert\\mathbf{B}_{\\perp,h}-\\mathbf{B}_\\perp\\Vert_{L^\\infty}", "L^\\infty\\mathrm{-error\\ of}\\ \\mathbf{B}_\\perp", "Bperp_Linf"),
-    (:uperp,     "\\Vert\\mathbf{u}_{\\perp,h}-\\mathbf{u}_\\perp\\Vert_{L^2}", "L^2\\mathrm{-error\\ of}\\ \\mathbf{u}_\\perp", "uperp"),
-    (:uperp_inf, "\\Vert\\mathbf{u}_{\\perp,h}-\\mathbf{u}_\\perp\\Vert_{L^\\infty}", "L^\\infty\\mathrm{-error\\ of}\\ \\mathbf{u}_\\perp", "uperp_Linf"),
-    (:rho,       "\\Vert\\rho_h-\\rho\\Vert_{L^2}",                  "L^2\\mathrm{-error\\ of}\\ \\rho",               "rho"),
-    (:state,     "\\Vert\\mathbf{q}_h-\\mathbf{q}\\Vert_{L^2}",      "L^2\\mathrm{-error\\ of\\ the\\ state}",       "L2"),
-    (:state_inf, "\\Vert\\mathbf{q}_h-\\mathbf{q}\\Vert_{L^\\infty}", "L^\\infty\\mathrm{-error\\ of\\ the\\ state}", "Linf"),
+    (Symbol(f, sfx),
+     string("\\Vert", h, "\\Vert_{", _aw_norm_tex(n), "}"),
+     string(_aw_norm_tex(n), "\\mathrm{-error\\ of", st ? "\\ the\\ state}" : "}\\ " * tt),
+     n == "L2" ? key : string(key, "_", n == "L1" ? "L1" : "Linf"))
+    for (f, h, tt, key, st) in (
+        ("bperp", "\\mathbf{B}_{\\perp,h}-\\mathbf{B}_\\perp", "\\mathbf{B}_\\perp", "Bperp", false),
+        ("uperp", "\\mathbf{u}_{\\perp,h}-\\mathbf{u}_\\perp", "\\mathbf{u}_\\perp", "uperp", false),
+        ("rho",   "\\rho_h-\\rho",                             "\\rho",              "rho",   false),
+        ("state", "\\mathbf{q}_h-\\mathbf{q}",                 "",                   "state", true))
+    for (n, sfx) in (("L2", ""), ("L1", "_l1"), ("Linf", "_inf"))
 ]
+# the figure of every variant side by side keeps the seven panels it had
+const AW_ALL_PANELS = [p for p in AW_PANELS
+                       if p[4] in ("Bperp", "Bperp_Linf", "uperp", "uperp_Linf", "rho", "state", "state_Linf")]
+# the panels of tools/alfven_wave_plot.jl --panels=L2, L1, Linf: B⊥, u⊥ and ρ in that norm
+const AW_PANEL_SETS = Dict(n => [p[4] for p in AW_PANELS
+                                 if p[4] in (n == "L2" ? ("Bperp", "uperp", "rho") :
+                                             (string("Bperp_", n), string("uperp_", n), string("rho_", n)))]
+                           for n in ("L2", "L1", "Linf"))
 
 #---------------------------------------------------------------------------------
 # WHAT DSGS DID, against #DOFs, from the run maxima every record stores:
@@ -583,6 +616,13 @@ function _aw_cmp_panel(rows, fld, ylab, title, tags)
                                    AW_CMP_FS.note))
         push!(ally, y2)
     end
+    if isempty(ally)              # nothing stored for this panel: L¹ before 23 Nov 2026
+        Plots.plot!(pl; ylims = (1.0e-12, 1.0e-2))
+        Plots.annotate!(pl, sqrt(xlo*xhi), 1.0e-7,
+                        Plots.text(endswith(string(fld), "_l1") ?
+                                   "no L¹ errors stored:\nruns from 23 Nov 2026 on store them" :
+                                   "nothing stored", AW_INK, :center, AW_CMP_FS.note))
+    end
     # decades (10^-7.5 is not a number anyone reports), set by the errors and the
     # guides' ends: a guide that starts above the errors is cut
     if !isempty(ally)
@@ -614,10 +654,11 @@ _aw_cmp_legend(rows, tags) =
                                background_color_legend = nothing, show = false), rows, tags)
 
 # Returns the files written. `panels`, a selection of AW_PANELS, draws the
-# comparisons with those panels alone, in one row with the legend as the last,
-# narrower cell (up to four panels), as <stem>_panels_<file>-<file>...-it<iout>.png
-# beside the full figures (tools/alfven_wave_plot.jl --panels).
-function _aw_compare(rows, OUTPUT_DIR, iout; name = "convergence", panels = AW_PANELS)
+# comparisons with those panels alone, as <stem>_panels_<label>-it<iout>.png
+# beside the full figures (tools/alfven_wave_plot.jl --panels); `label`
+# defaults to the panels' file keys joined by "-".
+function _aw_compare(rows, OUTPUT_DIR, iout; name = AW_FIG_NAME, panels = AW_PANELS,
+                     label = join(last.(panels), "-"))
     full  = length(panels) == length(AW_PANELS)
     files = String[]
     for (tags, suffix, title, singles) in AW_COMPARISONS
@@ -629,7 +670,7 @@ function _aw_compare(rows, OUTPUT_DIR, iout; name = "convergence", panels = AW_P
             continue
         end
         stem = isempty(suffix) ? name : string(name, "_", suffix)
-        full || (stem = string(stem, "_panels_", join(last.(panels), "-")))
+        full || (stem = string(stem, "_panels_", label))
         pls = Any[_aw_cmp_panel(rs, fld, ylab,
                                 LaTeXStrings.latexstring(string("\\mathrm{(", 'a' + (i - 1), ")}\\ ", ttl)),
                                 tags)
@@ -644,18 +685,19 @@ function _aw_compare(rows, OUTPUT_DIR, iout; name = "convergence", panels = AW_P
                               string(OUTPUT_DIR, "/", stem, "_", fname, "-it", iout, ".png"))
             end
         end
-        push!(pls, _aw_cmp_legend(rs, tags))
-        if length(pls) <= 5        # up to four panels: one row, the legend a narrower last cell
-            np = length(pls) - 1; wl = 0.55
-            lay = Plots.grid(1, np + 1; widths = [fill(1.0/(np + wl), np); wl/(np + wl)])
-            sz  = (round(Int, (np + wl)*AW_CMP_CELL[1]), AW_CMP_CELL[2] + 60)
-        else                       # a grid four wide, the legend in the last cell
-            nc = 4; nr = cld(length(pls), nc)
-            while length(pls) < nr*nc                  # an empty cell keeps the grid
-                push!(pls, Plots.plot(; framestyle = :none, grid = false, show = false))
-            end
-            lay = (nr, nc); sz = (nc*AW_CMP_CELL[1], nr*AW_CMP_CELL[2])
+        # the panels in a grid (one row up to four; else three wide when they
+        # come in threes, as the quantity × norm matrix does, four otherwise), and
+        # the legend a narrower column on the right
+        np = length(pls)
+        nc = np <= 4 ? np : (np % 3 == 0 ? 3 : 4); nr = cld(np, nc)
+        while length(pls) < nr*nc                      # an empty cell keeps the grid
+            push!(pls, Plots.plot(; framestyle = :none, grid = false, show = false))
         end
+        push!(pls, _aw_cmp_legend(rs, tags))
+        wl  = 0.55                                     # the legend column, in panel widths
+        lay = Plots.grid(1, 2; widths = [nc/(nc + wl), wl/(nc + wl)])
+        lay[1, 1] = Plots.grid(nr, nc)
+        sz  = (round(Int, (nc + wl)*AW_CMP_CELL[1]), nr*AW_CMP_CELL[2] + 60)
         plt = Plots.plot(pls...; layout = lay, size = sz,
                          plot_title = string(title, ", t = ", rs[1].t), plot_titlefontsize = 19,
                          left_margin = 12Plots.mm, bottom_margin = 10Plots.mm,
@@ -676,11 +718,11 @@ end
 # smooth-wave test needs side by side: the error of the wave (B⊥) for every
 # variant, max r against the cutoff, and max μ. Returns the first file, or
 # nothing when no order/tag has two meshes yet.
-function _aw_plot(rows, OUTPUT_DIR, iout; name = "convergence")
+function _aw_plot(rows, OUTPUT_DIR, iout; name = AW_FIG_NAME)
     kw = (tags = sort(unique(r.visc for r in rows)), label = _aw_label, line = _aw_line,
           galerkin = t -> startswith(t, "galerkin"))
     # every variant stored, side by side (the shared convergence figure)
-    fall = _conv_figure(rows, AW_PANELS, OUTPUT_DIR, iout; prefix = string(name, "_all"),
+    fall = _conv_figure(rows, AW_ALL_PANELS, OUTPUT_DIR, iout; prefix = string(name, "_all"),
                         singles = false, kw...)
     fall === nothing && return nothing
     cmp = _aw_compare(rows, OUTPUT_DIR, iout; name = name)
