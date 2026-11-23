@@ -1774,6 +1774,63 @@ def cmd_noise(a):
     print("wrote", out)
 
 
+def cmd_elements(a):
+    """Which quantity carries a pattern that repeats element by element (the stripes `noise` finds): along the
+    vertical line of nodes nearest each --x, for every element it crosses within --ylim, the element's smallest
+    rho/rho_e (s_min, which sets the viscosity of the velocity form, JEXPRESSO_LK10_VISC=velocity: the stress
+    rho_e s_min (mu - mu_rho)), its DynSGS coefficients (as the run wrote them, one value per element), that
+    stress over rho_e, s_min (mu - mu_rho), and its ratio to the element's below (a jump between neighbouring
+    elements, which the velocity form's stress has where the plasma drains), and on the line the node-to-node part (the highest
+    Legendre mode in the element) of log10 rho, log10 T and the two velocity components, and the nodes of the
+    element at the density and temperature floors."""
+    items = runs_of(a.run)
+    sel = nearest(items, a.times)
+    d0 = os.path.dirname(os.path.abspath(sel[0][1]))
+    mcz = float(_case_value(d0, "mcz", "1.3"))
+    tfl = float(_case_value(d0, "tfloor", "0.1"))
+    TCOR = 8.6e5 / 5700.0
+    V0 = L0_MM * 1.0e3 / 23.1946                                  # code velocity unit, km/s
+    for t, f in sel:
+        g0 = read_pvtu(f, None)
+        mus = sorted(k for k in g0["fields"] if k.startswith("mu_dsgs"))
+        mu_m = next((k for k in mus if "ρu" in k), mus[0] if mus else None)          # the momentum slots'
+        mu_r = next((k for k in mus if k == "mu_dsgs" or k.startswith("mu_dsgs_ρ_") or k == "mu_dsgs_ρ"), mu_m)
+        g = load(f, ["ρ", "T", "u", "v"] + ([mu_m] if mu_m else []) + ([mu_r] if mu_r and mu_r != mu_m else []))
+        X, Y = g["X"], g["Y"]
+        G = lambda n: grid2d(g, g["fields"][n])
+        R, T, U, W = G("ρ"), G("T"), G("u") * V0, G("v") * V0
+        MM = G(mu_m) if mu_m else np.zeros_like(R)
+        MR = G(mu_r) if mu_r else np.zeros_like(R)
+        rho_e, pe = _ref_atmos(g["yc"], mcz)
+        S = R / rho_e[:, None]
+        atR = R <= 0.2 * pe[:, None] / TCOR * (1.0 + 1e-6)
+        atT = T <= tfl * (1.0 + 1e-6)
+        LR, LT = np.log10(np.maximum(R, 1e-300)), np.log10(np.maximum(T, 1e-300))
+        h = np.linalg.inv(np.polynomial.legendre.legvander(_lgl(4)[0], 4))[4]       # P_4 coefficient from 5 nodes
+        print(f"--- t = {t:.0f} s ({os.path.basename(f)}); DynSGS fields: viscosity {mu_m}, mass {mu_r}; "
+              f"velocities km/s, node-to-node parts on the line, logs in dex")
+        for x0 in a.x:
+            i0 = int(np.argmin(np.abs(X - x0)))
+            ic = min(i0 - i0 % 4, len(X) - 5)
+            print(f"   x = {X[i0]:.2f} Mm (element columns {X[ic]:.2f} to {X[ic + 4]:.2f} Mm)")
+            print(f"{'y Mm':>13} {'s_min':>9} {'mu':>8} {'mu_rho':>8} {'s(mu-mu_r)':>10} {'/below':>8} {'log rho':>8} "
+                  f"{'log T':>7} {'u':>7} {'v':>7} {'rho fl':>6} {'T fl':>5}")
+            js = np.where((Y >= a.ylim[0]) & (Y <= a.ylim[1]))[0]
+            cprev = None
+            for e in range(js[0] - js[0] % 4, js[-1] - 3, 4):
+                blk = (slice(e, e + 5), slice(ic, ic + 5))
+                smin = S[blk].min()
+                jm, im = e + 2, ic + 2                               # an interior node: the element's own values
+                mu, mur = MM[jm, im], MR[jm, im]
+                c = smin * max(mu - mur, 0.0)                       # the stress over rho_e: no stratification in it
+                rat = c / cprev if (cprev is not None and cprev > 0) else np.nan
+                cprev = c
+                col = slice(e, e + 5)
+                hm = lambda F: abs(float(h @ F[col, i0]))
+                print(f"{Y[e]:6.2f}-{Y[e + 4]:5.2f} {smin:9.3g} {mu:8.3g} {mur:8.3g} {c:10.3g} {rat:8.3g} {hm(LR):8.3f} "
+                      f"{hm(LT):7.3f} {hm(U):7.2f} {hm(W):7.2f} {int(atR[blk].sum()):6d} {int(atT[blk].sum()):5d}")
+
+
 def find_opoints(A, X, Y, xlim=(-12.75, 12.75), ylim=(3.0, 19.5), k=6):
     """O-points of the in-plane field in a window: nodes where the flux function A (grid (ny, nx)) is the largest or
     the smallest of its (2k+1)^2 neighbours (an X-point is a saddle of A and is not one). Returns
@@ -2064,6 +2121,13 @@ def main():
     s.add_argument("--xlim", type=lambda t: tuple(map(float, t.split(","))), default=(-6.0, 6.0))
     s.add_argument("--ylim", type=lambda t: tuple(map(float, t.split(","))), default=(3.0, 14.0))
     s.add_argument("--vmax", type=float, default=0.3, help="top of the colour scale of the node-to-node maps [dex]")
+    s = sub.add_parser("elements", parents=[common]); s.set_defaults(fn=cmd_elements)
+    s.add_argument("run")
+    s.add_argument("--times", type=lambda t: [float(x) for x in t.split(",")], default=[2185.0, 2530.0],
+                   help="times [s], comma-separated (default 2185,2530)")
+    s.add_argument("--x", type=lambda t: [float(v) for v in t.split(",")], default=[-2.0, 0.0, 2.0],
+                   help="the vertical lines [Mm], comma-separated (default -2,0,2)")
+    s.add_argument("--ylim", type=lambda t: tuple(map(float, t.split(","))), default=(3.0, 9.5))
     s = sub.add_parser("drain", parents=[common]); s.set_defaults(fn=cmd_drain)
     s.add_argument("run")
     s.add_argument("--ref", default="", help="run whose first snapshot (t = 0) gives the unit of mass, for a restarted run")

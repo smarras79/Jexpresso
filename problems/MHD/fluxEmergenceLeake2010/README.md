@@ -928,6 +928,7 @@ python3 tools/plot_leake2010.py null     base=$RUN       # on x = 0 vs time: the
 python3 tools/plot_leake2010.py lines    run=$RUN        # Erratum Fig. 3 line by line: the height on x = 0 of each of its field lines, in the run and in the figure
 python3 tools/plot_leake2010.py core     run=$RUN        # the plasma at the tube axis vs time: height, density against the atmosphere's, B_z/rho against the initial tube's
 python3 tools/plot_leake2010.py noise    $RUN --times 2185,2530   # stripes and grain: the node-to-node part of log rho per element, along y and x, and the nodes at the floors
+python3 tools/plot_leake2010.py elements $RUN --times 2185,2530 --x=-2,0,2   # which quantity repeats element by element on vertical lines: s_min, the DynSGS coefficients and the velocity-form stress, node-to-node parts of log rho, log T, u, v, floor nodes
 python3 tools/plot_leake2010.py --paper-lines density $RUN   # the density figure with exactly the erratum's field lines (any map takes --paper-lines)
 python3 tools/plot_leake2010.py mass     $RUN            # the plasma above 3 Mm: mass budget, temperature, pressure, draining, heating time
 python3 tools/plot_leake2010.py drain    $RUN            # why that plasma drains or not: temperature, field it sits on, speed and support along the field
