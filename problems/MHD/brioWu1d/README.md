@@ -136,7 +136,7 @@ Overrides, all optional, so a sweep needs no file edits:
 | `JEXPRESSO_BW_CMIN` | 0.06 | the DynSGS background floor `:dsgs_Cmin` |
 | `JEXPRESSO_BW_HSCALE` | `ngl` | the DynSGS length scale: `ngl` is the kernels' own $\Delta_K/(k+1) = h_e/(N+1)$, eq. (15) of the DynSGS-MHD paper; `nop` is Dao & Nazarov's $\Delta_K/k$ |
 | `JEXPRESSO_BW_NODAL` | 0 | 1 for the nodal coefficient (`:ldsgs_nodal`, their eq. 4.10) |
-| `JEXPRESSO_BW_CR` | 1 | the DynSGS residual coefficient $C_R$ (`:dsgs_CR`, on the deck's length scale): $\nu = C_R\Delta^2 r$ where the residual is large; a run with $C_R \neq 1$ stores its curves as a method of its own (`elem_CR<x>`), and the scan takes a list, `BW_CR="1 4"` (`Cmin0.06_CR4`) |
+| `JEXPRESSO_BW_CR` | 1 | the DynSGS residual coefficient $C_R$ (`:dsgs_CR`; $C_1$ of the DynSGS-MHD paper's eq. 14, where $C_{max}$ is $C_2$), on the deck's length scale: $\nu = C_R\Delta^2 r$ where the residual is large; a run with $C_R \neq 1$ stores its curves as a method of its own (`elem_CR<x>`), and the scan takes a list, `BW_CR="1 4"` (`Cmin0.06_CR4`) |
 | `JEXPRESSO_BW_CUTOFF` | 0 | the DynSGS smoothness cutoff `:dsgs_cutoff`, ν from max(0, r − c); a run with c > 0 stores its curves as a method of its own (`elem_cut<c>`), and the scan takes a list, `BW_CUTOFF="0 1e-3"`, one store per value (`Cmin0.06_cut1e-3`) |
 
 At a fixed DOF count the orders run at equal cost: 150, 120, 100 and 86
@@ -353,7 +353,7 @@ of time stepping. At $t = 0.1$ (`density-it5.svg`; the per-variable figures with
   1 % (0.25–0.9 % at $N = 5, 6$), at the price of a slow shock 3.3 nodes wide
   instead of 2 and a contact 40 % wider; the nodal coefficient changes
   nothing there;
-- a larger residual coefficient $C_R$ (`JEXPRESSO_BW_CR`, Nov 2026; $N = 4$–7,
+- a larger residual coefficient $C_R$ ($C_1$ in the DynSGS-MHD paper; `JEXPRESSO_BW_CR`, Nov 2026; $N = 4$–7,
   600 and 1200 DOFs) acts where the residual is large, but it is
   self-limiting: the stronger $\nu$ widens the shock, which lowers its
   residual, so $C_R = 4$ raises $\nu$ at the slow shock only from 12 % to
