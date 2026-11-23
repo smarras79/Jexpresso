@@ -8,6 +8,7 @@ a restarted run is DIR1,DIR2. LABEL=RUN names a curve; without a label the run's
   ic      [LABEL=RUN ...]                     Fig. 1 (right): T (K) and rho (kg m^-3) of the initial atmosphere
   xsec    RUN --var Baxial|JB --times ...     Figs. 4, 6, 7, 12 (left): the cross-section halfway along the rope
                                               (y_r = 0): log10|B_axial| (G) or |J/J0|/|B/B0|
+  floors  RUN [--times T1,T2]                  where the positivity floors hold the run, by height
   height  LABEL=RUN ...                       Fig. 8: flux-rope height on x = y = 0 (axial-field maximum and sign
                                               change of the orthogonal horizontal field)
   energy  LABEL=RUN ...                       Fig. 9: free magnetic and kinetic energy above z = 10 L0, in E0
@@ -486,6 +487,44 @@ def cmd_render(a):
 
 
 # ---------------------------------------------------------------------------------------------------------
+def cmd_floors(a):
+    """Where the positivity floors hold the run: at each snapshot, the nodes the deck's stage limiter keeps at
+    rho = f_rho rho_e(z) (the density floor) or at p = f_p p_e(z) (the pressure floor; user_inputs.jl), per band of
+    height: how many, their x and y extent, and there the smallest rho/rho_e and p/p_e and the largest |v|. A node
+    the limiter raised sits on its floor to round-off in the snapshot, written after the last stage."""
+    edges = [-1e9, -20.0, -10.0, -5.0, 0.0, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 25.0, 30.0,
+             40.0, 60.0, 100.0, 200.0, 1e9]
+    for t, f in pick_times(snapshots(a.run), a.times):
+        (xc, yc, zc), F = read_lattice(f, ("ρ", "p", "u", "v", "w"))
+        T_e, p_e = atmosphere(zc, a.cz_gradient, a.mf)
+        rho_e = a.mf * p_e / T_e
+        R = F["ρ"] / rho_e[:, None, None]
+        P = F["p"] / p_e[:, None, None]
+        V = np.sqrt(F["u"] ** 2 + F["v"] ** 2 + F["w"] ** 2)
+        atR = R <= a.frho * (1.0 + 1e-6)
+        atP = P <= a.fp * (1.0 + 1e-6)
+        n = R.size
+        print(f"--- t = {t:g} ({os.path.basename(f)}): {atR.sum()} nodes at the density floor, {atP.sum()} at the "
+              f"pressure floor, of {n} ({(atR | atP).sum() / n:.2%} at either)")
+        print(f"{'z (L0)':>15} {'z (Mm)':>15} {'rho fl':>8} {'p fl':>8} {'x extent (L0)':>17} {'y extent (L0)':>17} "
+              f"{'min rho/rho_e':>13} {'min p/p_e':>10} {'max |v|':>8}")
+        for lo, hi in zip(edges[:-1], edges[1:]):
+            m = (zc >= lo) & (zc < hi)
+            if not m.any():
+                continue
+            r, pp, ar, ap = R[m], P[m], atR[m], atP[m]
+            hit = ar | ap
+            if hit.any():
+                k = np.nonzero(hit)
+                xs, ys = xc[k[2]], yc[k[1]]
+                ext = f"{xs.min():7.1f} {xs.max():7.1f}  {ys.min():7.1f} {ys.max():7.1f}"
+            else:
+                ext = f"{'-':>15}    {'-':>13}"
+            z0, z1 = max(lo, zc.min()), min(hi, zc.max())
+            print(f"{z0:7.1f} {z1:7.1f} {z0 * L0_MM:7.2f} {z1 * L0_MM:7.2f} {ar.sum():8d} {ap.sum():8d} {ext:>36} "
+                  f"{r.min():13.3g} {pp.min():10.3g} {V[m].max():8.3g}")
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -530,6 +569,16 @@ def main():
     s.add_argument("--persist", type=int, default=2, help="nodes either side on which a sign change must hold")
     common(s)
     s.set_defaults(func=cmd_height)
+
+    s = sub.add_parser("floors", help="where the positivity floors hold the run (rho, p at their floors), by height")
+    s.add_argument("run")
+    s.add_argument("--times", default=None)
+    s.add_argument("--frho", type=float, default=0.2, help="the density floor, a fraction of rho_e(z) (LK22_RHO_FLOOR)")
+    s.add_argument("--fp", type=float, default=0.2, help="the pressure floor, a fraction of p_e(z) (LK22_P_FLOOR)")
+    s.add_argument("--cz-gradient", type=float, default=1.0, help=":lk22_cz_gradient of the deck")
+    s.add_argument("--mf", type=float, default=1.0, help=":lk22_mf of the deck (p = rho T/m_f)")
+    common(s)
+    s.set_defaults(func=cmd_floors)
 
     s = sub.add_parser("energy", help="free magnetic and kinetic energy above z = 10 L0 (Fig. 9)")
     s.add_argument("runs", nargs="+")
