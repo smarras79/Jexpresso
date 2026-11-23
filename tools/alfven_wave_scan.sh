@@ -3,10 +3,11 @@
 # Convergence history of the smooth Alfvén wave (Babbar & Ranocha 2026, §5.5.1
 # and Fig. 13) for the polynomial orders N = 3 ... 7: every order on its own
 # range of meshes, with DynSGS (with its cutoff, and without it) and with plain
-# Galerkin. At the end tools/alfven_wave_plot.jl draws the figure of the whole
-# sweep, output/MHD/alfvenWaveBabbarRanocha2026/output/convergence-it0.png (and
-# convergence_Bperp-it0.png, the error of the wave's transverse field, alone),
-# and prints the table of errors, observed orders, and the largest normalized
+# Galerkin. At the end tools/alfven_wave_plot.jl draws the figures of the whole
+# sweep in output/MHD/alfvenWaveBabbarRanocha2026/output: convergence-it0.png
+# (DSGS and Galerkin), convergence_dsgs_nocut-it0.png (DSGS with and without
+# its cutoff) and convergence_all-it0.png (every variant), and prints the
+# table of errors, observed orders, and the largest normalized
 # residual r and DSGS coefficient μ of every run.
 #
 #   tools/alfven_wave_scan.sh                       # N = 3 ... 7, DSGS, DSGS c = 0, Galerkin
