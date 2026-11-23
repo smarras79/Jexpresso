@@ -136,6 +136,7 @@ Overrides, all optional, so a sweep needs no file edits:
 | `JEXPRESSO_BW_CMIN` | 0.06 | the DynSGS background floor `:dsgs_Cmin` |
 | `JEXPRESSO_BW_HSCALE` | `ngl` | the DynSGS length scale: `ngl` is the kernels' own $\Delta_K/(k+1) = h_e/(N+1)$, eq. (15) of the DynSGS-MHD paper; `nop` is Dao & Nazarov's $\Delta_K/k$ |
 | `JEXPRESSO_BW_NODAL` | 0 | 1 for the nodal coefficient (`:ldsgs_nodal`, their eq. 4.10) |
+| `JEXPRESSO_BW_CUTOFF` | 0 | the DynSGS smoothness cutoff `:dsgs_cutoff`, ν from max(0, r − c); a run with c > 0 stores its curves as a method of its own (`elem_cut<c>`), and the scan takes a list, `BW_CUTOFF="0 1e-3"`, one store per value (`Cmin0.06_cut1e-3`) |
 
 At a fixed DOF count the orders run at equal cost: 150, 120, 100 and 86
 elements for $N = 4, 5, 6, 7$ at 600 DOFs, i.e. 601, 601, 601 and 603 points.
@@ -328,7 +329,17 @@ of time stepping. At $t = 0.1$ (`density-it5.svg`; the per-variable figures with
   $10^{-5}$–$10^{-6}$ elsewhere (measured on $\Delta_K/k$);
 - the relative $L^1$ error of $\rho$ over the tube is $6.1$, $6.6$, $6.7$ and
   $7.0\times10^{-3}$ for $N = 4$–7; on $\Delta_K/k$ it was $7.6$–$8.0\times10^{-3}$,
-  and $2.7$–$3.7\times10^{-3}$ there with the floor off.
+  and $2.7$–$3.7\times10^{-3}$ there with the floor off;
+- the smoothness cutoff $10^{-3}$ of the smooth accuracy tests changes nothing
+  here (Nov 2026: $N = 4$–7 at 600 and 1200 DOFs, `BW_CMIN="0.06 0"
+  BW_CUTOFF="0 1e-3"`). With the floor, $\rho$ moves by at most $4\times10^{-8}$
+  and the $L^1$ errors agree to every printed digit; with the floor off, $\rho$
+  moves by at most $6\times10^{-6}$ and they agree to four digits or better. The
+  normalized residual never comes near the cutoff: at $t = 0.1$, $r$ is
+  0.2–0.9 in the quietest part of the tube (near its ends) and
+  $1$–$5\times10^{2}$ at the shocks, and its maximum over a run is
+  $7\times10^{2}$–$2\times10^{4}$. So the cutoff never sets $\nu$ to zero; it
+  lowers it by at most 0.6%, and by $10^{-5}$ (relative) at the shocks.
 
 ## Files
 
