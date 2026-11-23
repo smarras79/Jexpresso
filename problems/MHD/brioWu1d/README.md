@@ -339,7 +339,19 @@ of time stepping. At $t = 0.1$ (`density-it5.svg`; the per-variable figures with
   0.2–0.9 in the quietest part of the tube (near its ends) and
   $1$–$5\times10^{2}$ at the shocks, and its maximum over a run is
   $7\times10^{2}$–$2\times10^{4}$. So the cutoff never sets $\nu$ to zero; it
-  lowers it by at most 0.6%, and by $10^{-5}$ (relative) at the shocks.
+  lowers it by at most 0.6%, and by $10^{-5}$ (relative) at the shocks;
+- at the slow shock ($x \approx 0.647$) $B_y$ and $\rho$ both overshoot by
+  0.3–7 % of their jump ($N = 4$–7, 600 and 1200 DOFs, Nov 2026); the zoom
+  box of $B_y$ only shows it more, being 0.1 tall against a jump of 0.37. One
+  $\nu$ acts on every equation, and at $t = 0.1$ it is the floor there: the
+  residual part stays below it, so $\nu$ is about 12 % of the first-order cap
+  $C_{max}\Delta(|u| + c_f)$, enough to hold the shock to two nodes but not to
+  make it monotone. (With the floor off, the residual part alone reaches about
+  the same size, 15 % of the cap: spreading the shock lowers its residual,
+  which lowers $\nu$.) `JEXPRESSO_BW_CMIN=0.12` brings the overshoots under
+  1 % (0.25–0.9 % at $N = 5, 6$), at the price of a slow shock 3.3 nodes wide
+  instead of 2 and a contact 40 % wider; the nodal coefficient changes
+  nothing there.
 
 ## Files
 
