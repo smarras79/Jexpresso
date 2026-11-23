@@ -566,8 +566,8 @@ const AW_COMPARISONS = [   # (tags, file suffix, title, each panel alone too)
     (["dsgs", "dsgs_nocut"], "dsgs_nocut", "DSGS (the deck) and DSGS without the cutoff", false),
 ]
 const AW_INK = Plots.RGB(0x52/255, 0x51/255, 0x4e/255)   # the guides' labels
-const AW_CMP_FS = (title = 15, guide = 15, tick = 13, legend = 14, note = 13)
-const AW_CMP_CELL = (820, 640)
+const AW_CMP_FS = (title = 17, guide = 15, tick = 14, legend = 16, note = 14)
+const AW_CMP_CELL = (900, 700)
 
 function _aw_curve(rows, fld, nop, tag)              # sorted by #DOFs, the positive finite errors
     g  = sort(filter(r -> r.nop == nop && r.visc == tag, rows), by = r -> r.ndofs)
@@ -576,14 +576,18 @@ function _aw_curve(rows, fld, nop, tag)              # sorted by #DOFs, the posi
     return xs[keep], ys[keep]
 end
 
+# Sized to tell the curves apart in a figure of nine panels seen whole: the
+# deck's DSGS a small filled marker on a solid line; the other variant a larger
+# hollow one, dash-dot; Galerkin the largest hollow one, dashed. Where DSGS
+# equals the other, its filled marker sits inside the other's ring.
 function _aw_cmp_attrs(nop, tag, tags)
     col, mk = _conv_style(nop)
     ls  = _aw_line(tag, tags)
     filled = ls == :solid
-    return (line = (col, 2.0, ls),
-            marker = (mk, startswith(tag, "galerkin") ? 9 : filled ? 5 : 7),
+    return (line = (col, 2.6, ls),
+            marker = (mk, startswith(tag, "galerkin") ? 12 : filled ? 7 : 10),
             markercolor = filled ? col : :white, markerstrokecolor = col,
-            markerstrokewidth = 1.2, color = col)
+            markerstrokewidth = 2.0, color = col)
 end
 
 # xlab, ylab_on: whether to draw the axis labels. In a grid the title names the
@@ -624,7 +628,7 @@ function _aw_cmp_panel(rows, fld, ylab, title, tags; xlab = true, ylab_on = true
         A  = minimum(e[2] for e in ends)/3.0*xs[end]^sl
         y2 = A*xs[end]^(-sl)
         Plots.plot!(pl, [xs[1], xs[end]], [A*xs[1]^(-sl), y2];
-                    line = (_conv_style(n)[1], 1.0, :dot), label = "")
+                    line = (_conv_style(n)[1], 1.4, :dot), label = "")
         Plots.annotate!(pl, xs[end]*1.08, y2,
                         Plots.text(LaTeXStrings.latexstring("h^{", n + 1, "}"), AW_INK, :left,
                                    AW_CMP_FS.note))
@@ -649,27 +653,53 @@ function _aw_cmp_panel(rows, fld, ylab, title, tags; xlab = true, ylab_on = true
     return pl
 end
 
-# the legend entries of a comparison, as empty series (they draw nothing else);
-# with `state`, a line that says what q is
+# The legend of a comparison, drawn in a cell of its own: GR's legend samples
+# are too short to show a dash pattern, and a hollow marker there reads as a
+# filled one. The two codes are listed apart: the ORDER is the colour and the
+# marker's shape; the RUN is the line style and the marker's fill and size,
+# shown in grey with samples long enough to see them. With `state`, two lines
+# say what q is. `hpx` is the cell's height in pixels (it sets the spacing).
 const AW_Q_NOTE = ("q, the state:", "(ρ, ρu, ρv, ρE, ρw, Bx, By, Bz, ψ)")
-function _aw_cmp_legend!(pl, rows, tags; state = false)
-    listed = sort(tags, by = t -> (_aw_line(t, tags) != :solid, t))  # the deck's DSGS first
-    for n in sort(unique(r.nop for r in rows)), tag in listed
-        any(r -> r.nop == n && r.visc == tag, rows) || continue
-        Plots.plot!(pl, [NaN], [NaN]; label = string("N = ", n, ", ", _aw_label(tag)),
-                    _aw_cmp_attrs(n, tag, tags)...)
+function _aw_cmp_legend(rows, tags; state = false, hpx = AW_CMP_CELL[2])
+    pl = Plots.plot(; framestyle = :none, grid = false, xticks = false, yticks = false,
+                    xlims = (0, 1), ylims = (0, 1), legend = false, show = false)
+    nops   = sort(unique(r.nop for r in rows))
+    listed = sort(tags, by = t -> (_aw_line(t, tags) != :solid, t))   # the deck's DSGS first
+    dy  = 44/hpx                                     # one line, in the cell's units
+    nl  = 2 + length(nops) + 1 + length(listed) + 2 + (state ? 3 : 0)
+    y   = 0.5 + 0.5*(nl - 1)*dy                       # the block centred in the cell
+    x0, x1, xt = 0.04, 0.30, 0.35
+    txt(y, str; c = :black) = Plots.annotate!(pl, xt, y, Plots.text(str, c, :left, AW_CMP_FS.legend))
+    Plots.annotate!(pl, x0, y, Plots.text("order: colour and marker", AW_INK, :left, AW_CMP_FS.legend))
+    y -= 1.2dy
+    for n in nops
+        col, mk = _conv_style(n)
+        Plots.scatter!(pl, [(x0 + x1)/2], [y]; marker = (mk, 11), markercolor = col,
+                       markerstrokecolor = col, markerstrokewidth = 2.0)
+        txt(y, string("N = ", n)); y -= dy
     end
-    Plots.plot!(pl, [NaN], [NaN]; line = (AW_INK, 1.0, :dot),
-                label = "h^(N+1), dotted, one per order")
-    state && foreach(l -> Plots.plot!(pl, [NaN], [NaN]; linealpha = 0, label = l), AW_Q_NOTE)
+    y -= 0.4dy
+    Plots.annotate!(pl, x0, y, Plots.text("run: line and marker fill", AW_INK, :left, AW_CMP_FS.legend))
+    y -= 1.2dy
+    for tag in listed
+        a = _aw_cmp_attrs(first(nops), tag, tags)
+        Plots.plot!(pl, [x0, x1], [y, y]; line = (:gray25, a.line[2], a.line[3]))
+        Plots.scatter!(pl, [(x0 + x1)/2], [y]; marker = (:circle, a.marker[2]),
+                       markercolor = a.markercolor == :white ? :white : :gray25,
+                       markerstrokecolor = :gray25, markerstrokewidth = a.markerstrokewidth)
+        txt(y, _aw_label(tag)); y -= dy
+    end
+    y -= 0.4dy
+    Plots.plot!(pl, [x0, x1], [y, y]; line = (:gray25, 1.4, :dot))
+    txt(y, "h^(N+1), one per order"); y -= dy
+    if state
+        y -= 0.4dy
+        for l in AW_Q_NOTE
+            Plots.annotate!(pl, x0, y, Plots.text(l, :black, :left, AW_CMP_FS.legend)); y -= dy
+        end
+    end
     return pl
 end
-_aw_cmp_legend(rows, tags; state = false) =
-    _aw_cmp_legend!(Plots.plot(; framestyle = :none, grid = false, xticks = false, yticks = false,
-                               xlims = (0, 1), ylims = (0, 1), legend = :left,
-                               legendfontsize = AW_CMP_FS.legend, foreground_color_legend = nothing,
-                               background_color_legend = nothing, show = false), rows, tags;
-                    state = state)
 
 # Returns the files written. `panels`, a selection of AW_PANEL_MATRIX, draws
 # the comparisons with those panels alone, as <stem>_panels_<label>-it<iout>.png
@@ -702,12 +732,12 @@ function _aw_compare(rows, OUTPUT_DIR, iout; name = AW_FIG_NAME, panels = nothin
                   for (i, (fld, ylab, ttl, _)) in enumerate(panels)]
         if singles && full                             # each panel alone, with its legend
             for (i, (fld, ylab, ttl, fname)) in enumerate(AW_PANELS)
-                p1 = _aw_cmp_legend!(_aw_cmp_panel(rs, fld, ylab, LaTeXStrings.latexstring(
-                                         string(ttl, ",\\ t = ", rs[1].t)), tags), rs, tags;
-                                     state = startswith(fname, "state"))
-                Plots.plot!(p1; legend = :outertopright, legendfontsize = AW_CMP_FS.legend)
-                _conv_savefig(Plots.plot(p1; size = (1180, 700), left_margin = 8Plots.mm,
-                                         bottom_margin = 6Plots.mm, show = false),
+                p1 = _aw_cmp_panel(rs, fld, ylab, LaTeXStrings.latexstring(
+                                   string(ttl, ",\\ t = ", rs[1].t)), tags)
+                lg = _aw_cmp_legend(rs, tags; state = startswith(fname, "state"), hpx = 700)
+                _conv_savefig(Plots.plot(p1, lg; layout = Plots.grid(1, 2; widths = [0.67, 0.33]),
+                                         size = (1720, 700), left_margin = 8Plots.mm,
+                                         bottom_margin = 8Plots.mm, show = false),
                               string(OUTPUT_DIR, "/", stem, "_", fname, "-it", iout, ".png"))
             end
         end
@@ -715,7 +745,7 @@ function _aw_compare(rows, OUTPUT_DIR, iout; name = AW_FIG_NAME, panels = nothin
         while length(pls) < nr*nc                      # an empty cell keeps the grid
             push!(pls, Plots.plot(; framestyle = :none, grid = false, show = false))
         end
-        push!(pls, _aw_cmp_legend(rs, tags; state = st))
+        push!(pls, _aw_cmp_legend(rs, tags; state = st, hpx = nr*AW_CMP_CELL[2]))
         wl  = 0.65                                     # the legend column, in panel widths
         lay = Plots.grid(1, 2; widths = [nc/(nc + wl), wl/(nc + wl)])
         lay[1, 1] = Plots.grid(nr, nc)

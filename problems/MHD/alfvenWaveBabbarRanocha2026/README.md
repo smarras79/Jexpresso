@@ -221,8 +221,10 @@ From every record stored for the same final time, the run then:
   A comparison is drawn once both of its variants have a curve of two meshes; the titles
   carry the final time. In the grids the title names each panel (no y label) and #DOFs
   labels only the bottom panel of each column, so that no label runs into a neighbour
-  whatever the fonts; the single-panel files have both labels. A figure with a state
-  panel (`--panels=state...`) says in its legend what q is;
+  whatever the fonts; the single-panel files have both labels. The legend, drawn beside
+  the panels, lists the two codes apart: colour and marker for the order, line style and
+  marker fill (with long samples, in grey) for the run. A figure with a state panel
+  (`--panels=state...`) also says there what q is;
 - draws what DSGS did, from the run maxima of the DSGS records:
   - `alfven-convergence_rmax-it<n>.png`: max r of every run against #DOFs, with the cutoff c as
     a dashed line. A point below the line is a run in which μ = C_R Δ² max(0, r − c) was
