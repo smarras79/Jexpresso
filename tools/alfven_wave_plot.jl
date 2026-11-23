@@ -12,24 +12,28 @@
 #
 # It reads problems/MHD/alfvenWaveBabbarRanocha2026/errors/*.dat (what every
 # run writes) and uses the case's own plotting code, so the figure is the one
-# a run draws. It is written as convergence-it0.png (convergence_nop3-5-7-it0.png
-# for a subset) in output/MHD/alfvenWaveBabbarRanocha2026/output unless --out
-# says otherwise, with beside it:
+# a run draws. Written in output/MHD/alfvenWaveBabbarRanocha2026/output unless
+# --out says otherwise (convergence_nop3-5-7... for a subset of the orders), all
+# -it0.png:
 #
-#   convergence_Bperp, _uperp, _rho, _L2, _Linf   each error panel alone
+#   convergence         the deck's DSGS and Galerkin alone, the seven error
+#                       panels in a grid, one dotted h^(N+1) guide per order
+#   convergence_Bperp, _Bperp_Linf, _uperp, _uperp_Linf, _rho, _L2, _Linf
+#                       each of those panels alone, with its legend
+#   convergence_dsgs_nocut   the deck's DSGS and DSGS without the cutoff alone,
+#                       the same way
+#   convergence_all     every variant stored (or selected with --visc), the
+#                       seven panels side by side, the rate of each curve in
+#                       the legend
 #   convergence_rmax    the largest residual r of every DSGS run, before the
 #                       cutoff, against the cutoff c: a point below c is a run
 #                       in which μ was exactly zero throughout
 #   convergence_mumax   the largest DSGS coefficient μ of every run; the legend
 #                       says on how many meshes it was exactly zero
 #   convergence_paper   the error of B⊥ | max r | max μ, side by side
-#   convergence_dsgs_galerkin   the deck's DSGS and Galerkin alone, every panel,
-#                       with one dotted h^(N+1) guide per order
-#   convergence_dsgs_nocut      the deck's DSGS and DSGS without the cutoff
-#                       alone, the same way
 #
-# (all -it0.png). A Galerkin-only selection has no rmax, mumax or paper figure,
-# and a comparison is drawn only when both of its variants are stored.
+# A comparison is drawn only when both of its variants are stored; a
+# Galerkin-only selection has no rmax, mumax or paper figure.
 #
 #   --visc=TAGS   only these records, by the tag of their file name: dsgs (the
 #                 deck as committed), dsgs_nocut (cutoff 0), galerkin, dsgs_perstage, ...

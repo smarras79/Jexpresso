@@ -222,19 +222,20 @@ end
 # <prefix>_<file>-it<iout>.png, and all of them side by side, each at that same
 # size and with its own legend (the rates in it are that panel's), in
 # <prefix>-it<iout>.png. `panels` is a list of (field, ylabel, title, file); the
-# keywords are those of _conv_panel. Returns the side-by-side file, or nothing
-# when no (order, tag) has two points to join yet.
+# keywords are those of _conv_panel, and singles = false leaves out the files of
+# the panels alone. Returns the side-by-side file, or nothing when no
+# (order, tag) has two points to join yet.
 #---------------------------------------------------------------------------------
 const CONV_PANEL_SIZE = (1180, 780)
 
-function _conv_figure(rows, panels, OUTPUT_DIR, iout; prefix = "convergence", kw...)
+function _conv_figure(rows, panels, OUTPUT_DIR, iout; prefix = "convergence", singles = true, kw...)
     any(count(r -> r.nop == n && r.visc == v, rows) >= 2
         for n in unique(r.nop for r in rows), v in unique(r.visc for r in rows)) || return nothing
     pls = Plots.Plot[]
     for (fld, ylab, title, fname) in panels
         pl = _conv_panel(rows, fld, ylab, title; kw...)
-        _conv_savefig(Plots.plot(pl; size = CONV_PANEL_SIZE, show = false),
-                      string(OUTPUT_DIR, "/", prefix, "_", fname, "-it", iout, ".png"))
+        singles && _conv_savefig(Plots.plot(pl; size = CONV_PANEL_SIZE, show = false),
+                                 string(OUTPUT_DIR, "/", prefix, "_", fname, "-it", iout, ".png"))
         push!(pls, pl)
     end
     # Wider margins than a panel's own: Plots' GR backend sizes the room for the

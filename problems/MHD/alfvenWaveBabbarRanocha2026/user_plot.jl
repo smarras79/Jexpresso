@@ -506,21 +506,22 @@ function _aw_diag_panel(rows, fld::Symbol, ylab, title; tags, label, line, galer
 end
 
 #---------------------------------------------------------------------------------
-# TWO COMPARISONS, each one pair of tags alone, with the reference slopes of the
-# October 2026 figure: one dotted h^(N+1) guide PER ORDER, in the order's
+# THE TWO COMPARISONS, each one pair of tags alone, with the reference slopes of
+# the October 2026 figure: one dotted h^(N+1) guide PER ORDER, in the order's
 # colour, over the order's widest curve, a factor 3 below its finest error and
 # labelled at its end.
-#   <name>_dsgs_galerkin-it<iout>.png   the deck's DSGS and Galerkin
-#   <name>_dsgs_nocut-it<iout>.png      the deck's DSGS and DSGS without the cutoff
+#   <name>-it<iout>.png               the deck's DSGS and Galerkin, and each
+#                                     panel alone as <name>_<file>-it<iout>.png
+#   <name>_dsgs_nocut-it<iout>.png    the deck's DSGS and DSGS without the cutoff
 # The panels of AW_PANELS in a grid four wide, the last cell the legend. A
 # comparison is drawn when each of its two tags has a curve of two meshes or
 # more. The styles are those of the error panels: the deck's DSGS solid and
 # filled, drawn last so that it shows inside a hollow marker it coincides with;
 # Galerkin dashed with a larger hollow marker; the variant dash-dot.
 #---------------------------------------------------------------------------------
-const AW_COMPARISONS = [   # (tags, file suffix, title)
-    (["dsgs", "galerkin"],   "dsgs_galerkin", "DSGS (the deck) and Galerkin"),
-    (["dsgs", "dsgs_nocut"], "dsgs_nocut",    "DSGS (the deck) and DSGS without the cutoff"),
+const AW_COMPARISONS = [   # (tags, file suffix, title, each panel alone too)
+    (["dsgs", "galerkin"],   "",           "DSGS (the deck) and Galerkin",                true),
+    (["dsgs", "dsgs_nocut"], "dsgs_nocut", "DSGS (the deck) and DSGS without the cutoff", false),
 ]
 const AW_INK = Plots.RGB(0x52/255, 0x51/255, 0x4e/255)   # the guides' labels
 const AW_CMP_FS = (title = 15, guide = 15, tick = 13, legend = 14, note = 13)
@@ -594,11 +595,8 @@ function _aw_cmp_panel(rows, fld, ylab, title, tags)
     return pl
 end
 
-function _aw_cmp_legend(rows, tags)
-    pl = Plots.plot(; framestyle = :none, grid = false, xticks = false, yticks = false,
-                    xlims = (0, 1), ylims = (0, 1), legend = :left,
-                    legendfontsize = AW_CMP_FS.legend, foreground_color_legend = nothing,
-                    background_color_legend = nothing, show = false)
+# the legend entries of a comparison, as empty series (they draw nothing else)
+function _aw_cmp_legend!(pl, rows, tags)
     listed = sort(tags, by = t -> (_aw_line(t, tags) != :solid, t))  # the deck's DSGS first
     for n in sort(unique(r.nop for r in rows)), tag in listed
         any(r -> r.nop == n && r.visc == tag, rows) || continue
@@ -609,19 +607,38 @@ function _aw_cmp_legend(rows, tags)
                 label = "h^(N+1), dotted, one per order")
     return pl
 end
+_aw_cmp_legend(rows, tags) =
+    _aw_cmp_legend!(Plots.plot(; framestyle = :none, grid = false, xticks = false, yticks = false,
+                               xlims = (0, 1), ylims = (0, 1), legend = :left,
+                               legendfontsize = AW_CMP_FS.legend, foreground_color_legend = nothing,
+                               background_color_legend = nothing, show = false), rows, tags)
 
 # Returns the files written.
 function _aw_compare(rows, OUTPUT_DIR, iout; name = "convergence")
     files = String[]
-    for (tags, suffix, title) in AW_COMPARISONS
+    for (tags, suffix, title, singles) in AW_COMPARISONS
         rs = filter(r -> r.visc in tags, rows)
         nops = unique(r.nop for r in rs)
-        all(any(count(r -> r.visc == tag && r.nop == n, rs) >= 2 for n in nops) for tag in tags) ||
+        if !all(any(count(r -> r.visc == tag && r.nop == n, rs) >= 2 for n in nops) for tag in tags)
+            println(" # no figure \"", title, "\": it needs ", join(tags, " and "),
+                    " each on two meshes of one order")
             continue
+        end
+        stem = isempty(suffix) ? name : string(name, "_", suffix)
         pls = Any[_aw_cmp_panel(rs, fld, ylab,
                                 LaTeXStrings.latexstring(string("\\mathrm{(", 'a' + (i - 1), ")}\\ ", ttl)),
                                 tags)
                   for (i, (fld, ylab, ttl, _)) in enumerate(AW_PANELS)]
+        if singles                                     # each panel alone, with its legend
+            for (i, (fld, ylab, ttl, fname)) in enumerate(AW_PANELS)
+                p1 = _aw_cmp_legend!(_aw_cmp_panel(rs, fld, ylab, LaTeXStrings.latexstring(
+                                         string(ttl, ",\\ t = ", rs[1].t)), tags), rs, tags)
+                Plots.plot!(p1; legend = :outertopright, legendfontsize = AW_CMP_FS.legend)
+                _conv_savefig(Plots.plot(p1; size = (1180, 700), left_margin = 8Plots.mm,
+                                         bottom_margin = 6Plots.mm, show = false),
+                              string(OUTPUT_DIR, "/", stem, "_", fname, "-it", iout, ".png"))
+            end
+        end
         push!(pls, _aw_cmp_legend(rs, tags))
         nc = 4; nr = cld(length(pls), nc)
         while length(pls) < nr*nc                      # an empty cell keeps the grid
@@ -632,16 +649,18 @@ function _aw_compare(rows, OUTPUT_DIR, iout; name = "convergence")
                          plot_title = string(title, ", t = ", rs[1].t), plot_titlefontsize = 19,
                          left_margin = 12Plots.mm, bottom_margin = 10Plots.mm,
                          top_margin = 3Plots.mm, right_margin = 3Plots.mm, show = false)
-        f = string(OUTPUT_DIR, "/", name, "_", suffix, "-it", iout, ".png")
+        f = string(OUTPUT_DIR, "/", stem, "-it", iout, ".png")
         _conv_savefig(plt, f)
         push!(files, f)
     end
     return files
 end
 
-# <name>-it<iout>.png, the seven error panels side by side, and <name>_Bperp,
-# _Bperp_Linf, _uperp, _uperp_Linf, _rho, _L2 and _Linf, one each; the two
-# comparisons <name>_dsgs_galerkin and _dsgs_nocut (_aw_compare). Then what DSGS did: <name>_rmax and
+# <name>-it<iout>.png, the deck's DSGS and Galerkin in the seven error panels,
+# and <name>_Bperp, _Bperp_Linf, _uperp, _uperp_Linf, _rho, _L2 and _Linf, one
+# each; <name>_dsgs_nocut, the deck's DSGS and DSGS without the cutoff
+# (_aw_compare); <name>_all, every variant stored in the seven panels side by
+# side (_conv_figure). Then what DSGS did: <name>_rmax and
 # _mumax (_aw_diag_panel), and <name>_paper, the three panels the paper's
 # smooth-wave test needs side by side: the error of the wave (B⊥) for every
 # variant, max r against the cutoff, and max μ. Returns the first file, or
@@ -649,9 +668,12 @@ end
 function _aw_plot(rows, OUTPUT_DIR, iout; name = "convergence")
     kw = (tags = sort(unique(r.visc for r in rows)), label = _aw_label, line = _aw_line,
           galerkin = t -> startswith(t, "galerkin"))
-    f = _conv_figure(rows, AW_PANELS, OUTPUT_DIR, iout; prefix = name, kw...)
-    f === nothing && return nothing
-    _aw_compare(rows, OUTPUT_DIR, iout; name = name)
+    # every variant stored, side by side (the shared convergence figure)
+    fall = _conv_figure(rows, AW_PANELS, OUTPUT_DIR, iout; prefix = string(name, "_all"),
+                        singles = false, kw...)
+    fall === nothing && return nothing
+    cmp = _aw_compare(rows, OUTPUT_DIR, iout; name = name)
+    f = isempty(cmp) ? fall : first(cmp)
     pr = _aw_diag_panel(rows, :r_max,  "\\max_t\\, r",
                         "\\mathrm{largest\\ residual\\ before\\ the\\ cutoff}"; kw...)
     pm = _aw_diag_panel(rows, :mu_max, "\\max_t\\, \\mu",
