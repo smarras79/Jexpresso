@@ -1718,10 +1718,13 @@ def cmd_noise(a):
     """Stripes and grain in a map: at each time, the node-to-node part of log10 rho (the amplitude of the highest
     Legendre mode in each element, along y and along x, in dex), in the window (--xlim, --ylim), and the nodes held
     at the positivity floors (rho at 0.2 p_e/T_cor, T at 0.1 T_ph). Prints, per row of elements, the largest and
-    the mean amplitude and the share of nodes at a floor; a figure with the density, the two amplitudes and the
-    floor nodes. Horizontal stripes that are a property of the discretization show as a y amplitude that is large
-    where the stripes are and small along x; plasma at the density floor as floor nodes; real layers of plasma as
-    neither."""
+    the mean amplitude and the share of nodes at a floor, at either and at each; a figure with the density, the two
+    amplitudes and the floor nodes (grey: the temperature floor, black: the density floor). Horizontal stripes that
+    are a property of the discretization show as a y amplitude that is large where the stripes are and small along
+    x; plasma at the density floor as floor nodes; real layers of plasma as neither. Rows of nodes at the
+    temperature floor one element apart in height, over a smooth density, are the pressure of a drained low-beta
+    region set by the aliasing of the total-energy equation (README, Positivity: The internal energy where it is a
+    small share)."""
     items = runs_of(a.run)
     sel = nearest(items, a.times)
     d0 = os.path.dirname(os.path.abspath(sel[0][1]))
@@ -1738,25 +1741,29 @@ def cmd_noise(a):
         hy = _highmode(L, axis=0); hx = _highmode(L, axis=1)
         _, pe = _ref_atmos(Y / L0_MM, mcz)
         rfl = 0.2 * pe / TCOR                                # the density floor of the run, per height (code units)
-        atfl = (R <= rfl[:, None] * (1.0 + 1e-6)) | (T <= tfl * (1.0 + 1e-6))
+        atR = R <= rfl[:, None] * (1.0 + 1e-6)              # held at the density floor
+        atT = T <= tfl * (1.0 + 1e-6)                        # held at the temperature floor
+        atfl = atR | atT
         mx = (X >= a.xlim[0]) & (X <= a.xlim[1]); my = (Y >= a.ylim[0]) & (Y <= a.ylim[1])
         W = np.ix_(my, mx)
         print(f"--- t = {t:.0f} s ({os.path.basename(f)}), x in {a.xlim}, y in {a.ylim} Mm: node-to-node part of log10 rho "
               f"[dex], along y and along x, and the share of nodes at a floor")
         print(f"   whole window: along y max {hy[W].max():.3f} mean {hy[W].mean():.4f}; along x max {hx[W].max():.3f} "
-              f"mean {hx[W].mean():.4f}; at a floor {atfl[W].mean():.3%} ({atfl[W].sum()} nodes)")
-        print(f"{'y Mm':>12} {'y: max':>8} {'mean':>8} {'x: max':>8} {'mean':>8} {'at floor':>9}")
+              f"mean {hx[W].mean():.4f}; at a floor {atfl[W].mean():.3%} ({atfl[W].sum()} nodes: "
+              f"{atT[W].sum()} at the temperature floor, {atR[W].sum()} at the density floor)")
+        print(f"{'y Mm':>12} {'y: max':>8} {'mean':>8} {'x: max':>8} {'mean':>8} {'at floor':>9} {'T floor':>8} {'rho floor':>9}")
         js = np.where(my)[0]
         for e0 in range(js[0] - js[0] % 4, js[-1], 4):
             rows = slice(e0, min(e0 + 5, ny_))
             sub = (rows, mx)
             print(f"{Y[e0]:5.2f}-{Y[min(e0 + 4, ny_ - 1)]:5.2f} {hy[sub].max():8.3f} {hy[sub].mean():8.4f} "
-                  f"{hx[sub].max():8.3f} {hx[sub].mean():8.4f} {atfl[sub].mean():9.2%}")
+                  f"{hx[sub].max():8.3f} {hx[sub].mean():8.4f} {atfl[sub].mean():9.2%} {atT[sub].mean():8.2%} {atR[sub].mean():9.2%}")
         ext = dict(xlim=a.xlim, ylim=a.ylim)
         for k, (Z, ttl, cm, lim) in enumerate(((L, r"log$_{10}\rho$", "jet", (-16, -5.3)),
                                                 (hy, "node-to-node part along y (dex)", "magma", (0, a.vmax)),
                                                 (hx, "node-to-node part along x (dex)", "magma", (0, a.vmax)),
-                                                (atfl.astype(float), "nodes at a positivity floor", "Greys", (0, 1)))):
+                                                (np.where(atR, 1.0, np.where(atT, 0.5, 0.0)),
+                                                 "nodes at a floor: grey T, black rho", "Greys", (0, 1)))):
             ax = axs[r, k]
             im = ax.pcolormesh(X, Y, Z, cmap=cm, vmin=lim[0], vmax=lim[1], shading="nearest", rasterized=True)
             ax.set_xlim(a.xlim); ax.set_ylim(a.ylim); ax.set_aspect("equal")

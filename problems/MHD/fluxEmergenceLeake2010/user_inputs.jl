@@ -34,6 +34,9 @@
 #   JEXPRESSO_LK10_CMIN      DynSGS background floor C_min                        [0]
 #   JEXPRESSO_LK10_FLOORS    0: no positivity floors (stage limiter)              [1]
 #   JEXPRESSO_LK10_TFLOOR    temperature floor, in T_ph = 5700 K                 [0.1]
+#   JEXPRESSO_LK10_RHOFLOOR  momentum | velocity: the mass the density floor adds keeps the
+#                            node's momentum and total energy (braking and heating it), or
+#                            moves with its velocity at its temperature        [momentum]
 #   JEXPRESSO_LK10_ETA       induction | all: the DynSGS resistivity from the residuals
 #                            of the induction equation alone, or from the max over
 #                            all equations (one coefficient, the parent case)    [induction]
@@ -52,6 +55,13 @@
 #                            momentum ρv/ρ_e, or acts on the velocity gradient, with the
 #                            momentum of the mass the DynSGS diffuses (README, "The
 #                            viscosity on the velocity")                       [momentum]
+#   JEXPRESSO_LK10_EINT      off | lowbeta | all: the energy equation as the total energy's
+#                            own (off), or, where the internal energy is under 10⁻³…10⁻² of
+#                            the total (lowbeta) or everywhere (all), as the changes of the
+#                            kinetic and magnetic energies plus the internal energy's own
+#                            equation, so that the pressure of a drained low-β region is not
+#                            the remainder of two large energies (README, Positivity:
+#                            "The internal energy where it is a small share")       [off]
 #   JEXPRESSO_LK10_STABCAP   the DynSGS coefficient never above this viscous number, μ Δt/Δx²,
 #                            which the explicit step still integrates (0: no cap)    [0.2]
 #   JEXPRESSO_LK10_DSGS_STAGES  all | 1,5 | 1: the stages of the Runge-Kutta scheme at which
@@ -177,6 +187,16 @@ end
 if !@isdefined(lk10_floor_Tmin)
     const lk10_floor_Tmin = Ref{Float64}(0.1)
 end
+# JEXPRESSO_LK10_RHOFLOOR: what the mass the density floor adds carries. "momentum" (the default,
+# as before): nothing, the momentum and the total energy of the node are kept, so the node is
+# braked (v by ρ/ρ_min) and the kinetic energy it loses becomes heat there. In a drained region
+# the kinetic energy is 5-50 times the internal energy (dome of a velocity-form run, 2185-2530 s):
+# every hit brakes and heats that node, and the rows of nodes that sit at the floor drain
+# differently from the rows beside them. "velocity": the added mass moves with the node's velocity
+# and has its temperature (ρv and the internal energy scaled with ρ), as more of the same plasma.
+if !@isdefined(lk10_floor_keepv)
+    const lk10_floor_keepv = Ref{Bool}(false)
+end
 # Progress line (rank 0): the snapshots are 116 s of simulated time apart, an hour of wall
 # time on the fine meshes, and nothing else is printed in between.
 if !@isdefined(lk10_progress)
@@ -217,6 +237,15 @@ function lk10_positivity_limiter!(u, integrator, p, t)
         if ρ < ρmin
             d = 1.0 - ρ/ρmin
             d > worst[1] && (worst = (d, 1.0, X[1,ip], X[2,ip], ρ/ρmin))
+            if lk10_floor_keepv[] && ρ > 0.0
+                # the added mass at the node's velocity and temperature (JEXPRESSO_LK10_RHOFLOOR=velocity)
+                s   = ρmin/ρ
+                ke0 = 0.5*(u[iρu]^2 + u[iρv]^2 + u[iρw]^2)/ρ
+                me0 = 0.5*(u[iBx]^2 + u[iBy]^2 + u[iBz]^2) + 0.5*u[iψ]^2
+                ei0 = u[iE] - ke0 - me0
+                u[iρu] *= s; u[iρv] *= s; u[iρw] *= s
+                u[iE] = s*(ei0 + ke0) + me0
+            end
             u[iρ] = ρmin; ρ = ρmin; nhit += 1
         end
         ke = 0.5*(u[iρu]^2 + u[iρv]^2 + u[iρw]^2)/ρ
@@ -284,6 +313,7 @@ function user_inputs()
     stages = _lk10_stages()
     sensor = lowercase(_lk10_env("SENSOR", "legacy")) == "residual" ? "residual" : "legacy"
     lk10_floor_Tmin[] = _lk10_num("TFLOOR", 0.1)
+    lk10_floor_keepv[] = _lk10_word("RHOFLOOR", "momentum", "velocity") == "velocity"
     lk10_floor_hits[] = 0; lk10_floor_next[] = 1
     lk10_progress[] = (0.0, 0.0, 0.0); lk10_progress_tend[] = tend
     lk10_progress_every[] = 60.0*_lk10_num("PROGRESS", 10.0)
@@ -307,6 +337,7 @@ function user_inputs()
         :lk10_restart_dir     => String(_lk10_env("RESTART_DIR", "")),
         :lk10_floors          => floors,
         :lk10_floor_Tmin      => lk10_floor_Tmin[],   # T_ph units
+        :lk10_floor_keepv     => lk10_floor_keepv[],  # JEXPRESSO_LK10_RHOFLOOR=velocity
         :lsource              => true,       # gravity, energy relaxation, ψ damping, damping layers
         :lwell_balanced       => true,       # the reference (atmosphere + coronal field) is a discrete steady state
         :SOL_VARS_TYPE        => TOTAL(),
@@ -373,6 +404,11 @@ function user_inputs()
         # The viscosity on the velocity gradient instead of the diffusion of ρv/ρ_e (SGS.jl,
         # _dsgs_velocity_viscosity_2d!; README, "The viscosity on the velocity"): opt-in while under test
         :dsgs_velocity_viscosity => _lk10_word("VISC", "momentum", "velocity") == "velocity",
+        # The energy slot where the internal energy is a small share of the total: the chain rule
+        # of the kinetic and magnetic energies plus ∂ₜe + ∇·(e u) + p∇·u = S_e (rhs.jl,
+        # _mhd_internal_energy_2d!; README, Positivity: "The internal energy where it is a small share");
+        # Lare's energy equation
+        :mhd_internal_energy  => _lk10_word("EINT", "off", "lowbeta", "all"),
         # ... and capped at the first-order diffusivity of a field carried by the flow, C_max Δ |v|,
         # instead of the viscosity's C_max Δ (|v| + c_f) (SGS.jl, lflowcap): opt-in while under test
         :dsgs_eta_flow_cap    => lowercase(_lk10_env("ETACAP", "fast")) == "flow",

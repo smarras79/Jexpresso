@@ -90,8 +90,10 @@ below).
 | `JEXPRESSO_LK10_CMIN` | default 0 | DynSGS background floor $C_{min}$ |
 | `JEXPRESSO_LK10_FLOORS` | `1` (default), `0` | positivity floors as the Runge–Kutta stage limiter (Positivity, below) |
 | `JEXPRESSO_LK10_TFLOOR` | default 0.1 | temperature floor, in $T_{ph}$ = 5700 K |
+| `JEXPRESSO_LK10_RHOFLOOR` | `momentum` (default), `velocity` | the mass the density floor adds keeps the node's momentum and total energy (braking and heating it), or moves with the node's velocity at its temperature (Positivity, below: What the density floor adds). Opt-in while the cluster test runs |
 | `JEXPRESSO_LK10_ETA` | `induction` (default), `all` | DynSGS resistivity from the induction residuals alone, or from the max over all residuals (one coefficient, the parent case) (DynSGS in the corona, below) |
 | `JEXPRESSO_LK10_ENERGY` | `thermal` (default), `total` | energy-consistent DynSGS (Positivity, below), or $E$ diffused as a whole (the parent case) |
+| `JEXPRESSO_LK10_EINT` | `off` (default), `lowbeta`, `all` | the energy equation: the total energy's own (`off`); or, where the internal energy is less than 10⁻³–10⁻² of the total (`lowbeta`) or everywhere (`all`), the changes of the kinetic and magnetic energies plus the internal energy's own equation, as in Lare, so that the pressure of a drained low-β region is not the remainder of two large energies (Positivity, below: The internal energy where it is a small share). Opt-in while the cluster test runs |
 | `JEXPRESSO_LK10_STABCAP` | default 0.2; 0: none | the DynSGS coefficient never above this viscous number $\mu\Delta t/\Delta x^2$, which the explicit step still integrates (Meshes, time step and cost) |
 | `JEXPRESSO_LK10_DSGS_STAGES` | `all` (default), `1,5`, `1` | the stages of the Runge–Kutta scheme at which the DynSGS terms are evaluated: all five; the first and the last, held in between; or the first alone (the default of `JEXPRESSO_LK10_STABCAP` is then 0.08). The coefficient is that of the first stage, with half the $C_R$ (Meshes, time step and cost: The DynSGS at two stages of the five) |
 | `JEXPRESSO_LK10_CR` | default 1 | the DynSGS constant $C_R$ |
@@ -279,6 +281,74 @@ paper's dissipation and its energy relaxation:
   $0.2p_e(y)$, neither acts where the transition region dips (coronal density
   and pressure at chromospheric heights) or on cool plasma lifted into the
   corona. Not conservative where they fire; the log reports the hits.
+
+  *The internal energy where it is a small share* (`JEXPRESSO_LK10_EINT=lowbeta`;
+  `:mhd_internal_energy`, `src/kernel/operators/rhs.jl`). The velocity-form run of
+  22 Nov (REF 4) drains its dome down to the density floor between 2185 and 2530 s,
+  $\rho \approx 10^{-15}$ g cm⁻³ in a field of ~50 G: $\beta \sim 10^{-5}$–$10^{-7}$, the
+  internal energy that share of the total (the erratum's dome keeps
+  $\sim 10^{-12.5}$ g cm⁻³ to 2530 s). The pressure is then what the divergence of
+  $E$'s flux leaves after the kinetic and magnetic energies have taken their
+  changes, and node by node those agree only to the aliasing error of the
+  collocation derivative of products, which repeats in every element and is far
+  above $p$. `noise` on that run: at 1955 and 2185 s 10–20 % of the dome's nodes
+  (5.8–7.9 Mm) sit at the temperature floor, in rows of nodes one per element in
+  height (0.189 Mm apart, the element 0.1875 Mm), while the density there is still
+  smooth (node-to-node 0.01–0.04 dex); at 2530 s the density has followed
+  (0.06–0.13 dex in 4.3–9.5 Mm, 17–26 % of the nodes at a floor): the horizontal
+  stripes of its density maps. With the option, where the internal energy is less
+  than $10^{-3}$ of the total (blended up to $10^{-2}$; so off where $\beta \gtrsim 0.01$,
+  in the corona and below it), the energy slot's inviscid rate is the chain rule of
+  the others plus the internal energy's own equation,
+  $\mathbf u\cdot R_{\rho\mathbf u} - \tfrac12\lvert\mathbf u\rvert^2R_\rho + \mathbf B\cdot R_{\mathbf B} + \psi R_\psi + R_e$,
+  $R_e$ the rate of $\partial_te + \nabla\cdot(e\mathbf u) + p\nabla\cdot\mathbf u = S_e$: the pressure
+  follows that equation, all of whose terms are proportional to $p$, as Lare's
+  specific internal energy does (the energy-consistent DynSGS above is the same
+  chain rule for the dissipative terms). Total energy is not conserved where it
+  acts, by the error it removes. The flux's pressure clamp (`LK10_PFLOOR`, $10^{-9}$,
+  above $\rho T_{min}$ of cold plasma at the density floor) is then lowered to
+  $10^{-15}$. Tests (local, `noise`-like statistics of $p$): the circularly
+  polarized Alfvén wave of `alfvenWaveBabbarRanocha2026` at $\beta = 2\times10^{-6}$
+  ($p_0 = 10^{-6}$, $N = 4$, 16² elements, no DynSGS), whose exact pressure is $p_0$
+  at every point: after two periods the total-energy form has $p/p_0$ between
+  −2.1 and 3.5 (rms error 1.2, 842 of 4225 nodes negative, node-to-node part 1.0),
+  the internal-energy form 1 ± 4×10⁻⁶ (node-to-node 3×10⁻⁶); linearly polarized
+  ($\lvert\mathbf B\rvert^2$ varies), −3.0 to 5.4 against 0.91–1.11, the wave's own
+  compression, smooth to 2×10⁻⁵. At $\beta = 0.2$ (the test's own $p_0$) `lowbeta` is
+  off and bit-identical, and the total-energy form is accurate (5×10⁻⁷; `all`,
+  2.8×10⁻⁷). In this deck: the background (REF 1, no tube) stays at rest to the
+  bit with `lowbeta` and with `all`; and a drained hole in the corona where the
+  quadrupole's field is strongest (REF 1, no tube; at (12, 4) Mm, radius 1.5 Mm,
+  0.22 of the density and 0.002 of the temperature of the atmosphere, an
+  outflow along x of 65 km/s; $\beta$ down to $10^{-6}$), 20 s. Total energy: the
+  temperature on a vertical line through the hole is off its neighbours at every
+  fourth node, the element faces (1.6, 0.10 and 0.44 $T_{ph}$ among 7–14 at 8 s,
+  spikes at 10 s), the floor fires from 1.9 s (10⁴ hits by 17 s), the
+  node-to-node part of $\log T$ along y is 0.02–0.10 dex against 0.003–0.01 along
+  x. `lowbeta`: the same line is smooth, no floor hit until 11.4 s, 0.002–0.009
+  dex up to 10 s. From 11.4 s a spot of 1–4 nodes at the hole's centre, in the
+  temperature gradient of the reference's transition region (48 to 134 $T_{ph}$
+  between 3.5 and 4.5 Mm), reaches the floor in both runs; it is not rows, and it
+  is not traced here.
+
+  The run to try (from the 1955 s snapshot of a velocity-form run, whose
+  temperature-floor rows have not yet reached the density):
+  `JEXPRESSO_LK10_EINT=lowbeta` with the run's other switches; `noise` on its
+  output at 2185 and 2530 s should show no rows of nodes at the temperature floor
+  and a node-to-node part of $\log\rho$ along y close to the one along x.
+
+  *What the density floor adds* (`JEXPRESSO_LK10_RHOFLOOR`). By default the mass
+  the floor adds keeps the node's momentum and total energy: the node is braked
+  ($v$ by $\rho/\rho_{min}$) and the kinetic energy it loses becomes heat there. In
+  the drained dome the kinetic energy is 5–50 times the internal energy, so every
+  hit brakes and heats its node, and a row of nodes held at the floor drains
+  differently from the rows beside it. `velocity`: the added mass moves with the
+  node's velocity and has its temperature, as more of the same plasma (momentum and
+  energy added with it). Not yet shown to matter: in the drained-hole test with the
+  centre below the floor (0.12 of the density, 4 s, `lowbeta`) the floor fires where
+  the plasma is nearly at rest, and the two give the same statistics to 2 %; a
+  restart reports the change (`rho_floor`). For the case where rows of nodes at the
+  density floor remain once `EINT` is on.
 
 - **DynSGS in the corona.** The DynSGS has one coefficient per element,
   from the largest normalized residual of all equations, used as viscosity,
@@ -925,12 +995,17 @@ element, the amplitude of the highest Legendre mode of $\log_{10}\rho$ along
 $y$ and along $x$ (in dex: the node-to-node part, which the element cannot
 tell from noise), mapped over a window (`--xlim`, `--ylim`, default
 $\lvert x\rvert \le 6$, $3 \le y \le 14$ Mm) with the nodes held at a positivity
-floor, and tabulated per row of elements. Horizontal stripes that the
+floor (grey: the temperature floor, black: the density floor), and tabulated
+per row of elements with the share at each floor. Horizontal stripes that the
 discretization makes show as a large amplitude along $y$ in the rows where
 they are; plasma at the density floor as floor nodes; real layers as neither.
 On the blob test of "The viscosity on the velocity" (REF 1, 58 s) the mean
 amplitude along $y$ is 0.006 dex with the momentum form and 0.013 with the
-velocity form, the excess in the corona the blob falls through.
+velocity form, the excess in the corona the blob falls through. On the
+velocity-form run of 22 Nov (REF 4) it found rows of nodes at a floor one
+element apart in height in the drained dome, over a still smooth density at
+1955 and 2185 s and with it at 2530 s (Positivity: The internal energy where it
+is a small share).
 
 `core` follows the plasma at the tube axis (the O-point of the in-plane field
 on $x = 0$): its height, with the erratum's Fig. 2(a) and the O-point of its

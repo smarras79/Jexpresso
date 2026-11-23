@@ -1521,6 +1521,26 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :lwell_balanced))
         inputs[:lwell_balanced] = false
     end
+    #   :mhd_internal_energy  "off" | "lowbeta" | "all". 2D MHD, CG, TOTAL variables, the
+    #                      nine slots (ρ, ρu, ρv, ρE, ρw, Bx, By, Bz, ψ): the inviscid
+    #                      energy slot as the chain rule of the other slots plus the
+    #                      internal energy's own equation, ∂ₜe + ∇·(e u) + p∇·u = S_e, so
+    #                      that the pressure no longer is the remainder of two large
+    #                      energies (rhs.jl, _mhd_internal_energy_2d!). "lowbeta" where
+    #                      the internal energy is a small share of the total
+    #                      (:mhd_internal_energy_fraction), "all" everywhere.
+    #   :mhd_internal_energy_fraction  (r_on, r_off): the form is on where e/E <= r_on
+    #                      and off where e/E >= r_off, log-linear in between [(1e-3, 1e-2)]
+    if(!haskey(inputs, :mhd_internal_energy))
+        inputs[:mhd_internal_energy] = "off"
+    end
+    inputs[:mhd_internal_energy] = lowercase(string(inputs[:mhd_internal_energy]))
+    if !(inputs[:mhd_internal_energy] in ("off", "lowbeta", "all"))
+        error(" user_inputs.jl: :mhd_internal_energy must be \"off\", \"lowbeta\" or \"all\" (got $(inputs[:mhd_internal_energy])).")
+    end
+    if(!haskey(inputs, :mhd_internal_energy_fraction))
+        inputs[:mhd_internal_energy_fraction] = (1.0e-3, 1.0e-2)
+    end
     if haskey(inputs, :dsgs_legacy_stencil)
         error(" user_inputs.jl: :dsgs_legacy_stencil has been replaced by :dsgs_sensor => \"legacy\" | \"residual\".")
     end

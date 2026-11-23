@@ -476,6 +476,13 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     cmax = MPI.Allreduce(ch_local, MPI.MAX, comm)
     chin = Float64(get(inputs, :lk10_ch, 0.0))
     c_h_mhd[] = chin > 0.0 ? chin : cmax
+    # The flux's pressure clamp (user_flux.jl, LK10_PFLOOR): 10⁻⁹, 1% of the smallest pressure of the
+    # initial atmosphere, is above the pressure of cold plasma at the density floor (ρ T_min =
+    # 5.6e-10 at 6 Mm), where the energy flux then carries an enthalpy the plasma does not have and
+    # the momentum flux a pressure; with the internal energy form (:mhd_internal_energy) the pressure
+    # stays positive on its own and the stage limiter holds T ≥ T_min, so the clamp is lowered to
+    # 10⁻¹⁵, out of the way
+    LK10_PFLOOR[] = String(get(inputs, :mhd_internal_energy, "off")) == "off" ? 1.0e-9 : 1.0e-15
     pmin = MPI.Allreduce(pmin_local, MPI.MIN, comm)
     pmin <= 0.0 && error(" problems/MHD/fluxEmergenceLeake2010: non-positive initial pressure ($(pmin)).")
 
@@ -588,7 +595,7 @@ lk10_restart_fields() = ["ρ", "u", "v", "w", "p", "Bx", "By", "Bz", "ψ"]
 # switches of lk10_numeric_keys (to continue past a failure from an earlier snapshot);
 # the restart says which changed.
 lk10_numeric_keys() = ("curl_resistivity", "Cmin", "floors", "dsgs_energy", "eta_sensor", "dsgs_sensor", "eta_cap", "eta_factor", "visc_factor", "visc_form",
-                         "rho_factor", "heating", "stab_cap", "dsgs_stages", "CR", "tfloor")
+                         "rho_factor", "heating", "stab_cap", "dsgs_stages", "CR", "tfloor", "energy_form", "rho_floor")
 
 function lk10_case_record(inputs)
     return Pair{String,String}[
@@ -611,11 +618,13 @@ function lk10_case_record(inputs)
         "eta_factor"       => string(Float64(get(inputs, :μ, ones(9))[6])),
         "visc_factor"      => string(Float64(get(inputs, :μ, ones(9))[2])),
         "visc_form"        => get(inputs, :dsgs_velocity_viscosity, false) == true ? "velocity" : "momentum",
+        "energy_form"      => (ef = String(get(inputs, :mhd_internal_energy, "off")); ef == "off" ? "total" : "internal where " * ef),
         "rho_factor"       => string(Float64(get(inputs, :μ, ones(9))[1])),
         "stab_cap"         => string(Float64(get(inputs, :dsgs_stab_cap, 0.0))),
         "dsgs_stages"      => (st = get(inputs, :dsgs_stages, nothing); st === nothing ? "all" : join(st, ",")),
         "CR"               => string(Float64(get(inputs, :lk10_CR, 1.0))),
         "tfloor"           => string(Float64(get(inputs, :lk10_floor_Tmin, 0.1))),
+        "rho_floor"        => get(inputs, :lk10_floor_keepv, false) == true ? "velocity" : "momentum",
         "heating"          => (h = get(inputs, :dsgs_heating, 1.0); h isa Number ? string(Float64(h)) : String(h)),
         "mesh"             => basename(String(get(inputs, :gmsh_filename, ""))),
         "partition"        => get(inputs, :lxy_partition, true) != true ? "metis" :
@@ -664,7 +673,8 @@ function lk10_record_mismatch(old::Dict{String,String}, rec; numerics::Bool=fals
         # (and the legacy DynSGS sensor)
         w = get(old, k, k == "partition" ? "uniform" : k == "dsgs_sensor" ? "legacy" : k == "eta_cap" ? "fast" :
                         k in ("eta_factor", "visc_factor", "rho_factor", "heating", "CR") ? "1.0" : k == "stab_cap" ? "0.0" :
-                        k == "dsgs_stages" ? "all" : k == "tfloor" ? "0.1" : k == "visc_form" ? "momentum" : "(not recorded)")
+                        k == "dsgs_stages" ? "all" : k == "tfloor" ? "0.1" : k == "visc_form" ? "momentum" :
+                        k == "energy_form" ? "total" : k == "rho_floor" ? "momentum" : "(not recorded)")
         w == v || push!(bad, "$(k): $(w) there, $(v) here" *
                              (k == "partition" ? " (JEXPRESSO_LK10_PARTITION=$(w) to continue that run)" : ""))
     end

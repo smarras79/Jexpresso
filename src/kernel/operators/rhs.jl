@@ -874,6 +874,154 @@ function _well_balanced_subtract!(rhs_el, ref)
     return nothing
 end
 
+# ================================================================================
+# :mhd_internal_energy — the energy slot of 2D MHD (CG, TOTAL variables, the nine slots
+# ρ, ρu, ρv, ρE, ρw, Bx, By, Bz, ψ) where the internal energy is a small part of the total.
+#
+# The pressure is a remainder, p = (γ−1)(E − ½|m|²/ρ − ½|B|² − ½ψ²). Its rate is what the
+# divergence of E's flux leaves after the kinetic and magnetic energies have taken their
+# changes: two large terms that cancel in the continuum, and node by node only to the
+# aliasing error of the collocation derivative of products (∂(B²v) against B·∂(vB) and
+# v·∂(B²/2), ...). Where e = p/(γ−1) is a share r = e/E of 10⁻⁵…10⁻⁷ of the total — a
+# drained, strongly magnetized region; problems/MHD/fluxEmergenceLeake2010 at 1955–2530 s,
+# β ~ 10⁻⁵ to 10⁻⁷ — that error is far above p itself: the pressure becomes noise with the
+# pattern of the nodes in an element, negative on some rows of nodes (held at the
+# temperature floor) and hot on others, and the plasma on those rows drains differently.
+#
+# With the option the inviscid element contribution of the energy slot is replaced by
+#
+#     R_E = u·R_m − ½|u|² R_ρ + B·R_B + ψ R_ψ + R_e,
+#     R_e = the element contribution of  −∇·(e u) − p ∇·u + S_e,
+#
+# R_q the element contributions of the other slots as assembled (after the well-balanced
+# subtraction) and S_e the internal energy's part of the case's sources,
+# S_E − u·S_m + ½|u|²S_ρ − B·S_B − ψS_ψ: the work of gravity and of the damping layers
+# reaches the kinetic energy through R_m, and what remains is what the case puts into the
+# internal energy itself (a relaxation; the ψ damping, which heats in the total form and
+# still does). The coefficients u, B, ψ are nodal, so the sum commutes with the assembly
+# (DSS over elements and ranks, the lumped mass): at every node the assembled ∂ₜE is
+# ∂ₜ(½|m|²/ρ + ½|B|² + ½ψ²) + ∂ₜe exactly, and the pressure follows its own equation, all
+# of whose terms are proportional to p. That is the energy equation of Lare, the code of
+# the Leake papers (the specific internal energy, with the shock heating added explicitly;
+# here the DynSGS energy slot, :dsgs_thermal_energy, whose work term is this same chain
+# rule). Total energy is not conserved where it acts, by the aliasing error it removes.
+#
+# "lowbeta": blended, R_E ← (1−θ)R_E + θ(the above), θ = 1 for r ≤ r_on, 0 for r ≥ r_off,
+# log-linear in between (:mhd_internal_energy_fraction = (r_on, r_off), (1e-3, 1e-2) by
+# default: off in a plasma of β ≳ 0.01). θ is nodal, so the blend commutes with the
+# assembly as well. "all": θ = 1 everywhere.
+#
+# With :lwell_balanced the reference's contributions have been subtracted from every slot.
+# R_m, R_B, ... above are those differences; from R_e the reference's own is subtracted,
+# which is its energy slot's contribution when the reference is at rest with ψ = 0 (checked
+# once): its fluxes of E then vanish, and so do ∇·(e u) and p∇·u.
+# ================================================================================
+const _MHD_EINT_CHECKED = Ref{Bool}(false)
+
+function _mhd_internal_energy_2d!(params, lwb::Bool, lsource::Bool)
+    inputs = params.inputs
+    mode   = inputs[:mhd_internal_energy]::String
+    ron, roff = inputs[:mhd_internal_energy_fraction]
+    if !_MHD_EINT_CHECKED[]
+        params.SOL_VARS_TYPE == TOTAL() ||
+            error(" :mhd_internal_energy needs :SOL_VARS_TYPE => TOTAL().")
+        params.AD == ContGal() ||
+            error(" :mhd_internal_energy: CG only.")
+        params.neqs == 9 ||
+            error(" :mhd_internal_energy: the nine slots of MHD (ρ, ρu, ρv, ρE, ρw, Bx, By, Bz, ψ), got neqs = ", params.neqs, ".")
+        (0 < ron < roff) ||
+            error(" :mhd_internal_energy_fraction must be (r_on, r_off) with 0 < r_on < r_off (got ", (ron, roff), ").")
+        if lwb
+            qe = params.qp.qe
+            s  = maximum(abs, @view(qe[:, 4]))
+            for k in (2, 3, 5, 9)
+                maximum(abs, @view(qe[:, k])) <= 1.0e-12*max(s, 1.0) ||
+                    error(" :mhd_internal_energy with :lwell_balanced needs a reference at rest with ψ = 0 (slot ", k, " of qe is not zero).")
+            end
+        end
+        _MHD_EINT_CHECKED[] = true
+    end
+    ref = lwb ? _WB_REF[][2] : params.rhs_el
+    _mhd_internal_energy_2d_kernel!(params.rhs_el, ref, lwb, params.uaux, params.qp.qe,
+                                    params.mesh.connijk, params.mesh.coords, params.basis.dψ, params.ω,
+                                    params.metrics.Je, params.metrics.dξdx, params.metrics.dξdy,
+                                    params.metrics.dηdx, params.metrics.dηdy,
+                                    Int(params.mesh.nelem), Int(params.mesh.ngl), params.mesh.npoin,
+                                    Float64(inputs[:dsgs_gamma]), mode == "all", Float64(ron), Float64(roff),
+                                    lsource, params.CL, params.SOL_VARS_TYPE, params.ymax)
+    return nothing
+end
+
+function _mhd_internal_energy_2d_kernel!(rhs_el::AbstractArray{TT,4}, ref::AbstractArray{TT,4}, lwb::Bool,
+                                         uaux::AbstractMatrix{TT}, qe::AbstractMatrix,
+                                         connijk::AbstractArray{<:Integer,4}, coords::AbstractMatrix,
+                                         dψ::AbstractMatrix, ω::AbstractVector,
+                                         Je::AbstractArray, dξdx::AbstractArray, dξdy::AbstractArray,
+                                         dηdx::AbstractArray, dηdy::AbstractArray,
+                                         nelem::Int, ngl::Int, npoin, γ::Float64, lall::Bool,
+                                         ron::Float64, roff::Float64, lsource::Bool, CL, SVT, ymax) where {TT}
+    γm1  = TT(γ - 1.0)
+    lon  = log(ron); loff = log(roff)
+    Fe = zeros(TT, ngl, ngl); Ge = zeros(TT, ngl, ngl)
+    U  = zeros(TT, ngl, ngl); V  = zeros(TT, ngl, ngl)
+    P  = zeros(TT, ngl, ngl); Θ  = zeros(TT, ngl, ngl)
+    S  = zeros(TT, 9)
+    @inbounds for iel = 1:nelem
+        act = false
+        for j = 1:ngl, i = 1:ngl
+            ip = connijk[iel,i,j,1]
+            ρ  = uaux[ip,1]; u = uaux[ip,2]/ρ; v = uaux[ip,3]/ρ; w = uaux[ip,5]/ρ
+            E  = uaux[ip,4]
+            Bx = uaux[ip,6]; By = uaux[ip,7]; Bz = uaux[ip,8]; ψ = uaux[ip,9]
+            e  = E - TT(0.5)*(ρ*(u*u + v*v + w*w) + Bx*Bx + By*By + Bz*Bz + ψ*ψ)
+            θ  = one(TT)
+            if !lall
+                r = e/E
+                θ = r <= ron ? one(TT) : r >= roff ? zero(TT) : TT((loff - log(r))/(loff - lon))
+            end
+            U[i,j] = u; V[i,j] = v; P[i,j] = γm1*e
+            Fe[i,j] = e*u; Ge[i,j] = e*v; Θ[i,j] = θ
+            act |= θ > 0
+        end
+        act || continue
+        for j = 1:ngl, i = 1:ngl
+            θ = Θ[i,j]
+            θ > 0 || continue
+            ip = connijk[iel,i,j,1]
+            dFξ = zero(TT); dFη = zero(TT); dGξ = zero(TT); dGη = zero(TT)
+            dUξ = zero(TT); dUη = zero(TT); dVξ = zero(TT); dVη = zero(TT)
+            for k = 1:ngl
+                a = dψ[k,i]; b = dψ[k,j]
+                dFξ += a*Fe[k,j]; dFη += b*Fe[i,k]
+                dGξ += a*Ge[k,j]; dGη += b*Ge[i,k]
+                dUξ += a*U[k,j];  dUη += b*U[i,k]
+                dVξ += a*V[k,j];  dVη += b*V[i,k]
+            end
+            ξx = dξdx[iel,i,j]; ξy = dξdy[iel,i,j]; ηx = dηdx[iel,i,j]; ηy = dηdy[iel,i,j]
+            div_eu = dFξ*ξx + dFη*ηx + dGξ*ξy + dGη*ηy
+            divu   = dUξ*ξx + dUη*ηx + dVξ*ξy + dVη*ηy
+            ρ  = uaux[ip,1]; u = U[i,j]; v = V[i,j]; w = uaux[ip,5]/ρ
+            Bx = uaux[ip,6]; By = uaux[ip,7]; Bz = uaux[ip,8]; ψ = uaux[ip,9]
+            u2 = u*u + v*v + w*w
+            Se = zero(TT)
+            if lsource
+                user_source!(S, @view(uaux[ip,:]), @view(qe[ip,:]), npoin, CL, SVT;
+                             neqs = 9, x = coords[1,ip], y = coords[2,ip], ymax = ymax)
+                Se = S[4] - (u*S[2] + v*S[3] + w*S[5]) + TT(0.5)*u2*S[1] -
+                     (Bx*S[6] + By*S[7] + Bz*S[8]) - ψ*S[9]
+            end
+            ωJ = ω[i]*ω[j]*Je[iel,i,j]
+            Re = -ωJ*(div_eu + P[i,j]*divu - Se)
+            chain = -TT(0.5)*u2*rhs_el[iel,i,j,1] + u*rhs_el[iel,i,j,2] + v*rhs_el[iel,i,j,3] +
+                     w*rhs_el[iel,i,j,5] + Bx*rhs_el[iel,i,j,6] + By*rhs_el[iel,i,j,7] +
+                     Bz*rhs_el[iel,i,j,8] + ψ*rhs_el[iel,i,j,9]
+            new4 = chain + Re - (lwb ? ref[iel,i,j,4] : zero(TT))
+            rhs_el[iel,i,j,4] = (one(TT) - θ)*rhs_el[iel,i,j,4] + θ*new4
+        end
+    end
+    return nothing
+end
+
 function _build_rhs!(RHS, u, params, time)
 
     T       = Float64
@@ -1002,6 +1150,13 @@ function _build_rhs!(RHS, u, params, time)
                      params.mp.S_micro, params.mp.qn, params.mp.flux_lw, params.mp.flux_sw, SD)
 
     lwb && _well_balanced_subtract!(params.rhs_el, _WB_REF[][2])
+
+    # :mhd_internal_energy: the energy slot as the chain rule of the others plus the internal
+    # energy's own equation, where the internal energy is a small share of the total (above)
+    if params.inputs[:mhd_internal_energy]::String != "off"
+        SD == NSD_2D() || error(" :mhd_internal_energy is implemented in 2D only.")
+        @timeit_debug JEXPRESSO_TIMER "mhd_internal_energy" _mhd_internal_energy_2d!(params, lwb, lsource)
+    end
 
     if inputs[:ladapt] == true
         DSS_nc_gather_rhs!(params.RHS, SD, QT, params.rhs_el,
