@@ -23,8 +23,13 @@
 #   convergence_mumax   the largest DSGS coefficient μ of every run; the legend
 #                       says on how many meshes it was exactly zero
 #   convergence_paper   the error of B⊥ | max r | max μ, side by side
+#   convergence_dsgs_galerkin   the deck's DSGS and Galerkin alone, every panel,
+#                       with one dotted h^(N+1) guide per order
+#   convergence_dsgs_nocut      the deck's DSGS and DSGS without the cutoff
+#                       alone, the same way
 #
-# (all -it0.png). A Galerkin-only selection has no rmax, mumax or paper figure.
+# (all -it0.png). A Galerkin-only selection has no rmax, mumax or paper figure,
+# and a comparison is drawn only when both of its variants are stored.
 #
 #   --visc=TAGS   only these records, by the tag of their file name: dsgs (the
 #                 deck as committed), dsgs_nocut (cutoff 0), galerkin, dsgs_perstage, ...

@@ -215,6 +215,13 @@ From every record stored for the same final time, the run then:
     of "What this test found");
   - `convergence_paper-it<n>.png`: the three panels the smooth-wave test needs, side by
     side: the L² error of B⊥ for every variant, max r against the cutoff, and max μ.
+- draws two comparisons, each with one pair of variants alone and every error panel, with
+  one dotted h^(N+1) guide per order in the order's colour, labelled at its end (the
+  guides of the October 2026 figure):
+  - `convergence_dsgs_galerkin-it<n>.png`: the deck's DSGS and Galerkin;
+  - `convergence_dsgs_nocut-it<n>.png`: the deck's DSGS and DSGS without the cutoff.
+
+  A comparison is drawn once each of its two variants has a curve of two meshes.
 
 `tools/alfven_wave_plot.jl` draws the same figures and table from the store without
 running anything, as `convergence-it0.png` and the files above (`3,5,7` for a subset of

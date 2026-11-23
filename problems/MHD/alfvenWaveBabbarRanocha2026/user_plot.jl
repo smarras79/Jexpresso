@@ -505,8 +505,143 @@ function _aw_diag_panel(rows, fld::Symbol, ylab, title; tags, label, line, galer
     return pl
 end
 
+#---------------------------------------------------------------------------------
+# TWO COMPARISONS, each one pair of tags alone, with the reference slopes of the
+# October 2026 figure: one dotted h^(N+1) guide PER ORDER, in the order's
+# colour, over the order's widest curve, a factor 3 below its finest error and
+# labelled at its end.
+#   <name>_dsgs_galerkin-it<iout>.png   the deck's DSGS and Galerkin
+#   <name>_dsgs_nocut-it<iout>.png      the deck's DSGS and DSGS without the cutoff
+# The panels of AW_PANELS in a grid four wide, the last cell the legend. A
+# comparison is drawn when each of its two tags has a curve of two meshes or
+# more. The styles are those of the error panels: the deck's DSGS solid and
+# filled, drawn last so that it shows inside a hollow marker it coincides with;
+# Galerkin dashed with a larger hollow marker; the variant dash-dot.
+#---------------------------------------------------------------------------------
+const AW_COMPARISONS = [   # (tags, file suffix, title)
+    (["dsgs", "galerkin"],   "dsgs_galerkin", "DSGS (the deck) and Galerkin"),
+    (["dsgs", "dsgs_nocut"], "dsgs_nocut",    "DSGS (the deck) and DSGS without the cutoff"),
+]
+const AW_INK = Plots.RGB(0x52/255, 0x51/255, 0x4e/255)   # the guides' labels
+const AW_CMP_FS = (title = 15, guide = 15, tick = 13, legend = 14, note = 13)
+const AW_CMP_CELL = (820, 640)
+
+function _aw_curve(rows, fld, nop, tag)              # sorted by #DOFs, the positive finite errors
+    g  = sort(filter(r -> r.nop == nop && r.visc == tag, rows), by = r -> r.ndofs)
+    xs = [Float64(r.ndofs) for r in g]; ys = [Float64(getfield(r, fld)) for r in g]
+    keep = isfinite.(ys) .& (ys .> 0)
+    return xs[keep], ys[keep]
+end
+
+function _aw_cmp_attrs(nop, tag, tags)
+    col, mk = _conv_style(nop)
+    ls  = _aw_line(tag, tags)
+    filled = ls == :solid
+    return (line = (col, 2.0, ls),
+            marker = (mk, startswith(tag, "galerkin") ? 9 : filled ? 5 : 7),
+            markercolor = filled ? col : :white, markerstrokecolor = col,
+            markerstrokewidth = 1.2, color = col)
+end
+
+function _aw_cmp_panel(rows, fld, ylab, title, tags)
+    pl = Plots.plot(; xscale = :log10, yscale = :log10,
+                    xlabel = "#DOFs = (nelx N)²", ylabel = LaTeXStrings.latexstring(ylab),
+                    title = title, framestyle = :box, grid = true, gridalpha = 0.25,
+                    legend = false, titlefontsize = AW_CMP_FS.title,
+                    guidefontsize = AW_CMP_FS.guide, tickfontsize = AW_CMP_FS.tick, show = false)
+    # the resolutions run, labelled as the paper labels them (32², 64², ...); with
+    # too many to label, the powers of two
+    dofs = sort(unique(Float64(r.ndofs) for r in rows))
+    xlo, xhi = dofs[1]/1.25, dofs[end]*1.6           # room on the right for the guides' labels
+    side = length(dofs) <= 8 ? sqrt.(dofs) :
+           filter(s -> xlo <= s^2 <= xhi,
+                  [2.0^k for k in floor(Int, log2(sqrt(dofs[1]))):ceil(Int, log2(sqrt(dofs[end])))])
+    Plots.plot!(pl; xticks = (side.^2, [string(round(Int, s), "²") for s in side]),
+                xlims = (xlo, xhi))
+    drawn = sort(tags, by = t -> (_aw_line(t, tags) == :solid, t))   # the deck's DSGS last
+    ally  = Float64[]
+    for n in sort(unique(r.nop for r in rows))
+        ends = Tuple{Vector{Float64},Float64}[]    # (#DOFs of a curve, its finest error)
+        for tag in drawn
+            xs, ys = _aw_curve(rows, fld, n, tag)
+            isempty(xs) && continue
+            append!(ally, ys)
+            Plots.plot!(pl, xs, ys; label = "", _aw_cmp_attrs(n, tag, tags)...)
+            length(xs) >= 2 && push!(ends, (xs, ys[end]))
+        end
+        isempty(ends) && continue
+        # O(h^(N+1)) = #DOFs^(-(N+1)/2)
+        xs = ends[argmax([length(e[1]) for e in ends])][1]
+        sl = (n + 1)/2
+        A  = minimum(e[2] for e in ends)/3.0*xs[end]^sl
+        y2 = A*xs[end]^(-sl)
+        Plots.plot!(pl, [xs[1], xs[end]], [A*xs[1]^(-sl), y2];
+                    line = (_conv_style(n)[1], 1.0, :dot), label = "")
+        Plots.annotate!(pl, xs[end]*1.08, y2,
+                        Plots.text(LaTeXStrings.latexstring("h^{", n + 1, "}"), AW_INK, :left,
+                                   AW_CMP_FS.note))
+        push!(ally, y2)
+    end
+    # decades (10^-7.5 is not a number anyone reports), set by the errors and the
+    # guides' ends: a guide that starts above the errors is cut
+    if !isempty(ally)
+        lo = floor(Int, log10(minimum(ally))); hi = ceil(Int, log10(maximum(ally)))
+        stp = max(1, cld(hi - lo + 1, 8))
+        Plots.plot!(pl; ylims = (10.0^lo/1.5, 10.0^hi*1.5),
+                    yticks = ([10.0^e for e in lo:stp:hi],
+                              [LaTeXStrings.latexstring(string("10^{", e, "}")) for e in lo:stp:hi]))
+    end
+    return pl
+end
+
+function _aw_cmp_legend(rows, tags)
+    pl = Plots.plot(; framestyle = :none, grid = false, xticks = false, yticks = false,
+                    xlims = (0, 1), ylims = (0, 1), legend = :left,
+                    legendfontsize = AW_CMP_FS.legend, foreground_color_legend = nothing,
+                    background_color_legend = nothing, show = false)
+    listed = sort(tags, by = t -> (_aw_line(t, tags) != :solid, t))  # the deck's DSGS first
+    for n in sort(unique(r.nop for r in rows)), tag in listed
+        any(r -> r.nop == n && r.visc == tag, rows) || continue
+        Plots.plot!(pl, [NaN], [NaN]; label = string("N = ", n, ", ", _aw_label(tag)),
+                    _aw_cmp_attrs(n, tag, tags)...)
+    end
+    Plots.plot!(pl, [NaN], [NaN]; line = (AW_INK, 1.0, :dot),
+                label = "h^(N+1), dotted, one per order")
+    return pl
+end
+
+# Returns the files written.
+function _aw_compare(rows, OUTPUT_DIR, iout; name = "convergence")
+    files = String[]
+    for (tags, suffix, title) in AW_COMPARISONS
+        rs = filter(r -> r.visc in tags, rows)
+        nops = unique(r.nop for r in rs)
+        all(any(count(r -> r.visc == tag && r.nop == n, rs) >= 2 for n in nops) for tag in tags) ||
+            continue
+        pls = Any[_aw_cmp_panel(rs, fld, ylab,
+                                LaTeXStrings.latexstring(string("\\mathrm{(", 'a' + (i - 1), ")}\\ ", ttl)),
+                                tags)
+                  for (i, (fld, ylab, ttl, _)) in enumerate(AW_PANELS)]
+        push!(pls, _aw_cmp_legend(rs, tags))
+        nc = 4; nr = cld(length(pls), nc)
+        while length(pls) < nr*nc                      # an empty cell keeps the grid
+            push!(pls, Plots.plot(; framestyle = :none, grid = false, show = false))
+        end
+        plt = Plots.plot(pls...; layout = (nr, nc),
+                         size = (nc*AW_CMP_CELL[1], nr*AW_CMP_CELL[2]),
+                         plot_title = string(title, ", t = ", rs[1].t), plot_titlefontsize = 19,
+                         left_margin = 12Plots.mm, bottom_margin = 10Plots.mm,
+                         top_margin = 3Plots.mm, right_margin = 3Plots.mm, show = false)
+        f = string(OUTPUT_DIR, "/", name, "_", suffix, "-it", iout, ".png")
+        _conv_savefig(plt, f)
+        push!(files, f)
+    end
+    return files
+end
+
 # <name>-it<iout>.png, the seven error panels side by side, and <name>_Bperp,
-# _Bperp_Linf, _uperp, _uperp_Linf, _rho, _L2 and _Linf, one each. Then what DSGS did: <name>_rmax and
+# _Bperp_Linf, _uperp, _uperp_Linf, _rho, _L2 and _Linf, one each; the two
+# comparisons <name>_dsgs_galerkin and _dsgs_nocut (_aw_compare). Then what DSGS did: <name>_rmax and
 # _mumax (_aw_diag_panel), and <name>_paper, the three panels the paper's
 # smooth-wave test needs side by side: the error of the wave (B⊥) for every
 # variant, max r against the cutoff, and max μ. Returns the first file, or
@@ -516,6 +651,7 @@ function _aw_plot(rows, OUTPUT_DIR, iout; name = "convergence")
           galerkin = t -> startswith(t, "galerkin"))
     f = _conv_figure(rows, AW_PANELS, OUTPUT_DIR, iout; prefix = name, kw...)
     f === nothing && return nothing
+    _aw_compare(rows, OUTPUT_DIR, iout; name = name)
     pr = _aw_diag_panel(rows, :r_max,  "\\max_t\\, r",
                         "\\mathrm{largest\\ residual\\ before\\ the\\ cutoff}"; kw...)
     pm = _aw_diag_panel(rows, :mu_max, "\\max_t\\, \\mu",
