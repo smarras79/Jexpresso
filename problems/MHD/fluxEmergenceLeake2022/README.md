@@ -284,8 +284,22 @@ on 1024 ranks (192 elements each) 0.42 s per step, about a day to $t = 190$;
 on 2048 half that; 4096 ranks hold 48 elements each, where the exchanges
 between ranks start to weigh. 3 GB per snapshot, 66 GB to 190. `LK22_REF = 3`
 resolves the rope's length twice as finely for twice the cost.
-`LK22_DT` changes the step (the fast CFL number is 0.13 at the start at
-$10^{-3}$ on these meshes; a larger step was not tested here).
+`LK22_DT` changes the step. On a cluster (23 Nov 2026) the run above took
+about 1.1 s per step at $10^{-3}$, several times the estimate: 13.5 h to
+$t = 43.7$, so three jobs of 24 h to $t = 190$. Its fast CFL number (the
+monitor's, on the smallest LGL gap around each node) was 0.13 at the start,
+0.29 by $t = 25.6$ and unchanged to 43.7, with $|\mathbf v| + c_f$ at most 81
+and the largest DynSGS viscous number 0.03. The step can be doubled for the
+rest of such a run (`LK22_DT=2e-3`, restarting from a snapshot): on the 2.5D
+cross-section of this mesh (`fluxEmergenceLeake2022_2D`, `LK2D_REF=2`, the same
+switches) four times the step, $4\times10^{-3}$, a fast CFL number of 0.5–0.6
+from the start, gives to $t = 10$ the rope's axis and top to 0.01 $L_0$, its
+largest axial field 4.207 as with $10^{-3}$, the kinetic energy $8.50\times10^{-2}$ as
+with it, $T_{max}$ 182.4 against 182.2, no node at a floor, and a largest
+viscous number of 0.016, far below the cap of 0.2. With the doubled step the
+monitor's WARNING threshold (0.5) is passed by design; the scheme's limit
+for this operator is about 1.3 on the smallest gap in all three directions
+and higher where only the vertical one is small.
 
 ## Restart
 
