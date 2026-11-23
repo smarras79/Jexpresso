@@ -26,9 +26,10 @@
 # 0.1 (sin, cos)(2π(x∥ + t)) in both. Each is also stored in L¹,
 # (1/|Ω|) ∫ |q_h − q| dΩ (|B⊥,h − B⊥| for the wave), the norm of most MHD
 # accuracy tests, and in L∞, the largest error over the Gauss points. The
-# figures are a matrix of panels: rows B⊥, u⊥ (the wave's own error), ρ (the
-# paper's measure) and the full state, sqrt(Σ_k e(q_k)²) in L² and L¹, the
-# largest e(q_k) in L∞; columns L², L¹, L∞. The wave's L∞ is in every record
+# figures are a matrix of panels: rows B⊥, u⊥ (the wave's own error) and ρ
+# (the paper's measure); columns L², L¹, L∞. The full state q, sqrt(Σ_k e(q_k)²)
+# in L² and L¹ and the largest e(q_k) in L∞, is in the table and drawn on
+# request (AW_STATE_PANELS). The wave's L∞ is in every record
 # written since 17 Nov 2026 and L¹ in every record written since 23 Nov 2026;
 # an older record leaves those panels without its point.
 #
@@ -358,7 +359,7 @@ function _aw_report(rows)
     println(" # alfvenWaveBabbarRanocha2026: L2 error at t = ", rows[1].t,
             " (B⊥, u⊥: the wave; rho: the paper's Fig. 13 measure, exact rho = 1;",
             " r, mu: largest normalized residual before the cutoff and largest DSGS coefficient over the run)")
-    println(" #   visc         N  nelx    DOFs     L2(B⊥)  order     L1(B⊥)  order   Linf(B⊥)  order     L2(u⊥)  order    L2(rho)  order    L1(rho)  order       max r      max mu")
+    println(" #   visc         N  nelx    DOFs     L2(B⊥)  order     L1(B⊥)  order   Linf(B⊥)  order     L2(u⊥)  order    L2(rho)  order    L1(rho)  order      L2(q)  order      L1(q)  order       max r      max mu")
     _o(p) = isfinite(p) ? @sprintf("%.2f", p) : ""
     _g(x) = isfinite(x) ? @sprintf("%.3e", x) : "-"
     prev = nothing
@@ -367,13 +368,16 @@ function _aw_report(rows)
         pb = same ? _aw_rate(prev.ndofs, prev.bperp, r.ndofs, r.bperp) : NaN
         pb1 = same ? _aw_rate(prev.ndofs, prev.bperp_l1, r.ndofs, r.bperp_l1) : NaN
         pr1 = same ? _aw_rate(prev.ndofs, prev.rho_l1, r.ndofs, r.rho_l1) : NaN
+        pq  = same ? _aw_rate(prev.ndofs, prev.state, r.ndofs, r.state) : NaN
+        pq1 = same ? _aw_rate(prev.ndofs, prev.state_l1, r.ndofs, r.state_l1) : NaN
         pbi = same ? _aw_rate(prev.ndofs, prev.bperp_inf, r.ndofs, r.bperp_inf) : NaN
         pu = same ? _aw_rate(prev.ndofs, prev.uperp, r.ndofs, r.uperp) : NaN
         pr = same ? _aw_rate(prev.ndofs, prev.rho,   r.ndofs, r.rho)   : NaN
-        println(@sprintf(" #   %-11s %2d  %4d  %6d  %10s  %5s %10s  %5s %10s  %5s %10s  %5s %10.3e  %5s %10s  %5s  %10s  %10s",
+        println(@sprintf(" #   %-11s %2d  %4d  %6d  %10s  %5s %10s  %5s %10s  %5s %10s  %5s %10.3e  %5s %10s  %5s %10s  %5s %10s  %5s  %10s  %10s",
                          r.visc, r.nop, r.nelx, r.ndofs,
                          _g(r.bperp), _o(pb), _g(r.bperp_l1), _o(pb1), _g(r.bperp_inf), _o(pbi),
                          _g(r.uperp), _o(pu), r.rho, _o(pr), _g(r.rho_l1), _o(pr1),
+                         _g(r.state), _o(pq), _g(r.state_l1), _o(pq1),
                          _g(r.r_max), _g(r.mu_max)))
         prev = r
     end
@@ -397,10 +401,13 @@ end
 _aw_label(tag) = startswith(tag, "galerkin") ? replace(tag, "galerkin" => "Galerkin", "_" => " ") :
                  replace(tag, "dsgs" => "DSGS", "_nocut" => ", no cutoff",
                          r"_cut([0-9.e+-]+)" => s", cutoff \1", r"_bdf(\d+)" => s", BDF\1", "_" => " ")
-# The error panels, a matrix: rows B⊥, u⊥, ρ and the state; columns L², L¹
-# and L∞. The file key names the quantity and, but for L², the norm.
+# The error panels, a matrix: rows B⊥, u⊥ and ρ; columns L², L¹ and L∞. The
+# file key names the quantity and, but for L², the norm. The state's row
+# (AW_STATE_PANELS) is not in the figures: on this test it follows B⊥ and u⊥,
+# whose errors dominate it. It is in the table, and drawn on request
+# (tools/alfven_wave_plot.jl --panels=state,state_L1,state_Linf).
 _aw_norm_tex(n) = n == "L2" ? "L^2" : n == "L1" ? "L^1" : "L^\\infty"
-const AW_PANELS = [   # (field, ylabel, title, file)
+const AW_PANEL_MATRIX = [   # (field, ylabel, title, file)
     (Symbol(f, sfx),
      string("\\Vert", h, "\\Vert_{", _aw_norm_tex(n), "}"),
      string(_aw_norm_tex(n), "\\mathrm{-error\\ of", st ? "\\ the\\ state}\\ \\mathbf{q}" : "}\\ " * tt),
@@ -412,9 +419,11 @@ const AW_PANELS = [   # (field, ylabel, title, file)
         ("state", "\\mathbf{q}_h-\\mathbf{q}",                 "",                   "state", true))
     for (n, sfx) in (("L2", ""), ("L1", "_l1"), ("Linf", "_inf"))
 ]
-# the figure of every variant side by side keeps the seven panels it had
+const AW_PANELS       = [p for p in AW_PANEL_MATRIX if !startswith(p[4], "state")]
+const AW_STATE_PANELS = [p for p in AW_PANEL_MATRIX if  startswith(p[4], "state")]
+# the figure of every variant side by side: B⊥ and u⊥ in L² and L∞, and ρ
 const AW_ALL_PANELS = [p for p in AW_PANELS
-                       if p[4] in ("Bperp", "Bperp_Linf", "uperp", "uperp_Linf", "rho", "state", "state_Linf")]
+                       if p[4] in ("Bperp", "Bperp_Linf", "uperp", "uperp_Linf", "rho")]
 # the panels of tools/alfven_wave_plot.jl --panels=L2, L1, Linf: B⊥, u⊥ and ρ in that norm
 const AW_PANEL_SETS = Dict(n => [p[4] for p in AW_PANELS
                                  if p[4] in (n == "L2" ? ("Bperp", "uperp", "rho") :
@@ -662,13 +671,15 @@ _aw_cmp_legend(rows, tags; state = false) =
                                background_color_legend = nothing, show = false), rows, tags;
                     state = state)
 
-# Returns the files written. `panels`, a selection of AW_PANELS, draws the
-# comparisons with those panels alone, as <stem>_panels_<label>-it<iout>.png
+# Returns the files written. `panels`, a selection of AW_PANEL_MATRIX, draws
+# the comparisons with those panels alone, as <stem>_panels_<label>-it<iout>.png
 # beside the full figures (tools/alfven_wave_plot.jl --panels); `label`
-# defaults to the panels' file keys joined by "-".
-function _aw_compare(rows, OUTPUT_DIR, iout; name = AW_FIG_NAME, panels = AW_PANELS,
-                     label = join(last.(panels), "-"))
-    full  = length(panels) == length(AW_PANELS)
+# defaults to the panels' file keys joined by "-". Without it, the full
+# figures: AW_PANELS, and each panel alone.
+function _aw_compare(rows, OUTPUT_DIR, iout; name = AW_FIG_NAME, panels = nothing,
+                     label = panels === nothing ? "" : join(last.(panels), "-"))
+    full   = panels === nothing
+    panels = full ? AW_PANELS : panels
     files = String[]
     for (tags, suffix, title, singles) in AW_COMPARISONS
         rs = filter(r -> r.visc in tags, rows)
@@ -720,11 +731,10 @@ function _aw_compare(rows, OUTPUT_DIR, iout; name = AW_FIG_NAME, panels = AW_PAN
     return files
 end
 
-# <name>-it<iout>.png, the deck's DSGS and Galerkin in the seven error panels,
-# and <name>_Bperp, _Bperp_Linf, _uperp, _uperp_Linf, _rho, _L2 and _Linf, one
-# each; <name>_dsgs_nocut, the deck's DSGS and DSGS without the cutoff
-# (_aw_compare); <name>_all, every variant stored in the seven panels side by
-# side (_conv_figure). Then what DSGS did: <name>_rmax and
+# <name>-it<iout>.png, the deck's DSGS and Galerkin in the nine error panels
+# (AW_PANELS), and each alone as <name>_<key>; <name>_dsgs_nocut, the deck's
+# DSGS and DSGS without the cutoff (_aw_compare); <name>_all, every variant
+# stored in five panels side by side (AW_ALL_PANELS, _conv_figure). Then what DSGS did: <name>_rmax and
 # _mumax (_aw_diag_panel), and <name>_paper, the three panels the paper's
 # smooth-wave test needs side by side: the error of the wave (B⊥) for every
 # variant, max r against the cutoff, and max μ. Returns the first file, or

@@ -18,17 +18,16 @@
 # --out says otherwise (alfven-convergence_nop3-5-7... for a subset of the orders), all
 # -it0.png:
 #
-#   alfven-convergence         the deck's DSGS and Galerkin alone, twelve error
-#                       panels (B⊥, u⊥, ρ, the state; in L², L¹, L∞) in a grid,
-#                       one dotted h^(N+1) guide per order
-#   alfven-convergence_Bperp, _Bperp_L1, _Bperp_Linf, _uperp, ..., _rho, ...,
-#   _state, _state_L1, _state_Linf
-#                       each of those panels alone, with its legend
+#   alfven-convergence         the deck's DSGS and Galerkin alone, nine error
+#                       panels (B⊥, u⊥, ρ; in L², L¹, L∞) in a grid, one dotted
+#                       h^(N+1) guide per order
+#   alfven-convergence_Bperp, _Bperp_L1, _Bperp_Linf, _uperp, ..., _rho, _rho_L1,
+#   _rho_Linf           each of those panels alone, with its legend
 #   alfven-convergence_dsgs_nocut   the deck's DSGS and DSGS without the cutoff alone,
 #                       the same way
-#   alfven-convergence_all     every variant stored (or selected with --visc), seven
-#                       panels side by side (B⊥ and u⊥ in L² and L∞, ρ, the
-#                       state in L² and L∞), the rate of each curve in the legend
+#   alfven-convergence_all     every variant stored (or selected with --visc), five
+#                       panels side by side (B⊥ and u⊥ in L² and L∞, and ρ),
+#                       the rate of each curve in the legend
 #   alfven-convergence_rmax    the largest residual r of every DSGS run, before the
 #                       cutoff, against the cutoff c: a point below c is a run
 #                       in which μ was exactly zero throughout
@@ -46,8 +45,9 @@
 #                 the panels P, in a row (or a grid) with one legend for all:
 #                 L2, L1 or Linf for B⊥, u⊥ and ρ in that norm (without "=P":
 #                 L2), or panel keys (Bperp, Bperp_L1, Bperp_Linf, uperp, ...,
-#                 rho, ..., state, state_L1, state_Linf), comma separated, mixed
-#                 at will: --panels=L2,L1 gives B⊥, u⊥, ρ in L² over L¹. Written as
+#                 rho, ..., and state, state_L1, state_Linf: the state q, which
+#                 the other figures leave out), comma separated, mixed at will:
+#                 --panels=L2,L1 gives B⊥, u⊥, ρ in L² over L¹. Written as
 #                 alfven-convergence_panels_<P>-it0.png and
 #                 alfven-convergence_dsgs_nocut_panels_<P>-it0.png
 using Plots, LaTeXStrings, Printf, LinearAlgebra
@@ -113,14 +113,14 @@ function main(args)
     name = isempty(nops) ? AW_FIG_NAME : string(AW_FIG_NAME, "_nop", join(sort(unique(nops)), "-"))
     if panels !== nothing
         # L2, L1, Linf: B⊥, u⊥ and ρ in that norm; else panel keys
-        keys = [p[4] for p in AW_PANELS]
+        keys = [p[4] for p in AW_PANEL_MATRIX]
         sets = Dict(lowercase(k) => v for (k, v) in AW_PANEL_SETS)
         sel  = vcat(map(panels) do k
-            haskey(sets, lowercase(k)) && return [AW_PANELS[findfirst(==(x), keys)] for x in sets[lowercase(k)]]
+            haskey(sets, lowercase(k)) && return [AW_PANEL_MATRIX[findfirst(==(x), keys)] for x in sets[lowercase(k)]]
             i = findfirst(x -> lowercase(x) == lowercase(k), keys)
             i === nothing && error("unknown panel \"$k\": use L2, L1 or Linf (B⊥, u⊥ and ρ in ",
                                    "that norm) or panels among $(join(keys, ", "))")
-            [AW_PANELS[i]]
+            [AW_PANEL_MATRIX[i]]
         end...)
         isempty(_aw_compare(rows, out, 0; name = name, panels = sel, label = join(panels, "-"))) &&
             println(" # no figure: no comparison has both of its variants on two meshes")
