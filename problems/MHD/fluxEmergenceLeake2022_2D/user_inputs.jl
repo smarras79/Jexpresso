@@ -216,6 +216,7 @@ function user_inputs()
     # Δt for (|v| + c_f) Δt/Δh ≈ 0.25 at |v| + c_f ≈ 80 on the smallest LGL gap Δh of each mesh
     # (0.173 of the 4, 2, 1, 2 L₀ tall bottom elements), as the 3D deck at the same element size.
     Δt       = (2.0e-3, 1.0e-3, 5.0e-4, 1.0e-3)[LK2D_REF]
+    Δt       = parse(Float64, get(ENV, "LK2D_DT", string(Δt)))   # LK2D_DT overrides it
     tend     = parse(Float64, get(ENV, "LK2D_TEND", "60.0"))
     dtout    = parse(Float64, get(ENV, "LK2D_OUT_DT", "5.0"))
     # Positivity floors (top of this file): the fractions of ρ_e(h), p_e(h) below which the stage

@@ -149,6 +149,8 @@ function user_inputs()
     # region is 45 at t = 0 and reconnection outflows reach tens of v₀ (README). The CFL monitor
     # reports the actual value.
     Δt       = (4.0e-3, 2.0e-3, 1.0e-3, 5.0e-4, 1.0e-3, 1.0e-3)[LK22_REF]
+    # LK22_DT overrides it (README, "Fig. 4: what to run": a larger step while the fast CFL number is low)
+    Δt       = parse(Float64, get(ENV, "LK22_DT", string(Δt)))
     # Environment overrides (README, "Restart"): LK22_REF the mesh, LK22_TEND :tend,
     # LK22_OUT_DT a snapshot every LK22_OUT_DT (default 10, plus 142 and 184; only those after
     # the start are written), LK22_RESTART_DIR (+ LK22_RESTART_TIME) restarts from a snapshot.

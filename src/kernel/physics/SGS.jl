@@ -2250,6 +2250,15 @@ end
 # form). With :dsgs_heating => "shock" the explicit ν and η heat in full, the DynSGS viscosity
 # only where the flow is compressed and the DynSGS resistivity not at all (2D, above).
 # ================================================================================
+# x, y, z derivatives of field f at element node (ie, i, j, k) from its ξ, η, ζ derivatives
+@inline function _dsgs_g3(Fξ, Fη, Fζ, ie, i, j, k, f, ξx, ξy, ξz, hx, hy, hz, zx, zy, zz)
+    @inbounds a = Fξ[ie,i,j,k,f]; @inbounds b = Fη[ie,i,j,k,f]; @inbounds c = Fζ[ie,i,j,k,f]
+    return (a*ξx + b*hx + c*zx, a*ξy + b*hy + c*zy, a*ξz + b*hz + c*zz)
+end
+
+# Buffers of _dsgs_energy_consistent_3d!, kept between calls (one set per element count and type).
+const _DSGS_E3D_BUF = Ref{Any}(nothing)
+
 function _dsgs_energy_consistent_3d!(rhs_diff_el::AbstractArray{TT}, μ_dsgs::AbstractMatrix{TT},
                                      q::AbstractMatrix{TT}, qe::AbstractMatrix,
                                      connijk::AbstractArray{TI,4}, ω::AbstractVector, dψ::AbstractMatrix,
@@ -2262,52 +2271,82 @@ function _dsgs_energy_consistent_3d!(rhs_diff_el::AbstractArray{TT}, μ_dsgs::Ab
                                      ηphys::Union{Nothing,AbstractVector}=nothing) where {TT<:AbstractFloat, TI<:Integer}
     fheat  = TT(dsgs_heat_factor[])
     lshock = dsgs_heat_shock[]
-    G  = zeros(TT, 3, 12)      # ξ, η, ζ derivatives of u, v, w, m̃u, m̃v, m̃w, δBx, δBy, δBz, δψ (10 used)
-    gx = zeros(TT, 3, 12)      # x, y, z derivatives
-    @inbounds for ie = 1:nelem
-        μu = μ_dsgs[ie,2]; μv = μ_dsgs[ie,3]; μw = μ_dsgs[ie,5]
-        ηx = μ_dsgs[ie,6]; ηy = μ_dsgs[ie,7]; ηz = μ_dsgs[ie,8]; μψ = μ_dsgs[ie,9]
-        νp = (lshock && νphys !== nothing) ? TT(νphys[ie]) : zero(TT)
-        ηp = (lshock && ηphys !== nothing) ? TT(ηphys[ie]) : zero(TT)
-        for k = 1:ngl, j = 1:ngl, i = 1:ngl
-            fill!(G, zero(TT))
-            for m = 1:ngl
-                for (d, a, ipm) in ((1, dψ[m,i], connijk[ie,m,j,k]), (2, dψ[m,j], connijk[ie,i,m,k]), (3, dψ[m,k], connijk[ie,i,j,m]))
-                    r = one(TT)/q[ipm,1]; e = one(TT)/TT(qe[ipm,1])
-                    G[d,1]  += a*q[ipm,2]*r;  G[d,2] += a*q[ipm,3]*r;  G[d,3] += a*q[ipm,5]*r
-                    G[d,4]  += a*q[ipm,2]*e;  G[d,5] += a*q[ipm,3]*e;  G[d,6] += a*q[ipm,5]*e
-                    G[d,7]  += a*(q[ipm,6] - TT(qe[ipm,6])); G[d,8] += a*(q[ipm,7] - TT(qe[ipm,7]))
-                    G[d,9]  += a*(q[ipm,8] - TT(qe[ipm,8])); G[d,10] += a*(q[ipm,9] - TT(qe[ipm,9]))
-                end
-            end
+    NF = 10   # u, v, w, m̃u, m̃v, m̃w (ρu/ρ_e …), δBx, δBy, δBz, δψ at every element node
+    # The element arrays of this code have the element index fastest ([ie, i, j, k]): every loop below runs
+    # over the elements innermost, so that those arrays are read in order (the kernel is bound by memory).
+    b = _DSGS_E3D_BUF[]
+    if b === nothing || size(b[1]) != (nelem, ngl, ngl, ngl, NF) || eltype(b[1]) != TT
+        b = (zeros(TT, nelem, ngl, ngl, ngl, NF), zeros(TT, nelem, ngl, ngl, ngl, NF),
+             zeros(TT, nelem, ngl, ngl, ngl, NF), zeros(TT, nelem, ngl, ngl, ngl, NF))
+        _DSGS_E3D_BUF[] = b
+    end
+    F  = b[1]::Array{TT,5}; Fξ = b[2]::Array{TT,5}; Fη = b[3]::Array{TT,5}; Fζ = b[4]::Array{TT,5}
+    @inbounds for k = 1:ngl, j = 1:ngl, i = 1:ngl
+        for ie = 1:nelem
+            ip = connijk[ie,i,j,k]
+            r = one(TT)/q[ip,1]; e = one(TT)/TT(qe[ip,1])
+            F[ie,i,j,k,1] = q[ip,2]*r; F[ie,i,j,k,2] = q[ip,3]*r; F[ie,i,j,k,3] = q[ip,5]*r
+            F[ie,i,j,k,4] = q[ip,2]*e; F[ie,i,j,k,5] = q[ip,3]*e; F[ie,i,j,k,6] = q[ip,5]*e
+            F[ie,i,j,k,7] = q[ip,6] - TT(qe[ip,6]); F[ie,i,j,k,8] = q[ip,7] - TT(qe[ip,7])
+            F[ie,i,j,k,9] = q[ip,8] - TT(qe[ip,8]); F[ie,i,j,k,10] = q[ip,9] - TT(qe[ip,9])
+        end
+    end
+    # ξ, η, ζ derivatives (the derivative at node i is Σ_m dψ[m,i] f[m], as in the 2D kernel)
+    fill!(Fξ, zero(TT)); fill!(Fη, zero(TT)); fill!(Fζ, zero(TT))
+    @inbounds for f = 1:NF, k = 1:ngl, j = 1:ngl, i = 1:ngl, m = 1:ngl
+        a = dψ[m,i]; bη = dψ[m,j]; c = dψ[m,k]
+        @simd for ie = 1:nelem
+            Fξ[ie,i,j,k,f] += a*F[ie,m,j,k,f]
+            Fη[ie,i,j,k,f] += bη*F[ie,i,m,k,f]
+            Fζ[ie,i,j,k,f] += c*F[ie,i,j,m,f]
+        end
+    end
+    @inbounds for k = 1:ngl, j = 1:ngl, i = 1:ngl
+        wq = ω[i]*ω[j]*ω[k]
+        for ie = 1:nelem
             ξx = dξdx[ie,i,j,k]; ξy = dξdy[ie,i,j,k]; ξz = dξdz[ie,i,j,k]
             hx = dηdx[ie,i,j,k]; hy = dηdy[ie,i,j,k]; hz = dηdz[ie,i,j,k]
             zx = dζdx[ie,i,j,k]; zy = dζdy[ie,i,j,k]; zz = dζdz[ie,i,j,k]
-            for f = 1:10
-                gx[1,f] = G[1,f]*ξx + G[2,f]*hx + G[3,f]*zx
-                gx[2,f] = G[1,f]*ξy + G[2,f]*hy + G[3,f]*zy
-                gx[3,f] = G[1,f]*ξz + G[2,f]*hz + G[3,f]*zz
-            end
-            dot(a, b) = gx[1,a]*gx[1,b] + gx[2,a]*gx[2,b] + gx[3,a]*gx[3,b]
+            # x, y, z derivatives of the fields (_dsgs_g3: no closures here, they box)
+            g1 = _dsgs_g3(Fξ, Fη, Fζ, ie, i, j, k, 1, ξx, ξy, ξz, hx, hy, hz, zx, zy, zz)
+            g2 = _dsgs_g3(Fξ, Fη, Fζ, ie, i, j, k, 2, ξx, ξy, ξz, hx, hy, hz, zx, zy, zz)
+            g3 = _dsgs_g3(Fξ, Fη, Fζ, ie, i, j, k, 3, ξx, ξy, ξz, hx, hy, hz, zx, zy, zz)
+            g4 = _dsgs_g3(Fξ, Fη, Fζ, ie, i, j, k, 4, ξx, ξy, ξz, hx, hy, hz, zx, zy, zz)
+            g5 = _dsgs_g3(Fξ, Fη, Fζ, ie, i, j, k, 5, ξx, ξy, ξz, hx, hy, hz, zx, zy, zz)
+            g6 = _dsgs_g3(Fξ, Fη, Fζ, ie, i, j, k, 6, ξx, ξy, ξz, hx, hy, hz, zx, zy, zz)
+            b1 = _dsgs_g3(Fξ, Fη, Fζ, ie, i, j, k, 7, ξx, ξy, ξz, hx, hy, hz, zx, zy, zz)
+            b2 = _dsgs_g3(Fξ, Fη, Fζ, ie, i, j, k, 8, ξx, ξy, ξz, hx, hy, hz, zx, zy, zz)
+            b3 = _dsgs_g3(Fξ, Fη, Fζ, ie, i, j, k, 9, ξx, ξy, ξz, hx, hy, hz, zx, zy, zz)
+            g1x = g1[1]; g2y = g2[2]; g3z = g3[3]
+            d14 = g1[1]*g4[1] + g1[2]*g4[2] + g1[3]*g4[3]          # ∇u·∇m̃u
+            d25 = g2[1]*g5[1] + g2[2]*g5[2] + g2[3]*g5[3]
+            d36 = g3[1]*g6[1] + g3[2]*g6[2] + g3[3]*g6[3]
+            gb1 = b1[1]*b1[1] + b1[2]*b1[2] + b1[3]*b1[3]
+            gb2 = b2[1]*b2[1] + b2[2]*b2[2] + b2[3]*b2[3]
+            gb3 = b3[1]*b3[1] + b3[2]*b3[2] + b3[3]*b3[3]
+            μu = μ_dsgs[ie,2]; μv = μ_dsgs[ie,3]; μw = μ_dsgs[ie,5]
             ip = connijk[ie,i,j,k]
             ρe = TT(qe[ip,1])
-            Dm = ρe*(μu*dot(1, 4) + μv*dot(2, 5) + μw*dot(3, 6))
-            gb = (dot(7, 7), dot(8, 8), dot(9, 9))
+            Dm = ρe*(μu*d14 + μv*d25 + μw*d36)
             ρ  = q[ip,1]; u = q[ip,2]/ρ; v = q[ip,3]/ρ; w = q[ip,5]/ρ
             if lshock
-                Dp  = max(ρe*νp*(dot(1, 4) + dot(2, 5) + dot(3, 6)), zero(TT))
-                QBp = ηp*(gb[1] + gb[2] + gb[3])
-                dv  = min(gx[1,1] + gx[2,2] + gx[3,3], zero(TT))          # ∇·v where compressed
+                νp  = νphys !== nothing ? TT(νphys[ie]) : zero(TT)
+                ηp  = ηphys !== nothing ? TT(ηphys[ie]) : zero(TT)
+                Dp  = max(ρe*νp*(d14 + d25 + d36), zero(TT))
+                QBp = ηp*(gb1 + gb2 + gb3)
+                dv  = min(g1x + g2y + g3z, zero(TT))          # ∇·v where compressed
                 wsh = ρ*max(μu - νp, zero(TT))
                 Q   = Dp + QBp + min(wsh*dv*dv, max(max(Dm, zero(TT)) - Dp, zero(TT)))
             else
-                Q   = fheat*(max(Dm, zero(TT)) + ηx*gb[1] + ηy*gb[2] + ηz*gb[3] + μψ*dot(10, 10))
+                gp  = _dsgs_g3(Fξ, Fη, Fζ, ie, i, j, k, 10, ξx, ξy, ξz, hx, hy, hz, zx, zy, zz)
+                Q   = fheat*(max(Dm, zero(TT)) + μ_dsgs[ie,6]*gb1 + μ_dsgs[ie,7]*gb2 + μ_dsgs[ie,8]*gb3 +
+                             μ_dsgs[ie,9]*(gp[1]*gp[1] + gp[2]*gp[2] + gp[3]*gp[3]))
             end
             W = u*rhs_diff_el[ie,i,j,k,2] + v*rhs_diff_el[ie,i,j,k,3] + w*rhs_diff_el[ie,i,j,k,5] -
                 TT(0.5)*(u*u + v*v + w*w)*rhs_diff_el[ie,i,j,k,1] +
                 q[ip,6]*rhs_diff_el[ie,i,j,k,6] + q[ip,7]*rhs_diff_el[ie,i,j,k,7] +
                 q[ip,8]*rhs_diff_el[ie,i,j,k,8] + q[ip,9]*rhs_diff_el[ie,i,j,k,9]
-            rhs_diff_el[ie,i,j,k,4] += W + ω[i]*ω[j]*ω[k]*Je[ie,i,j,k]*Q
+            rhs_diff_el[ie,i,j,k,4] += W + wq*Je[ie,i,j,k]*Q
         end
     end
     return nothing

@@ -857,6 +857,7 @@ python3 tools/plot_leake2010.py diag     $RUN --dt <Δt>  # per snapshot: larges
 python3 tools/plot_leake2010.py null     base=$RUN       # on x = 0 vs time: the null above the dome, the flux below it, the mass lifted
 python3 tools/plot_leake2010.py lines    run=$RUN        # Erratum Fig. 3 line by line: the height on x = 0 of each of its field lines, in the run and in the figure
 python3 tools/plot_leake2010.py core     run=$RUN        # the plasma at the tube axis vs time: height, density against the atmosphere's, B_z/rho against the initial tube's
+python3 tools/plot_leake2010.py noise    $RUN --times 2185,2530   # stripes and grain: the node-to-node part of log rho per element, along y and x, and the nodes at the floors
 python3 tools/plot_leake2010.py --paper-lines density $RUN   # the density figure with exactly the erratum's field lines (any map takes --paper-lines)
 python3 tools/plot_leake2010.py mass     $RUN            # the plasma above 3 Mm: mass budget, temperature, pressure, draining, heating time
 python3 tools/plot_leake2010.py drain    $RUN            # why that plasma drains or not: temperature, field it sits on, speed and support along the field
@@ -869,7 +870,7 @@ bash tools/lk10_report.sh $RUN --base $RUN0 --log job.out            # all of th
 Figures are written to `figs_leake2010/` (`--outdir`) as
 `flux_emergence_Leake2010_<variable>.png` (`--prefix`, `--format`):
 `…_density`, `…_Bz`, `…_mu_dsgs_momentum`, `…_mu_dsgs_induction`,
-`…_mu_dsgs_mass_energy`, `…_dome`, `…_axis`, `…_null`, `…_lines`, `…_core`, `…_eshear`, `…_atmos`,
+`…_mu_dsgs_mass_energy`, `…_dome`, `…_axis`, `…_null`, `…_lines`, `…_core`, `…_noise`, `…_eshear`, `…_atmos`,
 `…_profiles`. Every map has a title and a labelled colour bar naming what its
 colours show.
 
@@ -918,6 +919,18 @@ change) has the quadrupole's value: on the initial state it is the analytic
 $A_z$ to 0.03 G Mm, on REF 1 and on REF 4. `--paper-lines`, before or after
 the name of any map's command, draws exactly these lines instead of 45
 equally spaced ones, so that a panel compares with the erratum's line for line.
+
+`noise` measures what a density map shows as grain or stripes: in each
+element, the amplitude of the highest Legendre mode of $\log_{10}\rho$ along
+$y$ and along $x$ (in dex: the node-to-node part, which the element cannot
+tell from noise), mapped over a window (`--xlim`, `--ylim`, default
+$\lvert x\rvert \le 6$, $3 \le y \le 14$ Mm) with the nodes held at a positivity
+floor, and tabulated per row of elements. Horizontal stripes that the
+discretization makes show as a large amplitude along $y$ in the rows where
+they are; plasma at the density floor as floor nodes; real layers as neither.
+On the blob test of "The viscosity on the velocity" (REF 1, 58 s) the mean
+amplitude along $y$ is 0.006 dex with the momentum form and 0.013 with the
+velocity form, the excess in the corona the blob falls through.
 
 `core` follows the plasma at the tube axis (the O-point of the in-plane field
 on $x = 0$): its height, with the erratum's Fig. 2(a) and the O-point of its

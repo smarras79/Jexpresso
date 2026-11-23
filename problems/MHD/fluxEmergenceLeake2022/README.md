@@ -170,11 +170,14 @@ and 4, whose $\theta$ is 0 or $\pi$) `LK22_REF = 6` keeps the columns of 2
 in $y$: 12.6 M nodes, half of 3, twice 5.
 
 **Cost.** `LK22_REF = 1` takes about 10 s per time step on 4 threads
-(0.41 M nodes; 13 s measured with other jobs on the machine). Scaling by
-nodes and steps to $t = 400t_0$: $\approx 1.1\times10^3$ core-hours at
-`LK22_REF = 1` ($10^5$ steps), $1.7\times10^4$ at 2, $2.7\times10^5$ at 3,
-$4\times10^6$ at 4 (the paper's resolution) and $6.8\times10^4$ at 5 (twice
-the nodes and steps of 2), before parallel losses.
+(0.41 M nodes; 13 s measured with other jobs on the machine), and 3.0 s on
+4 MPI ranks (22 Nov 2026: 0.60 s per right-hand side by the code's timer, five
+per step): about 29 core-seconds per step per million nodes, 34 with the
+switches of "Fig. 4: what to run". Scaling by nodes and steps to
+$t = 400t_0$ at 29: $\approx 3.3\times10^2$ core-hours at `LK22_REF = 1`
+($10^5$ steps), $5\times10^3$ at 2, $8\times10^4$ at 3, $1.2\times10^6$ at 4
+(the paper's resolution), $2\times10^4$ at 5 and $4\times10^4$ at 6, before
+parallel losses.
 Simulation 4 erupts by $200t_0$: `:tend => 250.0` covers it for 60 % of
 that.
 
@@ -272,11 +275,20 @@ LK22_REF=6 LK22_REF_WEIGHT=1 LK22_ENERGY=thermal LK22_HEAT=shock LK22_STABCAP=0.
 then, with the same `N` and switches, `LK22_RESTART_DIR=output/MHD/fluxEmergenceLeake2022/output-<previous job>`
 and `LK22_TEND=130`, then 190. Before the second job, `tools/plot_leake2022.py
 height` on the first gives the rope's height against time, to set beside the
-paper's Fig. 8 (simulation 4). Cost, at
-~100 core-seconds per step per million nodes (Cost, above): 12.6 M nodes and
-$1.9\times10^5$ steps to $t = 190$, about $6.6\times10^4$ core-hours ($2\times10^4$
-to $t = 60$), eight times `LK22_REF = 2`; 3 GB per snapshot, 66 GB to 190.
-`LK22_REF = 3` resolves the rope's length twice as finely for twice that.
+paper's Fig. 8 (simulation 4).
+
+Cost, measured with these switches (`LK22_REF = 1`, 4 MPI ranks, 25 steps,
+the code's own timer, `JEXPRESSO_ALLOC_SUMMARY=1`): a right-hand side takes
+0.69 s (0.60 s with the default deck), five per step, i.e. about 34
+core-seconds per step per million nodes (29 by default). For `LK22_REF = 6`,
+12.6 M nodes and $1.9\times10^5$ steps to $t = 190$, that is
+$2.3\times10^4$ core-hours ($7\times10^3$ to $t = 60$), before parallel losses:
+on 1024 ranks (192 elements each) 0.42 s per step, about a day to $t = 190$;
+on 2048 half that; 4096 ranks hold 48 elements each, where the exchanges
+between ranks start to weigh. 3 GB per snapshot, 66 GB to 190. `LK22_REF = 3`
+resolves the rope's length twice as finely for twice the cost.
+`LK22_DT` changes the step (the fast CFL number is 0.13 at the start at
+$10^{-3}$ on these meshes; a larger step was not tested here).
 
 ## Restart
 

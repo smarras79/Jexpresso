@@ -32,6 +32,8 @@ t0 = 23.1946 s), the density in g cm^-3 and B_z in G, as in the paper.
   python3 tools/plot_leake2010.py null RUN [RUN2 ...]         # on x = 0 vs time: the top of the emerged flux (the null
                                                               #   above it), the flux between the tube axis and it, the
                                                               #   mass lifted, and the DynSGS coefficients at the null
+  python3 tools/plot_leake2010.py noise RUN --times 2185,2530  # stripes and grain: the node-to-node part of log rho in each
+                                                              #   element (along y, along x) and the nodes held at the floors
   python3 tools/plot_leake2010.py core RUN [RUN2 ...]         # the plasma at the tube axis vs time: height, density against
                                                               #   the atmosphere's (buoyancy), B_z/rho against the initial
                                                               #   tube's (kept in ideal MHD), the in-plane flux around it
@@ -1695,6 +1697,76 @@ def cmd_column(a):
                   f"{Bz[j] * B0_GAUSS:8.2f} {beta[j]:9.3g} {u[j]:8.2f} {v[j]:8.2f} {ang[j]:6.1f} {mu[j]:8.3g} {eta[j]:8.3g}")
 
 
+def _highmode(F, nop=4, axis=0):
+    """Amplitude of the highest Legendre mode (degree nop) of F within each element along `axis`, on the tensor
+    lattice of LK10.geo (elements every nop nodes): the node-to-node part of a field, which the element cannot
+    tell from noise. Returns an array of F's shape with each element's value at its nodes (the larger of the
+    two estimates at a shared face)."""
+    x, _, _ = _lgl(nop)
+    V = np.polynomial.legendre.legvander(x, nop)         # V[i, k] = P_k(x_i)
+    Vi = np.linalg.inv(V)
+    G = np.moveaxis(np.asarray(F, float), axis, 0)
+    n = G.shape[0]
+    out = np.zeros_like(G)
+    for e in range(0, n - 1, nop):
+        c = np.tensordot(Vi[nop], G[e:e + nop + 1], axes=(0, 0))    # coefficient of P_nop, per line
+        out[e:e + nop + 1] = np.maximum(out[e:e + nop + 1], np.abs(c)[None, ...])
+    return np.moveaxis(out, 0, axis)
+
+
+def cmd_noise(a):
+    """Stripes and grain in a map: at each time, the node-to-node part of log10 rho (the amplitude of the highest
+    Legendre mode in each element, along y and along x, in dex), in the window (--xlim, --ylim), and the nodes held
+    at the positivity floors (rho at 0.2 p_e/T_cor, T at 0.1 T_ph). Prints, per row of elements, the largest and
+    the mean amplitude and the share of nodes at a floor; a figure with the density, the two amplitudes and the
+    floor nodes. Horizontal stripes that are a property of the discretization show as a y amplitude that is large
+    where the stripes are and small along x; plasma at the density floor as floor nodes; real layers of plasma as
+    neither."""
+    items = runs_of(a.run)
+    sel = nearest(items, a.times)
+    d0 = os.path.dirname(os.path.abspath(sel[0][1]))
+    mcz = float(_case_value(d0, "mcz", "1.3"))
+    tfl = float(_case_value(d0, "tfloor", "0.1"))
+    TCOR = 8.6e5 / 5700.0
+    fig, axs = plt.subplots(len(sel), 4, figsize=(16, 3.6 * len(sel)), squeeze=False)
+    for r, (t, f) in enumerate(sel):
+        g = load(f, ["log10rho_cgs", "ρ", "T"])
+        X, Y = g["X"], g["Y"]
+        G = lambda n: grid2d(g, g["fields"][n])
+        L, R, T = G("log10rho_cgs"), G("ρ"), G("T")
+        ny_, nx_ = L.shape
+        hy = _highmode(L, axis=0); hx = _highmode(L, axis=1)
+        _, pe = _ref_atmos(Y / L0_MM, mcz)
+        rfl = 0.2 * pe / TCOR                                # the density floor of the run, per height (code units)
+        atfl = (R <= rfl[:, None] * (1.0 + 1e-6)) | (T <= tfl * (1.0 + 1e-6))
+        mx = (X >= a.xlim[0]) & (X <= a.xlim[1]); my = (Y >= a.ylim[0]) & (Y <= a.ylim[1])
+        W = np.ix_(my, mx)
+        print(f"--- t = {t:.0f} s ({os.path.basename(f)}), x in {a.xlim}, y in {a.ylim} Mm: node-to-node part of log10 rho "
+              f"[dex], along y and along x, and the share of nodes at a floor")
+        print(f"   whole window: along y max {hy[W].max():.3f} mean {hy[W].mean():.4f}; along x max {hx[W].max():.3f} "
+              f"mean {hx[W].mean():.4f}; at a floor {atfl[W].mean():.3%} ({atfl[W].sum()} nodes)")
+        print(f"{'y Mm':>12} {'y: max':>8} {'mean':>8} {'x: max':>8} {'mean':>8} {'at floor':>9}")
+        js = np.where(my)[0]
+        for e0 in range(js[0] - js[0] % 4, js[-1], 4):
+            rows = slice(e0, min(e0 + 5, ny_))
+            sub = (rows, mx)
+            print(f"{Y[e0]:5.2f}-{Y[min(e0 + 4, ny_ - 1)]:5.2f} {hy[sub].max():8.3f} {hy[sub].mean():8.4f} "
+                  f"{hx[sub].max():8.3f} {hx[sub].mean():8.4f} {atfl[sub].mean():9.2%}")
+        ext = dict(xlim=a.xlim, ylim=a.ylim)
+        for k, (Z, ttl, cm, lim) in enumerate(((L, r"log$_{10}\rho$", "jet", (-16, -5.3)),
+                                                (hy, "node-to-node part along y (dex)", "magma", (0, a.vmax)),
+                                                (hx, "node-to-node part along x (dex)", "magma", (0, a.vmax)),
+                                                (atfl.astype(float), "nodes at a positivity floor", "Greys", (0, 1)))):
+            ax = axs[r, k]
+            im = ax.pcolormesh(X, Y, Z, cmap=cm, vmin=lim[0], vmax=lim[1], shading="nearest", rasterized=True)
+            ax.set_xlim(a.xlim); ax.set_ylim(a.ylim); ax.set_aspect("equal")
+            ax.set_title(f"{ttl}, t = {t:.0f} s", fontsize=9); fig.colorbar(im, ax=ax, shrink=0.8)
+    fig.tight_layout()
+    out = fig_path(a, "noise")
+    fig.savefig(out, dpi=a.dpi); plt.close(fig)
+    print("wrote", out)
+
+
 def find_opoints(A, X, Y, xlim=(-12.75, 12.75), ylim=(3.0, 19.5), k=6):
     """O-points of the in-plane field in a window: nodes where the flux function A (grid (ny, nx)) is the largest or
     the smallest of its (2k+1)^2 neighbours (an X-point is a saddle of A and is not one). Returns
@@ -1978,6 +2050,13 @@ def main():
     s.add_argument("--x", type=float, default=0.0, help="the vertical line, x [Mm] (default 0)")
     s.add_argument("--ymin", type=float, default=0.0); s.add_argument("--ymax", type=float, default=16.0)
     s.add_argument("--dy", type=float, default=0.5, help="height step of the table [Mm]")
+    s = sub.add_parser("noise", parents=[common]); s.set_defaults(fn=cmd_noise)
+    s.add_argument("run")
+    s.add_argument("--times", type=lambda t: [float(x) for x in t.split(",")], default=[1955.0, 2185.0, 2530.0],
+                   help="times [s], comma-separated (default 1955,2185,2530)")
+    s.add_argument("--xlim", type=lambda t: tuple(map(float, t.split(","))), default=(-6.0, 6.0))
+    s.add_argument("--ylim", type=lambda t: tuple(map(float, t.split(","))), default=(3.0, 14.0))
+    s.add_argument("--vmax", type=float, default=0.3, help="top of the colour scale of the node-to-node maps [dex]")
     s = sub.add_parser("drain", parents=[common]); s.set_defaults(fn=cmd_drain)
     s.add_argument("run")
     s.add_argument("--ref", default="", help="run whose first snapshot (t = 0) gives the unit of mass, for a restarted run")
