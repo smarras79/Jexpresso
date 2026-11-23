@@ -26,9 +26,10 @@
 # 0.1 (sin, cos)(2π(x∥ + t)) in both. Each is also stored in L¹,
 # (1/|Ω|) ∫ |q_h − q| dΩ (|B⊥,h − B⊥| for the wave), the norm of most MHD
 # accuracy tests, and in L∞, the largest error over the Gauss points. The
-# figures are a matrix of panels: rows B⊥, u⊥ (the wave's own error), ρ (the
-# paper's measure) and the full state, sqrt(Σ_k e(q_k)²) in L² and L¹, the
-# largest e(q_k) in L∞; columns L², L¹, L∞. The wave's L∞ is in every record
+# figures are a matrix of panels: rows B⊥, u⊥ (the wave's own error) and ρ
+# (the paper's measure); columns L², L¹, L∞. The full state q, sqrt(Σ_k e(q_k)²)
+# in L² and L¹ and the largest e(q_k) in L∞, is in the table and drawn on
+# request (AW_STATE_PANELS). The wave's L∞ is in every record
 # written since 17 Nov 2026 and L¹ in every record written since 23 Nov 2026;
 # an older record leaves those panels without its point.
 #
@@ -358,7 +359,7 @@ function _aw_report(rows)
     println(" # alfvenWaveBabbarRanocha2026: L2 error at t = ", rows[1].t,
             " (B⊥, u⊥: the wave; rho: the paper's Fig. 13 measure, exact rho = 1;",
             " r, mu: largest normalized residual before the cutoff and largest DSGS coefficient over the run)")
-    println(" #   visc         N  nelx    DOFs     L2(B⊥)  order     L1(B⊥)  order   Linf(B⊥)  order     L2(u⊥)  order    L2(rho)  order    L1(rho)  order       max r      max mu")
+    println(" #   visc         N  nelx    DOFs     L2(B⊥)  order     L1(B⊥)  order   Linf(B⊥)  order     L2(u⊥)  order    L2(rho)  order    L1(rho)  order      L2(q)  order      L1(q)  order       max r      max mu")
     _o(p) = isfinite(p) ? @sprintf("%.2f", p) : ""
     _g(x) = isfinite(x) ? @sprintf("%.3e", x) : "-"
     prev = nothing
@@ -367,13 +368,16 @@ function _aw_report(rows)
         pb = same ? _aw_rate(prev.ndofs, prev.bperp, r.ndofs, r.bperp) : NaN
         pb1 = same ? _aw_rate(prev.ndofs, prev.bperp_l1, r.ndofs, r.bperp_l1) : NaN
         pr1 = same ? _aw_rate(prev.ndofs, prev.rho_l1, r.ndofs, r.rho_l1) : NaN
+        pq  = same ? _aw_rate(prev.ndofs, prev.state, r.ndofs, r.state) : NaN
+        pq1 = same ? _aw_rate(prev.ndofs, prev.state_l1, r.ndofs, r.state_l1) : NaN
         pbi = same ? _aw_rate(prev.ndofs, prev.bperp_inf, r.ndofs, r.bperp_inf) : NaN
         pu = same ? _aw_rate(prev.ndofs, prev.uperp, r.ndofs, r.uperp) : NaN
         pr = same ? _aw_rate(prev.ndofs, prev.rho,   r.ndofs, r.rho)   : NaN
-        println(@sprintf(" #   %-11s %2d  %4d  %6d  %10s  %5s %10s  %5s %10s  %5s %10s  %5s %10.3e  %5s %10s  %5s  %10s  %10s",
+        println(@sprintf(" #   %-11s %2d  %4d  %6d  %10s  %5s %10s  %5s %10s  %5s %10s  %5s %10.3e  %5s %10s  %5s %10s  %5s %10s  %5s  %10s  %10s",
                          r.visc, r.nop, r.nelx, r.ndofs,
                          _g(r.bperp), _o(pb), _g(r.bperp_l1), _o(pb1), _g(r.bperp_inf), _o(pbi),
                          _g(r.uperp), _o(pu), r.rho, _o(pr), _g(r.rho_l1), _o(pr1),
+                         _g(r.state), _o(pq), _g(r.state_l1), _o(pq1),
                          _g(r.r_max), _g(r.mu_max)))
         prev = r
     end
@@ -397,10 +401,13 @@ end
 _aw_label(tag) = startswith(tag, "galerkin") ? replace(tag, "galerkin" => "Galerkin", "_" => " ") :
                  replace(tag, "dsgs" => "DSGS", "_nocut" => ", no cutoff",
                          r"_cut([0-9.e+-]+)" => s", cutoff \1", r"_bdf(\d+)" => s", BDF\1", "_" => " ")
-# The error panels, a matrix: rows B⊥, u⊥, ρ and the state; columns L², L¹
-# and L∞. The file key names the quantity and, but for L², the norm.
+# The error panels, a matrix: rows B⊥, u⊥ and ρ; columns L², L¹ and L∞. The
+# file key names the quantity and, but for L², the norm. The state's row
+# (AW_STATE_PANELS) is not in the figures: on this test it follows B⊥ and u⊥,
+# whose errors dominate it. It is in the table, and drawn on request
+# (tools/alfven_wave_plot.jl --panels=state,state_L1,state_Linf).
 _aw_norm_tex(n) = n == "L2" ? "L^2" : n == "L1" ? "L^1" : "L^\\infty"
-const AW_PANELS = [   # (field, ylabel, title, file)
+const AW_PANEL_MATRIX = [   # (field, ylabel, title, file)
     (Symbol(f, sfx),
      string("\\Vert", h, "\\Vert_{", _aw_norm_tex(n), "}"),
      string(_aw_norm_tex(n), "\\mathrm{-error\\ of", st ? "\\ the\\ state}\\ \\mathbf{q}" : "}\\ " * tt),
@@ -412,9 +419,11 @@ const AW_PANELS = [   # (field, ylabel, title, file)
         ("state", "\\mathbf{q}_h-\\mathbf{q}",                 "",                   "state", true))
     for (n, sfx) in (("L2", ""), ("L1", "_l1"), ("Linf", "_inf"))
 ]
-# the figure of every variant side by side keeps the seven panels it had
+const AW_PANELS       = [p for p in AW_PANEL_MATRIX if !startswith(p[4], "state")]
+const AW_STATE_PANELS = [p for p in AW_PANEL_MATRIX if  startswith(p[4], "state")]
+# the figure of every variant side by side: B⊥ and u⊥ in L² and L∞, and ρ
 const AW_ALL_PANELS = [p for p in AW_PANELS
-                       if p[4] in ("Bperp", "Bperp_Linf", "uperp", "uperp_Linf", "rho", "state", "state_Linf")]
+                       if p[4] in ("Bperp", "Bperp_Linf", "uperp", "uperp_Linf", "rho")]
 # the panels of tools/alfven_wave_plot.jl --panels=L2, L1, Linf: B⊥, u⊥ and ρ in that norm
 const AW_PANEL_SETS = Dict(n => [p[4] for p in AW_PANELS
                                  if p[4] in (n == "L2" ? ("Bperp", "uperp", "rho") :
@@ -552,13 +561,20 @@ end
 # filled, drawn last so that it shows inside a hollow marker it coincides with;
 # Galerkin dashed with a larger hollow marker; the variant dash-dot.
 #---------------------------------------------------------------------------------
+# DSGS without the cutoff ("dsgs_nocut", and its variants "dsgs_nocut_bdf5",
+# ...): on this wave another method, held at order 4 by the floor of its
+# residual (README, "What this test found", item 4). The figures leave it out
+# unless asked for (tools/alfven_wave_plot.jl --nocut); the table lists it.
+_aw_is_nocut(tag) = startswith(string(tag), "dsgs_nocut")
+_aw_drop_nocut(rows) = filter(r -> !_aw_is_nocut(r.visc), rows)
+
 const AW_COMPARISONS = [   # (tags, file suffix, title, each panel alone too)
     (["dsgs", "galerkin"],   "",           "DSGS (the deck) and Galerkin",                true),
     (["dsgs", "dsgs_nocut"], "dsgs_nocut", "DSGS (the deck) and DSGS without the cutoff", false),
 ]
 const AW_INK = Plots.RGB(0x52/255, 0x51/255, 0x4e/255)   # the guides' labels
-const AW_CMP_FS = (title = 15, guide = 15, tick = 13, legend = 14, note = 13)
-const AW_CMP_CELL = (820, 640)
+const AW_CMP_FS = (title = 17, guide = 15, tick = 14, legend = 16, note = 14)
+const AW_CMP_CELL = (900, 700)
 
 function _aw_curve(rows, fld, nop, tag)              # sorted by #DOFs, the positive finite errors
     g  = sort(filter(r -> r.nop == nop && r.visc == tag, rows), by = r -> r.ndofs)
@@ -567,14 +583,18 @@ function _aw_curve(rows, fld, nop, tag)              # sorted by #DOFs, the posi
     return xs[keep], ys[keep]
 end
 
+# Sized to tell the curves apart in a figure of nine panels seen whole: the
+# deck's DSGS a small filled marker on a solid line; the other variant a larger
+# hollow one, dash-dot; Galerkin the largest hollow one, dashed. Where DSGS
+# equals the other, its filled marker sits inside the other's ring.
 function _aw_cmp_attrs(nop, tag, tags)
     col, mk = _conv_style(nop)
     ls  = _aw_line(tag, tags)
     filled = ls == :solid
-    return (line = (col, 2.0, ls),
-            marker = (mk, startswith(tag, "galerkin") ? 9 : filled ? 5 : 7),
+    return (line = (col, 2.6, ls),
+            marker = (mk, startswith(tag, "galerkin") ? 12 : filled ? 7 : 10),
             markercolor = filled ? col : :white, markerstrokecolor = col,
-            markerstrokewidth = 1.2, color = col)
+            markerstrokewidth = 2.0, color = col)
 end
 
 # xlab, ylab_on: whether to draw the axis labels. In a grid the title names the
@@ -615,7 +635,7 @@ function _aw_cmp_panel(rows, fld, ylab, title, tags; xlab = true, ylab_on = true
         A  = minimum(e[2] for e in ends)/3.0*xs[end]^sl
         y2 = A*xs[end]^(-sl)
         Plots.plot!(pl, [xs[1], xs[end]], [A*xs[1]^(-sl), y2];
-                    line = (_conv_style(n)[1], 1.0, :dot), label = "")
+                    line = (_conv_style(n)[1], 1.4, :dot), label = "")
         Plots.annotate!(pl, xs[end]*1.08, y2,
                         Plots.text(LaTeXStrings.latexstring("h^{", n + 1, "}"), AW_INK, :left,
                                    AW_CMP_FS.note))
@@ -640,37 +660,66 @@ function _aw_cmp_panel(rows, fld, ylab, title, tags; xlab = true, ylab_on = true
     return pl
 end
 
-# the legend entries of a comparison, as empty series (they draw nothing else);
-# with `state`, a line that says what q is
+# The legend of a comparison, drawn in a cell of its own: GR's legend samples
+# are too short to show a dash pattern, and a hollow marker there reads as a
+# filled one. The two codes are listed apart: the ORDER is the colour and the
+# marker's shape; the RUN is the line style and the marker's fill and size,
+# shown in grey with samples long enough to see them. With `state`, two lines
+# say what q is. `hpx` is the cell's height in pixels (it sets the spacing).
 const AW_Q_NOTE = ("q, the state:", "(ρ, ρu, ρv, ρE, ρw, Bx, By, Bz, ψ)")
-function _aw_cmp_legend!(pl, rows, tags; state = false)
-    listed = sort(tags, by = t -> (_aw_line(t, tags) != :solid, t))  # the deck's DSGS first
-    for n in sort(unique(r.nop for r in rows)), tag in listed
-        any(r -> r.nop == n && r.visc == tag, rows) || continue
-        Plots.plot!(pl, [NaN], [NaN]; label = string("N = ", n, ", ", _aw_label(tag)),
-                    _aw_cmp_attrs(n, tag, tags)...)
+function _aw_cmp_legend(rows, tags; state = false, hpx = AW_CMP_CELL[2])
+    pl = Plots.plot(; framestyle = :none, grid = false, xticks = false, yticks = false,
+                    xlims = (0, 1), ylims = (0, 1), legend = false, show = false)
+    nops   = sort(unique(r.nop for r in rows))
+    listed = sort(tags, by = t -> (_aw_line(t, tags) != :solid, t))   # the deck's DSGS first
+    dy  = 44/hpx                                     # one line, in the cell's units
+    nl  = 2 + length(nops) + 1 + length(listed) + 2 + (state ? 3 : 0)
+    y   = 0.5 + 0.5*(nl - 1)*dy                       # the block centred in the cell
+    x0, x1, xt = 0.04, 0.30, 0.35
+    txt(y, str; c = :black) = Plots.annotate!(pl, xt, y, Plots.text(str, c, :left, AW_CMP_FS.legend))
+    Plots.annotate!(pl, x0, y, Plots.text("order: colour and marker", AW_INK, :left, AW_CMP_FS.legend))
+    y -= 1.2dy
+    for n in nops
+        col, mk = _conv_style(n)
+        Plots.scatter!(pl, [(x0 + x1)/2], [y]; marker = (mk, 11), markercolor = col,
+                       markerstrokecolor = col, markerstrokewidth = 2.0)
+        txt(y, string("N = ", n)); y -= dy
     end
-    Plots.plot!(pl, [NaN], [NaN]; line = (AW_INK, 1.0, :dot),
-                label = "h^(N+1), dotted, one per order")
-    state && foreach(l -> Plots.plot!(pl, [NaN], [NaN]; linealpha = 0, label = l), AW_Q_NOTE)
+    y -= 0.4dy
+    Plots.annotate!(pl, x0, y, Plots.text("run: line and marker fill", AW_INK, :left, AW_CMP_FS.legend))
+    y -= 1.2dy
+    for tag in listed
+        a = _aw_cmp_attrs(first(nops), tag, tags)
+        Plots.plot!(pl, [x0, x1], [y, y]; line = (:gray25, a.line[2], a.line[3]))
+        Plots.scatter!(pl, [(x0 + x1)/2], [y]; marker = (:circle, a.marker[2]),
+                       markercolor = a.markercolor == :white ? :white : :gray25,
+                       markerstrokecolor = :gray25, markerstrokewidth = a.markerstrokewidth)
+        txt(y, _aw_label(tag)); y -= dy
+    end
+    y -= 0.4dy
+    Plots.plot!(pl, [x0, x1], [y, y]; line = (:gray25, 1.4, :dot))
+    txt(y, "h^(N+1), one per order"); y -= dy
+    if state
+        y -= 0.4dy
+        for l in AW_Q_NOTE
+            Plots.annotate!(pl, x0, y, Plots.text(l, :black, :left, AW_CMP_FS.legend)); y -= dy
+        end
+    end
     return pl
 end
-_aw_cmp_legend(rows, tags; state = false) =
-    _aw_cmp_legend!(Plots.plot(; framestyle = :none, grid = false, xticks = false, yticks = false,
-                               xlims = (0, 1), ylims = (0, 1), legend = :left,
-                               legendfontsize = AW_CMP_FS.legend, foreground_color_legend = nothing,
-                               background_color_legend = nothing, show = false), rows, tags;
-                    state = state)
 
-# Returns the files written. `panels`, a selection of AW_PANELS, draws the
-# comparisons with those panels alone, as <stem>_panels_<label>-it<iout>.png
+# Returns the files written. `panels`, a selection of AW_PANEL_MATRIX, draws
+# the comparisons with those panels alone, as <stem>_panels_<label>-it<iout>.png
 # beside the full figures (tools/alfven_wave_plot.jl --panels); `label`
-# defaults to the panels' file keys joined by "-".
-function _aw_compare(rows, OUTPUT_DIR, iout; name = AW_FIG_NAME, panels = AW_PANELS,
-                     label = join(last.(panels), "-"))
-    full  = length(panels) == length(AW_PANELS)
+# defaults to the panels' file keys joined by "-". Without it, the full
+# figures: AW_PANELS, and each panel alone.
+function _aw_compare(rows, OUTPUT_DIR, iout; name = AW_FIG_NAME, panels = nothing,
+                     label = panels === nothing ? "" : join(last.(panels), "-"), nocut = true)
+    full   = panels === nothing
+    panels = full ? AW_PANELS : panels
     files = String[]
     for (tags, suffix, title, singles) in AW_COMPARISONS
+        (!nocut && any(_aw_is_nocut, tags)) && continue    # not asked for
         rs = filter(r -> r.visc in tags, rows)
         nops = unique(r.nop for r in rs)
         if !all(any(count(r -> r.visc == tag && r.nop == n, rs) >= 2 for n in nops) for tag in tags)
@@ -691,12 +740,12 @@ function _aw_compare(rows, OUTPUT_DIR, iout; name = AW_FIG_NAME, panels = AW_PAN
                   for (i, (fld, ylab, ttl, _)) in enumerate(panels)]
         if singles && full                             # each panel alone, with its legend
             for (i, (fld, ylab, ttl, fname)) in enumerate(AW_PANELS)
-                p1 = _aw_cmp_legend!(_aw_cmp_panel(rs, fld, ylab, LaTeXStrings.latexstring(
-                                         string(ttl, ",\\ t = ", rs[1].t)), tags), rs, tags;
-                                     state = startswith(fname, "state"))
-                Plots.plot!(p1; legend = :outertopright, legendfontsize = AW_CMP_FS.legend)
-                _conv_savefig(Plots.plot(p1; size = (1180, 700), left_margin = 8Plots.mm,
-                                         bottom_margin = 6Plots.mm, show = false),
+                p1 = _aw_cmp_panel(rs, fld, ylab, LaTeXStrings.latexstring(
+                                   string(ttl, ",\\ t = ", rs[1].t)), tags)
+                lg = _aw_cmp_legend(rs, tags; state = startswith(fname, "state"), hpx = 700)
+                _conv_savefig(Plots.plot(p1, lg; layout = Plots.grid(1, 2; widths = [0.67, 0.33]),
+                                         size = (1720, 700), left_margin = 8Plots.mm,
+                                         bottom_margin = 8Plots.mm, show = false),
                               string(OUTPUT_DIR, "/", stem, "_", fname, "-it", iout, ".png"))
             end
         end
@@ -704,7 +753,7 @@ function _aw_compare(rows, OUTPUT_DIR, iout; name = AW_FIG_NAME, panels = AW_PAN
         while length(pls) < nr*nc                      # an empty cell keeps the grid
             push!(pls, Plots.plot(; framestyle = :none, grid = false, show = false))
         end
-        push!(pls, _aw_cmp_legend(rs, tags; state = st))
+        push!(pls, _aw_cmp_legend(rs, tags; state = st, hpx = nr*AW_CMP_CELL[2]))
         wl  = 0.65                                     # the legend column, in panel widths
         lay = Plots.grid(1, 2; widths = [nc/(nc + wl), wl/(nc + wl)])
         lay[1, 1] = Plots.grid(nr, nc)
@@ -720,23 +769,24 @@ function _aw_compare(rows, OUTPUT_DIR, iout; name = AW_FIG_NAME, panels = AW_PAN
     return files
 end
 
-# <name>-it<iout>.png, the deck's DSGS and Galerkin in the seven error panels,
-# and <name>_Bperp, _Bperp_Linf, _uperp, _uperp_Linf, _rho, _L2 and _Linf, one
-# each; <name>_dsgs_nocut, the deck's DSGS and DSGS without the cutoff
-# (_aw_compare); <name>_all, every variant stored in the seven panels side by
-# side (_conv_figure). Then what DSGS did: <name>_rmax and
+# <name>-it<iout>.png, the deck's DSGS and Galerkin in the nine error panels
+# (AW_PANELS), and each alone as <name>_<key>; <name>_dsgs_nocut, the deck's
+# DSGS and DSGS without the cutoff (_aw_compare); <name>_all, every variant
+# stored in five panels side by side (AW_ALL_PANELS, _conv_figure). Then what DSGS did: <name>_rmax and
 # _mumax (_aw_diag_panel), and <name>_paper, the three panels the paper's
 # smooth-wave test needs side by side: the error of the wave (B⊥) for every
 # variant, max r against the cutoff, and max μ. Returns the first file, or
 # nothing when no order/tag has two meshes yet.
-function _aw_plot(rows, OUTPUT_DIR, iout; name = AW_FIG_NAME)
+# nocut = false leaves DSGS without the cutoff out of every figure.
+function _aw_plot(rows, OUTPUT_DIR, iout; name = AW_FIG_NAME, nocut = true)
+    nocut || (rows = _aw_drop_nocut(rows))
     kw = (tags = sort(unique(r.visc for r in rows)), label = _aw_label, line = _aw_line,
           galerkin = t -> startswith(t, "galerkin"))
     # every variant stored, side by side (the shared convergence figure)
     fall = _conv_figure(rows, AW_ALL_PANELS, OUTPUT_DIR, iout; prefix = string(name, "_all"),
                         singles = false, kw...)
     fall === nothing && return nothing
-    cmp = _aw_compare(rows, OUTPUT_DIR, iout; name = name)
+    cmp = _aw_compare(rows, OUTPUT_DIR, iout; name = name, nocut = nocut)
     f = isempty(cmp) ? fall : first(cmp)
     pr = _aw_diag_panel(rows, :r_max,  "\\max_t\\, r",
                         "\\mathrm{largest\\ residual\\ before\\ the\\ cutoff}"; kw...)
@@ -771,7 +821,7 @@ function user_plot_2d(mesh, q, t, outvar, inputs, OUTPUT_DIR, iout; Minv = nothi
     if MPI.Comm_rank(get_mpi_comm()) == 0
         _aw_save(e, inputs, tnom, t, st)
         rows = _aw_load(tnom)
-        isempty(rows) || (_aw_report(rows); _aw_plot(rows, OUTPUT_DIR, iout))
+        isempty(rows) || (_aw_report(rows); _aw_plot(rows, OUTPUT_DIR, iout; nocut = false))
     end
     return nothing
 end

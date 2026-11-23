@@ -136,6 +136,8 @@ Overrides, all optional, so a sweep needs no file edits:
 | `JEXPRESSO_BW_CMIN` | 0.06 | the DynSGS background floor `:dsgs_Cmin` |
 | `JEXPRESSO_BW_HSCALE` | `ngl` | the DynSGS length scale: `ngl` is the kernels' own $\Delta_K/(k+1) = h_e/(N+1)$, eq. (15) of the DynSGS-MHD paper; `nop` is Dao & Nazarov's $\Delta_K/k$ |
 | `JEXPRESSO_BW_NODAL` | 0 | 1 for the nodal coefficient (`:ldsgs_nodal`, their eq. 4.10) |
+| `JEXPRESSO_BW_CR` | 1 | the DynSGS residual coefficient $C_R$ (`:dsgs_CR`, on the deck's length scale): $\nu = C_R\Delta^2 r$ where the residual is large; a run with $C_R \neq 1$ stores its curves as a method of its own (`elem_CR<x>`), and the scan takes a list, `BW_CR="1 4"` (`Cmin0.06_CR4`) |
+| `JEXPRESSO_BW_CUTOFF` | 0 | the DynSGS smoothness cutoff `:dsgs_cutoff`, ν from max(0, r − c); a run with c > 0 stores its curves as a method of its own (`elem_cut<c>`), and the scan takes a list, `BW_CUTOFF="0 1e-3"`, one store per value (`Cmin0.06_cut1e-3`) |
 
 At a fixed DOF count the orders run at equal cost: 150, 120, 100 and 86
 elements for $N = 4, 5, 6, 7$ at 600 DOFs, i.e. 601, 601, 601 and 603 points.
@@ -328,7 +330,46 @@ of time stepping. At $t = 0.1$ (`density-it5.svg`; the per-variable figures with
   $10^{-5}$–$10^{-6}$ elsewhere (measured on $\Delta_K/k$);
 - the relative $L^1$ error of $\rho$ over the tube is $6.1$, $6.6$, $6.7$ and
   $7.0\times10^{-3}$ for $N = 4$–7; on $\Delta_K/k$ it was $7.6$–$8.0\times10^{-3}$,
-  and $2.7$–$3.7\times10^{-3}$ there with the floor off.
+  and $2.7$–$3.7\times10^{-3}$ there with the floor off;
+- the smoothness cutoff $10^{-3}$ of the smooth accuracy tests changes nothing
+  here (Nov 2026: $N = 4$–7 at 600 and 1200 DOFs, `BW_CMIN="0.06 0"
+  BW_CUTOFF="0 1e-3"`). With the floor, $\rho$ moves by at most $4\times10^{-8}$
+  and the $L^1$ errors agree to every printed digit; with the floor off, $\rho$
+  moves by at most $6\times10^{-6}$ and they agree to four digits or better. The
+  normalized residual never comes near the cutoff: at $t = 0.1$, $r$ is
+  0.2–0.9 in the quietest part of the tube (near its ends) and
+  $1$–$5\times10^{2}$ at the shocks, and its maximum over a run is
+  $7\times10^{2}$–$2\times10^{4}$. So the cutoff never sets $\nu$ to zero; it
+  lowers it by at most 0.6%, and by $10^{-5}$ (relative) at the shocks;
+- at the slow shock ($x \approx 0.647$) $B_y$ and $\rho$ both overshoot by
+  0.3–7 % of their jump ($N = 4$–7, 600 and 1200 DOFs, Nov 2026); the zoom
+  box of $B_y$ only shows it more, being 0.1 tall against a jump of 0.37. One
+  $\nu$ acts on every equation, and at $t = 0.1$ it is the floor there: the
+  residual part stays below it, so $\nu$ is about 12 % of the first-order cap
+  $C_{max}\Delta(|u| + c_f)$, enough to hold the shock to two nodes but not to
+  make it monotone. (With the floor off, the residual part alone reaches about
+  the same size, 15 % of the cap: spreading the shock lowers its residual,
+  which lowers $\nu$.) `JEXPRESSO_BW_CMIN=0.12` brings the overshoots under
+  1 % (0.25–0.9 % at $N = 5, 6$), at the price of a slow shock 3.3 nodes wide
+  instead of 2 and a contact 40 % wider; the nodal coefficient changes
+  nothing there;
+- a larger residual coefficient $C_R$ (`JEXPRESSO_BW_CR`, Nov 2026; $N = 4$–7,
+  600 and 1200 DOFs) acts where the residual is large, but it is
+  self-limiting: the stronger $\nu$ widens the shock, which lowers its
+  residual, so $C_R = 4$ raises $\nu$ at the slow shock only from 12 % to
+  13–29 % of the cap, and $C_R = 8$ to at most 46 %. At $C_R = 4$ the
+  overshoots at the slow shock about halve ($B_y$ 0.3–2.1 %, $\rho$ 0.4–2.6 %,
+  against 0.8–5.1 and 0.6–6.8 %), the slow shock is 2.4–3 nodes wide instead of
+  2, the contact keeps its width, and the $L^1$ error grows by about 10 %. But
+  the ripples behind the compound wave double (successive extrema up to 0.74 %
+  against 0.40 % at 600 DOFs): the stronger $\nu$ at that slowly moving shock
+  radiates more of them. $C_R = 8$ gains nothing more at the slow shock and
+  widens everything. With $C_{min} = 0.03$ and $C_R = 4$ the contact is
+  sharper than the deck's (10.5–13 nodes against 13–14 at 600 DOFs) with the
+  same halved overshoots, and the ripples are 0.6–0.8 %. Only the uniform floor
+  ($C_{min} = 0.12$) removes both the overshoots and the ripples (none on the
+  plateau), at the price of the contact. The deck keeps $C_R = 1$,
+  $C_{min} = 0.06$.
 
 ## Files
 

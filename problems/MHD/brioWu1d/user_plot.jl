@@ -189,12 +189,19 @@ function _bw_hfac(inputs)
 end
 
 # The key under which a run's curve is stored, and the only key drawn on one
-# figure: the coefficient form AND the length-scale convention. A curve from a
-# run with different settings is a different method and is never silently
-# mixed into the comparison — the "H" suffix marks Δ_K/k.
+# figure: the coefficient form, the length-scale convention, the residual
+# coefficient and the smoothness cutoff. A curve from a run with different
+# settings is a different method and is never silently mixed into the
+# comparison — the "H" suffix marks Δ_K/k, "_CR<x>" a C_R other than the deck's
+# 1 (:dsgs_CR, on the deck's length scale), "_cut<c>" a cutoff c > 0 on the
+# normalized residual (:dsgs_cutoff).
 function _bw_form(inputs)
     f = get(inputs, :ldsgs_nodal, false) ? "nodal" : "elem"
     _bw_hscale() == "nop" && (f = string(f, "H"))
+    cr = round(Float64(get(inputs, :dsgs_CR, 1.0))/_bw_hfac(inputs)^2; digits = 6)
+    cr == 1.0 || (f = string(f, "_CR", cr))
+    c = Float64(get(inputs, :dsgs_cutoff, 0.0))
+    c > 0 && (f = string(f, "_cut", c))
     return f
 end
 _bw_curve_file(nop, ndofs, form) =
@@ -511,8 +518,7 @@ function _bw_plot_density(curves, xs, href, inputs, OUTPUT_DIR, iout, tag)
     # entries when they differ.
     lcommon    = length(unique(c -> round(c.Cmin; digits = 12), curves)) == 1
     lshow_cmin = !lcommon
-    fname = string("\\ (", startswith(curves[1].form, "nodal") ? "\\mathrm{nodal}" : "\\mathrm{element}",
-                   "\\ \\nu,\\ \\Delta_K/", endswith(curves[1].form, "H") ? "k" : "(k{+}1)", ")")
+    fname = string("\\ (", _bw_form_desc(curves[1].form), ")")
     ttl = lcommon ? LaTeXStrings.latexstring(string("\\mathrm{Density},\\ C_{min} = ", curves[1].Cmin, fname)) :
                     LaTeXStrings.latexstring(string("\\mathrm{Density}", fname))
 
@@ -585,8 +591,7 @@ function _bw_plot_density_nu(curves, xs, href, inputs, OUTPUT_DIR, iout, tag;
     lcommon    = length(unique(c -> round(c.Cmin; digits = 12), withnu)) == 1
     lshow_cmin = !lcommon
     form  = withnu[1].form
-    fdesc = string(startswith(form, "nodal") ? "\\mathrm{nodal}" : "\\mathrm{element}",
-                   "\\ \\nu,\\ \\Delta_K/", endswith(form, "H") ? "k" : "(k{+}1)")
+    fdesc = _bw_form_desc(form)
     ttl_ρ = LaTeXStrings.latexstring(string("\\mathrm{Density}",
                                             lcommon ? string(",\\ C_{min} = ", withnu[1].Cmin) : "",
                                             "\\ (", fdesc, ")"))
@@ -671,9 +676,15 @@ const BW_PAIR_BY_INSETS = [   # (x-range, y-range, inset position: x, y, w, h of
     ((0.763, 0.913), (-1.010, -0.880), (0.72,  0.30,  0.26, 0.28), (:bottomleft, :bottomleft), [0.80, 0.85, 0.90]), # the right fast rarefaction
 ]
 
-# "element ν, Δ_K/(k+1)": the method of a store form, for the titles
-_bw_form_desc(form) = string(startswith(form, "nodal") ? "\\mathrm{nodal}" : "\\mathrm{element}",
-                             "\\ \\nu,\\ \\Delta_K/", endswith(form, "H") ? "k" : "(k{+}1)")
+# "element ν, Δ_K/(k+1)[, C_R x][, cutoff c]": the method of a store form, for the titles
+function _bw_form_desc(form)
+    m = match(r"^(nodal|elem)(H?)(?:_CR([^_]+))?(?:_cut(.+))?$", form)
+    m === nothing && return string("\\mathrm{", form, "}")
+    return string(m[1] == "nodal" ? "\\mathrm{nodal}" : "\\mathrm{element}",
+                  "\\ \\nu,\\ \\Delta_K/", m[2] == "H" ? "k" : "(k{+}1)",
+                  m[3] === nothing ? "" : string(",\\ C_R = ", m[3]),
+                  m[4] === nothing ? "" : string(",\\ \\mathrm{cutoff}\\ ", m[4]))
+end
 
 # the reference and every curve's `field` inside one zoom box
 function _bw_fill_inset!(sp, xr, xs, yref, curves, field, style)

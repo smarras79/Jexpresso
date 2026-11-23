@@ -187,31 +187,35 @@ Stores written before 16 Oct 2026 used `dsgs` for the run without the cutoff and
 
 From every record stored for the same final time, the run then:
 
-- prints a table with the errors of B⊥ (L² and L∞), u⊥ and ρ, their observed orders, and
-  max r and max μ of every run;
+- prints a table with the errors of B⊥ (L², L¹, L∞), u⊥ (L²), ρ (L², L¹) and the state q
+  (L², L¹), their observed orders, and max r and max μ of every run. The state q is the
+  nine conserved variables (ρ, ρu, ρv, ρE, ρw, Bx, By, Bz, ψ), its error
+  sqrt(Σ_k e(q_k)²): on this test it follows B⊥ and u⊥, whose errors dominate it, so the
+  figures leave it out (`tools/alfven_wave_plot.jl --panels=state,state_L1,state_Linf`
+  draws it);
 - draws the error against #DOFs on log-log axes, in a matrix of panels: rows B⊥ and u⊥
-  (the wave), ρ (the measure of the paper's Fig. 13) and the whole state; columns L², L¹
-  and L∞. L¹ is (1/|Ω|) ∫ |q_h − q| dΩ, the norm of most MHD accuracy tests (with
-  |B⊥,h − B⊥| for the wave), and L∞ the largest error over the Gauss points; the state
-  is sqrt(Σ_k e(q_k)²) in L² and L¹ and the largest e(q_k) in L∞. The wave's L∞ is in
+  (the wave) and ρ (the measure of the paper's Fig. 13); columns L², L¹ and L∞. L¹ is
+  (1/|Ω|) ∫ |q_h − q| dΩ, the norm of most MHD accuracy tests (with |B⊥,h − B⊥| for the
+  wave), and L∞ the largest error over the Gauss points. The wave's L∞ is in
   every record written since 17 Nov 2026 and L¹ in every record written since
   23 Nov 2026: an older record leaves those panels without its point. One colour and
   marker per order; DynSGS as the deck runs it solid with a filled marker, drawn last so
   that where it equals another run (the cutoff makes ν zero on the resolved wave) it shows
   inside that run's hollow marker; Galerkin dashed with a larger hollow marker; the other
   variants dash-dot. Three figures:
-  - `output/alfven-convergence-it<n>.png`: DynSGS and Galerkin alone, the twelve panels
+  - `output/alfven-convergence-it<n>.png`: DynSGS and Galerkin alone, the nine panels
     with the legend in a column on the right, and one dotted h^(N+1) reference slope per
     order in the order's colour, labelled at its end (the reference slopes of the October
     2026 figure). Each panel also on its own, at publication size and with its legend, as
     `alfven-convergence_<key>-it<n>.png`, the key one of `Bperp`, `Bperp_L1`,
-    `Bperp_Linf`, `uperp`, `uperp_L1`, `uperp_Linf`, `rho`, `rho_L1`, `rho_Linf`,
-    `state`, `state_L1`, `state_Linf` (no suffix: L²);
+    `Bperp_Linf`, `uperp`, `uperp_L1`, `uperp_Linf`, `rho`, `rho_L1`, `rho_Linf` (no
+    suffix: L²);
   - `output/alfven-convergence_dsgs_nocut-it<n>.png`: DynSGS with and without its cutoff, the
-    same way;
-  - `output/alfven-convergence_all-it<n>.png`: every variant stored, seven panels side by side
-    (B⊥ and u⊥ in L² and L∞, ρ, the state in L² and L∞) with the convergence figure of the
-    smooth vortex (`../smoothVortex/convergence_figure.jl`,
+    same way. DynSGS without the cutoff is left out of every figure unless asked for
+    (`tools/alfven_wave_plot.jl --nocut`, or a `--visc` that names it): on this wave it is
+    another method, held at order 4 (item 4 of "What this test found"). The table lists it;
+  - `output/alfven-convergence_all-it<n>.png`: every variant stored, five panels side by side
+    (B⊥ and u⊥ in L² and L∞, and ρ) with the convergence figure of the smooth vortex (`../smoothVortex/convergence_figure.jl`,
     shared by the two cases): the measured rate p of every curve in its legend, and the
     dotted reference slopes O(h^(N+1)) of the lowest and the highest order bracketing the
     data.
@@ -219,8 +223,10 @@ From every record stored for the same final time, the run then:
   A comparison is drawn once both of its variants have a curve of two meshes; the titles
   carry the final time. In the grids the title names each panel (no y label) and #DOFs
   labels only the bottom panel of each column, so that no label runs into a neighbour
-  whatever the fonts; the single-panel files have both labels. The legend says what q is:
-  the state (ρ, ρu, ρv, ρE, ρw, Bx, By, Bz, ψ);
+  whatever the fonts; the single-panel files have both labels. The legend, drawn beside
+  the panels, lists the two codes apart: colour and marker for the order, line style and
+  marker fill (with long samples, in grey) for the run. A figure with a state panel
+  (`--panels=state...`) also says there what q is;
 - draws what DSGS did, from the run maxima of the DSGS records:
   - `alfven-convergence_rmax-it<n>.png`: max r of every run against #DOFs, with the cutoff c as
     a dashed line. A point below the line is a run in which μ = C_R Δ² max(0, r − c) was
@@ -234,12 +240,14 @@ From every record stored for the same final time, the run then:
 
 `tools/alfven_wave_plot.jl` draws the same figures and table from the store without
 running anything, as `alfven-convergence-it0.png` and the files above (`3,5,7` for a subset of
-the orders, `--visc=dsgs,galerkin` for a subset of the records, `--out=DIR` elsewhere).
-With `--panels` it draws instead the two comparisons with only the L² errors of B⊥, u⊥
+the orders, `--visc=dsgs,galerkin` for a subset of the records, `--out=DIR` elsewhere,
+`--nocut` to draw DynSGS without the cutoff too).
+With `--panels` it draws instead the comparisons with only the L² errors of B⊥, u⊥
 and ρ, in one row with one legend for the three, as `alfven-convergence_panels_L2-it0.png`
-and `alfven-convergence_dsgs_nocut_panels_L2-it0.png`. `--panels=L1` and `--panels=Linf`
+(and `alfven-convergence_dsgs_nocut_panels_L2-it0.png` with `--nocut`). `--panels=L1` and `--panels=Linf`
 draw the same three in L¹ and in L∞, `--panels=L2,L1` both, one norm per row, and panel
-keys (`--panels=rho,state_L1`, the keys above) any other choice.
+keys (`--panels=rho,state_L1`: the keys above, and `state`, `state_L1`, `state_Linf` for
+the state q) any other choice.
 
 **Mass and energy** are tracked at every step, as for the rotor: the discrete totals
 Σ_K Σ_ij ω_iω_j J ρ and Σ_K Σ_ij ω_iω_j J ρE over all elements and ranks go to

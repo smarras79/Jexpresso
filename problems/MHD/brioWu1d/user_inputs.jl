@@ -43,6 +43,8 @@
 #   JEXPRESSO_BW_NELX   element count, overrides JEXPRESSO_BW_DOFS
 #   JEXPRESSO_BW_DT     time step, overrides the rule above
 #   JEXPRESSO_BW_CMIN   the DynSGS background floor :dsgs_Cmin (default 0.06)
+#   JEXPRESSO_BW_CR     the DynSGS residual coefficient C_R, :dsgs_CR (default 1):
+#                       ν = C_R Δ² r where the residual is large, at the shocks
 #   JEXPRESSO_BW_FREEZE 1 or 0 forces :dsgs_freeze_stage (the coefficient once
 #                       per step, or at every stage); unset, mod_inputs.jl's
 #                       default applies: on with the residual sensor
@@ -55,6 +57,7 @@ _bw_dofs() = something(tryparse(Int,     get(ENV, "JEXPRESSO_BW_DOFS", "")), BW_
 _bw_hold() = something(tryparse(Int, get(ENV, "JEXPRESSO_BW_HOLD", "")), 2)
 _bw_cutoff() = something(tryparse(Float64, get(ENV, "JEXPRESSO_BW_CUTOFF", "")), 0.0)
 _bw_cmin() = something(tryparse(Float64, get(ENV, "JEXPRESSO_BW_CMIN", "")), 0.06)
+_bw_cr()   = something(tryparse(Float64, get(ENV, "JEXPRESSO_BW_CR", "")), 1.0)
 _bw_freeze() = (v = strip(get(ENV, "JEXPRESSO_BW_FREEZE", ""));
                 isempty(v) ? nothing : v in ("1", "true", "yes"))
 
@@ -157,7 +160,7 @@ function user_inputs()
         # where there ARE shocks, and the Brio-Wu initial condition is a
         # discontinuity at t = 0, so it is the hard test of it.
         :dsgs_hold_steps  => _bw_hold(),
-        :dsgs_CR          => 1.0*_bw_hfac()^2,
+        :dsgs_CR          => _bw_cr()*_bw_hfac()^2,   # JEXPRESSO_BW_CR overrides
         :dsgs_Cmax        => 0.5*_bw_hfac(),
         # Background floor C_min (not in the paper), 6 % of the first-order
         # viscosity C_max·h·(|u|+c_f). (0.03 was enough before the residual's
