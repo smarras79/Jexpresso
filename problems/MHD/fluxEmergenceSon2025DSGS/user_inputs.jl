@@ -89,8 +89,8 @@ function user_inputs()
         # needs mass diffusion to stay positive, and mass diffusion under a
         # T-based energy closure drove p negative within a few τ₀ (measured),
         # while its κ∇T smeared the temperature jump and launched a 0.7 C_s
-        # pulse into the corona. :dsgs_CR, :dsgs_Cmax are Dao & Nazarov's
-        # C_R (residual) and C_max (first-order cap) coefficients; dsgs_gamma MUST match γ_mhd = 1.05 of
+        # pulse into the corona. :dsgs_C1, :dsgs_Cmax are Dao & Nazarov's
+        # C_1 (residual) and C_max (first-order cap) coefficients; dsgs_gamma MUST match γ_mhd = 1.05 of
         # user_flux.jl (the DynSGS wave speed and pressure are built from it).
         #---------------------------------------------------------------------------
         :lvisc            => true,
@@ -101,7 +101,7 @@ function user_inputs()
         # strong residual with the stage-consistent stencil, DSGS.md §1.2.
         :visc_model       => DSGS_MHD(),
         :dsgs_sensor      => "legacy",
-        :dsgs_CR          => 1.0,
+        :dsgs_C1          => 1.0,
         :dsgs_Cmax        => 0.5,
         # Background floor of 3% of the wave-speed cap: the residual sensor
         # cannot see a node-to-node mode (the discrete operator returns

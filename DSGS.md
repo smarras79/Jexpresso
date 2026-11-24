@@ -67,7 +67,7 @@ Per element $e$:
 
 $$
 \boxed{\;
-\mu_{res}\big|_e = C_R\,\Delta_e^2\,
+\mu_{res}\big|_e = C_1\,\Delta_e^2\,
 \max_i \frac{\lVert R_i\rVert_{\infty,e}}{\lVert q_i - \langle q_i\rangle\rVert_{\infty,\Omega}},
 \qquad
 \mu_{max}\big|_e = C_{max}\,\Delta_e\,\big(\lVert\mathbf{v}\rVert + c\big)_{\infty,e},
@@ -75,7 +75,7 @@ $$
 \mu\big|_e = \max\!\big(0,\ \min(\mu_{max},\ \mu_{res})\big)\;}
 $$
 
-with $C_R \approx 1$, $C_{max} \approx 0.5$ (Dao & Nazarov's names, kept throughout), and $\Delta_e$ the element length scale
+with $C_1 \approx 1$ (the name of the DynSGS-MHD paper, eq. 14; Dao & Nazarov's $C_R$), $C_{max} \approx 0.5$ (Dao & Nazarov's name), and $\Delta_e$ the element length scale
 divided by the polynomial count, $\Delta_e = \Delta_{elem}/(N+1)$.
 
 The three ingredients:
@@ -205,7 +205,7 @@ case file without touching the kernel.
 
 **State.** $\mathbf{q} = (\rho,\ \rho u,\ \rho E)$, `neqs = 3`, total-energy form.
 
-**Coefficients.** $C_R = 1$, $C_{max} = 0.5$, $\gamma = 1.4$ (hardcoded in the
+**Coefficients.** $C_1 = 1$, $C_{max} = 0.5$, $\gamma = 1.4$ (hardcoded in the
 function).
 
 **Element scale.** $\Delta = \Delta x_e/n_{gl}$, from `mesh.Δx`.
@@ -346,7 +346,7 @@ the residual set, the equation of state and the wave speed all differ from the
 for the equation set.
 
 **Coefficients.** From `inputs`, defaulted in `mod_inputs.jl`:
-`:dsgs_CR` (1.0), `:dsgs_Cmax` (0.5), `:dsgs_gamma` (5/3), `:dsgs_Prt` (0.7).
+`:dsgs_C1` (1.0), `:dsgs_Cmax` (0.5), `:dsgs_gamma` (5/3), `:dsgs_Prt` (0.7).
 $\gamma$ is a case input rather than `PhysConst.γ` because the latter is air's
 1.4, not the monatomic plasma's 5/3.
 
@@ -394,7 +394,7 @@ vortex, $B_x$ in a 1D shock tube, a tracer nobody has released — and for it th
 floor **is** the normalization, so its ordinary numerical error was amplified
 by up to 1000 and the max over the equations, eq. 4.8, was taken over the one
 variable with nothing to say. Measured on the vortex, reading the sensor on
-the clean viscosity-free solution ($C_R = C_{max} = C_{min} = 0$), the $\rho$
+the clean viscosity-free solution ($C_1 = C_{max} = C_{min} = 0$), the $\rho$
 ratio came out 40–60× every other equation's at every resolution, on its own
 enough to hold $\nu$ at its cap $C_{max}\Delta\lambda$ — an $O(h)$ viscosity,
 identical for every polynomial order, which flattened that case's convergence
@@ -523,7 +523,7 @@ residual never falls below $O(\Delta t)$ on a resolved smooth solution. At $\tau
 the three values are step-level states and the floor is the BDF2 truncation error,
 $O(\Delta t^2)$. On the MHD Alfvén wave at $N = 4$ that is the difference between
 order 3.2 and 4.8 (`problems/MHD/alfvenWaveBabbarRanocha2026`). That floor is also
-the limit of the frozen coefficient: $\nu \approx C_R\,\Delta^2\,O(\Delta t^2)$, so at a
+the limit of the frozen coefficient: $\nu \approx C_1\,\Delta^2\,O(\Delta t^2)$, so at a
 fixed Courant number DynSGS adds an error of order $h^4$, whatever $N$. On the same
 wave it shows from $N = 5$ on: the DynSGS error converges at about 4 while the Galerkin
 error converges at 6 to 8 ($N = 7$ on $16^2$: $4.2\cdot10^{-8}$ against
@@ -554,11 +554,11 @@ the momentum and field diffusion.
 The DynSGS term is then first order in time, which a regularization can
 afford. Two things follow. The legacy sensor is read where it is largest,
 $1.5\lvert\partial_t q\rvert$ against a stage mean of 0.75: the same coefficient
-needs `:dsgs_CR` halved (to leading order: the sensor is
+needs `:dsgs_C1` halved (to leading order: the sensor is
 $-1.5(1 - c_i)\,\partial_tq + V$ with $V$ the viscous tendency, which weighs
 more at the later stages, and where the DynSGS is at work the five-stage mean
 is nearer 0.9; in the kick test of the Leake 2010 case 0.6 times the
-five-stage $C_R$ reproduces the five-stage run best). And the diffusion is integrated by another scheme
+five-stage $C_1$ reproduces the five-stage run best). And the diffusion is integrated by another scheme
 than the rest: by forward Euler with `(1,)`, stable on degree-4 elements in 2D
 to a viscous number $\mu\Delta t/\Delta x_{min}^2$ of 0.18 (the five-stage
 scheme: 0.42); with `(1, 5)` by $1 + z + b_5c_5z^2$, $b_5c_5 = 0.147$, close to
@@ -572,7 +572,7 @@ the five*.
 (1 to 6, default 2) takes $\partial_t q$ at $\tau = 0$ with the backward-difference
 formula of order $k$ on $(q^n, \dots, q^{n-k})$, whose truncation error is
 $-\tfrac{\Delta t^k}{k+1}\,\partial_t^{k+1} q$, so the floor of $\nu$ above becomes
-$C_R\,\Delta^2\,O(\Delta t^k)$; the default runs the BDF2 path exactly as before, bit
+$C_1\,\Delta^2\,O(\Delta t^k)$; the default runs the BDF2 path exactly as before, bit
 for bit. The states older than $q^{n-2}$ sit in `params.dsgs_qhist`, and the kernels
 keep their three-term stencil because the history part of the difference is summed into
 one array first (`rhs.jl`, `_dsgs_bdf_combine!`, weights $(w_0, 1, 0)$); the startup
@@ -802,12 +802,12 @@ total-energy forms) and `DSGS_MHD` alike (`compute_dsgs_viscosity_nodal!`):
   the support of node $i$ (the elements containing it), `:dsgs_Cl` their
   $C_l$ (0 = the classical $\bar S$, 0.4 in their runs), with the
   $n^2/(n^2+\epsilon)$ guard of eq. 4.8;
-- $\nu_i = \min(C_{max}h_i\lambda_i,\ C_R h_i^2 R_i)$ at every node (eq. 4.10),
+- $\nu_i = \min(C_{max}h_i\lambda_i,\ C_1 h_i^2 R_i)$ at every node (eq. 4.10),
   $h_i = \max \Delta_K/(k+1)$ over the support (the element form's $\Delta$;
   the paper's $h_K/k$ with the circumradius is $\Delta_K/(\sqrt2 k)$ on a
   square, within 12 % of it at $k = 4$, while $\Delta_K/k$ put the
   rising-bubble case past the explicit viscous limit at start-up),
-  $C_{max} =$ `:dsgs_Cmax`, $C_R =$ `:dsgs_CR`,
+  $C_{max} =$ `:dsgs_Cmax`, $C_1 =$ `:dsgs_C1`,
   bounded from below by $C_{min} h_i\lambda_i$ (a `max`, the counterpart of the `min` cap);
 - the slot coefficients from $\nu_i$ exactly as in the element kernels, with
   the **nodal** density in the dynamic coefficients;
@@ -964,7 +964,7 @@ path is bit-for-bit what it was.
 | `src/kernel/physics/SGS.jl` | `compute_dsgs_viscosity!` (1D, 2D-θ, 3D-θ, 2D-MHD, 2D shallow water) and the nodal forms, `broadcast_dsgs_to_nodes!`, the `SGS_diffusion` accessors |
 | `src/kernel/operators/rhs.jl` | dispatch in `viscous_rhs_el!`, `_viscous_rhs_el_2d_dsgs!` / `_viscous_rhs_el_3d_dsgs!`, the step-cadenced history gate in `_build_rhs!` |
 | `src/kernel/infrastructure/params_setup.jl` | `μ_dsgs`, `μ_dsgs_pnode`, `visc_coeff_dsgs`, `dsgs_qnm1/2`, `dsgs_avg/denom`, `dsgs_thist` |
-| `src/io/mod_inputs.jl` | `:dsgs_CR`, `:dsgs_Cmax`, `:dsgs_gamma`, `:dsgs_Prt`, `:lsutherland`, `:sutherland_*`, `:Pr_lam` defaults |
+| `src/io/mod_inputs.jl` | `:dsgs_C1`, `:dsgs_Cmax`, `:dsgs_gamma`, `:dsgs_Prt`, `:lsutherland`, `:sutherland_*`, `:Pr_lam` defaults |
 | `src/io/write_output.jl` | the `mu_dsgs_*` VTK fields |
 | `tools/plot_orszag_tang.jl` | off-line figures from a finished MHD run, including the viscosity map |
 | `tools/vtu_reader.jl` | the minimal `.pvtu`/`.vtu` reader that script uses |
@@ -977,7 +977,7 @@ path is bit-for-bit what it was.
 :visc_model => DSGS_MHD(),    # 2D ideal GLM-MHD
 :visc_model => DSGS_SW(),     # 2D non-linear shallow water
 :μ          => [0.0, 1.0, …], # per-equation multipliers, length neqs
-:dsgs_CR    => 1.0,           # DSGS_MHD only
+:dsgs_C1    => 1.0,           # DSGS_MHD only
 :dsgs_Cmax    => 0.5,
 :dsgs_gamma => 5.0/3.0,
 :dsgs_Prt   => 0.7,
@@ -1033,7 +1033,7 @@ reasoning matters if the model is revisited.
    comment was written while defect 4 was also present: with a stage-cadenced
    history the BDF2 term is not a time derivative at all, so removing $M^{-1}$
    was compensating for a broken numerator. Had it still under-stabilized, the
-   fix would have been to raise $C_R$, not to restore wrong units.
+   fix would have been to raise $C_1$, not to restore wrong units.
 
 2. **The 2D θ-path had its momentum slots zeroed** by a leftover diagnostic
    (`# DIAG: momentum DSGS forced to zero …`), so only $\rho\theta$ was

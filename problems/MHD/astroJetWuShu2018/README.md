@@ -85,10 +85,10 @@ CG spectral elements, LGL nodes, `:nop => 4`, CarpenterKennedy2N54:
 - **The h = 0.01 meshes.** On them Δt is 2·10⁻⁷/2^lvl; set it by hand.
 - **Mesh files.** Every mesh puts the nozzle lip x = 0.05 on an element boundary. `tools/astro_jet_mesh.py` (with `--half` for the half meshes) regenerates them. `AJ.geo` is the gmsh definition (`half = 1` for the half domain), and its surface must be named `"domain"`.
 
-- **DynSGS**, conserved form (∇·(ν∇q) on all nine variables), residual sensor, **element norms**, `C_R = 1`, `C_max = 0.5`, no background viscosity and no startup hold. The residual sensor is the one that excludes the constrained boundary nodes.
-- **Why element norms.** The residual of each equation is divided by a scale D_i before ν_K = min(C_max Δ w_K, C_R Δ² max_i ‖R_i‖_{∞,K}/D_i).
+- **DynSGS**, conserved form (∇·(ν∇q) on all nine variables), residual sensor, **element norms**, `C_1 = 1`, `C_max = 0.5`, no background viscosity and no startup hold. The residual sensor is the one that excludes the constrained boundary nodes.
+- **Why element norms.** The residual of each equation is divided by a scale D_i before ν_K = min(C_max Δ w_K, C_1 Δ² max_i ‖R_i‖_{∞,K}/D_i).
   - With domain norms, D_E = ‖E − ⟨E⟩‖_{∞,Ω} ≈ 4.5·10⁵, the beam's kinetic energy. But in the beam p/(γ−1) is 5.6·10⁻⁶ of E.
-  - A grid-scale noise δE carried at v gives ‖R_E‖ ≈ vδE/Δ, so ν ≈ C_R Δ v δE/D_E. A noise δE = 2,000 moves p by 800, yet reads ν ≈ 0.009, which is 1% of the cap.
+  - A grid-scale noise δE carried at v gives ‖R_E‖ ≈ vδE/Δ, so ν ≈ C_1 Δ v δE/D_E. A noise δE = 2,000 moves p by 800, yet reads ν ≈ 0.009, which is 1% of the cap.
   - With element norms, D_E = max(‖E − Ē‖_{∞,K}, γp̄ + |**B̄**|²) ≈ max(δE, 200) in the beam, and the same noise puts ν at the cap.
 
   Measured on the full width:

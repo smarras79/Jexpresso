@@ -39,7 +39,7 @@ function user_inputs()
         # 2018, in the Marras-Nazarov form of the Euler/MHD kernels): one
         # residual-based kinematic ν per element,
         #
-        #     ν = min( C_max Δ (|v| + √(gH)),  C_R Δ² max_i ‖R_i‖/‖δq_i − ⟨δq_i⟩‖ ),
+        #     ν = min( C_max Δ (|v| + √(gH)),  C_1 Δ² max_i ‖R_i‖/‖δq_i − ⟨δq_i⟩‖ ),
         #
         # from the BDF2 residual of the three equations normalized by the
         # spread of the departure δq = q − qe from the lake at rest (the cone
@@ -54,7 +54,7 @@ function user_inputs()
         :visc_model           => DSGS_SW(),
         :dsgs_sensor          => "residual",  # element-wise strong residual (DSGS.md §1.2)
         :μ                    => [1.0, 1.0, 1.0],
-        :dsgs_CR              => 1.0,       # C_R,   residual viscosity
+        :dsgs_C1              => 1.0,       # C_1,   residual viscosity
         :dsgs_Cmax            => 0.5,       # C_max, first-order cap
         # Background floor: 5 % of the first-order viscosity, ν ≥ 0.05·Δ·(|v|+√(gH))
         # ≈ 0.02 m²/s in the still basin (the sibling's constant is 0.05). The

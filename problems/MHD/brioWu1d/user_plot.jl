@@ -192,14 +192,14 @@ end
 # figure: the coefficient form, the length-scale convention, the residual
 # coefficient and the smoothness cutoff. A curve from a run with different
 # settings is a different method and is never silently mixed into the
-# comparison — the "H" suffix marks Δ_K/k, "_CR<x>" a C_R other than the deck's
-# 1 (:dsgs_CR, on the deck's length scale), "_cut<c>" a cutoff c > 0 on the
+# comparison — the "H" suffix marks Δ_K/k, "_C1_<x>" a C_1 other than the deck's
+# 1 (:dsgs_C1, on the deck's length scale), "_cut<c>" a cutoff c > 0 on the
 # normalized residual (:dsgs_cutoff).
 function _bw_form(inputs)
     f = get(inputs, :ldsgs_nodal, false) ? "nodal" : "elem"
     _bw_hscale() == "nop" && (f = string(f, "H"))
-    cr = round(Float64(get(inputs, :dsgs_CR, 1.0))/_bw_hfac(inputs)^2; digits = 6)
-    cr == 1.0 || (f = string(f, "_CR", cr))
+    c1 = round(Float64(get(inputs, :dsgs_C1, 1.0))/_bw_hfac(inputs)^2; digits = 6)
+    c1 == 1.0 || (f = string(f, "_C1_", c1))
     c = Float64(get(inputs, :dsgs_cutoff, 0.0))
     c > 0 && (f = string(f, "_cut", c))
     return f
@@ -227,7 +227,7 @@ function _bw_save_curve(xs, ρs, νs, Bys, inputs, t, iout)
                         " t=", t,
                         " dt=", Float64(get(inputs, :Δt, 0.0)),
                         " Cmin=", round(Float64(get(inputs, :dsgs_Cmin, 0.0))/_bw_hfac(inputs); digits = 6),
-                        " CR=", Float64(get(inputs, :dsgs_CR, 1.0)),
+                        " C1=", Float64(get(inputs, :dsgs_C1, 1.0)),
                         " Cmax=", Float64(get(inputs, :dsgs_Cmax, 0.5)),
                         " sensor=", string(get(inputs, :dsgs_sensor, "residual")),
                         " iout=", iout,
@@ -676,13 +676,14 @@ const BW_PAIR_BY_INSETS = [   # (x-range, y-range, inset position: x, y, w, h of
     ((0.763, 0.913), (-1.010, -0.880), (0.72,  0.30,  0.26, 0.28), (:bottomleft, :bottomleft), [0.80, 0.85, 0.90]), # the right fast rarefaction
 ]
 
-# "element ν, Δ_K/(k+1)[, C_R x][, cutoff c]": the method of a store form, for the titles
+# "element ν, Δ_K/(k+1)[, C_1 x][, cutoff c]": the method of a store form, for the titles
 function _bw_form_desc(form)
-    m = match(r"^(nodal|elem)(H?)(?:_CR([^_]+))?(?:_cut(.+))?$", form)
+    # (curves stored before Nov 2026 wrote C_1 as "_CR<x>")
+    m = match(r"^(nodal|elem)(H?)(?:_(?:C1_|CR)([^_]+))?(?:_cut(.+))?$", form)
     m === nothing && return string("\\mathrm{", form, "}")
     return string(m[1] == "nodal" ? "\\mathrm{nodal}" : "\\mathrm{element}",
                   "\\ \\nu,\\ \\Delta_K/", m[2] == "H" ? "k" : "(k{+}1)",
-                  m[3] === nothing ? "" : string(",\\ C_R = ", m[3]),
+                  m[3] === nothing ? "" : string(",\\ C_1 = ", m[3]),
                   m[4] === nothing ? "" : string(",\\ \\mathrm{cutoff}\\ ", m[4]))
 end
 

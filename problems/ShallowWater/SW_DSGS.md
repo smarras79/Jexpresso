@@ -116,12 +116,12 @@ thin film does not produce a velocity $|Hu|/\varepsilon$, and $g$ =
 side of the element, $k$ the polynomial degree),
 
 $$
-\boxed{\ \nu_K = \max\Big(\ C_{min}\,\Delta\,\lambda_K,\ \ \max\big(0,\ \min(\,C_{max}\,\Delta\,\lambda_K,\ \ C_R\,\Delta^2\,\mathcal R_K\,)\big)\Big)\ }
+\boxed{\ \nu_K = \max\Big(\ C_{min}\,\Delta\,\lambda_K,\ \ \max\big(0,\ \min(\,C_{max}\,\Delta\,\lambda_K,\ \ C_1\,\Delta^2\,\mathcal R_K\,)\big)\Big)\ }
 $$
 
 | constant | deck key | `SoliWaveIslandDSGS` | role |
 |---|---|---|---|
-| $C_R$ | `:dsgs_CR` | 1.0 | residual viscosity $C_R\Delta^2\mathcal R$ |
+| $C_1$ | `:dsgs_C1` | 1.0 | residual viscosity $C_1\Delta^2\mathcal R$ |
 | $C_{max}$ | `:dsgs_Cmax` | 0.5 | first-order (Lax–Friedrichs-like) cap $C_{max}\Delta\lambda$ |
 | $C_{min}$ | `:dsgs_Cmin` | 0.05 | background floor, a fraction of the cap: $\nu \ge 0.05\,\Delta\lambda \approx 0.02$ m²/s in the still basin (the sibling `SoliWaveIsland` uses a constant 0.05); it keeps an element-scale transverse mode off the wave front, which the residual only catches once it has grown |
 
@@ -150,7 +150,7 @@ with `:outformat => "vtk"`.
 ```julia
 :visc_model    => DSGS_SW(),
 :μ             => [1.0, 1.0, 1.0],   # per-equation multipliers of ν
-:dsgs_CR       => 1.0,
+:dsgs_C1       => 1.0,
 :dsgs_Cmax     => 0.5,
 :dsgs_Cmin     => 0.05,
 :dsgs_norms    => "domain",          # scales over the whole basin (default); "rank": this rank's elements only

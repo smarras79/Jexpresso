@@ -136,7 +136,7 @@ Overrides, all optional, so a sweep needs no file edits:
 | `JEXPRESSO_BW_CMIN` | 0.06 | the DynSGS background floor `:dsgs_Cmin` |
 | `JEXPRESSO_BW_HSCALE` | `ngl` | the DynSGS length scale: `ngl` is the kernels' own $\Delta_K/(k+1) = h_e/(N+1)$, eq. (15) of the DynSGS-MHD paper; `nop` is Dao & Nazarov's $\Delta_K/k$ |
 | `JEXPRESSO_BW_NODAL` | 0 | 1 for the nodal coefficient (`:ldsgs_nodal`, their eq. 4.10) |
-| `JEXPRESSO_BW_CR` | 1 | the DynSGS residual coefficient $C_R$ (`:dsgs_CR`, on the deck's length scale): $\nu = C_R\Delta^2 r$ where the residual is large; a run with $C_R \neq 1$ stores its curves as a method of its own (`elem_CR<x>`), and the scan takes a list, `BW_CR="1 4"` (`Cmin0.06_CR4`) |
+| `JEXPRESSO_BW_C1` | 1 | the DynSGS residual coefficient $C_1$ (`:dsgs_C1`, eq. 14 of the DynSGS-MHD paper, where $C_{max}$ is $C_2$; Dao & Nazarov's $C_R$), on the deck's length scale: $\nu = C_1\Delta^2 r$ where the residual is large; a run with $C_1 \neq 1$ stores its curves as a method of its own (`elem_C1_<x>`), and the scan takes a list, `BW_C1="1 4"` (`Cmin0.06_C1_4`) |
 | `JEXPRESSO_BW_CUTOFF` | 0 | the DynSGS smoothness cutoff `:dsgs_cutoff`, ν from max(0, r − c); a run with c > 0 stores its curves as a method of its own (`elem_cut<c>`), and the scan takes a list, `BW_CUTOFF="0 1e-3"`, one store per value (`Cmin0.06_cut1e-3`) |
 
 At a fixed DOF count the orders run at equal cost: 150, 120, 100 and 86
@@ -185,7 +185,7 @@ $$
 so Dao & Nazarov's convention is the same for every order while the kernels' grows
 with $k$ (0.8 of it at $k=4$, 0.875 at $k=7$). That factor varies by 75 % over
 $k = 1\ldots7$, it is monotone in $k$, and it enters the cap and the floor
-linearly and the residual viscosity $C_R\Delta^2\mathcal{R}$ quadratically. On
+linearly and the residual viscosity $C_1\Delta^2\mathcal{R}$ quadratically. On
 a solution made of jumps, where the artificial viscosity and not the
 polynomial order sets the error, it is the whole comparison. Measured here on
 the nodal coefficient at 601 DOFs, relative $L^1$ error of $\rho$:
@@ -202,13 +202,13 @@ paper's Fig. 2, that $\mathbb{P}_3$ captures the compound structure more
 accurately than $\mathbb{P}_1$ at equal degrees of freedom.
 
 **This case runs $\Delta_K/(k+1) = h_e/(N+1)$ by default**, the kernels' own
-and the $\Delta_e$ of eq. (15) of the DynSGS-MHD paper, so that $C_R = 1$,
+and the $\Delta_e$ of eq. (15) of the DynSGS-MHD paper, so that $C_1 = 1$,
 $C_{max} = 0.5$ and $C_{min} = 0.06$ mean here what they mean in the paper and
 in every other case. Until October 2026 the default was Dao & Nazarov's
 $\Delta_K/k$, for the order comparison above; `JEXPRESSO_BW_HSCALE=nop`
 (`BW_HSCALE=nop` for the scan) still gives it. That is a *deck-level* switch:
 `user_inputs.jl` folds the factor into this case's own coefficients —
-$C_{max}$ and $C_{min}$ by $(k+1)/k$, $C_R$ by $((k+1)/k)^2$, which is
+$C_{max}$ and $C_{min}$ by $(k+1)/k$, $C_1$ by $((k+1)/k)^2$, which is
 algebraically identical to changing $\Delta$ — and no kernel is touched. Two
 things follow from the default. At equal DOFs the higher orders get the larger
 viscosity (orders 4 to 7: 9 % more floor and cap, 20 % more residual
@@ -235,8 +235,8 @@ the solution altogether.
   once the $C_{min}$ floor is on (see below): at every node
   the element-wise residual (DSGS.md §1.2) averaged at the node, normalized by their eq. 4.7 with
   $C_l = 0.4$ (`:dsgs_Cl`), the maximum over the equations (eq. 4.8), and
-  $\nu_i = \min(C_{max}h_i\lambda_i, C_R h_i^2 R_i)$ with the fast
-  magnetosonic speed, $h_i = \Delta x/(k+1)$ (the element form's $\Delta$), $C_{max} = 0.5$ (`:dsgs_Cmax`), $C_R = 1$ (`:dsgs_CR`)
+  $\nu_i = \min(C_{max}h_i\lambda_i, C_1 h_i^2 R_i)$ with the fast
+  magnetosonic speed, $h_i = \Delta x/(k+1)$ (the element form's $\Delta$), $C_{max} = 0.5$ (`:dsgs_Cmax`), $C_1 = 1$ (`:dsgs_C1`)
   (eq. 4.10); $\nu$ is a continuous field the element loop interpolates,
   so the diffusive flux has no jump at element interfaces. Applied in the
   **conserved form**, $\nabla\cdot(\nu\nabla q)$ on every slot (`user_primitives.jl`),
@@ -281,8 +281,8 @@ post-shock oscillations — into the plateau; they are present at
 $\mathbb{P}_3$ (200 elements, the paper's 600-DOF layout) and $\mathbb{P}_4$,
 and with the element and the nodal coefficient alike, so neither the order
 nor the continuity of $\nu$ is their cause. The residual viscosity cannot
-remove them: $\nu = C_R h^2 R$ and the residual of a ripple is its
-amplitude over $h$, so $\nu \sim C_R h\,\times$ amplitude, far below the
+remove them: $\nu = C_1 h^2 R$ and the residual of a ripple is its
+amplitude over $h$, so $\nu \sim C_1 h\,\times$ amplitude, far below the
 first-order cap for a $0.5\,\%$ ripple. The case therefore runs with
 `:dsgs_Cmin => 0.06`, a floor of 6 % of the first-order viscosity
 $C_{max}h(|u| + c_f)$: it damps an element-scale mode at a rate
@@ -353,22 +353,22 @@ of time stepping. At $t = 0.1$ (`density-it5.svg`; the per-variable figures with
   1 % (0.25–0.9 % at $N = 5, 6$), at the price of a slow shock 3.3 nodes wide
   instead of 2 and a contact 40 % wider; the nodal coefficient changes
   nothing there;
-- a larger residual coefficient $C_R$ (`JEXPRESSO_BW_CR`, Nov 2026; $N = 4$–7,
+- a larger residual coefficient $C_1$ (`JEXPRESSO_BW_C1`, Nov 2026; $N = 4$–7,
   600 and 1200 DOFs) acts where the residual is large, but it is
   self-limiting: the stronger $\nu$ widens the shock, which lowers its
-  residual, so $C_R = 4$ raises $\nu$ at the slow shock only from 12 % to
-  13–29 % of the cap, and $C_R = 8$ to at most 46 %. At $C_R = 4$ the
+  residual, so $C_1 = 4$ raises $\nu$ at the slow shock only from 12 % to
+  13–29 % of the cap, and $C_1 = 8$ to at most 46 %. At $C_1 = 4$ the
   overshoots at the slow shock about halve ($B_y$ 0.3–2.1 %, $\rho$ 0.4–2.6 %,
   against 0.8–5.1 and 0.6–6.8 %), the slow shock is 2.4–3 nodes wide instead of
   2, the contact keeps its width, and the $L^1$ error grows by about 10 %. But
   the ripples behind the compound wave double (successive extrema up to 0.74 %
   against 0.40 % at 600 DOFs): the stronger $\nu$ at that slowly moving shock
-  radiates more of them. $C_R = 8$ gains nothing more at the slow shock and
-  widens everything. With $C_{min} = 0.03$ and $C_R = 4$ the contact is
+  radiates more of them. $C_1 = 8$ gains nothing more at the slow shock and
+  widens everything. With $C_{min} = 0.03$ and $C_1 = 4$ the contact is
   sharper than the deck's (10.5–13 nodes against 13–14 at 600 DOFs) with the
   same halved overshoots, and the ripples are 0.6–0.8 %. Only the uniform floor
   ($C_{min} = 0.12$) removes both the overshoots and the ripples (none on the
-  plateau), at the price of the contact. The deck keeps $C_R = 1$,
+  plateau), at the price of the contact. The deck keeps $C_1 = 1$,
   $C_{min} = 0.06$.
 
 ## Files

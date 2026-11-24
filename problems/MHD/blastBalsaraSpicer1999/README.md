@@ -24,7 +24,7 @@ The equations are the 9-field GLM-MHD system of `problems/MHD/orszagTangBormanis
 
 As `problems/MHD/rotorDaoNazarov2022` (see its [algorithm.pdf](../rotorDaoNazarov2022/algorithm.pdf)), with two differences:
 
-- conserved-form DynSGS: one ν per element, ∇·(ν∇q) on every conserved variable, the legacy sensor with element norms, `C_R = 1`, `C_max = 0.5`, and no background viscosity.
+- conserved-form DynSGS: one ν per element, ∇·(ν∇q) on every conserved variable, the legacy sensor with element norms, `C_1 = 1`, `C_max = 0.5`, and no background viscosity.
   - **Fast-speed floors** (`:dsgs_fast_floors => true`, DSGS.md §4.5). Each residual R_i is divided by D_i = max(spread_i, S_i). The floors S_i use the fast-speed bound c̄_f = √((γp̄ + |**B̄**|²)/ρ̄) of the element-mean state instead of the sound speed c̄ = √(γp̄/ρ̄): S_ρ = ρ̄, S_ρv = ρ̄ c̄_f, S_E = γp̄ + |**B̄**|², S_B = √(γp̄ + |**B̄**|²). In this ambient c_f/c = 75. With sound-speed floors, a resolved fast wave read 75× (ρv, **B**) to 5,700× (E) too strong, and ν sat at its cap over most of the disturbed region (see the comparison below).
   - **Thermal-energy residual** (`:dsgs_thermal_residual => true`, DSGS.md §4.5). The residual of ρe = E − ½|**m**|²/ρ − ½|**B**|² − ½ψ² joins the max (below).
   - **No startup hold** (`:dsgs_hold_steps => 0`). The pressure jump at t = 0 is the most violent moment of the run, and outside it the initial data are uniform, so the first residual is nonzero only at the jump.

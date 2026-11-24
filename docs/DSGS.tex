@@ -25,7 +25,7 @@
 \newcommand{\Sbar}{\bar{S}}
 \newcommand{\Cmax}{C_{\max}}
 \newcommand{\Cmin}{C_{\min}}
-\newcommand{\CR}{C_R}
+\newcommand{\Cone}{C_1}
 \newcommand{\Cl}{C_l}
 \newcommand{\Prt}{\mathrm{Pr}_t}
 \newcommand{\dsgs}{\textsc{DynSGS}}
@@ -357,14 +357,14 @@ For every element $K$, with
 \begin{equation}
 \boxed{\;
 \begin{aligned}
-\nu_{\rm res} &= \CR\,\Delta^2\,\mathcal{R}_K, &
+\nu_{\rm res} &= \Cone\,\Delta^2\,\mathcal{R}_K, &
 \nu_{\max} &= \Cmax\,\Delta\,\lambda_K,\\
 \nu_c &= \max\big(0,\ \min(\nu_{\max},\nu_{\rm res})\big), &
 \nu_K &= \max\big(\nu_c,\ \Cmin\,\Delta\,\lambda_K\big)
 \end{aligned}\;}
 \label{eq:nuK}
 \end{equation}
-with $\CR$ = \code{:dsgs\_CR} (default $1$), $\Cmax$ = \code{:dsgs\_Cmax}
+with $\Cone$ = \code{:dsgs\_C1} (default $1$), $\Cmax$ = \code{:dsgs\_Cmax}
 (default $0.5$), $\Cmin$ = \code{:dsgs\_Cmin} (default $0$). The last
 operation is the background floor, a lower bound $\nu \ge \Cmin\Delta\lambda_K$
 applied with a $\max$ (the counterpart of the cap $\nu \le \Cmax\Delta\lambda_K$
@@ -382,7 +382,7 @@ h_i = \max_{K\ni i}\ \frac{\Delta_K}{k+1}
 \end{equation}
 \begin{equation}
 \boxed{\;
-\nu_c = \max\big(0,\ \min(\Cmax\,h_i\,\lambda_i,\ \CR\,h_i^2\,\mathcal{R}_i)\big),\qquad
+\nu_c = \max\big(0,\ \min(\Cmax\,h_i\,\lambda_i,\ \Cone\,h_i^2\,\mathcal{R}_i)\big),\qquad
 \nu_i = \max\big(\nu_c,\ \Cmin\,h_i\,\lambda_i\big)\;}
 \label{eq:nui}
 \end{equation}
@@ -566,7 +566,7 @@ These predate the MHD kernel and keep their own hard-coded constants.
 
 \subsection{2D, $\theta$ form (\code{:energy\_equation => "theta"})}
 
-$\bq=(\rho,\rho u,\rho v,\rho\theta)$, $\CR=1$, $\Cmax=0.5$ (not deck
+$\bq=(\rho,\rho u,\rho v,\rho\theta)$, $\Cone=1$, $\Cmax=0.5$ (not deck
 inputs), $p = C_0(\rho\theta)^\gamma$ with $C_0,\gamma$ from
 \code{PhysConst}, $c=\sqrt{\gamma p/\rho}$. Domain scope of
 Section~\ref{sec:norm-domain} with the lower bounds replaced by $n^q = \Sbar^q+\epsilon$
@@ -586,7 +586,7 @@ kinematic $\nu_K$; they enter neither the residual nor the normalization.
 
 \subsection{2D, energy form (\code{:energy\_equation => "energy"}; Nazarov \& Hoffman 2013)}
 
-$\bq=(\rho,\rho u,\rho v,\rho E)$, $\CR=1$, $\Cmax=0.5$. The momentum
+$\bq=(\rho,\rho u,\rho v,\rho E)$, $\Cone=1$, $\Cmax=0.5$. The momentum
 residual and spread are taken as vectors:
 $R^{m}_i = \sqrt{(R^{\rho u}_i)^2+(R^{\rho v}_i)^2}$,
 $\Sbar^{m}=\max_i\sqrt{(\rho u_i-\langle\rho u\rangle)^2+(\rho v_i-\langle\rho v\rangle)^2}$,
@@ -594,7 +594,7 @@ bounded from below as in~\eqref{eq:floors} for $\rho$, $m$, $E$. With
 $T_i = \max(E_i/\rho_i - \tfrac12|\bv_i|^2,0)$ and $\lambda_i=|\bv_i|+\sqrt{\gamma T_i}$,
 per element ($h=\Delta_K/n_{gl}$)
 \begin{equation}
-\mu_{\rm res} = \CR\,h^2\,\Sbar^{\rho}\,\mathcal{R}_K,\qquad
+\mu_{\rm res} = \Cone\,h^2\,\Sbar^{\rho}\,\mathcal{R}_K,\qquad
 \mu_{\rm cap} = \Cmax\,h\,\max_{i\in K}\rho_i\,\max_{i\in K}\lambda_i,\qquad
 \mu_K = \max(0,\min(\mu_{\rm cap},\mu_{\rm res})),
 \end{equation}
@@ -642,7 +642,7 @@ per-equation multipliers $\mu_q$ as plain Laplacian coefficients in m$^2$/s.
 
 With \code{:ldsgs\_nodal => true}, $\nu_i$ from~\eqref{eq:nui} with the
 per-slot normalization~\eqref{eq:n47} (every momentum component on its own),
-$\CR,\Cmax,\Cmin,\Cl$ from the deck, $\lambda_i=|\bv_i|+c_i$ ($c$ from the
+$\Cone,\Cmax,\Cmin,\Cl$ from the deck, $\lambda_i=|\bv_i|+c_i$ ($c$ from the
 $\theta$ or the energy equation of state), and the slot coefficients
 $\theta$ form: $(0,\ \rho_i\nu_i,\ \rho_i\nu_i,\ \tfrac{\mathrm{Pr}}{\gamma-1}\rho_i\nu_i)$;
 energy form: $(\nu_i,\ \rho_i\nu_i,\ \rho_i\nu_i,\ \tfrac{\mathrm{Pr}}{\gamma-1}\rho_i\nu_i)$,
@@ -650,7 +650,7 @@ passive tracers $\nu_i$, each times $\mu_q$.
 
 \subsection{1D Euler}
 
-$\bq=(\rho,\rho u,\rho E)$, $\gamma=1.4$, $\CR=1$, $\Cmax=0.5$,
+$\bq=(\rho,\rho u,\rho E)$, $\gamma=1.4$, $\Cone=1$, $\Cmax=0.5$,
 $n^q=\Sbar^q+\epsilon$ (no physical lower bounds), $\Delta=\Delta_K/n_{gl}$,
 $\lambda_i=|u_i|+\sqrt{\gamma(\gamma-1)e_i}$ with
 $e_i=\max(E_i/\rho_i-\tfrac12u_i^2,0)$, and the \emph{same} $\nu_K$ on all
@@ -659,7 +659,7 @@ three slots, times $\mu_q$.
 \subsection{2D shallow water (\code{DSGS\_SW})}
 
 $\bq=(H,\,Hu,\,Hv)$, $\bq_e = (H_e,0,0)$ the lake at rest of the case,
-$\CR,\Cmax,\Cmin,\Cl$ from the deck. The statistics of
+$\Cone,\Cmax,\Cmin,\Cl$ from the deck. The statistics of
 Section~\ref{sec:norm} are taken on the departure $\delta\bq = \bq-\bq_e$
 (the depth itself is cone-shaped over an island), with the lower bounds
 $n^{H} = \max(\Sbar^{H}, 10^{-3}\bar H)$,
@@ -695,7 +695,7 @@ key & default & meaning \\
 \midrule
 \code{:visc\_model} & -- & \code{DSGS\_MHD()} or \code{DSGS()} \\
 \texttt{:}$\mu$ & -- & per-slot multipliers $\mu_q$ \\
-\code{:dsgs\_CR} & 1.0 & $\CR$ (residual viscosity) \\
+\code{:dsgs\_C1} & 1.0 & $\Cone$ (residual viscosity) \\
 \code{:dsgs\_Cmax} & 0.5 & $\Cmax$ (first-order viscosity) \\
 \code{:dsgs\_Cmin} & 0.0 & $\Cmin$ (background floor; not in DN22) \\
 \code{:dsgs\_Cl} & 0.0 & $\Cl$ of eq.~\eqref{eq:n47} (nodal form) \\
@@ -791,8 +791,8 @@ $R^n_h = \max_q R(q)/n(q)$ at every node, eq.~4.8 &
 Nodal: identical, eq.~\eqref{eq:Ri}. Element: $\max$ over the element's nodes and the equations, eq.~\eqref{eq:RK} \\
 
 High-order viscosity &
-$\nu^H_i = \CR h_i^2 R^n_i$, $\CR=1$ (eq.~4.10) &
-Element: $\CR\Delta^2\mathcal R_K$. Nodal: identical. \code{:dsgs\_CR}, default $1$ \\
+$\nu^H_i = \Cone h_i^2 R^n_i$, $\Cone=1$ (eq.~4.10) &
+Element: $\Cone\Delta^2\mathcal R_K$. Nodal: identical. \code{:dsgs\_C1}, default $1$ \\
 
 Combination &
 $\nu_i = \min(\nu^L_i,\nu^H_i)$ (eq.~4.10) &
@@ -847,8 +847,8 @@ $\lambda_h = 0$ &
 $-\tfrac23\mu$ (through the deviatoric stress) \\
 
 Parameters used &
-$\Cmax=0.5$, $\CR=1$, $\Cl=0.4$, CFL $0.3$, $\mathrm{Pr}$ (unstated in \S5) &
-Brio--Wu: $\Cmax=0.5$, $\CR=1$, $\Cl=0.4$ (nodal), $\Cmin=0.03$, $\Prt=1$, conserved form, element form by default \\
+$\Cmax=0.5$, $\Cone=1$, $\Cl=0.4$, CFL $0.3$, $\mathrm{Pr}$ (unstated in \S5) &
+Brio--Wu: $\Cmax=0.5$, $\Cone=1$, $\Cl=0.4$ (nodal), $\Cmin=0.03$, $\Prt=1$, conserved form, element form by default \\
 
 \end{longtable}
 \end{small}

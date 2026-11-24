@@ -115,7 +115,7 @@ the discretization's own ∇·B and ψ errors.
 
 - **Stabilization.** DynSGS is set up as for `smoothVortex`, the other accuracy test of
   this directory:
-  - residual sensor, `:dsgs_Cmin => 0`, `:dsgs_CR => 1`, `:dsgs_Cmax => 0.5`;
+  - residual sensor, `:dsgs_Cmin => 0`, `:dsgs_C1 => 1`, `:dsgs_Cmax => 0.5`;
   - domain-wide normalization;
   - physical form (`:dsgs_conserved => false`) with the split energy flux;
   - the coefficient computed once per step (`:dsgs_freeze_stage`, the default for
@@ -229,7 +229,7 @@ From every record stored for the same final time, the run then:
   (`--panels=state...`) also says there what q is;
 - draws what DSGS did, from the run maxima of the DSGS records:
   - `alfven-convergence_rmax-it<n>.png`: max r of every run against #DOFs, with the cutoff c as
-    a dashed line. A point below the line is a run in which μ = C_R Δ² max(0, r − c) was
+    a dashed line. A point below the line is a run in which μ = C_1 Δ² max(0, r − c) was
     exactly zero throughout, so that there DSGS is Galerkin because of the cutoff;
   - `alfven-convergence_mumax-it<n>.png`: max μ of every run. Zero has no place on a log axis,
     so each legend entry says on how many of its meshes μ was exactly zero. The dotted
@@ -391,11 +391,11 @@ compares the coefficient computed at every stage (`JEXPRESSO_AW_FREEZE=0`).
 4. **Why order 4 without the cutoff: the time derivative in the frozen residual.** At the
    stage where the coefficient is computed, the residual's ∂ₜq is the BDF2 of three
    step-level states, whose truncation error is (Δt²/3)∂ₜ³q. A travelling wave has ∂ₜ³q ≠ 0
-   however well it is resolved, so that is the floor of the residual, and ν ≈ C_R Δ² O(Δt²)
+   however well it is resolved, so that is the floor of the residual, and ν ≈ C_1 Δ² O(Δt²)
    ∝ h⁴ at a fixed Courant number, whatever N.
    - The floor predicts the error with no fitted constant. The residual is normalized by
      ρ̄c̄ = 0.42 (the floor of the momentum and B norms, above the wave's spread), so
-     ν ≈ C_R Δ² (Δt²/3) ω³A/(ρ̄c̄), with ω = 2π and A = 0.1. The wave is damped by ν k² t
+     ν ≈ C_1 Δ² (Δt²/3) ω³A/(ρ̄c̄), with ω = 2π and A = 0.1. The wave is damped by ν k² t
      (k = 2π), so the state error is 0.14 ν k² t. Predicted against measured:
      N = 5 on 32², 6.6e-9 against 6.4e-9; N = 6 on 16² and 32², 5.4e-8 and 3.4e-9 against
      5.4e-8 and 3.2e-9; N = 7 on 8² and 16², 4.9e-7 and 3.0e-8 against 6.5e-7 and 4.2e-8.
@@ -423,7 +423,7 @@ compares the coefficient computed at every stage (`JEXPRESSO_AW_FREEZE=0`).
    - Computed at every stage (`JEXPRESSO_AW_FREEZE=0`, the default before b956ccd), the
      coefficient caps the rate at about 3. `src/io/mod_inputs.jl` (`:dsgs_freeze_stage`)
      explains why: at an intermediate RK stage, the three-point time difference of the
-     residual sensor uses an internal stage whose error is O(Δt). So ν ~ C_R h² O(Δt) ∝ h³
+     residual sensor uses an internal stage whose error is O(Δt). So ν ~ C_1 h² O(Δt) ∝ h³
      when Δt ∝ h.
    - State error and order, N = 4:
 

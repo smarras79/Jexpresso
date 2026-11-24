@@ -26,7 +26,7 @@ element form; the nodal form of `:ldsgs_nodal` puts the same $\nu$ at every
 node, see `DSGS.md` §4.7):
 
 $$
-\nu_K = \max\Big(C_{min}\Delta\lambda_K,\ \max\big(0, \min(C_{max}\Delta\lambda_K,\ C_R\Delta^2\mathcal R_K)\big)\Big),
+\nu_K = \max\Big(C_{min}\Delta\lambda_K,\ \max\big(0, \min(C_{max}\Delta\lambda_K,\ C_1\Delta^2\mathcal R_K)\big)\Big),
 \qquad
 \lambda_K = \max_{i\in K}\big(|\mathbf v_i| + \sqrt{gH_i}\big),
 $$
@@ -44,7 +44,7 @@ $s^{Hu} = s^{Hv} = \bar H\sqrt{g\bar H}$ the still-water scales of the mean
 depth $\bar H$, and the velocity of the wave speed desingularized as
 $Hu/\max(H, h_{min})$ with $h_{min}$ the wet/dry threshold (`:dsgs_swe_hmin`
 = `_H_WET_SWE` of `user_flux.jl`); $g$ is `:dsgs_swe_g` (= `_G_SWE`).
-$C_R$ = `:dsgs_CR` (1), $C_{max}$ = `:dsgs_Cmax` (0.5), $C_{min}$ =
+$C_1$ = `:dsgs_C1` (1), $C_{max}$ = `:dsgs_Cmax` (0.5), $C_{min}$ =
 `:dsgs_Cmin` (0): the Dao–Nazarov names used by every DynSGS kernel of the
 code.
 

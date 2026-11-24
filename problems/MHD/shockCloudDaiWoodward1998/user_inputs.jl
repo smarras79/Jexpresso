@@ -38,7 +38,7 @@ function user_inputs()
         :dsgs_thermal_residual => true,
         :dsgs_hold_steps      => 0,        # ν from the first step: the initial shock is sharp
         :dsgs_norms           => "element",
-        :dsgs_CR              => 1.0,
+        :dsgs_C1              => 1.0,
         :dsgs_Cmax            => 0.5,
         :dsgs_gamma           => 5.0/3.0,
         :dsgs_Prt             => 1.0,

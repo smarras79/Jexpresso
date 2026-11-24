@@ -29,7 +29,7 @@ function user_inputs()
         :μ                    => [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         :visc_model           => DSGS_MHD(),
         :dsgs_sensor          => "residual",   # carries the Dirichlet-node treatment needed at the nozzle
-        :dsgs_CR              => 1.0,
+        :dsgs_C1              => 1.0,
         :dsgs_Cmax            => 0.5,
         :dsgs_Cmin            => 0.0,
         :dsgs_cutoff          => 0.0,

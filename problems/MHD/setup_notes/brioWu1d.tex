@@ -41,7 +41,7 @@ $\Delta x/N$.
 \code{:visc\_model} & \cm{\code{DSGS\_MHD()}} & \\
 \code{:}$\mu$ (slot multipliers) & \cm{all 1} (8 entries) & mass diffusion is on\\
 \code{:dsgs\_sensor} & \code{"residual"} & element residual, stage-consistent stencil\\
-\code{:dsgs\_CR} & 1.0 & ($\times h_{fac}^2$ with \code{"nop"})\\
+\code{:dsgs\_C1} & 1.0 & ($\times h_{fac}^2$ with \code{"nop"})\\
 \code{:dsgs\_Cmax} & 0.5 & ($\times h_{fac}$ with \code{"nop"})\\
 \code{:dsgs\_Cmin} & 0.06 & \code{JEXPRESSO\_BW\_CMIN} ($\times h_{fac}$ with \code{"nop"})\\
 \code{:dsgs\_gamma} & \cm{$=\gamma_{mhd}$} $=2$ & \\
@@ -100,10 +100,10 @@ $c_f^2=\tfrac12\big(a^2+b^2+\sqrt{(a^2+b^2)^2-4a^2b_x^2}\big)$, $a^2=\gamma p/\r
 $b_x^2=B_x^2/\rho$, $p$ clipped at 0 (\code{SGS.jl:2075--2088}).
 \item \textbf{Coefficient} (\code{SGS.jl:2092--2096}):
 \[
-\nuc=\max\big(0,\min(\Cmax\Delta_Kw_K,\ \CR\Delta_K^2\mathcal R_K)\big),\qquad
+\nuc=\max\big(0,\min(\Cmax\Delta_Kw_K,\ \Cone\Delta_K^2\mathcal R_K)\big),\qquad
 \nufl=\Cmin\Delta_Kw_K,\qquad \nu_K=\max(\nuc,\nufl),
 \]
-\cm{one value per element}, \cm{recomputed at every Runge--Kutta stage}; $(\CR,\Cmax,\Cmin)=(1,0.5,0.06)$
+\cm{one value per element}, \cm{recomputed at every Runge--Kutta stage}; $(\Cone,\Cmax,\Cmin)=(1,0.5,0.06)$
 with $\Delta_K=\Delta x/5$ at $N=4$ (before \code{2bb4c2a1}: $(1.5625,0.625,0.075)$, i.e.\ $(1,0.5,0.06)$ on $\Delta x/4$).
 \item \textbf{Slot coefficients} (conserved form): $\mu^s_K=\mu[s]\,\nu_K=\nu_K$ for all 8 slots.
 \end{enumerate}

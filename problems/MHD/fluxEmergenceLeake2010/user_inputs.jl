@@ -69,9 +69,9 @@
 #                            last, held in between (the step costs 0.52 of the five-stage one);
 #                            or the first alone (0.47, and the default of
 #                            JEXPRESSO_LK10_STABCAP becomes 0.08). The coefficient is then that
-#                            of the first stage, with half the C_R (README, "The DynSGS at
+#                            of the first stage, with half the C_1 (README, "The DynSGS at
 #                            two stages of the five")                                [all]
-#   JEXPRESSO_LK10_CR        the DynSGS constant C_R (the coefficient is C_R Δ² × the largest
+#   JEXPRESSO_LK10_C1        the DynSGS constant C_1 (the coefficient is C_1 Δ² × the largest
 #                            normalized residual, up to its caps)                    [1]
 #   JEXPRESSO_LK10_ETACAP    fast | flow: the DynSGS resistivity capped at C_max Δ (|v| + c_f)
 #                            like the viscosity, or at C_max Δ |v|, the flow speed alone [fast]
@@ -121,6 +121,15 @@ function lk10_check_env()
     return join(("$(k)=$(ENV["JEXPRESSO_LK10_" * k])" for k in set), ", ")
 end
 _lk10_num(k, d) = something(tryparse(Float64, _lk10_env(k, "")), d)
+# C_1 (:dsgs_C1, :lk10_C1); JEXPRESSO_LK10_CR, its name until Nov 2026, is still read, with a warning
+function _lk10_c1()
+    v = _lk10_env("C1", "")
+    if isempty(v)
+        old = _lk10_env("CR", "")        # asked for, so lk10_check_env accepts it
+        isempty(old) || (@warn "JEXPRESSO_LK10_CR is now JEXPRESSO_LK10_C1"; v = old)
+    end
+    return something(tryparse(Float64, v), 1.0)
+end
 # one of the words `allowed` (the first is the default), in lower case; anything else is an error, not the default
 function _lk10_word(k, allowed...)
     w = lowercase(_lk10_env(k, allowed[1]))
@@ -397,10 +406,10 @@ function user_inputs()
         # its first reading is |∂ₜq| itself, the gradient it always reads. Restarts with it hold none.
         :dsgs_hold_steps      => (sensor == "legacy" && !isempty(strip(_lk10_env("RESTART_DIR", "")))) ? 0 : 2,
         # JEXPRESSO_LK10_DSGS_STAGES=1,5 or 1: the coefficient is that of the first stage, where the
-        # legacy sensor reads twice its mean over the stages: half the C_R, same coefficient.
+        # legacy sensor reads twice its mean over the stages: half the C_1, same coefficient.
         :dsgs_stages          => stages,
-        :lk10_CR              => _lk10_num("CR", 1.0),
-        :dsgs_CR              => _lk10_num("CR", 1.0)*((stages !== nothing && sensor == "legacy") ? 0.5 : 1.0),
+        :lk10_C1              => _lk10_c1(),
+        :dsgs_C1              => _lk10_c1()*((stages !== nothing && sensor == "legacy") ? 0.5 : 1.0),
         :dsgs_Cmax            => 0.5,
         :dsgs_Cmin            => _lk10_num("CMIN", 0.0),
         :dsgs_gamma           => 5.0/3.0,

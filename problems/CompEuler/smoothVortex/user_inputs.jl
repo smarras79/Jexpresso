@@ -27,7 +27,7 @@
 #                        comparison with problems/MHD/smoothVortex
 #   JEXPRESSO_EV_VISC    "dsgs" (default) or "none" for plain Galerkin
 #   JEXPRESSO_EV_SOLVER  ck54 (default), vern9, vern7, dp8, ssprk54, tsit5
-#   JEXPRESSO_EV_CMIN / _CR / _CMAX / _REL / _NORMS   the DynSGS coefficients
+#   JEXPRESSO_EV_CMIN / _C1 / _CMAX / _REL / _NORMS   the DynSGS coefficients
 #   JEXPRESSO_EV_BDF     :dsgs_bdf_order, the order k of the backward
 #                        difference the residual sensor takes ∂ₜq with
 #                        (default 2; see problems/MHD/smoothVortex/user_inputs.jl,
@@ -84,7 +84,11 @@ function _ev_positivity_floors()
     return (1.0e-6*ρc, 1.0e-6*ρc^γ)
 end
 _ev_cmin()  = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_CMIN",  "")), 0.0)
-_ev_cr()    = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_CR",    "")), 1.0)
+# C_1 (:dsgs_C1); JEXPRESSO_EV_CR, its name until Nov 2026, is still read, with a warning
+_ev_c1()    = (v = get(ENV, "JEXPRESSO_EV_C1", "");
+               isempty(v) && haskey(ENV, "JEXPRESSO_EV_CR") &&
+                   (@warn "JEXPRESSO_EV_CR is now JEXPRESSO_EV_C1"; v = ENV["JEXPRESSO_EV_CR"]);
+               something(tryparse(Float64, v), 1.0))
 _ev_cmax()  = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_CMAX",  "")), 0.5)
 _ev_rel()   = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_REL",   "")), 1.0)
 _ev_visc()  = lowercase(strip(get(ENV, "JEXPRESSO_EV_VISC",  "dsgs")))
@@ -185,7 +189,7 @@ function user_inputs()
         # assembly cancels (measured here: far from the vortex the element
         # term is 18x the assembled rate, and both halve when dt halves).
         :dsgs_sensor      => get(ENV, "JEXPRESSO_EV_SENSOR", "residual"),
-        :dsgs_CR          => _ev_cr(),
+        :dsgs_C1          => _ev_c1(),
         :dsgs_Cmax        => _ev_cmax(),
         :dsgs_Cmin        => _ev_cmin(),   # no background floor: it would be an
                                            # order-independent O(h) error on a

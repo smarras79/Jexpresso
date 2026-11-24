@@ -33,7 +33,7 @@ function user_inputs()
         :dsgs_rel             => 1.0,
         :dsgs_hold_steps      => 2,
         :dsgs_norms           => "element",
-        :dsgs_CR              => 1.0,
+        :dsgs_C1              => 1.0,
         :dsgs_Cmax            => 0.5,
         :dsgs_gamma           => 1.4,
         :dsgs_Prt             => 1.0,

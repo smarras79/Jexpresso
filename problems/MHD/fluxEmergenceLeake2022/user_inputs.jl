@@ -223,7 +223,7 @@ function user_inputs()
         :μ                    => [lk22_rhofac, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],   # LK22_RHOFAC: the mass diffusion
         :visc_model           => DSGS_MHD(),
         :dsgs_sensor          => "legacy",
-        :dsgs_CR              => 1.0,
+        :dsgs_C1              => 1.0,
         :dsgs_Cmax            => 0.5,
         :dsgs_Cmin            => 0.0,
         :dsgs_gamma           => 5.0/3.0,

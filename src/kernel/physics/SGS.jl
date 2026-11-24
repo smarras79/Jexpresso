@@ -422,7 +422,7 @@ end
 # artificial viscosity, parameter free.
 #
 # Per-element coefficient:
-#     μ_res = CR · Δ² · max_i ‖R_i‖∞,Ω / ‖q_i − ⟨q_i⟩‖∞,Ω
+#     μ_res = C1 · Δ² · max_i ‖R_i‖∞,Ω / ‖q_i − ⟨q_i⟩‖∞,Ω
 #     μ_max = Cmax · Δ · max(|u| + c)
 #     μ_dsgs[iel] = max(0, min(μ_res, μ_max))
 # where R_i is the element-wise strong residual of conservation law i,
@@ -762,13 +762,13 @@ dsgs_run_stats(comm) = MPI.Allreduce(copy(_DSGS_RUN_STATS), MPI.MAX, comm)
 # :dsgs_freeze_stage — the coefficient is computed ONCE PER TIME STEP, at the
 # stage that sits on tⁿ, and held for the rest of the step.
 #
-# Why it matters for accuracy. ν = C_R h² R̃, and R̃ is measured with a
+# Why it matters for accuracy. ν = C_1 h² R̃, and R̃ is measured with a
 # three-point time difference across the RK stages (rhs.jl, _dsgs_stencil).
 # Those weights are second-order in the values they are GIVEN, but at an
 # intermediate stage one of those values is an RK internal stage, whose own
 # error is O(Δt) — explicit RK schemes have low stage order. So R̃ never
 # falls below O(Δt), no matter how smooth and how well resolved the solution
-# is, and ν stalls at C_R h²·O(Δt): on a smooth problem the RV solution then
+# is, and ν stalls at C_1 h²·O(Δt): on a smooth problem the RV solution then
 # departs from the Galerkin one by O(h²), which caps the measured order at 2
 # as soon as the spatial error drops under it (measured: P6 and P7 of the
 # smooth vortex bend to p = 2.4 and 2.1 exactly there).
@@ -798,7 +798,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  connijk::AbstractArray{TI,4},
                                  Δx::AbstractVector{TT},
                                  nelem::Int, ngl::Int;
-                                 CR::TT=TT(1.0), Cmax::TT=TT(0.5), Cmin::TT=zero(TT),
+                                 C1::TT=TT(1.0), Cmax::TT=TT(0.5), Cmin::TT=zero(TT),
                                  cutoff::TT=zero(TT),
                                  lglobal_norms::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
     _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
@@ -886,7 +886,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
             uTmx = max(uTmx, abs(ul) + sqrt(γ*(γ - one(TT))*eint))
         end
 
-        μ_res = CR*Δ*Δ*_dsgs_cut(max(n1/denom1, n2/denom2, n3/denom3), cutoff)
+        μ_res = C1*Δ*Δ*_dsgs_cut(max(n1/denom1, n2/denom2, n3/denom3), cutoff)
         μ_max = Cmax*Δ*uTmx
         μ_fl  = Cmin > zero(TT) ? Cmin*Δ*uTmx : zero(TT)   # background floor, as ::DSGS_MHD
         μ     = max(μ_fl, min(μ_max, μ_res))
@@ -940,7 +940,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  PhysConst::PhysicalConst{TT},
                                  Pr::TT,
                                  nelem::Int, ngl::Int;
-                                 CR::TT=TT(1.0), Cmax::TT=TT(0.5), Cmin::TT=zero(TT),
+                                 C1::TT=TT(1.0), Cmax::TT=TT(0.5), Cmin::TT=zero(TT),
                                  cutoff::TT=zero(TT),
                                  ltheta::Bool=true,
                                  lglobal_norms::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
@@ -949,7 +949,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     if !ltheta
         _dsgs_2d_energy!(μ_dsgs, q, q1, q2, rhs_el, ω, Je, visc_coeff,
                          wt, connijk, Δelem, PhysConst, Pr, nelem, ngl,
-                         lglobal_norms; CR = CR, Cmax = Cmax, Cmin = Cmin, cutoff = cutoff)
+                         lglobal_norms; C1 = C1, Cmax = Cmax, Cmin = Cmin, cutoff = cutoff)
         return nothing
     end
 
@@ -961,7 +961,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     # error, not a residual — and used the un-divided weak RHS instead;
     # the element residual has the units and the meaning both lacked.
     #
-    #     μ_res|e = CR · Δ² · max_i ‖R_i‖∞,e / ‖q_i − ⟨q_i⟩‖∞,Ω
+    #     μ_res|e = C1 · Δ² · max_i ‖R_i‖∞,e / ‖q_i − ⟨q_i⟩‖∞,Ω
     #     μ_max|e = Cmax · Δ · (|u| + c)_∞,e
     #     μ|e     = max(0, min(μ_max, μ_res))
     #
@@ -1092,7 +1092,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         end
         ρ_el /= TT(ngl*ngl)
 
-        μ_res = CR*Δ*Δ*_dsgs_cut(max(n1/denom1, n2/denom2, n3/denom3, n4/denom4), cutoff)
+        μ_res = C1*Δ*Δ*_dsgs_cut(max(n1/denom1, n2/denom2, n3/denom3, n4/denom4), cutoff)
         μ_max = Cmax*Δ*uTmx
         μ_fl  = Cmin > zero(TT) ? Cmin*Δ*uTmx : zero(TT)   # background floor, as ::DSGS_MHD
         μ     = max(μ_fl, min(μ_max, μ_res))   # kinematic, m²/s
@@ -1137,7 +1137,7 @@ end
 #
 # Same structure as the 2D θ kernel:
 #
-#     ν_K = max(0, min(C_max Δ λ_K, C_R Δ² R_K)),  Δ = Δ_K/(k+1)
+#     ν_K = max(0, min(C_max Δ λ_K, C_1 Δ² R_K)),  Δ = Δ_K/(k+1)
 #
 # with the element residual of DSGS.md §1.2 and the slot split of Marras
 # et al. eq. (10). The primitives handed to the viscous operator are
@@ -1163,7 +1163,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  PhysConst::PhysicalConst{TT},
                                  Pr::TT,
                                  nelem::Int, ngl::Int;
-                                 CR::TT=TT(1.0), Cmax::TT=TT(0.5), Cmin::TT=zero(TT),
+                                 C1::TT=TT(1.0), Cmax::TT=TT(0.5), Cmin::TT=zero(TT),
                                  cutoff::TT=zero(TT),
                                  ltheta::Bool=true,
                                  lglobal_norms::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
@@ -1276,7 +1276,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         end
         ρ_el /= TT(ngl*ngl*ngl)
 
-        μ_res = CR*Δ*Δ*_dsgs_cut(max(n1/denom1, n2/denom2, n3/denom3, n4/denom4, n5/denom5), cutoff)
+        μ_res = C1*Δ*Δ*_dsgs_cut(max(n1/denom1, n2/denom2, n3/denom3, n4/denom4, n5/denom5), cutoff)
         μ_max = Cmax*Δ*uTmx
         μ_fl  = Cmin > zero(TT) ? Cmin*Δ*uTmx : zero(TT)   # background floor, as ::DSGS_MHD
         μ     = max(μ_fl, min(μ_max, μ_res))   # kinematic, m²/s
@@ -1323,7 +1323,7 @@ end
 #
 # Then eq. (3.5)-(3.7):
 #
-#     μ₁|K   = CR·h_K²·‖ρ−ρ̄‖_{∞,Ω}·max( ‖R_ρ‖_{∞,K}/‖ρ−ρ̄‖_{∞,Ω},
+#     μ₁|K   = C1·h_K²·‖ρ−ρ̄‖_{∞,Ω}·max( ‖R_ρ‖_{∞,K}/‖ρ−ρ̄‖_{∞,Ω},
 #                                        ‖R_m‖_{∞,K}/‖m−m̄‖_{∞,Ω},
 #                                        ‖R_E‖_{∞,K}/‖E−Ē‖_{∞,Ω} )
 #     μ_max|K = Cmax·h_K·‖ρ‖_{∞,K}·‖ |u| + √(γT) ‖_{∞,K}
@@ -1331,7 +1331,7 @@ end
 #     κ|K     = P/(γ−1)·μ|K            (heat conduction, on ∇T)
 #     β|K     = μ|K/‖ρ‖_{∞,K}          (density diffusion, on ∇ρ)
 #
-# with CR = 1, Cmax = 0.5 and P ≈ 0.1 the artificial Prandtl number
+# with C1 = 1, Cmax = 0.5 and P ≈ 0.1 the artificial Prandtl number
 # (inputs[:Pr]). NOTE that the leading ‖ρ−ρ̄‖_{∞,Ω} factor in μ₁ and the
 # ‖ρ‖_{∞,K} factor in μ_max make μ a DYNAMIC viscosity, which is what
 # _expansion_visc! wants for the momentum slots — so, unlike the θ path
@@ -1370,7 +1370,7 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
                           Pr::TT,
                           nelem::Int, ngl::Int,
                           lglobal_norms::Bool;
-                          CR::TT=TT(1.0), Cmax::TT=TT(0.5), Cmin::TT=zero(TT),
+                          C1::TT=TT(1.0), Cmax::TT=TT(0.5), Cmin::TT=zero(TT),
                           cutoff::TT=zero(TT)) where {TT<:AbstractFloat, TI<:Integer}
 
     γ    = PhysConst.γ
@@ -1492,7 +1492,7 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
         end
 
         # eq. (3.5)-(3.7). Both branches carry a density, so μ is DYNAMIC.
-        μ_res = CR*h*h*dρ*_dsgs_cut(ratio, cutoff)
+        μ_res = C1*h*h*dρ*_dsgs_cut(ratio, cutoff)
         μ_cap = Cmax*h*ρmax*wmax
         μ_fl  = Cmin > zero(TT) ? Cmin*h*ρmax*wmax : zero(TT)   # background floor
         μ     = max(μ_fl, min(μ_cap, μ_res))
@@ -1529,7 +1529,7 @@ end
 # globally (8x on this grid) to survive the shocks — which then over-damps
 # the smooth 90% of the domain.
 #
-#     μ_res|e = CR · Δ² · max_i ( ‖R_i‖_{∞,e} / ‖q_i − ⟨q_i⟩‖_{∞,Ω} )
+#     μ_res|e = C1 · Δ² · max_i ( ‖R_i‖_{∞,e} / ‖q_i − ⟨q_i⟩‖_{∞,Ω} )
 #     μ_max|e = Cmax · Δ  · (‖v‖ + c_f)_{∞,e}
 #     μ|e     = max(0, min(μ_max, μ_res))
 #
@@ -1623,7 +1623,7 @@ end
 #
 #  *  linduction (:dsgs_induction_sensor). The coefficient of the B slots (the
 #     resistivity) comes from the residuals of the induction equation alone,
-#     η = max(0, min(C_max Δ λ, C_R Δ² max_{i∈B} ‖R_i‖/den_i)), with the same cap and
+#     η = max(0, min(C_max Δ λ, C_1 Δ² max_{i∈B} ‖R_i‖/den_i)), with the same cap and
 #     floor; ρ, ρv, E and ψ keep the max over all equations. With ONE coefficient
 #     (Dao & Nazarov) an acoustic or slow-mode front in a low-β plasma, whose ρ and
 #     thermal residuals are O(c_s/Δ) while B hardly changes, makes the field as
@@ -1684,7 +1684,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  wt::NTuple{3,TT},
                                  connijk::AbstractArray{TI,4},
                                  Δelem::AbstractVector{TT},
-                                 γ::TT, Pr_t::TT, CR::TT, Cmax::TT,
+                                 γ::TT, Pr_t::TT, C1::TT, Cmax::TT,
                                  comm,
                                  nelem::Int, ngl::Int;
                                  lglobal_norms::Bool=false,
@@ -1911,7 +1911,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         end
         ρ_el /= TT(ngl*ngl)
 
-        μ_res = CR*Δ*Δ*_dsgs_cut(ratio, cutoff)
+        μ_res = C1*Δ*Δ*_dsgs_cut(ratio, cutoff)
         μ_max = Cmax*Δ*wmax
         μ_c   = max(zero(TT), min(μ_max, μ_res))    # kinematic, m²/s (residual, capped)
         μ     = μ_c
@@ -1940,7 +1940,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         end
         _dsgs_record!(ratio, μ)          # running maxima over the run (_DSGS_RUN_STATS)
         # resistivity: the same μ, or (linduction) the one of the induction residuals alone
-        μ_B = linduction ? max(max(zero(TT), min(μ_max, CR*Δ*Δ*_dsgs_cut(ratioB, cutoff))), μ_floor) : μ
+        μ_B = linduction ? max(max(zero(TT), min(μ_max, C1*Δ*Δ*_dsgs_cut(ratioB, cutoff))), μ_floor) : μ
         μ_B = min(μ_B, μ_stab)
         # (lflowcap, :dsgs_eta_flow_cap) capped at the first-order diffusivity of the frozen-in field,
         # C_max Δ ‖v‖∞,e, the flow speed alone: B is carried by v, and the fast speed of the cap above
@@ -2605,7 +2605,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  γ::TT, Cmax::TT,
                                  comm,
                                  nelem::Int, ngl::Int;
-                                 CR::TT=one(TT),
+                                 C1::TT=one(TT),
                                  lglobal_norms::Bool=false,
                                  llocal_norms::Bool=false,
                                  local_rel::TT=one(TT),
@@ -2776,7 +2776,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         end
 
         μ_max   = Cmax*Δ*wmax
-        μ_res   = CR*Δ*Δ*_dsgs_cut(ratio, cutoff)
+        μ_res   = C1*Δ*Δ*_dsgs_cut(ratio, cutoff)
         μ_c     = max(zero(TT), min(μ_max, μ_res))           # kinematic, residual-based, capped
         μ_floor = Cmin > zero(TT) ? Cmin*Δ*wmax : zero(TT)
         μ       = max(μ_c, μ_floor)
@@ -2789,7 +2789,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         end
         _dsgs_record!(ratio, μ)
         # resistivity: the same μ, or (linduction, :dsgs_induction_sensor) the one of the induction residuals
-        μ_B = linduction ? max(max(zero(TT), min(μ_max, CR*Δ*Δ*_dsgs_cut(ratioB, cutoff))), μ_floor) : μ
+        μ_B = linduction ? max(max(zero(TT), min(μ_max, C1*Δ*Δ*_dsgs_cut(ratioB, cutoff))), μ_floor) : μ
         μ_B = min(μ_B, μ_stab)
         νp = νphys === nothing ? zero(TT) : νphys[ie]
         ηp = ηphys === nothing ? zero(TT) : ηphys[ie]
@@ -2860,7 +2860,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  wt::NTuple{3,TT},
                                  connijk::AbstractArray{TI,4},
                                  Δx::AbstractVector{TT},
-                                 γ::TT, Pr_t::TT, CR::TT, Cmax::TT,
+                                 γ::TT, Pr_t::TT, C1::TT, Cmax::TT,
                                  comm,
                                  nelem::Int, ngl::Int;
                                  lglobal_norms::Bool=false,
@@ -3008,7 +3008,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         end
         ρ_el /= TT(ngl)
 
-        μ_res = CR*Δ*Δ*_dsgs_cut(ratio, cutoff)
+        μ_res = C1*Δ*Δ*_dsgs_cut(ratio, cutoff)
         μ_max = Cmax*Δ*wmax
         μ_c   = max(zero(TT), min(μ_max, μ_res))
         μ_fl  = Cmin > zero(TT) ? Cmin*Δ*wmax : zero(TT)
@@ -3049,7 +3049,7 @@ end
 # is the classical S̄), the residual ratio R_i = max over the equations of
 # R_i/n_i (eq. 4.8, with the n²/(n²+ε) guard), and
 #
-#     ν_i = min(C_max h_i λ_max,i,  C_R h_i² R_i)      (eq. 4.10),   h_i = Δ_K/(k+1)
+#     ν_i = min(C_max h_i λ_max,i,  C_1 h_i² R_i)      (eq. 4.10),   h_i = Δ_K/(k+1)
 #
 # at every node, floored at Cmin h_i λ_i as in the element kernel. ν is then a
 # continuous (C⁰, "DSS'd") field: the element loop interpolates the nodal
@@ -3083,7 +3083,7 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                                        wt::NTuple{3,TT},
                                        connijk::AbstractArray{TI,4},
                                        Δx::AbstractVector{TT},
-                                       γ::TT, Pr_t::TT, CR::TT, Cmax::TT, Cl::TT,
+                                       γ::TT, Pr_t::TT, C1::TT, Cmax::TT, Cl::TT,
                                        comm,
                                        nelem::Int, ngl::Int, npoin::Int;
                                        lglobal_norms::Bool=false,
@@ -3201,7 +3201,7 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
         λ   = sqrt(ul*ul + vl*vl + wl*wl) + cf
         h   = hnod[ip]
 
-        ν_c = max(zero(TT), min(Cmax*h*λ, CR*h*h*ratio))
+        ν_c = max(zero(TT), min(Cmax*h*λ, C1*h*h*ratio))
         ν   = Cmin > zero(TT) ? max(ν_c, Cmin*h*λ) : ν_c
         _dsgs_record!(r0, ν)
         ν_d = ρl*ν
@@ -3456,7 +3456,7 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                                        wt::NTuple{3,TT},
                                        connijk::AbstractArray{TI,4},
                                        Δelem::AbstractVector{TT},
-                                       γ::TT, Pr_t::TT, CR::TT, Cmax::TT, Cl::TT,
+                                       γ::TT, Pr_t::TT, C1::TT, Cmax::TT, Cl::TT,
                                        comm,
                                        nelem::Int, ngl::Int, npoin::Int;
                                        lglobal_norms::Bool=false,
@@ -3508,7 +3508,7 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
         λ  = sqrt(ul*ul + vl*vl + wl*wl) + cf
         h  = hnod[ip]
 
-        ν_c = max(zero(TT), min(Cmax*h*λ, CR*h*h*ratio))
+        ν_c = max(zero(TT), min(Cmax*h*λ, C1*h*h*ratio))
         ν_f = Cmin > zero(TT) ? Cmin*h*λ : zero(TT)
         ν   = max(ν_c, ν_f)
         _dsgs_record!(r0, ν)
@@ -3571,7 +3571,7 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                                        connijk::AbstractArray{TI,4},
                                        Δelem::AbstractVector{TT},
                                        PhysConst::PhysicalConst{TT},
-                                       Pr::TT, CR::TT, Cmax::TT, Cl::TT,
+                                       Pr::TT, C1::TT, Cmax::TT, Cl::TT,
                                        comm,
                                        nelem::Int, ngl::Int, npoin::Int;
                                        ltheta::Bool=true,
@@ -3623,7 +3623,7 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
         end
         λ  = sqrt(ul*ul + vl*vl) + c
         h  = hnod[ip]
-        ν_c = max(zero(TT), min(Cmax*h*λ, CR*h*h*ratio))
+        ν_c = max(zero(TT), min(Cmax*h*λ, C1*h*h*ratio))
         ν   = Cmin > zero(TT) ? max(ν_c, Cmin*h*λ) : ν_c
         μd  = ρl*ν
         if ltheta
@@ -3657,7 +3657,7 @@ end
 # CG/DG spectral elements), in the form of the Euler and MHD kernels of
 # this file:
 #
-#     ν_res|e = C_R · Δ² · max_i ‖R_i‖∞,e / ‖δq_i − ⟨δq_i⟩‖∞,Ω
+#     ν_res|e = C_1 · Δ² · max_i ‖R_i‖∞,e / ‖δq_i − ⟨δq_i⟩‖∞,Ω
 #     ν_max|e = C_max · Δ · (‖v‖ + √(gH))∞,e
 #     ν|e     = max(ν_floor, max(0, min(ν_max, ν_res))),  ν_floor = C_min Δ (‖v‖ + √(gH))∞,e
 #
@@ -3694,7 +3694,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  wt::NTuple{3,TT},
                                  connijk::AbstractArray{TI,4},
                                  Δelem::AbstractVector{TT},
-                                 g::TT, hmin::TT, CR::TT, Cmax::TT,
+                                 g::TT, hmin::TT, C1::TT, Cmax::TT,
                                  comm,
                                  nelem::Int, ngl::Int;
                                  lglobal_norms::Bool=false,
@@ -3770,7 +3770,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
             vl = q[ip,3]/Hd
             wmax = max(wmax, sqrt(ul*ul + vl*vl) + sqrt(g*Hc))
         end
-        ν_res = CR*Δ*Δ*_dsgs_cut(ratio, cutoff)
+        ν_res = C1*Δ*Δ*_dsgs_cut(ratio, cutoff)
         ν_max = Cmax*Δ*wmax
         ν     = max(zero(TT), min(ν_max, ν_res))
         ν     = Cmin > zero(TT) ? max(ν, Cmin*Δ*wmax) : ν
@@ -3813,7 +3813,7 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                                        wt::NTuple{3,TT},
                                        connijk::AbstractArray{TI,4},
                                        Δelem::AbstractVector{TT},
-                                       g::TT, hmin::TT, CR::TT, Cmax::TT, Cl::TT,
+                                       g::TT, hmin::TT, C1::TT, Cmax::TT, Cl::TT,
                                        comm,
                                        nelem::Int, ngl::Int, npoin::Int;
                                        lglobal_norms::Bool=false,
@@ -3859,7 +3859,7 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
         vl = q[ip,3]/Hd
         λ  = sqrt(ul*ul + vl*vl) + sqrt(g*Hc)
         h  = hnod[ip]
-        ν_c = max(zero(TT), min(Cmax*h*λ, CR*h*h*ratio))
+        ν_c = max(zero(TT), min(Cmax*h*λ, C1*h*h*ratio))
         ν   = Cmin > zero(TT) ? max(ν_c, Cmin*h*λ) : ν_c
         for ieq = 1:neqs
             μ_pnode[ip,ieq] = visc_coeff[ieq]*ν

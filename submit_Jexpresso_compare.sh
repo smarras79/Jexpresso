@@ -74,7 +74,7 @@ export SV_TEND=${SV_TEND:-0.5}
 # Δt PER CASE, from the deck's CFL rule, refined WITH the mesh. One step for
 # the whole sweep is right when only the space discretization is compared —
 # a plain Galerkin study — but wrong with the residual viscosity on: nu is
-# C_R h^2 R, and at a FIXED step R stops falling once it reaches its time
+# C_1 h^2 R, and at a FIXED step R stops falling once it reaches its time
 # floor, so nu stalls and every RV curve bends to slope h^2 as soon as its
 # spatial error drops under it. That is what caps P6 and P7 at p = 2.6 and
 # 2.4 while their Galerkin curves hold 5.7 and 9.6.

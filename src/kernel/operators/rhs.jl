@@ -1388,10 +1388,10 @@ end
 #
 # The sensor. The "legacy" sensor reads |R| = 1.5(1 − cᵢ)|∂ₜq| at stage i: 1.5|∂ₜq| at the first
 # stage, Σbᵢ·1.5(1 − cᵢ) = 0.75|∂ₜq| in the stage mean of any scheme of order ≥ 2 (Σbᵢcᵢ = ½).
-# The same coefficient needs :dsgs_CR halved (the "residual" sensor, a residual at tⁿ, does not).
+# The same coefficient needs :dsgs_C1 halved (the "residual" sensor, a residual at tⁿ, does not).
 # That is the leading order: R = −1.5(1 − cᵢ)∂ₜq + V with V the viscous tendency, which weighs
 # more at the later stages, so where the DynSGS is at work the five-stage mean is nearer 0.9
-# (problems/MHD/fluxEmergenceLeake2010/README.md: 0.6 C_R reproduces the five-stage run best).
+# (problems/MHD/fluxEmergenceLeake2010/README.md: 0.6 C_1 reproduces the five-stage run best).
 #
 # The step clock. "The first stage of a step" cannot be read off `time` alone: the time loop
 # shortens a step to land on an output time, and the grid of the steps after it is shifted. The
@@ -1841,7 +1841,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                 dsgs_wt,
                                 params.mesh.connijk, params.mesh.Δx,
                                 Int(nelem), Int(ngl);
-                                CR   = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_CR,   1.0)),
+                                C1   = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_C1,   1.0)),
                                 Cmax = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_Cmax, 0.5)),
                                 Cmin = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_Cmin, 0.0)),
                                 cutoff = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_cutoff, 0.0)),
@@ -1876,7 +1876,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                           params.mesh.connijk, params.mesh.Δx,
                                           TT(get(params.inputs, :dsgs_gamma, 5.0/3.0)),
                                           TT(get(params.inputs, :dsgs_Prt,   0.7)),
-                                          TT(get(params.inputs, :dsgs_CR,    1.0)),
+                                          TT(get(params.inputs, :dsgs_C1,    1.0)),
                                           TT(get(params.inputs, :dsgs_Cmax,    0.5)),
                                           TT(get(params.inputs, :dsgs_Cl,    0.0)),
                                           get_mpi_comm(),
@@ -1896,7 +1896,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                     params.mesh.connijk, params.mesh.Δx,
                                     TT(get(params.inputs, :dsgs_gamma, 5.0/3.0)),
                                     TT(get(params.inputs, :dsgs_Prt,   0.7)),
-                                    TT(get(params.inputs, :dsgs_CR,    1.0)),
+                                    TT(get(params.inputs, :dsgs_C1,    1.0)),
                                     TT(get(params.inputs, :dsgs_Cmax,    0.5)),
                                     get_mpi_comm(),
                                     Int(nelem), Int(ngl);
@@ -2029,7 +2029,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                           params.mesh.connijk, params.mesh.Δelem,
                                           TT(get(params.inputs, :dsgs_gamma, 5.0/3.0)),
                                           TT(get(params.inputs, :dsgs_Prt,   0.7)),
-                                          TT(get(params.inputs, :dsgs_CR,    1.0)),
+                                          TT(get(params.inputs, :dsgs_C1,    1.0)),
                                           TT(get(params.inputs, :dsgs_Cmax,    0.5)),
                                           TT(get(params.inputs, :dsgs_Cl,    0.0)),
                                           get_mpi_comm(),
@@ -2051,7 +2051,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                     params.mesh.connijk, params.mesh.Δelem,
                                     TT(get(params.inputs, :dsgs_gamma, 5.0/3.0)),
                                     TT(get(params.inputs, :dsgs_Prt,   0.7)),
-                                    TT(get(params.inputs, :dsgs_CR,    1.0)),
+                                    TT(get(params.inputs, :dsgs_C1,    1.0)),
                                     TT(get(params.inputs, :dsgs_Cmax,    0.5)),
                                     get_mpi_comm(),
                                     Int(params.mesh.nelem), Int(params.mesh.ngl);
@@ -2193,7 +2193,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                           dsgs_wt,
                                           params.mesh.connijk, params.mesh.Δelem,
                                           g_TT, hmin_TT,
-                                          TT(get(params.inputs, :dsgs_CR,   1.0)),
+                                          TT(get(params.inputs, :dsgs_C1,   1.0)),
                                           TT(get(params.inputs, :dsgs_Cmax, 0.5)),
                                           TT(get(params.inputs, :dsgs_Cl,   0.0)),
                                           get_mpi_comm(),
@@ -2209,7 +2209,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                     dsgs_wt,
                                     params.mesh.connijk, params.mesh.Δelem,
                                     g_TT, hmin_TT,
-                                    TT(get(params.inputs, :dsgs_CR,   1.0)),
+                                    TT(get(params.inputs, :dsgs_C1,   1.0)),
                                     TT(get(params.inputs, :dsgs_Cmax, 0.5)),
                                     get_mpi_comm(),
                                     Int(params.mesh.nelem), Int(params.mesh.ngl);
@@ -2265,7 +2265,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                           dsgs_wt,
                                           params.mesh.connijk, params.mesh.Δelem,
                                           PHYS_CONST, Pr_TT,
-                                          TT(get(params.inputs, :dsgs_CR, 1.0)),
+                                          TT(get(params.inputs, :dsgs_C1, 1.0)),
                                           TT(get(params.inputs, :dsgs_Cmax, 0.5)),
                                           TT(get(params.inputs, :dsgs_Cl, 0.0)),
                                           get_mpi_comm(),
@@ -2283,7 +2283,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                     params.mesh.connijk, params.mesh.Δelem,
                                     PHYS_CONST, Pr_TT,
                                     Int(params.mesh.nelem), Int(params.mesh.ngl);
-                                    CR   = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_CR,   1.0)),
+                                    C1   = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_C1,   1.0)),
                                     Cmax = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_Cmax, 0.5)),
                                     Cmin = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_Cmin, 0.0)),
                                     cutoff = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_cutoff, 0.0)),
@@ -2694,7 +2694,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                 TT(get(params.inputs, :dsgs_Cmax,  0.5)),
                                 get_mpi_comm(),
                                 Int(params.mesh.nelem), Int(params.mesh.ngl);
-                                CR            = TT(get(params.inputs, :dsgs_CR, 1.0)),
+                                C1            = TT(get(params.inputs, :dsgs_C1, 1.0)),
                                 lglobal_norms = params.dsgs_global_norms,
                                 llocal_norms  = params.dsgs_local_norms,
                                 local_rel     = TT(get(params.inputs, :dsgs_local_rel, 1.0)),
@@ -2764,7 +2764,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                 params.mesh.connijk, params.mesh.Δelem,
                                 PHYS_CONST, Pr_TT,
                                 Int(params.mesh.nelem), Int(params.mesh.ngl);
-                                CR   = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_CR,   1.0)),
+                                C1   = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_C1,   1.0)),
                                 Cmax = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_Cmax, 0.5)),
                                 Cmin = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_Cmin, 0.0)),
                                 cutoff = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_cutoff, 0.0)),

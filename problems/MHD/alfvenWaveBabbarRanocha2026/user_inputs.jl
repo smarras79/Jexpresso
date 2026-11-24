@@ -157,7 +157,7 @@ function user_inputs()
         :μ                => [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         :visc_model       => DSGS_MHD(),
         :dsgs_sensor      => _aw_sensor(),
-        :dsgs_CR          => 1.0,
+        :dsgs_C1          => 1.0,
         :dsgs_Cmax        => 0.5,
         :dsgs_Cmin        => _aw_cmin(),   # 0: a floor would add an O(h) error
         :dsgs_cutoff      => _aw_cutoff(), # the BDF2 floor of the residual, see AW_CUTOFF
