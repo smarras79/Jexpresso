@@ -193,9 +193,9 @@ end
 # the kinetic energy is 5-50 times the internal energy (dome of a velocity-form run, 2185-2530 s):
 # every hit brakes and heats that node, and the rows of nodes that sit at the floor drain
 # differently from the rows beside them. "velocity": the added mass moves with the node's velocity
-# and has its temperature (ρv and the internal energy scaled with ρ), as more of the same plasma, as
-# long as it is at most the node's own mass (ρ ≥ ρ_min/2); a node that nearly emptied in one stage is
-# braked and cooled as by the default, by 2ρ/ρ_min instead of ρ/ρ_min.
+# and has its temperature (ρv and the internal energy scaled with ρ), as more of the same plasma, in
+# the corona (where ρ_min ≥ 0.1 ρ_e) and for up to 1 % of the node's mass per stage; elsewhere, and for
+# a node that nearly emptied in one stage, the default.
 if !@isdefined(lk10_floor_keepv)
     const lk10_floor_keepv = Ref{Bool}(false)
 end
@@ -239,14 +239,17 @@ function lk10_positivity_limiter!(u, integrator, p, t)
         if ρ < ρmin
             d = 1.0 - ρ/ρmin
             d > worst[1] && (worst = (d, 1.0, X[1,ip], X[2,ip], ρ/ρmin))
-            if lk10_floor_keepv[] && ρ > 0.0
-                # the added mass at the node's velocity and temperature (JEXPRESSO_LK10_RHOFLOOR=velocity), up to
-                # twice the node's own mass: a node that nearly emptied in one stage has neither (m/ρ and p/ρ of a
-                # vanishing ρ), and keeping them would inject them amplified by ρmin/ρ (a restart from 2185 s went
-                # non-finite in 4 steps that way). Beyond that the velocity and temperature fall as 2ρ/ρmin, the
-                # default floor's ρ/ρmin doubled.
+            if lk10_floor_keepv[] && ρ > 0.0 && ρmin >= 0.1*qe[ip,1]
+                # the added mass at the node's velocity and temperature (JEXPRESSO_LK10_RHOFLOOR=velocity), where
+                # the floor is a fair share of the reference density (≥ 0.1 ρ_e: the corona above ~3.75 Mm, where
+                # drained plasma reaches it; below, it sits 15-700 times under ρ_e and catches only nodes that
+                # nearly emptied), and up to 1 % of the node's mass per stage: plasma draining at 20 km/s loses
+                # ~3e-4 of a node per stage, while a node that nearly emptied in one stage has no velocity or
+                # temperature worth keeping (m/ρ, p/ρ of a vanishing ρ). Beyond that the velocity and temperature
+                # fall as 1.01ρ/ρmin, the default's ρ/ρmin. Kept without these bounds (or up to 2), restarts from
+                # 2185 s went non-finite, in the chromosphere (1-3 Mm) both times.
                 s   = ρmin/ρ
-                se  = min(s, 2.0)
+                se  = min(s, 1.01)
                 ke0 = 0.5*(u[iρu]^2 + u[iρv]^2 + u[iρw]^2)/ρ
                 me0 = 0.5*(u[iBx]^2 + u[iBy]^2 + u[iBz]^2) + 0.5*u[iψ]^2
                 ei0 = u[iE] - ke0 - me0

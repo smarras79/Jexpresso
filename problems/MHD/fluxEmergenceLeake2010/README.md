@@ -342,21 +342,24 @@ paper's dissipation and its energy relaxation:
   ($v$ by $\rho/\rho_{min}$) and the kinetic energy it loses becomes heat there. In
   the drained dome the kinetic energy is 5–50 times the internal energy, so every
   hit brakes and heats its node, and a row of nodes held at the floor drains
-  differently from the rows beside it. `velocity`: the added mass moves with the
-  node's velocity and has its temperature, as more of the same plasma (momentum and
-  energy added with it), as long as that is at most the node's own mass
-  ($\rho \ge \rho_{min}/2$); a node that nearly emptied in one stage has no
-  velocity or temperature worth keeping ($m/\rho$, $p/\rho$ of a vanishing $\rho$) and is
-  braked and cooled as by the default, by $2\rho/\rho_{min}$ instead of $\rho/\rho_{min}$.
-  Without that bound a restart of the run below from 2185 s went non-finite in four
-  steps. Evidence for it (`elements` on the `EINT=lowbeta` run of 23 Nov at 2530 s):
-  where the elements on the lines $x = -2, 0, 2$ Mm hold nodes at the density floor
-  (1–8 of their 25), the node-to-node part of the vertical velocity is 9–29 km/s,
-  where they hold none 0.1–8 km/s, while the velocity form's stress varies by
-  0.6–1.5 from one element to the next there: the floor brakes the rows it holds
-  against the draining rows beside them. In the drained-hole tests the floor fires
-  on plasma nearly at rest and the two give the same statistics; a restart reports
-  the change (`rho_floor`).
+  differently from the rows beside it. Evidence (`elements` on the `EINT=lowbeta`
+  run of 23 Nov at 2530 s): where the elements on the lines $x = -2, 0, 2$ Mm hold
+  nodes at the density floor (1–8 of their 25), the node-to-node part of the
+  vertical velocity is 9–29 km/s, where they hold none 0.1–8 km/s, while the
+  velocity form's stress varies by 0.6–1.5 from one element to the next there.
+  `velocity`: the added mass moves with the node's velocity and has its
+  temperature, as more of the same plasma, where the floor is a fair share of the
+  reference density ($\rho_{min} \ge 0.1\rho_e$, the corona above ~3.75 Mm, where
+  drained plasma reaches it) and for up to 1 % of the node's mass per stage
+  (plasma draining at 20 km/s loses ~3×10⁻⁴ of a node per stage). Below the
+  corona the floor sits 15–700 times under $\rho_e$ and catches only nodes that
+  nearly emptied, whose $m/\rho$ and $p/\rho$ are not worth keeping; there, and for a
+  larger refill, the default. Kept everywhere without a bound, a restart from
+  2185 s went non-finite in four steps; with a bound of twice the node's mass,
+  after 236 steps, at $x$ = 14–16 Mm, 1–3 Mm high (under the quadrupole's
+  strongest field); the same restart with the default floor ran to 2530 s. In the
+  drained-hole tests the floor fires on plasma nearly at rest and all variants
+  give the same statistics; a restart reports the change (`rho_floor`).
 
   *Restarts* hold no DynSGS steps with the legacy sensor (`:dsgs_hold_steps`). A run
   starts with the coefficient at zero for two steps while the history of the
