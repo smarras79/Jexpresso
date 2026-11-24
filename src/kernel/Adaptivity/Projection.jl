@@ -3260,6 +3260,9 @@ end
 
 ngl_of(mesh) = Int(mesh.ngl)
 
+# RT heating (micro.flux_sw, flux_lw) is nodal (length npoin) only in runs that allocate it; otherwise a placeholder
+rt_heating_carried(params) = length(params.mp.flux_sw) == size(params.uaux, 1) && length(params.mp.flux_lw) == size(params.uaux, 1)
+
 # Moves per-(element, direction) arrays (an RT solution, Dict{(iel,d) => Vector}) along a redistribution glue, as
 # redistributed_q! moves nodal fields. Needs the same number of directions on every element (else nothing: cold start).
 function redistributed_elem_dict(old, glue, nel_old::Int, nel_new::Int, ngl::Int)
@@ -3325,9 +3328,6 @@ function redistributed_q!(u, u_old, glue_redistribute, connijk, old_connijk, ngl
     end
     
     u2recv, u2recver = send_and_receive(u2send, u2owner, comm)
-# RT heating (micro.flux_sw, flux_lw) is nodal (length npoin) only in runs that allocate it; otherwise a placeholder
-rt_heating_carried(params) = length(params.mp.flux_sw) == size(params.uaux, 1) && length(params.mp.flux_lw) == size(params.uaux, 1)
-
 
     id2recv = local_views(lids_rcv).item_ref[]
     cnt = 1

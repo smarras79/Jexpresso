@@ -346,11 +346,10 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
     if do_lw
         κ_lw, σ_lw = atmos_to_rad_longwave(atmos_data, mesh.npoin)
         lw = LWParams(inputs[:RT_ϵ_surface], inputs[:RT_T_space])
+        lw_top_setup!(mesh, atmos_data, bdy, inputs, comm)   # :RT_lw_top_bc (:column default | :vacuum), lw_top_column.jl
         # Lateral treatment (lw_lateral.jl):
         #   :RT_lw_lateral_bc    :blackbody (σT_back⁴/π on real walls) | :plane_parallel (local-column 1D radiance)
         #   :RT_lw_periodic_mode :periodic | :walls (periodic faces become walls with local-column 1D inflow)
-        lw_top_setup!(mesh, atmos_data, bdy, inputs, comm)   # :RT_lw_top_bc (:column default | :vacuum), lw_top_column.jl
-        lw_top_setup!(mesh, atmos_data, bdy, inputs, comm)   # :RT_lw_top_bc (:vacuum default | :column), lw_top_column.jl
         #   :RT_lw_cold_init     :zero | :walls (cold solve starts from the :walls solution, then solves periodic)
         #                        | :column_mean (cold solve starts from the plane-parallel horizontal-mean column; default)
         #                        | :column_local (cold solve starts from each node's own column: ICA)
