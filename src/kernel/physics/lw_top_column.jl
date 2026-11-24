@@ -1,11 +1,11 @@
-# ── LW top boundary from the atmosphere above the lid (opt-in: :RT_lw_top_bc => :column) ────────────────────────────
+# ── LW top boundary from the atmosphere above the lid (:RT_lw_top_bc => :column, the default) ──────────────────────
 #
-# By default the LW top boundary is a vacuum-like isotropic σT_space⁴/π (T_space = :RT_T_space, default 0 K). That is
-# right only at the real top of the atmosphere: with the gray LW optics of atmos_to_rad_longwave the air above a low
+# :RT_lw_top_bc => :vacuum gives the old vacuum-like isotropic σT_space⁴/π (T_space = :RT_T_space, default 0 K). That
+# is right only at the real top of the atmosphere: with the gray LW optics of atmos_to_rad_longwave the air above a low
 # lid is opaque (BOMEX, 3 km lid: optical depth ≈ 5 above it, downward flux ≈ 340 W/m², σT_lid⁴ ≈ 359 W/m²), so the
 # vacuum lid cools the top of the domain strongly (≈ −90 K/day at the BOMEX lid).
 #
-# With :RT_lw_top_bc => :column, every RT call builds a 1-D column above the lid and uses its downward radiance
+# With :RT_lw_top_bc => :column (default since 2026-11-24), every RT call builds a 1-D column above the lid and uses its downward radiance
 # I↓(μ) at the lid as the top inflow, for each direction cosine μ = |cos θ|:
 #   - lid state: domain mean of T, p and water vapour over the top-boundary nodes (collective);
 #   - profile above the lid (:RT_lw_top_profile):
@@ -105,33 +105,18 @@ end
 """
     lw_top_setup!(mesh, atmos_data, bdy, inputs, comm)
 
-Collective. Sets LW_TOP_FN for this RT call: nothing for :RT_lw_top_bc => :vacuum (default), else the downward
-radiance at the lid of the column above it (memoised per μ).
+Collective. Sets LW_TOP_FN for this RT call: the downward radiance at the lid of the column above it (memoised per μ;
+:RT_lw_top_bc => :column, the default), or nothing for :vacuum (σT_space⁴/π).
 """
 function lw_top_setup!(mesh, atmos_data, bdy, inputs, comm)
-    mode = Symbol(get(inputs, :RT_lw_top_bc, :vacuum))
+    mode = Symbol(get(inputs, :RT_lw_top_bc, :column))
     mode in (:vacuum, :column) || error(":RT_lw_top_bc must be :vacuum or :column")
     if mode == :vacuum
         LW_TOP_FN[] = nothing
         return nothing
     end
-    r_mol = 18.015e-3 / 28.964e-3
-    acc = zeros(5)                                     # ΣT, Σp, Σqv, n, z
-    for ip = 1:mesh.npoin
-        bdy.is_top(mesh.z[ip]) || continue
-        acc[1] += atmos_data.t_current[ip]; acc[2] += atmos_data.p_lay[ip]
-        acc[3] += atmos_data.vmr_h2o[ip] * r_mol; acc[4] += 1; acc[5] = max(acc[5], mesh.z[ip])
-    end
-    s = MPI.Allreduce(acc[1:4], MPI.SUM, comm); zl = MPI.Allreduce(acc[5], MPI.MAX, comm)
-    s[4] > 0 || error("lw_top_setup!: no top-boundary nodes found")
-    T_lid, p_lid, qv_lid = s[1] / s[4], s[2] / s[4], s[3] / s[4]
-    z, T, p, qv = lw_top_profile(zl, T_lid, p_lid, qv_lid;
-                                 mode = Symbol(get(inputs, :RT_lw_top_profile, :standard)),
-                                 blend = Float64(get(inputs, :RT_lw_top_blend_m, 3000.0)),
-                                 lapse = Float64(get(inputs, :RT_lw_top_lapse, 6.5e-3)),
-                                 tmin = Float64(get(inputs, :RT_lw_top_tmin, 200.0)),
-                                 qv_scale = Float64(get(inputs, :RT_lw_top_qv_scale_m, 2000.0)),
-                                 dz = Float64(get(inputs, :RT_lw_top_dz_m, 25.0)))
+    zl, T_lid, p_lid, qv_lid = rt_lid_state(mesh, atmos_data, bdy, comm)
+    z, T, p, qv = rt_top_profile(inputs, zl, T_lid, p_lid, qv_lid)
     col = lw_top_column(z, T, p, qv)
     memo = Dict{Float64,Float64}()
     f = μ -> get!(memo, μ) do
@@ -147,6 +132,30 @@ function lw_top_setup!(mesh, atmos_data, bdy, inputs, comm)
     end
     return nothing
 end
+
+# Domain-mean state at the lid (collective): height, T, p, water-vapour mixing ratio over the top-boundary nodes
+function rt_lid_state(mesh, atmos_data, bdy, comm)
+    r_mol = 18.015e-3 / 28.964e-3
+    acc = zeros(4); ztop = -Inf
+    for ip = 1:mesh.npoin
+        bdy.is_top(mesh.z[ip]) || continue
+        acc[1] += atmos_data.t_current[ip]; acc[2] += atmos_data.p_lay[ip]
+        acc[3] += atmos_data.vmr_h2o[ip] * r_mol; acc[4] += 1; ztop = max(ztop, mesh.z[ip])
+    end
+    s = MPI.Allreduce(acc, MPI.SUM, comm); zl = MPI.Allreduce(ztop, MPI.MAX, comm)
+    s[4] > 0 || error("rt_lid_state: no top-boundary nodes found")
+    return zl, s[1] / s[4], s[2] / s[4], s[3] / s[4]
+end
+
+# The column above the lid shared by the LW and SW top conditions (settings :RT_lw_top_profile, :RT_lw_top_*)
+rt_top_profile(inputs, zl, T_lid, p_lid, qv_lid) =
+    lw_top_profile(zl, T_lid, p_lid, qv_lid;
+                   mode = Symbol(get(inputs, :RT_lw_top_profile, :standard)),
+                   blend = Float64(get(inputs, :RT_lw_top_blend_m, 3000.0)),
+                   lapse = Float64(get(inputs, :RT_lw_top_lapse, 6.5e-3)),
+                   tmin = Float64(get(inputs, :RT_lw_top_tmin, 200.0)),
+                   qv_scale = Float64(get(inputs, :RT_lw_top_qv_scale_m, 2000.0)),
+                   dz = Float64(get(inputs, :RT_lw_top_dz_m, 25.0)))
 
 # Gauss-Legendre nodes and weights on [0, 1]
 function gausslegendre_01(n::Int)

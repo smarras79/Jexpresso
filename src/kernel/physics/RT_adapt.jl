@@ -187,6 +187,11 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
         κ_ext_sw = κ_sw .+ σ_sw
         z_prof, τ_from_TOA = build_sw_lateral_bc_profile(mesh, κ_ext_sw, mesh.ngl)
         sw = SWParams(inputs[:RT_S0_flux], inputs[:RT_μ0], inputs[:RT_ϕ0], 0.35, z_prof, τ_from_TOA)
+        #   :RT_sw_top_bc        :column (default: the air above the lid attenuates the beam and sends diffuse light
+        #                        through the top, sw_top_column.jl) | :vacuum (beam enters the lid at S₀, no diffuse inflow)
+        att_top = sw_top_setup!(mesh, atmos_data, bdy, inputs, comm, κ_ext_sw, σ_sw, g_eff, inputs[:RT_S0_flux],
+                                inputs[:RT_μ0], inputs[:RT_ϕ0], inputs[:RT_surface_albedo])
+        att_top == 1.0 || (sw = SWParams(sw.S₀_flux * att_top, sw.μ₀, sw.φ₀, sw.δ_beam, sw.z_prof, sw.τ_from_TOA))
         #   :RT_sw_direct_beam   :slant (default: 3D path toward the sun traced element by element through the polynomial
         #                        extinction, sw_direct_beam.jl; adaptive / hanging-node / periodic box meshes) |
         #                        :reference_column (one central column's vertical τ for every node; exact only for
@@ -344,6 +349,7 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
         # Lateral treatment (lw_lateral.jl):
         #   :RT_lw_lateral_bc    :blackbody (σT_back⁴/π on real walls) | :plane_parallel (local-column 1D radiance)
         #   :RT_lw_periodic_mode :periodic | :walls (periodic faces become walls with local-column 1D inflow)
+        lw_top_setup!(mesh, atmos_data, bdy, inputs, comm)   # :RT_lw_top_bc (:column default | :vacuum), lw_top_column.jl
         lw_top_setup!(mesh, atmos_data, bdy, inputs, comm)   # :RT_lw_top_bc (:vacuum default | :column), lw_top_column.jl
         #   :RT_lw_cold_init     :zero | :walls (cold solve starts from the :walls solution, then solves periodic)
         #                        | :column_mean (cold solve starts from the plane-parallel horizontal-mean column; default)

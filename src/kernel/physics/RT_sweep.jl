@@ -459,6 +459,7 @@ function build_shortwave_diffuse_case(κ_sw::Vector{Float64}, σ_sw::Vector{Floa
         prof = build_sw_column_optics(mesh, κ_ext_sw, σ_sw, g_eff, mesh.ngl)
     end
     make_lat() = begin
+        SW_TOP[] !== nothing && return SW_TOP[].lat      # extended column (air above the lid + domain column), true S₀
         lateral_bc == :single_scatter ?
             SWLateralSingleScatter(prof, sw.S₀_flux, sw.μ₀, sw.φ₀, surface_albedo) :
             build_sw_lateral_plane_parallel(prof, sw.S₀_flux, sw.μ₀, sw.φ₀, surface_albedo)
@@ -470,7 +471,8 @@ function build_shortwave_diffuse_case(κ_sw::Vector{Float64}, σ_sw::Vector{Floa
         if bdy.is_bottom(z)
             surface_albedo * F_dir[ip] / π
         elseif bdy.is_top(z)
-            0.0
+            st = SW_TOP[]                        # :RT_sw_top_bc => :column: diffuse light from the air above the lid
+            st === nothing ? 0.0 : st.lat(st.z_lid, θ, ϕ)
         elseif lateral_bc in (:single_scatter, :plane_parallel)
             lat_ref[] === nothing && (lat_ref[] = make_lat())
             lat_ref[](z, θ, ϕ)
