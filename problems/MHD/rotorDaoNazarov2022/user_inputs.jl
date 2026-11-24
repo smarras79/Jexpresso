@@ -22,17 +22,19 @@ function user_inputs()
         :interpolation_nodes  => "lgl",
         #---------------------------------------------------------------------------
         # DynSGS in its conserved form: one ν per element and ∇·(ν∇q) on every conserved variable, with the
-        # legacy residual normalized per element (the low-pressure interior is judged on its own scales).
-        # ρ or p that still undershoot are fixed by the conservative element limiter (:positivity_method).
-        # :dsgs_gamma must equal γ_mhd = 1.4 (user_flux.jl).
+        # residual sensor (each element's own residual, the coefficient computed once per step) normalized
+        # over the whole domain. ρ or p that still undershoot are fixed by the conservative element limiter
+        # (:positivity_method). :dsgs_gamma must equal γ_mhd = 1.4 (user_flux.jl).
+        # Until Nov 2026 this deck ran the legacy sensor with element norms; README.md records what the
+        # domain norms did with that sensor.
         #---------------------------------------------------------------------------
         :lvisc                => true,
         :μ                    => [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         :visc_model           => DSGS_MHD(),
-        :dsgs_sensor          => "legacy",
+        :dsgs_sensor          => "residual",
         :dsgs_rel             => 1.0,
         :dsgs_hold_steps      => 2,
-        :dsgs_norms           => "element",
+        :dsgs_norms           => "domain",
         :dsgs_C1              => 1.0,
         :dsgs_Cmax            => 0.5,
         :dsgs_gamma           => 1.4,

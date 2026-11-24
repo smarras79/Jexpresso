@@ -34,7 +34,7 @@ function user_inputs()
         :dsgs_Cmin            => 0.0,
         :dsgs_cutoff          => 0.0,
         :dsgs_hold_steps      => 0,
-        :dsgs_norms           => "element",   # the beam's p is 5.6e-6 of E: only an element scale sees its noise
+        :dsgs_norms           => "domain",    # whole domain; "element" until Nov 2026 (README.md, "Why element norms")
         :dsgs_rel             => 1.0,
         :dsgs_fast_floors     => true,     # floors on c_f = √((γp + |B|²)/ρ): β_a = 1e-2, c_f/c = 12
         :dsgs_gamma           => 1.4,

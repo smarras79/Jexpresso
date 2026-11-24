@@ -245,7 +245,6 @@ JEXPRESSO_SV_NOP=4 JEXPRESSO_SV_NELX=16 julia --project=. src/Jexpresso.jl MHD s
 | `JEXPRESSO_SV_SOLVER` | `ck54` | time integrator |
 | `JEXPRESSO_SV_TEND` | 1.0 | final time |
 | `JEXPRESSO_SV_VISC` | `dsgs` | `none` for the plain Galerkin run |
-| `JEXPRESSO_SV_SENSOR` | `residual` | `legacy` for the assembled-rate sensor |
 | `JEXPRESSO_SV_CUTOFF` | $10^{-3}$ | `:dsgs_cutoff`; 0 for none |
 | `JEXPRESSO_SV_HOLD` | 2 | `:dsgs_hold_steps` |
 | `JEXPRESSO_SV_BDF` | 2 | `:dsgs_bdf_order`, the order of the residual sensor's backward difference (1 to 6) |
@@ -253,7 +252,6 @@ JEXPRESSO_SV_NOP=4 JEXPRESSO_SV_NELX=16 julia --project=. src/Jexpresso.jl MHD s
 | `JEXPRESSO_SV_C1`, `JEXPRESSO_SV_CMAX` | 1, 0.5 | `:dsgs_C1`, `:dsgs_Cmax`; both zero keeps the sensor and applies no viscosity |
 | `JEXPRESSO_SV_CMIN` | 0 | the background floor `:dsgs_Cmin` |
 | `JEXPRESSO_SV_REL` | 1 | `:dsgs_rel`, the normalization floor; `1e-3` is what the kernels used before the fix of 11 Sep |
-| `JEXPRESSO_SV_NORMS` | `domain` | `:dsgs_norms`; `rank` makes the answer depend on the rank count, `element` normalizes per element |
 | `JEXPRESSO_SV_PLOT_NOPS` | — | as `SV_PLOT_NOPS` |
 
 **The meshes** come from one parameterized `vortex_periodic.geo`;

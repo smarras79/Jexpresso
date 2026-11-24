@@ -95,12 +95,13 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc            => true,
         :μ                => [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-        # DynSGS sensor: "legacy" = the sensor this case was validated with
-        # (the assembled RHS against a fixed BDF2 of the stage state, in
-        # effect a |∂ₜq| sensor); "residual" (the default) = the element-wise
-        # strong residual with the stage-consistent stencil, DSGS.md §1.2.
+        # DynSGS sensor "residual": each element's own strong residual,
+        # BDF2(qⁿ, qⁿ⁻¹, qⁿ⁻²) − RHS_e/M_e, with the coefficient computed once
+        # per step at tⁿ (:dsgs_freeze_stage, on by default with this sensor).
+        # Until Nov 2026 this deck ran "legacy" (the assembled RHS against a
+        # BDF2 of the stage state, in effect a |∂ₜq| sensor).
         :visc_model       => DSGS_MHD(),
-        :dsgs_sensor      => "legacy",
+        :dsgs_sensor      => "residual",
         :dsgs_C1          => 1.0,
         :dsgs_Cmax        => 0.5,
         # Background floor of 3% of the wave-speed cap: the residual sensor
@@ -125,16 +126,16 @@ function user_inputs()
         # Pr = 1 as in their runs.
         :dsgs_Prt         => 1.0,
         :dsgs_nazarov_energy => true,
-        # Stratification variants of the model (kernel/physics/SGS.jl): the
-        # residual is normalized per element, not by the domain spread that
-        # the 10⁸-times denser photosphere sets (the sensor was blind to the
-        # corona and a grid-scale sawtooth grew across the transition
-        # region), and the dynamic coefficient uses the nodal density, not
-        # the element mean (which over-diffuses the light side of a
-        # stratified element by ρ̄/ρ, up to 25 at the transition region,
-        # past the explicit viscous limit).
-        :dsgs_norms       => "element",   # residual normalized per element ("domain": the whole domain)
-        :dsgs_local_rel   => 1.0,   # floor of the element spread = the local ρ, ρc, ρc², √ρc themselves (see SGS.jl)
+        # The residual is normalized by the spread over the whole domain. Until
+        # Nov 2026 this deck normalized it per element instead (SGS.jl,
+        # llocal_norms): the domain spread is set by the 10⁸-times denser
+        # photosphere, and with it the sensor was blind to the corona and a
+        # grid-scale sawtooth grew across the transition region (measured with
+        # the setup of that time). The dynamic coefficient of the physical form
+        # would use the nodal density, not the element mean (which
+        # over-diffuses the light side of a stratified element by ρ̄/ρ, up to
+        # 25 at the transition region, past the explicit viscous limit).
+        :dsgs_norms       => "domain",  # residual normalized over the whole domain
         :dsgs_conserved   => true,  # Laplacian on the conserved variables (user_primitives.jl); implies no nodal-ρ scaling
         :dsgs_ref_weight  => true,  # ... of the RELATIVE departure (q − q_e)/ρ_e, coefficient μ·ρ_e (see top of file)
         :dsgs_nodal_rho   => true,  # (inactive with :dsgs_conserved; kept for the physical-form variant)

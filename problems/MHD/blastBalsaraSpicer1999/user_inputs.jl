@@ -23,19 +23,21 @@ function user_inputs()
         :nop                  => 4,
         #---------------------------------------------------------------------------
         # DynSGS in its conserved form: one ν per element and ∇·(ν∇q) on every conserved variable, with the
-        # legacy residual normalized per element; ρ or p that still undershoot are fixed by the conservative
-        # element limiter. As problems/MHD/rotorDaoNazarov2022, plus fast-speed floors, the thermal-energy
-        # residual and no startup hold.
+        # residual sensor (each element's own residual, the coefficient computed once per step) normalized
+        # over the whole domain; ρ or p that still undershoot are fixed by the conservative element limiter.
+        # As problems/MHD/rotorDaoNazarov2022, plus fast-speed floors, the thermal-energy residual and no
+        # startup hold. Until Nov 2026 this deck ran the legacy sensor with element norms (README.md,
+        # "Sensor: legacy, not residual", compares the two sensors with element norms).
         #---------------------------------------------------------------------------
         :lvisc                => true,
         :μ                    => [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         :visc_model           => DSGS_MHD(),
-        :dsgs_sensor          => "legacy",
+        :dsgs_sensor          => "residual",
         :dsgs_rel             => 1.0,
         :dsgs_fast_floors     => true,     # floors on c_f = √((γp + |B|²)/ρ): ambient β = 2.5e-4, c_f/c = 75
         :dsgs_thermal_residual => true,    # R of ρe: catches the B ripple at the fast front that empties p (README)
         :dsgs_hold_steps      => 0,        # ν from the first step: the initial jump is the most violent instant
-        :dsgs_norms           => "element",
+        :dsgs_norms           => "domain",
         :dsgs_C1              => 1.0,
         :dsgs_Cmax            => 0.5,
         :dsgs_gamma           => 1.4,

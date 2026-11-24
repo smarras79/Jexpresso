@@ -92,7 +92,6 @@ _ev_c1()    = (v = get(ENV, "JEXPRESSO_EV_C1", "");
 _ev_cmax()  = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_CMAX",  "")), 0.5)
 _ev_rel()   = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_REL",   "")), 1.0)
 _ev_visc()  = lowercase(strip(get(ENV, "JEXPRESSO_EV_VISC",  "dsgs")))
-_ev_norms() = lowercase(strip(get(ENV, "JEXPRESSO_EV_NORMS", "domain")))
 
 # The time integrator. As on the MHD case, a fourth-order one is not what
 # limits these runs — see the note by _sv_solver in
@@ -182,13 +181,14 @@ function user_inputs()
         :lvisc            => (_ev_visc() != "none"),
         :μ                => [1.0, 1.0, 1.0, 1.0],
         :visc_model       => DSGS(),
-        # "residual" (default) or "legacy", the assembled M^-1.RHS sensor:
-        # JEXPRESSO_EV_SENSOR. Which one is used decides what the coefficient
-        # measures on a SMOOTH solution — the element-local form reads the
-        # inter-element jump of a dt-proportional grid-scale residue, which the
-        # assembly cancels (measured here: far from the vortex the element
-        # term is 18x the assembled rate, and both halve when dt halves).
-        :dsgs_sensor      => get(ENV, "JEXPRESSO_EV_SENSOR", "residual"),
+        # "residual": the element-local strong residual. Compared with the
+        # former "legacy" sensor (the assembled M^-1.RHS), it is what the
+        # coefficient measures on a SMOOTH solution that differs — the
+        # element-local form reads the inter-element jump of a dt-proportional
+        # grid-scale residue, which the assembly cancels (measured here: far
+        # from the vortex the element term is 18x the assembled rate, and both
+        # halve when dt halves).
+        :dsgs_sensor      => "residual",
         :dsgs_C1          => _ev_c1(),
         :dsgs_Cmax        => _ev_cmax(),
         :dsgs_Cmin        => _ev_cmin(),   # no background floor: it would be an
@@ -196,7 +196,7 @@ function user_inputs()
                                            # smooth solution (see the README)
         :dsgs_Prt         => 0.7,
         :dsgs_rel         => _ev_rel(),
-        :dsgs_norms       => _ev_norms(),
+        :dsgs_norms       => "domain",
         # :dsgs_freeze_stage, the coefficient once per step instead of once
         # per stage, is mod_inputs.jl's default with the residual sensor: it
         # is what keeps the residual, and with it nu, from stalling at O(dt)
