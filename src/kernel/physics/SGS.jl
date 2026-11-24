@@ -1512,6 +1512,46 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
     return nothing
 end
 
+# :dsgs_rho_sensor — the node-to-node part of the density of an element (compute_dsgs_viscosity!,
+# DSGS_MHD 2D). On the LGL nodes of degree N the coefficient of P_N of a nodal line f is
+# (N/2) Σ_j ω_j P_N(ξ_j) f_j with P_N(ξ_j) = (−1)^(N−j) √(2/(N(N+1)ω_j)) (the LGL weights are
+# 2/(N(N+1)P_N(ξ_j)²) and the nodes the extrema of P_N), so the quadrature weights are all it needs.
+# _dsgs_pn_weights returns those weights over ln 10 (the mode of log₁₀ f from Σ w_j ln f_j);
+# _dsgs_logrho_mode the largest |mode| of log₁₀(ρ/ρ_ref) over the 2·ngl lines of element ie [dex].
+const _DSGS_NO_PNW = Float64[]
+const _DSGS_PNW    = Ref{Any}(nothing)
+function _dsgs_pn_weights(ω::AbstractVector{TT}, ngl::Int) where {TT<:AbstractFloat}
+    c = _DSGS_PNW[]
+    (c !== nothing && length(c) == ngl && eltype(c) == TT) && return c::Vector{TT}
+    N = ngl - 1
+    w = Vector{TT}(undef, ngl)
+    for j = 1:ngl
+        sgn = iseven(N - (j - 1)) ? one(TT) : -one(TT)
+        w[j] = TT(N)/2*ω[j]*sgn*sqrt(TT(2)/(TT(N*(N + 1))*ω[j]))/log(TT(10))
+    end
+    _DSGS_PNW[] = w
+    return w
+end
+@inline function _dsgs_logrho_mode(q::AbstractMatrix{TT}, qref::Union{Nothing,AbstractMatrix},
+                                   connijk::AbstractArray{TI,4}, pnw::AbstractVector,
+                                   ie::Int, ngl::Int) where {TT<:AbstractFloat, TI<:Integer}
+    a = zero(TT)
+    tiny = floatmin(TT)
+    @inbounds for l = 1:ngl
+        cξ = zero(TT); cη = zero(TT)
+        for m = 1:ngl
+            iξ = connijk[ie,m,l,1]; iη = connijk[ie,l,m,1]
+            rξ = max(q[iξ,1], tiny); rη = max(q[iη,1], tiny)
+            if qref !== nothing
+                rξ /= TT(qref[iξ,1]); rη /= TT(qref[iη,1])
+            end
+            cξ += TT(pnw[m])*log(rξ); cη += TT(pnw[m])*log(rη)
+        end
+        a = max(a, abs(cξ), abs(cη))
+    end
+    return a
+end
+
 # ================================================================================
 # Marras-Nazarov Dynamic SGS (DynSGS) — 2D, ideal GLM-MHD (nine fields)
 #
@@ -1706,8 +1746,12 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  Δgap::Union{Nothing,AbstractVector{TT}}=nothing,
                                  Δt::TT=zero(TT),
                                  νphys::Union{Nothing,AbstractVector{TT}}=nothing,
-                                 ηphys::Union{Nothing,AbstractVector{TT}}=nothing) where {TT<:AbstractFloat, TI<:Integer}
+                                 ηphys::Union{Nothing,AbstractVector{TT}}=nothing,
+                                 rhosens::Union{Nothing,NTuple{3,TT}}=nothing,
+                                 qref::Union{Nothing,AbstractMatrix}=nothing) where {TT<:AbstractFloat, TI<:Integer}
     _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
+    # :dsgs_rho_sensor: the weights that give the highest Legendre mode of log10 of a nodal line
+    pnw = rhosens === nothing ? _DSGS_NO_PNW : _dsgs_pn_weights(ω, ngl)
 
     neqs = size(μ_dsgs, 2)
     NRES = min(neqs, 8)          # residual max excludes the ψ slot
@@ -1794,6 +1838,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         ratioB = zero(TT)     # the same over the B slots only (linduction)
         wmax  = zero(TT)      # (‖v‖ + c_f)∞,e
         umax  = zero(TT)      # ‖v‖∞,e (lflowcap)
+        umax2 = zero(TT)      # the in-plane speed's ‖(u, v)‖∞,e (:dsgs_rho_sensor)
         ρ_el  = zero(TT)      # element-mean density
         den_th = one(TT)      # thermal-energy normalization (lth)
 
@@ -1897,6 +1942,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                 cf = sqrt(max(γ*pl/ρl + B2/ρl, zero(TT)))
                 wmax  = max(wmax, sqrt(ul*ul + vl*vl + wl*wl) + cf)
                 umax  = max(umax, sqrt(ul*ul + vl*vl + wl*wl))
+                umax2 = max(umax2, sqrt(ul*ul + vl*vl))
                 ρ_el += ρl
                 if lth   # R_ρe = R_E − v·R_m + ½|v|² R_ρ − B·R_B − ψ R_ψ
                     Rth = _dsgs_rsig(q, q1, q2, rhs_el, wt, imK, ip, ie, i, j, 4) +
@@ -1962,6 +2008,22 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         # needs it — the LGL undershoot of that contact goes below the 1e-8
         # of its light side as soon as it is displaced (fluxEmergenceSon2025).
         μ_dsgs[ie,1] = visc_coeff[1]*μ                             # ρ
+        if rhosens !== nothing
+            # :dsgs_rho_sensor = (a₀, a₁, C): where the density of the element has a node-to-node part —
+            # the highest Legendre mode of log₁₀(ρ/ρ_e) along any of its lines, a: a contact it cannot
+            # resolve, or the wiggle one leaves behind — the mass slot gets the first-order diffusivity
+            # of a field carried by the flow, C Δ ‖(u, v)‖∞, ramped from a = a₀ to a₁ and held to the
+            # stability limit. The residual sensor hardly sees a contact (it moves with the flow, at a
+            # pressure that does not change), and with :μ[1] < 1 the density has a fraction of what it
+            # sets: a row of nodes at an element face in a steep, sheared edge then loses its mass to its
+            # neighbours within a minute (problems/MHD/fluxEmergenceLeake2010, README, "The density
+            # sensor"). Nothing where the density is smooth or the plasma at rest.
+            aw = _dsgs_logrho_mode(q, qref, connijk, pnw, ie, ngl)
+            Sw = (aw - rhosens[1])/(rhosens[2] - rhosens[1])
+            if Sw > zero(TT)
+                μ_dsgs[ie,1] = max(μ_dsgs[ie,1], min(rhosens[3]*Δ*umax2*min(Sw, one(TT)), μ_stab))
+            end
+        end
         if lconserved
             # Laplacian on the CONSERVED variables (the case's user_primitives!
             # returns ρ, ρu, ρv, E, ρw, B, ψ themselves, rhs.jl drops the τ·u
@@ -2155,10 +2217,12 @@ function _dsgs_energy_consistent_2d!(rhs_diff_el::AbstractArray{TT}, μ_dsgs::Ab
                                      nelem::Int, ngl::Int, lcurlB::Bool;
                                      νphys::Union{Nothing,AbstractVector}=nothing,
                                      ηphys::Union{Nothing,AbstractVector}=nothing,
-                                     lvel::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
+                                     lvel::Bool=false,
+                                     μstab::Union{Nothing,AbstractVector}=nothing) where {TT<:AbstractFloat, TI<:Integer}
     fheat  = TT(dsgs_heat_factor[])
     lshock = dsgs_heat_shock[]
     lvisc  = dsgs_heat_viscous[]
+    lnode  = lvel && μstab !== nothing
     @inbounds for ie = 1:nelem
         μu = μ_dsgs[ie,2]; μv = μ_dsgs[ie,3]; μw = μ_dsgs[ie,5]
         ηx = μ_dsgs[ie,6]; ηy = μ_dsgs[ie,7]; ηz = μ_dsgs[ie,8]; μψ = μ_dsgs[ie,9]
@@ -2166,6 +2230,8 @@ function _dsgs_energy_consistent_2d!(rhs_diff_el::AbstractArray{TT}, μ_dsgs::Ab
         # the rest of the viscosity is the stress ρ_e s_min (μ − μ_ρ)₊ ∇v, _dsgs_velocity_viscosity_2d! below)
         smin = lvel ? _dsgs_smin_2d(q, qe, connijk, ie, ngl) : one(TT)
         μρ   = lvel ? μ_dsgs[ie,1] : zero(TT)
+        # (:dsgs_velocity_weight => "node": the stress weighs node q with ρ_e min(s_q, h s_min), as the kernel below)
+        scap = lnode ? _dsgs_scap(smin, max(μu - μρ, μv - μρ, μw - μρ, zero(TT)), μρ, TT(μstab[ie])) : smin
         # the explicit ν, η riding in μ_dsgs (dsgs_heat_shock: they heat, the DynSGS part by compression only)
         νp = (lshock && νphys !== nothing) ? TT(νphys[ie]) : zero(TT)
         ηp = ((lshock || lvisc) && ηphys !== nothing) ? TT(ηphys[ie]) : zero(TT)
@@ -2206,7 +2272,8 @@ function _dsgs_energy_consistent_2d!(rhs_diff_el::AbstractArray{TT}, μ_dsgs::Ab
             ρe  = TT(qe[ip,1])
             if lvel
                 # what the two terms dissipate: (ρ μ_ρ + ρ_e s_min (μ − μ_ρ)₊) |∇v|², never negative
-                ρe *= smin
+                # (lnode: ρ_e min(s, h s_min) for ρ_e s_min)
+                ρe = lnode ? ρe*min(q[ip,1]/ρe, scap) : ρe*smin
                 dmudx = dudx; dmudy = dudy; dmvdx = dvdx; dmvdy = dvdy; dmwdx = dwdx; dmwdy = dwdy
                 gu = dudx*dudx + dudy*dudy; gv = dvdx*dvdx + dvdy*dvdy; gw = dwdx*dwdx + dwdy*dwdy
                 Dm = q[ip,1]*μρ*(gu + gv + gw) +
@@ -2418,6 +2485,21 @@ end
 # _dsgs_energy_consistent_2d!(lvel = true) returns as heat. Called after the generic
 # assembly and before the energy slot, which reads the rates this leaves.
 #
+# `μstab` (:dsgs_velocity_weight => "node"; the element's stability limit stab·Δx²/Δt of
+# :dsgs_stab_cap): the stress weight of quadrature node q is ρ_e min(s_q, h s_min) instead of
+# ρ_e s_min, with h = max(1, (μ_stab − μ_ρ)/(μ − μ_ρ)₊): each node's own density, held to what
+# the element's lightest node can take at the stability limit. s_min spends none of the
+# margin between the coefficient and that limit (a factor 20–600 where the DynSGS is not on
+# its cap): one node drained to the floor inside plasma 300 times denser takes the stress of
+# the elements that share it down 300-fold, for the dense nodes too, and the heat of what is
+# left, uniform per volume, goes per unit mass to the light node. With the node's weight the
+# stress is ρ(μ − μ_ρ)∇v wherever the contrast across the element is below h, the heat per unit
+# mass is the same at every node there, and the light node is relaxed towards its neighbours at
+# no more than μ_stab; no node is diffused faster than the limit the coefficient is capped
+# for. In problems/MHD/fluxEmergenceLeake2010 (README, "The viscosity on the velocity") the
+# elements of the drained dome that hold a node below the reference density had a stress
+# coefficient 65 times smaller than the others and held the rows of its density maps.
+#
 # `check`: the mass slot's contributions are rebuilt from μ_ρ ρ_e ∇((ρ − ρ_e)/ρ_e) and
 # compared with what the generic assembly left in rhs_diff_el[:,:,:,1], and in the elements
 # where ρ/ρ_e is uniform to 10⁻¹² (there the two forms are one operator) the new momentum
@@ -2437,20 +2519,31 @@ const _DSGS_VELVISC_TRIES   = Ref{Int}(0)      # calls made in check mode (a ran
     end
     return smin
 end
+# :dsgs_velocity_weight => "node": the largest ρ/ρ_e a node is weighed with in the stress of an
+# element whose smallest is s_min, h s_min with h = max(1, (μ_stab − μ_ρ)/μ′), μ′ = (μ − μ_ρ)₊ the
+# largest stress coefficient of the element: the lightest node is then relaxed at μ_ρ + h μ′ ≤ μ_stab
+@inline function _dsgs_scap(smin::TT, μs::TT, μρ::TT, μst::TT) where {TT<:AbstractFloat}
+    μs > zero(TT) || return typemax(TT)
+    return smin*max(one(TT), (μst - μρ)/μs)
+end
 
 function _dsgs_velocity_viscosity_2d!(rhs_diff_el::AbstractArray{TT}, μ_dsgs::AbstractMatrix{TT},
                                       q::AbstractMatrix{TT}, qe::AbstractMatrix,
                                       connijk::AbstractArray{TI,4}, ω::AbstractVector, dψ::AbstractMatrix,
                                       Je::AbstractArray, dξdx::AbstractArray, dξdy::AbstractArray,
                                       dηdx::AbstractArray, dηdy::AbstractArray,
-                                      nelem::Int, ngl::Int; check::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
+                                      nelem::Int, ngl::Int; check::Bool=false,
+                                      μstab::Union{Nothing,AbstractVector}=nothing) where {TT<:AbstractFloat, TI<:Integer}
     errmax = zero(TT); refmax = zero(TT); errs = zero(TT); refs = zero(TT)
     chk = check ? zeros(TT, ngl, ngl) : zeros(TT, 0, 0)
     old = check ? zeros(TT, ngl, ngl, 3) : zeros(TT, 0, 0, 0)
+    lnode = μstab !== nothing
     @inbounds for ie = 1:nelem
         μρ = μ_dsgs[ie,1]
         μu = max(μ_dsgs[ie,2] - μρ, zero(TT)); μv = max(μ_dsgs[ie,3] - μρ, zero(TT)); μw = max(μ_dsgs[ie,5] - μρ, zero(TT))
         smin = _dsgs_smin_2d(q, qe, connijk, ie, ngl)
+        # (lnode) the largest ρ/ρ_e the stress may weigh a node with: h s_min
+        scap = lnode ? _dsgs_scap(smin, max(μu, μv, μw), μρ, TT(μstab[ie])) : smin
         if check
             for l = 1:ngl, k = 1:ngl
                 old[k,l,1] = rhs_diff_el[ie,k,l,2]; old[k,l,2] = rhs_diff_el[ie,k,l,3]; old[k,l,3] = rhs_diff_el[ie,k,l,5]
@@ -2485,7 +2578,7 @@ function _dsgs_velocity_viscosity_2d!(rhs_diff_el::AbstractArray{TT}, μ_dsgs::A
             ip  = connijk[ie,k,l,1]
             ρe  = TT(qe[ip,1])
             cm  = μρ*ρe                    # the momentum with the mass slot's coefficient
-            cs  = ρe*smin                  # the stress on the velocity gradient
+            cs  = lnode ? ρe*min(q[ip,1]/ρe, scap) : ρe*smin      # the stress on the velocity gradient
             ωJ  = ω[k]*ω[l]*Je[ie,k,l]
             fx = cm*(dmuξ*ξx + dmuη*ηxk) + cs*μu*(duξ*ξx + duη*ηxk); fy = cm*(dmuξ*ξy + dmuη*ηyk) + cs*μu*(duξ*ξy + duη*ηyk)
             aξu = (ξx*fx + ξy*fy)*ωJ; aηu = (ηxk*fx + ηyk*fy)*ωJ

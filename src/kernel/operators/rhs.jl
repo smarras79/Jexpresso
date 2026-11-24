@@ -2073,7 +2073,9 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                     stab            = TT(get(params.inputs, :dsgs_stab_cap, 0.0)),
                                     Δgap            = get(params.inputs, :dsgs_stab_cap, 0.0) > 0 ? _dsgs_elem_gap(params.mesh, TT) : nothing,
                                     Δt              = TT(params.Δt),
-                                    νphys = νphys2d, ηphys = ηphys2d)
+                                    νphys = νphys2d, ηphys = ηphys2d,
+                                    rhosens = _dsgs_rho_sensor(params.inputs, TT),
+                                    qref    = dsgs_ref_weight[] ? qe : nothing)
             broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
                                      params.mesh.connijk,
                                      Int(params.mesh.nelem),
@@ -2116,6 +2118,15 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
         # viscosity on the velocity and of the momentum the mass diffusion carries (SGS.jl,
         # _dsgs_velocity_viscosity_2d!); the energy slot below returns what that stress dissipates
         lvelvisc = get(params.inputs, :dsgs_velocity_viscosity, false)::Bool
+        # :dsgs_velocity_weight => "node": the stress weighs each node with its own density, up to what the
+        # element's lightest node can take at the stability limit of :dsgs_stab_cap (SGS.jl, _dsgs_scap)
+        μstab_el = nothing
+        if lvelvisc && get(params.inputs, :dsgs_velocity_weight, "smin")::String == "node"
+            stabv = TT(get(params.inputs, :dsgs_stab_cap, 0.0))
+            (stabv > zero(TT) && params.Δt > 0) ||
+                error(" :dsgs_velocity_weight => \"node\" needs :dsgs_stab_cap > 0 (the stability limit it holds the lightest node to).")
+            μstab_el = _dsgs_elem_mustab(params.mesh, TT, stabv, TT(params.Δt))
+        end
         if lvelvisc
             (lnodal_mhd2d || !dsgs_ref_weight[] || !dsgs_thermal_energy[]) &&
                 error(" :dsgs_velocity_viscosity needs the reference-weighted conserved element form of DSGS_MHD with the ",
@@ -2125,7 +2136,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                         params.mesh.connijk, params.ω, params.basis.dψ, params.metrics.Je,
                                         params.metrics.dξdx, params.metrics.dξdy,
                                         params.metrics.dηdx, params.metrics.dηdy,
-                                        nelemB, Int(params.mesh.ngl); check = lchk)
+                                        nelemB, Int(params.mesh.ngl); check = lchk, μstab = μstab_el)
             if lchk && vref > 0
                 verr <= 1.0e-9*vref ||
                     error(" :dsgs_velocity_viscosity: the mass flux rebuilt from the state differs from the one assembled (", verr,
@@ -2136,7 +2147,8 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                 _DSGS_VELVISC_CHECKED[] = true
                 MPI.Comm_rank(get_mpi_comm()) == 0 &&
                     println(" # DynSGS viscosity on the velocity (:dsgs_velocity_viscosity), rank 0: the mass slot's flux is reproduced to ",
-                            round(Float64(verr/vref), sigdigits = 2), " of its largest contribution; where ρ/ρ_e is uniform the stress ",
+                            round(Float64(verr/vref), sigdigits = 2), " of its largest contribution",
+                            μstab_el === nothing ? "" : "; node weight (:dsgs_velocity_weight)", "; where ρ/ρ_e is uniform the stress ",
                             sref > 0 ? string("equals the one it replaces to ", round(Float64(serr/sref), sigdigits = 2)) :
                                        "could not be compared (no such element with a flow)")
             elseif lchk
@@ -2166,7 +2178,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                         params.metrics.dξdx, params.metrics.dξdy,
                                         params.metrics.dηdx, params.metrics.dηdy,
                                         nelemB, Int(params.mesh.ngl), lcurlB;
-                                        νphys = νphys2d, ηphys = ηphys2d, lvel = lvelvisc)
+                                        νphys = νphys2d, ηphys = ηphys2d, lvel = lvelvisc, μstab = μstab_el)
         end
         return
     end
@@ -2844,6 +2856,26 @@ end
 # :dsgs_stab_cap: the smallest gap between two adjacent LGL nodes of each element, the length of
 # the explicit diffusion limit μ Δt/Δx² (cached per mesh).
 const _DSGS_ELEM_GAP = Ref{Any}(nothing)
+# :dsgs_rho_sensor => (a₀, a₁, C) or nothing (SGS.jl): the tuple in the kernel's float type
+@inline function _dsgs_rho_sensor(inputs, ::Type{TT}) where {TT}
+    r = get(inputs, :dsgs_rho_sensor, nothing)
+    r === nothing && return nothing
+    return (TT(r[1]), TT(r[2]), TT(r[3]))
+end
+# stab·Δx²/Δt per element, Δx its smallest LGL gap: the diffusivity :dsgs_stab_cap holds the DynSGS
+# coefficient to (SGS.jl), for :dsgs_velocity_weight => "node". Kept between calls.
+const _DSGS_ELEM_MUSTAB = Ref{Any}(nothing)
+function _dsgs_elem_mustab(mesh, ::Type{TT}, stab::TT, Δt::TT) where {TT}
+    c = _DSGS_ELEM_MUSTAB[]
+    (c !== nothing && c[1] === mesh && c[2] == stab && c[3] == Δt && length(c[4]) == Int(mesh.nelem)) && return c[4]::Vector{TT}
+    g = _dsgs_elem_gap(mesh, TT)
+    m = Vector{TT}(undef, length(g))
+    @inbounds for ie in eachindex(g)
+        m[ie] = stab*g[ie]*g[ie]/Δt
+    end
+    _DSGS_ELEM_MUSTAB[] = (mesh, stab, Δt, m)
+    return m
+end
 function _dsgs_elem_gap(mesh, ::Type{TT}) where {TT}
     c = _DSGS_ELEM_GAP[]
     nelem = Int(mesh.nelem)

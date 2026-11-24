@@ -1267,7 +1267,7 @@ def drain_row(g, thr=-13.0, ymin=3.0, tfloor=0.1, rhofac=1.0, viscfac=1.0, vform
         mur = (rhofac / viscfac) * mud                          # the mass slot's coefficient
         Rr = L2(re * mur, r / re)
         along = lambda fx, fy: (bx * fx + by * fy) / np.maximum(r * G_CODE * by, 1e-300)
-        if vform == "velocity" and _sem_ok(Xc) and _sem_ok(Yc):
+        if vform.startswith("velocity") and _sem_ok(Xc) and _sem_ok(Yc):
             # JEXPRESSO_LK10_VISC=velocity (SGS.jl, _dsgs_velocity_viscosity_2d!): the momentum is diffused with the
             # mass slot's coefficient, the rest of the viscosity is a stress rho_e s_min (mu - mu_rho)+ grad v
             sr = r / re
@@ -1341,8 +1341,9 @@ def cmd_drain(a):
         forms[os.path.basename(os.path.normpath(d))] = _case_value(d, "visc_form", "momentum")
     print(f"plasma with log10 rho > {a.thr:g} in {a.ymin:g} < y < 20 Mm, |x| < 13 Mm; mass in units of the "
           f"{'reference run' if a.ref else 'first snapshot'}'s whole box ({M0:.3g} g/cm); fractions of its mass")
-    if any(v == "velocity" for v in forms.values()):
-        print("   viscosity on the velocity (JEXPRESSO_LK10_VISC=velocity) in: " + ", ".join(k for k, v in forms.items() if v == "velocity")
+    if any(v.startswith("velocity") for v in forms.values()):
+        print("   viscosity on the velocity (JEXPRESSO_LK10_VISC=velocity or nodal; evaluated with the s_min weight, a lower bound "
+              "of the stress for nodal) in: " + ", ".join(k for k, v in forms.items() if v.startswith("velocity"))
               + "; visc, nu and shear are those of that operator there")
     print(f"{'t [s]':>7} {'mass':>8} | {'T med K':>8} {'floor':>6} {'<2e4 K':>6} {'>=2e4':>6} | {'beta>1':>6} {'flat':>6} | "
           f"{'v down':>7} {'support':>7} {'visc':>6} {'nu':>6} {'shear':>6} {'p+visc':>6} | {'mu':>7} {'@floor':>7} {'off':>7}")
@@ -1538,7 +1539,9 @@ def heat_fields(g, thr, ymin, ymax, rhofac, mcz, ch, relax=True, relax_ymin=-np.
                ((2.0 * ux - vy) / 3.0, ux), ((2.0 * vy - ux) / 3.0, vy))
     lare = sum(Lc * r * (LARE_VISC1 * cf + LARE_VISC2 * Lc * np.abs(sij)) * sij * dij for sij, dij in strains)
     lare = np.maximum(lare, 0.0)
-    Rr = div2(re * rhofac * mud, r / re)                 # the DynSGS mass diffusion
+    mrn = next((n for n in ("mu_dsgs_ρ",) if n in g["fields"]), None)
+    mur = G(mrn) if mrn else rhofac * mud                # the mass slot's coefficient (its own field where it has one:
+    Rr = div2(re * mur, r / re)                          # JEXPRESSO_LK10_RHOFAC < 1, _RHOSENS), else rho_factor x mu
     # the energy relaxation to the internal energy the reference atmosphere has at the height of the same density
     yt = np.linspace(min(float(np.min(yc)), -200.0), float(np.max(yc)), 20001)
     rt, pt = _ref_atmos(yt, mcz)
@@ -1633,7 +1636,7 @@ def cmd_heat(a):
     if a.ymin < 0.0:
         raise SystemExit("heat: --ymin must be >= 0: below the photosphere the case's viscosity is dynamic (nu/rho_e)")
     items = runs_of(a.run)
-    names = ["log10rho_cgs", "ρ", "p", "T", "u", "v", "w", "Bz", "ψ", MU_NAME, *ETA_NAMES]
+    names = ["log10rho_cgs", "ρ", "p", "T", "u", "v", "w", "Bz", "ψ", MU_NAME, "mu_dsgs_ρ", *ETA_NAMES]
     seen, rows, pairs = {}, [], []
     prev = None
     for t, f in items:
@@ -1659,7 +1662,7 @@ def cmd_heat(a):
           f"with the run's heating, mass-weighted mean [K per 100 s]; GLM: c_h = {a.ch:g}, dh = {F['dh']:.4g} (lattice); "
           f"Lare visc with its cell {a.lare_dx:g} Mm")
     for d in seen:
-        if _case_value(d, "visc_form", "momentum") == "velocity":
+        if _case_value(d, "visc_form", "momentum").startswith("velocity"):
             print(f"   {os.path.basename(os.path.normpath(d))}: viscosity on the velocity (JEXPRESSO_LK10_VISC=velocity); the nu and DSGS "
                   f"heat columns below are those of the momentum form, an upper bound there (rho for rho_e s_min)")
     for d, (rf, h, *_) in seen.items():
@@ -1726,6 +1729,61 @@ def cmd_column(a):
             j = int(np.argmin(np.abs(Y - yq)))
             print(f"{Y[j]:6.2f} {L[j]:8.2f} {T[j]:9.3g} {P[j] * P_PH_CGS:9.3g} {Bp[j] * B0_GAUSS:8.2f} {Bx[j] * B0_GAUSS:8.2f} "
                   f"{Bz[j] * B0_GAUSS:8.2f} {beta[j]:9.3g} {u[j]:8.2f} {v[j]:8.2f} {ang[j]:6.1f} {mu[j]:8.3g} {eta[j]:8.3g}")
+
+
+def cmd_massbudget(a):
+    """The mass budget node by node on a vertical line, for the stripes: at the snapshot nearest --time and on the mesh
+    column nearest each --x, for every node between --ylim (an element face is marked |):
+      s, s next   rho/rho_e at that snapshot and at the next one;
+      -d(ru)/dx, -d(rv)/dy   the advection of mass along x and along y, with the code's element derivatives
+                  averaged at the faces two elements share;
+      diffusion   the DynSGS mass diffusion, div(rho_e mu_rho grad(rho/rho_e)), with the mass slot's coefficient
+                  of the snapshot;
+      sum, observed   their sum, and the change of ln rho to the next snapshot;
+    all as rates of ln rho per 100 s (-100: the node would lose a factor e of its density in 100 s), then the
+    node-to-node part of log10(rho/rho_e) of the node's element along y [dex] (what JEXPRESSO_LK10_RHOSENS reads) and
+    the mass slot's coefficient. A stripe in the making is one row of nodes, at an element face, whose mass leaves
+    through -d(rv)/dy alone while the rows 50 km above and below it keep theirs, and to which the diffusion returns
+    a fraction (README, "The density sensor"). The next snapshot should be close (the off-grid outputs, 12-18 s
+    after 1380, 1610, 1955, 2070, 2185 s): over a longer interval the budget of one instant is not the change."""
+    items = runs_of(a.run)
+    k = int(np.argmin([abs(t - a.time) for t, _ in items]))
+    if k + 1 >= len(items):
+        raise SystemExit(f"massbudget: the snapshot nearest {a.time:g} s is the last one; give an earlier time")
+    (t1, f1), (t2, f2) = items[k], items[k + 1]
+    d0 = os.path.dirname(os.path.abspath(f1))
+    mcz = float(_case_value(d0, "mcz", "1.3"))
+    g0 = read_pvtu(f1, None)
+    mus = sorted(n for n in g0["fields"] if n.startswith("mu_dsgs"))
+    mu_m = next((n for n in mus if "ρu" in n), mus[0] if mus else None)
+    mu_r = next((n for n in mus if n == "mu_dsgs" or n.startswith("mu_dsgs_ρ_") or n == "mu_dsgs_ρ"), mu_m)
+    g = load(f1, ["ρ", "u", "v"] + ([mu_r] if mu_r else []))
+    g2 = load(f2, ["ρ"])
+    G = lambda n: grid2d(g, g["fields"][n])
+    r, u, v = G("ρ"), G("u"), G("v")
+    mur = G(mu_r) if mu_r else np.zeros_like(r)
+    r2 = grid2d(g2, g2["fields"]["ρ"])
+    xc, yc, X, Y = g["xc"], g["yc"], g["X"], g["Y"]
+    if r2.shape != r.shape or not (_sem_ok(xc) and _sem_ok(yc)):
+        raise SystemExit("massbudget: needs two snapshots on the same tensor-product LGL lattice")
+    re = _ref_atmos(yc, mcz)[0][:, None] * np.ones_like(r)
+    per100 = 100.0 / T0_S
+    ax = -_sem_d(r * u, xc, 1) / r * per100
+    ay = -_sem_d(r * v, yc, 0) / r * per100
+    df = (_sem_dcd(re * mur, r / re, xc, 1) + _sem_dcd(re * mur, r / re, yc, 0)) / r * per100
+    obs = np.log(np.maximum(r2, 1e-300) / r) / (t2 - t1) * 100.0
+    hy = _highmode(np.log10(r / re), axis=0)
+    print(f"--- t = {t1:.0f} s ({os.path.basename(f1)}) against the change to {t2:.0f} s ({os.path.basename(f2)}, {t2 - t1:.0f} s later); "
+          f"rates of ln rho per 100 s; mass coefficient: {mu_r}")
+    for xq in a.x:
+        i = int(np.argmin(np.abs(X - xq)))
+        print(f"   x = {X[i]:.2f} Mm (node column {i}: {'an element face' if i % 4 == 0 else 'inside an element'})")
+        print(f"   {'y Mm':>6} {'s':>9} {'s next':>9} | {'-d(ru)/dx':>9} {'-d(rv)/dy':>9} {'diffusion':>9} {'sum':>8} | {'observed':>8} | "
+              f"{'n2n dex':>7} {'mu_rho':>7}")
+        for j in range(len(Y)):
+            if a.ylim[0] <= Y[j] <= a.ylim[1]:
+                print(f" {'|' if j % 4 == 0 else ' '} {Y[j]:6.3f} {r[j, i] / re[j, i]:9.3f} {r2[j, i] / re[j, i]:9.3f} | {ax[j, i]:9.1f} {ay[j, i]:9.1f} "
+                      f"{df[j, i]:9.1f} {ax[j, i] + ay[j, i] + df[j, i]:8.1f} | {obs[j, i]:8.1f} | {hy[j, i]:7.3f} {mur[j, i]:7.4f}")
 
 
 # The erratum's Fig. 3 (Leake et al. 2011, ApJ 741:125) by height: its colours turned back into log10 rho
@@ -2209,6 +2267,12 @@ def main():
     s.add_argument("--x", type=float, default=0.0, help="the vertical line, x [Mm] (default 0)")
     s.add_argument("--ymin", type=float, default=0.0); s.add_argument("--ymax", type=float, default=16.0)
     s.add_argument("--dy", type=float, default=0.5, help="height step of the table [Mm]")
+    s = sub.add_parser("massbudget", parents=[common]); s.set_defaults(fn=cmd_massbudget)
+    s.add_argument("run")
+    s.add_argument("--time", type=float, default=2185.0, help="the snapshot nearest this time [s] (default 2185); the next one gives the change")
+    s.add_argument("--x", type=lambda t: [float(v) for v in t.split(",")], default=[-2.0, 2.0],
+                   help="the vertical lines [Mm], comma-separated (default -2,2)")
+    s.add_argument("--ylim", type=lambda t: tuple(map(float, t.split(","))), default=(3.0, 5.7))
     s = sub.add_parser("profile", parents=[common]); s.set_defaults(fn=cmd_profile)
     s.add_argument("run")
     s.add_argument("--times", type=lambda t: [float(x) for x in t.split(",")], default=[1955.0, 2185.0, 2530.0],

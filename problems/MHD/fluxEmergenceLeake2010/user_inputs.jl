@@ -39,6 +39,11 @@
 #                            all equations (one coefficient, the parent case)    [induction]
 #   JEXPRESSO_LK10_RHOFAC    factor on the DynSGS mass diffusion (the :μ multiplier of the ρ
 #                            slot), a test of the plasma it carries across the field  [1]
+#   JEXPRESSO_LK10_RHOSENS   off | on | a0,a1,C: the mass slot of an element whose density has a
+#                            node-to-node part (the highest Legendre mode of log10(ρ/ρ_e), from
+#                            a0 to a1 dex) gets at least C Δ |(u, v)|, the first-order diffusivity
+#                            of a contact carried by the flow; on = 0.03,0.15,1 (README, "The
+#                            density sensor")                                   [off]
 #   JEXPRESSO_LK10_HEAT      what the heat the DynSGS dissipates does: "shock": only the
 #                            explicit ν, η and the DynSGS viscosity in compression heat;
 #                            "viscous": all the viscous dissipation and the explicit η heat,
@@ -50,9 +55,12 @@
 #   JEXPRESSO_LK10_VISCFAC   factor on the DynSGS viscosity (the :μ multipliers of the ρu,
 #                            ρv, ρw slots; after its caps, the case's ν untouched), a test
 #                            of its drag on the plasma that drains from the dome     [1]
-#   JEXPRESSO_LK10_VISC      momentum | velocity: the viscosity (DynSGS and ν) diffuses the
-#                            momentum ρv/ρ_e, or acts on the velocity gradient, with the
-#                            momentum of the mass the DynSGS diffuses (README, "The
+#   JEXPRESSO_LK10_VISC      momentum | velocity | nodal: the viscosity (DynSGS and ν)
+#                            diffuses the momentum ρv/ρ_e, or acts on the velocity gradient,
+#                            with the momentum of the mass the DynSGS diffuses; its stress
+#                            weighs every node of an element with the lightest one's
+#                            density (velocity) or each with its own, up to what the
+#                            lightest takes at the stability limit (nodal) (README, "The
 #                            viscosity on the velocity")                       [momentum]
 #   JEXPRESSO_LK10_EINT      off | lowbeta | all: the energy equation as the total energy's
 #                            own (off), or, where the internal energy is under 10⁻³…10⁻² of
@@ -154,6 +162,16 @@ function _lk10_stages()
     error(" problems/MHD/fluxEmergenceLeake2010: JEXPRESSO_LK10_DSGS_STAGES = \"$(w)\", expected all, 1,5 or 1.")
 end
 
+# JEXPRESSO_LK10_RHOSENS: nothing (off), or (a0, a1, C) (:dsgs_rho_sensor)
+function _lk10_rhosens()
+    v = lowercase(_lk10_env("RHOSENS", "off"))
+    v == "off" && return nothing
+    v == "on" && return (0.03, 0.15, 1.0)
+    p = [tryparse(Float64, strip(x)) for x in split(v, ",")]
+    (length(p) == 3 && all(x -> x !== nothing, p) && 0.0 <= p[1] < p[2] && p[3] >= 0.0) ||
+        error(" JEXPRESSO_LK10_RHOSENS must be off, on or a0,a1,C with 0 <= a0 < a1 and C >= 0 (got \"$(v)\").")
+    return (p[1], p[2], p[3])
+end
 function _lk10_heat()
     h = lowercase(_lk10_env("HEAT", "shock"))
     h in ("shock", "viscous") && return h
@@ -400,12 +418,18 @@ function user_inputs()
         # or all the viscous dissipation, as Lare's default tensor shock viscosity heats (viscous)
         # (JEXPRESSO_LK10_HEAT; README, "The heat of the DynSGS")
         :dsgs_heating         => _lk10_heat(),
+        # The mass diffusion where the density has a node-to-node part (SGS.jl, :dsgs_rho_sensor;
+        # README, "The density sensor"): the contacts the residual sensor does not see
+        :dsgs_rho_sensor      => _lk10_rhosens(),
         # Resistivity from the induction residuals alone (SGS.jl, linduction; README, "DynSGS in
         # the corona"): acoustic fronts in the low-β corona then do not make the field resistive.
         :dsgs_induction_sensor => _lk10_word("ETA", "induction", "all") == "induction",
         # The viscosity on the velocity gradient instead of the diffusion of ρv/ρ_e (SGS.jl,
         # _dsgs_velocity_viscosity_2d!; README, "The viscosity on the velocity"): opt-in while under test
-        :dsgs_velocity_viscosity => _lk10_word("VISC", "momentum", "velocity") == "velocity",
+        :dsgs_velocity_viscosity => _lk10_word("VISC", "momentum", "velocity", "nodal") != "momentum",
+        # ... its stress weighing each node with its own density, up to what the element's lightest node
+        # takes at the stability limit (VISC=nodal; SGS.jl, _dsgs_scap), or all with the lightest (velocity)
+        :dsgs_velocity_weight => _lk10_word("VISC", "momentum", "velocity", "nodal") == "nodal" ? "node" : "smin",
         # The energy slot where the internal energy is a small share of the total: the chain rule
         # of the kinetic and magnetic energies plus ∂ₜe + ∇·(e u) + p∇·u = S_e (rhs.jl,
         # _mhd_internal_energy_2d!; README, Positivity: "The internal energy where it is a small share");

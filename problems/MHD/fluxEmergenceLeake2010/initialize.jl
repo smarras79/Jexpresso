@@ -552,8 +552,15 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
                            join(st, " and "), length(st) > 1 ? ", held in between" : ", held over the step"),
                     "; never above a viscous number of $(get(inputs, :dsgs_stab_cap, 0.0)) (JEXPRESSO_LK10_DSGS_STAGES, _STABCAP)")
         end
+        get(inputs, :dsgs_rho_sensor, nothing) === nothing ||
+            println(" Density sensor (JEXPRESSO_LK10_RHOSENS): the mass slot gets at least ", inputs[:dsgs_rho_sensor][3],
+                    " Δ |(u, v)| where log10(ρ/ρ_e) has a node-to-node part of ", inputs[:dsgs_rho_sensor][1], " to ",
+                    inputs[:dsgs_rho_sensor][2], " dex")
         get(inputs, :dsgs_velocity_viscosity, false) == true &&
-            println(" Viscosity (DynSGS and ν): on the velocity gradient, with the momentum of the diffused mass (JEXPRESSO_LK10_VISC=velocity)")
+            println(" Viscosity (DynSGS and ν): on the velocity gradient, with the momentum of the diffused mass; stress weighted by ",
+                    get(inputs, :dsgs_velocity_weight, "smin") == "node" ?
+                        "each node's density, up to what the element's lightest node takes at the stability limit (JEXPRESSO_LK10_VISC=nodal)" :
+                        "the element's lightest node (JEXPRESSO_LK10_VISC=velocity)")
         println(" Initialize fields for 2.5D GLM-MHD flux emergence (Leake et al. 2010) ........... DONE")
         flush(stdout)
     end
@@ -595,7 +602,7 @@ lk10_restart_fields() = ["ρ", "u", "v", "w", "p", "Bx", "By", "Bz", "ψ"]
 # switches of lk10_numeric_keys (to continue past a failure from an earlier snapshot);
 # the restart says which changed.
 lk10_numeric_keys() = ("curl_resistivity", "Cmin", "floors", "dsgs_energy", "eta_sensor", "dsgs_sensor", "eta_cap", "eta_factor", "visc_factor", "visc_form",
-                         "rho_factor", "heating", "stab_cap", "dsgs_stages", "C1", "tfloor", "energy_form", "rho_floor")
+                         "rho_factor", "heating", "stab_cap", "dsgs_stages", "C1", "tfloor", "energy_form", "rho_floor", "rho_sensor")
 
 function lk10_case_record(inputs)
     return Pair{String,String}[
@@ -617,9 +624,11 @@ function lk10_case_record(inputs)
         "eta_cap"          => get(inputs, :dsgs_eta_flow_cap, false) == true ? "flow" : "fast",
         "eta_factor"       => string(Float64(get(inputs, :μ, ones(9))[6])),
         "visc_factor"      => string(Float64(get(inputs, :μ, ones(9))[2])),
-        "visc_form"        => get(inputs, :dsgs_velocity_viscosity, false) == true ? "velocity" : "momentum",
+        "visc_form"        => get(inputs, :dsgs_velocity_viscosity, false) != true ? "momentum" :
+                              (get(inputs, :dsgs_velocity_weight, "smin") == "node" ? "velocity, node weight" : "velocity"),
         "energy_form"      => (ef = String(get(inputs, :mhd_internal_energy, "off")); ef == "off" ? "total" : "internal where " * ef),
         "rho_factor"       => string(Float64(get(inputs, :μ, ones(9))[1])),
+        "rho_sensor"       => (rs = get(inputs, :dsgs_rho_sensor, nothing); rs === nothing ? "off" : join(rs, ",")),
         "stab_cap"         => string(Float64(get(inputs, :dsgs_stab_cap, 0.0))),
         "dsgs_stages"      => (st = get(inputs, :dsgs_stages, nothing); st === nothing ? "all" : join(st, ",")),
         "C1"               => string(Float64(get(inputs, :lk10_C1, 1.0))),
@@ -676,7 +685,7 @@ function lk10_record_mismatch(old::Dict{String,String}, rec; numerics::Bool=fals
         w = get(old, k, k == "partition" ? "uniform" : k == "dsgs_sensor" ? "legacy" : k == "eta_cap" ? "fast" :
                         k in ("eta_factor", "visc_factor", "rho_factor", "heating", "C1") ? "1.0" : k == "stab_cap" ? "0.0" :
                         k == "dsgs_stages" ? "all" : k == "tfloor" ? "0.1" : k == "visc_form" ? "momentum" :
-                        k == "energy_form" ? "total" : k == "rho_floor" ? "momentum" : "(not recorded)")
+                        k == "energy_form" ? "total" : k == "rho_floor" ? "momentum" : k == "rho_sensor" ? "off" : "(not recorded)")
         w == v || push!(bad, "$(k): $(w) there, $(v) here" *
                              (k == "partition" ? " (JEXPRESSO_LK10_PARTITION=$(w) to continue that run)" : ""))
     end

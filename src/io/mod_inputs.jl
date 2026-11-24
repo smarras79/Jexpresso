@@ -1255,6 +1255,12 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #                      where mass and momentum diffuse with one coefficient; with :μ[1] < 1, or an
     #                      explicit ν, the diffusion of ρv/ρ_e takes momentum out of dense plasma moving
     #                      through thin plasma (problems/MHD/fluxEmergenceLeake2010). Default false.
+    #   :dsgs_velocity_weight  with :dsgs_velocity_viscosity: the density the stress weighs a node with.
+    #                      "smin" (default): ρ_e s_min, the smallest ρ/ρ_e of the element for all its nodes.
+    #                      "node": ρ_e min(s, h s_min), each node's own density up to
+    #                      h = (μ_stab − μ_ρ)/(μ − μ_ρ) times the lightest, μ_stab the stability limit of
+    #                      :dsgs_stab_cap (which it needs): one drained node no longer takes the stress
+    #                      of its elements down with it (SGS.jl, _dsgs_scap).
     #   :dsgs_stab_cap     DSGS_MHD 2D and 3D, element form: the coefficient never above stab·Δx²/Δt, Δx the
     #                      smallest LGL gap of the element (0, the default: no cap). The first-order
     #                      cap C_max Δ (|v| + c_f) follows the fast speed, and an explicit step
@@ -1543,6 +1549,28 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
     if(!haskey(inputs, :mhd_internal_energy_fraction))
         inputs[:mhd_internal_energy_fraction] = (1.0e-3, 1.0e-2)
+    end
+    #   :dsgs_rho_sensor   DSGS_MHD 2D, element form: nothing (default), or (a₀, a₁, C). The mass slot of an
+    #                      element whose density has a node-to-node part — the highest Legendre mode of
+    #                      log₁₀(ρ/ρ_e) (log₁₀ ρ without :dsgs_ref_weight) along any of its lines, a [dex] —
+    #                      gets at least C Δ ‖(u, v)‖∞, the first-order diffusivity of a field carried by
+    #                      the flow, ramped from a = a₀ to a₁ and held to the limit of :dsgs_stab_cap: for
+    #                      the contacts that the residual sensor does not see and :μ[1] < 1 leaves
+    #                      under-damped (SGS.jl, _dsgs_logrho_mode; problems/MHD/fluxEmergenceLeake2010).
+    if haskey(inputs, :dsgs_rho_sensor) && inputs[:dsgs_rho_sensor] !== nothing
+        r = inputs[:dsgs_rho_sensor]
+        (r isa Tuple && length(r) == 3 && all(x -> x isa Real, r) && 0 <= r[1] < r[2] && r[3] >= 0) ||
+            error(" user_inputs.jl: :dsgs_rho_sensor must be nothing or (a0, a1, C) with 0 <= a0 < a1 and C >= 0 (got $(r)).")
+        inputs[:dsgs_rho_sensor] = (Float64(r[1]), Float64(r[2]), Float64(r[3]))
+    else
+        inputs[:dsgs_rho_sensor] = nothing
+    end
+    if(!haskey(inputs, :dsgs_velocity_weight))
+        inputs[:dsgs_velocity_weight] = "smin"
+    end
+    inputs[:dsgs_velocity_weight] = lowercase(string(inputs[:dsgs_velocity_weight]))
+    if !(inputs[:dsgs_velocity_weight] in ("smin", "node"))
+        error(" user_inputs.jl: :dsgs_velocity_weight must be \"smin\" or \"node\" (got $(inputs[:dsgs_velocity_weight])).")
     end
     if haskey(inputs, :dsgs_legacy_stencil)
         error(" user_inputs.jl: :dsgs_legacy_stencil has been replaced by :dsgs_sensor => \"legacy\" | \"residual\".")

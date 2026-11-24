@@ -99,7 +99,8 @@ below).
 | `JEXPRESSO_LK10_ETACAP` | `fast` (default), `flow` | DynSGS resistivity capped at $C_{max}\Delta(\lvert v\rvert + c_f)$ like the viscosity, or at $C_{max}\Delta\lvert v\rvert$ (Verification, the REF 4 run) |
 | `JEXPRESSO_LK10_ETAFAC` | default 1 | factor on the DynSGS resistivity (the `:μ` multipliers of the B slots), a sensitivity test; a factor above 1 never carries the coefficient past the stability cap (`JEXPRESSO_LK10_STABCAP`) |
 | `JEXPRESSO_LK10_RHOFAC` | default 1 | factor on the DynSGS mass diffusion (the `:μ` multiplier of the ρ slot), a sensitivity test |
-| `JEXPRESSO_LK10_VISC` | `momentum` (default), `velocity` | the viscosity (DynSGS and ν) as the diffusion of the momentum $\rho\mathbf v/\rho_e$, or as a stress on the velocity gradient with the momentum of the mass the DynSGS diffuses (Equations and dissipation: The viscosity on the velocity). Opt-in while the cluster test runs |
+| `JEXPRESSO_LK10_VISC` | `momentum` (default), `velocity`, `nodal` | the viscosity (DynSGS and ν) as the diffusion of the momentum $\rho\mathbf v/\rho_e$, or as a stress on the velocity gradient with the momentum of the mass the DynSGS diffuses; that stress weighs every node of an element with the density of its lightest (`velocity`), or each node with its own, up to what the lightest takes at the stability limit (`nodal`) (Equations and dissipation: The viscosity on the velocity). Opt-in while the cluster test runs |
+| `JEXPRESSO_LK10_RHOSENS` | `off` (default), `on`, `a0,a1,C` | the mass slot of an element whose density has a node-to-node part (the highest Legendre mode of $\log_{10}(\rho/\rho_e)$ along any of its lines, from `a0` to `a1` dex) gets at least `C` $\Delta\lvert(u, v)\rvert$; `on` is `0.03,0.15,1` (`:dsgs_rho_sensor`; Equations and dissipation: The density sensor). Opt-in while the cluster test runs |
 | `JEXPRESSO_LK10_VISCFAC` | default 1 | factor on the DynSGS viscosity (the `:μ` multipliers of the momentum slots, applied after its caps; the case's ν is not scaled), a test of its drag on the plasma that drains from the dome (`drain`, its `visc` column) |
 | `JEXPRESSO_LK10_HEAT` | `shock` (default), `viscous`, a fraction | what the heat the DynSGS dissipates does (`:dsgs_heating`): `shock`, only the explicit ν, η and the DynSGS viscosity in compression heat; `viscous`, all the viscous dissipation (DynSGS and ν) and the explicit η heat, the DynSGS resistivity not, as Lare's default tensor shock viscosity heats (The heat of the DynSGS, below); or that fraction of all of it into the plasma (1 conserves energy, 0 loses it all) |
 | `JEXPRESSO_LK10_SENSOR` | `legacy` (default), `residual` | DynSGS sensor: $\lvert\partial_tq\rvert$ against the assembled RHS (the parent case's), or the element residual once per step (DSGS.md §1.2) |
@@ -336,8 +337,9 @@ paper's dissipation and its energy relaxation:
   `JEXPRESSO_LK10_EINT=lowbeta` and its other switches): `noise` at 2185 and 2530 s
   shows no rows of nodes at the temperature floor. The density stripes remain: in
   the draining legs of the arcade at 2185 s, with almost no floor contact, and
-  across the dome at 2530 s, as rows of nodes at the density floor (next
-  paragraph). The pressure noise was real, but it is not what makes the stripes.
+  across the dome at 2530 s, as rows of nodes at the density floor. The pressure
+  noise was real, but it is not what makes the stripes (The density sensor,
+  below).
 
   *What the density floor adds.* The mass the floor adds keeps the node's
   momentum and total energy: the node is braked ($v$ by $\rho/\rho_{min}$) and the
@@ -358,20 +360,22 @@ paper's dissipation and its energy relaxation:
   up to 1 % of the node's mass per stage, after 1060 steps (2188.7 s), at
   $x$ = 13.6–14.3 Mm, 2.8–5.1 Mm high. The last two under the quadrupole's
   strongest field, outside the dome; the same restart with the floor above ran
-  to 2530 s. The rows of 2530 s are where the drained dome meets this floor.
-  The erratum's dome drains about as far: at 2530 s its centre
+  to 2530 s. The erratum's dome drains about as far as this one: at 2530 s its centre
   ($\lvert x\rvert \le 3$ Mm, its colours turned back into log ρ) is at 0.4–0.85 of
   the coronal density of the atmosphere above 7 Mm (−14.2 to −14.8, against
   −14.3 to −14.4), 0.3–0.6 dex above this floor ($0.2\rho_e$ in the corona).
   The run's dome is not thinner than the erratum's (`profile` on the
   `EINT=lowbeta` run of 23 Nov): below its top it is 0.05–0.9 dex denser at
   1955, 2185 and 2530 s, and thinner only at 9–14 Mm, where the erratum's dome
-  reaches and this one does not. Its rows are a minority of its nodes: at
+  reaches and this one does not. (The momentum form's dome, 20 Nov, hardly
+  drains: its centre at 4–8 Mm is 1.1–1.5 dex denser than the erratum's at
+  1955 s, 1.1–1.8 at 2185 s and 1.3–2.5 at 2530 s, with no node at a floor.) Its rows are a minority of its nodes: at
   2530 s 3–11 % of the centre's nodes at 6–10 Mm are at the density floor, its
   10th percentile at the floor (−15.0) under a median of −13.6 to −14.0; and at
   2185 s, when no node of the dome at 4–8 Mm is at a floor, the rows are
-  already there, in the elements whose velocity-form stress has collapsed (The
-  viscosity on the velocity, below).
+  already there. They are made by the advection of the density at the element
+  faces, and the floor is where they end, not where they start (The density
+  sensor, below).
 
   *Restarts* hold no DynSGS steps with the legacy sensor (`:dsgs_hold_steps`). A run
   starts with the coefficient at zero for two steps while the history of the
@@ -522,8 +526,15 @@ paper's dissipation and its energy relaxation:
   reference density have a stress coefficient $s_{min}(\mu - \mu_\rho)$ 65 times
   smaller than the others at 2185 s (median 0.33 against 22 $L_0v_0$), and 45 %
   of them have a node-to-node part of $\log\rho$ above 0.1 dex, against 6 % of
-  the others (52 % and 22 % at 2530 s): the rows of its density maps, which
-  the momentum form of 20 Nov does not have. Both
+  the others (52 % and 22 % at 2530 s). Those are the elements of the rows of
+  its density maps; the weak stress is where the rows are, not what makes them
+  (a light node gives its element both). `JEXPRESSO_LK10_VISC=nodal`
+  (`:dsgs_velocity_weight => "node"`) weighs each node with its own density,
+  up to $h\,s_{min}$, $h = (\mu_{stab} - \mu_\rho)/(\mu - \mu_\rho)$ the margin to the
+  stability limit of `JEXPRESSO_LK10_STABCAP`: the stress is $\rho(\mu - \mu_\rho)\nabla\mathbf v$
+  wherever the element's contrast is below $h$ (a factor 20–600 in the dome),
+  and no node is diffused faster than that limit. It restores the stress and
+  leaves the rows (The density sensor). Both
   terms are diffusions with a non-negative coefficient; the mass flux written
   by itself, $\nabla\cdot(\mathbf v F_\rho) + \nabla\cdot(\rho_e s_{min}\mu\nabla\mathbf v)$,
   is not (its stress coefficient is negative at the dense nodes of an element
@@ -565,6 +576,88 @@ paper's dissipation and its energy relaxation:
   the dome is no higher for it ("The erratum's Fig. 3 line by line" in
   Verification): it stays opt-in. `drain` reads the form from `lk10_case.txt`
   and evaluates that operator.
+
+- **The density sensor** (`JEXPRESSO_LK10_RHOSENS=on`; `:dsgs_rho_sensor`,
+  `src/kernel/physics/SGS.jl`, `_dsgs_logrho_mode`). The velocity-form runs on
+  the cluster (22–23 Nov) have horizontal stripes in the drained dome: rows of
+  nodes one element apart, light and hot at the pressure of the plasma around
+  them, that end at the density floor (Positivity: What the density floor
+  adds). They are made by the advection of the density at the element faces
+  where the density is steep, and they are there because the mass slot has a
+  tenth of the DynSGS coefficient (`JEXPRESSO_LK10_RHOFAC=0.1`).
+
+  *A stripe in the making* (here, REF 1: the blob test of the previous item with
+  100 times the coronal density and a Gaussian radius of 0.75 Mm at
+  (3.0, 5.55) Mm, `RHOFAC=0.1`, `VISC=velocity`, `EINT=lowbeta`, and one row of
+  13 nodes through it, at an element face, drained to 0.3 of the coronal
+  density at $t = 0$). The drained row fills within 12 s and leaves the blob
+  with a node-to-node part of $\log\rho$ of 0.04–0.07 dex (0.001–0.004 without
+  the row). In the blob's upper edge, where the density falls from 50 to 3
+  times the coronal one over 0.8 Mm, the next element face up then empties: on
+  $x$ = 2.70 Mm the node at $y$ = 6.18 Mm has $\rho/\rho_e$ = 30, 19, 11, 7.0, 3.6
+  and 0.20 (the floor) at 23, 35, 46, 58, 70 and 81 s, while the nodes 0.10 Mm
+  below and 0.12 Mm above it stay at 52 ± 1 and 28 ± 1, at 0.86–0.97 of the
+  coronal pressure throughout, so that its temperature goes from
+  2.8 × 10⁴ K to 3.7 × 10⁶ K; the face at 6.85 Mm follows (4.2 to 0.20 by 93 s),
+  then a node inside the element between them. In the density map these are
+  the dark horizontal rows of the cluster's figures, with nodes at the density
+  floor from 81 s. `massbudget` at 46 s, rates of $\ln\rho$ per 100 s:
+
+  | $y$ (Mm) | $\rho/\rho_e$ | $-\partial_x(\rho u)$ | $-\partial_y(\rho v)$ | DynSGS | sum | observed |
+  |---|---|---|---|---|---|---|
+  | 6.08 | 53 | 0.5 | −0.3 | −0.2 | −0.1 | −0.1 |
+  | 6.18 (face) | 11 | 0.4 | −8.0 | 2.4 | −5.2 | −4.1 |
+  | 6.30 | 27 | 0.5 | −0.1 | −0.2 | 0.2 | 0.3 |
+  | 6.52 | 10 | 0.5 | −1.7 | 0.1 | −1.0 | −0.8 |
+  | 6.74 | 7.3 | 0.5 | 0.4 | −0.2 | 0.6 | 0.8 |
+  | 6.85 (face) | 2.4 | 0.3 | −4.5 | 1.3 | −2.9 | −2.4 |
+
+  The mass of a face node leaves through $-\partial_y(\rho v)$ alone. The plasma
+  moves down at 2 km/s; the element below the face gives, for the derivative of
+  $\rho v$ at its top node, mostly the difference to its next node (the last row
+  of the LGL differentiation matrix of degree 4 is 0.5, −1.4, 2.7, −6.8, 5),
+  where $\rho v$ is five times larger because that node is five times denser, a
+  divergence; the element above gives a third of it with the other sign, and
+  the two are averaged. The lighter the face node against the node downstream
+  of it, the larger its loss: a dip of a fifth (37 without the drained row, 30
+  with it, at 23 s) is at the floor a minute later. The DynSGS returns 2.4 of
+  the 8.0: its residual sensor hardly sees a contact, which moves with the
+  flow at a pressure that does not change ($\mu$ = 0.3 $L_0v_0$ there, a tenth of
+  its first-order cap), and the density gets a tenth of that. `RHOFAC=0.1` was
+  set to keep the edge of the dome one element thin (Verification: Sharpness)
+  when the viscosity still diffused the momentum $\rho\mathbf v/\rho_e$, and with
+  it the mass flux, with the whole coefficient; the velocity form leaves the
+  density to its own slot. Neither the weight of the stress (`nodal`: the same
+  rows, same nodes at the floor, velocities three times quieter) nor the floor
+  (it is where the rows end) is in this.
+
+  *The sensor.* The residual of a contact is small and the mass slot has a
+  tenth of it, but the density shows it: a node that drops out of its
+  neighbours is the highest Legendre mode of $\log_{10}(\rho/\rho_e)$ along its
+  line of the element. `JEXPRESSO_LK10_RHOSENS=on` (`:dsgs_rho_sensor =>
+  (0.03, 0.15, 1.0)`) reads it on every line of every element and, where it is
+  above 0.03 dex, raises the mass slot's coefficient to at least
+  $C\Delta\lvert(u, v)\rvert$, the first-order diffusivity of a contact carried by
+  the flow, in full from 0.15 dex, and never above the stability limit of
+  `JEXPRESSO_LK10_STABCAP`. Where the plasma is at rest, or its density smooth,
+  nothing changes: a contact of 2 dex across one element (10–90 %) has a
+  node-to-node part of 0.024 dex, so the sensor keeps an edge one element
+  thick, what `RHOFAC=0.1` is for, and diffuses only what is sharper. In the
+  test above it gives the stripe elements 0.11 $L_0v_0$ for the mass (0.004
+  before) and the blob, with the same drained row:
+
+  | $t$ (s) | 12 | 23 | 46 | 81 | 93 |
+  |---|---|---|---|---|---|
+  | node-to-node $\log\rho$ (dex), without / with | 0.066 / 0.019 | 0.038 / 0.013 | 0.067 / 0.012 | 0.124 / 0.008 | 0.105 / 0.010 |
+  | smallest $\rho/\rho_e$, without / with | 1.00 / 1.00 | 0.98 / 0.98 | 0.85 / 0.87 | 0.20 / 0.78 | 0.20 / 0.78 |
+  | nodes at the density floor, without / with | 0 / 0 | 0 / 0 | 0 / 0 | 7 / 0 | 8 / 0 |
+  | $u$, node-to-node along $y$ (km/s), without / with | 0.01 / 0.01 | 0.09 / 0.03 | 0.19 / 0.04 | 0.43 / 0.04 | 0.71 / 0.05 |
+
+  The blob falls as without the row (12.25 km/s at 93 s, 12.32 without it,
+  14.50 in free fall), and its mass and temperature are those of the run
+  without the row to 3 %. The default is unchanged to the bit (the kick test
+  of "Positivity", the totals of mass and energy at steps 0, 100 and 200). On the cluster, from
+  1955 s with the switches of the `EINT=lowbeta` run of 23 Nov: not run yet.
 
 ## What is not in the paper, and what was done
 
@@ -995,6 +1088,7 @@ python3 tools/plot_leake2010.py core     run=$RUN        # the plasma at the tub
 python3 tools/plot_leake2010.py noise    $RUN --times 2185,2530   # stripes and grain: the node-to-node part of log rho per element, along y and x, and the nodes at the floors
 python3 tools/plot_leake2010.py elements $RUN --times 2185,2530 --x=-2,0,2   # which quantity repeats element by element on vertical lines: s_min, the DynSGS coefficients and the velocity-form stress, node-to-node parts of log rho, log T, u, v, floor nodes
 python3 tools/plot_leake2010.py profile  $RUN --times 1955,2185,2530   # the dome's density by height, centre and flanks, beside the erratum's Fig. 3, with the nodes at the floors
+python3 tools/plot_leake2010.py massbudget $RUN --time 2185 --x=-2,2 --ylim 3,5.7   # a stripe in the making: node by node on a vertical line, the advection of mass along x and y, the DynSGS mass diffusion, and the change to the next snapshot
 python3 tools/plot_leake2010.py --paper-lines density $RUN   # the density figure with exactly the erratum's field lines (any map takes --paper-lines)
 python3 tools/plot_leake2010.py mass     $RUN            # the plasma above 3 Mm: mass budget, temperature, pressure, draining, heating time
 python3 tools/plot_leake2010.py drain    $RUN            # why that plasma drains or not: temperature, field it sits on, speed and support along the field
@@ -1159,6 +1253,19 @@ centre: −12.3 to −12.6 at 4–8 Mm at 1955 s, −12.5 to −13.3 at 2185 s, 
 2530 s −13.1 at 4 Mm, −13.6 at 5 Mm and −14.2 to −14.8 above 7 Mm, at or below
 the atmosphere's coronal density; its flanks are denser below 7 Mm (−11.2 to
 −12.9 at 2530 s).
+
+`massbudget` is for the stripes (The density sensor): node by node on a
+vertical line, between two consecutive snapshots, $\rho/\rho_e$ now and at the
+next snapshot, and as rates of $\ln\rho$ per 100 s the advection of mass along
+$x$ and along $y$ (the code's element derivatives, averaged at the faces), the
+DynSGS mass diffusion with the mass slot's coefficient of the snapshot, their
+sum and the change observed, then the node-to-node part of $\log_{10}(\rho/\rho_e)$
+of the node's element along $y$ (what the sensor reads). A stripe in the making
+is one row of nodes, at an element face (marked `|`), that loses its mass
+through $-\partial_y(\rho v)$ alone while the rows 50 km above and below keep
+theirs, and to which the diffusion returns a fraction. Use two snapshots that
+are close (the off-grid outputs, 12–18 s after 1380, 1610, 1955, 2070 and
+2185 s).
 
 `balance` is the erratum's Fig. 4 as a table, for the question of what holds
 the dome: on a vertical line, at each time, gravity, the magnetic tension, the
