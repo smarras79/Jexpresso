@@ -30,9 +30,9 @@
 #   convergence-it<n>, convergence_smooth-it<n> error against 1/#DOFs
 #
 #   --form=F   the method to draw: elem (the deck: element ν, Δ_K/(k+1)),
-#              elemH (Δ_K/k), nodal or nodalH, with _CR<x> for a residual
+#              elemH (Δ_K/k), nodal or nodalH, with _C1_<x> for a residual
 #              coefficient other than 1 and _cut<c> for a smoothness cutoff
-#              (elem_CR4.0); default the form of the newest stored curve
+#              (elem_C1_4.0); default the form of the newest stored curve
 #   --t=T      the final time; default the latest in the store
 #   --fmt=F    svg (default), pdf or png
 #   --right=nu ρ and ν side by side instead of ρ and B_y (density_nu_*-it<n>,

@@ -21,7 +21,7 @@
 \newcommand{\bF}{\mathbf{F}}
 \newcommand{\dsgs}{\textsc{DynSGS}}
 \newcommand{\Cmax}{C_{\max}}
-\newcommand{\CR}{C_R}
+\newcommand{\Cone}{C_1}
 \newcommand{\Et}{\tilde E}
 \newcommand{\eps}{\varepsilon}
 
@@ -285,11 +285,11 @@ domain-wide norms made the residual of grid-scale pressure noise invisible.
 \mathcal{R}_K = \max_{I\in K}\ \max_{q\le 8}\ \frac{R^q_{K,I}}{n^q_K},\qquad
 w_K = \max_{I\in K}\Big(|\bv_I| + \sqrt{\max\big(\gamma p_I/\rho_I + |\bB_I|^2/\rho_I,\ 0\big)}\Big),\\
 \Delta_K = \frac{\Delta^{elem}_K}{N+1},\qquad
-\nu_K = \max\Big(0,\ \min\big(\Cmax\,\Delta_K\,w_K,\ \ \CR\,\Delta_K^2\,\mathcal{R}_K\big)\Big),
+\nu_K = \max\Big(0,\ \min\big(\Cmax\,\Delta_K\,w_K,\ \ \Cone\,\Delta_K^2\,\mathcal{R}_K\big)\Big),
 \label{eq:nu}
 \end{gather}
 with $\Delta^{elem}_K$ the shortest edge of $K$ ($1/128$, so $\Delta_K = 1/512$),
-$\CR$ = \code{:dsgs\_CR} $=1$, $\Cmax$ = \code{:dsgs\_Cmax} $=0.5$, no lower floor
+$\Cone$ = \code{:dsgs\_C1} $=1$, $\Cmax$ = \code{:dsgs\_Cmax} $=0.5$, no lower floor
 (\code{:dsgs\_Cmin} $=0$) and no cutoff. In $w_K$, $\rho_I$ is floored at $\eps$
 and $p_I$ is the full nodal pressure~\eqref{eq:p}. The cap $\Cmax\Delta w$ is the
 first-order (Lax--Friedrichs-like) viscosity; the residual term is $O(\Delta^2)$
@@ -488,7 +488,7 @@ $\gamma$ ($\gamma$\code{\_mhd}, \code{:dsgs\_gamma}) & 1.4 & ratio of specific h
 \code{:dsgs\_hold\_steps} & 2 & $\nu = 0$ in the first 2 steps \\
 \code{:dsgs\_norms} & "element" & per-element normalization \\
 \code{:dsgs\_local\_rel} ($r_{loc}$) & 1 (default) & weight of the physical floors $s^q_K$ \\
-\code{:dsgs\_CR} ($\CR$) & 1 & residual coefficient in~\eqref{eq:nu} \\
+\code{:dsgs\_C1} ($\Cone$) & 1 & residual coefficient in~\eqref{eq:nu} \\
 \code{:dsgs\_Cmax} ($\Cmax$) & 0.5 & first-order cap in~\eqref{eq:nu} \\
 \code{:dsgs\_Cmin} & 0 (default) & no background viscosity \\
 \code{:dsgs\_conserved} & true & diffuse the conserved variables, $\bF_V = \nu\nabla\bq$ \\
@@ -515,7 +515,7 @@ $s$ & 64 & round-off margin (ulps) of the limiter \\
 \label{sec:results}
 
 All runs: $N = 3$, 4 MPI ranks, the deck of this note (Laplacian on $\rho\bv$,
-assembled legacy sensor, element norms, $\CR = 1$, $\Cmax = 0.5$, limiter with
+assembled legacy sensor, element norms, $\Cone = 1$, $\Cmax = 0.5$, limiter with
 $\eps_\rho = \eps_p = 10^{-6}$). ``Noise'' is the median (95th percentile) of the
 node-to-node second difference of $p$ relative to $p$ for $r < 0.08$; ``symmetry''
 is the largest relative deviation from the $180^\circ$ point symmetry of the

@@ -104,7 +104,7 @@ run() { echo "\$ $*"; "$@" 2>&1; echo "[exit $?]"; }
       echo "(this is a report, not the run's log: --log takes the file the queue wrote for the job, e.g. slurm-<jobid>.out)"; continue
     fi
     echo "--- how the run was set up"
-    grep -E 'DynSGS: C_R|Restart:|Subnormal|Dissipation:|Fastest wave|GLM: c_h|Δt *=>|dsgs_|lk10_|mhd_anomalous|Time loop running|Switches set|Viscosity \(DynSGS' "$L" | grep -v '^ *#' | head -80
+    grep -E 'DynSGS: C_[1R]|Restart:|Subnormal|Dissipation:|Fastest wave|GLM: c_h|Δt *=>|dsgs_|lk10_|mhd_anomalous|Time loop running|Switches set|Viscosity \(DynSGS' "$L" | grep -v '^ *#' | head -80
     grep -E 'DynSGS viscosity on the velocity|DSGS over the run' "$L" | head -4
     echo "--- positivity floors (first 15 and last 15 reports)"
     grep 'positivity floors' "$L" | head -15

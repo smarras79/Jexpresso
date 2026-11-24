@@ -211,9 +211,10 @@ function _ev_save_error(e, inputs, t, tnum = t)
                         " beta=", _ev_beta(),
                         " Cmin=", Float64(get(inputs, :dsgs_Cmin, 0.0)),
                         # the coefficients that MADE this number: nu is linear
-                        # in CR, so a record that does not carry it cannot be
-                        # compared with one measured at another CR
-                        " CR=", Float64(get(inputs, :dsgs_CR, 1.0)),
+                        # in C1, so a record that does not carry it cannot be
+                        # compared with one measured at another C1 (records
+                        # before Nov 2026 call it CR)
+                        " C1=", Float64(get(inputs, :dsgs_C1, 1.0)),
                         " Cmax=", Float64(get(inputs, :dsgs_Cmax, 0.0)),
                         " rel=", Float64(get(inputs, :dsgs_rel, 1.0)),
                         " hold=", Int(get(inputs, :dsgs_hold_steps, 2)),

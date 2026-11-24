@@ -49,7 +49,7 @@ Time integrator & \multicolumn{8}{l}{\code{CarpenterKennedy2N54} at fixed $\Delt
 Sensor $R_i$ (\code{:dsgs\_sensor}) & (R) residual & (R) residual & (R) residual & (L) legacy & (L) legacy & (L) legacy & (R) residual & (L) legacy\\
 $\mu|_e$ computed (\code{:dsgs\_freeze\_stage}) & once per step & once per step & once per step & every RK stage & every RK stage
  & every RK stage & once per step & every RK stage\\
-$C_1$, $C_2$ (\code{:dsgs\_CR}, \code{:dsgs\_Cmax}) & 1, 0.5 & 1, 0.5 & 1, 0.5 & 1, 0.5 & 1, 0.5 & 1, 0.5 & 1, 0.5 & 1, 0.5\\
+$C_1$, $C_2$ (\code{:dsgs\_C1}, \code{:dsgs\_Cmax}) & 1, 0.5 & 1, 0.5 & 1, 0.5 & 1, 0.5 & 1, 0.5 & 1, 0.5 & 1, 0.5 & 1, 0.5\\
 Floor $C_{\min}\Delta_e(\lVert\vv\rVert+c_f)$ (\code{:dsgs\_Cmin}) & 0 & 0 & 0.06 & 0 & 0 & 0 & 0 & 0.03\\
 Length $\Delta_e$, (15) & $h_e/(N+1)$ & $h_e/(N+1)$ & $h_e/(N+1)$$^{a}$ & $h_e/(N+1)$ & $h_e/(N+1)$ & $h_e/(N+1)$ & $h_e/(N+1)$ & $h_e/(N+1)$\\
 Cutoff $c$ (\code{:dsgs\_cutoff}) & \multicolumn{8}{l}{$10^{-3}$ in the MHD vortex (since \code{22c0907}), 0 in every other deck (the Alfv\'en wave, not in the paper, runs $10^{-3}$ too)}\\

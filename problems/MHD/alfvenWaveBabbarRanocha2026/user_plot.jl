@@ -435,7 +435,7 @@ const AW_PANEL_SETS = Dict(n => [p[4] for p in AW_PANELS
 #
 #   :r_max   the largest normalized residual r of the run, BEFORE the cutoff,
 #            with the cutoff c drawn as a horizontal line. A point below the line
-#            is a run in which μ = C_R Δ² max(0, r − c) was exactly zero
+#            is a run in which μ = C_1 Δ² max(0, r − c) was exactly zero
 #            throughout: there DSGS is Galerkin because of the cutoff.
 #   :mu_max  the largest coefficient μ of the run. μ = 0 has no place on a log
 #            axis, so each curve's legend entry says on how many of its meshes μ
@@ -537,7 +537,7 @@ function _aw_diag_panel(rows, fld::Symbol, ylab, title; tags, label, line, galer
             push!(ally, c)
         end
     elseif length(allx) >= 2
-        # O(h⁴), drawn above every point: μ ≈ C_R Δ² (Δt²/3)|∂ₜ³q|/(ρ̄c̄) at a fixed Courant number
+        # O(h⁴), drawn above every point: μ ≈ C_1 Δ² (Δt²/3)|∂ₜ³q|/(ρ̄c̄) at a fixed Courant number
         A = 2.0*maximum(ally[i]*allx[i]^2 for i in eachindex(allx))
         x1, x2 = extrema(allx)
         Plots.plot!(pl, [x1, x2], [A/x1^2, A/x2^2]; line = (:gray40, 1.2, :dot),

@@ -1100,7 +1100,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #
     # Marras-Nazarov DynSGS (visc_model = DSGS_MHD()) parameters, named as
     # in Dao & Nazarov (2022):
-    #   :dsgs_CR    C_R,   coefficient of the residual viscosity C_R·Δ²·‖R‖/‖q−⟨q⟩‖
+    #   :dsgs_C1    C_1,   coefficient of the residual viscosity C_1·Δ²·‖R‖/‖q−⟨q⟩‖
     #               (their eq. 4.10, typical range [0.1, 1], paper 1)
     #   :dsgs_Cmax  C_max, coefficient of the first-order viscosity C_max·Δ·(|v|+c_f)
     #               (their §4.2, typical range [0.15, 0.5], paper 0.5)
@@ -1109,13 +1109,14 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #               deliberately NOT PhysConst.γ, which is air's 1.4)
     #   :dsgs_Prt   turbulent Prandtl number for the energy slot
     #
-    for (old, new) in ((:dsgs_C1, :dsgs_CR), (:dsgs_C2, :dsgs_Cmax), (:dsgs_C0, :dsgs_Cmin))
+    for (old, new) in ((:dsgs_CR, :dsgs_C1), (:dsgs_C2, :dsgs_Cmax), (:dsgs_C0, :dsgs_Cmin))
         if haskey(inputs, old)
-            error(" user_inputs.jl: $(old) has been renamed $(new) (Dao & Nazarov's C_R, C_max; C_min is the background floor).")
+            error(" user_inputs.jl: $(old) has been renamed $(new) (C_1, the residual coefficient of the DynSGS-MHD paper, eq. 14, " *
+                  "Dao & Nazarov's C_R; C_max, theirs; C_min, the background floor).")
         end
     end
-    if(!haskey(inputs, :dsgs_CR))
-        inputs[:dsgs_CR] = 1.0
+    if(!haskey(inputs, :dsgs_C1))
+        inputs[:dsgs_C1] = 1.0
     end
     if(!haskey(inputs, :dsgs_Cmax))
         inputs[:dsgs_Cmax] = 0.5
@@ -1241,7 +1242,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #                      only; the operators are applied at the listed stages with that coefficient;
     #                      at the other stages the right-hand side of the last listed stage is held
     #                      (the work term of the :dsgs_thermal_energy slot is still taken at each). The
-    #                      block is two thirds of a DynSGS-MHD stage. The deck must then halve :dsgs_CR
+    #                      block is two thirds of a DynSGS-MHD stage. The deck must then halve :dsgs_C1
     #                      with the "legacy" sensor (it reads twice its stage mean at the first stage)
     #                      and keep :dsgs_stab_cap below the stable viscous number of the list, with
     #                      CarpenterKennedy2N54 on degree-4 elements: 0.6 for (1, 5), 0.18 for (1,)
@@ -1332,14 +1333,14 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #                      "legacy" sensor ignores it (set below, after
     #                      :dsgs_sensor).
     #
-    #                      ν = C_R h² R̃, and R̃ is a three-point time
+    #                      ν = C_1 h² R̃, and R̃ is a three-point time
     #                      difference across the stages. At an intermediate
     #                      stage one of those three values is an RK internal
     #                      stage, whose own error is O(Δt) — explicit RK
     #                      schemes have low stage order — so R̃ never falls
     #                      below O(Δt) however smooth and however well
     #                      resolved the solution is. ν then stalls at
-    #                      C_R h²·O(Δt), the RV solution departs from the
+    #                      C_1 h²·O(Δt), the RV solution departs from the
     #                      Galerkin one by O(h²), and the measured order of a
     #                      smooth accuracy test is capped at 2 as soon as the
     #                      spatial error drops under it — measured on the

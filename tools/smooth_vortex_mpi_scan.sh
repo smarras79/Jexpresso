@@ -118,7 +118,7 @@ if [ "${SV_DT:-}" = "auto" ] || [ "${SV_DT:-}" = "percase" ]; then
     # Δt PER CASE, from the deck's own CFL rule (DT_REF*64/(nelx*nop)): the
     # step is refined WITH the mesh instead of being held fixed for the whole
     # sweep. That is the study to run when the residual viscosity is on: nu
-    # is C_R h^2 R, and at a fixed step R stops falling once it reaches the
+    # is C_1 h^2 R, and at a fixed step R stops falling once it reaches the
     # time-discretization error, so nu stalls and every RV curve eventually
     # bends to slope h^2. A step that shrinks with h keeps that floor falling.
     DT=percase

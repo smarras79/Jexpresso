@@ -27,7 +27,7 @@
 #                       a 4th-order one caps the measured rate at 4
 #   JEXPRESSO_SV_TEND   final time                              (default 1.0)
 #   JEXPRESSO_SV_CMIN   the DynSGS background floor :dsgs_Cmin  (default 0)
-#   JEXPRESSO_SV_CR     :dsgs_CR                                 (default 1)
+#   JEXPRESSO_SV_C1     :dsgs_C1                                 (default 1)
 #   JEXPRESSO_SV_REL    :dsgs_rel, the normalization floor        (default 1)
 #   JEXPRESSO_SV_NORMS  :dsgs_norms, "domain" (default) | "rank" | "element";
 #                       "rank" makes the answer depend on the rank count
@@ -61,12 +61,16 @@ _sv_nop()  = something(tryparse(Int,     get(ENV, "JEXPRESSO_SV_NOP",  "")), SV_
 _sv_nelx() = something(tryparse(Int,     get(ENV, "JEXPRESSO_SV_NELX", "")), SV_NELX_DEFAULT)
 _sv_tend() = something(tryparse(Float64, get(ENV, "JEXPRESSO_SV_TEND", "")), 1.0)
 _sv_cmin() = something(tryparse(Float64, get(ENV, "JEXPRESSO_SV_CMIN", "")), 0.0)
-# C_R and C_max as well, so that a run can keep the SENSOR (and its
+# C_1 and C_max as well, so that a run can keep the SENSOR (and its
 # diagnostics) while applying no viscosity at all: with both zero the
 # solution is the plain Galerkin one and the printed residual is the
 # residual of a clean solution, which is how one checks that the sensor
 # itself converges under refinement.
-_sv_cr()   = something(tryparse(Float64, get(ENV, "JEXPRESSO_SV_CR",   "")), 1.0)
+# C_1 (:dsgs_C1); JEXPRESSO_SV_CR, its name until Nov 2026, is still read, with a warning
+_sv_c1()   = (v = get(ENV, "JEXPRESSO_SV_C1", "");
+              isempty(v) && haskey(ENV, "JEXPRESSO_SV_CR") &&
+                  (@warn "JEXPRESSO_SV_CR is now JEXPRESSO_SV_C1"; v = ENV["JEXPRESSO_SV_CR"]);
+              something(tryparse(Float64, v), 1.0))
 # :dsgs_rel — how far below its own physical scale a variable's spread may fall
 # before that scale normalizes its residual. 1 is the fix; 1e-3 is what the
 # kernels used before it, and reproduces the first-order convergence this case
@@ -206,7 +210,7 @@ function user_inputs()
         :visc_model       => DSGS_MHD(),
         :dsgs_sensor      => _sv_sensor(),
         :dsgs_rel         => _sv_rel(),
-        :dsgs_CR          => _sv_cr(),
+        :dsgs_C1          => _sv_c1(),
         :dsgs_Cmax        => _sv_cmax(),
         :dsgs_Cmin        => _sv_cmin(),   # no background floor: it would be an
                                            # order-independent O(h) error on a

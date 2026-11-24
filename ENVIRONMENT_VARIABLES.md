@@ -381,7 +381,7 @@ the level of the usual round-off divergence. On one rank `"rank"` and
 | Key                    | Type | Default | Purpose                                   |
 |------------------------|------|---------|-------------------------------------------|
 | `:dsgs_norms`          | str  | `"rank"` | DynSGS normalization scope: `"rank"` (rank-local, no reductions), `"domain"` (MPI-global, the papers'), `"element"` (DSGS_MHD, per element) |
-| `:dsgs_CR`             | real | `1.0`   | Dao & Nazarov's $C_R$: residual viscosity $C_R h^2 R$ (their eq. 4.10; was `:dsgs_C1`) |
+| `:dsgs_C1`             | real | `1.0`   | $C_1$ of the DynSGS-MHD paper, eq. 14 (Dao & Nazarov's $C_R$): residual viscosity $C_1 h^2 R$ (their eq. 4.10). Named `:dsgs_CR` until Nov 2026; that name is now an error |
 | `:dsgs_Cmax`           | real | `0.5`   | Dao & Nazarov's $C_{max}$: first-order viscosity $C_{max} h \lambda_{max}$ (their §4.2; was `:dsgs_C2`) |
 | `:dsgs_Cmin`           | real | `0.0`   | Background floor $C_{min} h \lambda_{max}$ on the coefficient; not in the paper (was `:dsgs_C0`) |
 | `:dsgs_Cl`             | real | `0.0`   | Dao & Nazarov's $C_l$ in the local-jump normalization (their eq. 4.7); paper 0.4, nodal form |

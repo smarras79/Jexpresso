@@ -546,7 +546,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         println(" Dissipation: ν = $(round(LK10_NU, sigdigits=4)) ($(get(inputs, :lk10_nu_mode, "kinematic"))), anomalous η₀ = $(round(LK10_ETA0, sigdigits=4)), ",
                 "j_crit = $(round(LK10_JCRIT, sigdigits=4)) (code units)")
         let st = get(inputs, :dsgs_stages, nothing)
-            println(" DynSGS: C_R = $(get(inputs, :dsgs_CR, 1.0)), ",
+            println(" DynSGS: C_1 = $(get(inputs, :dsgs_C1, 1.0)), ",
                     st === nothing ? "evaluated at every stage of the scheme" :
                     string("coefficient at the first stage of each step, operators at stage", length(st) > 1 ? "s " : " ",
                            join(st, " and "), length(st) > 1 ? ", held in between" : ", held over the step"),
@@ -595,7 +595,7 @@ lk10_restart_fields() = ["ρ", "u", "v", "w", "p", "Bx", "By", "Bz", "ψ"]
 # switches of lk10_numeric_keys (to continue past a failure from an earlier snapshot);
 # the restart says which changed.
 lk10_numeric_keys() = ("curl_resistivity", "Cmin", "floors", "dsgs_energy", "eta_sensor", "dsgs_sensor", "eta_cap", "eta_factor", "visc_factor", "visc_form",
-                         "rho_factor", "heating", "stab_cap", "dsgs_stages", "CR", "tfloor", "energy_form", "rho_floor")
+                         "rho_factor", "heating", "stab_cap", "dsgs_stages", "C1", "tfloor", "energy_form", "rho_floor")
 
 function lk10_case_record(inputs)
     return Pair{String,String}[
@@ -622,7 +622,7 @@ function lk10_case_record(inputs)
         "rho_factor"       => string(Float64(get(inputs, :μ, ones(9))[1])),
         "stab_cap"         => string(Float64(get(inputs, :dsgs_stab_cap, 0.0))),
         "dsgs_stages"      => (st = get(inputs, :dsgs_stages, nothing); st === nothing ? "all" : join(st, ",")),
-        "CR"               => string(Float64(get(inputs, :lk10_CR, 1.0))),
+        "C1"               => string(Float64(get(inputs, :lk10_C1, 1.0))),
         "tfloor"           => string(Float64(get(inputs, :lk10_floor_Tmin, 0.1))),
         "rho_floor"        => get(inputs, :lk10_floor_keepv, false) == true ? "velocity" : "momentum",
         "heating"          => (h = get(inputs, :dsgs_heating, 1.0); h isa Number ? string(Float64(h)) : String(h)),
@@ -661,6 +661,8 @@ function lk10_read_case_record(dir)
         i === nothing && continue
         d[String(strip(s[1:prevind(s, i)]))] = String(strip(s[nextind(s, i):end]))
     end
+    # records written before Nov 2026 called C_1 "CR"
+    haskey(d, "CR") && !haskey(d, "C1") && (d["C1"] = d["CR"])
     return d
 end
 
@@ -672,7 +674,7 @@ function lk10_record_mismatch(old::Dict{String,String}, rec; numerics::Bool=fals
         # (runs made before the partition was recorded had the uniform bins)
         # (and the legacy DynSGS sensor)
         w = get(old, k, k == "partition" ? "uniform" : k == "dsgs_sensor" ? "legacy" : k == "eta_cap" ? "fast" :
-                        k in ("eta_factor", "visc_factor", "rho_factor", "heating", "CR") ? "1.0" : k == "stab_cap" ? "0.0" :
+                        k in ("eta_factor", "visc_factor", "rho_factor", "heating", "C1") ? "1.0" : k == "stab_cap" ? "0.0" :
                         k == "dsgs_stages" ? "all" : k == "tfloor" ? "0.1" : k == "visc_form" ? "momentum" :
                         k == "energy_form" ? "total" : k == "rho_floor" ? "momentum" : "(not recorded)")
         w == v || push!(bad, "$(k): $(w) there, $(v) here" *

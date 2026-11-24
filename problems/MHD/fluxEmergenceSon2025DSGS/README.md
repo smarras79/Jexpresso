@@ -95,7 +95,7 @@ Properties:
   ($\rho_e \approx 10^{-8}$ in the corona against $10^{-5}$ inside the
   emerged loop) the operator is the conserved-variable Laplacian
   $\nabla\cdot(\mu\nabla q)$ with the same residual-based $\mu$, same
-  $C_R$, $C_{max}$, $C_{min}$ and local norms as the sibling.
+  $C_1$, $C_{max}$, $C_{min}$ and local norms as the sibling.
 
 The coefficient $\mu$ itself is the sibling's — residual sensor, wave-speed
 cap $C_{max}\Delta(\lVert\mathbf{v}\rVert + c_f)$, background floor $C_{min}$ —
@@ -106,7 +106,7 @@ of any kind was added to it.
 
 Dao & Nazarov, *J. Sci. Comput.* 92:77 (2022), apply the residual-based
 viscosity to these same GLM-MHD equations with continuous Lagrange elements.
-Their construction: one kinematic viscosity $\nu = \min(C_{max}h\lambda_{max},\ C_R h^2 R)$
+Their construction: one kinematic viscosity $\nu = \min(C_{max}h\lambda_{max},\ C_1 h^2 R)$
 from the *maximum* over the normalized residuals of all components (their
 eq. 4.8) — the $\mu$ of this kernel — and then, by the nature of each
 equation (their §4.4), $\nu$ on $\nabla\rho$, the dynamic $\mu = \rho\nu$ in

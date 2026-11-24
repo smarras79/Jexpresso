@@ -43,8 +43,8 @@
 #   JEXPRESSO_BW_NELX   element count, overrides JEXPRESSO_BW_DOFS
 #   JEXPRESSO_BW_DT     time step, overrides the rule above
 #   JEXPRESSO_BW_CMIN   the DynSGS background floor :dsgs_Cmin (default 0.06)
-#   JEXPRESSO_BW_CR     the DynSGS residual coefficient C_R, :dsgs_CR (default 1):
-#                       ν = C_R Δ² r where the residual is large, at the shocks
+#   JEXPRESSO_BW_C1     the DynSGS residual coefficient C_1, :dsgs_C1 (default 1):
+#                       ν = C_1 Δ² r where the residual is large, at the shocks
 #   JEXPRESSO_BW_FREEZE 1 or 0 forces :dsgs_freeze_stage (the coefficient once
 #                       per step, or at every stage); unset, mod_inputs.jl's
 #                       default applies: on with the residual sensor
@@ -57,7 +57,11 @@ _bw_dofs() = something(tryparse(Int,     get(ENV, "JEXPRESSO_BW_DOFS", "")), BW_
 _bw_hold() = something(tryparse(Int, get(ENV, "JEXPRESSO_BW_HOLD", "")), 2)
 _bw_cutoff() = something(tryparse(Float64, get(ENV, "JEXPRESSO_BW_CUTOFF", "")), 0.0)
 _bw_cmin() = something(tryparse(Float64, get(ENV, "JEXPRESSO_BW_CMIN", "")), 0.06)
-_bw_cr()   = something(tryparse(Float64, get(ENV, "JEXPRESSO_BW_CR", "")), 1.0)
+# C_1 (:dsgs_C1); JEXPRESSO_BW_CR, its name until Nov 2026, is still read, with a warning
+_bw_c1()   = (v = get(ENV, "JEXPRESSO_BW_C1", "");
+              isempty(v) && haskey(ENV, "JEXPRESSO_BW_CR") &&
+                  (@warn "JEXPRESSO_BW_CR is now JEXPRESSO_BW_C1"; v = ENV["JEXPRESSO_BW_CR"]);
+              something(tryparse(Float64, v), 1.0))
 _bw_freeze() = (v = strip(get(ENV, "JEXPRESSO_BW_FREEZE", ""));
                 isempty(v) ? nothing : v in ("1", "true", "yes"))
 
@@ -82,7 +86,7 @@ _bw_nodal() = lowercase(strip(get(ENV, "JEXPRESSO_BW_NODAL", "false"))) in ("1",
 # viscosity), while Dao & Nazarov's is order-independent. Δ enters the cap and
 # the floor linearly and the residual viscosity quadratically, so the
 # convention can be switched here without touching the kernels, by scaling
-# the coefficients: C_max, C_min by (k+1)/k and C_R by ((k+1)/k)².
+# the coefficients: C_max, C_min by (k+1)/k and C_1 by ((k+1)/k)².
 #
 # THIS CASE USES THE PAPER'S Δ_e = h_e/(N+1) BY DEFAULT, as every other case
 # does, so that C_1 = 1, C_2 = 0.5 and C_min = 0.06 mean here what they mean in
@@ -138,7 +142,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # DynSGS-MHD, conserved form: one residual-based kinematic ν per
         # element (max over the equations of the normalized residual, Dao &
-        # Nazarov eq. 4.8; :dsgs_CR, :dsgs_Cmax are their C_R, C_max), capped at
+        # Nazarov eq. 4.8; :dsgs_C1, :dsgs_Cmax are their C_R, C_max), capped at
         # C_max·Δ·(|u| + c_f), applied as ∇·(ν∇q) to every conserved variable
         # (user_primitives.jl). :μ are the per-slot multipliers for
         # (ρ, ρu, ρv, ρE, ρw, Bx, By, Bz); :dsgs_gamma must equal γ_mhd = 2
@@ -160,13 +164,13 @@ function user_inputs()
         # where there ARE shocks, and the Brio-Wu initial condition is a
         # discontinuity at t = 0, so it is the hard test of it.
         :dsgs_hold_steps  => _bw_hold(),
-        :dsgs_CR          => _bw_cr()*_bw_hfac()^2,   # JEXPRESSO_BW_CR overrides
+        :dsgs_C1          => _bw_c1()*_bw_hfac()^2,   # JEXPRESSO_BW_C1 overrides
         :dsgs_Cmax        => 0.5*_bw_hfac(),
         # Background floor C_min (not in the paper), 6 % of the first-order
         # viscosity C_max·h·(|u|+c_f). (0.03 was enough before the residual's
         # time derivative was made stage-consistent, DSGS.md §4.4: the old
         # stencil added its own dissipation on the moving waves.)
-        # The residual viscosity is C_R h² R: it scales with the amplitude
+        # The residual viscosity is C_1 h² R: it scales with the amplitude
         # of what it sees, so the element-scale ripples that the slowly
         # moving compound wave radiates into the plateau behind it (±0.5 %
         # in ρ, one wiggle per element, present at P3 and P4, with the

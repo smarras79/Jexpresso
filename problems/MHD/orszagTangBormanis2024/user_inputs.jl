@@ -79,7 +79,7 @@ function user_inputs()
         # coefficients by equation are those of Dao & Nazarov (2022, JSC
         # 92:77, §4.4), who apply the residual viscosity to these same
         # equations with continuous elements: one kinematic ν from the max
-        # of the normalized residuals (their eq. 4.8; :dsgs_CR and :dsgs_Cmax
+        # of the normalized residuals (their eq. 4.8; :dsgs_C1 and :dsgs_Cmax
         # are their C_R and C_max),
         # then ν on ∇ρ (:μ[1] = 1, their eq. 4.4, the term that keeps ρ
         # positive), the dynamic ρν in the momentum stress, κ = ρν/Pr on
@@ -114,7 +114,7 @@ function user_inputs()
         # Allreduces per RHS call and is what the method means by the norm
         # over Ω. JEXPRESSO_OT_NORMS=rank restores the cheaper scope.
         :dsgs_norms       => _ot_norms(),
-        :dsgs_CR          => 1.0,
+        :dsgs_C1          => 1.0,
         :dsgs_Cmax        => 0.5,
         :dsgs_gamma       => 5.0/3.0,
         :dsgs_Prt         => 1.0,

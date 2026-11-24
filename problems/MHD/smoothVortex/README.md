@@ -63,7 +63,7 @@ What `user_inputs.jl` runs, and so what a sweep measures:
 | when $\nu$ is computed | once per time step, at the first stage | `:dsgs_freeze_stage`, the `DSGS_MHD` default with the residual sensor |
 | **smoothness cutoff** | $c = 10^{-3}$ on the normalized residual | `:dsgs_cutoff`, **the default since 20 Oct 2026** |
 | normalization | over the whole domain, each variable's spread floored at its own scale ($\bar\rho$, $\bar\rho\bar c$, $\bar\rho\bar c^2$, $\sqrt{\bar\rho}\,\bar c$) | `:dsgs_norms => "domain"`, `:dsgs_rel => 1` |
-| coefficient | $\nu = \max\big(0, \min(C_{max}\Delta\lambda,\ C_R\Delta^2\max(0, r - c))\big)$ with $C_R = 1$, $C_{max} = 0.5$, $\Delta = h_e/(N+1)$ | `:dsgs_CR`, `:dsgs_Cmax` |
+| coefficient | $\nu = \max\big(0, \min(C_{max}\Delta\lambda,\ C_1\Delta^2\max(0, r - c))\big)$ with $C_1 = 1$, $C_{max} = 0.5$, $\Delta = h_e/(N+1)$ | `:dsgs_C1`, `:dsgs_Cmax` |
 | background floor | none, $C_{min} = 0$ ([why](#why-the-background-floor-is-off-here)) | `:dsgs_Cmin` |
 | form | physical: $\nu$ on $\rho$, $\bar\rho\nu$ in the deviatoric stress, $\kappa = \bar\rho\nu/\mathrm{Pr}$ on $\nabla T$, $\eta = \nu$ on $\mathbf B$, with the $\tau\cdot\mathbf u$ and $\eta\,\mathbf B\cdot\nabla\mathbf B$ work terms | `:dsgs_conserved => false`, `:dsgs_nazarov_energy => true` |
 | startup | $\nu$ held at zero for 2 steps (the BDF2 history) | `:dsgs_hold_steps` |
@@ -94,7 +94,7 @@ without it.
 | $\nu$ computed | at every Runge–Kutta stage | once per step (`b956ccd`, 14 Oct) |
 | smoothness cutoff | did not exist | $10^{-3}$ (20 Oct) |
 | $\Delta t$ | $\propto h$, per case (`tools/smooth_vortex_scan.sh`) | one $\Delta t$ for the sweep (`tools/smooth_vortex_mpi_scan.sh`) |
-| unchanged | residual sensor, `:dsgs_rel = 1`, $C_{min} = 0$, $C_R = 1$, $C_{max} = 0.5$, hold 2, $t = 1$, the absolute velocity norms | |
+| unchanged | residual sensor, `:dsgs_rel = 1`, $C_{min} = 0$, $C_1 = 1$, $C_{max} = 0.5$, hold 2, $t = 1$, the absolute velocity norms | |
 
 ## What a run produces
 
@@ -111,7 +111,7 @@ as the paper's Fig. 1 plots them, using the mesh's own nodal quadrature
 weights (the lumped mass: $\omega_i\omega_j|J|$ summed over the elements at
 each node; they integrate the domain area to 14 digits). It stores them in
 `errors/nop<N>_nelx<M>_<tag>.dat`, whose header also carries the relative
-norms and every parameter that made the number (box, $C_R$, $C_{max}$,
+norms and every parameter that made the number (box, $C_1$, $C_{max}$,
 $C_{min}$, `:dsgs_rel`, hold, cutoff, $\Delta t$). The tag says which
 experiment the record belongs to, so that no experiment overwrites another's:
 
@@ -250,7 +250,7 @@ JEXPRESSO_SV_NOP=4 JEXPRESSO_SV_NELX=16 julia --project=. src/Jexpresso.jl MHD s
 | `JEXPRESSO_SV_HOLD` | 2 | `:dsgs_hold_steps` |
 | `JEXPRESSO_SV_BDF` | 2 | `:dsgs_bdf_order`, the order of the residual sensor's backward difference (1 to 6) |
 | `JEXPRESSO_SV_FREEZE` | (on) | 1 or 0 forces `:dsgs_freeze_stage` |
-| `JEXPRESSO_SV_CR`, `JEXPRESSO_SV_CMAX` | 1, 0.5 | `:dsgs_CR`, `:dsgs_Cmax`; both zero keeps the sensor and applies no viscosity |
+| `JEXPRESSO_SV_C1`, `JEXPRESSO_SV_CMAX` | 1, 0.5 | `:dsgs_C1`, `:dsgs_Cmax`; both zero keeps the sensor and applies no viscosity |
 | `JEXPRESSO_SV_CMIN` | 0 | the background floor `:dsgs_Cmin` |
 | `JEXPRESSO_SV_REL` | 1 | `:dsgs_rel`, the normalization floor; `1e-3` is what the kernels used before the fix of 11 Sep |
 | `JEXPRESSO_SV_NORMS` | `domain` | `:dsgs_norms`; `rank` makes the answer depend on the rank count, `element` normalizes per element |
@@ -285,7 +285,7 @@ sensor:
 
 ```bash
 # the sensor with no viscosity applied: the solution is the Galerkin one
-JEXPRESSO_SV_CR=0 JEXPRESSO_SV_CMAX=0 JEXPRESSO_SV_NELX=16 \
+JEXPRESSO_SV_C1=0 JEXPRESSO_SV_CMAX=0 JEXPRESSO_SV_NELX=16 \
     julia --project=. src/Jexpresso.jl MHD smoothVortex
 ```
 
@@ -366,7 +366,7 @@ that difference's truncation error, $-(\Delta t^2/3)\,\partial_t^3 q$: the floor
 $\partial_t q$ with the backward difference of order $k$ on
 $(q^n, \dots, q^{n-k})$ instead, whose truncation error is
 $-\Delta t^k/(k+1)\,\partial_t^{k+1} q$, so $\nu$'s floor becomes
-$C_R\Delta^2\,O(\Delta t^k)$. The default runs the BDF2 path exactly as before
+$C_1\Delta^2\,O(\Delta t^k)$. The default runs the BDF2 path exactly as before
 (checked bit for bit against the code before the option: every digit of the
 error and of the mass and energy history, DynSGS without the cutoff at $N = 5$ on
 $8^2$), and the startup hold is at least $k$ steps. With `CarpenterKennedy2N54` the residual

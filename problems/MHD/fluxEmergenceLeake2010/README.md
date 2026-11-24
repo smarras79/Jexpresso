@@ -95,8 +95,8 @@ below).
 | `JEXPRESSO_LK10_ENERGY` | `thermal` (default), `total` | energy-consistent DynSGS (Positivity, below), or $E$ diffused as a whole (the parent case) |
 | `JEXPRESSO_LK10_EINT` | `off` (default), `lowbeta`, `all` | the energy equation: the total energy's own (`off`); or, where the internal energy is less than 10⁻³–10⁻² of the total (`lowbeta`) or everywhere (`all`), the changes of the kinetic and magnetic energies plus the internal energy's own equation, as in Lare, so that the pressure of a drained low-β region is not the remainder of two large energies (Positivity, below: The internal energy where it is a small share). Opt-in while the cluster test runs |
 | `JEXPRESSO_LK10_STABCAP` | default 0.2; 0: none | the DynSGS coefficient never above this viscous number $\mu\Delta t/\Delta x^2$, which the explicit step still integrates (Meshes, time step and cost) |
-| `JEXPRESSO_LK10_DSGS_STAGES` | `all` (default), `1,5`, `1` | the stages of the Runge–Kutta scheme at which the DynSGS terms are evaluated: all five; the first and the last, held in between; or the first alone (the default of `JEXPRESSO_LK10_STABCAP` is then 0.08). The coefficient is that of the first stage, with half the $C_R$ (Meshes, time step and cost: The DynSGS at two stages of the five) |
-| `JEXPRESSO_LK10_CR` | default 1 | the DynSGS constant $C_R$ |
+| `JEXPRESSO_LK10_DSGS_STAGES` | `all` (default), `1,5`, `1` | the stages of the Runge–Kutta scheme at which the DynSGS terms are evaluated: all five; the first and the last, held in between; or the first alone (the default of `JEXPRESSO_LK10_STABCAP` is then 0.08). The coefficient is that of the first stage, with half the $C_1$ (Meshes, time step and cost: The DynSGS at two stages of the five) |
+| `JEXPRESSO_LK10_C1` | default 1 | the DynSGS constant $C_1$ |
 | `JEXPRESSO_LK10_ETACAP` | `fast` (default), `flow` | DynSGS resistivity capped at $C_{max}\Delta(\lvert v\rvert + c_f)$ like the viscosity, or at $C_{max}\Delta\lvert v\rvert$ (Verification, the REF 4 run) |
 | `JEXPRESSO_LK10_ETAFAC` | default 1 | factor on the DynSGS resistivity (the `:μ` multipliers of the B slots), a sensitivity test; a factor above 1 never carries the coefficient past the stability cap (`JEXPRESSO_LK10_STABCAP`) |
 | `JEXPRESSO_LK10_RHOFAC` | default 1 | factor on the DynSGS mass diffusion (the `:μ` multiplier of the ρ slot), a sensitivity test |
@@ -237,7 +237,7 @@ paper's dissipation and its energy relaxation:
   without the transient.)
 - **DynSGS** (`DSGS_MHD`, conserved form on the departure from the reference
   state, weighted by $\rho_e$; legacy sensor; element norms; fast-speed floors
-  and thermal-energy residual for the low-β corona; $C_R = 1$,
+  and thermal-energy residual for the low-β corona; $C_1 = 1$,
   $C_{max} = 0.5$); the in-plane field is diffused in curl form (next sections).
   It replaces the numerical dissipation of Lare (shock viscosity and remap) and
   is the only shock capturing, with the positivity floors (next item). The background floor
@@ -386,7 +386,7 @@ paper's dissipation and its energy relaxation:
   (an Alfvénic or fast-mode structure has $\delta B/B = \delta v/c_f$ and keeps
   $\eta = \nu$; a grid-scale current sheet still gets the cap); and REF 4
   (Meshes), which halves $\Delta$ where the dome and the rope evolve
-  (the residual coefficient is $C_R\Delta^2\times$ the residual). The kick test
+  (the residual coefficient is $C_1\Delta^2\times$ the residual). The kick test
   of "Positivity" (32 km/s at (17, 2.4) Mm, $\beta = 3.6\times10^{-3}$, REF 1):
   in the disturbed corona (11 < x < 23 Mm, 1.5 < y < 12 Mm) the resistivity is
   0.57 (median) and 1.5 (largest) $L_0v_0$ at 11.6 s with one coefficient, 0.018
@@ -684,7 +684,7 @@ first-order cap is 0.145), and the scheme stays linearly stable to a fast CFL
 number of 1.4. The log names the rank the first time the cap acts. If the fast
 CFL number of the log approaches 1, restart with a smaller `JEXPRESSO_LK10_DT`.
 Here, the kick test at five times the time step (fast CFL number 1.13) with the
-coefficient driven to its cap ($C_R$ = 1000): non-finite at 0.39 $t_0$ without
+coefficient driven to its cap ($C_1$ = 1000): non-finite at 0.39 $t_0$ without
 the stability cap, with a viscous number of 0.71 at the snapshot before; with
 it, 0.26 and a clean run to 2 $t_0$ (flows decaying from 32 to 1.2 km/s,
 smallest pressure, density and temperature unchanged, $\psi$ at round-off).
@@ -728,8 +728,8 @@ integrated as before. Four things make it the same model:
   which is not small against $p$ at $\beta = 10^{-3}$.
 - *The coefficient.* The legacy sensor at stage $i$ reads
   $1.5\,(1 - c_i)\lvert\partial_tq\rvert$: 1.5 at the first stage, 0.75 in the mean
-  over the five (weights $b_i$). $C_R$ is halved (`:dsgs_CR` is 0.5
-  `JEXPRESSO_LK10_CR`).
+  over the five (weights $b_i$). $C_1$ is halved (`:dsgs_C1` is 0.5
+  `JEXPRESSO_LK10_C1`).
 - *The stability cap.* The diffusion is no longer integrated by the scheme
   itself, and what the step takes changes (linear analysis on degree-4 elements
   in 2D; viscous number $\mu\Delta t/\Delta x_{min}^2$):
@@ -781,7 +781,7 @@ Measured here:
   little smaller: at its later stages the five-stage sensor also reads the
   tendency of its own viscous term, which the $1.5\,(1 - c_i)$ of the
   calibration leaves out (its last-stage coefficient is 0.11 of the
-  first-stage one in this test, not 0.04). With `JEXPRESSO_LK10_CR` = 1.15
+  first-stage one in this test, not 0.04). With `JEXPRESSO_LK10_C1` = 1.15
   and 1.3 the stage list ends with flows of 14.31 and 14.18 km/s, on either
   side of the 14.25 of the five stages, and 0.037 and 0.045 km/s rms from
   them: 1.2 is the constant that reproduces a five-stage run whose history is
@@ -794,7 +794,7 @@ Measured here:
   the solution as much as the choice of the output times changes the
   five-stage one, in the other direction.
 - *Stability.* The kick test at five times the time step (fast CFL number
-  1.13) with the coefficient driven to its caps ($C_R\times1000$), to 2 $t_0$:
+  1.13) with the coefficient driven to its caps ($C_1\times1000$), to 2 $t_0$:
   five stages with the cap at 0.2 and at 0.5, stages 1 and 5 at 0.2 and 0.5,
   stage 1 at 0.08 and 0.2 all complete, with flows decaying from 32 km/s to
   1.2–1.3 km/s and a smallest pressure of 0.95 of the initial one (2.2 km/s
@@ -815,7 +815,7 @@ Measured here:
   initial one, 0.005 km/s rms apart (0.018 at most), pressure 0.05 % rms, no
   floor hit in either.
 - *The other switches.* The kick test to 2.4 s with stages 1 and 5 and, in
-  turn, `JEXPRESSO_LK10_SENSOR=residual` ($C_R$ not halved: that sensor is a
+  turn, `JEXPRESSO_LK10_SENSOR=residual` ($C_1$ not halved: that sensor is a
   residual at the first stage already), `_ENERGY=total` (the energy slot held
   whole), `_ETA=all` and `_CURLB=0`: all run, with flows of 18.9–19.0 km/s at
   the end as with the defaults.
@@ -830,7 +830,7 @@ JEXPRESSO_LK10_RESTART_DIR=$RUN JEXPRESSO_LK10_RESTART_TIME=1610 JEXPRESSO_LK10_
 ```
 
 (with the mesh, the rank count and the `JEXPRESSO_LK10_DT` of that run; add
-`JEXPRESSO_LK10_CR=1.4` for the coefficient that run had, see *The same
+`JEXPRESSO_LK10_C1=1.4` for the coefficient that run had, see *The same
 solution* above: without it the stage list runs with about 30 % less DynSGS,
 which is a second change).
 
@@ -877,7 +877,7 @@ stops at once ("nothing to continue"), so a spare job in the chain is harmless.
   (`JEXPRESSO_LK10_DT`), the end time, the snapshot interval and the numerical
   switches may change (`JEXPRESSO_LK10_FLOORS`, `_CMIN`, `_CURLB` and those of
   the DynSGS: `_ETA`, `_ETACAP`, `_ETAFAC`, `_VISC`, `_VISCFAC`, `_RHOFAC`, `_HEAT`, `_STABCAP`,
-  `_SENSOR`, `_ENERGY`, `_DSGS_STAGES`, `_CR`, and `_TFLOOR`; the log says which did): that is
+  `_SENSOR`, `_ENERGY`, `_DSGS_STAGES`, `_C1`, and `_TFLOOR`; the log says which did): that is
   how a run continues past a failure (below), or with another setting from the
   snapshot where it starts to matter.
 - **Which run.** `JEXPRESSO_LK10_RESTART_DIR` is the output directory
