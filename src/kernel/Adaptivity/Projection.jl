@@ -3158,7 +3158,8 @@ function amr_strategy!(args...)
     # next RT call; the cost weights of the last RT call (if any) are used by the redistribution (partition_weights.jl)
     t_amr0 = time_ns()
     nst = size(params.uaux, 2)
-    ext = hcat(params.uaux, params.mp.flux_sw, params.mp.flux_lw)
+    carry_rt = rt_heating_carried(params)        # RT heating arrays are nodal only in runs with radiation
+    ext = carry_rt ? hcat(params.uaux, params.mp.flux_sw, params.mp.flux_lw) : params.uaux
     rt_release_state!(params)                     # old RT infrastructure and plan caches are not needed any more
     GC.gc(true)
     sem, partitioned_model_new, ext_new = sem_setup(inputs, params.nparts, params.distribute, ref_coarse_flags, partitioned_model, params.mesh, params.interp, params.project, ext)
@@ -3178,8 +3179,10 @@ function amr_strategy!(args...)
                               tspan)
     
     uaux2u!(nu, uaux_new, nparams.neqs, nparams.mesh.npoin)
-    nparams.mp.flux_sw .= @view ext_new[:, nst + 1]
-    nparams.mp.flux_lw .= @view ext_new[:, nst + 2]
+    if carry_rt && rt_heating_carried(nparams)
+        nparams.mp.flux_sw .= @view ext_new[:, nst + 1]
+        nparams.mp.flux_lw .= @view ext_new[:, nst + 2]
+    end
     prob = ODEProblem(rhs!,
                     nu,
                     nparams.tspan,
@@ -3206,7 +3209,8 @@ function rt_rebalance_strategy!(inputs, params, u, t, partitioned_model)
     neqs = params.neqs; npoin = params.mesh.npoin
     u2uaux!(@view(params.uaux[:,:]), u, neqs, npoin)
     nst = size(params.uaux, 2)
-    ext = hcat(params.uaux, params.mp.flux_sw, params.mp.flux_lw)    # state + RT heating, transferred together
+    carry_rt = rt_heating_carried(params)        # RT heating arrays are nodal only in runs with radiation
+    ext = carry_rt ? hcat(params.uaux, params.mp.flux_sw, params.mp.flux_lw) : params.uaux
     flags = KernelAbstractions.zeros(CPU(), TInt, Int64(params.mesh.nelem))   # nothing_flag everywhere
     params.mesh.lneed_redistribute = true         # one rebuild: redistribute directly with the weights (no adapt)
     PART_FORCE[] = true
@@ -3225,8 +3229,10 @@ function rt_rebalance_strategy!(inputs, params, u, t, partitioned_model)
     nparams, nu = params_setup(sem, qp, inputs, OUTPUT_DIR, TFloat, [t, inputs[:tend]])
     uaux_new = ext_new[:, 1:nst]
     uaux2u!(nu, uaux_new, nparams.neqs, nparams.mesh.npoin)
-    nparams.mp.flux_sw .= @view ext_new[:, nst + 1]
-    nparams.mp.flux_lw .= @view ext_new[:, nst + 2]
+    if carry_rt && rt_heating_carried(nparams)
+        nparams.mp.flux_sw .= @view ext_new[:, nst + 1]
+        nparams.mp.flux_lw .= @view ext_new[:, nst + 2]
+    end
     glue = PART_LAST_GLUE[]; PART_LAST_GLUE[] = nothing
     nel_new = Int(nparams.mesh.nelem); moved = String[]
     if glue !== nothing
@@ -3319,6 +3325,9 @@ function redistributed_q!(u, u_old, glue_redistribute, connijk, old_connijk, ngl
     end
     
     u2recv, u2recver = send_and_receive(u2send, u2owner, comm)
+# RT heating (micro.flux_sw, flux_lw) is nodal (length npoin) only in runs that allocate it; otherwise a placeholder
+rt_heating_carried(params) = length(params.mp.flux_sw) == size(params.uaux, 1) && length(params.mp.flux_lw) == size(params.uaux, 1)
+
 
     id2recv = local_views(lids_rcv).item_ref[]
     cnt = 1
