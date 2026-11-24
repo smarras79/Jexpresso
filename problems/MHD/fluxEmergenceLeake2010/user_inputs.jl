@@ -34,9 +34,6 @@
 #   JEXPRESSO_LK10_CMIN      DynSGS background floor C_min                        [0]
 #   JEXPRESSO_LK10_FLOORS    0: no positivity floors (stage limiter)              [1]
 #   JEXPRESSO_LK10_TFLOOR    temperature floor, in T_ph = 5700 K                 [0.1]
-#   JEXPRESSO_LK10_RHOFLOOR  momentum | velocity: the mass the density floor adds keeps the
-#                            node's momentum and total energy (braking and heating it), or
-#                            moves with its velocity at its temperature        [momentum]
 #   JEXPRESSO_LK10_ETA       induction | all: the DynSGS resistivity from the residuals
 #                            of the induction equation alone, or from the max over
 #                            all equations (one coefficient, the parent case)    [induction]
@@ -110,9 +107,18 @@ if !@isdefined(_LK10_ASKED)
     const _LK10_ASKED = Set{String}(("SUBNORMALS",))     # every switch asked for (SUBNORMALS: in initialize.jl)
 end
 _lk10_env(k, d) = (push!(_LK10_ASKED, String(k)); strip(get(ENV, "JEXPRESSO_LK10_" * k, d)))
+# switches that existed and were removed, with the reason the error gives
+if !@isdefined(_LK10_WITHDRAWN)
+    const _LK10_WITHDRAWN = Dict(
+        "RHOFLOOR" => "the velocity-keeping density floor made every restart go non-finite and was withdrawn on 24 Nov 2026" *
+                      " (README, Positivity: What the density floor adds); unset it, the floor is the one of before")
+end
 # the JEXPRESSO_LK10_* variables of the environment, "NAME=value, ..."; an error if one was not asked for
 function lk10_check_env()
     set = sort!([String(k)[16:end] for k in keys(ENV) if startswith(String(k), "JEXPRESSO_LK10_")])
+    for k in set
+        haskey(_LK10_WITHDRAWN, k) && error(" problems/MHD/fluxEmergenceLeake2010: JEXPRESSO_LK10_", k, ": ", _LK10_WITHDRAWN[k], ".")
+    end
     bad = [k for k in set if !(k in _LK10_ASKED)]
     isempty(bad) ||
         error(" problems/MHD/fluxEmergenceLeake2010: ", join("JEXPRESSO_LK10_" .* bad, ", "), length(bad) > 1 ? " are" : " is",
@@ -196,18 +202,6 @@ end
 if !@isdefined(lk10_floor_Tmin)
     const lk10_floor_Tmin = Ref{Float64}(0.1)
 end
-# JEXPRESSO_LK10_RHOFLOOR: what the mass the density floor adds carries. "momentum" (the default,
-# as before): nothing, the momentum and the total energy of the node are kept, so the node is
-# braked (v by ρ/ρ_min) and the kinetic energy it loses becomes heat there. In a drained region
-# the kinetic energy is 5-50 times the internal energy (dome of a velocity-form run, 2185-2530 s):
-# every hit brakes and heats that node, and the rows of nodes that sit at the floor drain
-# differently from the rows beside them. "velocity": the added mass moves with the node's velocity
-# and has its temperature (ρv and the internal energy scaled with ρ), as more of the same plasma, in
-# the corona (where ρ_min ≥ 0.1 ρ_e) and for up to 1 % of the node's mass per stage; elsewhere, and for
-# a node that nearly emptied in one stage, the default.
-if !@isdefined(lk10_floor_keepv)
-    const lk10_floor_keepv = Ref{Bool}(false)
-end
 # Progress line (rank 0): the snapshots are 116 s of simulated time apart, an hour of wall
 # time on the fine meshes, and nothing else is printed in between.
 if !@isdefined(lk10_progress)
@@ -248,23 +242,6 @@ function lk10_positivity_limiter!(u, integrator, p, t)
         if ρ < ρmin
             d = 1.0 - ρ/ρmin
             d > worst[1] && (worst = (d, 1.0, X[1,ip], X[2,ip], ρ/ρmin))
-            if lk10_floor_keepv[] && ρ > 0.0 && ρmin >= 0.1*qe[ip,1]
-                # the added mass at the node's velocity and temperature (JEXPRESSO_LK10_RHOFLOOR=velocity), where
-                # the floor is a fair share of the reference density (≥ 0.1 ρ_e: the corona above ~3.75 Mm, where
-                # drained plasma reaches it; below, it sits 15-700 times under ρ_e and catches only nodes that
-                # nearly emptied), and up to 1 % of the node's mass per stage: plasma draining at 20 km/s loses
-                # ~3e-4 of a node per stage, while a node that nearly emptied in one stage has no velocity or
-                # temperature worth keeping (m/ρ, p/ρ of a vanishing ρ). Beyond that the velocity and temperature
-                # fall as 1.01ρ/ρmin, the default's ρ/ρmin. Kept without these bounds (or up to 2), restarts from
-                # 2185 s went non-finite, in the chromosphere (1-3 Mm) both times.
-                s   = ρmin/ρ
-                se  = min(s, 1.01)
-                ke0 = 0.5*(u[iρu]^2 + u[iρv]^2 + u[iρw]^2)/ρ
-                me0 = 0.5*(u[iBx]^2 + u[iBy]^2 + u[iBz]^2) + 0.5*u[iψ]^2
-                ei0 = u[iE] - ke0 - me0
-                u[iρu] *= se; u[iρv] *= se; u[iρw] *= se
-                u[iE] = se*ei0 + se*se/s*ke0 + me0
-            end
             u[iρ] = ρmin; ρ = ρmin; nhit += 1
         end
         ke = 0.5*(u[iρu]^2 + u[iρv]^2 + u[iρw]^2)/ρ
@@ -332,7 +309,6 @@ function user_inputs()
     stages = _lk10_stages()
     sensor = lowercase(_lk10_env("SENSOR", "legacy")) == "residual" ? "residual" : "legacy"
     lk10_floor_Tmin[] = _lk10_num("TFLOOR", 0.1)
-    lk10_floor_keepv[] = _lk10_word("RHOFLOOR", "momentum", "velocity") == "velocity"
     lk10_floor_hits[] = 0; lk10_floor_next[] = 1
     lk10_progress[] = (0.0, 0.0, 0.0); lk10_progress_tend[] = tend
     lk10_progress_every[] = 60.0*_lk10_num("PROGRESS", 10.0)
@@ -356,7 +332,6 @@ function user_inputs()
         :lk10_restart_dir     => String(_lk10_env("RESTART_DIR", "")),
         :lk10_floors          => floors,
         :lk10_floor_Tmin      => lk10_floor_Tmin[],   # T_ph units
-        :lk10_floor_keepv     => lk10_floor_keepv[],  # JEXPRESSO_LK10_RHOFLOOR=velocity
         :lsource              => true,       # gravity, energy relaxation, ψ damping, damping layers
         :lwell_balanced       => true,       # the reference (atmosphere + coronal field) is a discrete steady state
         :SOL_VARS_TYPE        => TOTAL(),

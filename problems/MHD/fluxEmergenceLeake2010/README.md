@@ -90,7 +90,6 @@ below).
 | `JEXPRESSO_LK10_CMIN` | default 0 | DynSGS background floor $C_{min}$ |
 | `JEXPRESSO_LK10_FLOORS` | `1` (default), `0` | positivity floors as the Runge–Kutta stage limiter (Positivity, below) |
 | `JEXPRESSO_LK10_TFLOOR` | default 0.1 | temperature floor, in $T_{ph}$ = 5700 K |
-| `JEXPRESSO_LK10_RHOFLOOR` | `momentum` (default), `velocity` | the mass the density floor adds keeps the node's momentum and total energy (braking and heating it), or moves with the node's velocity at its temperature (Positivity, below: What the density floor adds). Opt-in while the cluster test runs |
 | `JEXPRESSO_LK10_ETA` | `induction` (default), `all` | DynSGS resistivity from the induction residuals alone, or from the max over all residuals (one coefficient, the parent case) (DynSGS in the corona, below) |
 | `JEXPRESSO_LK10_ENERGY` | `thermal` (default), `total` | energy-consistent DynSGS (Positivity, below), or $E$ diffused as a whole (the parent case) |
 | `JEXPRESSO_LK10_EINT` | `off` (default), `lowbeta`, `all` | the energy equation: the total energy's own (`off`); or, where the internal energy is less than 10⁻³–10⁻² of the total (`lowbeta`) or everywhere (`all`), the changes of the kinetic and magnetic energies plus the internal energy's own equation, as in Lare, so that the pressure of a drained low-β region is not the remainder of two large energies (Positivity, below: The internal energy where it is a small share). Opt-in while the cluster test runs |
@@ -331,42 +330,45 @@ paper's dissipation and its energy relaxation:
   between 3.5 and 4.5 Mm), reaches the floor in both runs; it is not rows, and it
   is not traced here.
 
-  The run to try (from the 1955 s snapshot of a velocity-form run, whose
-  temperature-floor rows have not yet reached the density):
-  `JEXPRESSO_LK10_EINT=lowbeta` with the run's other switches; `noise` on its
-  output at 2185 and 2530 s should show no rows of nodes at the temperature floor
-  and a node-to-node part of $\log\rho$ along y close to the one along x.
+  The cluster run (23 Nov: the velocity-form run of 22 Nov restarted at 1955 s,
+  whose temperature-floor rows had not yet reached the density, with
+  `JEXPRESSO_LK10_EINT=lowbeta` and its other switches): `noise` at 2185 and 2530 s
+  shows no rows of nodes at the temperature floor. The density stripes remain: in
+  the draining legs of the arcade at 2185 s, with almost no floor contact, and
+  across the dome at 2530 s, as rows of nodes at the density floor (next
+  paragraph). The pressure noise was real, but it is not what makes the stripes.
 
-  *What the density floor adds* (`JEXPRESSO_LK10_RHOFLOOR`). By default the mass
-  the floor adds keeps the node's momentum and total energy: the node is braked
-  ($v$ by $\rho/\rho_{min}$) and the kinetic energy it loses becomes heat there. In
-  the drained dome the kinetic energy is 5–50 times the internal energy, so every
-  hit brakes and heats its node, and a row of nodes held at the floor drains
-  differently from the rows beside it. Evidence (`elements` on the `EINT=lowbeta`
-  run of 23 Nov at 2530 s): where the elements on the lines $x = -2, 0, 2$ Mm hold
-  nodes at the density floor (1–8 of their 25), the node-to-node part of the
-  vertical velocity is 9–29 km/s, where they hold none 0.1–8 km/s, while the
-  velocity form's stress varies by 0.6–1.5 from one element to the next there.
-  `velocity`: the added mass moves with the node's velocity and has its
-  temperature, as more of the same plasma, where the floor is a fair share of the
-  reference density ($\rho_{min} \ge 0.1\rho_e$, the corona above ~3.75 Mm, where
-  drained plasma reaches it) and for up to 1 % of the node's mass per stage
-  (plasma draining at 20 km/s loses ~3×10⁻⁴ of a node per stage). Below the
-  corona the floor sits 15–700 times under $\rho_e$ and catches only nodes that
-  nearly emptied, whose $m/\rho$ and $p/\rho$ are not worth keeping; there, and for a
-  larger refill, the default. Kept everywhere without a bound, a restart from
-  2185 s went non-finite in four steps; with a bound of twice the node's mass,
-  after 236 steps, at $x$ = 14–16 Mm, 1–3 Mm high (under the quadrupole's
-  strongest field); the same restart with the default floor ran to 2530 s. In the
-  drained-hole tests the floor fires on plasma nearly at rest and all variants
-  give the same statistics; a restart reports the change (`rho_floor`).
+  *What the density floor adds.* The mass the floor adds keeps the node's
+  momentum and total energy: the node is braked ($v$ by $\rho/\rho_{min}$) and the
+  kinetic energy it loses becomes heat there. In the drained dome the kinetic
+  energy is 5–50 times the internal energy, so every hit brakes and heats its
+  node, and a row of nodes held at the floor drains differently from the rows
+  beside it. Evidence (`elements` on the `EINT=lowbeta` run of 23 Nov at 2530 s):
+  where the elements on the lines $x = -2, 0, 2$ Mm hold nodes at the density
+  floor (1–8 of their 25), the node-to-node part of the vertical velocity is
+  9–29 km/s, where they hold none 0.1–8 km/s, while the velocity form's stress
+  varies by 0.6–1.5 from one element to the next there. A floor whose added
+  mass moves with the node's velocity and has its temperature, as more of the
+  same plasma, was tried on restarts of that run from 2185 s and withdrawn: kept
+  everywhere without a bound, the run went non-finite in 4 steps, at $x = 0$
+  below 3 Mm; with the refill bounded by twice the node's mass, after 236 steps,
+  at $x$ = 14–16 Mm, 1–3 Mm high; only where the floor is a fair share of the
+  reference density ($\rho_{min} \ge 0.1\rho_e$, the corona above ~3.75 Mm) and for
+  up to 1 % of the node's mass per stage, after 1060 steps (2188.7 s), at
+  $x$ = 13.6–14.3 Mm, 2.8–5.1 Mm high. The last two under the quadrupole's
+  strongest field, outside the dome; the same restart with the floor above ran
+  to 2530 s. The rows of 2530 s
+  are where the dome has drained to the floor, 2–3 orders of magnitude below the
+  erratum's $\sim 10^{-12.5}$ g cm⁻³: what removes them is a dome that does not
+  drain that far, not another floor.
 
   *Restarts* hold no DynSGS steps with the legacy sensor (`:dsgs_hold_steps`). A run
   starts with the coefficient at zero for two steps while the history of the
   sensor fills; at a restart that left a developed flow without DynSGS until its
-  third step (the restart above was at its fourth when it failed, the coefficient
-  on its cap). The legacy sensor reads $|\partial_tq|$, and on the history seeded
-  with the restart state that is its first reading too. Restarting a REF 1 run at
+  third step (the first restart with the velocity-keeping floor, above, was at
+  its fourth when it failed, the coefficient on its cap). The legacy sensor
+  reads $|\partial_tq|$, and on the history seeded with the restart state that is
+  its first reading too. Restarting a REF 1 run at
   920 s, both ways end as far from the uninterrupted run at 974 s (velocity rms
   0.081 and 0.086 km/s, $\log\rho$ rms 0.0052 and 0.0050 dex, the same largest
   coefficient): the difference is the restart's, not the hold's.

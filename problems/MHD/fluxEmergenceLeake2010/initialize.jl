@@ -624,7 +624,7 @@ function lk10_case_record(inputs)
         "dsgs_stages"      => (st = get(inputs, :dsgs_stages, nothing); st === nothing ? "all" : join(st, ",")),
         "C1"               => string(Float64(get(inputs, :lk10_C1, 1.0))),
         "tfloor"           => string(Float64(get(inputs, :lk10_floor_Tmin, 0.1))),
-        "rho_floor"        => get(inputs, :lk10_floor_keepv, false) == true ? "velocity" : "momentum",
+        "rho_floor"        => "momentum",   # the velocity-keeping floor (23 Nov) is withdrawn; a restart from its snapshots reports the change
         "heating"          => (h = get(inputs, :dsgs_heating, 1.0); h isa Number ? string(Float64(h)) : String(h)),
         "mesh"             => basename(String(get(inputs, :gmsh_filename, ""))),
         "partition"        => get(inputs, :lxy_partition, true) != true ? "metis" :
