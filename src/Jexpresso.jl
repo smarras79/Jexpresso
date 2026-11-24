@@ -252,6 +252,7 @@ include(joinpath( "kernel", "operators", "sweep_nc.jl"))
 include(joinpath( "kernel", "operators", "sweep_profile.jl"))
 
 include(joinpath( "kernel", "operators", "sweep_cache.jl"))
+include(joinpath( "kernel", "operators", "sweep_fastdiag.jl"))   # opt-in fast element solver
 
 include(joinpath( "kernel", "operators", "sweep_nc_mpi.jl"))
 

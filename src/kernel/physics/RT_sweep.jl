@@ -24,6 +24,9 @@ Base.@kwdef struct RadiativeCase
     # Asymmetry used for the scattering matrix: :element (one σ-weighted g per element) or :nodal (each node's own g;
     # nodes sharing a g share one matrix, so only cloud-edge nodes add matrices)
     phase_g_mode::Symbol = :element
+    # source_fn independent of direction (LW emission): build_case_fields evaluates it once per element and every
+    # direction shares that vector (only without a beam source, whose per-direction term is added in place)
+    source_isotropic::Bool = false
 end
 
 Base.@kwdef struct SweepOptions
@@ -44,6 +47,13 @@ Base.@kwdef struct SweepOptions
     lu_cache_mb::Float64 = -1.0        # -1 = from available memory (auto_cache_budget_mb)
     gc_mode::Symbol = :sync
     gc_every::Int = 0                  # 0 = auto: 16 for <=32 ranks, 8 above (measured optima)
+    # gc_mode :sync only: also run a young-generation collection whenever this many GB have been allocated since the
+    # last one (inside the sweep and after the source build). 0 = off (the schedule above only). The scheduled GC alone
+    # let ~31 GB/rank of per-pair garbage build up within one sweep at 1.2 M pairs/rank (BOMEX 64x64x60 6x6O4, OOM).
+    gc_alloc_gb::Float64 = 4.0
+    # element solver on the workspace path: :dense (LU) or :fastdiag (sweep_fastdiag.jl; affine elements, falls back to
+    # :dense per pair). ENV JEXPRESSO_RT_FASTDIAG=1/0 overrides.
+    elem_solver::Symbol = :dense
     async_chunk::Int = 256
     async_interval_ms::Float64 = 0.0   # 0 = auto: 20 ms for <=32 ranks, 5 ms above
     round_cap::Int = -64               # used only by the synchronous sweep (async=false)
@@ -60,6 +70,13 @@ function apply_sweep_options!(o::SweepOptions, nranks::Int)
     ASYNC_CHUNK[] = o.async_chunk
     ASYNC_INTERVAL[] = (o.async_interval_ms > 0 ? o.async_interval_ms : (nranks <= 32 ? 20.0 : 5.0)) / 1000
     gc_every = o.gc_every > 0 ? o.gc_every : (nranks <= 32 ? 16 : 8)
+    gb = something(tryparse(Float64, get(ENV, "JEXPRESSO_RT_GC_ALLOC_GB", "")), o.gc_alloc_gb)   # env override (tuning/tests)
+    GC_ALLOC_LIMIT[] = o.gc_mode == :sync ? gb * 1e9 : 0.0
+    GC_SYNC_MIN[] = something(tryparse(Float64, get(ENV, "JEXPRESSO_RT_GC_SYNC_MIN_GB", "")), 2.0) * 1e9
+    GC_ALLOC_MARK[] = Base.gc_bytes()
+    fdenv = get(ENV, "JEXPRESSO_RT_FASTDIAG", "")
+    USE_FASTDIAG[] = fdenv == "" ? o.elem_solver == :fastdiag : fdenv == "1"
+    o.elem_solver in (:dense, :fastdiag) || error("SweepOptions.elem_solver must be :dense or :fastdiag")
     return (gc_mode = o.gc_mode, gc_every = gc_every, gs_tol = o.gs_tol,
             lu_cache_mb = o.lu_cache_mb, round_cap = o.round_cap)
 end
@@ -75,11 +92,17 @@ function build_case_fields(mesh, case::RadiativeCase)
     ngl = mesh.ngl
     bc_fn_all = Dict{Tuple{Int,Int}, Function}()
     q_ext_all = Dict{Tuple{Int,Int}, Vector{Float64}}()
+    share_q = case.source_isotropic && case.beam_source === nothing
     for iel = 1:mesh.nelem
         em = mesh.extra_mesh[iel]
+        q_shared = nothing
         for d = 1:em.extra_npoin
             θ = em.extra_coords[1,d]; ϕ = em.extra_coords[2,d]
             bc_fn_all[(iel,d)] = (x,y,z,ip,nx,ny,nz) -> case.bc_fn(x,y,z,ip,nx,ny,nz,θ,ϕ)
+            if share_q && q_shared !== nothing          # same values for every direction: share one vector (read-only)
+                q_ext_all[(iel,d)] = q_shared
+                continue
+            end
             #=q_vec = zeros(npoin_cg)
             for k=1:ngl,j=1:ngl,i=1:ngl
                 gip = mesh.connijk[iel,i,j,k]
@@ -92,6 +115,7 @@ function build_case_fields(mesh, case::RadiativeCase)
 	    end
 
             q_ext_all[(iel,d)] = q_vec
+            share_q && (q_shared = q_vec)
         end
     end
 
@@ -378,7 +402,7 @@ function build_longwave_case(atmos_data, κ_lw::Vector{Float64}, σ_lw::Vector{F
     # (thermal-IR scattering is weak; ω₀_cloud=0.05 already folds the
     # MAGNITUDE into σ, only the ANGULAR redistribution is assumed isotropic).
     return RadiativeCase(kappa_fn=kappa_fn, sigma_fn=sigma_fn,
-                          phase_fn=(θ,θ1,ϕ,ϕ1,g) -> 1/(4π), g_const=0.0,
+                          phase_fn=(θ,θ1,ϕ,ϕ1,g) -> 1/(4π), g_const=0.0, source_isotropic=true,
                           bc_fn=bc_fn, source_fn=source_fn, prev_override=prev_override,
                           # surface_reflection: Lambertian reflection of the downward LW flux with albedo 1 - ε at the
                           # bottom (bc_fn keeps the emission ε B); off by default, as the offline ICA reference in
@@ -689,10 +713,10 @@ function build_unified_ncf_infrastructure(mesh, sem, comm)
 
     n_dirs = [mesh.extra_mesh[iel].extra_npoin for iel = 1:mesh.nelem]
     #gid_exch = build_ncf_gid_value_exchange(mesh, neighbor_rank, n_dirs, comm)
-    gid_exch = augment_gid_exchange(build_ncf_gid_value_exchange(mesh, neighbor_rank, n_dirs, comm), ngl)
+    gid_exch = compact_gid_exchange(augment_gid_exchange(build_ncf_gid_value_exchange(mesh, neighbor_rank, n_dirs, comm), ngl))
     periodic_only_faces = Dict{Tuple{TInt,TInt},TInt}(k => v for (k,v) in neighbor_rank if get(neighbor_is_periodic, k, false))
     #periodic_gid_exch = build_ncf_gid_value_exchange(mesh, periodic_only_faces, n_dirs, comm)
-    periodic_gid_exch = augment_gid_exchange(build_ncf_gid_value_exchange(mesh, periodic_only_faces, n_dirs, comm), ngl)
+    periodic_gid_exch = compact_gid_exchange(augment_gid_exchange(build_ncf_gid_value_exchange(mesh, periodic_only_faces, n_dirs, comm), ngl))
 
     return (mesh=mesh, sem=sem,
             neighbor_elem=neighbor_elem, neighbor_fid=neighbor_fid, face_correspondence=face_correspondence,
@@ -792,6 +816,10 @@ function run_unified_case_solve(setup, metrics, comm, case::RadiativeCase;
             em = mesh.extra_mesh[iel]; nd = em.extra_npoin; C_iel = C_iel_all[iel]
             gips  = [mesh.connijk[iel,i,j,k] for i=1:ngl, j=1:ngl, k=1:ngl][:]      # i fastest = lidx order
             σ_loc = σ[gips]
+            if all(iszero, σ_loc)                     # no scattering here: the source is the fixed one (read-only)
+                for dk = 1:nd; extra_source_all[(iel,dk)] = q_ext_all[(iel,dk)]; end
+                continue
+            end
             Imat = Matrix{Float64}(undef, ngl^3, nd)
             for m = 1:nd; Imat[:,m] .= I_cg_all[(iel,m)]; end
             S = if C_groups === nothing || length(C_groups[iel]) == 1
@@ -805,6 +833,7 @@ function run_unified_case_solve(setup, metrics, comm, case::RadiativeCase;
                 extra_source_all[(iel,dk)] = q_ext_all[(iel,dk)] .+ σ_loc .* view(S,:,dk)
             end
         end
+        maybe_young_gc!()                                     # source-build temporaries (Imat, S, broadcasts)
         # Lagged iterate read across periodic faces; with prev_override some entries are replaced by fixed inflow
         I_prev = I_cg_all
         if case.prev_override !== nothing
@@ -856,7 +885,8 @@ function run_unified_case_solve(setup, metrics, comm, case::RadiativeCase;
                 Id = Dict{Tuple{Int,Int}, Vector{Float64}}(); unflatten_I!(Id, x, order, len_each)
                 monitor(kind, res, length(t_tot), Id, κ, σ)
             end
-            x_final = gmres_fixed_point_solve(apply_G, flatten_I(I_cg_init, order), comm;
+            x_init = flatten_I(I_cg_init, order); empty!(I_cg_init)         # the Dict copy is not needed any more
+            x_final = gmres_fixed_point_solve(apply_G, x_init, comm;
                                                restart=gmres_restart, max_restarts=gmres_max_restarts, tol=tol, rtol=rtol,
                                                monitor=gmon, basis=gmres_basis)
         elseif solver == :gmres_precond
@@ -960,6 +990,23 @@ function run_unified_case_solve(setup, metrics, comm, case::RadiativeCase;
         GC.enable(gc_prev)
     end
     t_solve = (time_ns() - t_solve0) * 1e-9
+    if USE_FASTDIAG[]
+        fs = MPI.Allreduce(Float64[FD_STATS.n_fd, FD_STATS.n_fallback, FD_STATS.n_skip, FD_STATS.its], MPI.SUM, comm)
+        fc = MPI.Allreduce(Float64[FD_STATS.max_check, FD_STATS.n_checked], MPI.MAX, comm)
+        rank == 0 && println(@sprintf("  fast-diag element solves: %d fast (mean %.1f GMRES its), %d not converged -> dense, %d not eligible -> dense; self-check max rel diff %.1e over %d pairs/rank%s",
+            Int(fs[1]), fs[4] / max(fs[1], 1), Int(fs[2]), Int(fs[3]), fc[1], Int(fc[2]), FD_DISABLED[] ? " (DISABLED after a failed check)" : ""))
+        fw = MPI.Allreduce(Float64.(FD_SKIP_WHY), MPI.SUM, comm)
+        rank == 0 && println("    not eligible, by reason: " * join(["$(FDW_NAMES[i]) $(Int(fw[i]))" for i in eachindex(fw) if fw[i] > 0], ", "))
+        ftn = MPI.Allreduce(Float64[FD_STATS.n_tan, FD_STATS.its_tan, FD_STATS.n_fallback_tan], MPI.SUM, comm)
+        ftc = MPI.Allreduce(Float64[FD_STATS.n_checked_tan], MPI.MIN, comm)
+        rank == 0 && println(@sprintf("    of which tangential (direction parallel to element faces): %d fast (mean %.1f GMRES its), %d not converged; self-checked >= %d pairs/rank",
+            Int(ftn[1]), ftn[2] / max(ftn[1], 1), Int(ftn[3]), Int(ftc[1])))
+        fd_stats_reset!()
+    end
+    nyg = MPI.Allreduce(Float64(GC_YOUNG_COUNT[]), MPI.MAX, comm); GC_YOUNG_COUNT[] = 0
+    rank == 0 && GC_ALLOC_LIMIT[] > 0 && println("  allocation-volume young GCs this solve (max over ranks): $(Int(nyg)), limit $(GC_ALLOC_LIMIT[]/1e9) GB")
+    gsc = MPI.Allreduce(Float64[GC_SYNC_COUNT[], GC_SYNC_SKIP[]], MPI.MAX, comm); GC_SYNC_COUNT[] = 0; GC_SYNC_SKIP[] = 0
+    rank == 0 && println("  scheduled full GCs this solve (max over ranks): $(Int(gsc[1])) done, $(Int(gsc[2])) skipped (< $(GC_SYNC_MIN[]/1e9) GB allocated since the previous)")
 
     # ---- report (collective) ----
     nmv = length(t_tot)

@@ -940,8 +940,8 @@ end
 function exchange_ncf_gid_values!(exch, x_dg::Dict{Tuple{Int,Int},Vector{Float64}}, ngl::Int)
     send_vals = Vector{Float64}(undef, exch.n_flat)
     for m = 1:exch.n_flat
-        iel = exch.flat_owning_iel[m]; d = exch.flat_d[m]
-        i,j,k = exch.flat_i[m], exch.flat_j[m], exch.flat_k[m]
+        iel = Int(exch.flat_owning_iel[m]); d = Int(exch.flat_d[m])
+        i,j,k = Int(exch.flat_i[m]), Int(exch.flat_j[m]), Int(exch.flat_k[m])
         send_vals[m] = haskey(x_dg, (iel,d)) ? x_dg[(iel,d)][lidx(i,j,k,ngl)] : NaN
     end
     send_and_receive!(exch.val_cache, send_vals)

@@ -43,6 +43,28 @@ function make_gid_table(exch)
     return GidTable(vc.combined_recv_data, slot, gelv, dv, gidv)
 end
 
+# Static receive-only data: the (gel, d, gid) key caches are exchanged once at setup and afterwards only their
+# combined_recv_data is read (GidTable aliases it; discover! and the verification path read it). A SendReceiveCache
+# also keeps send buffers, per-peer receive buffers and an Int64 sender index of the same length: ~4x the data.
+struct StaticRecv
+    combined_recv_data::Vector{Float64}
+end
+
+"""
+    compact_gid_exchange(exch) -> exch
+
+Memory compaction after augment_gid_exchange, values unchanged: the three key caches keep only their received array
+(the same array object, so GidTable's aliases stay valid), and the flat_* indices (read only by the verification-path
+exchange_ncf_gid_values!) are stored as Int32. BOMEX 32x32x30 6x6O4, 960 elements/rank: ~1.9 GB/rank.
+"""
+function compact_gid_exchange(exch)
+    return merge(exch, (gel_cache = StaticRecv(exch.gel_cache.combined_recv_data),
+                        d_cache   = StaticRecv(exch.d_cache.combined_recv_data),
+                        gid_cache = StaticRecv(exch.gid_cache.combined_recv_data),
+                        flat_owning_iel = Int32.(exch.flat_owning_iel), flat_d = Int32.(exch.flat_d),
+                        flat_i = Int32.(exch.flat_i), flat_j = Int32.(exch.flat_j), flat_k = Int32.(exch.flat_k)))
+end
+
 function augment_gid_exchange(exch, ngl::Int)
     n = exch.n_flat
     index = Dict{Tuple{Int,Int},Int}()

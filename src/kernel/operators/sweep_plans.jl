@@ -10,6 +10,34 @@ struct AsyncDeps
 end
 const ASYNC_DEPS = IdDict{Any,AsyncDeps}()
 
+# Allocation-volume GC (SweepOptions.gc_alloc_gb, set by apply_sweep_options!). With GC disabled during the solve
+# (gc_mode :sync) per-pair garbage (upwind closures, result vectors, LU pivots) otherwise accumulates until the scheduled
+# full collection. A young collection only frees unreachable objects: it changes neither the values nor the solve order.
+const GC_ALLOC_LIMIT = Ref(0.0)
+const GC_ALLOC_MARK = Ref{Int64}(0)
+const GC_YOUNG_COUNT = Ref(0)
+@inline function maybe_young_gc!()
+    lim = GC_ALLOC_LIMIT[]
+    (lim > 0 && Base.gc_bytes() - GC_ALLOC_MARK[] > lim) || return false
+    was = GC.enable(true); GC.gc(false); GC.enable(was)
+    GC_ALLOC_MARK[] = Base.gc_bytes(); GC_YOUNG_COUNT[] += 1
+    return true
+end
+
+# Scheduled full collection (gc_mode :sync, every 4*gc_every reduction rounds) only when at least GC_SYNC_MIN bytes
+# were allocated since the previous one (ENV JEXPRESSO_RT_GC_SYNC_MIN_GB, default 2; 0 = always, the old schedule).
+# Idle ranks poll faster than busy ones, so a round-count schedule alone collects more often the faster the solve.
+const GC_SYNC_MIN = Ref(2.0e9)          # set at run time by apply_sweep_options! (env read there, not at precompile)
+const GC_SYNC_MARK = Ref{Int64}(0)
+const GC_SYNC_COUNT = Ref(0); const GC_SYNC_SKIP = Ref(0)
+@inline function sync_full_gc_due!()
+    if Base.gc_bytes() - GC_SYNC_MARK[] < GC_SYNC_MIN[]
+        GC_SYNC_SKIP[] += 1; return false
+    end
+    GC_SYNC_MARK[] = Base.gc_bytes(); GC_SYNC_COUNT[] += 1
+    return true
+end
+
 struct FinePlan
     remote_gel::TInt
     gids::Matrix{Int}                      # (ngl,ngl) parent-grid gids, 0 = no entry
@@ -995,6 +1023,7 @@ function run_dg_sweep_async!(mesh, metrics, ψ, dψ, ω,
         if ns > 0
             n_solved_local += ns; solved_period += ns; retry_dirty = true
             te1 = time_ns(); flush!(newly); t_exch_p += (time_ns() - te1) * 1e-9
+            maybe_young_gc!()
         end
         if qh[] > length(queue) && retry_dirty                      # idle: one pass over the retry list, only if something changed
             retry_dirty = false
@@ -1069,7 +1098,7 @@ function run_dg_sweep_async!(mesh, metrics, ψ, dψ, ω,
                     recount!(); retry_dirty = false
                     just_resolved = true; prev = nothing
                 end
-                if gc_mode == :sync && gc_every > 0 && n_red % (4*gc_every) == 0
+                if gc_mode == :sync && gc_every > 0 && n_red % (4*gc_every) == 0 && sync_full_gc_due!()
                     tt = time_ns(); GC.enable(true); GC.gc(true); GC.enable(false)
                     prof === nothing || padd!(prof, :sync_gc, (time_ns() - tt) * 1e-9)
                 end

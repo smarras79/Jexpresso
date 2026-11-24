@@ -894,10 +894,10 @@ function setup_unified_ncf_test(inputs, nparts, distribute, sem, partitioned_mod
 
     n_dirs = [mesh.extra_mesh[iel].extra_npoin for iel = 1:mesh.nelem]
     #gid_exch = build_ncf_gid_value_exchange(mesh, neighbor_rank, n_dirs, comm)
-    gid_exch = augment_gid_exchange(build_ncf_gid_value_exchange(mesh, neighbor_rank, n_dirs, comm), ngl)
+    gid_exch = compact_gid_exchange(augment_gid_exchange(build_ncf_gid_value_exchange(mesh, neighbor_rank, n_dirs, comm), ngl))
     periodic_only_faces = Dict{Tuple{TInt,TInt},TInt}(k => v for (k,v) in neighbor_rank if get(neighbor_is_periodic, k, false))
     #periodic_gid_exch = build_ncf_gid_value_exchange(mesh, periodic_only_faces, n_dirs, comm)
-    periodic_gid_exch = augment_gid_exchange(build_ncf_gid_value_exchange(mesh, periodic_only_faces, n_dirs, comm), ngl)
+    periodic_gid_exch = compact_gid_exchange(augment_gid_exchange(build_ncf_gid_value_exchange(mesh, periodic_only_faces, n_dirs, comm), ngl))
 
     return (mesh=mesh, metrics=metrics, sem=sem, partitioned_model=partitioned_model,
             neighbor_elem=neighbor_elem, neighbor_fid=neighbor_fid, face_correspondence=face_correspondence,

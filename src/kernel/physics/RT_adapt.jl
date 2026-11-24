@@ -141,6 +141,8 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
     # Solver and diagnostic switches read below (each is documented where it is read):
     #   solvers      :RT_sw_solver, :RT_lw_solver (:gmres | :jacobi), :RT_{sw,lw}_gmres_restart, :RT_gmres_max_matvecs,
     #                :RT_gmres_basis, :RT_sw_rtol, :RT_lw_rtol, :RT_lw_cold_rtol
+    #   elements     :RT_elem_solver (:dense | :fastdiag: fast-diagonalisation element solver, sweep_fastdiag.jl),
+    #                :RT_lu_cache_mb (-1 = automatic budget from free memory; 0 = no cached element factors)
     #   SW phase     :RT_sw_phase_normalization (:symmetric_g, mod_inputs.jl), :RT_sw_phase_g (:element | :nodal)
     #   SW limiter   :RT_sw_positivity_limiter (true), :RT_sw_limiter_mode (:posthoc | :sweep), :RT_sw_limited_sweeps
     #   reflection   :RT_sw_surface_diffuse_reflection (true), :RT_lw_surface_reflection (false; albedo 1 - ε)
@@ -303,6 +305,7 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
             I_cg_all_init = micro.rt_sol_sw_available ? micro.rt_sol_sw : nothing,
             rtol = sw_rtol,
             monitor = sw_monitor,
+            opts = SweepOptions(elem_solver = Symbol(get(inputs, :RT_elem_solver, :dense)), lu_cache_mb = Float64(get(inputs, :RT_lu_cache_mb, -1.0))),
             report = rt_solve_report!(tm, :sw))
         rt_lap!(tm, :sw_solve)
         if get(inputs, :RT_neg_radiance_check, true) == true      # diagnostic only: never stops the run
@@ -396,6 +399,7 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
             solver = lw_solver,
             rtol = cold ? cold_rtol : lw_rtol,
             monitor = lw_monitor,
+            opts = SweepOptions(elem_solver = Symbol(get(inputs, :RT_elem_solver, :dense)), lu_cache_mb = Float64(get(inputs, :RT_lu_cache_mb, -1.0))),
             report = rt_solve_report!(tm, :lw))
         rt_lap!(tm, :lw_solve)
         if get(inputs, :RT_neg_radiance_check, true) == true      # diagnostic only: never stops the run
