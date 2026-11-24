@@ -1,0 +1,220 @@
+#---------------------------------------------------------------------------------
+# Isentropic (Shu) vortex — the classical smooth accuracy test of the 2D
+# compressible Euler equations, and the HYDRODYNAMIC CONTROL for
+# problems/MHD/smoothVortex.
+#
+# Same box, same meshes, same error machinery and the same figures as the MHD
+# case; no magnetic field, so no ∇·B and no GLM cleaning. The difference
+# between the two convergence histories is the bias the divergence constraint
+# introduces, which is what this case exists to measure.
+#
+#     tools/smooth_vortex_mesh.sh                          # the meshes, once
+#     SV_CASE=CompEuler/smoothVortex tools/smooth_vortex_mpi_scan.sh
+#
+# or by hand,
+#
+#     JEXPRESSO_EV_NOP=4 JEXPRESSO_EV_NELX=16 \
+#         julia --project=. src/Jexpresso.jl CompEuler smoothVortex
+#
+# Overrides, all optional:
+#   JEXPRESSO_EV_NOP     polynomial order                        (default 4)
+#   JEXPRESSO_EV_NELX    elements per side; picks the mesh file  (default 16)
+#   JEXPRESSO_EV_DT      time step, overrides the rule below
+#   JEXPRESSO_EV_TEND    final time                              (default 1.0)
+#   JEXPRESSO_EV_BETA    vortex strength                         (default 5)
+#                        5 is the classical test; 1 matches the amplitude of
+#                        the MHD vortex (κ = μ = 1) for a like-for-like
+#                        comparison with problems/MHD/smoothVortex
+#   JEXPRESSO_EV_VISC    "dsgs" (default) or "none" for plain Galerkin
+#   JEXPRESSO_EV_SOLVER  ck54 (default), vern9, vern7, dp8, ssprk54, tsit5
+#   JEXPRESSO_EV_CMIN / _CR / _CMAX / _REL / _NORMS   the DynSGS coefficients
+#
+# THE MESHES ARE THE MHD CASE'S. They are the same [-5,5]² doubly periodic
+# quad grids, and duplicating them here would only mean two copies to
+# regenerate; the per-case SEM cache lives next to this deck, so nothing is
+# shared but the .msh file itself.
+#---------------------------------------------------------------------------------
+const EV_NELX_DEFAULT = 16
+const EV_NOP_DEFAULT  = 4
+const EV_DT_REF       = 2.0e-3    # at nelx*nop = 64
+
+_ev_nop()   = something(tryparse(Int,     get(ENV, "JEXPRESSO_EV_NOP",   "")), EV_NOP_DEFAULT)
+_ev_nelx()  = something(tryparse(Int,     get(ENV, "JEXPRESSO_EV_NELX",  "")), EV_NELX_DEFAULT)
+_ev_tend()  = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_TEND",  "")), 1.0)
+_ev_beta()  = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_BETA",  "")), EV_BETA_DEFAULT)
+
+#---------------------------------------------------------------------------------
+# Positivity floors for the realizability repair, DERIVED FROM THE VORTEX BEING
+# RUN rather than from the free stream. This is not fussiness — a fixed floor
+# would silently clip the exact solution at high β.
+#
+# The isentropic vortex has its minimum at r = 0, where
+#
+#     T_c = 1 - (γ-1)β²e/(8γπ²),   ρ_c = T_c^(1/(γ-1)),   p_c = ρ_c^γ
+#
+# and that minimum collapses fast with β (γ = cp/cv = 1.3983):
+#
+#     β =  5 (default)   ρ_c = 4.94e-1   p_c = 3.73e-1
+#     β =  7             ρ_c = 1.93e-1   p_c = 1.00e-1
+#     β = 10             ρ_c = 4.96e-5   p_c = 9.58e-7   <-- BELOW a 1e-6 floor
+#
+# So a floor of "1e-6 of the free stream", which is right for every other case
+# here because their free stream IS their scale, would at β = 10 fire in the
+# middle of the EXACT SOLUTION and quietly corrupt a convergence study. The
+# floors below are 1e-6 of the exact CORE instead, so they sit six orders under
+# the true minimum whatever β is asked for, and the repair can never touch the
+# vortex.
+#
+# On this case it must never engage at all. That is the point of running it:
+# a smooth, well-resolved, exactly-known solution is the negative control for
+# the repair. IF IT REPORTS ANY ENGAGEMENT HERE, or if any stored convergence
+# number moves, stop and treat it as a bug in the repair — not in the vortex.
+#---------------------------------------------------------------------------------
+function _ev_positivity_floors()
+    γ  = PhysicalConst{Float64}().γ
+    β  = _ev_beta()
+    δT = -(γ - 1.0)*β*β*exp(1.0)/(8.0*γ*π*π)      # the r = 0 minimum
+    T  = 1.0 + δT
+    T <= 0.0 && return (1.0e-14, 1.0e-14)         # β past the vacuum limit
+    ρc = T^(1.0/(γ - 1.0))
+    return (1.0e-6*ρc, 1.0e-6*ρc^γ)
+end
+_ev_cmin()  = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_CMIN",  "")), 0.0)
+_ev_cr()    = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_CR",    "")), 1.0)
+_ev_cmax()  = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_CMAX",  "")), 0.5)
+_ev_rel()   = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_REL",   "")), 1.0)
+_ev_visc()  = lowercase(strip(get(ENV, "JEXPRESSO_EV_VISC",  "dsgs")))
+_ev_norms() = lowercase(strip(get(ENV, "JEXPRESSO_EV_NORMS", "domain")))
+
+# The time integrator. As on the MHD case, a fourth-order one is not what
+# limits these runs — see the note by _sv_solver in
+# problems/MHD/smoothVortex/user_inputs.jl for the measurement.
+function _ev_solver()
+    name = lowercase(strip(get(ENV, "JEXPRESSO_EV_SOLVER", "ck54")))
+    name == "vern9"   && return Vern9()
+    name == "vern7"   && return Vern7()
+    name == "dp8"     && return DP8()
+    name == "ssprk54" && return SSPRK54()
+    name == "tsit5"   && return Tsit5()
+    name == "ck54"    || @warn "CompEuler/smoothVortex: unknown JEXPRESSO_EV_SOLVER=$(name); using CarpenterKennedy2N54"
+    return CarpenterKennedy2N54()
+end
+
+# Δt ∝ 1/(nelx·nop) unless it is given: the Courant number is then the same at
+# every point of a sweep. A convergence sweep should fix it instead
+# (tools/smooth_vortex_mpi_scan.sh does), so that the time error is a constant
+# rather than something that shrinks with h and contaminates the slope.
+function _ev_dt()
+    d = tryparse(Float64, get(ENV, "JEXPRESSO_EV_DT", ""))
+    d === nothing || return d
+    return EV_DT_REF*64.0/max(1, _ev_nelx()*_ev_nop())
+end
+
+# The BOX WIDTH. The vortex is a Gaussian, so on [-L/2, L/2]² the exact
+# solution is not periodic: the velocity perturbation at the middle of an
+# edge is (L/2)exp((1 - (L/2)²)/2)/2π with opposite sign on opposite edges,
+# so the initial condition jumps across the periodic seam by twice that —
+# 4.9e-06 on the L = 10 box of Balsara and of Dao & Nazarov. That jump is a
+# discontinuity in the DATA: it floors any accuracy study at ~1e-5, whatever
+# the order, and a 6th-order element reaches the floor sooner than a 4th.
+# L = 15 puts the floor at 1e-12 and L = 20 at machine zero; generate those
+# meshes with SV_L=20 tools/smooth_vortex_mesh.sh.
+# The default is the box of the paper, [-10,10]^2, i.e. L = 20.
+_ev_hold() = something(tryparse(Int, get(ENV, "JEXPRESSO_EV_HOLD", "")), 2)
+_ev_cutoff() = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_CUTOFF", "")), 0.0)
+_ev_freeze() = get(ENV, "JEXPRESSO_EV_FREEZE", "0") in ("1", "true", "yes")
+_ev_lbox() = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_L", "")), 20.0)
+# The box is ALWAYS in the mesh name (vortex_L20_32x32.msh): a mesh whose name
+# does not say which box it is cannot be told apart from one that is a
+# different box, and reading the wrong one costs a whole sweep.
+_ev_ltag() = (L = _ev_lbox();
+                 string("L", L == round(L) ? string(Int(round(L))) : string(L), "_"))
+_ev_mesh() = string("./problems/MHD/smoothVortex/vortex_", _ev_ltag(),
+                       _ev_nelx(), "x", _ev_nelx(), ".msh")
+
+function user_inputs()
+    inputs = Dict(
+        :ode_solver           => _ev_solver(),
+        :Δt                   => _ev_dt(),
+        :tinit                => 0.0,
+        :tend                 => _ev_tend(),
+        :diagnostics_at_times => (0.0, _ev_tend()),
+        :restart_time         => 0.0,
+        :lrestart             => false,
+        :lsource              => false,   # the vortex is an exact solution, unforced
+        :SOL_VARS_TYPE        => TOTAL(),
+        # Realizability repair (src/kernel/positivity/), ON AS A TEST. This case
+        # is the NEGATIVE control: smooth, well resolved, exact solution known,
+        # and fast. It must report zero engagements. A run that never engages is
+        # bit-identical to :lpositivity => false, because the driver skips the
+        # write-back when nothing was repaired — so the convergence study is
+        # safe unless the repair fires, and if it fires you want to know.
+        # Floors scale with β: see _ev_positivity_floors above.
+        :lpositivity          => true,
+        :positivity_rho_min   => _ev_positivity_floors()[1],
+        :positivity_p_min     => _ev_positivity_floors()[2],
+        :ode_adaptive_solver  => false,
+        #---------------------------------------------------------------------------
+        :interpolation_nodes => "lgl",
+        :nop                 => _ev_nop(),
+        #---------------------------------------------------------------------------
+        # Stabilization. The point of the test is that the residual viscosity
+        # must NOT destroy the accuracy of a high-order solution on a smooth
+        # problem, so the comparison is DynSGS against the plain Galerkin run
+        # (JEXPRESSO_EV_VISC=none).
+        #---------------------------------------------------------------------------
+        :lvisc            => (_ev_visc() != "none"),
+        :μ                => [1.0, 1.0, 1.0, 1.0],
+        :visc_model       => DSGS(),
+        # "residual" (default) or "legacy", the assembled M^-1.RHS sensor:
+        # JEXPRESSO_EV_SENSOR. Which one is used decides what the coefficient
+        # measures on a SMOOTH solution — the element-local form reads the
+        # inter-element jump of a dt-proportional grid-scale residue, which the
+        # assembly cancels (measured here: far from the vortex the element
+        # term is 18x the assembled rate, and both halve when dt halves).
+        :dsgs_sensor      => get(ENV, "JEXPRESSO_EV_SENSOR", "residual"),
+        :dsgs_CR          => _ev_cr(),
+        :dsgs_Cmax        => _ev_cmax(),
+        :dsgs_Cmin        => _ev_cmin(),   # no background floor: it would be an
+                                           # order-independent O(h) error on a
+                                           # smooth solution (see the README)
+        :dsgs_Prt         => 0.7,
+        :dsgs_rel         => _ev_rel(),
+        :dsgs_norms       => _ev_norms(),
+        # Compute the coefficient once per step instead of once per stage:
+        # JEXPRESSO_EV_FREEZE=1 (see :dsgs_freeze_stage in mod_inputs.jl).
+        # It is what keeps the residual, and with it nu, from stalling at
+        # O(dt) and capping a high-order accuracy test at second order.
+        :dsgs_freeze_stage => _ev_freeze(),
+        # Smoothness cutoff on the normalized residual (JEXPRESSO_EV_CUTOFF,
+        # :dsgs_cutoff in mod_inputs.jl): nu is zero where the sensor is only
+        # reading the element-local jump of a dt-proportional grid-scale
+        # residue, which is the floor that caps this very study's order.
+        :dsgs_cutoff       => _ev_cutoff(),
+        # Steps the coefficient is held at zero at the start of a run
+        # (JEXPRESSO_EV_HOLD, :dsgs_hold_steps). 2 is the minimum the BDF2
+        # history needs and the long-standing behaviour; more is the probe of
+        # whether the smooth-flow excess is a STARTUP dose.
+        :dsgs_hold_steps   => _ev_hold(),
+        :lrichardson      => false,
+        :energy_equation  => "energy",
+        :lkep             => false,
+        :entropy_variables => false,
+        :lfilter          => false,
+        #---------------------------------------------------------------------------
+        :lread_gmsh          => true,
+        :gmsh_filename       => _ev_mesh(),
+        #---------------------------------------------------------------------------
+        :outformat           => "png",
+        :plot_user           => true,
+        :plot_matrix         => false,
+        :plot_vars           => ["ρ", "u", "v", "p"],
+        :loverwrite_output   => true,
+        :lwrite_initial      => false,
+        :output_dir          => "./output",
+        :loutput_pert        => false,
+        :linitial_refine     => false,
+        :ladapt              => false,
+    ) #Dict
+    return inputs
+end

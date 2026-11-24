@@ -58,10 +58,10 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
         :loverwrite_output   => false,
-        :lwrite_initial      => false,
-       # :lwrite_initial      => true,
-        :output_dir          => "./output-nse/",
-        #:output_dir          => "./test/CI-run",
+        :lwrite_initial      => true,
+        #:output_dir          => "./output-theta/",
+	:output_dir          => "/scratch/smarras/smarras/output/KH32x32x7th/", 
+	#:output_dir          => "./test/CI-run",
         :loutput_pert        => false,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------
         # init_refinement

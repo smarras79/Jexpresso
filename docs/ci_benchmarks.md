@@ -1,200 +1,267 @@
-# CI Benchmark Testing
+# CI benchmark testing
 
-This document explains how the classical benchmark CI pipeline works, how to run
-it, and how to add a new benchmark to the suite.
+This document explains how the Jexpresso CI pipeline works, how to run it, and
+how to add a case to it.
+
+The short version: **every case CI runs is one line in
+[`test/ci_cases.jl`](../test/ci_cases.jl)**. The GitHub Actions job matrices
+are generated from that file at run time, so adding or removing a case never
+touches a workflow file.
 
 ---
 
 ## Overview
 
-Two GitHub Actions workflows manage benchmark testing:
-
 | Workflow | Trigger | Purpose |
 |---|---|---|
-| `benchmarks.yml` | Push/PR to `master`, weekly, manual | Run all benchmarks and compare output against reference |
-| `generate-ci-ref.yml` | Manual only | Generate and commit reference `.h5` files |
+| `CI.yml` | push/PR to `master`, tags, manual | Validate the registry, then `Pkg.test()` — run and compare every registered case. This is the merge gate. |
+| `benchmarks.yml` | push to `master`, weekly (Sun 02:00 UTC), manual | One job per case: own log, own timeout, own output artifact, plus an aggregated summary table |
+| `generate-ci-ref.yml` | manual only | Run the cases and commit their output as the reference (“golden”) solutions |
+| `Documentation.yml` | push/PR to `master`, tags, manual | Build and deploy the documentation |
+| `cleanup.yml` | PR closed | Delete the documentation preview of that PR |
 
-Each benchmark is run in **CI mode**: it reads problem inputs from
-`test/CI-runs/<EQ>/<CASE>/user_inputs.jl` (reduced simulation time,
-`hdf5` output) instead of the full `problems/` directory.  Output lands in
-`test/CI-runs/<EQ>/<CASE>/output/`.
+`benchmarks.yml` deliberately does not run on pull requests — `CI.yml` already
+runs the same cases there, and these are real simulations. The
+`pull_request:` trigger is present but commented out in the workflow if you
+want the per-case table on PRs as well.
 
-Pass/fail is determined in two layers:
+### What a case run means
 
-1. **Execution** — did the Julia process exit without error?
-2. **Numerical correctness** — do all HDF5 fields in the output match the
-   committed reference files in `test/CI-ref/<EQ>/<CASE>/output/` within
-   `atol = 1e-5`?
+Each case runs in **CI mode**: the solver reads
+`test/CI-runs/<EQS>/<CASE>/user_inputs.jl` (a shortened deck) instead of
+`problems/<EQS>/<CASE>/`, and writes to `test/CI-runs/<EQS>/<CASE>/output/`.
 
-A markdown summary table is written to the GitHub Actions job summary page
-after every run.
+CI mode also forces the settings the comparison depends on —
+`:outformat => "hdf5"`, `:output_dir => "none"`, `:loverwrite_output => true`
+and a single write at `:tend` — announcing each override it applies. Nothing
+is printed during the solve as a result; run with `JEXPRESSO_STEP_HEARTBEAT=1`
+to see progress and the step rate. A deck copied out of
+`problems/` therefore produces comparable output even though it asks for VTK
+somewhere else. `JEXPRESSO_CI_OUTPUT=0` disables the overrides.
 
----
+Pass/fail has two layers:
 
-## Running the benchmark CI
+1. **Execution** — did the run finish without error?
+2. **Numerical correctness** — does every HDF5 field match the committed
+   reference in `test/CI-ref/<EQS>/<CASE>/output/` within the case's `atol`
+   (default `1e-5`)?
 
-### Automatic runs
-
-`benchmarks.yml` triggers automatically on every push or pull request to
-`master`, and on a weekly schedule (Sunday 02:00 UTC).  No manual action is
-required.
-
-### Manual run
-
-1. Go to **Actions → Classical Benchmarks → Run workflow**.
-2. Select the branch you want to test.
-3. Click **Run workflow**.
-
-The job summary (visible on the workflow run page under the **Summary** tab)
-shows a table like:
-
-```
-### Simulation (did the code run?)
-| Benchmark          | Result  |
-|--------------------|---------|
-| CompEuler/theta    | ✅ Pass |
-| CompEuler/3d       | ✅ Pass |
-| ...                | ...     |
-
-### Numerical comparison (do results match reference?)
-| Status                                                    |
-|-----------------------------------------------------------|
-| ✅ Pass (see Compare step log for per-benchmark detail)  |
-```
-
-If a benchmark shows **skipped** in the comparison column it means no
-reference file exists for it yet — see [Bootstrapping reference files](#bootstrapping-reference-files) below.
+A case with no committed reference is reported as **skipped**, not failed.
 
 ---
 
-## Bootstrapping reference files
-
-Reference files must exist in `test/CI-ref/` before numerical comparison
-can run.  Generate them with the dedicated workflow:
-
-1. Go to **Actions → Generate CI Reference Solutions → Run workflow**.
-2. Select the branch that holds your intended baseline code.
-3. Optionally set a commit message (default: `Update CI reference solutions`).
-4. Click **Run workflow**.
-
-The workflow:
-- Runs every benchmark with CI mode inputs.
-- Copies the resulting `.h5` files from `test/CI-runs/<EQ>/<CASE>/output/`
-  to `test/CI-ref/<EQ>/<CASE>/output/`.
-- Commits and pushes those files with `[skip ci]` in the message so it
-  does not trigger another benchmark run.
-
-After this, every subsequent `benchmarks.yml` run compares fresh output
-against those committed files.
-
-### Re-generating references after an intentional change
-
-If a physics fix, scheme change, or parameter update intentionally alters the
-expected solution, run **Generate CI Reference Solutions** again on the
-updated branch.  The new `.h5` files replace the old ones and become the new
-golden reference.
-
----
-
-## Adding a new benchmark
-
-Follow these steps to add `<MyEquations>/<mycase>` to the CI suite.
-
-### 1 — Create the problem files
-
-The full problem definition lives under `problems/`:
-
-```
-problems/<MyEquations>/<mycase>/
-    initialize.jl
-    user_bc.jl
-    user_flux.jl
-    user_inputs.jl
-    user_primitives.jl
-    user_source.jl
-```
-
-### 2 — Create the CI-runs directory
-
-Copy the problem directory into `test/CI-runs/` and modify
-`user_inputs.jl` for fast CI execution:
-
-```bash
-cp -r problems/<MyEquations>/<mycase> test/CI-runs/<MyEquations>/<mycase>
-```
-
-Then edit `test/CI-runs/<MyEquations>/<mycase>/user_inputs.jl` and change:
-
-| Key | CI value | Reason |
-|---|---|---|
-| `:outformat` | `"hdf5"` | Required for comparison |
-| `:output_dir` | `"none"` | Output goes to `test/CI-runs/<EQ>/<CASE>/output/` |
-| `:tend` | A small value (a few time steps) | Keep CI wall-time short |
-| `:diagnostics_at_times` | Match the new `:tend` | Ensure at least one output file is written |
-| `:loverwrite_output` | `true` | Avoid timestamped subdirectories |
-
-Example — reduce a case with `Δt = 0.01` to just 5 steps:
+## The registry
 
 ```julia
-:tend                 => 0.05,
-:diagnostics_at_times => (0.05,),
-:outformat            => "hdf5",
-:output_dir           => "none",
-:loverwrite_output    => true,
-```
-
-### 3 — Register the benchmark in the comparison script
-
-Open `test/compare_benchmarks.jl` and add the new case to the `BENCHMARKS`
-constant:
-
-```julia
-const BENCHMARKS = [
-    ...
-    ("MyEquations", "mycase"),   # ← add this line
+# test/ci_cases.jl
+const CI_CASES = CICase[
+    CICase(eqs = "CompEuler", case = "theta", timeout = 40, atol = 1e-5),
 ]
 ```
 
-### 4 — Add simulation steps to both workflows
+| Field | Meaning |
+|---|---|
+| `eqs`, `case` | directory names under `test/CI-runs/` |
+| `timeout` | per-case limit in minutes, used for the GitHub Actions job |
+| `atol` | absolute tolerance of the field-by-field comparison |
+| `vtk_smoke` | also check the VTK writer for this case (default `false`) |
 
-**`benchmarks.yml`** — add a simulation step and include the new step id
-in the report and fail-gate:
+### Checking the VTK writer
 
-```yaml
-- name: "Simulate: MyEquations/mycase"
-  id: sim_myequations_mycase
-  continue-on-error: true
-  timeout-minutes: 20
-  run: |
-    julia --project=. -e '
-      using Jexpresso
-      Jexpresso.run_case("MyEquations", "mycase", CI_MODE=true)
-    '
+CI compares HDF5, so a break in `write_vtk` — the format production runs
+actually use — would go unnoticed. The VTK smoke test runs a case a second
+time with VTK output and asserts the writer produced non-empty
+`.vtu`/`.pvtu` files (no reference, no tolerance — the numbers are the HDF5
+comparison's job). One command:
+
+```bash
+julia --project=. test/runtests.jl --vtk CompEuler/theta
 ```
 
-Then add the step id to the report table:
+It is off by default because it doubles the case's run time; set
+`vtk_smoke = true` on a `CICase` to have CI do it every time. Details in
+[`test/CIdescription.md`](../test/CIdescription.md#checking-the-vtk-writer).
 
-```yaml
-echo "| MyEquations/mycase | $(icon '${{ steps.sim_myequations_mycase.outcome }}') |"
+The registry has a small command line interface, used by the workflows and
+useful locally:
+
+```bash
+julia test/ci_cases.jl list        # cases that will run
+julia test/ci_cases.jl validate    # registry vs. what is actually on disk
+julia test/ci_cases.jl matrix      # the JSON the workflows turn into jobs
+julia test/ci_cases.jl matrix "CompEuler/theta"   # a subset
 ```
 
-And to the fail-gate outcomes array:
+`validate` is the first thing both CI and the benchmarks workflow do, so a
+typo in the registry fails in seconds instead of after a 40-minute run.
 
-```yaml
-"${{ steps.sim_myequations_mycase.outcome }}"
+### Current suite
+
+Only **`CompEuler/theta`** is enabled. The cases that were in the suite
+previously are listed, commented out, at the bottom of `CI_CASES`. Re-enabling
+one is: uncomment the line, then run
+`julia --project=. test/generate_ci_ref.jl <EQS>/<CASE>` — it recreates the CI
+deck from `problems/` when that deck is no longer under `test/CI-runs/`, and
+regenerates the reference (any reference still sitting in `test/CI-ref/` for
+those cases predates the current HDF5 file naming and cannot be reused).
+
+---
+
+## Running the pipeline
+
+### Locally
+
+```bash
+# everything CI does
+julia --project=. -e 'using Pkg; Pkg.test()'
+
+# one case
+julia --project=. test/runtests.jl CompEuler/theta
+
+# comparison only, against output already in test/CI-runs/**/output
+julia --project=. test/compare_benchmarks.jl CompEuler/theta
 ```
 
-**`generate-ci-ref.yml`** — add an identical block (replacing `sim_` with
-`gen_`) plus a `copy_ref MyEquations mycase` line in the
-"Collect reference files" step, and add the step to the report table.
+### On GitHub
 
-### 5 — Generate the first reference solution
+**Actions → Benchmarks → Run workflow**, pick a branch, and optionally narrow
+the run with the `cases` input (`all`, or e.g.
+`CompEuler/theta,Burgers/case1`). The run page shows one job per case and a
+summary table:
 
-Commit everything, push, then run **Generate CI Reference Solutions** on
-your branch (see [Bootstrapping reference files](#bootstrapping-reference-files)).
+```
+## Benchmark results
 
-### 6 — Verify
+| Case                | Simulation | Comparison vs reference |
+|---------------------|------------|-------------------------|
+| `CompEuler/theta`   | ✅ pass    | ✅ pass                 |
+```
 
-Trigger **Classical Benchmarks** manually on the same branch and confirm:
-- The new simulation step shows ✅.
-- The comparison step shows ✅ (not skipped).
+Each job also uploads its HDF5 output as an artifact (`output-<EQS>-<CASE>`),
+which is what you want when a comparison fails and you need to look at the
+fields.
+
+---
+
+## Reference solutions
+
+References live in `test/CI-ref/<EQS>/<CASE>/output/` and are committed to the
+repository.
+
+### Locally
+
+```bash
+# run the case(s) and copy the output into test/CI-ref/
+julia --project=. test/generate_ci_ref.jl CompEuler/theta   # or no argument: all cases
+
+# review, then commit — the script never touches git
+git status --short test/CI-ref
+git add test/CI-ref
+git commit -m "Update CI reference solutions"
+git push
+```
+
+Useful variants:
+
+| Command | Effect |
+|---|---|
+| `julia --project=. test/generate_ci_ref.jl` | regenerate every registered case |
+| `julia test/generate_ci_ref.jl --copy-only CompEuler/theta` | publish the output of a run you already did by hand (no packages needed) |
+| `julia --project=. test/generate_ci_ref.jl --dest /tmp/refs CompEuler/theta` | write elsewhere, e.g. to diff against the committed set before overwriting it |
+
+The script clears stale `.h5` files from the destination before copying, so a
+reference set always corresponds to exactly one run, and exits non-zero if a
+case crashed or produced no HDF5 output.
+
+### With the workflow
+
+1. **Actions → Generate CI Reference Solutions → Run workflow**.
+2. Choose the branch holding the intended baseline code.
+3. `cases`: `all`, or a comma-separated subset.
+4. Optionally set a commit message.
+
+The workflow runs one job per case, stages each case's `.h5` files (plus the
+`user_inputs.jl` they were produced with), and a single final job merges them
+into `test/CI-ref/` and pushes **one** commit to the branch, marked
+`[skip ci]`.
+
+Re-run it whenever a physics or numerics change intentionally moves the
+expected answer — and review the resulting diff, since it is the record of
+what changed.
+
+### Is my local reference good enough for Linux CI?
+
+References are compared, in CI, against a run on `ubuntu-latest` x64. A
+reference generated on macOS can drift past `atol = 1e-5` over a few thousand
+time steps. To check before spending a CI run: dispatch **Generate CI
+Reference Solutions** on your branch, download the `ciref-<EQS>-<CASE>`
+artifact from the run page (it is uploaded before anything is committed), and
+compare it against your local output at the CI tolerance:
+
+```bash
+unzip ~/Downloads/ciref-CompEuler-theta.zip -d /tmp/linux-ref
+julia --project=. test/compare_benchmarks.jl --ref /tmp/linux-ref CompEuler/theta
+```
+
+Pass: keep your reference. Fail: `git pull` — the workflow already committed
+the runner's version to your branch — and use that one. Step-by-step in
+[`test/CIdescription.md`](../test/CIdescription.md#checking-a-reference-across-platforms).
+
+---
+
+## Adding a case
+
+One command, from a case that already exists and runs under `problems/`:
+
+```bash
+julia --project=. test/generate_ci_ref.jl <EQS>/<CASE>
+
+git add test/CI-ref test/CI-runs test/ci_cases.jl
+git commit -m "Add <EQS>/<CASE> to CI"
+git push
+```
+
+It copies `problems/<EQS>/<CASE>/` into `test/CI-runs/` (leaving out any
+`output/`), runs it in CI mode — which forces HDF5 output, next to the case
+inputs, one write at `:tend` — publishes the result as the reference, and
+appends the `CICase(...)` line to `test/ci_cases.jl` with a timeout derived
+from the measured run time. From the next push, CI runs the case.
+
+What it cannot decide for you: how long the case should run. The copied deck
+keeps the `:tend` from `problems/`; shorten it in
+`test/CI-runs/<EQS>/<CASE>/user_inputs.jl` if the case is slow, then run the
+script again.
+
+### Meshes
+
+`meshes/` is the developer's link to
+[`smarras79/JexpressoMeshes`](https://github.com/smarras79/JexpressoMeshes)
+and does not exist on a CI runner. A case that CI runs must keep its mesh
+committed **in this repository, next to its deck**:
+
+```julia
+:gmsh_filename => "./problems/<EQS>/<CASE>/<mesh>.msh",
+```
+
+`generate_ci_ref.jl` symlinks that mesh into `test/CI-runs/<EQS>/<CASE>/`
+(relative link, stored by git as mode 120000 — no second copy of the bytes)
+and retargets `:gmsh_filename` at the link. Paths inside a deck are resolved
+from the repository root, never from the deck. `julia test/ci_cases.jl
+validate` fails in seconds when the mesh is missing, instead of letting the
+job burn 15 minutes and die in `sem_setup`.
+
+Full checklist and flags in [`test/CIdescription.md`](../test/CIdescription.md).
+
+---
+
+## Layout
+
+```
+test/ci_cases.jl              registry + matrix generator + validator
+test/ci_compare.jl            run/compare helpers shared by everything below
+test/runtests.jl              Pkg.test() entry point: run + compare each case
+test/compare_benchmarks.jl    comparison only (HDF5 only, no solver load)
+test/generate_ci_ref.jl       (re)generate the reference solutions
+test/CI-runs/<EQS>/<CASE>/    shortened input decks; output/ is written here
+test/CI-ref/<EQS>/<CASE>/     committed reference solutions
+```

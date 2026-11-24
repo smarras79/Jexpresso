@@ -36,7 +36,7 @@ using KernelAbstractions
 # UnicodePlots, Geodesy) and were not referenced anywhere in the source
 # tree. Removed to cut the per-rank baseline. Re-add at the REPL if
 # you need them interactively.
-#using Revise
+using Revise
 # using BenchmarkTools
 using Dates
 using CSV, DataFrames
@@ -62,7 +62,8 @@ using LinearSolve
 using LinearSolve: solve
 using SciMLBase: CallbackSet, DiscreteCallback,
                  ODEProblem, ODESolution, ODEFunction,
-                 SplitODEProblem, FullSpecialize
+                 SplitODEProblem, FullSpecialize,
+                 successful_retcode
 # PERF: `using HDF5` moved into Jexpresso._ensure_hdf5_loaded!() —
 # only `write_hdf5`/`read_hdf5` in src/io/write_output.jl reference
 # h5* functions, and both call the loader before touching them. The
@@ -154,6 +155,7 @@ include(joinpath( "kernel", "physics", "microphysics.jl"))
 include(joinpath( "kernel", "physics", "saturation.jl"))
 
 include(joinpath( "kernel", "physics", "soundSpeed.jl"))
+include(joinpath( "kernel", "physics", "schlieren.jl"))
 
 include(joinpath( "kernel", "physics", "globalConstantsPhysics.jl"))
 
@@ -168,6 +170,13 @@ include(joinpath( "kernel", "physics", "turbul.jl"))
 include(joinpath( "kernel", "physics", "sgsStructs.jl"))
 
 include(joinpath( "kernel", "physics", "SGS.jl"))
+
+# Node-wise realizability repair for the compressible Euler state. Own module,
+# own directory: Positivity.jl is self-contained numerics with no Jexpresso
+# dependency, positivity_driver.jl is the adapter. OFF unless a deck sets
+# :lpositivity => true. See src/kernel/positivity/README.md.
+include(joinpath( "kernel", "positivity", "Positivity.jl"))
+include(joinpath( "kernel", "positivity", "positivity_driver.jl"))
 
 include(joinpath( "kernel", "physics", "CM_MOST.jl"))
 
@@ -197,6 +206,16 @@ include(joinpath( "kernel", "mesh", "extra_mesh_spatial_amr.jl"))
 
 include(joinpath( "kernel", "mesh", "pole_handling.jl"))
 
+# High-order grid on a CLOSED spherical shell (2D manifold embedded in 3D).
+# Self-contained on purpose: the flat 2D reader in mesh.jl stores only (x,y).
+
+# Cube-face -> sphere maps (gnomonic / equiangular / conformal) and the
+# post-read node remap that switches a cubed-sphere grid from one to another.
+include(joinpath( "kernel", "mesh", "cubed_sphere_maps.jl"))
+
+# Metric terms of the 2D manifold + the diagonal mass matrix.
+include(joinpath( "kernel", "mesh", "sphere_metrics.jl"))
+
 include(joinpath( "kernel", "bases", "basis_structs.jl"))
 
 include(joinpath( "kernel", "mesh", "metric_terms.jl"))
@@ -217,9 +236,10 @@ include(joinpath( "kernel", "boundaryconditions", "surface_integral.jl"))
 
 include(joinpath( "kernel", "boundaryconditions", "BCs.jl"))
 include(joinpath( "kernel", "boundaryconditions", "bc_constraints.jl"))
-include(joinpath( "kernel", "boundaryconditions", "bc_diagnostics.jl")) # TEMPORARY (ldebug_bc)
 
 include(joinpath( "kernel", "operators", "operators.jl"))
+
+include(joinpath( "kernel", "operators", "dg_fluxes.jl"))
 
 include(joinpath( "kernel", "operators", "rhs.jl"))
 
@@ -246,6 +266,13 @@ include(joinpath( "kernel", "operators", "sweep_exchange_tables.jl"))
 include(joinpath( "kernel", "operators", "sweep_plans.jl"))
 
 include(joinpath( "kernel", "operators", "sweep_adaptive.jl"))
+# SEM right-hand side on the spherical shell (+ the modal filter).
+include(joinpath( "kernel", "operators", "sphere_rhs.jl"))
+
+# Stochastic small-scale forcing and large-scale dissipation on the shell
+# (Scott & Polvani 2007). Needs St_sphere_params and the DSS helper from
+# sphere_rhs.jl, so it is included straight after it.
+include(joinpath( "kernel", "operators", "sphere_forcing.jl"))
 
 include(joinpath( "kernel", "operators", "rhs_2point.jl"))
 
@@ -258,6 +285,17 @@ include(joinpath( "kernel", "operators", "rhs_laguerre.jl"))
 include(joinpath( "kernel", "operators", "filter.jl"))
 
 include(joinpath( "kernel", "solvers", "TimeIntegrators.jl"))
+
+# Proper Orthogonal Decomposition and the reduced-order-model basis it builds.
+# pod_core.jl is the decomposition itself and depends on nothing in Jexpresso;
+# pod.jl is what samples a running case and writes the result out. Included
+# BEFORE the time loop, which records snapshots through them.
+include(joinpath( "kernel", "rom", "pod_core.jl"))
+include(joinpath( "kernel", "rom", "pod.jl"))
+
+# SSP-RK3 time loop for the spherical shell, with the Lagrange projection
+# applied at every stage.
+include(joinpath( "kernel", "solvers", "sphere_time_loop.jl"))
 
 include(joinpath("kernel", "operators", "Axb_rad_mpi.jl"))
 
@@ -304,6 +342,13 @@ include(joinpath( "io", "les_statistics.jl"))
 include(joinpath( "io", "mod_print_io.jl"))
 
 include(joinpath( "io", "write_output.jl"))
+
+# Nodal fields on a pixel raster (flat and spherical), and the POD figures
+# drawn on them.
+# After write_output.jl, which is what brings Plots into the module (jeplots.jl).
+include(joinpath( "io", "plotting", "mesh_raster.jl"))
+
+include(joinpath( "io", "plotting", "pod_plots.jl"))
 
 include(joinpath( "io", "diagnostics.jl"))
 
@@ -453,12 +498,21 @@ const _HDF5_LOADED = Ref(false)
 """
     Jexpresso._ensure_hdf5_loaded!()
 
-Lazily `using HDF5`. Called from write_hdf5/read_hdf5 before the first
-`h5open`/`h5read`.
+Lazily bring HDF5.jl's entry points into scope. Called from
+write_hdf5/read_hdf5 before the first `h5open`/`h5read`.
+
+Only the functions are imported, never the package binding: `using HDF5`
+would bring in the name `HDF5`, which this module already uses for its own
+output-format dispatch tag (abstractTypes.jl), and Julia would print
+
+    WARNING: using HDF5.HDF5 in module Jexpresso conflicts with an existing
+    identifier.
+
+on the first HDF5 write of every run.
 """
 function _ensure_hdf5_loaded!()
     _HDF5_LOADED[] && return nothing
-    @eval Jexpresso using HDF5
+    @eval Jexpresso import HDF5: h5open, h5read, h5write
     _HDF5_LOADED[] = true
     return nothing
 end

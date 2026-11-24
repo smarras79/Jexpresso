@@ -1,30 +1,37 @@
 # Installing Jexpresso
 
-This guide walks you through downloading, building, and testing **Jexpresso**.
+This guide takes you from a fresh clone to a running **Jexpresso**, first in
+serial and then in parallel with MPI.
 
-> **Hit an error?** See [FAQ.md](FAQ.md) for fixes to common installation and run problems.
+> **Hit an error?** See [FAQ.md](FAQ.md) for fixes to common installation and
+> run problems.
+
+**Which sections do you need?**
+
+| I want to… | Read |
+|---|---|
+| Run serially on a laptop | §1–§4 |
+| Run in parallel with MPI | §1–§4, then §5 |
+| Run AMR cases (`theta_amr`, …) on macOS | §1–§4, §5, then §7 |
+| Iterate quickly on code | §6 |
+
+---
 
 ## Prerequisites
 
-- **Julia 1.11.9** is the recommended version.
-  > Julia 1.12.6 also works, but for now we prefer to stay on the earlier release.
-- **Git** with SSH access to GitHub configured ([setup guide](https://docs.github.com/en/authentication/connecting-to-github-with-ssh)).
+- **Julia 1.11.9** (recommended; 1.12.6 also works, but we stay on 1.11 for now).
+- **Git** with SSH access to GitHub ([setup guide](https://docs.github.com/en/authentication/connecting-to-github-with-ssh)).
 
 ## 1. Download the repositories
 
-Clone Jexpresso and the companion mesh repository:
-
-```julia
+```bash
 git clone git@github.com:smarras79/Jexpresso.git
 git clone git@github.com:smarras79/JexpressoMeshes.git
 ```
 
-> **Note:** `JexpressoMeshes` contains sample meshes used to run the existing
-> tests without having to build them from scratch.
+`JexpressoMeshes` holds the sample meshes used by the bundled test cases.
 
 ## 2. Link the sample meshes
-
-From inside the `Jexpresso` directory, create a symbolic link to the meshes:
 
 ```bash
 cd Jexpresso
@@ -33,215 +40,169 @@ ln -s ../JexpressoMeshes/meshes .
 
 ## 3. Build and precompile (serial)
 
-These steps give you a working **serial** Jexpresso. If you want to run in
-parallel, do these steps first and then continue with
-[Section 5 — Running in parallel with MPI](#5-running-in-parallel-with-mpi).
+From inside `Jexpresso/`:
 
-If you are not already inside the project directory, move into it first:
-
-```bash
-cd PATH/TO/Jexpresso
-```
-
-**3a. Instantiate the dependencies** (with automatic precompilation disabled so
-it can be controlled explicitly below):
+**3a. Instantiate the dependencies** (precompilation deferred so we control it
+explicitly):
 
 ```bash
 julia --project=. -e 'ENV["JULIA_PKG_PRECOMPILE_AUTO"]=0; using Pkg; Pkg.instantiate()'
 ```
 
-**3b. Precompile everything:**
+> **Going parallel?** Stop here and do [§5](#5-running-in-parallel-with-mpi)
+> *before* precompiling. Binding MPI rebuilds `MPI` and the C libraries that
+> link against it, which forces a recompile anyway — doing MPI first saves you
+> a full precompilation pass.
+
+**3b. Precompile:**
 
 ```bash
 julia --project=. -e 'using Pkg; Pkg.precompile()'
 ```
 
-This step may take a while the first time as Julia compiles all dependencies.
-
-> **Going parallel?** Do **not** precompile yet if you already know you will
-> run with MPI — configuring MPI first (Section 5) rebuilds the `MPI` package,
-> which triggers a recompile anyway. Either order works, but configuring MPI
-> first saves you one precompilation pass.
+The first pass takes a while.
 
 ## 4. Test the installation
-
-Once compilation has finished, verify everything works by running one of the
-bundled cases.
-
-Start a Julia session scoped to the project:
 
 ```bash
 julia --project=.
 ```
-
-Then, at the Julia prompt, run the `CompEuler` / `sod1d` test:
 
 ```julia
 using Jexpresso
 Jexpresso.run_case("CompEuler", "sod1d")
 ```
 
-If the test runs to completion, your serial Jexpresso installation is ready. 🎉
+If the case runs to completion, your serial Jexpresso is ready. 🎉
 
 ---
 
 ## 5. Running in parallel with MPI
 
-Everything you need to install, configure, and run Jexpresso in parallel lives
-in this section. **Skip it entirely if you only run serially.**
+`MPI.jl` does not contain an MPI implementation; it binds to one at build time,
+and `MPIPreferences` records which. The workflow is the same for every route:
 
-Julia's [`MPI.jl`](https://juliaparallel.org/MPI.jl/stable/) does not contain an
-MPI implementation itself — it binds to one at build time. You tell
-`MPIPreferences` which of the three routes below to use.
+> **install MPI → point `MPIPreferences` at it → rebuild `MPI` and the
+> MPI-linked C libraries → precompile → launch with the matching `mpiexec`.**
 
-You may have **several MPIs installed at once** — MPI.jl is bound to exactly
-one of them *at a time*, and you can rebind whenever you like (§5.2, case 2).
-What is never allowed is mixing them *within a single run*: the library MPI.jl
-loads, the `mpiexec` that launches the job, and — for coupled runs — the MPI
-`Alya.x` was linked against must all be the same installation.
+You may have several MPIs installed at once and rebind whenever you like
+(§5.2, case 2). What is never allowed is mixing them **within one run** — the
+`libmpi` MPI.jl loads, the `mpiexec` that launches the job, the MPI baked into
+`P4est_jll`/`P4est_wrapper` (§5.3), and, for coupled runs, the MPI `Alya.x` was
+linked with must all come from the same installation.
+
+> **Two rules that are easy to miss:**
+>
+> 1. **Build in a clean shell.** Any `Pkg.instantiate`/`Pkg.build` picks up
+>    whatever `mpicc` is first on `PATH`. If you have exported a Homebrew MPI
+>    `bin` dir in `~/.zshrc` (as §6.1 suggests for *launching*), open a shell
+>    where it is not active before building — `which mpicc` must print nothing.
+> 2. **Switching between a system MPI and a JLL MPI needs a fresh Manifest.**
+>    `P4est_jll` ships one build per MPI (`MPICH_jll`, `OpenMPI_jll`,
+>    `MPItrampoline_jll` for system MPIs), and the variant is chosen when the
+>    Manifest is *resolved*, not when `MPI` is rebuilt. Rebinding without
+>    `rm -f Manifest.toml` + `Pkg.instantiate()` leaves two MPIs in one process
+>    (see §5.7).
 
 | Route | What provides MPI | When to choose it |
 |-------|-------------------|-------------------|
-| **A. OpenMPI** (system binary) | An OpenMPI you install on the machine | Linux clusters / HPC where OpenMPI is the site default |
-| **B. MPICH** (system binary) | An MPICH you install on the machine | You prefer MPICH, or your cluster ships MPICH |
-| **C. MPICH_jll** (native, bundled) | MPI shipped *inside* Julia's package env — nothing to install | Laptops/desktops, no admin rights, or OpenMPI deadlocks on macOS (see [Troubleshooting](#57-troubleshooting)) |
-
-The three routes share the same workflow: **install MPI → point `MPIPreferences`
-at it → rebuild `MPI` → launch with the matching `mpiexec`.** Only the details
-differ, and they are spelled out per route below.
+| **A. OpenMPI** (system) | An OpenMPI you install | Linux clusters where OpenMPI is the site default |
+| **B. MPICH** (system) | An MPICH you install | You prefer MPICH, or the cluster ships it |
+| **C. MPICH_jll** (bundled) | Shipped inside Julia's package environment | **Laptops/desktops (recommended on macOS)**, no admin rights, or OpenMPI deadlocks on macOS |
 
 ### 5.1 Install an MPI implementation
 
-#### Route A — OpenMPI (system binary)
+**Route A — OpenMPI**
 
 ```bash
-# Ubuntu/Debian
-sudo apt install libopenmpi-dev openmpi-bin
-
-# macOS (Homebrew)
-brew install open-mpi
-
-# Verify
-mpiexec --version
+sudo apt install libopenmpi-dev openmpi-bin   # Ubuntu/Debian
+brew install open-mpi                         # macOS
+mpiexec --version                             # verify
 ```
 
-#### Route B — MPICH (system binary)
+**Route B — MPICH**
 
 ```bash
-# Ubuntu/Debian
-sudo apt install mpich libmpich-dev
-
-# macOS (Homebrew)
-brew install mpich
-
-# Verify
-mpiexec --version
+sudo apt install mpich libmpich-dev           # Ubuntu/Debian
+brew install mpich                            # macOS
+mpiexec --version                             # verify
 ```
 
-#### Route C — MPICH_jll (native, bundled with MPI.jl)
+**Route C — MPICH_jll**
 
-**Nothing to install.** MPI ships *with* Julia's package environment as a JLL
-(MPItrampoline, which defaults to MPICH). This is the most reliable route on a
-laptop and the recommended fallback when a system OpenMPI deadlocks on macOS.
-Proceed straight to the configuration step below. It is unaffected by whatever
-system MPIs you have — it brings its own library *and* its own `mpiexec`
-(`julia --project=. -e 'using MPI; println(mpiexec())'`), which is the one you
-must launch with.
+Nothing to install. MPI.jl ships MPItrampoline (MPICH-based) together with its
+own `mpiexec`, which is the launcher you must use (§5.6). It is unaffected by
+any system MPI on the machine.
 
-#### Installing both OpenMPI and MPICH side by side
-
-You do not have to choose once and for all — keeping both installed is
-supported, and useful (OpenMPI 5 on macOS is prone to hanging in `MPI_Init`,
-so having MPICH ready to switch to saves a reinstall). Just run both install
-commands above. The only rule is that **each individual run must use one
-implementation end to end**: library, launcher, and — for coupled runs —
-`Alya.x`. Section 5.2, case 2 below shows how to select between them.
+> Keeping OpenMPI *and* MPICH installed side by side is fine and often useful
+> (OpenMPI 5 on macOS is prone to hanging in `MPI_Init`). Just run both install
+> commands; §5.2 case 2 shows how to select between them.
 
 ### 5.2 Point `MPIPreferences` at your MPI
 
-Run **one** of these, matching the route you chose. The setting is recorded in
-`LocalPreferences.toml` in the project root.
+Run **one** of these. The choice is recorded in `LocalPreferences.toml` in the
+project root.
 
 > **Two things get selected, not one.** `MPIPreferences` records which
-> **library** (`libmpi`) Julia loads. Your shell separately decides which
-> **launcher** (`mpiexec`/`mpirun`) starts the job. They are independent, and a
-> job whose launcher and library come from different MPIs does not fail with an
+> **library** Julia loads; your shell decides which **launcher** starts the
+> job. A run whose launcher and library come from different MPIs does not
 > error — it hangs in `MPI_Init`, or gives every rank its own world of size 1.
 > Whenever you bind one, pin the other to match.
 
-#### Route A or B, case 1 — only ONE system MPI installed
+**Route C — MPICH_jll (simplest)**
 
-If MPI is installed in standard system paths (`/usr/bin`, `/usr/local/bin`):
+```bash
+julia --project=. -e 'using MPIPreferences; MPIPreferences.use_jll_binary("MPICH_jll")'
+```
+
+Name `"MPICH_jll"` explicitly. The bare `use_jll_binary()` defaults to
+`MPItrampoline_jll`, a shim that sits between MPI.jl and MPICH; naming the
+library directly guarantees MPI.jl, `P4est_jll` and `P4est_wrapper` all load
+the *same* `libmpi` file from `~/.julia/artifacts/`, which is what AMR needs.
+
+**Route A or B, case 1 — only one system MPI installed**
+
+Standard system paths (`/usr/bin`, `/usr/local/bin`):
 
 ```bash
 julia --project=. -e 'using MPIPreferences; MPIPreferences.use_system_binary()'
 ```
 
-If it lives somewhere else (`/opt/...`, Homebrew on Apple Silicon), pass its
-`lib` directory:
+Elsewhere (`/opt/...`, Homebrew on Apple Silicon), pass the `lib` directory:
 
 ```bash
 julia --project=. -e 'using MPIPreferences; MPIPreferences.use_system_binary(extra_paths=["/PATH/TO/MPI/lib"])'
 ```
 
-> For a single Homebrew MPI on Apple Silicon that directory is `/opt/homebrew/lib`.
-> **Do not use `/opt/homebrew/lib` if you have both OpenMPI and MPICH installed** —
-> see case 2.
+For a single Homebrew MPI on Apple Silicon that is `/opt/homebrew/lib` —
+**but not if both OpenMPI and MPICH are installed**; use case 2.
 
-#### Route A or B, case 2 — BOTH OpenMPI and MPICH installed
+**Route A or B, case 2 — both OpenMPI and MPICH installed**
 
-This is fine and common; the two just have to be kept apart. The bare call
-`use_system_binary()` searches the default loader paths and binds whichever
-`libmpi` it finds first — which is not necessarily the one whose `mpiexec` is
-first on your `PATH`. Name the install explicitly instead.
+The bare `use_system_binary()` binds whichever `libmpi` the loader finds first,
+which need not match the `mpiexec` on your `PATH`. Name the installation
+explicitly.
 
-**Step 1 — find each installation's prefix.**
-
-On macOS/Homebrew (these print stable symlinks into the versioned Cellar dirs,
-e.g. `/opt/homebrew/opt/open-mpi`):
-
-```bash
-brew --prefix open-mpi
-brew --prefix mpich
-```
-
-On Ubuntu/Debian, both packages coexist under per-implementation subdirs:
-
-```bash
-ls -d /usr/lib/*/openmpi /usr/lib/*/mpich 2>/dev/null
-```
-
-Anywhere else, find the libraries themselves:
-
-```bash
-ls -d /opt/*/lib/libmpi.* /usr/local/*/lib/libmpi.* 2>/dev/null
-```
-
-Typical layouts:
+*Step 1 — find each prefix.*
 
 | Platform | OpenMPI prefix | MPICH prefix |
 |---|---|---|
-| macOS, Homebrew (Apple Silicon) | `/opt/homebrew/opt/open-mpi` | `/opt/homebrew/opt/mpich` |
+| macOS, Homebrew (Apple Silicon) | `$(brew --prefix open-mpi)` → `/opt/homebrew/opt/open-mpi` | `$(brew --prefix mpich)` → `/opt/homebrew/opt/mpich` |
 | macOS, Homebrew (Intel) | `/usr/local/opt/open-mpi` | `/usr/local/opt/mpich` |
 | Ubuntu/Debian | `/usr/lib/x86_64-linux-gnu/openmpi` | `/usr/lib/x86_64-linux-gnu/mpich` |
 | HPC modules | `$MPI_HOME` after `module load openmpi` | `$MPI_HOME` after `module load mpich` |
 
-**Step 2 — bind MPI.jl to the one you want, library *and* launcher.**
+*Step 2 — bind library **and** launcher.* `extra_paths` is searched before the
+default loader paths, and passing `mpiexec` records the matching launcher so the
+two halves cannot drift apart.
 
-`extra_paths` is searched *before* the default loader paths, so it decides the
-tie. Passing `mpiexec` at the same time records the matching launcher in
-`LocalPreferences.toml`, which is what keeps the two halves from drifting apart:
+> ⚠️ **Paste one block at a time and never put a trailing `# comment` on the
+> `PREFIX=` line.** Interactive `zsh` (the macOS default) does not treat `#`
+> as a comment unless `setopt interactivecomments` is set; it runs the command
+> `#` with the variable set only for that command, so the variable is never
+> set and the `julia` call fails with `extra_paths = ["/lib"]`.
 
-> ⚠️ **Paste these one block at a time, and never add a trailing `# comment`
-> to the `MPI_PREFIX=` line.** Interactive `zsh` (the macOS default) does not
-> treat `#` as a comment unless you `setopt interactivecomments`. It parses
-> `MPI_PREFIX=$(...)  # note` as the command `#` with `MPI_PREFIX` set only for
-> *that* command — so you get `zsh: command not found: #` **and the variable is
-> never set**. The `use_system_binary` call then runs with an empty prefix and
-> fails with `extra_paths = ["/lib"]`. The blocks below are comment-free for
-> exactly this reason.
-
-**To use OpenMPI**, set the prefix and check it is non-empty:
+To use OpenMPI:
 
 ```bash
 OMPI_PREFIX=$(brew --prefix open-mpi)
@@ -249,15 +210,13 @@ echo "prefix = $OMPI_PREFIX"
 ls "$OMPI_PREFIX"/lib/libmpi.*
 ```
 
-Both commands must print something. Then bind:
-
 ```bash
 julia --project=. -e "using MPIPreferences; MPIPreferences.use_system_binary(
         extra_paths = [\"$OMPI_PREFIX/lib\"],
         mpiexec     = \"$OMPI_PREFIX/bin/mpiexec\")"
 ```
 
-**To use MPICH**, the same in its prefix:
+To use MPICH:
 
 ```bash
 MPICH_PREFIX=$(brew --prefix mpich)
@@ -271,25 +230,15 @@ julia --project=. -e "using MPIPreferences; MPIPreferences.use_system_binary(
         mpiexec     = \"$MPICH_PREFIX/bin/mpiexec\")"
 ```
 
-On Linux, set the prefix by hand instead of with `brew --prefix` — e.g.
-`OMPI_PREFIX=/usr/lib/x86_64-linux-gnu/openmpi` or
-`MPICH_PREFIX=/usr/lib/x86_64-linux-gnu/mpich` — and run the identical `julia`
-command.
+On Linux set the prefix by hand (e.g.
+`MPICH_PREFIX=/usr/lib/x86_64-linux-gnu/mpich`) and run the same `julia` line.
 
-> **`MPI library could not be found ... in the following extra directories:
-> ["/lib"]`** means the prefix variable was empty when the `julia` line ran —
-> the `extra_paths` entry is literally `"" * "/lib"`. Re-run the `echo` above:
-> if it prints `prefix = ` with nothing after it, either you hit the `zsh`
-> comment trap described above, or `brew --prefix <formula>` failed because
-> that formula is not installed.
+> `MPI library could not be found ... extra directories: ["/lib"]` means the
+> prefix variable was empty — either the `zsh` comment trap above, or
+> `brew --prefix <formula>` failed because the formula is not installed.
 
-Then continue with [5.3](#53-rebuild-mpi-and-precompile) — the rebuild is
-**mandatory** after every rebinding.
-
-**Step 3 — put the matching launcher first on `PATH` for the same shell.**
-
-`MPIPreferences` cannot change your `PATH`; you must. Define both switches
-once in `~/.zshrc` / `~/.bashrc` and call the one you need before launching:
+*Step 3 — put the matching launcher first on `PATH`.* Define both switches in
+`~/.zshrc` / `~/.bashrc` and call the one you need before launching:
 
 ```bash
 # macOS / Homebrew
@@ -301,69 +250,48 @@ use-openmpi() { export PATH="/usr/lib/x86_64-linux-gnu/openmpi/bin:$PATH"; hash 
 use-mpich()   { export PATH="/usr/lib/x86_64-linux-gnu/mpich/bin:$PATH";   hash -r; }
 ```
 
-Confirm before every parallel run that all three agree:
+Before every parallel run, confirm all three agree: `which mpiexec mpirun mpif90`.
 
-```bash
-which mpiexec mpirun mpif90
-```
+> **Homebrew:** `open-mpi` and `mpich` both provide `mpicc`/`mpiexec`/`libmpi`,
+> so only one is *linked* into `/opt/homebrew/{bin,lib}` at a time. Both stay
+> usable under their own `opt` prefixes, which is why the commands above never
+> use the shared `/opt/homebrew/lib`. Rebinding MPI.jl does **not** require
+> `brew link`.
+>
+> **Ubuntu/Debian:** `update-alternatives --config mpi` only changes what the
+> bare `mpicc`/`mpirun` names resolve to; it has no effect on MPI.jl.
 
-> **Homebrew caveat.** The `open-mpi` and `mpich` formulas both provide
-> `mpicc`, `mpiexec`, `libmpi.dylib`, so Homebrew will only *link* one of them
-> into `/opt/homebrew/{bin,lib}` at a time. Both stay fully usable under their
-> own `opt`/`Cellar` prefixes — which is exactly why the commands above use
-> `brew --prefix <formula>` and never the shared `/opt/homebrew/lib`. If you
-> want to change which one owns the shared symlinks:
-> ```bash
-> brew unlink mpich && brew link --overwrite open-mpi
-> ```
-> Rebinding MPI.jl does **not** require this — the prefix paths work whether or
-> not the formula is linked.
+### 5.3 Rebuild `MPI` **and the MPI-linked C libraries**, then precompile
 
-> **Ubuntu/Debian caveat.** `update-alternatives --config mpi` (and
-> `mpi-default-bin`) switches which `mpicc`/`mpirun` the bare names resolve to,
-> system-wide. It has no effect on what MPI.jl is bound to. Use the explicit
-> prefixes above and treat the alternative purely as a `PATH` convenience.
+Three things in the dependency tree are tied to a specific `libmpi`:
 
-#### Switching from one to the other later
+- `MPI` itself.
+- **`P4est_jll`** — the p4est library, shipped in one variant per MPI. The
+  variant is selected when the Manifest is resolved (`Pkg.instantiate()`).
+- **`P4est_wrapper`** — `GridapP4est`'s bindings, built by its `deps/build.jl`
+  against the p4est/MPI it finds *at build time*. `Pkg.instantiate()` builds it
+  once (§3a) and never rebuilds it on its own.
 
-Rebinding is not just the `MPIPreferences` call — the stale build and
-precompile caches must go too, or you get the old library with the new
-preference:
+If any of the three is bound to a different MPI than MPI.jl, the first AMR call
+loads two MPIs into one process. On macOS this shows up either as a
+**`Segmentation fault: 11` in `_platform_memmove` right after the gmsh mesh is
+read** (backtrace of nothing but `dyld` frames), or as
+**`Attempting to use an MPI routine (internal_Comm_size) before initializing
+… MPICH`** right after `Into p4est_new`.
 
-```bash
-rm -f LocalPreferences.toml
-julia --project=. -e 'using Pkg; Pkg.build("MPI"; verbose=true)'
-julia --project=. -e 'using Pkg; Pkg.precompile()'
-```
-
-Then verify with [5.4](#54-verify-the-binding), and check the whole setup end
-to end with:
-
-```bash
-bash tools/check_mpi_setup.sh
-```
-
-> **Coupled runs need a third thing to match.** `AlyaProxy/Alya.x` is a
-> separately compiled Fortran binary with its own MPI baked in at link time.
-> After switching implementations you must rebuild it with the matching
-> `mpif90` — `cd AlyaProxy && MPIF90=<prefix>/bin/mpif90 bash compilef90.sh`.
-> See [RUN-COUPLED.md](RUN-COUPLED.md) §3 and §5.
-
-#### Route C — MPICH_jll (native)
-
-```bash
-julia --project=. -e 'using MPIPreferences; MPIPreferences.use_jll_binary()'
-```
-
-### 5.3 Rebuild `MPI` and precompile
-
-`MPI` must be rebuilt against whatever you just selected, then everything
-precompiled:
+So after **every** `MPIPreferences` change — in a shell where `which mpicc`
+prints nothing — rebuild them in this order:
 
 ```bash
 julia --project=. -e 'using Pkg; Pkg.build("MPI"; verbose=true)'
+julia --project=. -e 'using Pkg; Pkg.build("P4est_wrapper"; verbose=true)'
+julia --project=. -e 'using Pkg; Pkg.build("GridapP4est"; verbose=true)'
 julia --project=. -e 'using Pkg; Pkg.precompile()'
 ```
+
+If you changed *route* (system ↔ JLL), do `rm -f Manifest.toml` and
+`Pkg.instantiate()` **before** these builds so `P4est_jll` is re-resolved to
+the matching variant.
 
 ### 5.4 Verify the binding
 
@@ -375,90 +303,72 @@ julia --project=. -e '
                         println("mpiexec = ", MPI.mpiexec())'
 ```
 
-- **Route A** should report an Open MPI implementation and `binary = "system"`.
-- **Route B** should report MPICH and `binary = "system"`.
-- **Route C** should print `binary = "MPItrampoline_jll"` (MPICH-based).
+- **Route A:** an Open MPI implementation, `binary = "system"`.
+- **Route B:** MPICH, `binary = "system"`.
+- **Route C:** `binary = "MPICH_jll"`, `libmpi` under `~/.julia/artifacts/`.
 
-With **both** OpenMPI and MPICH installed, the implementation name alone is not
-enough — check the two paths as well:
+With both OpenMPI and MPICH installed, also check the paths: `libmpi` must sit
+under the prefix chosen in §5.2 (not the ambiguous `/opt/homebrew/lib`), and
+`mpiexec` must come from the same prefix **and** match `which mpiexec` in the
+shell you launch from.
 
-- `libmpi` must sit under the prefix you chose in 5.2 (e.g.
-  `/opt/homebrew/opt/mpich/lib/...`, not `/opt/homebrew/lib/...`, which is
-  ambiguous because it belongs to whichever formula is currently linked).
-- `mpiexec` must come from that **same** prefix, and must match what
-  `which mpiexec` reports in the shell you launch from. If those disagree, your
-  runs will hang in `MPI_Init` rather than report an error.
+**The decisive check — exactly one `libmpi` in the process.** This catches a
+`P4est_jll`/`P4est_wrapper` bound to a different MPI, which the checks above
+cannot see:
 
-`bash tools/check_mpi_setup.sh` checks all of this for you, plus the launcher
-itself, and times out instead of hanging.
-
-### 5.5 macOS hostname fix (MPICH and MPICH_jll only)
-
-Required for **any MPICH-based MPI on macOS** — i.e. Route B on macOS and
-Route C on macOS.
-
-> It is worth applying on **OpenMPI too**. Open MPI 5's PRRTE launcher also
-> resolves the local hostname when it brings up its out-of-band channel, and an
-> unresolvable hostname makes `mpirun` hang before your program starts rather
-> than print the MPICH error below. The fix is harmless either way.
-
-MPICH's TCP channel resolves the machine hostname via the C `gethostbyname()`
-call, which on macOS only returns mDNS names (`*.local`) and fails on the bare
-hostname, producing `MPI_Init` errors like:
-
-```
-GetSockInterfaceAddr ... gethostbyname failed, <your-hostname> (errno 0)
+```bash
+# macOS
+DYLD_PRINT_LIBRARIES=1 julia --project=. -e 'using Jexpresso' 2>&1 | grep -i 'libmpi\.'
+# Linux
+LD_DEBUG=libs julia --project=. -e 'using Jexpresso' 2>&1 | grep -i 'libmpi\.' | grep init
 ```
 
-Fix once, permanently:
+All lines must point at one directory. Two different `libmpi` paths (e.g. one
+under `/opt/homebrew/...` and one under `~/.julia/artifacts/...`) means the
+Manifest was resolved for a different route than `LocalPreferences.toml` now
+records — fix per §5.3.
+
+`bash tools/check_mpi_setup.sh` runs all of these checks, plus the launcher,
+and times out instead of hanging.
+
+### 5.5 macOS hostname fix (MPICH and MPICH_jll)
+
+Required for any MPICH-based MPI on macOS (Routes B and C), and harmless — and
+recommended — on OpenMPI, whose PRRTE launcher also resolves the hostname and
+hangs silently when it cannot. Without it `MPI_Init` fails with
+`gethostbyname failed, <hostname> (errno 0)`.
 
 ```bash
 echo "127.0.0.1   $(hostname -s)" | sudo tee -a /etc/hosts
 echo "127.0.0.1   $(hostname)"    | sudo tee -a /etc/hosts
+ping -c 1 $(hostname -s)     # should answer from 127.0.0.1
 ```
 
-Verify:
-
-```bash
-ping -c 1 $(hostname -s)     # should respond from 127.0.0.1
-```
-
-If you cannot `sudo`, export `MPICH_INTERFACE_HOSTNAME=127.0.0.1` in every shell
-session before launching MPI jobs (or add it to `~/.zshrc`).
+No `sudo`? Export `MPICH_INTERFACE_HOSTNAME=127.0.0.1` in every shell instead
+(or add it to `~/.zshrc`).
 
 ### 5.6 Launch a parallel run
 
-> **Use the launcher that matches your route.** A system `mpiexec`/`mpirun`
-> belongs to the system MPI; the JLL provides its own `mpiexec` through MPI.jl.
-> Mixing them is the most common cause of "it won't start" failures.
+Use the launcher that matches your route. Mixing a system `mpiexec` with the
+JLL library (or vice versa) is the most common "it won't start" failure.
 
-#### Route A or B — system MPI (OpenMPI / MPICH)
-
-Use the system launcher directly:
-
-```bash
-mpiexec -n <NPROCS> julia --project=. src/Jexpresso.jl <EQUATIONS> <CASE_NAME>
-```
-
-For example, 4 ranks of the 3D Euler case:
+**Route A or B — system MPI**
 
 ```bash
 mpiexec -n 4 julia --project=. src/Jexpresso.jl CompEuler 3d
 ```
 
-If `mpiexec` is not on your `PATH`, or you have several MPIs installed, use
-absolute paths to both the launcher and `julia`:
+With several MPIs installed, use absolute paths to both launcher and `julia`:
 
 ```bash
-/opt/homebrew/Cellar/open-mpi/5.0.6/bin/mpirun -n 4 \
+/opt/homebrew/opt/mpich/bin/mpiexec -n 4 \
   /Applications/Julia-1.11.app/Contents/Resources/julia/bin/julia \
   --project=. src/Jexpresso.jl CompEuler theta
 ```
 
-#### Route C — MPICH_jll (native)
+**Route C — MPICH_jll**
 
-Do **not** use the system `mpirun`. Launch with the `mpiexec` that MPI.jl ships,
-which you reach from inside Julia:
+Do **not** use a system `mpirun`. Launch with the `mpiexec` MPI.jl ships:
 
 ```bash
 julia --project=. -e '
@@ -466,26 +376,8 @@ julia --project=. -e '
   run(`$(mpiexec()) -n 4 $(Base.julia_cmd()) --project=. src/Jexpresso.jl CompEuler city2d`)'
 ```
 
-For daily use, wrap the launcher in a small shell script (a ready-made copy
-ships as [`jexp_mpich.sh`](jexp_mpich.sh) in the repo root):
-
-```bash
-#!/bin/bash
-
-# USER: change to your julia path: ---------------------------------------
-JULIA=/Applications/Julia-1.11.app/Contents/Resources/julia/bin/julia
-# END USER ---------------------------------------------------------------
-
-jexp_mpich() {
-    $JULIA --project=. -e "
-      using MPI
-      run(\`\$(mpiexec()) -n $1 \$(Base.julia_cmd()) --project=. src/Jexpresso.jl $2 $3\`)"
-}
-
-jexp_mpich "$@"
-```
-
-Usage:
+For daily use, [`jexp_mpich.sh`](jexp_mpich.sh) in the repo root wraps this
+(edit the `JULIA=` path at its top):
 
 ```bash
 ./jexp_mpich.sh 4 CompEuler city2d
@@ -493,265 +385,163 @@ Usage:
 
 ### 5.7 Troubleshooting
 
-- **OpenMPI 5 + macOS deadlock on `MPI.Init` (Route A).** A known sharp edge
-  where the PMIx handshake never completes and the run hangs forever. The fix is
-  to switch to **Route C (MPICH_jll)** — redo Sections 5.2–5.6 with the JLL
-  binary. This needs no system MPI at all.
-- **MPICH aborts in `MPI_Finalize` with an `OFI` / `nic=utunN` error.** For
-  example:
-  ```
-  Fatal error in internal_Finalize: Other MPI error
-  MPIDI_OFI_mpi_finalize_hook(861): flush_send(771):
-  OFI call tsenddata failed (default nic=utun7: No such file or directory
-  ```
-  MPICH's OFI (libfabric) netmod enumerates the machine's network interfaces
-  and picked a **VPN / tunnel device** (`utun0`, `utun7`, …) as its NIC. That
-  interface disappears or refuses the send, and the job dies — often at
-  finalize, after the science already ran, and on a laptop where no real
-  network fabric is needed at all.
+- **Hang in `MPI.Init` with OpenMPI 5 on macOS (Route A).** A known PMIx
+  handshake deadlock. Switch to Route C: redo §5.2–§5.6 with the JLL binary.
 
-  Pin the provider, and pin it to the machine's **real** default interface —
-  which you can read off the routing table rather than guess:
+- **Segfault in `_platform_memmove` right after `Done reading … .msh`, or
+  `Attempting to use an MPI routine (internal_Comm_size) before initializing
+  … MPICH` right after `Into p4est_new` (AMR cases, macOS).** Two MPIs are
+  loaded: MPI.jl initialised one, p4est is calling the other. Confirm with the
+  one-`libmpi` check in §5.4, then fix per §5.3 — `rm -f Manifest.toml`,
+  `Pkg.instantiate()`, the three `Pkg.build`s, `Pkg.precompile()`, all in a
+  shell where `which mpicc` prints nothing — the copy-pasteable version is
+  the reset recipe in §7.2. The full walk-through is in
+  [FAQ.md](FAQ.md#amr-case-segfaults-in-_platform_memmove-or-aborts-with-attempting-to-use-an-mpi-routine-before-initializing).
+
+- **MPICH aborts in `MPI_Finalize` with an `OFI` / `nic=utunN` error.**
+  MPICH's libfabric netmod picked a VPN/tunnel device as its NIC. Pin the
+  provider to the machine's real default interface:
   ```bash
-  route get default | awk '/interface:/{print $2}'
-  ```
-  Then, with that name (`en0` on most Macs):
-  ```bash
+  route get default | awk '/interface:/{print $2}'   # usually en0
   export FI_PROVIDER=tcp
   export FI_TCP_IFACE=en0
   ```
-  Do not reach for `lo0` first. Loopback looks like the obvious choice for a
-  single-machine run, but libfabric's `tcp` provider often cannot open an
-  endpoint on it, which trades the original error for this one:
-  ```
-  MPIDI_OFI_create_vci_context(1054): OFI call ep_enable failed
-  (default nic=tcp: Bad file descriptor)
-  ```
-  If neither works, the older `sockets` provider is the reliable fallback and
-  needs no interface at all:
-  ```bash
-  export FI_PROVIDER=sockets
-  ```
-  `bash tools/check_mpi_setup.sh` tries all of these combinations and tells you
-  which one works on your machine. Disconnecting the VPN also makes the
-  original symptom go away, which is a quick way to confirm the diagnosis.
+  Do not use `lo0` (the `tcp` provider often cannot open an endpoint on it,
+  giving `ep_enable failed … Bad file descriptor`). If `tcp` fails,
+  `export FI_PROVIDER=sockets` needs no interface at all.
+  `bash tools/check_mpi_setup.sh` tries the combinations for you.
 
-  **Making it permanent.** Put the winning pair — and only that pair, since
-  they interact — in `~/.zshrc`. Two things to know first:
-
-  * `FI_*` is read by *any* libfabric user, so this affects every MPI job on
-    the machine, OpenMPI's OFI components included. On a laptop that is
-    normally what you want.
-  * `FI_TCP_IFACE` names an interface that has to exist at `MPI_Init`. On a
-    laptop `en0` is usually Wi-Fi, so turning Wi-Fi off, or a dock/VPN change
-    that renumbers interfaces, can bring the failure back. `FI_PROVIDER=sockets`
-    with no interface pinned is the more robust choice if that bites.
-
-  If you sync dotfiles to a cluster, guard it — these settings are wrong on a
-  machine with a real fabric (InfiniBand, Slingshot), where libfabric should
-  pick `verbs`, `psm2` or `cxi` for itself:
+  To make it permanent, put the winning pair in `~/.zshrc`, guarded so it does
+  not leak onto a cluster with a real fabric:
   ```bash
   if [[ "$(hostname -s)" == "my-laptop" ]]; then
     export FI_PROVIDER=tcp
     export FI_TCP_IFACE=en0
   fi
   ```
+  Notes: `FI_*` affects every libfabric user on the machine (OpenMPI's OFI
+  components included); `FI_TCP_IFACE` must exist at `MPI_Init`, so Wi-Fi off
+  or a dock/VPN renumbering can bring the failure back — `FI_PROVIDER=sockets`
+  with no interface pinned is more robust if that bites.
 
-  > **Do not use `FI_PROVIDER=shm` on macOS.** The libfabric `shm` provider is
-  > **Linux-only**. Asking for it on macOS leaves libfabric with no provider to
-  > return, and `MPI_Init` then fails outright with a *different* error that is
-  > easy to mistake for a broken install:
-  > ```
-  > MPIDI_OFI_find_provider(84): find_provider(126):
-  > OFI call getinfo failed (default nic=(n/a): No message available on STREAM)
-  > ```
-  > `nic=(n/a)` means "no provider matched your filter". If you see it, check
-  > whether `FI_PROVIDER` is set to something unavailable — `echo $FI_PROVIDER`
-  > — and switch to `tcp` or `sockets`, or `unset FI_PROVIDER` to let
-  > libfabric choose again. `fi_info -l` lists the providers your build
-  > actually has.
-- **Library conflicts / stale binding.** Remove the recorded preference and
-  reconfigure from Section 5.2:
-  ```bash
-  rm -f LocalPreferences.toml
-  ```
-- **Path issues (system MPI).** Confirm which launcher you are actually calling:
-  ```bash
-  which mpiexec
-  which mpirun
-  ```
-  Use absolute paths (see Section 5.6) if the wrong one is picked up.
-- **Version mismatches (system MPI).** Make sure the compiler wrappers and the
-  runtime agree:
-  ```bash
-  mpicc --version
-  mpif90 --version
-  ```
+  > **Never `FI_PROVIDER=shm` on macOS** — it is Linux-only. Asking for it
+  > leaves libfabric with no provider and `MPI_Init` fails with
+  > `getinfo failed (default nic=(n/a) …)`. `nic=(n/a)` means "no provider
+  > matched"; check `echo $FI_PROVIDER` and switch to `tcp`/`sockets` or
+  > `unset` it. `fi_info -l` lists the providers your build has.
+
+- **Stale binding / library conflicts.** `rm -f LocalPreferences.toml`, then
+  reconfigure from §5.2 and rebuild per §5.3.
+
+- **Wrong launcher picked up.** `which mpiexec mpirun`; use absolute paths
+  (§5.6) if needed.
+
+- **Version mismatch (system MPI).** `mpicc --version` and `mpif90 --version`
+  must agree with the runtime.
+
+#### Switching MPI implementations later
+
+Rebinding is the `MPIPreferences` call **plus** a clean rebuild of everything
+linked against MPI; otherwise you get the old library under the new preference:
+
+```bash
+which mpicc                    # must print nothing — otherwise open a clean shell first
+rm -f LocalPreferences.toml Manifest.toml
+# → re-run the §5.2 block for the MPI you want
+julia --project=. -e 'ENV["JULIA_PKG_PRECOMPILE_AUTO"]=0; using Pkg; Pkg.instantiate()'
+julia --project=. -e 'using Pkg; Pkg.build("MPI"; verbose=true); Pkg.build("P4est_wrapper"; verbose=true); Pkg.build("GridapP4est"; verbose=true)'
+julia --project=. -e 'using Pkg; Pkg.precompile()'
+bash tools/check_mpi_setup.sh
+```
+
+`Manifest.toml` is gitignored; deleting it costs one re-resolve and is what
+moves `P4est_jll` onto the new MPI's variant.
+
+> **Coupled runs need one more thing to match.** `AlyaProxy/Alya.x` has its own
+> MPI baked in at link time. After switching, rebuild it with the matching
+> `mpif90`: `cd AlyaProxy && MPIF90=<prefix>/bin/mpif90 bash compilef90.sh`.
+> See [RUN-COUPLED.md](RUN-COUPLED.md) §3 and §5.
 
 ### 5.8 Running on a Slurm cluster
-
-For batch runs on many nodes, use the ready-made job script:
 
 ```bash
 sbatch --export=ALL,EQS=CompEuler,CASE=theta \
        auxiliary/slurm/submit_jexpresso_parallel.sh
 ```
 
-Edit the `CHANGE_ME` lines in its `#SBATCH` block (account, partition, QoS)
-and the `module load` lines at the top; the rest is site-agnostic.
+Edit the `CHANGE_ME` lines in its `#SBATCH` block and the `module load` lines;
+the rest is site-agnostic. The script runs a **serial precompile phase**
+(`Pkg.instantiate()` + `Pkg.precompile()` on one process) before the
+**parallel run phase** (launched with `JULIA_PKG_PRECOMPILE_AUTO=0`,
+`--compiled-modules=existing`, `--pkgimages=existing`), so hundreds of ranks
+do not all compile into the same depot at once. Full details and
+cluster-specific pitfalls (system-MPI binding, `JULIA_CPU_TARGET`, why not to
+stage the depot to node-local disk): [`auxiliary/slurm/README.md`](auxiliary/slurm/README.md).
 
-The script splits the job into a **serial precompile phase** — one process on
-one node running `Pkg.instantiate()` + `Pkg.precompile()` — and a **parallel
-run phase** launched with precompilation disabled
-(`JULIA_PKG_PRECOMPILE_AUTO=0`, `--compiled-modules=existing`,
-`--pkgimages=existing`). That split is the whole point: with a cold depot,
-every rank otherwise discovers the same missing cache files at the same
-moment and they all compile into the same shared depot at once, which on a
-few hundred ranks costs far more wall time than the idle nodes during the
-serial phase.
+---
 
-See [`auxiliary/slurm/README.md`](auxiliary/slurm/README.md) for the full set
-of knobs and the cluster-specific pitfalls (system-MPI binding,
-`JULIA_CPU_TARGET` on heterogeneous partitions, why you must *not* stage the
-depot to node-local disk).
+## 6. Daily workflow — fast iteration
 
-## 6. Daily workflow — interactive REPL for fast iteration
+Every fresh Julia process pays a one-time JIT cost (`sem_setup`, the `with_mpi`
+closure, the SciML integrator, the VTK writer…), typically 30–60 s of silent
+wall time after `# Read inputs dict ... DONE`.
 
-Every Julia process pays a one-time JIT compilation cost on first use of
-`sem_setup`, the `with_mpi` closure, the SciML integrator, the VTK
-writer, etc. Cold starts (a fresh `mpirun`, a fresh `julia src/Jexpresso.jl ...`)
-re-pay this cost every time — typically ~30–60 s of silent wall time
-between `# Read inputs dict ... DONE` and the time loop visibly
-advancing.
-
-**The cheapest way to escape that is the REPL workflow**: launch Julia
-once, run the same case (or different cases) repeatedly inside the same
-process. The first invocation in a session is slow; every subsequent
-invocation is essentially instant for the JIT-related work — only your
-actual integration time remains.
-
-### Single-rank (serial) workflow
-
-This is the recommended development workflow:
+### Serial: stay in one REPL
 
 ```bash
 julia --project=.
 ```
 
-Then at the prompt, run a case:
-
 ```julia
 julia> using Jexpresso
-julia> Jexpresso.run_case("CompEuler", "theta")
-# ... lots of JIT on the first run; the simulation completes ...
+julia> Jexpresso.run_case("CompEuler", "theta")   # slow the first time
+julia> Jexpresso.run_case("CompEuler", "theta")   # near-instant after edits
 ```
 
-Edit your code, then re-run in the SAME session:
+Use `Revise.jl` so edits to source files outside `user_inputs.jl` are picked up
+without restarting.
 
-```julia
-julia> Jexpresso.run_case("CompEuler", "theta")
-# ... starts almost immediately; only your edits get JIT-compiled ...
-```
-
-For source files outside `user_inputs.jl` etc., use `Revise.jl` so edits
-are picked up without restarting the REPL.
-
-### MPI runs from the same Julia process
-
-You can also drive parallel `mpiexec` runs from within an interactive
-Julia session — Julia's `run(...)` keeps `mpiexec` happy (this works for
-all three routes; with Route C be sure `mpiexec()` comes from `using MPI`)
-and you can re-run as many times as you like without restart:
+### Parallel from the same REPL
 
 ```julia
 julia> using MPI
-julia> JULIA = Base.julia_cmd()
-julia> run(`$(mpiexec()) -n 4 $JULIA --project=. src/Jexpresso.jl CompEuler city2d`)
+julia> run(`$(mpiexec()) -n 4 $(Base.julia_cmd()) --project=. src/Jexpresso.jl CompEuler city2d`)
 ```
 
-Each `run(...)` invocation still spawns FRESH MPI ranks, so each
-parallel run pays the cold-JIT cost again. The REPL-resident Julia
-process does not save you here — the JIT cost lives in the child
-processes that mpiexec spawns.
-
-In short: **interactive REPL eliminates cold-start cost for serial
-development**, but every `mpirun` is its own cold start. The next-tier
-win for parallel cold starts is `PackageCompiler.create_sysimage`,
-covered in [Section 6.1](#61-fastest-parallel-execution-on-macos-with-mpich).
+Each `run(...)` spawns fresh ranks, so every parallel launch is a cold start —
+the REPL does not help here. The fix is a sysimage (§6.1).
 
 ### 6.1 Fastest parallel execution on macOS with MPICH
 
-On a Mac the wall-clock cost of a parallel Jexpresso run is dominated by Julia
-startup, not by MPI. Address that first; the MPI-side tuning is small by
-comparison and mostly consists of not getting in your own way.
+On a Mac the cost of a parallel run is dominated by Julia startup, not MPI.
 
-#### One-time: shell environment
-
-Put these in `~/.zshrc` (see [§5.7](#57-troubleshooting) for why the libfabric
-pair is needed, and how to find your own interface name):
+**One-time shell setup** (`~/.zshrc`; see §5.7 for the libfabric pair):
 
 ```bash
 export FI_PROVIDER=tcp
 export FI_TCP_IFACE=en0
 export PATH="$(brew --prefix mpich)/bin:$PATH"
-```
-
-#### One-time: build a sysimage
-
-This is the single biggest win. Without it every rank of every `mpirun` JIT-compiles
-Jexpresso from scratch — tens of seconds per launch, paid again on the next run.
-A sysimage bakes that into a `.so` the ranks load directly:
-
-```bash
-julia --project=. -e 'using Pkg; Pkg.precompile()'
-julia --project=. create_Jexpresso_sysimage.jl
-```
-
-That writes `jexpresso.so` (several minutes, once). Use it with `--sysimage`:
-
-```bash
-mpiexec -np 4 julia --project=. --sysimage jexpresso.so --startup-file=no \
-    ./src/Jexpresso.jl CompEuler theta
-```
-
-Rebuild it after changing `Project.toml` or `src/`. `run_coupled.sh` picks up
-`jexpresso.so` automatically when it is present, and `REBUILD_SYSIMAGE=1
-./run_coupled.sh` regenerates it.
-
-The second-biggest win is already automatic: the mesh and SEM caches under
-`<case>/.jexpresso_cache/`. The first run of a case builds them, later runs of
-the same case load them. Leave `:luse_mesh_cache` at its default.
-
-#### How many ranks
-
-Apple Silicon has performance and efficiency cores; only the P-cores are worth
-giving MPI ranks. Count them:
-
-```bash
-sysctl -n hw.perflevel0.physicalcpu
-sysctl -n hw.perflevel1.physicalcpu
-```
-
-The first number is your rank ceiling — 4 on an M1/M2 Air, 8–12 on a Pro/Max.
-Oversubscribing past it makes runs slower, not faster, and MPICH will busy-wait
-while it happens.
-
-Jexpresso is essentially pure MPI (one `@threads` loop, in matrix assembly), so
-give the ranks the cores and keep threads out of the way:
-
-```bash
 export JULIA_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 ```
 
-Without this, *N* ranks each start *N* BLAS threads and fight over the same
-cores.
+The thread settings matter: Jexpresso is essentially pure MPI, and without
+them *N* ranks each start *N* BLAS threads and fight over the same cores.
 
-> **Rank pinning does not work on macOS.** Hydra's `-bind-to core` /
-> `-map-by` rely on affinity APIs Darwin does not expose. Do not bother
-> passing them; the scheduler places threads for you.
+> **The `PATH` line is for Route B (Homebrew MPICH) launches only.** It puts
+> Homebrew's `mpicc`/`mpiexec` first for *every* shell, and any `Pkg.build`
+> run from such a shell will link `P4est_wrapper` against Homebrew's MPI even
+> when MPI.jl is bound to a JLL — the two-MPI failure in §5.7. Either wrap it
+> in the `use-mpich` function from §5.2 and call it only before launching, or
+> run builds in a shell where `which mpicc` prints nothing. On Route C leave it
+> out entirely and launch with MPI.jl's `mpiexec()` (§5.6).
 
-#### Launch flags worth using
+**One-time sysimage** — the single biggest win:
+
+```bash
+julia --project=. -e 'using Pkg; Pkg.precompile()'
+julia --project=. create_Jexpresso_sysimage.jl        # writes jexpresso.so (minutes, once)
+```
 
 ```bash
 mpiexec -np 4 -prepend-rank \
@@ -759,21 +549,28 @@ mpiexec -np 4 -prepend-rank \
     ./src/Jexpresso.jl CompEuler theta
 ```
 
-* `-prepend-rank` — Hydra's per-rank output tagging (MPICH's equivalent of
-  OpenMPI's `--output tag`). Without it, a parallel run's stdout is
-  interleaved and block-buffered, and looks like a hang.
-* `--startup-file=no` — skips `~/.julia/config/startup.jl` on every rank.
-* `-genv VAR VAL` — set an environment variable for all ranks. Hydra forwards
-  your whole environment by default, so exported variables already arrive;
-  this is for one-off overrides.
+Rebuild it after changing `Project.toml` or `src/` (not after editing
+`user_inputs.jl`). `run_coupled.sh` picks it up automatically;
+`REBUILD_SYSIMAGE=1 ./run_coupled.sh` regenerates it. The mesh/SEM caches
+under `<case>/.jexpresso_cache/` are the second-biggest win and are automatic —
+leave `:luse_mesh_cache` at its default.
 
-#### For coupled runs
+**How many ranks.** Only the performance cores are worth a rank:
 
-Split the P-cores between the two codes rather than exceeding them — on a
-4-P-core machine that means 2 + 2. **Alya needs at least two ranks**: its rank
-0 is a master that owns no grid points, so a single Alya rank assigns zero
-points and the codes do not couple at all. Beyond that minimum, Alya does very
-little work, so spend extra ranks on Jexpresso:
+```bash
+sysctl -n hw.perflevel0.physicalcpu   # your rank ceiling: 4 on an M1/M2 Air, 8–12 on Pro/Max
+```
+
+Oversubscribing makes runs slower. Rank pinning (`-bind-to`, `-map-by`) does
+nothing on macOS; don't pass it.
+
+**Launch flags.** `-prepend-rank` tags each rank's output (otherwise stdout is
+interleaved and block-buffered and looks like a hang); `--startup-file=no`
+skips `startup.jl` on every rank; `-genv VAR VAL` sets a variable for all ranks.
+
+**Coupled runs.** Split the P-cores, e.g. 2 + 2. Alya needs **at least two
+ranks** (its rank 0 is a master with no grid points); beyond that, spend extra
+ranks on Jexpresso:
 
 ```bash
 export JEXPRESSO_COUPLED=1
@@ -782,154 +579,248 @@ mpiexec -np 2 ./AlyaProxy/Alya.x \
         ./src/Jexpresso.jl CompEuler 3dAlya
 ```
 
-or just `./run_coupled.sh 2 2`, which applies the sysimage and the preflight
-checks for you.
+or `./run_coupled.sh 2 2`, which applies the sysimage and preflight checks.
 
-#### Things that cost you time
+**Things that cost you time:** a VPN connected during a run (renumbers the
+interface `FI_TCP_IFACE` is pinned to); the repo on iCloud Drive or a network
+share (every rank reads mesh and cache files — keep it on the internal SSD);
+frequent output (`:diagnostics_at_times` and VTK writes are synchronous);
+rebuilding the sysimage more often than needed.
 
-* **A VPN connected during a run.** It renumbers interfaces, which is what
-  `FI_TCP_IFACE` is pinned against; a reconnect mid-run can kill the job.
-* **The repo on iCloud Drive or a network share.** Every rank reads the mesh
-  and cache files. Keep the working copy on the internal SSD.
-* **Frequent output.** `:diagnostics_at_times` and the VTK writes are
-  synchronous. Widen the interval while you are benchmarking.
-* **Rebuilding the sysimage more often than needed.** It is only invalidated
-  by dependency or source changes, not by editing `user_inputs.jl`.
+---
 
 ## 7. AMR on macOS (Apple Silicon): the patched GridapP4est fork
 
-The registered `GridapP4est` (`0.3.11`, see the package list at the bottom of
-this file) does not support adaptive mesh refinement on macOS — `@cfunction`
-closures aren't supported on ARM64, and there's a Julia/C struct stride
-mismatch for the p4est iterator structs on both ARM64 (Julia ≥ 1.11) and
-x86_64 (Julia ≥ 1.12). These surface during the refinement callbacks that run
-*after* the coarse octree model is built, so every
-`:lamr`/`:lpreadapt`/`:linitial_refine` case (see
-[docs/amr_setup.md](docs/amr_setup.md)) needs the patched fork on macOS.
-
-Both bugs are fixed on a branch of a fork:
+The registered `GridapP4est 0.3.11` does not support AMR on macOS:
+`@cfunction` closures aren't supported on ARM64, and there is a Julia/C struct
+stride mismatch for the p4est iterator structs (ARM64 with Julia ≥ 1.11, x86_64
+with Julia ≥ 1.12). Both surface in the refinement callbacks that run *after*
+the coarse octree model is built, so every `:lamr`/`:lpreadapt`/
+`:linitial_refine` case (see [docs/amr_setup.md](docs/amr_setup.md)) needs the
+patched fork on macOS:
 <https://github.com/Hwang1229/GridapP4est.jl/tree/arm64-cfunction-fix>.
 
-> **Note:** the `AssertionError: A check failed` at
-> `OctreeDistributedDiscreteModels.jl:325` is a *different*, platform-independent
-> issue — a `Dp != Dc` coarse mesh — and is handled in code by
-> `_flatten_model_to_cell_dim` in `src/kernel/mesh/mesh.jl`; the fork does not
-> address it. See the
-> [FAQ entry](FAQ.md#amr-theta_amr-and-other-lamrlinitial_refine-cases-fails-with-assertionerror-a-check-failed-in-octreedistributeddiscretemodel).
+**You do not install the fork by hand.** `Project.toml` pins it in a
+`[sources]` block, so `Pkg.instantiate()` resolves `GridapP4est` to the fork on
+every platform. The block must be present — check for it, and add it if a merge
+or an older branch dropped it:
 
-**You no longer need to install this fork by hand.** `Project.toml` pins it in a
-`[sources]` block (same package UUID and version `0.3.11`, plus the fixes), so a
-plain `Pkg.instantiate()` already resolves `GridapP4est` to the fork on every
-platform. Verify it took effect:
+```bash
+grep -A2 '^\[sources' Project.toml
+```
+
+```toml
+[sources]
+GridapP4est = {url = "https://github.com/Hwang1229/GridapP4est.jl", rev = "arm64-cfunction-fix"}
+```
+
+Then verify the fork actually resolved (the URL must appear):
 
 ```bash
 julia --project=. -e 'using Pkg; Pkg.status("GridapP4est")'
-# should show "https://github.com/Hwang1229/GridapP4est.jl#arm64-cfunction-fix"
+# expect: [c2c8e14b] GridapP4est v0.3.11 `https://github.com/Hwang1229/GridapP4est.jl#arm64-cfunction-fix`
 ```
 
-If you'd rather work from an editable local clone (e.g. to make further fixes
-yourself), the `Pkg.develop` below overrides the `[sources]` pin for your
-machine only:
+Plain `GridapP4est v0.3.11` with no URL means the registry version is in use.
+That happens if the `[sources]` block is missing, or if `Manifest.toml` was
+resolved before the block was added — `Pkg.instantiate()` does not re-resolve
+an existing Manifest. Fix: add the block if needed, then
+`rm -f Manifest.toml` and re-run §3a. The tell-tale runtime error for the
+registry version on Apple Silicon is
+`ERROR: LoadError: cfunction: closures are not supported on this platform`
+in `UniformlyRefinedForestOfOctreesDiscreteModels.jl`.
+
+To work from an editable local clone instead (overrides the pin on your machine
+only):
 
 ```bash
 git clone -b arm64-cfunction-fix git@github.com:Hwang1229/GridapP4est.jl.git ~/GridapP4est.jl
 julia --project=. -e 'using Pkg; Pkg.develop(path=expanduser("~/GridapP4est.jl"))'
 ```
 
-If you hit a missing-file error (e.g. `libp4est`/`libjansson` failing to
-`dlopen`, or `Pkg.instantiate()` failing to precompile a package with a
-`SystemError: opening file ".../artifacts/.../..."`) right after switching,
-that's a separate, unrelated artifact-corruption issue — see the FAQ entry
-["A package fails to precompile with a missing file inside a Julia artifact"](FAQ.md#a-package-fails-to-precompile-with-a-missing-file-inside-a-julia-artifact).
+> The `AssertionError: A check failed` at
+> `OctreeDistributedDiscreteModels.jl:325` is a *different*, platform-independent
+> issue (a `Dp != Dc` coarse mesh), handled in code by
+> `_flatten_model_to_cell_dim` in `src/kernel/mesh/mesh.jl` — see the
+> [FAQ entry](FAQ.md#amr-theta_amr-and-other-lamrlinitial_refine-cases-fails-with-assertionerror-a-check-failed-in-octreedistributeddiscretemodel).
+>
+> `dlopen` failures for `libp4est`/`libjansson`, or a `SystemError: opening
+> file ".../artifacts/..."` during precompile, are an unrelated
+> artifact-corruption issue — see
+> [FAQ: missing file inside a Julia artifact](FAQ.md#a-package-fails-to-precompile-with-a-missing-file-inside-a-julia-artifact).
 
 ### 7.1 AMR quick-start on macOS (clean build → `theta_amr`)
 
-A copy-pasteable path from nothing to a running AMR case on macOS. It reuses the
-detailed steps above ([§2](#2-link-the-sample-meshes) for the mesh link,
-[§5.2](#52-point-mpipreferences-at-your-mpi) / [§5.5](#55-macos-hostname-fix-mpich-and-mpich_jll-only)
-for MPI); the notes here call out only what AMR adds.
-
 ```bash
-# 0. Prereqs: Julia 1.11.9, git+SSH to GitHub.
+# 0. Prereqs
 julia --version                              # 1.11.9
 
-# 1. Clone Jexpresso + the mesh repo side by side, get on this branch
+# 1. Clone side by side
 git clone git@github.com:smarras79/Jexpresso.git
 git clone git@github.com:smarras79/JexpressoMeshes.git
 cd Jexpresso
-git checkout claude/theta-amr-osx-assertion-bi8ubv
+git checkout sm/newmaster
 
-# 2. Link the sample meshes (provides hexa_TFI_10x10.msh — see Section 2)
+# 2. Link the sample meshes (provides hexa_TFI_10x10.msh)
 ln -s ../JexpressoMeshes/meshes .
 ls -l meshes/gmsh_grids/hexa_TFI_10x10.msh   # must resolve
 
-# 3. Instantiate. The [sources] pin clones the patched GridapP4est fork here,
-#    so this step needs network access. Precompile is deferred until after MPI.
-julia --project=. -e 'ENV["JULIA_PKG_PRECOMPILE_AUTO"]=0; using Pkg; Pkg.instantiate()'
+# 3. Clean shell: no Homebrew MPI on PATH while building (see §5 rules)
+which mpicc                                  # must print nothing
 
-# 4. Confirm the fork took effect (this is what makes the refinement steps work)
+# 4. Make sure the fork pin is present (add it if not — §7)
+grep -A2 '^\[sources' Project.toml           # must show the Hwang1229 URL
+
+# 5. Bind MPI FIRST — Route C, naming MPICH_jll explicitly. The preference must
+#    exist before the Manifest is resolved, because P4est_jll's MPI variant is
+#    chosen at resolve time. (A first instantiate is needed only so that
+#    MPIPreferences itself is available.)
+julia --project=. -e 'ENV["JULIA_PKG_PRECOMPILE_AUTO"]=0; using Pkg; Pkg.instantiate()'
+rm -f LocalPreferences.toml
+julia --project=. -e 'using MPIPreferences; MPIPreferences.use_jll_binary("MPICH_jll")'
+
+# 6. Fresh resolve with that preference in place (clones the fork; needs network)
+rm -f Manifest.toml
+julia --project=. -e 'ENV["JULIA_PKG_PRECOMPILE_AUTO"]=0; using Pkg; Pkg.instantiate()'
 julia --project=. -e 'using Pkg; Pkg.status("GridapP4est")'
 #    expect: ...GridapP4est.jl#arm64-cfunction-fix
 
-# 5. Configure MPI — Route C (bundled MPICH_jll) is the reliable choice on macOS
-julia --project=. -e 'using MPIPreferences; MPIPreferences.use_jll_binary()'
-
-# 6. macOS hostname fix (required for any MPICH-based MPI, incl. the JLL; Section 5.5)
+# 7. macOS hostname fix (§5.5)
 echo "127.0.0.1   $(hostname -s)" | sudo tee -a /etc/hosts
 echo "127.0.0.1   $(hostname)"    | sudo tee -a /etc/hosts
 
-# 7. Rebuild MPI against that choice, then precompile everything
+# 8. Rebuild MPI and everything linked against it (§5.3), then precompile
 julia --project=. -e 'using Pkg; Pkg.build("MPI"; verbose=true)'
+julia --project=. -e 'using Pkg; Pkg.build("P4est_wrapper"; verbose=true)'
+julia --project=. -e 'using Pkg; Pkg.build("GridapP4est"; verbose=true)'
 julia --project=. -e 'using Pkg; Pkg.precompile()'
 
-# 8. Sanity-check a non-AMR case first (fast, proves the base build)
+# 9. Verify exactly one libmpi is loaded, and it is the artifact (§5.4)
+DYLD_PRINT_LIBRARIES=1 julia --project=. -e 'using Jexpresso' 2>&1 | grep -i 'libmpi\.'
+#    every line under ~/.julia/artifacts/...; nothing under /opt/homebrew
+
+# 10. Sanity-check a non-AMR case first
 julia --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler","theta")'
 
-# 9. Run the AMR case
+# 11. Run the AMR case
 julia --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler","theta_amr")'
 ```
 
-**Updating an existing clone** (you previously hand-added the fork with
-`Pkg.add`/`Pkg.develop`): force a clean re-resolve so the committed `[sources]`
-pin and the new mesh code are picked up.
+**Updating an existing clone** (e.g. you hand-added the fork earlier): force a
+clean re-resolve so the `[sources]` pin and new mesh code are picked up.
+`LocalPreferences.toml` is kept, so the MPI variant stays consistent.
 
 ```bash
 cd Jexpresso
 git pull
+which mpicc                    # must print nothing
 rm -f Manifest.toml            # gitignored; forces a from-scratch resolve
 julia --project=. -e 'ENV["JULIA_PKG_PRECOMPILE_AUTO"]=0; using Pkg; Pkg.instantiate()'
-julia --project=. -e 'using Pkg; Pkg.build("MPI"; verbose=true); Pkg.precompile()'
+julia --project=. -e 'using Pkg; Pkg.build("MPI"; verbose=true); Pkg.build("P4est_wrapper"; verbose=true); Pkg.build("GridapP4est"; verbose=true); Pkg.precompile()'
 ```
 
-**Two AMR-specific checks** if `theta_amr` still misbehaves:
+**If `theta_amr` still misbehaves**, the error text tells you which step was
+skipped. In the order they appear during a run:
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `Segmentation fault: 11` in `_platform_memmove` right after `Done reading … .msh`; `lldb` backtrace is all `dyld` frames | Two MPIs loaded (one system, one JLL) | §7.2 reset recipe; see [FAQ](FAQ.md#amr-case-segfaults-in-_platform_memmove-or-aborts-with-attempting-to-use-an-mpi-routine-before-initializing) |
+| `Attempting to use an MPI routine (internal_Comm_size) before initializing … MPICH` right after `Into p4est_new` | Same: MPI.jl initialised one MPICH, p4est calls another | Same |
+| `ERROR: LoadError: cfunction: closures are not supported on this platform` | Registry `GridapP4est`, not the fork | Steps 4 and 6; see [FAQ](FAQ.md#amr-case-fails-with-cfunction-closures-are-not-supported-on-this-platform) |
+| `could not load library ".../libp4est.4.dylib" … Library not loaded: @rpath/libmpi.12.dylib` | `P4est_jll` resolved to its MPICH build while MPI.jl is on another MPI (typically `OpenMPI_jll`, for which no p4est build exists on Apple Silicon) | §7.2 reset recipe |
+| `AssertionError: A check failed` at `OctreeDistributedDiscreteModels.jl:325` | `Dp != Dc` coarse mesh | Handled by `_flatten_model_to_cell_dim`; see [FAQ](FAQ.md#amr-theta_amr-and-other-lamrlinitial_refine-cases-fails-with-assertionerror-a-check-failed-in-octreedistributeddiscretemodel) |
+
+To read the embedding dimension of the mesh for the last case:
 
 ```bash
-# a) What embedding dimension does the mesh report? Dp=3 is why the old
-#    AssertionError fired; _flatten_model_to_cell_dim now collapses it to Dp=Dc.
 julia --project=. -e 'using GridapGmsh; println(typeof(GmshDiscreteModel("./meshes/gmsh_grids/hexa_TFI_10x10.msh")))'
 #    {2,3,...} = Dp=3 (flattened at runtime);  {2,2,...} = already flat
-
-# b) Is the fork really in use? (step 4) — must show #arm64-cfunction-fix
 ```
 
-Common macOS stumbles are covered in the FAQ: `dlopen`/`libjansson`/missing
-artifacts on instantiate, `MPI_Init … gethostbyname failed` (the hostname fix in
-step 6), and hangs at `MPI.Init` (stay on Route C, step 5). See
-[FAQ.md](FAQ.md#run).
+Other macOS stumbles (`dlopen`/`libjansson`, `gethostbyname failed`, hangs at
+`MPI.Init`) are in [FAQ.md](FAQ.md#run).
 
-# To run other tests that are already in Jexpresso or to add your own new problem,
-see [ADD_A_NEW_TEST.md](ADD_A_NEW_TEST.md)
+### 7.2 macOS reset recipe: when AMR breaks with any of the errors above
 
-# NOTES ON PACKAGE LIST:
+Not every Mac hits these problems — an install that was done in the right order
+from the start (an iMac set up straight from §7.1, say) never sees them. They
+show up on machines whose MPI binding has been changed over time: a Homebrew
+MPI put on `PATH` in `~/.zshrc`, a `use_system_binary` call made after the
+Manifest was resolved, an experiment with `OpenMPI_jll`, a fork pin added
+after the first `instantiate`. Each leaves one of `MPI`, `P4est_jll`,
+`P4est_wrapper` or `GridapP4est` bound to something different from the others,
+and the symptoms cycle through the table above as you fix them one at a time.
+
+The following sequence resets all of them at once to the one configuration
+verified to work end to end on Apple Silicon (`MPICH_jll` everywhere, patched
+`GridapP4est` fork, no Homebrew MPI involved). It is safe to run whenever a Mac
+AMR build is in doubt, and it takes a few minutes:
+
+```bash
+cd Jexpresso
+which mpicc                                  # must print nothing — otherwise open a shell where no Homebrew MPI is on PATH
+
+# 1. Bind MPI.jl to the bundled MPICH, by name
+rm -f LocalPreferences.toml
+julia --project=. -e 'using MPIPreferences; MPIPreferences.use_jll_binary("MPICH_jll")'
+
+# 2. Throw away everything that could remember a previous binding: the Manifest
+#    (P4est_jll MPI variant) and the precompile caches of the MPI-linked chain
+rm -f Manifest.toml
+rm -rf ~/.julia/compiled/v1.11/P4est_jll ~/.julia/compiled/v1.11/P4est_wrapper ~/.julia/compiled/v1.11/GridapP4est ~/.julia/compiled/v1.11/MPI ~/.julia/compiled/v1.11/Jexpresso
+
+# 3. Fresh resolve with the preference already in place
+julia --project=. -e 'ENV["JULIA_PKG_PRECOMPILE_AUTO"]=0; using Pkg; Pkg.instantiate()'
+julia --project=. -e 'using Pkg; Pkg.status("GridapP4est")'   # fork URL must show; if not, add the [sources] block (§7) and redo from step 2
+
+# 4. Rebuild the MPI-linked chain, then precompile
+julia --project=. -e 'using Pkg; Pkg.build("MPI"; verbose=true); Pkg.build("P4est_wrapper"; verbose=true); Pkg.build("GridapP4est"; verbose=true)'
+julia --project=. -e 'using Pkg; Pkg.precompile()'
+
+# 5. Verify: exactly one libmpi, and it is the MPICH_jll artifact
+DYLD_PRINT_LIBRARIES=1 julia --project=. -e 'using Jexpresso' 2>&1 | grep -i 'libmpi\.'
+#   expect exactly one line: ~/.julia/artifacts/<hash>/lib/libmpi.12.dylib
+
+# 6. Run — the grep should print nothing
+julia --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler","theta_amr")' 2>&1 | grep -n -A12 'ERROR'
+```
+
+Adjust the `v1.11` in step 2 to your Julia minor version. After this, parallel
+runs use MPI.jl's launcher (`./jexp_mpich.sh N EQS CASE` or `mpiexec()` from
+`using MPI`), never Homebrew's `mpiexec`.
+
+**Why `MPICH_jll` and not the alternatives.** On Apple Silicon:
+
+- `use_jll_binary("OpenMPI_jll")` binds MPI.jl fine, but there is no
+  OpenMPI-linked `P4est_jll` build for `aarch64-apple-darwin`; the resolver
+  silently hands you the MPICH one and the first AMR call fails with
+  `Library not loaded: @rpath/libmpi.12.dylib`.
+- A system MPI (Homebrew MPICH or OpenMPI, Routes A/B) makes `P4est_jll` pick
+  its matching JLL-built variant, and macOS `dyld` then loads that artifact's
+  `libmpi` *next to* the system one instead of substituting it (Linux dedupes
+  by soname; macOS resolves `@rpath` by path). Result: the segfault or the
+  "MPI routine before initializing" abort. Routes A/B with AMR on macOS
+  therefore require a p4est you build yourself against the system MPI and
+  point `P4est_wrapper` at via `P4EST_ROOT_DIR` — not covered here.
+- The bare `use_jll_binary()` picks `MPItrampoline_jll`, which adds a shim
+  between MPI.jl and MPICH and has also been seen to end up with two copies.
+
+`MPICH_jll`, named explicitly, is the one choice where MPI.jl, `P4est_jll` and
+`P4est_wrapper` all resolve to a single library file with no extra work.
 
 
-Jexpresso uses a few packages whose latest version may be incompatible. Please, enfornce the installation of the following versions:
+---
 
-> **Note:** this list is an informational snapshot — the authoritative versions
-> live in [`Project.toml`](Project.toml). In particular `GridapP4est` is no
-> longer plain `=0.3.11`: it is pinned to the patched fork via a `[sources]`
-> block (see [Section 7](#7-amr-on-macos-apple-silicon-the-patched-gridapp4est-fork)),
-> so a `Pkg.instantiate()` resolves the fork automatically.
+## Adding your own test cases
+
+See [ADD_A_NEW_TEST.md](ADD_A_NEW_TEST.md).
+
+## Notes on package versions
+
+Jexpresso pins several packages whose latest versions are incompatible. This
+list is an informational snapshot; the authoritative versions are in
+[`Project.toml`](Project.toml). `GridapP4est` in particular is not plain
+`=0.3.11` but the patched fork via `[sources]` (§7).
 
 ```
 [compat]
@@ -961,5 +852,3 @@ TrixiBase = "0.1.8"
 UUIDs = "1.11.0"
 UnicodePlots = "=3.7.2"
 ```
-</content>
-</invoke>

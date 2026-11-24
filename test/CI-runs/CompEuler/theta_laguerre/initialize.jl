@@ -1,8 +1,10 @@
-function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
-    """
-
-    """
-    @info " Initialize fields for 2D CompEuler with θ equation ........................ "
+function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
+    
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    if rank == 0
+        println(" Initialize fields for 2D CompEuler with θ equation ........................ ")
+    end
     
     #---------------------------------------------------------------------------------
     # Solution variables:
@@ -11,7 +13,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     # defines neqs, which is the second dimension of q = define_q()
     # 
     #---------------------------------------------------------------------------------
-    qvars = ("ρ", "ρu", "ρv", "ρθ")
+    qvars = ["ρ", "ρu", "ρv", "ρθ"]
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars))
     #---------------------------------------------------------------------------------
 
@@ -20,7 +22,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     
         if (inputs[:case] === "rtb")
         
-            xc = (maximum(mesh.x) + minimum(mesh.x))/2
+            xc = (mesh.xmax + mesh.xmin)/2
             yc = 2500.0 #m
             r0 = 2000.0 #m
         
@@ -31,7 +33,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 #for j=1:mesh.ngl, i=1:mesh.ngl
                 
                     #ip = mesh.connijk[iel_g,i,j]
-                    x, y = mesh.x[ip], mesh.y[ip]
+                    x, y = mesh.coords[1,ip], mesh.coords[2,ip]
                     r = sqrt( (x - xc)^2 + (y - yc)^2 )
                     Δθ = 0.0 #K
                     if r < r0
@@ -106,17 +108,20 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         end
 
         PhysConst = PhysicalConst{TFloat}()
-        xc = TFloat((maximum(mesh.x) + minimum(mesh.x))/2)
+        xc = TFloat((maximum(@view(mesh.coords[1,:])) + minimum(@view(mesh.coords[1,:])))/2)
         yc = TFloat(2500.0) #m
         rθ = TFloat(2000.0) #m
 
         θref = TFloat(300.0) #K
         θc   =   TFloat(2.0) #K
         k = initialize_gpu!(inputs[:backend])
-        k(q.qn, q.qe, mesh.x, mesh.y, xc, rθ, yc, θref, θc, PhysConst, lpert; ndrange = (mesh.npoin))
+        k(q.qn, q.qe, @view(mesh.coords[1,:]), @view(mesh.coords[2,:]), xc, rθ, yc, θref, θc, PhysConst, lpert; ndrange = (mesh.npoin))
     end
-    @info " Initialize fields for 2D CompEuler with θ equation ........................ DONE "
-    
+
+    if rank == 0
+        println(" Initialize fields for 2D CompEuler with θ equation ........................ DONE ")
+    end
+
     return q
 end
 

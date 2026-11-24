@@ -49,16 +49,16 @@ At the end the array `u` is repacked from `uaux` via `uaux2u!(u, uaux, neqs, npo
 
 The 1D/2D versions (and the GPU and Laguerre paths) still work this way.
 
-### 2.1.1 3D (CPU): constraints inferred from `user_bc_dirichlet!`
+### 2.1.1 Constraints inferred from `user_bc_dirichlet!` (1D, 2D, 3D; CPU, CG)
 
-In 3D on the CPU the kernel no longer treats "the user wrote `qbdy[ieq]`" as "freeze this component". Instead it works out **what each boundary tag actually constrains** from what `user_bc_dirichlet!` does to a node value, once at setup (`build_bc_constraints` in `src/kernel/boundaryconditions/bc_constraints.jl`). No input parameter and no change to existing `user_bc.jl` files is needed.
+On the CPU with continuous Galerkin, in 1D, 2D and 3D, the kernel no longer treats "the user wrote `qbdy[ieq]`" as "freeze this component". Instead it works out **what each boundary tag actually constrains** from what `user_bc_dirichlet!` does to a node value, once at setup (`build_bc_constraints` in `src/kernel/boundaryconditions/bc_constraints.jl`). No input parameter and no change to existing `user_bc.jl` files is needed.
 
 **Detection rules (per boundary node, per tag):**
 
 1. **Value constraint.** A component is constrained if `user_bc_dirichlet!` *changes* its value. The test is run on the initial state and on probe states (the initial state plus distinct, non-zero offsets on every component), so a constraint that the current state already satisfies — e.g. `w = 0` at a wall for a fluid at rest — is still detected. A component that is returned unchanged (passthrough, or tangential momentum on an axis-aligned wall) is *not* constrained.
-2. **No-penetration (free slip).** If the returned *total* momentum (equations 2:4, adding `qe` in `PERT` form) equals the tangential projection of the input momentum, $\mathbf m - (\mathbf m\cdot\mathbf n)\,\mathbf n$, with $\mathbf n$ the face normal, the node is treated as a no-penetration node. This covers flat walls and walls with topography. Such nodes get a **node normal** built from all incident constrained faces: the kernel accumulates $\sum \mathbf n\mathbf n^T$, eigen-decomposes it, and removes every direction whose eigenvalue exceeds 20 % of the largest. Nearly parallel face normals (smooth terrain) therefore merge into one averaged normal, while distinct walls meeting at an edge or a corner are all removed (2 or 3 normals).
+2. **No-penetration (free slip; 2D and 3D).** If the returned *total* momentum (equations 2:3 in 2D, 2:4 in 3D, adding `qe` in `PERT` form) equals the tangential projection of the input momentum, $\mathbf m - (\mathbf m\cdot\mathbf n)\,\mathbf n$, with $\mathbf n$ the boundary normal, the node is treated as a no-penetration node. This covers flat walls and walls with topography. Such nodes get a **node normal** built from all incident constrained boundary edges (2D) or faces (3D): the kernel accumulates $\sum \mathbf n\mathbf n^T$, eigen-decomposes it, and removes every direction whose eigenvalue exceeds 20 % of the largest. Nearly parallel normals (smooth terrain) therefore merge into one averaged normal, while distinct walls meeting at a corner (2D) or an edge or corner (3D) are all removed. In 1D a wall is simply ρu = 0, which rule 1 already covers.
 3. **Robin tags.** Tags whose name contains `robin` (any case, e.g. `"robin_bottom"`, `"ROBIN"`) are value + flux conditions: the values returned by `user_bc_dirichlet!` are applied, but **no tendency is constrained**, so a flux from `user_bc_neumann!` on the same tag acts.
-4. Periodic tags (`periodicx/y/z`, `periodic1/2/3`) are skipped, as before.
+4. Periodic tags (`periodicx/y/z`, `periodic1/2/3`) and `Laguerre` edges are skipped, as before. In 1D the boundary nodes are the two end points, with tags `"left"` and `"right"`.
 
 The resulting masks are assembled across MPI ranks and periodic copies, so every copy of a node is treated identically.
 
@@ -82,12 +82,12 @@ Neumann contributions (`user_bc_neumann!`, MOST, bulk fluxes, `S_flux`) are unch
 **Limitations to be aware of:**
 
 - The constraint pattern is detected once at setup. A BC that switches which components it constrains *during* the run (e.g. inflow/outflow chosen by the sign of `u`) is detected with the probe states only; values are still applied every stage, but the set of zeroed tendencies does not change.
-- Momentum is assumed to be equations 2:4 (CompEuler convention). The no-penetration test is attempted only when all three are set; other equation sets fall back to the component-wise rule.
-- 1D, 2D, Laguerre and GPU runs keep the legacy behaviour described above.
+- Momentum is assumed to be equations 2:(1+d) (CompEuler and shallow-water convention, d = 2 or 3). The no-penetration test is attempted only when all of them are set; other equation sets fall back to the component-wise rule.
+- Laguerre (semi-infinite) meshes, DG, GPU runs and periodic 1D keep the legacy behaviour described in §2.1: the returned values overwrite the state at every RHS evaluation.
 
-**Boundary normals at edges.** `DSS_global_normals!` (3D) replaces a face normal by the node-averaged normal only when *all three* components are within 0.25 of it (smooth surfaces). At sharp edges/corners the face keeps its own normal. Previously the components were replaced one at a time, which, where a tilted wall met another wall, produced a normal belonging to no face and a mass leak through the wall. Metric terms and normals are stored in the case's `.jexpresso_cache/` (keyed on mesh name and order, not on the code): after updating, clear it (`clean_cache.sh` in the case directory) so the normals are recomputed.
+**Boundary normals at edges (3D).** `DSS_global_normals!` replaces a face normal by the node-averaged normal only when *all three* components are within 0.25 of it (smooth surfaces). At sharp edges/corners the face keeps its own normal. Previously the components were replaced one at a time, which, where a tilted wall met another wall, produced a normal belonging to no face and a mass leak through the wall. Metric terms and normals are stored in the case's `.jexpresso_cache/` (keyed on mesh name and order, not on the code): after updating, clear it (`clean_cache.sh` in the case directory) so the normals are recomputed.
 
-**Migration note for existing cases.** No file needs to change. Results differ from older versions only at walls: free-slip walls no longer freeze the tangential momentum (the legacy 3D path zeroed the whole momentum tendency at wall nodes, i.e. effectively no-slip on the tendency), and tendencies are constrained after the MPI assembly. Coordinate-gated workarounds in `user_bc.jl` (e.g. setting only `qbdy[4]` for `z < 0.01`) are no longer needed.
+**Migration note for existing cases.** No file needs to change. Previously the returned values overwrote the state at the start of every RHS evaluation, and the zeroing of `RHS[ip, ieq]` done at that point was overwritten by the subsequent assembly, so boundary tendencies were effectively not constrained; values were only re-imposed at the next stage. Now the constrained tendencies are zeroed after the global assembly, so results at Dirichlet boundaries change slightly (more consistently with the imposed values), and free-slip walls constrain only the normal momentum. Coordinate-gated workarounds in `user_bc.jl` (e.g. setting only `qbdy[4]` for `z < 0.01`) are no longer needed.
 
 ### 2.2 Neumann machinery
 

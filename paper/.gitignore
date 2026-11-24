@@ -1,0 +1,8 @@
+*.aux
+*.log
+*.out
+*.bbl
+*.blg
+*.pdf
+joss-logo.png
+results_collage.png

@@ -1,5 +1,5 @@
 function initialize(SD, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
-    @info " Initialize fields for 1D CompEuler (sod1d: shock tube) ............ "
+    println(" Initialize fields for 1D CompEuler (sod1d: shock tube) ............ ")
 
     PhysConst = PhysicalConst{Float64}()
     γ = PhysConst.γ
@@ -19,7 +19,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
     for iel_g = 1:mesh.nelem
         for i = 1:mesh.ngl
             ip = mesh.connijk[iel_g, i, 1, 1]
-            x  = mesh.coords[ip, 1]
+            x  = mesh.coords[1, ip]
 
             if x < xshock_initial
                 ρ, u, p = ρL, uL, pL
@@ -39,7 +39,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
         end
     end
 
-    @info " Initialize fields for 1D CompEuler (sod1d: shock tube) ............ DONE "
+    println(" Initialize fields for 1D CompEuler (sod1d: shock tube) ............ DONE ")
 
     return q
 end

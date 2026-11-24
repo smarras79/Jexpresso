@@ -12,6 +12,7 @@ pages = [
          "User inputs" => "tutorials/user_inputs.md",
          "Tutorials" => Any["tutorials/running-jexpresso.md", 
                             "tutorials/newcase.md",
+                            "tutorials/laguerre.md",
                             ],
         ]
 

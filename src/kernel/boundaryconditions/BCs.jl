@@ -1,5 +1,28 @@
 include("custom_bcs.jl")
 
+#
+# Did the user's boundary routine prescribe a value for this component?
+#
+# user_bc_dirichlet! receives qbdy pre-filled with a sentinel and writes the
+# components it wants imposed; a component whose value it merely echoes
+# (e.g. the tangential momentum of a free-slip wall) must be left alone,
+# otherwise its RHS would be zeroed and the wall would become no-slip. That
+# "did it change?" test used to be Kopriva's AlmostEqual, which declares two
+# numbers equal whenever they are within an ABSOLUTE 2e-6 of each other and
+# either is below 1e-6. On a stratified atmosphere spanning many decades of
+# density this silently switches the walls off: with ρ ≈ 7e-9 at the top of
+# the solar corona of problems/MHD/fluxEmergenceSon2025, the wall-normal
+# momentum stays below 2e-6 up to a velocity of ~300 C_s, the prescribed
+# zero was never applied and the atmosphere drained through the "wall" with
+# an exponentially growing downflow. The test is now RELATIVE, scaled by the
+# larger of the two values and of the reference state of that point (which
+# keeps the roundoff of the PERT-form projections q + qe - qe, of order
+# eps·|qe|, below the threshold, as the old absolute tolerance did).
+#
+@inline function bc_value_changed(qb, ua, qref)
+    return abs(qb - ua) > 1.0e-10*max(abs(qb), abs(ua), abs(qref))
+end
+
 function apply_boundary_conditions_dirichlet!(u, uaux, t,qe,
                                               coords, 
                                               nx, ny, nz,
@@ -23,7 +46,6 @@ function apply_boundary_conditions_dirichlet!(u, uaux, t,qe,
         # constraints inferred at setup (bc_constraints.jl): impose values on the state only;
         # the tendency is constrained after the global assembly (apply_bc_constraints_rhs!).
         apply_bc_constraints_state!(bc_cons, u, uaux, qe, t, coords,
-                                    nx, ny, nz, bdy_face_type, poin_in_bdy_face, ngl,
                                     xmin, xmax, ymin, ymax, zmin, zmax, ubdy, neqs, npoin, inputs)
     else
         build_custom_bcs_dirichlet!(SD, t,
@@ -36,6 +58,38 @@ function apply_boundary_conditions_dirichlet!(u, uaux, t,qe,
                           Tabs, qn,
                           neqs, dirichlet!, neumann, inputs)
     end
+end
+
+#
+# DG (DiscGal): boundary conditions are FLUXES, not node values.
+#
+# The strong path above overwrites uaux/RHS at the points listed in
+# poin_in_bdy_edge. Under DiscGal that array is meaningless twice over: it
+# carries CG point ids, while mesh.x/connijk were renumbered to the
+# duplicated-DOF DG numbering (add_high_order_nodes_2D_gmsh_dg!), so the
+# writes would land on whatever DG node happens to share the index; and even
+# with correct ids, clamping a node value and zeroing its RHS is the CG way
+# of imposing a boundary condition, not the DG one. DG imposes it weakly,
+# through the numerical flux on the boundary faces built by
+# build_dg_faces_2D! and consumed by surface_rhs_el! (see dg_boundary_ghost!).
+#
+# This is a no-op rather than an error because it is also the right answer
+# for the periodic DG cases, whose boundary edges are all periodic tags that
+# the strong path skips anyway.
+#
+function apply_boundary_conditions_dirichlet!(u, uaux, t, qe,
+                                              coords,
+                                              nx, ny, nz,
+                                              npoin, npoin_linear,
+                                              poin_in_bdy_edge, poin_in_bdy_face,
+                                              nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ψ, dψ,
+                                              xmax, ymax, zmax, xmin, ymin, zmin, RHS, rhs_el, ubdy,
+                                              connijk_lag,
+                                              bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type,
+                                              connijk, Jef, S_face, S_flux, F_surf, M_surf_inv, M_edge_inv, M_inv,
+                                              Tabs, qn,
+                                              ω, neqs, inputs, AD::DiscGal, SD)
+    nothing
 end
 
 function apply_boundary_conditions_neumann!(u, uaux, t,qe,
@@ -56,7 +110,7 @@ function apply_boundary_conditions_neumann!(u, uaux, t,qe,
                                             ω, neqs, inputs, AD, SD)
 
     build_custom_bcs_neumann!(SD, t,
-                              @view(coords[:,:]),
+                              @view(coords[:, :]),
                               nx, ny, nz, npoin, npoin_linear, 
                               poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
                               xmax, ymax, zmax, xmin, ymin, zmin, ubdy, uaux, u, qe,
@@ -67,6 +121,29 @@ function apply_boundary_conditions_neumann!(u, uaux, t,qe,
                               neqs, dirichlet!, neumann, inputs)
 end
 
+
+# DG (DiscGal): see the dirichlet method above. The surface integral of a
+# boundary flux is the DG boundary term itself, already applied in
+# surface_rhs_el!; the CG Neumann builder would add a second one, on
+# CG-numbered points.
+function apply_boundary_conditions_neumann!(u, uaux, t, qe,
+                                            coords,
+                                            nx, ny, nz,
+                                            npoin, npoin_linear,
+                                            poin_in_bdy_edge, poin_in_bdy_face,
+                                            nedges_bdy, nfaces_bdy,
+                                            ngl, ngr, nelem_semi_inf, ψ, dψ,
+                                            xmax, ymax, zmax, xmin, ymin, zmin,
+                                            RHS, rhs_el, ubdy,
+                                            connijk_lag, bdy_edge_in_elem,
+                                            bdy_edge_type, bdy_face_in_elem, bdy_face_type,
+                                            connijk, Jef,
+                                            S_face, S_flux, F_surf, M_surf_inv, M_edge_inv, M_inv,
+                                            τ_f, wθ, wqv,
+                                            Tabs, qn,
+                                            ω, neqs, inputs, AD::DiscGal, SD)
+    nothing
+end
 
 function apply_periodicity!(u, uaux, t, qe,
                             npoin_linear, ψ, dψ,
@@ -86,6 +163,13 @@ function apply_periodicity!(u, uaux, t,qe,
     nothing
 end
 
+function apply_periodicity!(u, uaux, t, qe,
+                            npoin_linear, ψ, dψ,
+                            RHS, rhs_el, ubdy,
+                            ω, neqs, inputs, AD::DiscGal, SD::NSD_1D)
+    # DG periodicity is a flux face (see surface_rhs_el!), not a node identification.
+    nothing
+end
 
 function apply_periodicity!(u, uaux, t,qe,
                             npoin_linear, ψ, dψ,
@@ -99,6 +183,18 @@ function apply_periodicity!(u, uaux, t,qe,
                             npoin_linear, ψ, dψ,
                             RHS, rhs_el, ubdy,
                             ω, neqs, inputs, AD::ContGal, SD::NSD_2D)
+    nothing
+end
+
+
+function apply_periodicity!(u, uaux, t,qe,
+                            npoin_linear, ψ, dψ,
+                            RHS, rhs_el, ubdy,
+                            ω, neqs, inputs, AD::DiscGal, SD::NSD_2D)
+    # DG periodicity is a flux face (see surface_rhs_el!), not a node identification.
+    # NOTE: currently unreachable in 2D — the single call site (this file, dirichlet
+    # wrapper) gates on lperiodic_1d && NSD_1D. Defensive, mirroring the ContGal
+    # 2D method above.
     nothing
 end
 
@@ -148,9 +244,9 @@ function build_custom_bcs_dirichlet!(::NSD_1D, t,
     
     ip = 1
     fill!(qbdy, 4325789.0)
-    user_bc_dirichlet!(@view(uaux[ip,:]), @view(coords[ip,:]), t, "left", qbdy, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
+    user_bc_dirichlet!(@view(uaux[ip,:]), @view(coords[:, ip]), t, "left", qbdy, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
     for ieq =1:neqs
-        if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
+        if bc_value_changed(qbdy[ieq], uaux[ip,ieq], qe[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
             uaux[ip,ieq] = qbdy[ieq]
             RHS[ip, ieq] = 0.0
         end
@@ -158,9 +254,9 @@ function build_custom_bcs_dirichlet!(::NSD_1D, t,
     
     ip=npoin_linear
     fill!(qbdy, 4325789.0)
-    user_bc_dirichlet!(@view(uaux[ip,:]), @view(coords[ip,:]), t, "right", qbdy, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
+    user_bc_dirichlet!(@view(uaux[ip,:]), @view(coords[:, ip]), t, "right", qbdy, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
     for ieq =1:neqs
-        if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
+        if bc_value_changed(qbdy[ieq], uaux[ip,ieq], qe[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
             uaux[ip,ieq] = qbdy[ieq]
             RHS[ip, ieq] = 0.0
         end
@@ -213,10 +309,10 @@ function build_custom_bcs_dirichlet!(::NSD_2D, t,
                 ny_l = ny[iedge,k]
                 fill!(qbdy, 4325789.0)
                 
-                user_bc_dirichlet!(@view(uaux[ip,:]), @view(coords[ip,:]), t, bdy_edge_type[iedge], qbdy, nx_l, ny_l, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
+                user_bc_dirichlet!(@view(uaux[ip,:]), @view(coords[:, ip]), t, bdy_edge_type[iedge], qbdy, nx_l, ny_l, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
                 
                 for ieq =1:neqs
-                    if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
+                    if bc_value_changed(qbdy[ieq], uaux[ip,ieq], qe[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
                         uaux[ip,ieq] = qbdy[ieq]
                         RHS[ip, ieq] = 0.0
                     end
@@ -225,65 +321,38 @@ function build_custom_bcs_dirichlet!(::NSD_2D, t,
         end
     end
 
-    if(inputs[:llaguerre_bc])
-        if (nelem_semi_inf >0)
-            for e=1:nelem_semi_inf
-                for i=1:ngl
-                    ip = connijk_lag[e,i,ngr]
-                    ny_l = 1.0
-                    nx_l = 0.0
-                    fill!(qbdy, 4325789.0)
-                    tag = inputs[:laguerre_tag]
-                    user_bc_dirichlet!(@view(uaux[ip,:]), @view(coords[ip,:]), t, tag, qbdy, nx_l, ny_l, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
-
-                    for ieq =1:neqs
-                        if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
-                            #@info mesh.x[ip],mesh.y[ip],ieq,qbdy[ieq]
-                            uaux[ip,ieq] = qbdy[ieq]
-                            RHS[ip, ieq] = 0.0
-                        end
-                    end
-                end
-                ip_test = connijk_lag[e,1,1]
-                if (coords[ip_test,1] == xmin)
-                    for k=1:ngr
-                        ip = connijk_lag[e,1,k]
-                        ny_l = 0.0
-                        nx_l = -1.0
-                        fill!(qbdy, 4325789.0)
-                        tag = inputs[:laguerre_tag]
-                        user_bc_dirichlet!(@view(uaux[ip,:]), @view(coords[ip,:]), t, tag, qbdy, nx_l, ny_l, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
-                        for ieq =1:neqs
-                            if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0)
-                                uaux[ip,ieq] = qbdy[ieq]
-                                RHS[ip, ieq] = 0.0
-                            end
-                        end
-                    end
-                end
-                ip_test = connijk_lag[e,ngl,1]
-                if (coords[ip_test,1] == xmax)
-                    for k =1:ngr
-                        ip = connijk_lag[nelem_semi_inf,ngl,k]
-                        ny_l = 0.0
-                        nx_l = 1.0
-                        fill!(qbdy, 4325789.0)
-                        tag = inputs[:laguerre_tag]
-                        user_bc_dirichlet!(@view(uaux[ip,:]), @view(coords[ip,:]), t, tag, qbdy, nx_l, ny_l, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
-
-                        for ieq =1:neqs
-                            if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0)
-                                uaux[ip,ieq] = qbdy[ieq]
-                                RHS[ip, ieq] = 0.0
-                            end
-                        end
-                    end
-                end
+    if nelem_semi_inf > 0
+        # Semi-infinite layer (see laguerre_side_columns_2D in bc_constraints.jl):
+        # a column side continuing a boundary of the finite domain inherits its
+        # tag; the far end takes :laguerre_tag when :llaguerre_bc is on.
+        sides = laguerre_side_columns_2D(connijk_lag, coords, poin_in_bdy_edge, bdy_edge_type,
+                                         nedges_bdy, nelem_semi_inf, ngl, ngr)
+        for (e, i, tag, nx_l, ny_l) in sides, k = 2:ngr
+            _laguerre_dirichlet_node!(uaux, RHS, qbdy, qe, coords, t, connijk_lag[e,i,k],
+                                      tag, nx_l, ny_l, neqs, inputs)
+        end
+        if inputs[:llaguerre_bc]
+            tag = inputs[:laguerre_tag]
+            for e = 1:nelem_semi_inf, i = 1:ngl
+                nx_l, ny_l = laguerre_far_normal(connijk_lag, coords, e, i, ngr)
+                _laguerre_dirichlet_node!(uaux, RHS, qbdy, qe, coords, t, connijk_lag[e,i,ngr],
+                                          tag, nx_l, ny_l, neqs, inputs)
             end
         end
     end
     uaux2u!(u, uaux, neqs, npoin)
 end
+function _laguerre_dirichlet_node!(uaux, RHS, qbdy, qe, coords, t, ip, tag, nx_l, ny_l, neqs, inputs)
+    fill!(qbdy, 4325789.0)
+    user_bc_dirichlet!(@view(uaux[ip,:]), @view(coords[:, ip]), t, tag, qbdy, nx_l, ny_l, @view(qe[ip,:]), inputs[:SOL_VARS_TYPE])
+    for ieq = 1:neqs
+        if bc_value_changed(qbdy[ieq], uaux[ip,ieq], qe[ip,ieq]) && !AlmostEqual(qbdy[ieq], 4325789.0)
+            uaux[ip,ieq] = qbdy[ieq]
+            RHS[ip, ieq] = 0.0
+        end
+    end
+end
+
 function build_custom_bcs_neumann!(::NSD_2D, t,
                                    coords,
                                    nx, ny, nz, npoin,
@@ -379,8 +448,8 @@ function build_custom_bcs_neumann!(::NSD_2D, t,
                             θ_sfc    = Tabs[ipsfc]*(PhysConst.pref/uaux[ipsfc, end])^(1/PhysConst.cpoverR)
                         end
 
-                        Δx = coords[ip1, 1] - coords[ipsfc, 1]
-                        Δy = coords[ip1, 2] - coords[ipsfc, 2]
+                        Δx = coords[1, ip1] - coords[1, ipsfc]
+                        Δy = coords[2, ip1] - coords[2, ipsfc]
                         z_inside = abs(Δx*nx[iedge,i] + Δy*ny[iedge,i])
 
                         if (micro > 1)
@@ -411,7 +480,7 @@ function build_custom_bcs_neumann!(::NSD_2D, t,
                         user_bc_neumann!(@view(F_surf[i,:]), @view(uaux[ip,:]), @view(uaux[ip1,:]),
                                          @view(qe[ip,:]), @view(qe[ip1,:]),
                                          bdy_edge_type[iedge],
-                                         @view(coords[ip,:]),
+                                         @view(coords[:, ip]),
                                          τ_f_local, wθ_local, SOL_VARS_TYPE, PhysConst;
                                          θ  = θ,
                                          θ1 = θ1,
@@ -454,7 +523,7 @@ function build_custom_bcs_lin_solve_sparse!(::NSD_2D, t, coords, nx, ny, nz,
                 fill!(qbdy, 4325789.0)
                 
                 user_bc_dirichlet!(@view(RHS[ip,:]),
-                                   @view(coords[ip,:]), t,
+                                   @view(coords[:, ip]), t,
                                    bdy_edge_type[iedge],
                                    qbdy,
                                    nx_l, ny_l,
@@ -470,24 +539,28 @@ function build_custom_bcs_lin_solve_sparse!(::NSD_2D, t, coords, nx, ny, nz,
     end
 
     if ("Laguerre" in bdy_edge_type)
-        for k=1:ngr
-            ip = connijk_lag[1, 1, k]
+        # Column sides continuing a boundary of the finite domain inherit its
+        # tag and Dirichlet value (see laguerre_side_columns_2D); the far end
+        # j = ngr is homogeneous (decay at infinity).
+        sides = laguerre_side_columns_2D(connijk_lag, coords, poin_in_bdy_edge, bdy_edge_type,
+                                         nedges_bdy, nelem_semi_inf, ngl, ngr)
+        # k = 1 included: the base corner node is a finite-boundary node, but the
+        # sparse path does not replace the finite-boundary rows of L when a
+        # Laguerre layer is present.
+        for (e, i, tag, nx_l, ny_l) in sides, k = 1:ngr
+            ip = connijk_lag[e, i, k]
+            fill!(qbdy, 4325789.0)
+            user_bc_dirichlet!(@view(RHS[ip,:]), @view(coords[:, ip]), t, tag, qbdy,
+                               nx_l, ny_l, @view(qe[ip,:]), inputs[:SOL_VARS_TYPE])
             for ip1 = 1:npoin
                 L[ip,ip1] = 0.0
             end
             L[ip,ip] = 1.0
-            RHS[ip] = 0.0
+            for ieq = 1:neqs
+                RHS[ip,ieq] = qbdy[ieq]
+            end
         end
 
-        for k=1:ngr
-            ip = connijk_lag[nelem_semi_inf, ngl, k]
-            for ip1 = 1:npoin
-                L[ip,ip1] = 0.0
-            end
-            L[ip,ip] = 1.0
-            RHS[ip] = 0.0
-        end
-        
         for e=1:nelem_semi_inf
             for i=1:ngl
                 ip = connijk_lag[e, i, ngr]
@@ -564,7 +637,7 @@ function build_custom_bcs_lin_solve!(::NSD_2D, t, coords,
                 ny_l = ny[iedge,k]
                 fill!(qbdy, 4325789.0)
                 
-                user_bc_dirichlet!(@view(RHS[ip,:]), @view(coords[ip,:]), t,
+                user_bc_dirichlet!(@view(RHS[ip,:]), @view(coords[:, ip]), t,
                                    bdy_edge_type[iedge], qbdy, nx_l, ny_l, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
 
                 for ip1 = 1:npoin
@@ -580,24 +653,28 @@ function build_custom_bcs_lin_solve!(::NSD_2D, t, coords,
     end
     
     if ("Laguerre" in bdy_edge_type)
-        for k=1:ngr
-            ip = connijk_lag[1, 1, k]
+        # Column sides continuing a boundary of the finite domain inherit its
+        # tag and Dirichlet value (see laguerre_side_columns_2D); the far end
+        # j = ngr is homogeneous (decay at infinity).
+        sides = laguerre_side_columns_2D(connijk_lag, coords, poin_in_bdy_edge, bdy_edge_type,
+                                         nedges_bdy, nelem_semi_inf, ngl, ngr)
+        # k = 1 included: the base corner node is a finite-boundary node, but the
+        # sparse path does not replace the finite-boundary rows of L when a
+        # Laguerre layer is present.
+        for (e, i, tag, nx_l, ny_l) in sides, k = 1:ngr
+            ip = connijk_lag[e, i, k]
+            fill!(qbdy, 4325789.0)
+            user_bc_dirichlet!(@view(RHS[ip,:]), @view(coords[:, ip]), t, tag, qbdy,
+                               nx_l, ny_l, @view(qe[ip,:]), inputs[:SOL_VARS_TYPE])
             for ip1 = 1:npoin
                 L[ip,ip1] = 0.0
             end
             L[ip,ip] = 1.0
-            RHS[ip] = 0.0
+            for ieq = 1:neqs
+                RHS[ip,ieq] = qbdy[ieq]
+            end
         end
 
-        for k=1:ngr
-            ip = connijk_lag[nelem_semi_inf, ngl, k]
-            for ip1 = 1:npoin
-                L[ip,ip1] = 0.0
-            end
-            L[ip,ip] = 1.0
-            RHS[ip] = 0.0
-        end
-        
         for e=1:nelem_semi_inf
             for i=1:ngl
                 ip = connijk_lag[e, i, ngr]
@@ -635,7 +712,7 @@ function build_custom_bcs_dirichlet!(::NSD_3D, t, coords, nx, ny, nz, npoin, npo
                     fill!(qbdy, 4325789.0)
                     ip = poin_in_bdy_face[iface,i,j]
                     user_bc_dirichlet!(@view(uaux[ip,:]),
-                                       @view(coords[ip,:]), 
+                                       @view(coords[:, ip]), 
                                        t, bdy_face_type[iface], qbdy,
                                        nx[iface,i,j], ny[iface,i,j], nz[iface,i,j],
                                        xmin, xmax,
@@ -643,7 +720,7 @@ function build_custom_bcs_dirichlet!(::NSD_3D, t, coords, nx, ny, nz, npoin, npo
                                        zmin, zmax,
                                        @view(qe[ip,:]), inputs[:SOL_VARS_TYPE])
                     for ieq =1:neqs
-                        if !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
+                        if bc_value_changed(qbdy[ieq], uaux[ip,ieq], qe[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
                             uaux[ip,ieq] = qbdy[ieq]
                             RHS[ip, ieq] = 0.0
                         end
@@ -670,21 +747,49 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                    Tabs, qn,
                                    neqs, dirichlet!,
                                    neumann, inputs)
+    # Function barrier: SOL_VARS_TYPE, δhf and user_heatflux come out of the untyped inputs Dict.
+    # Read them once here and pass them as arguments, so the per-node face loop below compiles
+    # with concrete types (no dynamic dispatch / allocation per boundary node and RK stage).
+    _build_custom_bcs_neumann_3d!(t, coords, nx, ny, nz, npoin, npoin_linear,
+                                  poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy,
+                                  ngl, ngr, nelem_semi_inf, ω,
+                                  xmax, ymax, zmax, xmin, ymin, zmin,
+                                  qbdy, uaux, u, qe,
+                                  connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type,
+                                  RHS, rhs_el,
+                                  connijk, Jef, S_face, S_flux, F_surf, M_surf_inv, M_edge_inv, M_inv,
+                                  τ_f, wθ, wqv,
+                                  Tabs, qn,
+                                  neqs, dirichlet!,
+                                  neumann, inputs,
+                                  inputs[:SOL_VARS_TYPE], Float64(inputs[:δhf]), Float64(inputs[:user_heatflux]))
+end
+
+function _build_custom_bcs_neumann_3d!(t, coords, nx, ny, nz, npoin, npoin_linear,
+                                       poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy,
+                                       ngl, ngr, nelem_semi_inf, ω,
+                                       xmax, ymax, zmax, xmin, ymin, zmin,
+                                       qbdy, uaux, u, qe,
+                                       connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type,
+                                       RHS, rhs_el,
+                                       connijk, Jef, S_face, S_flux, F_surf, M_surf_inv, M_edge_inv, M_inv,
+                                       τ_f, wθ, wqv,
+                                       Tabs, qn,
+                                       neqs, dirichlet!,
+                                       neumann, inputs,
+                                       SOL_VARS_TYPE, δhf::Float64, user_heatflux::Float64)
 
     PhysConst           = PhysicalConst{Float64}()
     micro               = size(Tabs,1)
     lbdy_fluxes         = inputs[:bdy_fluxes]::Bool
     lbulk_fluxes        = inputs[:bulk_fluxes]::Bool
-    SOL_VARS_TYPE       = inputs[:SOL_VARS_TYPE]
     ifirst_wall_node    = inputs[:ifirst_wall_node_index]::Int
-    δhf                 = inputs[:δhf]
-    user_heatflux       = inputs[:user_heatflux]
     
     for iface = 1:nfaces_bdy
         if (lbdy_fluxes)
             F_surf .= 0.0
             if (lbulk_fluxes)
-                if (coords[poin_in_bdy_face[iface,3,3],3] == zmin)
+                if (coords[3, poin_in_bdy_face[iface,3,3]] == zmin)
                     for i = 1:ngl
                         for j = 1:ngl
                             ip  = poin_in_bdy_face[iface,i,j]
@@ -704,7 +809,7 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                 end
             
             else
-                #if (coords[poin_in_bdy_face[iface,3,3], 3] == zmin) # FOR YT THIS WOULDN'T WORK WITH TOPOGRAPHY
+                #if (coords[3, poin_in_bdy_face[iface,3,3]] == zmin) # FOR YT THIS WOULDN'T WORK WITH TOPOGRAPHY
                     for i = 1:ngl
                         for j = 1:ngl
                             
@@ -717,8 +822,8 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                             
                             θ = 0.0   
                             θ1 = 0.0 
-                            qn1 = 0
-                            qn2 = 0
+                            qn1 = 0.0
+                            qn2 = 0.0
                             if (micro > 1)
                                 qn1 = qn[ip]
                                 qn2 = qn[ip1]
@@ -761,9 +866,9 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                     θ_sfc    = Tabs[ipsfc]*(PhysConst.pref/uaux[ipsfc,end])^(1/PhysConst.cpoverR)
                                 end
 
-                                Δx = coords[ip1, 1] - coords[ipsfc, 1]
-                                Δy = coords[ip1, 2] - coords[ipsfc, 2]
-                                Δz = coords[ip1, 3] - coords[ipsfc, 3]
+                                Δx = coords[1, ip1] - coords[1, ipsfc]
+                                Δy = coords[2, ip1] - coords[2, ipsfc]
+                                Δz = coords[3, ip1] - coords[3, ipsfc]
                                 z_inside = abs(Δx*nx[iface,i,j] + Δy*ny[iface,i,j] + Δz*nz[iface,i,j])
 
                                 if (micro > 1)
@@ -795,7 +900,7 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                 user_bc_neumann!(@view(F_surf[i,j,:]), @view(uaux[ip,:]), @view(uaux[ip1,:]),
                                                  @view(qe[ip,:]), @view(qe[ip1,:]),
                                                  bdy_face_type[iface],
-                                                 @view(coords[ip,:]),
+                                                 @view(coords[:, ip]),
                                                  @view(τ_f[iface,i,j,:]), @view(wθ[iface,i,j,:]), SOL_VARS_TYPE, PhysConst;
                                                  θ = θ,
                                                  θ1 = θ1,
@@ -814,7 +919,7 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
     #@info minimum(S_face[:,:,:,2]), minimum(S_face[:,:,:,5]), minimum(S_face[:,:,:,6])
     if (lbdy_fluxes)
         DSS_surface_integral!(S_flux, S_face, M_surf_inv, nfaces_bdy, ngl,
-                              @view(coords[:,3]), zmin, connijk, poin_in_bdy_face, bdy_face_in_elem, neqs)
+                              @view(coords[3, :]), zmin, connijk, poin_in_bdy_face, bdy_face_in_elem, neqs)
         #@info maximum(S_flux[:,2]), maximum(S_flux[:,5])
         # @info minimum(S_flux[:,2]), minimum(S_flux[:,5])
         RHS[:,:] .= @view(RHS[:,:]) .+ @view(S_flux[:,:])

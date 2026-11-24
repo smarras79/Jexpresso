@@ -1,4 +1,17 @@
 function convert_mesh_arrays!(::NSD_1D, mesh, backend, inputs)
+    #
+    # mesh.coords TOO, and this is not optional. The converter moved only
+    # mesh.x/y/z, which was harmless while the deprecated arrays were what the
+    # kernels read; now that everything downstream indexes coords, a kernel
+    # launched on a GPU backend would be handed a HOST array. Converting it
+    # here is what keeps the GPU path alive after the migration.
+    #
+    mesh.coords = convert_to_typed_array(mesh.coords, TFloat)
+    aux = KernelAbstractions.allocate(backend, TFloat, size(mesh.coords))
+    KernelAbstractions.copyto!(backend, aux, mesh.coords)
+    mesh.coords = KernelAbstractions.allocate(backend, TFloat, size(mesh.coords))
+    mesh.coords .= aux
+
     # Ensure mesh.x, mesh.y, mesh.z are of type TFloat (e.g., Float32)
     mesh.x = convert_to_typed_array(mesh.x, TFloat)
     mesh.y = convert_to_typed_array(mesh.y, TFloat)
@@ -34,6 +47,19 @@ function convert_mesh_arrays!(::NSD_1D, mesh, backend, inputs)
 end
 
 function convert_mesh_arrays!(::NSD_2D, mesh, backend, inputs)
+    #
+    # mesh.coords TOO, and this is not optional. The converter moved only
+    # mesh.x/y/z, which was harmless while the deprecated arrays were what the
+    # kernels read; now that everything downstream indexes coords, a kernel
+    # launched on a GPU backend would be handed a HOST array. Converting it
+    # here is what keeps the GPU path alive after the migration.
+    #
+    mesh.coords = convert_to_typed_array(mesh.coords, TFloat)
+    aux = KernelAbstractions.allocate(backend, TFloat, size(mesh.coords))
+    KernelAbstractions.copyto!(backend, aux, mesh.coords)
+    mesh.coords = KernelAbstractions.allocate(backend, TFloat, size(mesh.coords))
+    mesh.coords .= aux
+
     # Ensure mesh.x, mesh.y, mesh.z are of type TFloat (e.g., Float32)
     mesh.x = convert_to_typed_array(mesh.x, TFloat)
     mesh.y = convert_to_typed_array(mesh.y, TFloat)
@@ -73,6 +99,19 @@ function convert_mesh_arrays!(::NSD_2D, mesh, backend, inputs)
 end
 
 function convert_mesh_arrays!(::NSD_3D, mesh, backend, inputs)
+    #
+    # mesh.coords TOO, and this is not optional. The converter moved only
+    # mesh.x/y/z, which was harmless while the deprecated arrays were what the
+    # kernels read; now that everything downstream indexes coords, a kernel
+    # launched on a GPU backend would be handed a HOST array. Converting it
+    # here is what keeps the GPU path alive after the migration.
+    #
+    mesh.coords = convert_to_typed_array(mesh.coords, TFloat)
+    aux = KernelAbstractions.allocate(backend, TFloat, size(mesh.coords))
+    KernelAbstractions.copyto!(backend, aux, mesh.coords)
+    mesh.coords = KernelAbstractions.allocate(backend, TFloat, size(mesh.coords))
+    mesh.coords .= aux
+
     # Ensure mesh.x, mesh.y, mesh.z are of type TFloat (e.g., Float32)
     mesh.x = convert_to_typed_array(mesh.x, TFloat)
     mesh.y = convert_to_typed_array(mesh.y, TFloat)

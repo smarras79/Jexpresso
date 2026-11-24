@@ -77,6 +77,27 @@ end
 # END Callback for missing user_uout!()
 #------------------------------------------------------------------
 
+
+function write_output(SD, sol::SciMLBase.LinearSolution, uaux, mesh::St_mesh,
+                      OUTPUT_DIR::String, inputs,
+                      varnames, outvarnames,
+                      outformat::NONE;
+                      nvar=1, qexact=zeros(1,nvar), case="")
+    nothing
+end
+
+function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
+                      connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
+                      OUTPUT_DIR::String, inputs,
+                      varnames, outvarnames,
+                      outformat::NONE;
+                      nvar=1, qexact=zeros(1,nvar), case="",
+                      μ_dsgs_pnode=nothing, schlieren=nothing,
+                      Minv=nothing)   # the 2D PNG path hands it to user_plot_2d; ignored elsewhere
+    nothing
+end
+
+
 function write_output(SD::NSD_1D, q::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
     #OK
     nvar = length(varnames)
@@ -91,7 +112,8 @@ function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       varnames, outvarnames,
                       outformat::PNG;
                       nvar=1, qexact=zeros(1,nvar), case="",
-                      μ_dsgs_pnode=nothing)
+                      μ_dsgs_pnode=nothing, schlieren=nothing,
+                      Minv=nothing)   # the 2D PNG path hands it to user_plot_2d; ignored elsewhere
         
     #
     # 1D PNG of q(t) from dq/dt = RHS
@@ -121,13 +143,27 @@ function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp,
         # DSGS runs render the viscosity staircase as one more panel of
         # the same output time (the per-node broadcast is in μ_dsgs_pnode)
         μ_nodes = (μ_dsgs_pnode !== nothing && inputs[:backend] == CPU()) ? μ_dsgs_pnode : nothing
-            if (inputs[:backend] == CPU())
-                plot_results(SD, mesh, sol, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, PT=nothing, μ_nodes=μ_nodes)
+        # A case whose qoutvars differ from its solution variables (it
+        # defines user_uout!, e.g. problems/MHD/brioWu1d: ρ, u, v, p, By from
+        # the conserved (ρ, ρu, ρv, ρE, …)) gets those output variables
+        # plotted, as the 2D writer does; otherwise the solution itself.
+        if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
+        npoin_1d = mesh.npoin
+        if inputs[:backend] == CPU() && outvarnames !== nothing && length(outvarnames) > 0 &&
+           collect(outvarnames) != collect(varnames)
+            noutvar = length(outvarnames)
+            qout1d  = zeros(Float64, npoin_1d, noutvar)
+            qe1d = (size(qexact, 1) == npoin_1d) ? qexact : zeros(Float64, npoin_1d, max(nvar, 1))
+            call_user_uout(qout1d, uaux, qe1d, mp, inputs[:SOL_VARS_TYPE], npoin_1d, nvar, noutvar;
+                           μ_dsgs_pnode=μ_dsgs_pnode)
+            plot_results(SD, mesh, vec(qout1d), title, OUTPUT_DIR, outvarnames, inputs; iout=iout, nvar=noutvar, PT=nothing, μ_nodes=μ_nodes, t=t)
+        elseif (inputs[:backend] == CPU())
+                plot_results(SD, mesh, sol, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, PT=nothing, μ_nodes=μ_nodes, t=t)
             else
                 uout = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin*nvar))
                 KernelAbstractions.copyto!(CPU(), uout, sol)
                 convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
-                plot_results(SD, mesh, uout, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, PT=nothing, μ_nodes=μ_nodes)
+                plot_results(SD, mesh, uout, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, PT=nothing, μ_nodes=μ_nodes, t=t)
             end
         #end
     end
@@ -140,7 +176,7 @@ function write_output(SD::NSD_2D, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       varnames, outvarnames,
                       outformat::PNG;
                       nvar=1, qexact=zeros(1,nvar), case="",
-                      μ_dsgs_pnode=nothing)
+                      μ_dsgs_pnode=nothing, schlieren=nothing, Minv=nothing)
 
     #
     # 2D PNG of q(t): one colored map per variable and output time.
@@ -160,18 +196,58 @@ function write_output(SD::NSD_2D, sol, uaux, t, iout,  mesh::St_mesh, mp,
         convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
     end
 
-    title = @sprintf "t = %.4f s" t
+    #
+    # Render the OUTPUT variables (qoutvars, filled by the case's
+    # user_uout!) exactly as the VTK writer does, so that a case can plot
+    # derived quantities (velocity, pressure, temperature, ...) and not only
+    # the conserved set. Cases without user_uout! get their solution
+    # variables back unchanged (callback_user_uout!).
+    #
+    if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
+    qplot     = q
+    nplot     = nvar
+    plotnames = varnames
+    if (inputs[:backend] == CPU())
+        npoin   = mesh.npoin
+        noutvar = length(outvarnames)
+        qout    = zeros(Float64, npoin, noutvar)
+        u2uaux!(uaux, q, nvar, npoin)
+        call_user_uout(qout, uaux, qexact, mp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar;
+                       μ_dsgs_pnode=μ_dsgs_pnode)
+        qplot     = vec(qout)
+        nplot     = noutvar
+        plotnames = outvarnames
+    end
+
+    # Silent per-variable PNGs want no screen workstation at all. Under MPI
+    # only rank 0 renders, and a GR that tries to open a gksqt window there
+    # (no display, a remote shell, a batch job) blocks rank 0 while the other
+    # ranks wait at the next collective — the run looks hung right after
+    # "Write initial condition". GKSwstype=100 (workstation "no output")
+    # keeps the file export and drops the window; honour a user setting.
+    if !get(inputs, :plot_matrix, true) && !haskey(ENV, "GKSwstype")
+        ENV["GKSwstype"] = "100"
+    end
+
+    title = @sprintf("t = %.4f%s", t, string(get(inputs, :plot_time_unit, " s")))
     if (inputs[:lplot_surf3d])
-        plot_surf3d(SD, mesh, q, title, OUTPUT_DIR;
-                    iout=iout, nvar=nvar,
-                    smoothing_factor=inputs[:smoothing_factor], varnames=varnames)
+        plot_surf3d(SD, mesh, qplot, title, OUTPUT_DIR;
+                    iout=iout, nvar=nplot,
+                    smoothing_factor=inputs[:smoothing_factor], varnames=plotnames)
     else
-        plot_triangulation(SD, mesh, q, title, OUTPUT_DIR, inputs;
-                           iout=iout, nvar=nvar, varnames=varnames)
+        # DSGS runs render the per-equation eddy viscosity as extra panels
+        # of the same output time (the per-node broadcast is μ_dsgs_pnode).
+        μ_nodes = (μ_dsgs_pnode !== nothing && inputs[:backend] == CPU()) ? μ_dsgs_pnode : nothing
+        _dump_mu_nodes(OUTPUT_DIR, mesh, μ_nodes, iout)
+        _dump_rsplit(OUTPUT_DIR, mesh, iout)
+        plot_triangulation(SD, mesh, qplot, title, OUTPUT_DIR, inputs;
+                           iout=iout, nvar=nplot, varnames=plotnames,
+                           μ_nodes=μ_nodes, μ_names=varnames, Minv=Minv, t=t)
     end
 
     println_rank(string(" # writing ", OUTPUT_DIR, "/<var>-it", iout, ".png at t=", t, " s... DONE"); msg_rank = rank)
 end
+
 
 
 function write_output(SD, sol::SciMLBase.LinearSolution, uaux, mesh::St_mesh,
@@ -211,14 +287,14 @@ function write_output(SD, sol::SciMLBase.LinearSolution, uaux, mesh::St_mesh,
 
 end
 
-
 function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                       OUTPUT_DIR::String, inputs,
                       varnames, outvarnames,
                       outformat::VTK;
                       nvar=1, qexact=zeros(1,nvar), case="",
-                      μ_dsgs_pnode=nothing)
+                      μ_dsgs_pnode=nothing, schlieren=nothing,
+                      Minv=nothing)   # the 2D PNG path hands it to user_plot_2d; ignored elsewhere
 
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
@@ -230,7 +306,7 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                   t, title, OUTPUT_DIR, inputs,
                   varnames, outvarnames;
                   iout=iout, nvar=nvar, qexact=qexact, case=case,
-                  μ_dsgs_pnode=μ_dsgs_pnode)
+                  μ_dsgs_pnode=μ_dsgs_pnode, schlieren=schlieren)
         
     else
         #VERIFY THIS on GPU
@@ -252,7 +328,8 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                     varnames, outvarnames,
                     outformat::NETCDF;
                     nvar=1, qexact=zeros(1,nvar), case="",
-                    μ_dsgs_pnode=nothing)
+                    μ_dsgs_pnode=nothing, schlieren=nothing,
+                    Minv=nothing)   # the 2D PNG path hands it to user_plot_2d; ignored elsewhere
 
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
@@ -286,18 +363,79 @@ end
 #------------
 # VTK writer
 #------------
+#
+# JEXPRESSO_DSGS_DUMP=1 writes the nodal DynSGS viscosity as plain numbers
+# beside the figures: x y mu_1 ... mu_neqs, one line per node, one file per
+# rank and output. A RENDERED field cannot separate an artefact of the data
+# from an artefact of the renderer (a raster that samples fewer pixels than
+# there are nodes, a ParaView interpolation of a per-element constant), and
+# a pattern that a picture suggests has to be measured in the numbers before
+# it is chased in the kernel.
+#
+# The companion of the nu dump: WHERE the residual that set nu came from.
+# One line per element — its centroid, the normalized ratio, and the two
+# halves of R at the node where that ratio peaked: the time difference and
+# this element's own weak RHS per unit mass.
+function _dump_rsplit(OUTPUT_DIR, mesh, iout)
+    (_DSGS_RSPLIT[] && length(_DSGS_RR) == mesh.nelem) || return nothing
+    try
+        mkpath(OUTPUT_DIR)
+        f = string(OUTPUT_DIR, "/rsplit-it", iout, "-rank",
+                   MPI.Comm_rank(get_mpi_comm()), ".txt")
+        ngl = mesh.ngl
+        open(f, "w") do io
+            println(io, "# xc yc ratio time_term space_term")
+            for ie = 1:mesh.nelem
+                xc = 0.0; yc = 0.0
+                for j = 1:ngl, i = 1:ngl
+                    ip = mesh.connijk[ie,i,j,1]
+                    xc += mesh.coords[1,ip]; yc += mesh.coords[2,ip]
+                end
+                xc /= ngl*ngl; yc /= ngl*ngl
+                println(io, xc, " ", yc, " ", _DSGS_RR[ie], " ", _DSGS_RT[ie], " ", _DSGS_RS[ie])
+            end
+        end
+        @info " wrote $f"
+    catch err
+        @warn "could not dump the DynSGS residual split" exception=err
+    end
+    return nothing
+end
+
+function _dump_mu_nodes(OUTPUT_DIR, mesh, μ_nodes, iout)
+    (μ_nodes !== nothing && get(ENV, "JEXPRESSO_DSGS_DUMP", "") == "1") || return nothing
+    try
+        mkpath(OUTPUT_DIR)
+        f = string(OUTPUT_DIR, "/mu_nodes-it", iout, "-rank",
+                   MPI.Comm_rank(get_mpi_comm()), ".txt")
+        npoin = min(mesh.npoin, size(μ_nodes, 1))
+        open(f, "w") do io
+            println(io, "# x y ", join(string.("mu_", 1:size(μ_nodes, 2)), " "))
+            for ip = 1:npoin
+                print(io, mesh.coords[1,ip], " ", mesh.coords[2,ip])
+                for ieq = 1:size(μ_nodes, 2); print(io, " ", μ_nodes[ip, ieq]); end
+                println(io)
+            end
+        end
+        @info " wrote $f"
+    catch err
+        @warn "could not dump the nodal DynSGS viscosity" exception=err
+    end
+    return nothing
+end
+
 function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                    connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                    t, title::String, OUTPUT_DIR::String, inputs, varnames, outvarnames;
                    iout=1, nvar=1, qexact=zeros(1,nvar), case="",
-                   μ_dsgs_pnode=nothing)
+                   μ_dsgs_pnode=nothing, schlieren=nothing)
 
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
     
     nvar     = size(varnames, 1)
     noutvar  = size(outvarnames,1) #max(nvar, size(outvarnames,1))
-    new_size = size(mesh.x,1)
+    new_size = size(@view(mesh.coords[1,:]),1)
 
     npoin          = mesh.npoin
     nelem          = mesh.nelem
@@ -305,13 +443,15 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     ngl            = mesh.ngl
     ngr            = mesh.ngr
     
-    if (nelem_semi_inf > 0)
-        subelem = Array{Int64}(undef, nelem*(ngl-1)^2+nelem_semi_inf*(ngl-1)*(ngr-1), 4)
-        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:nelem*(ngl-1)^2+nelem_semi_inf*(ngl-1)*(ngr-1)]
-    else
-        subelem = Array{Int64}(undef, nelem*(ngl-1)^2, 4)
-        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(ngl-1)^2]
-    end
+    #
+    # PERF: ONE allocation per sub-element instead of three. This list used to be
+    # built by a comprehension and then have every entry overwritten in the loop
+    # below, and each overwrite allocated again for the `subelem[isel, :]` slice.
+    # write_vtk runs once per output snapshot, so on a 100-element nop=4 grid that
+    # was ~4800 throw-away allocations per file. `subelem` itself was write-only.
+    #
+    ncells = nelem*(ngl-1)^2 + nelem_semi_inf*(ngl-1)*(ngr-1)
+    cells  = Vector{typeof(MeshCell(VTKCellTypes.VTK_QUAD, Int64[1, 2, 4, 3]))}(undef, ncells)
     
     isel = 1
     for iel = 1:nelem
@@ -321,12 +461,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                 ip2 = mesh.connijk[iel,i+1,j]
                 ip3 = mesh.connijk[iel,i+1,j+1]
                 ip4 = mesh.connijk[iel,i,j+1]
-                subelem[isel, 1] = ip1
-                subelem[isel, 2] = ip2
-                subelem[isel, 3] = ip3
-                subelem[isel, 4] = ip4
-                
-                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
+cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, Int64[ip1, ip2, ip3, ip4])
                 
                 isel = isel + 1
             end
@@ -340,12 +475,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                 ip2 = mesh.connijk_lag[iel,i+1,j]
                 ip3 = mesh.connijk_lag[iel,i+1,j+1]
                 ip4 = mesh.connijk_lag[iel,i,j+1]
-                subelem[isel, 1] = ip1
-                subelem[isel, 2] = ip2
-                subelem[isel, 3] = ip3
-                subelem[isel, 4] = ip4
-                
-                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
+cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, Int64[ip1, ip2, ip3, ip4])
                 
                 isel = isel + 1
             end
@@ -367,33 +497,107 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     fout_name = string(OUTPUT_DIR, "/iter_", iout)
     vtkfile = map(mesh.parts) do part
         vtkf = pvtk_grid(fout_name,
-                         mesh.coords[1:mesh.npoin,1],
-                         mesh.coords[1:mesh.npoin,2],
-                         mesh.coords[1:mesh.npoin,2]*TFloat(0.0),
+                         mesh.coords[1, 1:mesh.npoin],
+                         mesh.coords[2, 1:mesh.npoin],
+                         mesh.coords[2, 1:mesh.npoin]*TFloat(0.0),
                          cells,
                          compress=false;
                          part=part, nparts=mesh.nparts, ismain=(part==1))
         vtkf["part", VTKCellData()] = ones(isel -1) * part
-        
+
+        # Simulation time of this snapshot. The file name only carries the
+        # output counter (iter_1, iter_2, ...), so without this the physical
+        # time is not recoverable from the output alone. "TimeValue" is the
+        # name ParaView looks for; tools/plot_orszag_tang.jl reads it back to
+        # match a snapshot to a requested time.
+        vtkf["TimeValue", VTKFieldData()] = t
+
         for ivar = 1:noutvar
             idx = (ivar - 1)*npoin
             vtkf[string(outvarnames[ivar]), VTKPointData()] = @view(qout[1:npoin,ivar])
         end
-        
+        # log10 fields, as the PNG writer renders them (:plot_log10, floored
+        # at 1e-300): one extra field log10_<var> per listed variable, next
+        # to the linear one, so ParaView shows the decades the literature
+        # plots (the flux-emergence cases: ρ, p, β over eight decades).
+        for var in get(inputs, :plot_log10, String[])
+            ivar = findfirst(==(string(var)), string.(outvarnames))
+            ivar === nothing && continue
+            vtkf[string("log10_", var), VTKPointData()] = log10.(max.(@view(qout[1:npoin,ivar]), 1.0e-300))
+        end
+
+        # DynSGS: write the per-equation eddy viscosity actually applied on
+        # this step, one field per equation, named after the solution
+        # variable it damps (mu_dsgs_ρu, mu_dsgs_Bx, ...). These are the
+        # per-element coefficients broadcast to nodes by
+        # broadcast_dsgs_to_nodes!, so they are piecewise constant per
+        # element by construction.
+        #
+        # NOTE the coefficients are not all in the same units: the momentum
+        # and energy slots carry the DYNAMIC coefficient ρ̄·μ (because their
+        # primitives are u, v, w, T) while the magnetic and ψ slots carry
+        # the KINEMATIC μ as a turbulent resistivity. Compare a slot against
+        # itself over time, not against a different slot.
+        #
+        # A DynSGS-MHD run in its conserved form (:dsgs_conserved, e.g. the
+        # flux-emergence cases) gives every slot the same kinematic μ, so
+        # when all columns are identical one field, mu_dsgs, is written
+        # instead of nine copies of it.
+        _dump_mu_nodes(OUTPUT_DIR, mesh, μ_dsgs_pnode, iout)
+        _dump_rsplit(OUTPUT_DIR, mesh, iout)
+        if μ_dsgs_pnode !== nothing && size(μ_dsgs_pnode, 1) == npoin
+            nμ = size(μ_dsgs_pnode, 2)
+            # one field per DISTINCT coefficient: a slot identical to an
+            # earlier one is not written again (its name lists the slots)
+            written = Int[]
+            for ieq = 1:nμ
+                dup = any(j -> view(μ_dsgs_pnode, 1:npoin, ieq) == view(μ_dsgs_pnode, 1:npoin, j), written)
+                dup && continue
+                push!(written, ieq)
+            end
+            for ieq in written
+                slots = [j for j = ieq:nμ if view(μ_dsgs_pnode, 1:npoin, j) == view(μ_dsgs_pnode, 1:npoin, ieq)]
+                mu_name = (length(written) == 1) ? "mu_dsgs" :
+                    string("mu_dsgs_", join([(j <= length(varnames)) ? string(varnames[j]) : string(j) for j in slots], "_"))
+                vtkf[mu_name, VTKPointData()] = @view(μ_dsgs_pnode[1:npoin, ieq])
+                # log₁₀ of the coefficient floored at :plot_dsgs_floor, the
+                # field the PNG writer renders with :plot_dsgs_log10
+                if get(inputs, :plot_dsgs_log10, false)
+                    μfloor = get(inputs, :plot_dsgs_floor, 1.0e-6)
+                    vtkf[string("log10_", mu_name), VTKPointData()] = log10.(max.(@view(μ_dsgs_pnode[1:npoin, ieq]), μfloor))
+                end
+            end
+        end
+
+        # Numerical schlieren (see kernel/physics/schlieren.jl). Written
+        # straight to the file rather than through user_uout!, so switching
+        # it on is one line in user_inputs.jl and needs no change to the
+        # case's qoutvars or its user_uout! — which matters because not
+        # every case's user_uout! accepts extra keyword arguments.
+        #
+        #   schlieren_grad_rho : |∇ρ| [kg/m⁴], quantitative
+        #   schlieren          : exp(-k|∇ρ|/max|∇ρ|) ∈ [e^-k, 1], the image
+        #                        — plot greyscale REVERSED for the familiar
+        #                        dark-shock schlieren look
+        if schlieren !== nothing && size(schlieren, 1) == npoin
+            vtkf["schlieren_grad_rho", VTKPointData()] = @view(schlieren[1:npoin, 1])
+            vtkf["schlieren",          VTKPointData()] = @view(schlieren[1:npoin, 2])
+        end
+
         vtkf
     end
-    
+
     outfiles = map(vtk_save, vtkfile)
-    
+
 end
 
-function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp, 
+function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
                    connijk_original, poin_in_bdy_face_original,
                    x_original, y_original, z_original,
                    t, title::String, OUTPUT_DIR::String, inputs,
                    varnames, outvarnames;
                    iout=1, nvar=1, qexact=zeros(1,nvar), case="",
-                   μ_dsgs_pnode=nothing)
+                   μ_dsgs_pnode=nothing, schlieren=nothing)
 
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
@@ -402,8 +606,15 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
     noutvar = size(outvarnames,1) #max(nvar, size(outvarnames,1))
     npoin   = mesh.npoin
     
-    subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^3, 8)
-    cells = [MeshCell(VTKCellTypes.VTK_HEXAHEDRON, [1, 2, 3, 4, 5, 6, 7, 8]) for _ in 1:mesh.nelem*(mesh.ngl-1)^3]
+    #
+    # PERF: ONE allocation per sub-element instead of three. This list used to be
+    # built by a comprehension and then have every entry overwritten in the loop
+    # below, and each overwrite allocated again for the `subelem[isel, :]` slice.
+    # write_vtk runs once per output snapshot, so on a 100-element nop=4 grid that
+    # was ~4800 throw-away allocations per file. `subelem` itself was write-only.
+    #
+    cells = Vector{typeof(MeshCell(VTKCellTypes.VTK_HEXAHEDRON, Int64[1, 2, 3, 4, 5, 6, 7, 8]))}(
+                undef, mesh.nelem*(mesh.ngl-1)^3)
 
     gelm_id = zeros(mesh.nelem*(mesh.ngl-1)^3)
     ad_lvl  = zeros(mesh.nelem*(mesh.ngl-1)^3)
@@ -423,16 +634,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
                     ip7 = mesh.connijk[iel,i+1,j+1,k+1]
                     ip8 = mesh.connijk[iel,i,j+1,k+1]
 
-                    subelem[isel, 1] = ip1
-                    subelem[isel, 2] = ip2
-                    subelem[isel, 3] = ip3
-                    subelem[isel, 4] = ip4
-                    subelem[isel, 5] = ip5
-                    subelem[isel, 6] = ip6
-                    subelem[isel, 7] = ip7
-                    subelem[isel, 8] = ip8
-                    
-                    cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, subelem[isel, :])
+cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, Int64[ip1, ip2, ip3, ip4, ip5, ip6, ip7, ip8])
 
                     gelm_id[isel] = mesh.el2gel[iel]
                     ad_lvl[isel]  = mesh.ad_lvl[iel]
@@ -458,9 +660,9 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
     fout_name = string(OUTPUT_DIR, "/iter_", iout)
     vtkfile = map(mesh.parts) do part
         vtkf = pvtk_grid(fout_name,
-                         mesh.coords[1:mesh.npoin,1],
-                         mesh.coords[1:mesh.npoin,2],
-                         mesh.coords[1:mesh.npoin,3],
+                         mesh.coords[1, 1:mesh.npoin],
+                         mesh.coords[2, 1:mesh.npoin],
+                         mesh.coords[3, 1:mesh.npoin],
                          cells,
                          compress=false;
                          part=part, nparts=mesh.nparts, ismain=(part==1))
@@ -468,11 +670,66 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
         vtkf["gel_id", VTKCellData()] = gelm_id
         vtkf["ad_lvl", VTKCellData()] = ad_lvl
 
+        # Simulation time of this snapshot; see the 2D writer above.
+        vtkf["TimeValue", VTKFieldData()] = t
+
         for ivar = 1:noutvar
             idx = (ivar - 1)*npoin
             vtkf[string(outvarnames[ivar]), VTKPointData()] = @view(qout[1:npoin,ivar])
         end
-        
+        # log10 fields, as the PNG writer renders them (:plot_log10, floored
+        # at 1e-300): one extra field log10_<var> per listed variable, next
+        # to the linear one, so ParaView shows the decades the literature
+        # plots (the flux-emergence cases: ρ, p, β over eight decades).
+        for var in get(inputs, :plot_log10, String[])
+            ivar = findfirst(==(string(var)), string.(outvarnames))
+            ivar === nothing && continue
+            vtkf[string("log10_", var), VTKPointData()] = log10.(max.(@view(qout[1:npoin,ivar]), 1.0e-300))
+        end
+
+        # DynSGS: write the per-equation eddy viscosity actually applied on
+        # this step, one field per equation, named after the solution
+        # variable it damps (mu_dsgs_ρu, mu_dsgs_Bx, ...). These are the
+        # per-element coefficients broadcast to nodes by
+        # broadcast_dsgs_to_nodes!, so they are piecewise constant per
+        # element by construction.
+        #
+        # NOTE the coefficients are not all in the same units: the momentum
+        # and energy slots carry the DYNAMIC coefficient ρ̄·μ (because their
+        # primitives are u, v, w, T) while the magnetic and ψ slots carry
+        # the KINEMATIC μ as a turbulent resistivity. Compare a slot against
+        # itself over time, not against a different slot.
+        #
+        # A DynSGS-MHD run in its conserved form (:dsgs_conserved, e.g. the
+        # flux-emergence cases) gives every slot the same kinematic μ, so
+        # when all columns are identical one field, mu_dsgs, is written
+        # instead of nine copies of it.
+        _dump_mu_nodes(OUTPUT_DIR, mesh, μ_dsgs_pnode, iout)
+        _dump_rsplit(OUTPUT_DIR, mesh, iout)
+        if μ_dsgs_pnode !== nothing && size(μ_dsgs_pnode, 1) == npoin
+            nμ = size(μ_dsgs_pnode, 2)
+            # one field per DISTINCT coefficient: a slot identical to an
+            # earlier one is not written again (its name lists the slots)
+            written = Int[]
+            for ieq = 1:nμ
+                dup = any(j -> view(μ_dsgs_pnode, 1:npoin, ieq) == view(μ_dsgs_pnode, 1:npoin, j), written)
+                dup && continue
+                push!(written, ieq)
+            end
+            for ieq in written
+                slots = [j for j = ieq:nμ if view(μ_dsgs_pnode, 1:npoin, j) == view(μ_dsgs_pnode, 1:npoin, ieq)]
+                mu_name = (length(written) == 1) ? "mu_dsgs" :
+                    string("mu_dsgs_", join([(j <= length(varnames)) ? string(varnames[j]) : string(j) for j in slots], "_"))
+                vtkf[mu_name, VTKPointData()] = @view(μ_dsgs_pnode[1:npoin, ieq])
+                # log₁₀ of the coefficient floored at :plot_dsgs_floor, the
+                # field the PNG writer renders with :plot_dsgs_log10
+                if get(inputs, :plot_dsgs_log10, false)
+                    μfloor = get(inputs, :plot_dsgs_floor, 1.0e-6)
+                    vtkf[string("log10_", mu_name), VTKPointData()] = log10.(max.(@view(μ_dsgs_pnode[1:npoin, ieq]), μfloor))
+                end
+            end
+        end
+
         vtkf
     end
     
@@ -482,9 +739,15 @@ end
 
 function write_vtk_grid_only(SD::NSD_2D, mesh::St_mesh, file_name::String, OUTPUT_DIR::String, parts, nparts)
     
-    #nothing
-    subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2, 4)
-    cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2]
+    #
+    # PERF: ONE allocation per sub-element instead of three. This list used to be
+    # built by a comprehension and then have every entry overwritten in the loop
+    # below, and each overwrite allocated again for the `subelem[isel, :]` slice.
+    # write_vtk runs once per output snapshot, so on a 100-element nop=4 grid that
+    # was ~4800 throw-away allocations per file. `subelem` itself was write-only.
+    #
+    cells = Vector{typeof(MeshCell(VTKCellTypes.VTK_QUAD, Int64[1, 2, 4, 3]))}(
+                undef, mesh.nelem*(mesh.ngl-1)^2)
     
     isel = 1
     for iel = 1:mesh.nelem
@@ -494,12 +757,7 @@ function write_vtk_grid_only(SD::NSD_2D, mesh::St_mesh, file_name::String, OUTPU
                 ip2 = mesh.connijk[iel,i+1,j]
                 ip3 = mesh.connijk[iel,i+1,j+1]
                 ip4 = mesh.connijk[iel,i,j+1]
-                subelem[isel, 1] = ip1
-                subelem[isel, 2] = ip2
-                subelem[isel, 3] = ip3
-                subelem[isel, 4] = ip4
-                
-                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
+cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, Int64[ip1, ip2, ip3, ip4])
                 
                 isel = isel + 1
             end
@@ -513,12 +771,7 @@ function write_vtk_grid_only(SD::NSD_2D, mesh::St_mesh, file_name::String, OUTPU
                 ip2 = mesh.connijk_lag[iel,i+1,j]
                 ip3 = mesh.connijk_lag[iel,i+1,j+1]
                 ip4 = mesh.connijk_lag[iel,i,j+1]
-                subelem[isel, 1] = ip1
-                subelem[isel, 2] = ip2
-                subelem[isel, 3] = ip3
-                subelem[isel, 4] = ip4
-                
-                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
+cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, Int64[ip1, ip2, ip3, ip4])
                 
                 isel = isel + 1
             end
@@ -530,7 +783,7 @@ function write_vtk_grid_only(SD::NSD_2D, mesh::St_mesh, file_name::String, OUTPU
     fout_name = string(OUTPUT_DIR, "/", file_name, ".vtu")
     
     vtkfile = map(parts) do part
-        vtkf = pvtk_grid(file_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells, compress=false;
+        vtkf = pvtk_grid(file_name, view(mesh.coords,1,1:mesh.npoin), view(mesh.coords,2,1:mesh.npoin), view(mesh.coords,2,1:mesh.npoin)*TFloat(0.0), cells, compress=false;
                         part=part, nparts=nparts, ismain=(part==1))
         vtkf["part", VTKCellData()] = ones(isel -1) * part
         vtkf
@@ -544,8 +797,15 @@ end
 
 function write_vtk_grid_only(SD::NSD_3D, mesh::St_mesh, file_name::String, OUTPUT_DIR::String, parts, nparts)
 
-    subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^3, 8)
-    cells = [MeshCell(VTKCellTypes.VTK_HEXAHEDRON, [1, 2, 3, 4, 5, 6, 7, 8]) for _ in 1:mesh.nelem*(mesh.ngl-1)^3]
+    #
+    # PERF: ONE allocation per sub-element instead of three. This list used to be
+    # built by a comprehension and then have every entry overwritten in the loop
+    # below, and each overwrite allocated again for the `subelem[isel, :]` slice.
+    # write_vtk runs once per output snapshot, so on a 100-element nop=4 grid that
+    # was ~4800 throw-away allocations per file. `subelem` itself was write-only.
+    #
+    cells = Vector{typeof(MeshCell(VTKCellTypes.VTK_HEXAHEDRON, Int64[1, 2, 3, 4, 5, 6, 7, 8]))}(
+                undef, mesh.nelem*(mesh.ngl-1)^3)
         
     isel = 1
     for iel = 1:mesh.nelem
@@ -562,16 +822,7 @@ function write_vtk_grid_only(SD::NSD_3D, mesh::St_mesh, file_name::String, OUTPU
                     ip7 = mesh.connijk[iel,i+1,j+1,k+1]
                     ip8 = mesh.connijk[iel,i,j+1,k+1]
 
-                    subelem[isel, 1] = ip1
-                    subelem[isel, 2] = ip2
-                    subelem[isel, 3] = ip3
-                    subelem[isel, 4] = ip4
-                    subelem[isel, 5] = ip5
-                    subelem[isel, 6] = ip6
-                    subelem[isel, 7] = ip7
-                    subelem[isel, 8] = ip8
-                    
-                    cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, subelem[isel, :])
+cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, Int64[ip1, ip2, ip3, ip4, ip5, ip6, ip7, ip8])
                     
                     isel = isel + 1
                 end
@@ -582,9 +833,9 @@ function write_vtk_grid_only(SD::NSD_3D, mesh::St_mesh, file_name::String, OUTPU
     #Reference values only (definied in initial conditions)
     fout_name = string(OUTPUT_DIR, "/", file_name, ".vtu")
     
-    # vtkfile = vtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells)
+    # vtkfile = vtk_grid(fout_name, view(mesh.coords,1,1:mesh.npoin), view(mesh.coords,2,1:mesh.npoin), view(mesh.coords,2,1:mesh.npoin)*TFloat(0.0), cells)
     vtkfile = map(parts) do part
-        vtkf = pvtk_grid(file_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.z[1:mesh.npoin], cells, compress=false;
+        vtkf = pvtk_grid(file_name, view(mesh.coords,1,1:mesh.npoin), view(mesh.coords,2,1:mesh.npoin), view(mesh.coords,3,1:mesh.npoin), cells, compress=false;
                         part=part, nparts=nparts, ismain=(part==1))
         vtkf["part", VTKCellData()] = ones(isel -1) * part
         vtkf
@@ -592,6 +843,251 @@ function write_vtk_grid_only(SD::NSD_3D, mesh::St_mesh, file_name::String, OUTPU
     outfiles = map(vtk_save, vtkfile)
     # outfiles = vtk_save(vtkfile)
 end
+
+
+#---------------------------------------------------------------------------------
+# VTK output of the HIGH-ORDER SPHERICAL SHELL grid.
+#
+# The shell is an ordinary St_mesh with `lmanifold == true`, built by the same
+# gmsh path as every other grid. This is a separate writer only because it
+# draws the LGL sub-cells in 3D and adds the shell diagnostics below; the
+# convention is otherwise identical
+# to write_vtk_grid_only above: each spectral element (ngl × ngl LGL nodes) is
+# written as (ngl-1)² linear VTK_QUAD sub-cells whose corners ARE the LGL
+# nodes. That is what lets you SEE the actual node distribution in ParaView —
+# a VTK_LAGRANGE_QUADRILATERAL would be re-tessellated by ParaView and would
+# hide exactly the thing we want to inspect.
+#
+# One PIECE PER RANK when the run is parallel: pvtk_grid writes
+# <name>/<name>_<part>.vtu plus the <name>.pvtu that lists them, which is the
+# same convention write_vtk_grid_only uses for the flat cases. Every rank writes
+# the nodes it holds — including the mirrored copies of nodes owned by a
+# neighbour, so a seam node appears in two pieces with the same value, which is
+# what ParaView expects of a partitioned mesh. On one rank it stays a single
+# .vtu, unchanged.
+#
+# What is written, and why it is the useful thing to look at when debugging
+# the numbering of a CLOSED shell:
+#
+#   point data
+#     ip         global node index — colour by it and the seams between gmsh
+#                panels must show a CONTINUOUS field: a jump means the two
+#                sides of the seam carry different node numbers, i.e. the
+#                shell was silently torn open.
+#     node_type  0 = linear vertex, 1 = edge node, 2 = element interior.
+#     lon, lat   degrees.
+#     radius     |x|; must be flat at R everywhere.
+#   cell data
+#     iel        owning element
+#     panel      cubed-sphere panel 1..6, derived from the element centroid
+#
+# ONE file per run, like write_vtk_grid_only for the flat cases. The
+# sub-elements carry the high-order structure: open it in ParaView with
+# representation "Surface With Edges" and the LGL point distribution is drawn.
+#---------------------------------------------------------------------------------
+export write_vtk_sphere_grid
+
+# Which of the six cubed-sphere panels an element belongs to: the face of the
+# inscribed cube its centroid points at, i.e. whichever Cartesian component
+# dominates, and its sign. 1..6 = +x, -x, +y, -y, +z, -z.
+function _cubed_sphere_panel(mesh::St_mesh, iel::Int)
+    ngl = mesh.ngl
+    crd = mesh.coords          # (x,y,z); @view(mesh.coords[1,:])/y/z are deprecated
+    cx = cy = cz = 0.0
+    @inbounds for j = 1:ngl, i = 1:ngl
+        ip = mesh.connijk[iel, i, j]
+        cx += crd[1, ip]; cy += crd[2, ip]; cz += crd[3, ip]
+    end
+    ax, ay, az = abs(cx), abs(cy), abs(cz)
+    if ax >= ay && ax >= az
+        return cx >= 0 ? 1 : 2
+    elseif ay >= az
+        return cy >= 0 ? 3 : 4
+    else
+        return cz >= 0 ? 5 : 6
+    end
+end
+
+function write_vtk_sphere_grid(mesh::St_mesh,
+                               file_name::String,
+                               OUTPUT_DIR::String;
+                               q       = nothing,
+                               extra   = nothing,
+                               verbose = true)
+
+    if !isdir(OUTPUT_DIR)
+        mkpath(OUTPUT_DIR)
+    end
+
+    ngl    = mesh.ngl
+    nelem  = mesh.nelem
+    nsub   = nelem*(ngl-1)*(ngl-1)
+
+    cells    = [MeshCell(VTKCellTypes.VTK_QUAD, Int64[1, 2, 3, 4]) for _ = 1:nsub]
+    cell_iel = Vector{Float64}(undef, nsub)
+    cell_pan = Vector{Float64}(undef, nsub)
+
+    isel = 1
+    for iel = 1:nelem
+        for j = 1:ngl-1
+            for i = 1:ngl-1
+                #
+                # Counter-clockwise as seen from OUTSIDE the sphere, because
+                # the elements were re-oriented that way in
+                # orient_elements_outward!. Keeping that order here means the
+                # VTK normals also point outward and ParaView's "backface
+                # culling"/lighting shows a lit sphere, not a black one.
+                #
+                ip1 = mesh.connijk[iel, i,   j  ]
+                ip2 = mesh.connijk[iel, i+1, j  ]
+                ip3 = mesh.connijk[iel, i+1, j+1]
+                ip4 = mesh.connijk[iel, i,   j+1]
+
+                cells[isel]    = MeshCell(VTKCellTypes.VTK_QUAD, Int64[ip1, ip2, ip3, ip4])
+                cell_iel[isel] = Float64(iel)
+                # Cubed-sphere panel id, derived from the element centroid
+                # rather than carried on the mesh: the panel is whichever
+                # Cartesian axis dominates, and its sign. This used to be the
+                # gmsh physical tag stored in St_mesh_sphere.elem_tag; deriving
+                # it here keeps the panel field in ParaView without putting a
+                # sphere-only column on the shared St_mesh.
+                cell_pan[isel] = Float64(_cubed_sphere_panel(mesh, iel))
+                isel += 1
+            end
+        end
+    end
+
+    fout_name = string(OUTPUT_DIR, "/", file_name)
+
+    comm   = get_mpi_comm()
+    nparts = MPI.Comm_size(comm)
+    part   = MPI.Comm_rank(comm) + 1        # WriteVTK parts are 1-indexed
+
+    vtkf = if nparts > 1
+        pvtk_grid(fout_name,
+                  mesh.coords[1, 1:mesh.npoin],
+                  mesh.coords[2, 1:mesh.npoin],
+                  mesh.coords[3, 1:mesh.npoin],
+                  cells, compress = false;
+                  part = part, nparts = nparts, ismain = (part == 1))
+    else
+        vtk_grid(fout_name,
+                 mesh.coords[1, 1:mesh.npoin],
+                 mesh.coords[2, 1:mesh.npoin],
+                 mesh.coords[3, 1:mesh.npoin],
+                 cells, compress = false)
+    end
+
+    # The GLOBAL node number, not the local one: across a panel seam — or a
+    # PARTITION seam — this field must look continuous, and the local index is
+    # meaningless from one piece to the next.
+    vtkf["ip",        VTKPointData()] =
+        length(mesh.ip2gip) >= mesh.npoin ? Float64.(@view mesh.ip2gip[1:mesh.npoin]) :
+                                            Float64.(collect(1:mesh.npoin))
+    # 0 = linear vertex, 1 = edge node, 2 = element interior. Read off the
+    # global numbering rather than stored: mod_mesh_read_gmsh! lays the nodes
+    # out as [vertices | edge nodes | interior nodes], in that order.
+    _nedge_nodes = mesh.nedges*(mesh.ngl - 2)
+    vtkf["node_type", VTKPointData()] =
+        [ip <= mesh.npoin_linear                 ? 0.0 :
+         ip <= mesh.npoin_linear + _nedge_nodes  ? 1.0 : 2.0
+         for ip = 1:mesh.npoin]
+    vtkf["lon",       VTKPointData()] = mesh.lon .* (180.0/π)
+    vtkf["lat",       VTKPointData()] = mesh.lat .* (180.0/π)
+    vtkf["radius",    VTKPointData()] = sqrt.(mesh.coords[1,:].^2 .+ mesh.coords[2,:].^2 .+ mesh.coords[3,:].^2)
+
+    vtkf["iel",   VTKCellData()] = cell_iel
+    vtkf["panel", VTKCellData()] = cell_pan
+    # Which rank owns each element — colour by it to see the partition.
+    nparts > 1 && (vtkf["part", VTKCellData()] = fill(Float64(part), nsub))
+
+    #
+    # Solution fields, when a state vector is handed in (the initial condition,
+    # for now). They ride on the SAME file as the grid — one file per run, like
+    # write_vtk_grid_only for the flat cases.
+    #
+    # BOTH sets are written:
+    #   q.qn   under q.qvars      the CONSERVATIVE state actually integrated
+    #                             (for SWsphere: phi, phiu, phiv, phiw)
+    #   q.qout under q.qoutvars   the PRIMITIVE fields a human reads
+    #                             (for SWsphere: h, u, v, w)
+    # A plot of phiu is unreadable; a plot of h is what the test is judged on,
+    # and keeping the conservative state too means what the scheme integrates
+    # is never hidden.
+    #
+    nq = 0
+    if q !== nothing
+
+        for (vars, data) in ((q.qvars, q.qn), (q.qoutvars, q.qout))
+            for ieq = 1:length(vars)
+                name = vars[ieq]
+                name === nothing && continue
+                ieq <= size(data, 2) || continue
+                vtkf[String(name), VTKPointData()] = Float64.(@view data[1:mesh.npoin, ieq])
+                nq += 1
+            end
+        end
+
+        #
+        # The velocity as a genuine VTK VECTOR, so it can be glyphed or
+        # streamlined without a Calculator filter.
+        #
+        # It is built from the CONSERVATIVE state, u = (φu,φv,φw)/φ, NOT from
+        # q.qout: qout holds the velocity projected onto the shell (zonal,
+        # meridional, radial), which is what a human wants to read but is NOT a
+        # Cartesian triple — glyphing it would point every arrow in a
+        # meaningless direction.
+        #
+        iφ  = findfirst(isequal("phi"),  q.qvars)
+        iφu = findfirst(isequal("phiu"), q.qvars)
+        if iφ !== nothing && iφu !== nothing && iφu+2 <= size(q.qn, 2)
+            vx = Vector{Float64}(undef, mesh.npoin)
+            vy = Vector{Float64}(undef, mesh.npoin)
+            vz = Vector{Float64}(undef, mesh.npoin)
+            for ip = 1:mesh.npoin
+                φp = q.qn[ip, iφ]
+                vx[ip] = q.qn[ip, iφu]/φp
+                vy[ip] = q.qn[ip, iφu+1]/φp
+                vz[ip] = q.qn[ip, iφu+2]/φp
+            end
+            vtkf["velocity", VTKPointData()] = (vx, vy, vz)
+        end
+
+        #
+        # The off-shell momentum, (phi u)·x̂. This is the quantity the Lagrange
+        # multiplier holds at zero; plotting it is how you SEE the flow leaving
+        # the spherical shell if it ever does.
+        #
+        if length(q.qvars) >= 4
+            nrm = Vector{Float64}(undef, mesh.npoin)
+            for ip = 1:mesh.npoin
+                x, y, z = mesh.coords[1,ip], mesh.coords[2,ip], mesh.coords[3,ip]
+                nrm[ip] = (q.qn[ip,2]*x + q.qn[ip,3]*y + q.qn[ip,4]*z)/sqrt(x*x + y*y + z*z)
+            end
+            vtkf["momentum_normal", VTKPointData()] = nrm
+        end
+    end
+
+    #
+    # Anything else the caller wants on the file (relative vorticity, …).
+    #
+    if extra !== nothing
+        for (name, vals) in extra
+            vtkf[String(name), VTKPointData()] = Float64.(@view vals[1:mesh.npoin])
+            nq += 1
+        end
+    end
+
+    out = vtk_save(vtkf)
+
+    verbose && println(" # Wrote high-order spherical shell grid: ", fout_name,
+                       nparts > 1 ? ".pvtu  (" : ".vtu  (",
+                       mesh.npoin, " nodes, ", nsub, " sub-cells",
+                       nq == 0 ? "" : string(", ", nq, " solution fields"), ")")
+
+    return out
+end
+
 
 #------------
 # HDF5 writer/reader
@@ -602,7 +1098,8 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       varnames, outvarnames,
                       outformat::HDF5;
                       nvar=1, qexact=zeros(1,nvar), case="",
-                      μ_dsgs_pnode=nothing)
+                      μ_dsgs_pnode=nothing, schlieren=nothing,
+                      Minv=nothing)   # the 2D PNG path hands it to user_plot_2d; ignored elsewhere
     
     # println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ...  ") )
     iout = size(t,1)
@@ -785,9 +1282,9 @@ function read_hdf5_interp(SD, OLD_DIR::String, inputs, mesh, npoin, nvar;
     MPI.Bcast!(F, comm; root=0)
     t_restart = MPI.bcast(t_restart, 0, comm)
  
-    X = @view mesh.coords[1:npoin, 1]
-    Y = @view mesh.coords[1:npoin, 2]
-    Z = @view mesh.coords[1:npoin, 3]
+    X = @view mesh.coords[1, 1:npoin]
+    Y = @view mesh.coords[2, 1:npoin]
+    Z = @view mesh.coords[3, 1:npoin]
     tol = 1e-3 * max(xs[end] - xs[1], ys[end] - ys[1], zs[end] - zs[1])
     outside = count(i -> X[i] < xs[1]-tol || X[i] > xs[end]+tol ||
                          Y[i] < ys[1]-tol || Y[i] > ys[end]+tol ||
@@ -924,9 +1421,9 @@ function _write_hdf5_impl(mesh, q, qe, t, OUTPUT_DIR, nvar)
     end
     
     h5open(string(OUTPUT_DIR, "/coords_", rank, ".h5"), "w") do fid
-           write(fid, "x", Float64.(mesh.coords[1:mesh.npoin, 1]))
-           write(fid, "y", Float64.(mesh.coords[1:mesh.npoin, 2]))
-           write(fid, "z", Float64.(mesh.coords[1:mesh.npoin, 3]))
+           write(fid, "x", Float64.(mesh.coords[1, 1:mesh.npoin]))
+           write(fid, "y", Float64.(mesh.coords[2, 1:mesh.npoin]))
+           write(fid, "z", Float64.(mesh.coords[3, 1:mesh.npoin]))
     end
 
     for ivar = 1:nvar
@@ -1256,7 +1753,7 @@ function read_vtk_restart!(q, mesh, inputs, PhysConst; output_dir="")
 
     # Build a safe index map: vtk_ip = ip_map[mesh_ip]
     # Fast O(N) identity check; falls back to coordinate hash-map if ordering differs.
-    ip_map = vtk_to_mesh_ipmap(vars["__coords__"], mesh.x, mesh.y, mesh.z)
+    ip_map = vtk_to_mesh_ipmap(vars["__coords__"], @view(mesh.coords[1,:]), @view(mesh.coords[2,:]), @view(mesh.coords[3,:]))
 
     ρ_arr = vars["ρ"]
     u_arr = vars["u"]
@@ -1395,7 +1892,7 @@ user_read_vtu_point_data! not found. Define it in your problem's user_primitives
     npoin_vtk == mesh.npoin ||
         error("Rank $rank: VTK point count ($npoin_vtk) ≠ mesh.npoin ($(mesh.npoin)).")
 
-    ip_map = vtk_to_mesh_ipmap(vars["__coords__"], mesh.x, mesh.y, mesh.z)
+    ip_map = vtk_to_mesh_ipmap(vars["__coords__"], @view(mesh.coords[1,:]), @view(mesh.coords[2,:]), @view(mesh.coords[3,:]))
 
     user_read_vtu_point_data!(q, vars, ip_map, mesh)
 
@@ -1424,8 +1921,8 @@ function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
 
-    xx      = mesh.x
-    yy      = mesh.y
+    xx      = @view(mesh.coords[1,:])
+    yy      = @view(mesh.coords[2,:])
     nvar    = size(varnames, 1)
     noutvar = max(nvar, size(outvarnames,1))
 
@@ -1604,9 +2101,9 @@ function write_NetCDF(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
     # ----------------------------------------------------------------
     # local coordinates
     # ----------------------------------------------------------------
-    xx = copy(mesh.x)
-    yy = copy(mesh.y)
-    zz = copy(mesh.z)
+    xx = copy(@view(mesh.coords[1,:]))
+    yy = copy(@view(mesh.coords[2,:]))
+    zz = copy(@view(mesh.coords[3,:]))
 
     # ----------------------------------------------------------------
     # build local subelement connectivity using ip2gip for global node indices

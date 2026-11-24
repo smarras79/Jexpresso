@@ -65,7 +65,7 @@ function build_les_bottom_cache(mesh, metrics, inputs)
     PhysConst_b = PhysicalConst{Float64}()
     κ_v = PhysConst_b.karman
 
-    coords       = Array(mesh.coords)      # (npoin, 3)
+    coords       = Array(mesh.coords)      # (3, npoin)
     gip2owner    = Array(mesh.gip2owner)
     connijk_arr  = Array(mesh.connijk)
     poin_bdy     = Array(mesh.poin_in_bdy_face)
@@ -79,7 +79,7 @@ function build_les_bottom_cache(mesh, metrics, inputs)
     nfaces_bdy   = mesh.nfaces_bdy
     ngl          = mesh.ngl
 
-    xr = round.(coords[:, 1]; digits=6)
+    xr = round.(coords[1, :]; digits=6)
 
     # Scan MOST faces; mirror BCs.jl exactly:
     #   ip_sfc = bottom surface node (connijk[e,i,j,1])
@@ -98,9 +98,9 @@ function build_les_bottom_cache(mesh, metrics, inputs)
             nx_f = metrics_nx[iface, i, j]
             ny_f = metrics_ny[iface, i, j]
             nz_f = metrics_nz[iface, i, j]
-            Δx = coords[ip1, 1] - coords[ip_sfc, 1]
-            Δy = coords[ip1, 2] - coords[ip_sfc, 2]
-            Δz = coords[ip1, 3] - coords[ip_sfc, 3]
+            Δx = coords[1, ip1] - coords[1, ip_sfc]
+            Δy = coords[2, ip1] - coords[2, ip_sfc]
+            Δz = coords[3, ip1] - coords[3, ip_sfc]
             z_in = abs(Δx*nx_f + Δy*ny_f + Δz*nz_f)
             ip1_zin[ip1] = z_in
             xk = xr[ip_sfc]
@@ -185,7 +185,7 @@ function build_les_stat_cache(mesh, nprofiles::Int, nstress::Int, T, backend)
 
     comm = get_mpi_comm()
 
-    z         = Array(mesh.z)  # ensure CPU array
+    z         = Array(@view(mesh.coords[3,:]))  # ensure CPU array
     gip2owner = Array(mesh.gip2owner)
 
     # Gather all unique z values across all ranks
@@ -682,7 +682,7 @@ function compute_les_spectra!(cs, uaux, qe, mesh, ET, comm, params)
     sc   = cs.spec_cache
     rank = MPI.Comm_rank(comm)
     nxz  = length(cs.xz_coords)
-    y    = Array(mesh.y)
+    y    = Array(@view(mesh.coords[2,:]))
 
     # --- Pack local data: 6 floats per point = (ixz_float, y, u, v, w, θ) ---
     n_local   = sum(length(cs.xz_groups[ixz]) for ixz in 1:nxz)
@@ -804,8 +804,8 @@ function build_les_cross_section(mesh, nprofiles::Int, nstress::Int, T)
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
-    x         = Array(mesh.x)
-    z         = Array(mesh.z)
+    x         = Array(@view(mesh.coords[1,:]))
+    z         = Array(@view(mesh.coords[3,:]))
     gip2owner = Array(mesh.gip2owner)
     npoin_local = length(x)
 
@@ -868,8 +868,8 @@ function build_les_cross_section(mesh, nprofiles::Int, nstress::Int, T)
 
     connijk_arr = Array(mesh.connijk)  # (nelem, ngl, ngl, ngl)
     ngl_c       = mesh.ngl
-    x_arr       = Array(mesh.x)
-    z_arr       = Array(mesh.z)
+    x_arr       = Array(@view(mesh.coords[1,:]))
+    z_arr       = Array(@view(mesh.coords[3,:]))
 
     seen_quads = Set{NTuple{4,Int64}}()
     xz_cells   = NTuple{4,Int64}[]

@@ -355,8 +355,8 @@ function verify_optical_depth(mesh, κ, σ, ω, Je, ngl;
     # Round to nearest tol_xy to group nodes at the same (x,y) position
     column_nodes = Dict{Tuple{Float64,Float64}, Vector{Int}}()
     for ip = 1:mesh.npoin
-        key = (round(mesh.x[ip] / tol_xy) * tol_xy,
-               round(mesh.y[ip] / tol_xy) * tol_xy)
+        key = (round(mesh.coords[1,ip] / tol_xy) * tol_xy,
+               round(mesh.coords[2,ip] / tol_xy) * tol_xy)
         push!(get!(column_nodes, key, Int[]), ip)
     end
 
@@ -404,8 +404,8 @@ function verify_optical_depth(mesh, κ, σ, ω, Je, ngl;
         key_votes = Dict{Tuple{Float64,Float64}, Int}()
         for i = 1:ngl, j = 1:ngl
             ip_ref = mesh.connijk[iel, i, j, 1]
-            key    = (round(mesh.x[ip_ref] / tol_xy) * tol_xy,
-                      round(mesh.y[ip_ref] / tol_xy) * tol_xy)
+            key    = (round(mesh.coords[1,ip_ref] / tol_xy) * tol_xy,
+                      round(mesh.coords[2,ip_ref] / tol_xy) * tol_xy)
             key_votes[key] = get(key_votes, key, 0) + 1
         end
         # Pick the key with the most votes
@@ -465,7 +465,7 @@ function verify_optical_depth(mesh, κ, σ, ω, Je, ngl;
             continue
         end
 
-        z_vals       = mesh.z[nodes_in_col]
+        z_vals       = mesh.coords[3,nodes_in_col]
         sort_idx     = sortperm(z_vals)
         nodes_sorted = nodes_in_col[sort_idx]
         z_sorted     = z_vals[sort_idx]

@@ -22,8 +22,8 @@ function user_source!(S,
     # Adapted to 2D from problems/CompEuler/LESICP2/user_source.jl
     # where the sponge acts along the vertical (z in 3D, y here).
     #--------------
-    if inputs[:lsponge] == true
-        ys = inputs[:zsponge]
+    if (inputs[:lsponge]::Bool)   # type-asserted: a bare read of the global Dict boxes and allocates at every node
+        ys = inputs[:zsponge]::Float64
         α  = 0.05   # weak sponge strength
         if y >= ys
             betay_coe = α*sinpi(0.5*(y - ys)/(ymax - ys))
@@ -58,8 +58,8 @@ function user_source!(S,
     S[3] = -ρ*PhysConst.g
     S[4] = 0.0
 
-    if inputs[:lsponge] == true
-        ys = inputs[:zsponge]
+    if (inputs[:lsponge]::Bool)   # type-asserted: a bare read of the global Dict boxes and allocates at every node
+        ys = inputs[:zsponge]::Float64
         α  = 0.05
         if y >= ys
             betay_coe = α*sinpi(0.5*(y - ys)/(ymax - ys))

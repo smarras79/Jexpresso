@@ -12,8 +12,13 @@ include("../mesh/restructure_for_periodicity.jl")
 function _try_load_sem_cache(path::String; gmsh_path::String="",
                               inputs=nothing, nparts::Int=1)
     rank = MPI.Comm_rank(get_mpi_comm())
-    # Prefer the prefetched payload before any disk I/O.
-    if JEXPRESSO_PREFETCHED_SEM_CACHE[] !== nothing
+    # An adaptive run executes on a mesh these metrics were not built for.
+    # _preprocess_cache_path already returns "" for such runs; this second
+    # guard keeps the invariant if a caller passes a path of its own.
+    _adaptive_mesh_run(inputs) && return (nothing, nothing)
+    # Prefer the prefetched payload before any disk I/O — but only when it
+    # was prefetched for THIS case (the Ref outlives a single run_case).
+    if JEXPRESSO_PREFETCHED_SEM_CACHE[] !== nothing && _prefetch_usable(inputs)
         return JEXPRESSO_PREFETCHED_SEM_CACHE[]
     end
     # Pre-load validity check via fingerprint-only read. See
@@ -80,8 +85,36 @@ function _matrix_for_cache(matrix)
     return NamedTuple{keep}(map(k -> getproperty(matrix, k), keep))
 end
 
+# Does a loaded payload actually describe the mesh we are holding?
+#
+# Last line of defence: a cache that got past the path + fingerprint checks
+# but was built on a different mesh (different element count, different
+# quadrature order, a partition from another rank layout) must be rejected
+# HERE, where the message can say so — not several hundred lines later as a
+# DimensionMismatch inside params_setup.
+#
+# metrics is either a St_metrics or, for Laguerre runs, a (metrics1, metrics2)
+# tuple; only the first carries the CG element count. `Je` is allocated as
+# (nelem, Q+1, ...) and the mass matrix as npoin (or npoin × npoin when the
+# quadrature is exact and unlumped), which is all we need to compare.
+function _sem_cache_shape_ok(metrics, matrix, mesh, Qξ::Int)
+    try
+        m = metrics isa Tuple ? first(metrics) : metrics
+        Je = getproperty(m, :Je)
+        size(Je, 1) == Int64(mesh.nelem) || return false
+        size(Je, 2) == Int64(Qξ) + 1     || return false
+        if matrix isa NamedTuple && haskey(matrix, :Minv)
+            size(matrix.Minv, 1) == Int64(mesh.npoin) || return false
+        end
+    catch
+        # Anything unexpected in the payload's shape → do not trust it.
+        return false
+    end
+    return true
+end
+
 function _save_sem_cache(path::String, metrics, matrix; inputs=nothing, nparts::Int=1)
-    inputs[:lamr] && return
+    _adaptive_mesh_run(inputs) && return
     isempty(path) && return
     rank = MPI.Comm_rank(get_mpi_comm())
     try
@@ -177,27 +210,41 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
     else
         mesh, partitioned_model, uaux_new = mod_mesh_mesh_driver(inputs, nparts, distribute, args...)
     end
-    if (inputs[:xscale] != 1.0 && inputs[:xdisp] != 0.0)
-        mesh.x .= (@view(mesh.x[:]) .+ TFloat(inputs[:xdisp])) .*TFloat(inputs[:xscale]*0.5)
-    elseif (inputs[:xscale] != 1.0)
-        mesh.x[:] = @view(mesh.x[:])*TFloat(inputs[:xscale]*0.5)
-    elseif (inputs[:xdisp] != 0.0)
-        mesh.x[:] .= (@view(mesh.x[:]) .+ TFloat(inputs[:xdisp]))
+    #
+    # :xscale / :xdisp and :yscale / :ydisp are applied to mesh.coords, the
+    # canonical node array, and MIRRORED into the deprecated mesh.x/mesh.y so
+    # that the mesh construction chain (mesh.jl and the files it calls, which
+    # still read them by design) stays consistent.
+    #
+    # THIS USED TO SCALE ONLY mesh.x/mesh.y AND LEAVE mesh.coords UNTOUCHED.
+    # Consumers that had already moved to coords -- the VTK writer,
+    # sphere_metrics -- therefore saw the UNSCALED grid while everything else
+    # saw the scaled one, silently, on any deck with :xscale != 1.0 or
+    # :xdisp != 0.0. The migration of the rest of the kernel onto coords would
+    # have turned that into scaling being ignored outright.
+    #
+    # (x + disp)*scale with disp = 0 / scale = 1 when the input is neutral
+    # reproduces all three branches of the elseif chain this replaces exactly.
+    #
+    if inputs[:xscale] != 1.0 || inputs[:xdisp] != 0.0
+        xsc = (inputs[:xscale] != 1.0) ? TFloat(inputs[:xscale]*0.5) : TFloat(1.0)
+        xdp = TFloat(inputs[:xdisp])
+        @views mesh.coords[1,:] .= (mesh.coords[1,:] .+ xdp) .* xsc
+        @views mesh.x[1:mesh.npoin] .= mesh.coords[1,:]
     end
-    # mesh.xmin = minimum(mesh.coords[:,1])
-    # mesh.xmax = maximum(mesh.coords[:,1])
-    mesh.xmax = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
-    mesh.xmin = MPI.Allreduce(minimum(mesh.x), MPI.MIN, comm)
-    if (inputs[:yscale] != 1.0 && inputs[:ydisp] != 0.0)
-        mesh.y[:] .= (mesh.y[:] .+ inputs[:ydisp]) .*inputs[:yscale] * 0.5
-    elseif(inputs[:yscale] != 1.0)
-        mesh.y[:] .= (mesh.y[:]) .*inputs[:yscale]*0.5
-    elseif(inputs[:ydisp] != 0.0)
-        mesh.y[:] .= (mesh.y[:] .+ inputs[:ydisp])
+    # mesh.xmin = minimum(mesh.coords[1, :])
+    # mesh.xmax = maximum(mesh.coords[1, :])
+    mesh.xmax = MPI.Allreduce(maximum(@view(mesh.coords[1,:])), MPI.MAX, comm)
+    mesh.xmin = MPI.Allreduce(minimum(@view(mesh.coords[1,:])), MPI.MIN, comm)
+    if (inputs[:yscale] != 1.0 || inputs[:ydisp] != 0.0) && mesh.nsd >= 2
+        ysc = (inputs[:yscale] != 1.0) ? TFloat(inputs[:yscale]*0.5) : TFloat(1.0)
+        ydp = TFloat(inputs[:ydisp])
+        @views mesh.coords[2,:] .= (mesh.coords[2,:] .+ ydp) .* ysc
+        @views mesh.y[1:mesh.npoin] .= mesh.coords[2,:]
     end
     if mesh.nsd == 2
-        mesh.ymax = MPI.Allreduce(maximum(mesh.y), MPI.MAX, comm)
-        mesh.ymin = MPI.Allreduce(minimum(mesh.y), MPI.MIN, comm)
+        mesh.ymax = MPI.Allreduce(maximum(@view(mesh.coords[2,:])), MPI.MAX, comm)
+        mesh.ymin = MPI.Allreduce(minimum(@view(mesh.coords[2,:])), MPI.MIN, comm)
     end
     
     #--------------------------------------------------------
@@ -251,14 +298,25 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
     # to one partition and another rank builds fresh metrics for a different
     # one.
     preprocess_cache = _preprocess_cache_path(inputs, Nξ, Qξ, nparts)
-    # Skip the SEM cache entirely when the mesh has been spatially adapted.
-    # The adapt_flags argument signals an adapted-mesh sem_setup call; cached
-    # metrics/matrices were built on the base (non-adapted) mesh and have the
-    # wrong dimensions/structure for the refined mesh.
-    if isnothing(adapt_flags)
+    # Skip the SEM cache entirely when the mesh is spatially adapted — both
+    # when this very call is the adapt pass (adapt_flags !== nothing) and when
+    # the DECK adapts at all (:lamr / :ladapt / :lpreadapt / :linitial_refine /
+    # :lrestart_amr). Cached metrics/matrices were built on the base
+    # (non-adapted) mesh and have the wrong dimensions for the refined one.
+    # The deck-level half of this test is what stops an AMR case from picking
+    # up the metrics of its own non-AMR twin.
+    if isnothing(adapt_flags) && !_adaptive_mesh_run(inputs)
         cached_metrics, cached_matrix = _try_load_sem_cache(preprocess_cache;
                                                             gmsh_path=get(inputs, :gmsh_filename, ""),
                                                             inputs=inputs, nparts=nparts)
+        # Shape gate: reject a payload that does not describe THIS mesh, no
+        # matter how it got here (fingerprint hole, hand-passed path, stale
+        # prefetch). Cheaper to rebuild than to fail cryptically later.
+        if !isnothing(cached_metrics) && !_sem_cache_shape_ok(cached_metrics, cached_matrix, mesh, Qξ)
+            rank == 0 && println(" # SEM cache $preprocess_cache does not match the current mesh (nelem=$(mesh.nelem), npoin=$(mesh.npoin)) — discarding and rebuilding")
+            try; isempty(preprocess_cache) || rm(preprocess_cache; force=true); catch _; end
+            cached_metrics, cached_matrix = nothing, nothing
+        end
         local_loaded = !isnothing(cached_metrics)
         loaded_from_cache = nparts > 1 ?
             (MPI.Allreduce(local_loaded ? 1 : 0, MPI.MIN, comm) == 1) :
@@ -274,7 +332,7 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
     else
         cached_metrics, cached_matrix = nothing, nothing
         loaded_from_cache = false
-        rank == 0 && println(" # SEM cache: skipped for spatially adapted mesh — rebuilding metric terms")
+        rank == 0 && println(" # SEM cache: skipped for adaptive run (:lamr/:ladapt/:lpreadapt/:linitial_refine/:lrestart_amr) — rebuilding metric terms")
     end
     # ─────────────────────────────────────────────────────────────────────────
 

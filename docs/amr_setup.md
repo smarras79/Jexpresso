@@ -231,7 +231,33 @@ path.
 | `:lrestart_amr` | `false` | VTK + p4est forest restart (resumes the real adapted mesh) |
 | `:restart_vtk_iout` | auto | Explicit `iter_N` to resume from; omit to restart from the last entry in `simulation.pvd` |
 
-## 6. Testing locally
+## 6. AMR and the mesh / SEM caches
+
+Ordinary runs cache the mesh topology and the SEM preprocessing (metric terms
++ mass/Laplace matrices) in `<case_dir>/.jexpresso_cache/`, so the second run
+of a case skips the gmsh read and the metric build. **Adaptive runs neither
+read nor write those caches.** A deck that sets any of `:lamr`, `:ladapt`,
+`:lpreadapt`, `:linitial_refine` or `:lrestart_amr` runs on a mesh that is not
+the one the cache describes, so `sem_setup` rebuilds every time and prints
+
+```
+ # SEM cache: skipped for adaptive run (...) — rebuilding metric terms
+```
+
+Caches are also per case: the `<equations>_<case>` tag is part of both the
+cache directory and the cache file name, and it is recorded in the
+fingerprint stored inside the file. Running `ShallowWater/SoliWaveIsland_amr`
+right after `ShallowWater/SoliWaveIsland` — same `.msh`, same `:nop` — cannot
+pick up the non-AMR run's mesh or metrics. Three further guards catch anything
+that slips through: the fingerprint of every preprocessing-relevant input, a
+signature of the `St_mesh`/`St_metrics` field sets (so adding a field to
+either struct invalidates every cache on disk automatically), and a shape
+check of the loaded payload against the mesh actually in hand.
+
+`clean_cache.sh` removes every cache in the tree if you ever want a clean
+slate; `:luse_mesh_cache => false` in a deck turns caching off for that case.
+
+## 7. Testing locally
 
 Invoke as a script, not `-e '...include(...)'` — the latter leaves
 `PROGRAM_FILE` unset and silently skips the whole driver (see the

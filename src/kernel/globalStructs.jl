@@ -109,7 +109,10 @@ function allocate_fluxes(SD, npoin, ngl, T, backend; neqs=1)
         dims2 = (Int64(ngl), Int64(neqs+1)) 
     elseif SD == NSD_2D()
         dims1 = (Int64(ngl), Int64(ngl), Int64(neqs))
-        dims2 = (Int64(ngl), Int64(ngl), Int64(neqs+1)) 
+        # neqs+1: pressure / the DynSGS-MHD reference weight; neqs+2: the
+        # thermal part of the energy primitive of a split-energy DynSGS-MHD
+        # case (kernel/physics/SGS.jl, dsgs_split_energy)
+        dims2 = (Int64(ngl), Int64(ngl), Int64(neqs+2)) 
     elseif SD == NSD_3D()
         dims1 = (Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs))
         dims2 = (Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs+1)) 
@@ -274,23 +277,30 @@ Base.@kwdef mutable struct St_filter{T <: AbstractFloat, dims1, dims2, dims3, di
     b::Arr3     = KernelAbstractions.zeros(backend,  T, dims3)
     B::Arr4     = KernelAbstractions.zeros(backend,  T, dims4)
 end
-function allocate_filter(SD, nelem, npoin, ngl, T, backend; neqs=1, lfilter=false)
+function allocate_filter(SD, nelem, npoin, ngl, T, backend; neqs=1, lfilter=false, ladapt=false)
+
+    # `b` (dims3) is the element-local filter scratch, (nelem, ngl^d, neqs).
+    # It is only consumed by DSS_nc_gather_rhs!/DSS_rhs! on the AMR path; with
+    # ladapt == false filter! assembles straight into `B` (exactly like the GPU
+    # kernels do) and never touches `b`. Sizing it to 1 in that case saves
+    # nelem*ngl^d*neqs*sizeof(T) bytes -- easily hundreds of MB for a 3D LES run.
+    lb = lfilter && ladapt
 
     if lfilter
         if SD == NSD_1D()
             dims1 = (Int64(neqs), Int64(ngl))
             dims2 = (Int64(ngl))
-            dims3 = (Int64(nelem), Int64(ngl), Int64(neqs))
+            dims3 = lb ? (Int64(nelem), Int64(ngl), Int64(neqs)) : (1, 1, 1)
             dims4 = (Int64(npoin), Int64(neqs))
         elseif SD == NSD_2D()
             dims1 = (Int64(neqs), Int64(ngl), Int64(ngl))
             dims2 = (Int64(ngl), Int64(ngl))
-            dims3 = (Int64(nelem), Int64(ngl), Int64(ngl), Int64(neqs))
+            dims3 = lb ? (Int64(nelem), Int64(ngl), Int64(ngl), Int64(neqs)) : (1, 1, 1, 1)
             dims4 = (Int64(npoin), Int64(neqs))
         elseif SD == NSD_3D()
             dims1 = (Int64(neqs), Int64(ngl), Int64(ngl), Int64(ngl))
             dims2 = (Int64(ngl), Int64(ngl), Int64(ngl))
-            dims3 = (Int64(nelem), Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs))
+            dims3 = lb ? (Int64(nelem), Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs)) : (1, 1, 1, 1, 1)
             dims4 = (Int64(npoin), Int64(neqs))
         end
     else
@@ -337,23 +347,28 @@ end
 function allocate_filter_lag(SD, nelem_semi_inf, npoin, ngl, ngr, T, backend; neqs=1, lfilter=false)
 
     if lfilter
+        # NOTE: b_lag (dims3) is no longer written by filter! -- the Laguerre
+        # block is summed straight into B_lag inside the element loop (2D
+        # Laguerre + AMR is unsupported, so the element-local copy had no
+        # consumer). It is kept at size 1 so the field still exists.
         if SD == NSD_1D()
             dims1 = (Int64(neqs), Int64(ngr))
             dims2 = (Int64(ngr))
-            dims3 = (Int64(nelem_semi_inf), Int64(ngr), Int64(neqs))
+            dims3 = (1, 1, 1)
             dims4 = (Int64(npoin), Int64(neqs))
         elseif SD == NSD_2D()
             dims1 = (Int64(neqs), Int64(ngl), Int64(ngr))
             dims2 = (Int64(ngl), Int64(ngr))
-            dims3 = (Int64(nelem_semi_inf), Int64(ngl), Int64(ngr), Int64(neqs))
+            dims3 = (1, 1, 1, 1)
             dims4 = (Int64(npoin), Int64(neqs))
         elseif SD == NSD_3D()
-            # WARNING Allocate only 1 because there is no 3D filter yet
-            #dims1 = (1, 1, 1, 1)
-            #dims2 = (1, 1, 1)
-            #dims3 = (1, 1, 1, 1, 1)
-            #dims4 = (1, 1)
-            #warning( " 3D laguerre filter not implemented yet")
+            # WARNING Allocate only 1 because there is no 3D Laguerre filter yet.
+            # These used to be left undefined, which made allocate_filter_lag throw
+            # an UndefVarError for a 3D Laguerre run with lfilter == true.
+            dims1 = (1, 1, 1, 1)
+            dims2 = (1, 1, 1)
+            dims3 = (1, 1, 1, 1, 1)
+            dims4 = (1, 1)
         end
         
     else
@@ -448,7 +463,7 @@ function allocate_gpuAux_lag(SD, nelem_semi_inf, nedges_bdy, nfaces_bdy, ngl, ng
         elseif SD == NSD_2D()
             dims1 = (Int64(nelem_semi_inf), Int64(ngl), Int64(ngr), 2*neqs)
             dims2 = (Int64(nelem_semi_inf), Int64(ngl), Int64(ngr),   neqs)
-            dims3 = (Int64(nedges_bdy),     Int64(ngl),               neqs)
+            dims3 = (Int64(nelem_semi_inf), Int64(ngl), Int64(ngr),   neqs)   # indexed [e, i, j, ieq]
         elseif SD == NSD_3D()
             error(" globalStructs.jl: --> 3D Laguerre not implemented yet!")
         end
@@ -460,6 +475,35 @@ function allocate_gpuAux_lag(SD, nelem_semi_inf, nedges_bdy, nfaces_bdy, ngl, ng
     gpuAux_lag = St_gpuAux_lag{T, dims1, dims2, dims3, backend, Arr1, Arr2, Arr3}()
 
     return gpuAux_lag
+end
+
+#
+# Normals of the boundary sides of the 2D semi-infinite layer, for the GPU
+# Dirichlet kernel (which cannot use the string tags): computed once on the host
+# from laguerre_side_columns_2D (bc_constraints.jl) and copied to the backend.
+#   side_n[e, s, :] : outward normal of column side s (s = 1 -> i = 1, s = 2 -> i = ngl)
+#                     of element e when that side continues a boundary of the
+#                     finite domain, (0, 0) otherwise (interior or periodic);
+#   far_n[e, i, :]  : column direction of column i of element e (far-end normal).
+#
+function laguerre_bc_normals_gpu(mesh, T, backend)
+    ne = Int64(mesh.nelem_semi_inf); ngl = Int64(mesh.ngl); ngr = Int64(mesh.ngr)
+    side_n = zeros(T, ne, 2, 2)
+    far_n  = zeros(T, ne, ngl, 2)
+    if mesh.SD == NSD_2D() && ne > 0
+        C = Array(mesh.connijk_lag); X = Array(mesh.coords)
+        for (e, i, _, nx, ny) in laguerre_side_columns_2D(C, X, Array(mesh.poin_in_bdy_edge), mesh.bdy_edge_type,
+                                                          mesh.nedges_bdy, ne, ngl, ngr)
+            s = i == 1 ? 1 : 2
+            side_n[e, s, 1] = nx; side_n[e, s, 2] = ny
+        end
+        for e = 1:ne, i = 1:ngl
+            far_n[e, i, 1], far_n[e, i, 2] = laguerre_far_normal(C, X, e, i, ngr)
+        end
+    end
+    side_n_b = KernelAbstractions.allocate(backend, T, size(side_n)); KernelAbstractions.copyto!(backend, side_n_b, side_n)
+    far_n_b  = KernelAbstractions.allocate(backend, T, size(far_n));  KernelAbstractions.copyto!(backend, far_n_b,  far_n)
+    return side_n_b, far_n_b
 end
 
 Base.@kwdef mutable struct St_gpuMoist{T <: AbstractFloat, dims1, dims2, dims3, dims4, backend, Arr1, Arr2, Arr3, Arr4}

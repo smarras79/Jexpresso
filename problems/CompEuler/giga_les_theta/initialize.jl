@@ -26,7 +26,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             PhysConst = PhysicalConst{Float64}()
         
             for ip=1:mesh.npoin
-                z = mesh.z[ip]
+                z = mesh.coords[3,ip]
                 ρ  = q.qn[ip,1]
                 hl = q.qn[ip,5] / ρ
                 qv = q.qn[ip,6] / ρ
@@ -47,25 +47,25 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             # INITIAL STATE from scratch:
             #
             data       = read_sounding(inputs[:sounding_file])
-            background = interpolate_sounding(inputs[:backend],mesh.npoin,mesh.z,data) 
+            background = interpolate_sounding(inputs[:backend],mesh.npoin,@view(mesh.coords[3,:]),data) 
             
             # data_u                 = read_sounding("./data_files/GLES_initial_u.dat")
             # data_u_reordered       = zeros(size(data_u))
             # data_u_reordered[:,1] .= data_u[:,2]*1000
             # data_u_reordered[:,2] .= data_u[:,1]
-            # background_u           = interpolate_sounding(inputs[:backend],mesh.npoin,mesh.z,data_u_reordered)
+            # background_u           = interpolate_sounding(inputs[:backend],mesh.npoin,@view(mesh.coords[3,:]),data_u_reordered)
 
             # data_qv                 = read_sounding("./data_files/GLES_initial_qv.dat")
             # data_qv_reordered       = zeros(size(data_qv))
             # data_qv_reordered[:,1] .= data_qv[:,2]*1000
             # data_qv_reordered[:,2] .= data_qv[:,1]
-            # background_qv           = interpolate_sounding(inputs[:backend],mesh.npoin,mesh.z,data_qv_reordered)
+            # background_qv           = interpolate_sounding(inputs[:backend],mesh.npoin,@view(mesh.coords[3,:]),data_qv_reordered)
             
             amp = 0.1 #K
 
             for ip = 1:mesh.npoin
             
-                x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
+                x, y, z = mesh.coords[1,ip], mesh.coords[2,ip], mesh.coords[3,ip]
 
                 rand_noise = 0.0 #K
                 T_ref  = background[ip,2] + 273.15
@@ -159,16 +159,16 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             lpert = false
         end
         data = read_sounding(inputs[:sounding_file])
-        background = interpolate_sounding(inputs[:backend],mesh.npoin,mesh.z,data)
+        background = interpolate_sounding(inputs[:backend],mesh.npoin,@view(mesh.coords[3,:]),data)
         PhysConst = PhysicalConst{TFloat}()
-        xc = TFloat((maximum(mesh.x) + minimum(mesh.x))/2)
+        xc = TFloat((maximum(@view(mesh.coords[1,:])) + minimum(@view(mesh.coords[1,:])))/2)
         zc = TFloat(2000.0) #m
         rz = TFloat(1500.0) #m
         rx = TFloat(10000.0)
         θref = TFloat(300.0) #K
         θc   =   TFloat(2.0) #K
         k = initialize_gpu!(inputs[:backend])
-        k(q.qn, q.qe, background, mesh.x, mesh.y, mesh.z, xc, rx, rz, zc, θc, PhysConst, lpert; ndrange = (mesh.npoin))
+        k(q.qn, q.qe, background, @view(mesh.coords[1,:]), @view(mesh.coords[2,:]), @view(mesh.coords[3,:]), xc, rx, rz, zc, θc, PhysConst, lpert; ndrange = (mesh.npoin))
     end
     println(maximum(q.qe[:,end]), minimum(q.qe[:,end]))
     println(" Initialize fields for 3D CompEuler with θ equation ........................ DONE ")

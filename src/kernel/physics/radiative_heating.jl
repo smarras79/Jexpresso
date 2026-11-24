@@ -180,9 +180,9 @@ function compute_rt_radiative_heating(
 
     if splitting
         bdy_nodes = [ip for ip = 1:mesh.npoin 
-             if mesh.z[ip] ≈ mesh.zmin || 
-                mesh.x[ip] ≈ mesh.xmin || mesh.x[ip] ≈ mesh.xmax ||
-                mesh.y[ip] ≈ mesh.ymin || mesh.y[ip] ≈ mesh.ymax]
+             if mesh.coords[3,ip] ≈ mesh.zmin || 
+                mesh.coords[1,ip] ≈ mesh.xmin || mesh.coords[1,ip] ≈ mesh.xmax ||
+                mesh.coords[2,ip] ≈ mesh.ymin || mesh.coords[2,ip] ≈ mesh.ymax]
                 
         G_total = G_accum .+ G_dir
         if MPI.Comm_rank(MPI.COMM_WORLD) == 0
@@ -306,6 +306,18 @@ function get_RT_heat_fluxes!(q, qe, mesh, micro, metrics, atmos_data, params, d�
     κ_ext_sw         = κ .+ σ
     #compute sample optical depth for lateral boundary conditions
     z_prof, τ_from_TOA = build_sw_lateral_bc_profile(mesh, κ_ext_sw, mesh.ngl)
+    # Invalidate warm-start if the spatial mesh changed on ANY rank (spatial AMR between steps).
+    if micro.rt_nelem_saved != 0
+        local_changed = micro.rt_nelem_saved != mesh.nelem ? 1 : 0
+        any_changed = MPI.Comm_size(MPI.COMM_WORLD) > 1 ?
+                      MPI.Allreduce(local_changed, MPI.MAX, MPI.COMM_WORLD) : local_changed
+        if any_changed > 0
+            @info "[RT warm-start] Spatial mesh changed: discarding warm start"
+            micro.rt_sol_sw_available = false
+            micro.rt_sol_lw_available = false
+        end
+    end
+
     #Solve shortwave RT problem and get heating rate
     inputs[:RT_shortwave] = true
     inputs[:RT_longwave] = false
@@ -349,6 +361,7 @@ function get_RT_heat_fluxes!(q, qe, mesh, micro, metrics, atmos_data, params, d�
     end
     micro.rt_sol_sw_available = true
     micro.rt_sol_lw_available = true
+    micro.rt_nelem_saved = mesh.nelem
 end
 
 
