@@ -602,7 +602,7 @@ function compute_rt_radiative_heating_unified(mesh, I_cg_all::Dict{Tuple{Int,Int
         T = atmos_data.t_current[ip]; ρ = atmos_data.rho[ip]
         κ_a = κ[ip]-σ[ip]; G = G_accum[ip]
         if swlw
-            Q_rad[ip] = κ_a * (G - 4.0*σ_SB*T^4)
+            Q_rad[ip] = κ_a * (G - 4π * lw_B(T))      # band's Planck share with :RT_lw_bands => 2
         else
             Q_rad[ip] = splitting ? Q_dir[ip] + κ_a*(G_accum[ip]-G_dir[ip]) : κ_a*G
         end

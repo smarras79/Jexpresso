@@ -25,6 +25,37 @@ const LW_GRAY_K_DRY = 0.002        # m²/kg, dry air (× p/p_ref), as atmos_to_r
 const LW_GRAY_K_VAP = 0.05         # m²/kg per kg/kg of vapour (× p/p_ref)
 const LW_GRAY_P_REF = 101325.0
 
+# ── LW bands (:RT_lw_bands => 2, the default since 2026-11-24; 1 = the old single gray band) ─────────────────────────
+# Two-band semi-gray model fitted to RRTMGP (RRTMGP.jl two-stream, AFGL tropical gases) on clear and cloudy columns of
+# BOMEX (5400 s), RTB (800 s) and Lasher-Trapp (LT24, 2700 s) with the column top above the lid
+# (chtc_output/semigray_fit.py): mass-weighted heating rms 0.8-1.35 K/day (gray: 1-7), downward flux at the lid within
+# 2-4 W/m², net flux at cloud base/top within ~15 W/m². Band b has its share of the Planck function, f_w(T) for the
+# window and 1 - f_w(T) for the opaque band, f_w(T) = clamp(f0 + f1 (T - 280)/100, 0, 1), and the mass absorption
+#   k_b = a_b s + b_b qv s + c_b qv² s + k_liq qc + k_ice qi        (m²/kg, s = p / p_ref)
+# The bands are solved one after the other (LW_BAND set for the band being solved) and their heating is summed.
+const LW_BAND_COEF = (opaque = (a = 9.732e-4, b = 0.447,  c = 0.0),
+                      window = (a = 0.0,      b = 0.0285, c = 0.0),
+                      f0 = 0.3485, f1 = 0.2603, k_liq = 77.62, k_ice = 23.06)
+const LW_BAND = Ref{Any}(nothing)          # nothing: one gray band; else (b = 1 opaque | 2 window, coefficients)
+
+lw_band_context(b::Int) = (b = b, gas = b == 1 ? LW_BAND_COEF.opaque : LW_BAND_COEF.window,
+                           k_liq = LW_BAND_COEF.k_liq, k_ice = LW_BAND_COEF.k_ice)
+@inline lw_window_share(T) = clamp(LW_BAND_COEF.f0 + LW_BAND_COEF.f1 * (T - 280.0) / 100.0, 0.0, 1.0)
+# share of the Planck function carried by the band being solved (1 with a single gray band)
+@inline function lw_band_share(T)
+    bc = LW_BAND[]
+    bc === nothing && return 1.0
+    return bc.b == 2 ? lw_window_share(T) : 1.0 - lw_window_share(T)
+end
+# Planck radiance of the band being solved, W m⁻² sr⁻¹ (σT⁴/π with a single gray band)
+@inline lw_B(T) = 5.670374419e-8 * T^4 / π * lw_band_share(T)
+# gas mass absorption (m²/kg) of the band being solved; the gray constants with a single band
+@inline function lw_gas_k(qv, s)
+    bc = LW_BAND[]
+    bc === nothing && return LW_GRAY_K_DRY * s + LW_GRAY_K_VAP * qv * s
+    return bc.gas.a * s + bc.gas.b * qv * s + bc.gas.c * qv^2 * s
+end
+
 # top-inflow radiance as a function of μ = |cos θ| of a downward direction; nothing = the vacuum default (T_space)
 const LW_TOP_FN = Ref{Any}(nothing)
 
@@ -96,8 +127,8 @@ function lw_top_column(z, T, p, qv)
     for k in eachindex(z)
         ρ = p[k] / (287.04 * T[k] * (1 + 0.61 * qv[k]))
         s = p[k] / LW_GRAY_P_REF
-        κ[k] = ρ * (LW_GRAY_K_DRY * s + LW_GRAY_K_VAP * qv[k] * s)
-        B[k] = LW_σ_SB * T[k]^4 / π
+        κ[k] = ρ * lw_gas_k(qv[k], s)
+        B[k] = lw_B(T[k])
     end
     return LWColumn(z, κ, B, 0.0, 0.0)
 end

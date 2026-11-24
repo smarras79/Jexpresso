@@ -3238,7 +3238,11 @@ function rt_rebalance_strategy!(inputs, params, u, t, partitioned_model)
     if glue !== nothing
         for (old, lw) in ((ws_lw, true), (ws_sw, false))
             old === nothing && continue
-            new = redistributed_elem_dict(old, glue, nel_old, nel_new, ngl_of(nparams.mesh))
+            # LW with :RT_lw_bands => 2 keeps one warm start per band (a vector): move each
+            new = old isa AbstractVector ?
+                  (v = Any[redistributed_elem_dict(x, glue, nel_old, nel_new, ngl_of(nparams.mesh)) for x in old];
+                   any(x -> x === nothing, v) ? nothing : v) :
+                  redistributed_elem_dict(old, glue, nel_old, nel_new, ngl_of(nparams.mesh))
             ok = MPI.Allreduce(new === nothing ? 0 : 1, MPI.MIN, comm) == 1
             ok || continue
             if lw; nparams.mp.rt_sol_lw = new; nparams.mp.rt_sol_lw_available = true

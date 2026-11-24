@@ -93,7 +93,9 @@ function atmos_to_rad_longwave(atmos_data, npoin)
         p_scale = P / P_ref
 
         # Total mass absorption coefficient (m²/kg)
-        k_abs = k_dry * p_scale + k_vap * qv * p_scale + k_liq * qliq + k_ice * qice
+        bc = LW_BAND[]                     # :RT_lw_bands => 2: coefficients of the band being solved (lw_top_column.jl)
+        k_abs = bc === nothing ? k_dry * p_scale + k_vap * qv * p_scale + k_liq * qliq + k_ice * qice :
+                                 lw_gas_k(qv, p_scale) + bc.k_liq * qliq + bc.k_ice * qice
 
         # In-cloud fraction drives scattering albedo
         in_cloud = (qliq + qice) > 1e-8

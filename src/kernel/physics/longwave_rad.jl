@@ -56,7 +56,7 @@ function user_rhs_longwave(x, y, z, θ, ϕ, ip, κ, atmos_data)
     κ_abs = κ[ip]
 
     # Gray Planck radiance (W m⁻² sr⁻¹)
-    B_T = σ_SB * T^4 / π
+    B_T = lw_B(T)                  # σT⁴/π, times the band's Planck share with two bands (lw_top_column.jl)
 
     return κ_abs * B_T
 end
@@ -106,11 +106,11 @@ function user_rad_bc_longwave(x, y, z, θ, ϕ, nx_n, ny_n, nz_n,
     if bdy.is_top(z)
         ftop = LW_TOP_FN[]                       # :RT_lw_top_bc => :column (lw_top_column.jl)
         ftop === nothing || return ftop(abs(cos(θ)))
-        return σ_SB * lw.T_space^4 / π
+        return lw_B(lw.T_space)
 
     elseif bdy.is_bottom(z)
         T_sfc = atmos_data.t_current[ip]
-        return lw.ε_surface * σ_SB * T_sfc^4 / π
+        return lw.ε_surface * lw_B(T_sfc)
 
     else
         # Lateral face (rigid wall or periodic). Use the background-state
@@ -121,6 +121,6 @@ function user_rad_bc_longwave(x, y, z, θ, ϕ, nx_n, ny_n, nz_n,
         # For periodic boundaries these nodes are skipped by build_rad.jl before
         # this function is reached.
         T_wall = atmos_data.t_back[ip]
-        return σ_SB * T_wall^4 / π
+        return lw_B(T_wall)
     end
 end

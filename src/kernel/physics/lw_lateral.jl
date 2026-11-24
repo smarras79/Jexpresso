@@ -59,7 +59,7 @@ function build_lw_lateral_columns(mesh, κ_ext::AbstractVector, T::AbstractVecto
     buf = Float64[]
     for ip = 1:npoin
         lw_on_lateral(L, x[ip], y[ip]) || continue
-        push!(buf, x[ip], y[ip], z[ip], κ_ext[ip], LW_σ_SB * T[ip]^4 / π)
+        push!(buf, x[ip], y[ip], z[ip], κ_ext[ip], lw_B(T[ip]))
     end
     counts = MPI.Allgather(Int32(length(buf)), comm)
     allbuf = Vector{Float64}(undef, sum(counts))
@@ -74,7 +74,7 @@ function build_lw_lateral_columns(mesh, κ_ext::AbstractVector, T::AbstractVecto
         a = get(d, zm, (allbuf[r+2], 0.0, 0.0, 0.0))
         d[zm] = (a[1], a[2] + allbuf[r+3], a[3] + allbuf[r+4], a[4] + 1.0)
     end
-    I_top = LW_σ_SB * T_space^4 / π
+    I_top = lw_B(T_space)
     for (key, d) in acc
         zs = sort(collect(keys(d)))
         zv = [d[k][1] for k in zs]; κv = [d[k][2]/d[k][4] for k in zs]; Bv = [d[k][3]/d[k][4] for k in zs]
@@ -176,7 +176,7 @@ function lw_column_mean_init(mesh, κ_ext::AbstractVector, T::AbstractVector, co
     for ip = 1:npoin
         zm = lw_mm(mesh.z[ip])
         a = get(acc, zm, (mesh.z[ip], 0.0, 0.0, 0.0))
-        acc[zm] = (a[1], a[2] + κ_ext[ip], a[3] + LW_σ_SB * T[ip]^4 / π, a[4] + 1.0)
+        acc[zm] = (a[1], a[2] + κ_ext[ip], a[3] + lw_B(T[ip]), a[4] + 1.0)
     end
     buf = Float64[]
     for (zm, a) in acc; push!(buf, a[1], a[2], a[3], a[4]); end
@@ -190,7 +190,7 @@ function lw_column_mean_init(mesh, κ_ext::AbstractVector, T::AbstractVector, co
     end
     zs = sort(collect(keys(g)))
     zv = [g[k][1] for k in zs]; κv = [g[k][2]/g[k][4] for k in zs]; Bv = [g[k][3]/g[k][4] for k in zs]
-    col = LWColumn(zv, κv, Bv, ε_surface * Bv[1], LW_σ_SB * T_space^4 / π)
+    col = LWColumn(zv, κv, Bv, ε_surface * Bv[1], lw_B(T_space))
     lev = Dict(zs[i] => i for i in eachindex(zs))
     cache = Dict{Float64,Vector{Float64}}()
     out = Dict{Tuple{Int,Int},Vector{Float64}}()
@@ -224,7 +224,7 @@ function lw_column_local_init(mesh, κ_ext::AbstractVector, T::AbstractVector, c
     sbufs = [Float64[] for _ = 1:np]
     for ip = 1:npoin
         key = (lw_mm(mesh.x[ip]), lw_mm(mesh.y[ip]))
-        push!(sbufs[owner(key)], key[1], key[2], mesh.z[ip], κ_ext[ip], LW_σ_SB * T[ip]^4 / π)
+        push!(sbufs[owner(key)], key[1], key[2], mesh.z[ip], κ_ext[ip], lw_B(T[ip]))
     end
     recv = lw_alltoallv(sbufs, comm)
     # 2) owners assemble columns; remember which ranks asked for which column
@@ -245,7 +245,7 @@ function lw_column_local_init(mesh, κ_ext::AbstractVector, T::AbstractVector, c
     end
     recv = lw_alltoallv(sbufs, comm)
     # 3) local columns -> radiance at every node and direction
-    I_top = LW_σ_SB * T_space^4 / π
+    I_top = lw_B(T_space)
     cols = Dict{Tuple{Int,Int},LWColumn}()
     for buf in recv
         r = 1

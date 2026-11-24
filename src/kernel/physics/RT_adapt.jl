@@ -29,6 +29,10 @@ function invalidate_angular_state!()
     return nothing
 end
 
+# a warm start, or (LW with :RT_lw_bands => 2) a vector of them, one per band
+remap_warm_start_any(s, snapshots, mesh) = s isa AbstractVector ? Any[remap_warm_start(x, snapshots, mesh) for x in s] :
+                                                                  remap_warm_start(s, snapshots, mesh)
+
 # Warm start onto the new angular mesh: every new direction takes the vector of the nearest OLD direction (unit-vector dot product),
 # so unchanged directions are copied exactly and new directions inside a refined element are first-order accurate.
 function remap_warm_start(old::Dict{Tuple{Int,Int},Vector{Float64}}, snapshots, mesh)
@@ -92,7 +96,7 @@ function rt_adaptive_regrid_step!(mesh, params, infra, comm, inputs, phase_fn, g
     t_regrid = (time_ns() - t1)*1e-9
 
     t2 = time_ns()
-    new_sols = Any[remap_warm_start(s, snapshots, mesh) for s in sols]
+    new_sols = Any[remap_warm_start_any(s, snapshots, mesh) for s in sols]
     t_remap = (time_ns() - t2)*1e-9
 
     st.levels = info.levels; st.radius = info.radius
@@ -344,88 +348,107 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
 
     # ── Longwave ───────────────────────────────────────────────────────────────────────────────────────────────────
     if do_lw
-        κ_lw, σ_lw = atmos_to_rad_longwave(atmos_data, mesh.npoin)
-        lw = LWParams(inputs[:RT_ϵ_surface], inputs[:RT_T_space])
-        lw_top_setup!(mesh, atmos_data, bdy, inputs, comm)   # :RT_lw_top_bc (:column default | :vacuum), lw_top_column.jl
-        # Lateral treatment (lw_lateral.jl):
-        #   :RT_lw_lateral_bc    :blackbody (σT_back⁴/π on real walls) | :plane_parallel (local-column 1D radiance)
-        #   :RT_lw_periodic_mode :periodic | :walls (periodic faces become walls with local-column 1D inflow)
-        #   :RT_lw_cold_init     :zero | :walls (cold solve starts from the :walls solution, then solves periodic)
-        #                        | :column_mean (cold solve starts from the plane-parallel horizontal-mean column; default)
-        #                        | :column_local (cold solve starts from each node's own column: ICA)
-        #   :RT_lw_solver        :gmres | :gmres_precond (direction scaling by periodic path length, sweep_gmres.jl)
-        #                        | :jacobi (source iteration: no Krylov basis, same residual stop as GMRES; memory-lean)
-        #   :RT_lw_rtol          relaxes EVERY LW solve to max(rt_tol, rtol·‖b‖); 0 = off. Default 2.6e-8 ≈ absolute 0.1
-        #                        on BOMEX 32x32x30 4x4O4 (‖b‖ 3.8e6): heating error ≲3e-7 rel L2, ≲2e-3 K/day max
-        #                        (tolerance study, 2026-11-18), ~1e4 below the 3D−ICA difference
-        #   :RT_lw_cold_rtol     overrides :RT_lw_rtol for the cold solve (default: :RT_lw_rtol)
-        cold = !micro.rt_sol_lw_available
-        lat_bc = Symbol(get(inputs, :RT_lw_lateral_bc, :blackbody))
-        per_mode = Symbol(get(inputs, :RT_lw_periodic_mode, :periodic))
-        cold_init = Symbol(get(inputs, :RT_lw_cold_init, :column_mean))
-        lw_rtol   = Float64(get(inputs, :RT_lw_rtol, 2.6e-8))
-        cold_rtol = Float64(get(inputs, :RT_lw_cold_rtol, lw_rtol))
-        #   :RT_lw_surface_reflection  false (default) | true: Lambertian reflection of the downward LW flux at the
-        #                              surface with albedo 1 - ε (RadiativeCase.surface_reflection)
-        lw_refl = get(inputs, :RT_lw_surface_reflection, false) == true
-        need_cols = lat_bc == :plane_parallel || per_mode == :walls || (cold && cold_init == :walls)
-        cols = need_cols ? build_lw_lateral_columns(mesh, κ_lw .+ σ_lw, atmos_data.t_current, comm;
-                                                    ε_surface=lw.ε_surface, T_space=lw.T_space) : nothing
-        ovr = (per_mode == :walls || (cold && cold_init == :walls)) ? lw_lateral_prev_override(mesh, cols) : nothing
-        lw_case = build_longwave_case(atmos_data, κ_lw, σ_lw, bdy; ε_surface=lw.ε_surface, T_space=lw.T_space,
-                                      lateral_cols = lat_bc == :plane_parallel ? cols : nothing,
-                                      prev_override = per_mode == :walls ? ovr : nothing, surface_reflection = lw_refl)
-        rt_lap!(tm, :lw_case)                                           # optics, lateral columns and case
-        I_init_lw = micro.rt_sol_lw_available ? micro.rt_sol_lw : nothing
-        lw_solver = Symbol(get(inputs, :RT_lw_solver, :gmres))
-        #   :RT_lw_tol_study     true: heating at every GMRES iterate of the LW solve, compared with the converged one
-        #                        (rt_tol_study_report!, rt_timing.jl). Costs one heating evaluation per iterate.
-        tol_study = get(inputs, :RT_lw_tol_study, false) == true
-        study = RTTolStudyPoint[]
-        lw_monitor = !tol_study ? nothing : (kind, res, nmv, Id, κu, σu) -> begin
-            _, dT, _, _ = compute_rt_radiative_heating_unified(mesh, Id, atmos_data, κu, σu, true, comm)
-            push!(study, RTTolStudyPoint(kind, res, nmv, copy(dT)))
-        end
-        if cold && cold_init == :column_mean
-            I_init_lw = lw_column_mean_init(mesh, κ_lw .+ σ_lw, atmos_data.t_current, comm;
-                                            ε_surface=lw.ε_surface, T_space=lw.T_space)
-            rt_lap!(tm, :lw_mean_init)
-        elseif cold && cold_init == :column_local
-            I_init_lw = lw_column_local_init(mesh, κ_lw .+ σ_lw, atmos_data.t_current, comm;
-                                             ε_surface=lw.ε_surface, T_space=lw.T_space)
-            rt_lap!(tm, :lw_ica_init)
-        end
-        if cold && cold_init == :walls && per_mode == :periodic
-            walls_case = build_longwave_case(atmos_data, κ_lw, σ_lw, bdy; ε_surface=lw.ε_surface, T_space=lw.T_space,
-                                             lateral_cols = lat_bc == :plane_parallel ? cols : nothing,
-                                             prev_override = ovr, surface_reflection = lw_refl)
-            I_init_lw, _, _ = run_unified_case_solve(infra, metrics, comm, walls_case;
-                max_iter=rt_max_iter, tol=rt_tol, solver=:gmres, gmres_restart=60, gmres_max_restarts=10,
-                rtol=cold_rtol, report = rt_solve_report!(tm, :lw_walls_init))
-            rt_lap!(tm, :lw_walls_init)
-        end
-        I_cg_lw, κ_lw_used, σ_lw_used = run_unified_case_solve(infra, metrics, comm, lw_case;
-            max_iter=rt_max_iter, tol=rt_tol,
-            gmres_restart=lw_restart, gmres_max_restarts=cld(gm_cap, lw_restart), gmres_basis=gm_basis,
-            I_cg_all_init = I_init_lw,
-            solver = lw_solver,
-            rtol = cold ? cold_rtol : lw_rtol,
-            monitor = lw_monitor,
-            opts = SweepOptions(elem_solver = Symbol(get(inputs, :RT_elem_solver, :dense)), lu_cache_mb = Float64(get(inputs, :RT_lu_cache_mb, -1.0))),
-            report = rt_solve_report!(tm, :lw))
-        rt_lap!(tm, :lw_solve)
-        if get(inputs, :RT_neg_radiance_check, true) == true      # diagnostic only: never stops the run
-            try
-                rt_negative_radiance_report(mesh, I_cg_lw, κ_lw_used .+ σ_lw_used, comm; band="LW")
-            catch err
-                @warn "negative-radiance check failed (diagnostic only)" exception=err
+        # :RT_lw_bands  2 (default since 2026-11-24: window + opaque semi-gray bands fitted to RRTMGP, lw_top_column.jl)
+        #               | 1 (the single gray band of the earlier runs). One solve per band, heating summed; one warm
+        #               start per band (micro.rt_sol_lw holds a Vector of them with 2 bands).
+        nb = Int(get(inputs, :RT_lw_bands, 2))
+        nb in (1, 2) || error(":RT_lw_bands must be 1 or 2")
+        lw_prev = !micro.rt_sol_lw_available ? nothing :
+                  nb == 1 ? (micro.rt_sol_lw isa AbstractVector ? nothing : Any[micro.rt_sol_lw]) :
+                  (micro.rt_sol_lw isa AbstractVector && length(micro.rt_sol_lw) == nb ? micro.rt_sol_lw : nothing)
+        cold = lw_prev === nothing
+        lw_new = Any[]; flux_acc = zeros(length(micro.flux_lw))
+        try
+        for band = 1:nb
+            LW_BAND[] = nb == 1 ? nothing : lw_band_context(band)
+            κ_lw, σ_lw = atmos_to_rad_longwave(atmos_data, mesh.npoin)
+            lw = LWParams(inputs[:RT_ϵ_surface], inputs[:RT_T_space])
+            lw_top_setup!(mesh, atmos_data, bdy, inputs, comm)   # :RT_lw_top_bc (:column default | :vacuum), lw_top_column.jl
+            # Lateral treatment (lw_lateral.jl):
+            #   :RT_lw_lateral_bc    :blackbody (σT_back⁴/π on real walls) | :plane_parallel (local-column 1D radiance)
+            #   :RT_lw_periodic_mode :periodic | :walls (periodic faces become walls with local-column 1D inflow)
+            #   :RT_lw_cold_init     :zero | :walls (cold solve starts from the :walls solution, then solves periodic)
+            #                        | :column_mean (cold solve starts from the plane-parallel horizontal-mean column; default)
+            #                        | :column_local (cold solve starts from each node's own column: ICA)
+            #   :RT_lw_solver        :gmres | :gmres_precond (direction scaling by periodic path length, sweep_gmres.jl)
+            #                        | :jacobi (source iteration: no Krylov basis, same residual stop as GMRES; memory-lean)
+            #   :RT_lw_rtol          relaxes EVERY LW solve to max(rt_tol, rtol·‖b‖); 0 = off. Default 2.6e-8 ≈ absolute 0.1
+            #                        on BOMEX 32x32x30 4x4O4 (‖b‖ 3.8e6): heating error ≲3e-7 rel L2, ≲2e-3 K/day max
+            #                        (tolerance study, 2026-11-18), ~1e4 below the 3D−ICA difference
+            #   :RT_lw_cold_rtol     overrides :RT_lw_rtol for the cold solve (default: :RT_lw_rtol)
+            lat_bc = Symbol(get(inputs, :RT_lw_lateral_bc, :blackbody))
+            per_mode = Symbol(get(inputs, :RT_lw_periodic_mode, :periodic))
+            cold_init = Symbol(get(inputs, :RT_lw_cold_init, :column_mean))
+            lw_rtol   = Float64(get(inputs, :RT_lw_rtol, 2.6e-8))
+            cold_rtol = Float64(get(inputs, :RT_lw_cold_rtol, lw_rtol))
+            #   :RT_lw_surface_reflection  false (default) | true: Lambertian reflection of the downward LW flux at the
+            #                              surface with albedo 1 - ε (RadiativeCase.surface_reflection)
+            lw_refl = get(inputs, :RT_lw_surface_reflection, false) == true
+            need_cols = lat_bc == :plane_parallel || per_mode == :walls || (cold && cold_init == :walls)
+            cols = need_cols ? build_lw_lateral_columns(mesh, κ_lw .+ σ_lw, atmos_data.t_current, comm;
+                                                        ε_surface=lw.ε_surface, T_space=lw.T_space) : nothing
+            ovr = (per_mode == :walls || (cold && cold_init == :walls)) ? lw_lateral_prev_override(mesh, cols) : nothing
+            lw_case = build_longwave_case(atmos_data, κ_lw, σ_lw, bdy; ε_surface=lw.ε_surface, T_space=lw.T_space,
+                                          lateral_cols = lat_bc == :plane_parallel ? cols : nothing,
+                                          prev_override = per_mode == :walls ? ovr : nothing, surface_reflection = lw_refl)
+            rt_lap!(tm, :lw_case)                                           # optics, lateral columns and case
+            I_init_lw = lw_prev === nothing ? nothing : lw_prev[band]
+            lw_solver = Symbol(get(inputs, :RT_lw_solver, :gmres))
+            #   :RT_lw_tol_study     true: heating at every GMRES iterate of the LW solve, compared with the converged one
+            #                        (rt_tol_study_report!, rt_timing.jl). Costs one heating evaluation per iterate.
+            tol_study = get(inputs, :RT_lw_tol_study, false) == true
+            study = RTTolStudyPoint[]
+            lw_monitor = !tol_study ? nothing : (kind, res, nmv, Id, κu, σu) -> begin
+                _, dT, _, _ = compute_rt_radiative_heating_unified(mesh, Id, atmos_data, κu, σu, true, comm)
+                push!(study, RTTolStudyPoint(kind, res, nmv, copy(dT)))
             end
+            if cold && cold_init == :column_mean
+                I_init_lw = lw_column_mean_init(mesh, κ_lw .+ σ_lw, atmos_data.t_current, comm;
+                                                ε_surface=lw.ε_surface, T_space=lw.T_space)
+                rt_lap!(tm, :lw_mean_init)
+            elseif cold && cold_init == :column_local
+                I_init_lw = lw_column_local_init(mesh, κ_lw .+ σ_lw, atmos_data.t_current, comm;
+                                                 ε_surface=lw.ε_surface, T_space=lw.T_space)
+                rt_lap!(tm, :lw_ica_init)
+            end
+            if cold && cold_init == :walls && per_mode == :periodic
+                walls_case = build_longwave_case(atmos_data, κ_lw, σ_lw, bdy; ε_surface=lw.ε_surface, T_space=lw.T_space,
+                                                 lateral_cols = lat_bc == :plane_parallel ? cols : nothing,
+                                                 prev_override = ovr, surface_reflection = lw_refl)
+                I_init_lw, _, _ = run_unified_case_solve(infra, metrics, comm, walls_case;
+                    max_iter=rt_max_iter, tol=rt_tol, solver=:gmres, gmres_restart=60, gmres_max_restarts=10,
+                    rtol=cold_rtol, report = rt_solve_report!(tm, :lw_walls_init))
+                rt_lap!(tm, :lw_walls_init)
+            end
+            I_cg_lw, κ_lw_used, σ_lw_used = run_unified_case_solve(infra, metrics, comm, lw_case;
+                max_iter=rt_max_iter, tol=rt_tol,
+                gmres_restart=lw_restart, gmres_max_restarts=cld(gm_cap, lw_restart), gmres_basis=gm_basis,
+                I_cg_all_init = I_init_lw,
+                solver = lw_solver,
+                rtol = cold ? cold_rtol : lw_rtol,
+                monitor = lw_monitor,
+                opts = SweepOptions(elem_solver = Symbol(get(inputs, :RT_elem_solver, :dense)), lu_cache_mb = Float64(get(inputs, :RT_lu_cache_mb, -1.0))),
+                report = rt_solve_report!(tm, :lw))
+            rt_lap!(tm, :lw_solve)
+            if get(inputs, :RT_neg_radiance_check, true) == true      # diagnostic only: never stops the run
+                try
+                    rt_negative_radiance_report(mesh, I_cg_lw, κ_lw_used .+ σ_lw_used, comm; band="LW")
+                catch err
+                    @warn "negative-radiance check failed (diagnostic only)" exception=err
+                end
+            end
+            push!(lw_new, I_cg_lw)
+            Q_lw, dTdt_lw, F_net_lw, G_lw = compute_rt_radiative_heating_unified(
+                mesh, I_cg_lw, atmos_data, κ_lw_used, σ_lw_used, true, comm)
+            flux_acc .+= to_flux(dTdt_lw)
+            tol_study && rt_tol_study_report!(study, dTdt_lw, atmos_data.rho, mesh.npoin, comm, inputs; cold=cold)
+            rt_lap!(tm, :lw_heat)
         end
-        micro.rt_sol_lw = I_cg_lw
-        Q_lw, dTdt_lw, F_net_lw, G_lw = compute_rt_radiative_heating_unified(
-            mesh, I_cg_lw, atmos_data, κ_lw_used, σ_lw_used, true, comm)
-        micro.flux_lw .= to_flux(dTdt_lw)
-        tol_study && rt_tol_study_report!(study, dTdt_lw, atmos_data.rho, mesh.npoin, comm, inputs; cold=cold)
+        finally
+            LW_BAND[] = nothing                 # never leave a band selected (other LW users read it)
+        end
+        micro.rt_sol_lw = nb == 1 ? lw_new[1] : lw_new
+        micro.flux_lw .= flux_acc
         micro.rt_sol_lw_available = true
         rt_lap!(tm, :lw_heat)
     else
