@@ -362,9 +362,16 @@ paper's dissipation and its energy relaxation:
   The erratum's dome drains about as far: at 2530 s its centre
   ($\lvert x\rvert \le 3$ Mm, its colours turned back into log ρ) is at 0.4–0.85 of
   the coronal density of the atmosphere above 7 Mm (−14.2 to −14.8, against
-  −14.3 to −14.4), 0.3–0.6 dex above this floor ($0.2\rho_e$ in the corona);
-  `profile` puts a run's dome beside it, height by height, with its nodes at
-  the floors.
+  −14.3 to −14.4), 0.3–0.6 dex above this floor ($0.2\rho_e$ in the corona).
+  The run's dome is not thinner than the erratum's (`profile` on the
+  `EINT=lowbeta` run of 23 Nov): below its top it is 0.05–0.9 dex denser at
+  1955, 2185 and 2530 s, and thinner only at 9–14 Mm, where the erratum's dome
+  reaches and this one does not. Its rows are a minority of its nodes: at
+  2530 s 3–11 % of the centre's nodes at 6–10 Mm are at the density floor, its
+  10th percentile at the floor (−15.0) under a median of −13.6 to −14.0; and at
+  2185 s, when no node of the dome at 4–8 Mm is at a floor, the rows are
+  already there, in the elements whose velocity-form stress has collapsed (The
+  viscosity on the velocity, below).
 
   *Restarts* hold no DynSGS steps with the legacy sensor (`:dsgs_hold_steps`). A run
   starts with the coefficient at zero for two steps while the history of the
@@ -509,7 +516,14 @@ paper's dissipation and its energy relaxation:
   limit the coefficient is capped for; with $\rho_e s_{min}$ no node is
   diffused faster than by the operator this replaces, and where the
   atmosphere is the reference's it is $\rho\mu\nabla\mathbf v$ exactly. The
-  price is a weaker stress where the density jumps inside an element. Both
+  price is a weaker stress where the density jumps inside an element. In the
+  drained dome of the `EINT=lowbeta` run of 23 Nov (`elements` on
+  $x = -2, 0, 2$ Mm, 3.5–9.5 Mm) the elements that hold a node below the
+  reference density have a stress coefficient $s_{min}(\mu - \mu_\rho)$ 65 times
+  smaller than the others at 2185 s (median 0.33 against 22 $L_0v_0$), and 45 %
+  of them have a node-to-node part of $\log\rho$ above 0.1 dex, against 6 % of
+  the others (52 % and 22 % at 2530 s): the rows of its density maps, which
+  the momentum form of 20 Nov does not have. Both
   terms are diffusions with a non-negative coefficient; the mass flux written
   by itself, $\nabla\cdot(\mathbf v F_\rho) + \nabla\cdot(\rho_e s_{min}\mu\nabla\mathbf v)$,
   is not (its stress coefficient is negative at the dense nodes of an element
