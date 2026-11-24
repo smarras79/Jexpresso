@@ -53,7 +53,7 @@ The simulation is chosen in `user_inputs.jl`:
 | `LK22_REF` (environment variable) | 1, 2 (default), 3, 4, 5 | mesh and time step (below); also `LK22_TEND`, `LK22_OUT_DT` and the restart (Restart) |
 | `LK22_RHO_FLOOR`, `LK22_P_FLOOR` (environment variables) | 0.2 (default) | the density and pressure floors as fractions of the reference atmosphere (Notes, "The floor fractions") |
 | `LK22_REF_WEIGHT`, `LK22_ENERGY_SPLIT` (environment variables) | 0 (default), 1 | the reference-weighted DynSGS operator of `fluxEmergenceLeake2022_2D` (its Deviations, item 5) and the split energy flux (`src/kernel/physics/SGS.jl`; in the 2.5D emergence it changed nothing, that README's Verification); `LK22_REF_WEIGHT=1` on any mesh (Meshes and time step, "Vertical resolution") |
-| `LK22_DSGS` (environment variable) | `default`, `lk10` | `lk10`: the DynSGS of `problems/MHD/fluxEmergenceLeake2010` (below, "The DynSGS of the 2010 case"): the reference-weighted operator, the energy-consistent energy slot with Lare-like heating, the induction-only resistivity sensor, the stability cap and a tenth of the mass diffusion; each also alone: `LK22_ENERGY=thermal`, `LK22_HEAT=shock`, `LK22_ETA=induction`, `LK22_STABCAP=0.2`, `LK22_RHOFAC=0.1` |
+| `LK22_DSGS` (environment variable) | `default`, `lk10` | `lk10`: the DynSGS of `problems/MHD/fluxEmergenceLeake2010` (below, "The DynSGS of the 2010 case"): the reference-weighted operator, the energy-consistent energy slot with shock-mode heating (`shock`: the DynSGS viscosity heats only where the flow is compressed. Lare's default tensor shock viscosity heats in shear too, which `LK22_HEAT=viscous` does: `problems/MHD/fluxEmergenceLeake2010`, README, "The heat of the DynSGS"), the induction-only resistivity sensor, the stability cap and a tenth of the mass diffusion; each also alone: `LK22_ENERGY=thermal`, `LK22_HEAT=shock`, `LK22_ETA=induction`, `LK22_STABCAP=0.2`, `LK22_RHOFAC=0.1` |
 
 ## Units
 
@@ -258,10 +258,10 @@ axial field is 0.84 of the initial one at $t = 5$, 0.64 at 10 and 0.38 at
 $\eta$ and the rope's expansion account for, with no node at a floor.
 There the default energy slot heats the corona at 7.7–9 Mm with the DynSGS's
 own dissipation of the start's waves (245 against 150 by $t = 10$); the
-energy-consistent slot with Lare-like heating does not (182) and keeps a
+energy-consistent slot with shock-mode heating does not (182) and keeps a
 little more of the rope (that README, "The DynSGS of the 2010 case"). So:
 `LK22_REF = 6` (or 3), the reference-weighted operator, the energy-consistent
-slot with Lare-like heating, and the stability cap as a safety net (it acts
+slot with shock-mode heating, and the stability cap as a safety net (it acts
 only if the fast CFL number grows well beyond the step's design, which it
 did not in these tests); not the rest of `LK22_DSGS=lk10`.
 
@@ -456,7 +456,7 @@ Short runs on 4 threads at `LK22_REF = 1`; the full runs are for a cluster.
   $2.6\times10^9$; the damping layers and the floors); with the energy-
   consistent slot added and all its heat kept (`LK22_ENERGY=thermal`,
   `LK22_HEAT=1`) by 0.22, so the slot returns as heat what the DynSGS
-  dissipates; with `LK22_DSGS=lk10`, whose Lare-like heating does not return
+  dissipates; with `LK22_DSGS=lk10`, whose shock-mode heating does not return
   the DynSGS resistive heat and its viscous heat outside compressions, by
   2.7×10³. The mass is the same to the last digit in the three.
   Whether the set helps was tested on the 2.5D cross-section

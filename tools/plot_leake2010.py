@@ -1362,11 +1362,13 @@ def cmd_drain(a):
 GAMMA = 5.0 / 3.0
 NU_CODE = 0.01326                       # the case's explicit kinematic viscosity above the photosphere (user_flux.jl, LK10_NU)
 ETA0_CODE, JCRIT_CODE = 1.18e-4, 126.3  # its anomalous resistivity eta0 max(0, |curl B|/jcrit - 1) (user_flux.jl), code units
-HEAT_TERMS = ["p dV", "nu", "shock", "anom eta", "E diff", "rho diff", "relax", "GLM psi"]
+HEAT_TERMS = ["p dV", "nu", "DSGS heat", "anom eta", "E diff", "rho diff", "relax", "GLM psi"]
 CH_DEFAULT = 274.655                    # the GLM speed of the tube + quadrupole case (its log: "GLM: c_h = ...")
 TAU0_CODE, TAU_EXP, RELAX_RHOMIN = 23.0 / 23.1946, 1.43, 1.0e-5   # the energy relaxation (user_source.jl)
 G_EXACT = 2.74e4 * 1.5e7 / (1.380649e-16 * 5700.0 / (1.125 * 1.67262192e-24))   # gravity, code (user_flux.jl, LK10_G)
 LOST_TERMS = ["DSGS visc", "DSGS eta"]
+LARE_VISC1, LARE_VISC2 = 0.1, 0.5       # LareXd's shock-viscosity coefficients (control.f90 of 2.6-2.9, the defaults)
+LARE_DX_MM = 0.048                      # its cell in the figure window: the paper's grid, 0.0375 Mm at the surface (REF 4's mean node gap)
 
 
 def _case_value(d, key, default):
@@ -1482,11 +1484,14 @@ def _ref_atmos(yc, mcz):
     return p / T, p
 
 
-def heat_fields(g, thr, ymin, ymax, rhofac, mcz, ch, relax=True, relax_ymin=-np.inf):
+def heat_fields(g, thr, ymin, ymax, rhofac, mcz, ch, relax=True, relax_ymin=-np.inf, mode="shock", lare_dx=LARE_DX_MM):
     """Every term of the temperature equation of the plasma of one snapshot, as the code applies it with
-    JEXPRESSO_LK10_HEAT=shock, on the mesh's own lattice (cmd_heat). The DynSGS diffuses each slot q as
-    div(rho_e mu grad((q - q_e)/rho_e)) (:dsgs_ref_weight, the case's user_primitives!), q_e the reference state
-    (rho_e, p_e of the atmosphere, at rest), and its heat is SGS.jl's _dsgs_energy_consistent_2d!, shock mode."""
+    JEXPRESSO_LK10_HEAT=mode (shock, viscous or a fraction), on the mesh's own lattice (cmd_heat). The DynSGS
+    diffuses each slot q as div(rho_e mu grad((q - q_e)/rho_e)) (:dsgs_ref_weight, the case's user_primitives!), q_e
+    the reference state (rho_e, p_e of the atmosphere, at rest), and its heat is SGS.jl's
+    _dsgs_energy_consistent_2d!. Also what LareXd's default tensor shock viscosity would heat with this flow
+    (lagran.F90 of 2.6-2.9, Q_MONO off): sigma_ij = L rho (visc1 c_f + visc2 L |s_ij|) s_ij, s the traceless
+    strain rate, in every cell, heating by sigma_ij dv_i/dx_j; L its cell, lare_dx [Mm]."""
     X, Y = g["X"], g["Y"]
     G = lambda n: grid2d(g, g["fields"][n])
     L = G("log10rho_cgs")
@@ -1516,6 +1521,23 @@ def heat_fields(g, thr, ymin, ymax, rhofac, mcz, ch, relax=True, relax_ymin=-np.
     shock = np.minimum(r * mud * np.minimum(div, 0.0) ** 2, np.maximum(Dm - Dp, 0.0))
     j2 = (dx(By) - dy(Bx)) ** 2 + dx(Bz) ** 2 + dy(Bz) ** 2
     eta_an = ETA0_CODE * np.maximum(np.sqrt(j2) / JCRIT_CODE - 1.0, 0.0)
+    visc_all = np.maximum(Dm - Dp, 0.0)                  # all the DynSGS viscosity dissipates
+    eta_dsgs = np.maximum(etaB - eta_an, 0.0) * j2       # and its resistivity
+    if mode == "shock":
+        applied, lost_v, lost_e = shock, visc_all - shock, eta_dsgs
+    elif mode == "viscous":
+        applied, lost_v, lost_e = visc_all, 0.0 * visc_all, eta_dsgs
+    else:                                                # a fraction f of all of it (ψ diffusion not counted)
+        fh = float(mode)
+        applied, lost_v, lost_e = fh * (visc_all + eta_dsgs), (1.0 - fh) * visc_all, (1.0 - fh) * eta_dsgs
+    # LareXd's default tensor shock viscosity on this flow (2.5D: no z derivatives; its qxx, qyy, qxy, qxz, qyz)
+    Lc = lare_dx / L0_MM
+    cf = np.sqrt(np.maximum(GAMMA * p + Bx ** 2 + By ** 2 + Bz ** 2, 0.0) / np.maximum(r, 1e-300))
+    ux, uy, vx, vy, wx, wy = dx(u), dy(u), dx(v), dy(v), dx(w), dy(w)
+    strains = ((0.5 * (uy + vx), uy + vx), (0.5 * wx, wx), (0.5 * wy, wy),
+               ((2.0 * ux - vy) / 3.0, ux), ((2.0 * vy - ux) / 3.0, vy))
+    lare = sum(Lc * r * (LARE_VISC1 * cf + LARE_VISC2 * Lc * np.abs(sij)) * sij * dij for sij, dij in strains)
+    lare = np.maximum(lare, 0.0)
     Rr = div2(re * rhofac * mud, r / re)                 # the DynSGS mass diffusion
     # the energy relaxation to the internal energy the reference atmosphere has at the height of the same density
     yt = np.linspace(min(float(np.min(yc)), -200.0), float(np.max(yc)), 20001)
@@ -1529,14 +1551,15 @@ def heat_fields(g, thr, ymin, ymax, rhofac, mcz, ch, relax=True, relax_ymin=-np.
     psi = G("ψ") if "ψ" in g["fields"] else np.zeros_like(u)
     q = {"p dV": -p * div,                               # compression heats, expansion cools: ideal
          "nu": Dp,
-         "shock": shock,                                 # the DynSGS viscosity, in compression only
+         "DSGS heat": applied,                           # the DynSGS heat as the run's mode applies it
          "anom eta": eta_an * j2,                        # the case's anomalous resistivity, in full
          "E diff": div2(re * mud, (e - ee) / re),        # the DynSGS diffusion of the internal energy departure
          "rho diff": -(e / r) * Rr,                      # it leaves e in place: T = p/rho rises where mass is taken away
          "relax": qrel,
          "GLM psi": (ch / dh) * psi * psi,
-         "DSGS visc": np.maximum(Dm - Dp, 0.0) - shock,  # dissipated, not heated
-         "DSGS eta": np.maximum(etaB - eta_an, 0.0) * j2}
+         "DSGS visc": lost_v,                            # dissipated, not heated
+         "DSGS eta": lost_e,
+         "Lare visc": lare}                              # what Lare's default tensor shock viscosity would heat
     W = _trapw(yc)[:, None] * _trapw(xc)[None, :]
     return dict(X=X, dense=dense, W=W, r=r, T=T, u=u, v=v, q=q, dx=dx, dy=dy, dh=dh,
                 Mbox=np.sum(np.where(box, W * r, 0.0)))     # all the plasma of the box: the unit of mass, as drain's
@@ -1582,11 +1605,13 @@ def heat_lagrangian(F1, F2, t1, t2, sel1, sel2, tcut=2.0e5, jump=0.3):
 def cmd_heat(a):
     """What heats the dense plasma, from the snapshots. For the plasma denser than 10^thr g cm^-3 in the box
     ymin < y < 20 Mm, |x| < 13 Mm, split into the center (|x| < --xsplit Mm, where the dome's field lies flat) and
-    the flanks, each term of its temperature equation as the code applies it with JEXPRESSO_LK10_HEAT=shock, at the
-    instant of each snapshot, as the mass-weighted mean dT/dt [K per 100 s]:
+    the flanks, each term of its temperature equation as the code applies it with the run's JEXPRESSO_LK10_HEAT
+    (lk10_case.txt), at the instant of each snapshot, as the mass-weighted mean dT/dt [K per 100 s]:
       p dV      compression (heats) and expansion (cools), -p div v: ideal, the paper's too;
       nu        the case's explicit viscosity (0.01326 L0 v0 above the photosphere), in full;
-      shock     the DynSGS viscosity where the flow is compressed, rho mu (div v)^2 for div v < 0;
+      DSGS heat the DynSGS heat the run applies: with heating = shock its viscosity where the flow is compressed,
+                rho mu (div v)^2 for div v < 0; with viscous all its viscous dissipation; with a fraction f, f of
+                all it dissipates;
       anom eta  the case's anomalous resistivity, eta |curl B|^2, in full (zero below |curl B| = j_crit);
       E diff    the DynSGS diffusion of the internal energy's departure from the reference atmosphere;
       rho diff  the DynSGS mass diffusion (rho_factor x mu, lk10_case.txt): it leaves the internal energy where it
@@ -1595,8 +1620,12 @@ def cmd_heat(a):
       GLM psi   the GLM damping of psi, whose energy 1/2 psi^2 the pressure gains (alpha_p c_h/dh psi^2; --ch);
       sum       of these: DT/Dt of the plasma, but for the temperature floor (JEXPRESSO_LK10_TFLOOR), which a
                 snapshot does not show.
-    Then what the DynSGS dissipates and 'shock' does not heat (heating = 1 would): its viscosity outside
-    compression, and its resistivity. Where two snapshots are close (the run's off-grid outputs, 12-17 s apart),
+    Then what the DynSGS dissipates and the run does not heat (heating = 1 would): its viscosity (outside
+    compression, with shock), and its resistivity. Last, 'Lare visc': what LareXd's default tensor shock viscosity
+    (the paper's code; lagran.F90 of 2.6-2.9, built without Q_MONO) would heat with the same flow: it acts in every
+    cell, expanding ones too, sigma_ij = L rho (0.1 c_f + 0.5 L |s_ij|) s_ij on the traceless strain rate s, and all
+    of what it dissipates is heat; L is its cell, --lare-dx Mm (0.048: the paper's grid in the figure window, a
+    factor ~1.3 either way). Where two snapshots are close (the run's off-grid outputs, 12-17 s apart),
     the observed DT/Dt = dT/dt + v.grad T, node by node, is set against the mean of the two budgets on the nodes
     that stay in the set, below 2e5 K, and change by less than 30 % (fronts sweeping over a node excluded): what
     the budget misses (the floor, and its own errors) is their difference. The gradients are finite differences on
@@ -1613,8 +1642,9 @@ def cmd_heat(a):
             seen[d] = (float(_case_value(d, "rho_factor", "1.0")) if a.rhofac is None else a.rhofac,
                        _case_value(d, "heating", "not recorded"), float(_case_value(d, "mcz", "1.3")),
                        _case_value(d, "relax", "true") == "true", float(_case_value(d, "relax_ymin", "-Inf")))
-        rf, _, mcz, rl, rly = seen[d]
-        F = heat_fields(load(f, names), a.thr, a.ymin, a.ymax, rf, mcz, a.ch, rl, rly)      # relax_ymin: in L0
+        rf, hm, mcz, rl, rly = seen[d]
+        hm = "shock" if hm == "not recorded" else hm
+        F = heat_fields(load(f, names), a.thr, a.ymin, a.ymax, rf, mcz, a.ch, rl, rly, hm, a.lare_dx)   # relax_ymin: in L0
         regs = {"center": F["dense"] & (np.abs(F["X"]) < a.xsplit)[None, :],
                 "flanks": F["dense"] & (np.abs(F["X"]) >= a.xsplit)[None, :]}
         rows.append((t, {k: heat_means(F, s) for k, s in regs.items()}))
@@ -1626,16 +1656,17 @@ def cmd_heat(a):
     if not rows:
         raise SystemExit("heat: no snapshots")
     print(f"plasma with log10 rho > {a.thr:g} in {a.ymin:g} < y < {a.ymax:g} Mm, |x| < 13 Mm: each term of DT/Dt as applied "
-          f"with heating = shock, mass-weighted mean [K per 100 s]; GLM: c_h = {a.ch:g}, dh = {F['dh']:.4g} (lattice)")
+          f"with the run's heating, mass-weighted mean [K per 100 s]; GLM: c_h = {a.ch:g}, dh = {F['dh']:.4g} (lattice); "
+          f"Lare visc with its cell {a.lare_dx:g} Mm")
     for d in seen:
         if _case_value(d, "visc_form", "momentum") == "velocity":
-            print(f"   {os.path.basename(os.path.normpath(d))}: viscosity on the velocity (JEXPRESSO_LK10_VISC=velocity); the nu and shock "
-                  f"columns below are those of the momentum form, an upper bound there (rho for rho_e s_min)")
+            print(f"   {os.path.basename(os.path.normpath(d))}: viscosity on the velocity (JEXPRESSO_LK10_VISC=velocity); the nu and DSGS "
+                  f"heat columns below are those of the momentum form, an upper bound there (rho for rho_e s_min)")
     for d, (rf, h, *_) in seen.items():
-        print(f"   {os.path.basename(os.path.normpath(d))}: heating = {h}, rho_factor = {rf:g}"
-              + ("" if h in ("shock", "not recorded") else "  (not shock: there the 'not heated' columns heated too)"))
+        print(f"   {os.path.basename(os.path.normpath(d))}: heating = {h}"
+              + (" (read as shock)" if h == "not recorded" else "") + f", rho_factor = {rf:g}")
     hdr = (f"{'t [s]':>7} {'mass':>7} {'T K':>8} | " + " ".join(f"{n:>8}" for n in HEAT_TERMS)
-           + f" {'sum':>8} | " + " ".join(f"{n:>9}" for n in LOST_TERMS))
+           + f" {'sum':>8} | " + " ".join(f"{n:>9}" for n in LOST_TERMS) + f" | {'Lare visc':>9}")
     csv = []
     for ir, (reg, label) in enumerate((("center", f"|x| < {a.xsplit:g} Mm"), ("flanks", f"{a.xsplit:g} <= |x| < 13 Mm"))):
         print(f"--- {reg}: {label}; mass in units of the first snapshot's whole box (as drain's: center + flanks = its mass)")
@@ -1646,8 +1677,8 @@ def cmd_heat(a):
                 continue
             s = sum(x[n] for n in HEAT_TERMS)
             print(f"{t:7.0f} {x['M'] / M0:7.3g} {x['T']:8.3g} | " + " ".join(f"{x[n]:8.3g}" for n in HEAT_TERMS)
-                  + f" {s:8.3g} | " + " ".join(f"{x[n]:9.3g}" for n in LOST_TERMS))
-            csv.append([ir, t, x["M"], x["T"], *(x[n] for n in HEAT_TERMS), s, *(x[n] for n in LOST_TERMS)])
+                  + f" {s:8.3g} | " + " ".join(f"{x[n]:9.3g}" for n in LOST_TERMS) + f" | {x['Lare visc']:9.3g}")
+            csv.append([ir, t, x["M"], x["T"], *(x[n] for n in HEAT_TERMS), s, *(x[n] for n in LOST_TERMS), x["Lare visc"]])
         for t1, t2, ob in pairs:
             o, b, fr = ob[reg]
             if not fr > 0:
@@ -1657,7 +1688,7 @@ def cmd_heat(a):
     out = os.path.join(a.outdir, "heat.csv")
     np.savetxt(out, np.array(csv), delimiter=",",
                header="region (0 center, 1 flanks), t [s], mass [code], mean T [K], "
-                      + ", ".join(HEAT_TERMS) + ", sum, " + ", ".join(LOST_TERMS) + " (K per 100 s)")
+                      + ", ".join(HEAT_TERMS) + ", sum, " + ", ".join(LOST_TERMS) + ", Lare visc (K per 100 s)")
     print("wrote", out)
 
 
@@ -1695,6 +1726,70 @@ def cmd_column(a):
             j = int(np.argmin(np.abs(Y - yq)))
             print(f"{Y[j]:6.2f} {L[j]:8.2f} {T[j]:9.3g} {P[j] * P_PH_CGS:9.3g} {Bp[j] * B0_GAUSS:8.2f} {Bx[j] * B0_GAUSS:8.2f} "
                   f"{Bz[j] * B0_GAUSS:8.2f} {beta[j]:9.3g} {u[j]:8.2f} {v[j]:8.2f} {ang[j]:6.1f} {mu[j]:8.3g} {eta[j]:8.3g}")
+
+
+# The erratum's Fig. 3 (Leake et al. 2011, ApJ 741:125) by height: its colours turned back into log10 rho
+# [g cm^-3] through its colour bar (white field lines and arrows left out), median over the centre (|x| <= 3 Mm)
+# and over the flanks (3 < |x| <= 8 Mm) at each height of ERRATUM_Y [Mm]; nan where too few pixels are not
+# white. Read off the published figure (a factor ~0.1 dex in a smooth region); for cmd_profile.
+ERRATUM_Y = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0]
+ERRATUM_PROFILE = {
+    920: ([-10.78, -12.44, -13.41, -14.32, -14.32, -14.32, -14.32, -14.32, -14.31, -14.32, -14.32, -14.32, -14.32, -14.32],
+          [-11.62, -13.02, -13.91, -14.20, -14.21, -14.32, -14.32, -14.32, -14.33, -14.33, -14.43, -14.32, -14.32, -14.32]),
+    1380: ([np.nan, -10.52, -10.62, -10.52, -10.19, -10.95, -14.42, -14.32, -14.32, -14.32, -14.32, np.nan, -14.32, -14.32],
+           [-9.95, -10.51, -10.41, -10.40, -11.62, -14.32, -14.32, -14.32, -14.32, -14.32, -14.32, -14.32, -14.32, -14.32]),
+    1610: ([np.nan, -11.20, -11.38, -11.41, -11.43, -11.36, -11.14, -10.96, -11.40, -14.43, -14.32, -14.32, -14.32, -14.32],
+           [-10.32, -10.62, -10.65, -11.20, -11.30, -11.13, -10.99, -11.23, -14.43, -14.43, -14.43, -14.35, -14.32, -14.32]),
+    1955: ([-10.74, -11.38, -12.27, -12.59, -12.62, -12.54, -12.44, -12.21, -11.99, -12.11, -12.37, -14.42, -14.36, -14.32],
+           [-10.42, -10.72, -11.08, -11.38, -11.60, -11.59, -12.07, -12.21, -12.21, -13.04, -14.43, -14.32, -14.32, -14.32]),
+    2185: ([-10.95, -11.59, -12.54, -12.70, -12.75, -13.28, -13.30, -13.19, -12.98, -12.72, -12.21, -12.46, -13.02, -14.04],
+           [-10.65, -10.94, -11.28, -11.50, -11.79, -12.02, -12.19, -12.69, -13.00, -13.17, -14.43, -14.46, -14.43, -14.43]),
+    2530: ([-10.94, -12.15, -13.11, -13.62, -13.90, -14.18, -14.42, -14.44, -14.48, -14.78, -14.74, -14.75, -14.62, -14.57],
+           [-10.74, -11.19, -11.51, -11.85, -12.26, -12.93, -13.90, -14.22, -14.59, -14.81, -14.56, -14.60, -14.49, -14.43]),
+}
+
+
+def cmd_profile(a):
+    """The density of the dome by height, against the erratum's Fig. 3. At each requested time, for bands 0.5 Mm
+    thick around y = 2, 3, ..., 15 Mm: the run's median log10 rho [g cm^-3] over the centre (|x| <= 3 Mm) and over
+    the flanks (3 < |x| <= 8 Mm), the erratum's at that height and time (ERRATUM_PROFILE: its colours turned back
+    into log10 rho, medians over the same x ranges), their difference (run - erratum, dex; negative: the run is
+    thinner), the run's 10th percentile (how far its thinnest nodes go), and the share of its nodes held at the
+    density floor (0.2 p_e(y)/T_cor) and at the temperature floor (lk10_case.txt's tfloor). Whether, and where, the
+    run's dome drains more than the paper's, with the floors that a thinner dome meets kept apart."""
+    items = runs_of(a.run)
+    sel = nearest(items, a.times)
+    d0 = os.path.dirname(os.path.abspath(sel[0][1]))
+    mcz = float(_case_value(d0, "mcz", "1.3"))
+    tfl = float(_case_value(d0, "tfloor", "0.1"))
+    TCOR = 8.6e5 / 5700.0
+    for t, f in sel:
+        g = load(f, ["log10rho_cgs", "ρ", "T"])
+        X, Y = g["X"], g["Y"]
+        G = lambda n: grid2d(g, g["fields"][n])
+        L, R, T = G("log10rho_cgs"), G("ρ"), G("T")
+        _, pe = _ref_atmos(Y / L0_MM, mcz)
+        atR = R <= (0.2 * pe / TCOR)[:, None] * (1.0 + 1e-6)
+        atT = T <= tfl * (1.0 + 1e-6)
+        te = min(ERRATUM_PROFILE, key=lambda k: abs(k - t))
+        ec, ef = ERRATUM_PROFILE[te] if abs(te - t) <= 1.0 else ([np.nan] * len(ERRATUM_Y),) * 2
+        print(f"--- t = {t:.0f} s ({os.path.basename(f)}): median log10 rho [g cm^-3] by height"
+              + (f"; erratum's Fig. 3 at {te} s" if abs(te - t) <= 1.0 else "; no panel of the erratum at this time"))
+        print(f"{'y Mm':>5} | {'centre |x|<=3 Mm: run':>21} {'erratum':>8} {'diff':>6} {'p10':>7} {'rho fl':>7} {'T fl':>6}"
+              f" | {'flanks 3<|x|<=8: run':>20} {'erratum':>8} {'diff':>6} {'p10':>7} {'rho fl':>7} {'T fl':>6}")
+        for k, yq in enumerate(ERRATUM_Y):
+            band = np.abs(Y - yq) <= 0.25
+            cells = []
+            for msk, ev in (((np.abs(X) <= 3.0), ec[k]), ((np.abs(X) > 3.0) & (np.abs(X) <= 8.0), ef[k])):
+                Wm = np.ix_(band, msk)
+                v = L[Wm]
+                if v.size == 0:
+                    cells.append(f"{'':>21} {'':>8} {'':>6} {'':>7} {'':>7} {'':>6}")
+                    continue
+                m = float(np.median(v))
+                cells.append(f"{m:21.2f} {ev:8.2f} {m - ev:6.2f} {float(np.percentile(v, 10)):7.2f} "
+                             f"{atR[Wm].mean():7.1%} {atT[Wm].mean():6.1%}")
+            print(f"{yq:5.1f} | {cells[0]} | {cells[1]}")
 
 
 def _highmode(F, nop=4, axis=0):
@@ -2114,6 +2209,10 @@ def main():
     s.add_argument("--x", type=float, default=0.0, help="the vertical line, x [Mm] (default 0)")
     s.add_argument("--ymin", type=float, default=0.0); s.add_argument("--ymax", type=float, default=16.0)
     s.add_argument("--dy", type=float, default=0.5, help="height step of the table [Mm]")
+    s = sub.add_parser("profile", parents=[common]); s.set_defaults(fn=cmd_profile)
+    s.add_argument("run")
+    s.add_argument("--times", type=lambda t: [float(x) for x in t.split(",")], default=[1955.0, 2185.0, 2530.0],
+                   help="times [s], comma-separated (default 1955,2185,2530; the erratum has 920, 1380, 1610 too)")
     s = sub.add_parser("noise", parents=[common]); s.set_defaults(fn=cmd_noise)
     s.add_argument("run")
     s.add_argument("--times", type=lambda t: [float(x) for x in t.split(",")], default=[1955.0, 2185.0, 2530.0],
@@ -2144,6 +2243,8 @@ def main():
     s.add_argument("--rhofac", type=float, default=None,
                    help="the factor on the DynSGS mass diffusion (default: rho_factor of each directory's lk10_case.txt)")
     s.add_argument("--pair", type=float, default=20.0, help="snapshots at most this far apart [s] are compared with the budget")
+    s.add_argument("--lare-dx", type=float, default=LARE_DX_MM,
+                   help="the cell of the paper's Lare grid for the 'Lare visc' column [Mm] (default 0.048)")
     s = sub.add_parser("null", parents=[common]); s.set_defaults(fn=cmd_null)
     s.add_argument("runs", nargs="+", help="RUN or LABEL=RUN")
     s.add_argument("--thr", type=float, default=-13.0, help="log10 rho threshold of the dome top [g cm^-3]")

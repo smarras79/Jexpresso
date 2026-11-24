@@ -557,17 +557,20 @@ const dsgs_split_energy = Ref{Bool}(false)
 const dsgs_thermal_energy = Ref{Bool}(false)
 # :dsgs_heating — what _dsgs_energy_consistent_2d! does with the heat Q that the DynSGS terms
 # dissipate. A number is the fraction of Q put into the internal energy: 1 (the default)
-# conserves the total energy, 0 loses what the DynSGS dissipates. "shock" (dsgs_heat_shock)
-# heats as a Lagrangian-remap code with a shock viscosity does (Lare, Arber et al. 2001, whose
-# remap does not return the kinetic energy it loses as heat, `rke = .FALSE.`): the explicit
-# viscosity and resistivity of the case (:mhd_dissipation, :mhd_anomalous_eta) heat in full,
-# the DynSGS viscosity only where the flow is compressed, ρ μ (∇·v)₋² (no more than it
-# dissipates there), and the DynSGS resistivity and ψ diffusion not at all.
-# problems/MHD/fluxEmergenceLeake2010: with the default the plasma the emerging field lifts
-# into the corona was heated from below 2·10⁴ K to 10⁵ K in a few hundred seconds, stopped
-# draining, and held the field down.
-const dsgs_heat_factor = Ref{Float64}(1.0)
-const dsgs_heat_shock  = Ref{Bool}(false)
+# conserves the total energy, 0 loses what the DynSGS dissipates. "shock" (dsgs_heat_shock):
+# the explicit viscosity and resistivity of the case (:mhd_dissipation, :mhd_anomalous_eta)
+# heat in full, the DynSGS viscosity only where the flow is compressed, ρ μ (∇·v)₋² (no more
+# than it dissipates there), and the DynSGS resistivity and ψ diffusion not at all: a scalar
+# (Wilkins q_mono) shock viscosity. "viscous" (dsgs_heat_viscous): everything the DynSGS
+# viscosity and the explicit ν dissipate heats, in compression and in shear, and so does the
+# explicit η; the DynSGS resistivity and ψ diffusion do not. That is the heat of Lare's default
+# build (LareXd 2.6–2.9, Arber et al. 2001; Makefile with Q_MONO off): its tensor shock
+# viscosity σ = (ν₁ρc_f L + ν₂ρL²|s|)(ε − ⅓δ∇·v) acts in every cell, expanding ones too, and
+# heats by σ:ε ≥ 0, while its remap loses the kinetic and magnetic energy it diffuses
+# (`rke = .FALSE.`). problems/MHD/fluxEmergenceLeake2010 (README, "The heat of the DynSGS").
+const dsgs_heat_factor  = Ref{Float64}(1.0)
+const dsgs_heat_shock   = Ref{Bool}(false)
+const dsgs_heat_viscous = Ref{Bool}(false)
 
 @inline function SGS_diffusion(visc_coeffieq, ieq,
                                ρ,
@@ -2140,8 +2143,9 @@ end
 # momentum part exactly where the viscous term is not clipped, the field part up to
 # ∫η ∇B_e:∇δB, a boundary term for a potential reference field. Explicit ν, η
 # (:mhd_dissipation, :mhd_anomalous_eta) ride in μ_dsgs, so their heating is included.
-# :dsgs_heating (dsgs_heat_factor, dsgs_heat_shock above) scales Q or keeps only its
-# shock-viscosity and explicit parts; νphys, ηphys are those explicit coefficients.
+# :dsgs_heating (dsgs_heat_factor, dsgs_heat_shock, dsgs_heat_viscous above) scales Q or keeps
+# only its shock-viscosity and explicit parts, or its viscous and explicit parts; νphys, ηphys
+# are those explicit coefficients.
 # ================================================================================
 function _dsgs_energy_consistent_2d!(rhs_diff_el::AbstractArray{TT}, μ_dsgs::AbstractMatrix{TT},
                                      q::AbstractMatrix{TT}, qe::AbstractMatrix,
@@ -2154,6 +2158,7 @@ function _dsgs_energy_consistent_2d!(rhs_diff_el::AbstractArray{TT}, μ_dsgs::Ab
                                      lvel::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
     fheat  = TT(dsgs_heat_factor[])
     lshock = dsgs_heat_shock[]
+    lvisc  = dsgs_heat_viscous[]
     @inbounds for ie = 1:nelem
         μu = μ_dsgs[ie,2]; μv = μ_dsgs[ie,3]; μw = μ_dsgs[ie,5]
         ηx = μ_dsgs[ie,6]; ηy = μ_dsgs[ie,7]; ηz = μ_dsgs[ie,8]; μψ = μ_dsgs[ie,9]
@@ -2163,7 +2168,7 @@ function _dsgs_energy_consistent_2d!(rhs_diff_el::AbstractArray{TT}, μ_dsgs::Ab
         μρ   = lvel ? μ_dsgs[ie,1] : zero(TT)
         # the explicit ν, η riding in μ_dsgs (dsgs_heat_shock: they heat, the DynSGS part by compression only)
         νp = (lshock && νphys !== nothing) ? TT(νphys[ie]) : zero(TT)
-        ηp = (lshock && ηphys !== nothing) ? TT(ηphys[ie]) : zero(TT)
+        ηp = ((lshock || lvisc) && ηphys !== nothing) ? TT(ηphys[ie]) : zero(TT)
         for l = 1:ngl, k = 1:ngl
             # element-local ξ and η derivatives of u, m̃ = ρu/ρ_e, δB and ψ at node (k, l)
             duξ = zero(TT); duη = zero(TT); dvξ = zero(TT); dvη = zero(TT); dwξ = zero(TT); dwη = zero(TT)
@@ -2222,6 +2227,11 @@ function _dsgs_energy_consistent_2d!(rhs_diff_el::AbstractArray{TT}, μ_dsgs::Ab
                 dv  = min(dudx + dvdy, zero(TT))
                 wsh = lvel ? ρ*μρ + ρe*max(μu - μρ - νe, zero(TT)) : ρ*max(μu - νp, zero(TT))
                 Q   = Dp + QBp + min(wsh*dv*dv, max(max(Dm, zero(TT)) - Dp, zero(TT)))
+            elseif lvisc
+                # all the viscous dissipation (DynSGS and explicit ν), and the explicit η's Ohmic heat
+                QBp = (lcurlB ? ηp*jz*jz : ηp*(dbxdx*dbxdx + dbxdy*dbxdy + dbydx*dbydx + dbydy*dbydy)) +
+                      ηp*(dbzdx*dbzdx + dbzdy*dbzdy)
+                Q   = max(Dm, zero(TT)) + QBp
             else
                 Q   = fheat*(max(Dm, zero(TT)) + QB + ηz*(dbzdx*dbzdx + dbzdy*dbzdy) + μψ*(dpdx*dpdx + dpdy*dpdy))
             end
@@ -2248,7 +2258,8 @@ end
 #
 # (m̃ = ρu/ρ_e; the B slots are component Laplacians in 3D, so their heat is the gradient
 # form). With :dsgs_heating => "shock" the explicit ν and η heat in full, the DynSGS viscosity
-# only where the flow is compressed and the DynSGS resistivity not at all (2D, above).
+# only where the flow is compressed and the DynSGS resistivity not at all; with "viscous" all the
+# viscous dissipation and the explicit η heat, the DynSGS resistivity not at all (2D, above).
 # ================================================================================
 # x, y, z derivatives of field f at element node (ie, i, j, k) from its ξ, η, ζ derivatives
 @inline function _dsgs_g3(Fξ, Fη, Fζ, ie, i, j, k, f, ξx, ξy, ξz, hx, hy, hz, zx, zy, zz)
@@ -2271,6 +2282,7 @@ function _dsgs_energy_consistent_3d!(rhs_diff_el::AbstractArray{TT}, μ_dsgs::Ab
                                      ηphys::Union{Nothing,AbstractVector}=nothing) where {TT<:AbstractFloat, TI<:Integer}
     fheat  = TT(dsgs_heat_factor[])
     lshock = dsgs_heat_shock[]
+    lvisc  = dsgs_heat_viscous[]
     NF = 10   # u, v, w, m̃u, m̃v, m̃w (ρu/ρ_e …), δBx, δBy, δBz, δψ at every element node
     # The element arrays of this code have the element index fastest ([ie, i, j, k]): every loop below runs
     # over the elements innermost, so that those arrays are read in order (the kernel is bound by memory).
@@ -2337,6 +2349,10 @@ function _dsgs_energy_consistent_3d!(rhs_diff_el::AbstractArray{TT}, μ_dsgs::Ab
                 dv  = min(g1x + g2y + g3z, zero(TT))          # ∇·v where compressed
                 wsh = ρ*max(μu - νp, zero(TT))
                 Q   = Dp + QBp + min(wsh*dv*dv, max(max(Dm, zero(TT)) - Dp, zero(TT)))
+            elseif lvisc
+                # all the viscous dissipation (DynSGS and explicit ν), and the explicit η's Ohmic heat
+                ηp  = ηphys !== nothing ? TT(ηphys[ie]) : zero(TT)
+                Q   = max(Dm, zero(TT)) + ηp*(gb1 + gb2 + gb3)
             else
                 gp  = _dsgs_g3(Fξ, Fη, Fζ, ie, i, j, k, 10, ξx, ξy, ξz, hx, hy, hz, zx, zy, zz)
                 Q   = fheat*(max(Dm, zero(TT)) + μ_dsgs[ie,6]*gb1 + μ_dsgs[ie,7]*gb2 + μ_dsgs[ie,8]*gb3 +

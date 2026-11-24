@@ -101,7 +101,7 @@ below).
 | `JEXPRESSO_LK10_RHOFAC` | default 1 | factor on the DynSGS mass diffusion (the `:μ` multiplier of the ρ slot), a sensitivity test |
 | `JEXPRESSO_LK10_VISC` | `momentum` (default), `velocity` | the viscosity (DynSGS and ν) as the diffusion of the momentum $\rho\mathbf v/\rho_e$, or as a stress on the velocity gradient with the momentum of the mass the DynSGS diffuses (Equations and dissipation: The viscosity on the velocity). Opt-in while the cluster test runs |
 | `JEXPRESSO_LK10_VISCFAC` | default 1 | factor on the DynSGS viscosity (the `:μ` multipliers of the momentum slots, applied after its caps; the case's ν is not scaled), a test of its drag on the plasma that drains from the dome (`drain`, its `visc` column) |
-| `JEXPRESSO_LK10_HEAT` | `shock` (default), a fraction | what the heat the DynSGS dissipates does (`:dsgs_heating`): `shock`, only the explicit ν, η and the DynSGS viscosity in compression heat, as in Lare (The heat of the DynSGS, below); or that fraction of it into the plasma (1 conserves energy, 0 loses it all) |
+| `JEXPRESSO_LK10_HEAT` | `shock` (default), `viscous`, a fraction | what the heat the DynSGS dissipates does (`:dsgs_heating`): `shock`, only the explicit ν, η and the DynSGS viscosity in compression heat; `viscous`, all the viscous dissipation (DynSGS and ν) and the explicit η heat, the DynSGS resistivity not, as Lare's default tensor shock viscosity heats (The heat of the DynSGS, below); or that fraction of all of it into the plasma (1 conserves energy, 0 loses it all) |
 | `JEXPRESSO_LK10_SENSOR` | `legacy` (default), `residual` | DynSGS sensor: $\lvert\partial_tq\rvert$ against the assembled RHS (the parent case's), or the element residual once per step (DSGS.md §1.2) |
 
 For example, the erratum's Fig. 1 (tubes 1 and 2, field-free corona) and its
@@ -285,8 +285,9 @@ paper's dissipation and its energy relaxation:
   `:mhd_internal_energy`, `src/kernel/operators/rhs.jl`). The velocity-form run of
   22 Nov (REF 4) drains its dome down to the density floor between 2185 and 2530 s,
   $\rho \approx 10^{-15}$ g cm⁻³ in a field of ~50 G: $\beta \sim 10^{-5}$–$10^{-7}$, the
-  internal energy that share of the total (the erratum's dome keeps
-  $\sim 10^{-12.5}$ g cm⁻³ to 2530 s). The pressure is then what the divergence of
+  internal energy that share of the total (the erratum's drains too: its centre,
+  $\lvert x\rvert \le 3$ Mm, is at $10^{-12.6}$ g cm⁻³ at 5–7 Mm at 1955 s and at
+  $10^{-13.6}$–$10^{-14.8}$ above 5 Mm at 2530 s, `profile` below). The pressure is then what the divergence of
   $E$'s flux leaves after the kinetic and magnetic energies have taken their
   changes, and node by node those agree only to the aliasing error of the
   collocation derivative of products, which repeats in every element and is far
@@ -357,10 +358,13 @@ paper's dissipation and its energy relaxation:
   up to 1 % of the node's mass per stage, after 1060 steps (2188.7 s), at
   $x$ = 13.6–14.3 Mm, 2.8–5.1 Mm high. The last two under the quadrupole's
   strongest field, outside the dome; the same restart with the floor above ran
-  to 2530 s. The rows of 2530 s
-  are where the dome has drained to the floor, 2–3 orders of magnitude below the
-  erratum's $\sim 10^{-12.5}$ g cm⁻³: what removes them is a dome that does not
-  drain that far, not another floor.
+  to 2530 s. The rows of 2530 s are where the drained dome meets this floor.
+  The erratum's dome drains about as far: at 2530 s its centre
+  ($\lvert x\rvert \le 3$ Mm, its colours turned back into log ρ) is at 0.4–0.85 of
+  the coronal density of the atmosphere above 7 Mm (−14.2 to −14.8, against
+  −14.3 to −14.4), 0.3–0.6 dex above this floor ($0.2\rho_e$ in the corona);
+  `profile` puts a run's dome beside it, height by height, with its nodes at
+  the floors.
 
   *Restarts* hold no DynSGS steps with the legacy sensor (`:dsgs_hold_steps`). A run
   starts with the coefficient at zero for two steps while the history of the
@@ -406,31 +410,55 @@ paper's dissipation and its energy relaxation:
 
 - **The heat of the DynSGS.** With the energy-consistent operator every
   erg the DynSGS removes from the flow and the field can become heat, so that
-  the total energy is conserved (`JEXPRESSO_LK10_HEAT=1`). Lare does not do that: its remap does not conserve the
-  kinetic energy and the loss is not returned as heat unless asked
-  (`rke = .FALSE.` in the distributed `control.f90`: "This missing energy can be
-  added back into the simulation as a uniform heating"); what heats there is
-  the shock viscosity, which acts in compression, and the physical terms of the
-  paper's Eq. (5). The difference matters for the cold, dense plasma that the
-  emerging field lifts into the corona, which has little internal energy: in
-  the REF 4 run (Verification) the DynSGS viscosity could supply all of it in
-  100–600 s, the plasma went from below 2 × 10⁴ K to 10⁵ K, stopped draining,
-  and the dome stopped rising. `JEXPRESSO_LK10_HEAT=shock` (`:dsgs_heating =>
-  "shock"`, `src/kernel/physics/SGS.jl`), the default, heats as Lare does: the explicit ν and
+  the total energy is conserved (`JEXPRESSO_LK10_HEAT=1`). Lare does not return
+  all of it: its remap does not conserve the kinetic energy and the loss is not
+  returned as heat unless asked (`rke = .FALSE.` in the distributed
+  `control.f90`: "This missing energy can be added back into the simulation as
+  a uniform heating"), and what the remap diffuses of the field is lost too.
+  What heats there is the paper's Eq. (5) and Lare's shock viscosity, which in
+  the default build of the versions of the erratum's time (LareXd 2.6, March
+  2011, and 2.9, August 2011: `lagran.F90`, with `#QMONO = -DQ_MONO` commented
+  out in the distributed Makefile) is a tensor,
+  $\sigma_{ij} = (\nu_1\rho c_fL + \nu_2\rho L^2\lvert s\rvert)(\varepsilon_{ij} - \tfrac13\delta_{ij}\nabla\cdot\mathbf v)$,
+  $\nu_1 = 0.1$, $\nu_2 = 0.5$, $L$ the cell, "applied to all cells, not just
+  those which are compressed, as significant shear forces may exist across
+  expanding cells. The heating term is however always positive" (the LareXd
+  manual, "Shock viscosity"); its heat, $\sigma_{ij}\partial_jv_i$, goes into the
+  internal energy at every step. That is a first-order viscosity, $0.05\,c_fL$,
+  in every cell, all of whose dissipation heats, in shear as in compression.
+  `JEXPRESSO_LK10_HEAT=viscous` (`:dsgs_heating => "viscous"`,
+  `src/kernel/physics/SGS.jl`) heats so: everything the DynSGS viscosity and ν
+  dissipate, and the explicit η; the DynSGS resistivity and ψ diffusion do not
+  heat, as the remap's diffusion of the field does not.
+  `JEXPRESSO_LK10_HEAT=shock`, the default, was modelled on the scalar option
+  (`Q_MONO`, a pressure added where the flow is compressed): the explicit ν and
   η in full, the DynSGS viscosity only where the flow is compressed,
   $\rho\mu(\nabla\cdot\mathbf v)_-^2$ and never more than it dissipates there, the
   DynSGS resistivity and ψ diffusion not at all; the rest of what the DynSGS
-  dissipates is lost, as in the remap. `JEXPRESSO_LK10_HEAT=0` loses all of it
-  (shocks then do not heat either: a test only). `shock` is the default since
-  the cluster run of Verification, in which the lifted plasma keeps draining
-  and the flux rope of the erratum forms. Here, the kick test of "Positivity" (REF 1, no floors,
+  dissipates is lost. In the dome of the velocity-form run of 22 Nov that is
+  13–28 % of what the DynSGS viscosity dissipates (`heat`, 1610–1955 s; its
+  last column is what Lare's tensor viscosity would heat with the same flow).
+  The difference matters for the cold, dense plasma that the emerging field
+  lifts into the corona, which has little internal energy: in the REF 4 run
+  (Verification; the viscosity on the momentum) all of the heat (`1`) could
+  supply it in 100–600 s, the plasma went from below 2 × 10⁴ K to 10⁵ K,
+  stopped draining, and the dome stopped rising. `JEXPRESSO_LK10_HEAT=0`
+  loses all of it (shocks then do not heat either: a test only). `shock` is the
+  default since the cluster run of Verification, in which the lifted plasma
+  keeps draining and the flux rope of the erratum forms; `viscous` has not run
+  on the cluster. Here, the kick test of "Positivity" (REF 1, no floors,
   11.6 s) runs the same with the three: flows of 13.9, 13.8 and 13.8 km/s
   (1, `shock`, 0), the same smallest temperature, the pressure near the kick
   1.0 % (`shock`) and 1.3 % (0) below that with all the heat, the total energy change
   −2.98 and −3.22 against −2.21 × 10⁻¹⁰: of the heat the DynSGS dissipates
   there `shock` keeps a quarter, the compressed half of a kick whose velocity
-  gradient is half compression. A restart that changes the mode reports it
-  and continues.
+  gradient is half compression. With the viscosity on the velocity and
+  `JEXPRESSO_LK10_EINT=lowbeta` (24 Nov 2026): flows of 14.02, 14.09 and
+  14.10 km/s (`shock`, `viscous`, 1), the same smallest temperature, the mean
+  pressure within 2 Mm of the kick 2.26, 2.64 and 2.72 % above the initial one,
+  the total energy change −2.85, −2.37 and −2.11 × 10⁻¹⁰: `viscous` returns
+  two thirds of what `shock` loses, the rest being the DynSGS resistivity's.
+  A restart that changes the mode reports it and continues.
 
 - **The viscosity on the velocity** (`JEXPRESSO_LK10_VISC=velocity`;
   `:dsgs_velocity_viscosity`, `src/kernel/physics/SGS.jl`,
@@ -952,6 +980,7 @@ python3 tools/plot_leake2010.py lines    run=$RUN        # Erratum Fig. 3 line b
 python3 tools/plot_leake2010.py core     run=$RUN        # the plasma at the tube axis vs time: height, density against the atmosphere's, B_z/rho against the initial tube's
 python3 tools/plot_leake2010.py noise    $RUN --times 2185,2530   # stripes and grain: the node-to-node part of log rho per element, along y and x, and the nodes at the floors
 python3 tools/plot_leake2010.py elements $RUN --times 2185,2530 --x=-2,0,2   # which quantity repeats element by element on vertical lines: s_min, the DynSGS coefficients and the velocity-form stress, node-to-node parts of log rho, log T, u, v, floor nodes
+python3 tools/plot_leake2010.py profile  $RUN --times 1955,2185,2530   # the dome's density by height, centre and flanks, beside the erratum's Fig. 3, with the nodes at the floors
 python3 tools/plot_leake2010.py --paper-lines density $RUN   # the density figure with exactly the erratum's field lines (any map takes --paper-lines)
 python3 tools/plot_leake2010.py mass     $RUN            # the plasma above 3 Mm: mass budget, temperature, pressure, draining, heating time
 python3 tools/plot_leake2010.py drain    $RUN            # why that plasma drains or not: temperature, field it sits on, speed and support along the field
@@ -1074,9 +1103,10 @@ chromosphere (1.11 with the finite differences used before 21 Nov 2026).
 than $10^{-13}$ g cm⁻³ above 3 Mm (`--ymin`, `--ymax`, `--thr`; `--thr -99` for
 all of it), split into the center ($|x| < 2.5$ Mm, where the dome's field lies
 flat) and the flanks, each term of its temperature equation as the code applies
-it with `JEXPRESSO_LK10_HEAT=shock`, as a mass-weighted mean $DT/Dt$ in K per
+it with the run's `JEXPRESSO_LK10_HEAT` (`lk10_case.txt`), as a mass-weighted mean $DT/Dt$ in K per
 100 s: compression and expansion ($-p\nabla\cdot\mathbf v$, ideal), the case's
-viscosity (in full), the DynSGS viscosity where the flow is compressed, the
+viscosity (in full), the DynSGS heat (`DSGS heat`: its viscosity where the flow
+is compressed with `shock`, all of it with `viscous`), the
 case's anomalous resistivity (in full; zero while
 $|\nabla\times\mathbf B| < j_{crit}$, a 40 G reversal thinner than about 50 m),
 the DynSGS diffusion of the internal energy's departure from the reference
@@ -1091,7 +1121,10 @@ term is below $10^{-4}$ K per 100 s), with the elements' derivatives and the CG
 weak form on the mesh's lattice of rectangles, where the 2D operator is exactly
 the sum of the 1D ones along the rows and the columns (60 times closer to the
 exact operator than finite differences on a graded test lattice). Then what the
-DynSGS dissipates and `shock` does not heat. Where two
+DynSGS dissipates and the run does not heat, and last (`Lare visc`) what Lare's
+default tensor shock viscosity (The heat of the DynSGS, above) would heat with
+the snapshot's flow, $\sigma_{ij}\partial_jv_i$ with its cell $L$ = 0.048 Mm
+(`--lare-dx`; the paper's grid in the figure window, to a factor ~1.3). Where two
 snapshots are at most 20 s apart (the off-grid outputs, 12–17 s apart) the
 observed $DT/Dt = \partial_tT + \mathbf v\cdot\nabla T$, node by node, is set
 against the budget on the nodes that stay in the set, below $2\times10^5$ K,
@@ -1099,6 +1132,19 @@ and change by less than 30 % (a front sweeping over a node is not an advection a
 finite difference follows): the difference is what the budget misses, the
 temperature floor and its own error. On REF 1 at 920–928 s it is 1 % on the
 flanks and 5 % in the center above 3 Mm.
+
+`profile` puts the dome's density beside the erratum's, height by height: for
+bands 0.5 Mm thick around $y$ = 2, 3, …, 15 Mm, the run's median log ρ over the
+centre ($\lvert x\rvert \le 3$ Mm) and over the flanks ($3 < \lvert x\rvert \le 8$ Mm),
+the erratum's at that height (its Fig. 3 turned back into log ρ through its
+colour bar, medians over the same ranges of $x$; at 920 s, before the tube
+reaches 5 Mm, it gives −14.32 for the corona at 5–15 Mm where the atmosphere
+here has −14.18 to −14.48), their difference, the run's 10th percentile, and
+the share of its nodes at the density and temperature floors. The erratum's
+centre: −12.3 to −12.6 at 4–8 Mm at 1955 s, −12.5 to −13.3 at 2185 s, and at
+2530 s −13.1 at 4 Mm, −13.6 at 5 Mm and −14.2 to −14.8 above 7 Mm, at or below
+the atmosphere's coronal density; its flanks are denser below 7 Mm (−11.2 to
+−12.9 at 2530 s).
 
 `balance` is the erratum's Fig. 4 as a table, for the question of what holds
 the dome: on a vertical line, at each time, gravity, the magnetic tension, the
@@ -1346,7 +1392,8 @@ Short runs on 4 cores; the full runs are for a cluster (above).
   log ρ ≈ −12 at 1.3–2 × 10⁵ K: a gas pressure of 10–15 dyn cm⁻², 30–45 times
   the initial coronal one there, and a pressure scale height of 3.5–5.5 Mm, so
   it sits on its own pressure; plasma lifted from the chromosphere and cooled
-  by its expansion, as in Lare (no heating there but its shock viscosity), has
+  by its expansion, unless something heats it (in Lare its shock viscosity,
+  which in the default build heats in shear too: "The heat of the DynSGS"), has
   a scale height of a fraction of a Mm (0.16 Mm at 6000 K) and drains.
 
   `plot_leake2010.py mass` on this run, for the plasma in that box:

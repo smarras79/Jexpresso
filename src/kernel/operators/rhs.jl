@@ -1999,9 +1999,11 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
         # below adds the work of the other slots and the dissipated heat.
         dsgs_thermal_energy[] = get(params.inputs, :dsgs_thermal_energy, false)::Bool
         let h = get(params.inputs, :dsgs_heating, 1.0)
-            dsgs_heat_shock[]  = h isa AbstractString && lowercase(h) == "shock"
-            dsgs_heat_factor[] = h isa Number ? Float64(h) : 1.0
-            (h isa Number || dsgs_heat_shock[]) || error(" :dsgs_heating must be a number (the fraction of the dissipated heat kept) or \"shock\" (got ", h, ").")
+            dsgs_heat_shock[]   = h isa AbstractString && lowercase(h) == "shock"
+            dsgs_heat_viscous[] = h isa AbstractString && lowercase(h) == "viscous"
+            dsgs_heat_factor[]  = h isa Number ? Float64(h) : 1.0
+            (h isa Number || dsgs_heat_shock[] || dsgs_heat_viscous[]) ||
+                error(" :dsgs_heating must be a number (the fraction of the dissipated heat kept), \"shock\" or \"viscous\" (got ", h, ").")
         end
         dsgs_thermal_energy[] && (lnodal_mhd2d || dsgs_split_energy[] || !get(params.inputs, :dsgs_conserved, false)) &&
             error(" :dsgs_thermal_energy needs the conserved element form of DSGS_MHD (:dsgs_conserved => true, ",
@@ -2674,9 +2676,11 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                 error(" :dsgs_thermal_energy in 3D needs the reference-weighted conserved form (:dsgs_conserved, ",
                       ":dsgs_ref_weight => true) without the split energy flux (:dsgs_nazarov_energy => false).")
             let h = get(params.inputs, :dsgs_heating, 1.0)
-                dsgs_heat_shock[]  = h isa AbstractString && lowercase(h) == "shock"
-                dsgs_heat_factor[] = h isa Number ? Float64(h) : 1.0
-                (h isa Number || dsgs_heat_shock[]) || error(" :dsgs_heating must be a number (the fraction of the dissipated heat kept) or \"shock\" (got ", h, ").")
+                dsgs_heat_shock[]   = h isa AbstractString && lowercase(h) == "shock"
+                dsgs_heat_viscous[] = h isa AbstractString && lowercase(h) == "viscous"
+                dsgs_heat_factor[]  = h isa Number ? Float64(h) : 1.0
+                (h isa Number || dsgs_heat_shock[] || dsgs_heat_viscous[]) ||
+                    error(" :dsgs_heating must be a number (the fraction of the dissipated heat kept), \"shock\" or \"viscous\" (got ", h, ").")
             end
         end
         dsgs_qA, dsgs_qB, dsgs_wt = _dsgs_stencil(params, TT)

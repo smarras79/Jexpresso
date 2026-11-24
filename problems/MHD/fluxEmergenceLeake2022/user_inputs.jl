@@ -163,7 +163,7 @@ function user_inputs()
     lk22_p_floor[]   = parse(Float64, get(ENV, "LK22_P_FLOOR", "0.2"))
     # The DynSGS of problems/MHD/fluxEmergenceLeake2010 (README, "The DynSGS of the 2010 case"):
     # LK22_DSGS=lk10 turns on, together, the reference-weighted operator, the energy-consistent energy
-    # slot with Lare-like heating (shock: the explicit ν, η heat in full, the DynSGS viscosity only
+    # slot with shock-mode heating (shock: the explicit ν, η heat in full, the DynSGS viscosity only
     # where the flow is compressed, the DynSGS resistivity not at all), the induction-only resistivity
     # sensor, the stability cap and a tenth of the mass diffusion. Each can also be set alone; unset,
     # the deck is what it was.
@@ -171,7 +171,7 @@ function user_inputs()
     lk22_refw    = get(ENV, "LK22_REF_WEIGHT", lk10 ? "1" : "0") == "1"
     lk22_thermal = lowercase(strip(get(ENV, "LK22_ENERGY", lk10 ? "thermal" : "total"))) == "thermal"
     lk22_heat    = let h = lowercase(strip(get(ENV, "LK22_HEAT", lk10 ? "shock" : "1")))
-                       h == "shock" ? "shock" : parse(Float64, h)
+                       h in ("shock", "viscous") ? h : parse(Float64, h)
                    end
     lk22_induct  = lowercase(strip(get(ENV, "LK22_ETA", lk10 ? "induction" : "all"))) == "induction"
     lk22_stabcap = parse(Float64, get(ENV, "LK22_STABCAP", lk10 ? "0.2" : "0.0"))
@@ -243,7 +243,7 @@ function user_inputs()
         :dsgs_thermal_residual => true,
         # The 2010 case's DynSGS (above; off unless LK22_DSGS=lk10 or the switch alone):
         :dsgs_thermal_energy  => lk22_thermal,   # LK22_ENERGY=thermal: the energy-consistent energy slot
-        :dsgs_heating         => lk22_heat,      # LK22_HEAT=shock or a factor on the DynSGS heat (1)
+        :dsgs_heating         => lk22_heat,      # LK22_HEAT=shock, viscous or a factor on the DynSGS heat (1)
         :dsgs_induction_sensor => lk22_induct,   # LK22_ETA=induction: the resistivity from the induction residuals
         :dsgs_stab_cap        => lk22_stabcap,   # LK22_STABCAP=0.2: μ ≤ 0.2 Δx²/Δt (0: none)
         :lrichardson          => false,

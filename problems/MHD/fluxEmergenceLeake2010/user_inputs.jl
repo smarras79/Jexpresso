@@ -40,8 +40,10 @@
 #   JEXPRESSO_LK10_RHOFAC    factor on the DynSGS mass diffusion (the :μ multiplier of the ρ
 #                            slot), a test of the plasma it carries across the field  [1]
 #   JEXPRESSO_LK10_HEAT      what the heat the DynSGS dissipates does: "shock": only the
-#                            explicit ν, η and the DynSGS viscosity in compression heat,
-#                            as in Lare (README, "The heat of the DynSGS"); or a fraction
+#                            explicit ν, η and the DynSGS viscosity in compression heat;
+#                            "viscous": all the viscous dissipation and the explicit η heat,
+#                            the DynSGS resistivity not, as Lare's default tensor shock
+#                            viscosity does (README, "The heat of the DynSGS"); or a fraction
 #                            put into the plasma (1: all, energy conserving; 0: none) [shock]
 #   JEXPRESSO_LK10_ETAFAC    factor on the DynSGS resistivity (the :μ multiplier of the B
 #                            slots), a sensitivity test of the reconnection          [1]
@@ -142,7 +144,7 @@ function _lk10_word(k, allowed...)
     w in allowed || error(" JEXPRESSO_LK10_$(k) must be one of $(join(allowed, ", ")) (got \"$(w)\").")
     return w
 end
-# JEXPRESSO_LK10_HEAT: "shock" (default) or the fraction of the dissipated heat kept
+# JEXPRESSO_LK10_HEAT: "shock" (default), "viscous" or the fraction of the dissipated heat kept
 # JEXPRESSO_LK10_DSGS_STAGES: nothing (all: every stage), (1, 5) or (1,)
 function _lk10_stages()
     w = replace(lowercase(strip(_lk10_env("DSGS_STAGES", "all"))), " " => "")
@@ -154,9 +156,9 @@ end
 
 function _lk10_heat()
     h = lowercase(_lk10_env("HEAT", "shock"))
-    h == "shock" && return "shock"
+    h in ("shock", "viscous") && return h
     v = tryparse(Float64, h)
-    (v === nothing || !(0.0 <= v <= 1.0)) && error(" JEXPRESSO_LK10_HEAT must be shock or a number from 0 to 1 (got \"$(h)\").")
+    (v === nothing || !(0.0 <= v <= 1.0)) && error(" JEXPRESSO_LK10_HEAT must be shock, viscous or a number from 0 to 1 (got \"$(h)\").")
     return v
 end
 
@@ -394,9 +396,9 @@ function user_inputs()
         # E slot diffuses the internal energy and receives the work and the heat of the other
         # slots, so the DynSGS cannot drive p negative in the low-β chromosphere and corona.
         :dsgs_thermal_energy  => lowercase(_lk10_env("ENERGY", "thermal")) != "total",
-        # ... of which only the shock viscosity's part and the explicit ν, η heat, as in Lare
-        # (JEXPRESSO_LK10_HEAT; README, "The heat of the DynSGS"): 1 would heat the plasma lifted into
-        # the corona until it holds itself up and stops draining
+        # ... of which only the DynSGS viscosity in compression and the explicit ν, η heat (shock),
+        # or all the viscous dissipation, as Lare's default tensor shock viscosity heats (viscous)
+        # (JEXPRESSO_LK10_HEAT; README, "The heat of the DynSGS")
         :dsgs_heating         => _lk10_heat(),
         # Resistivity from the induction residuals alone (SGS.jl, linduction; README, "DynSGS in
         # the corona"): acoustic fronts in the low-β corona then do not make the field resistive.

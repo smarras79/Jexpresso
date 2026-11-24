@@ -1281,10 +1281,12 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #   :dsgs_heating      with :dsgs_thermal_energy: what becomes of the heat the DynSGS dissipates
     #                      (SGS.jl, dsgs_heat_factor, dsgs_heat_shock). A number: the fraction that goes
     #                      into the internal energy (default 1, energy conserving; 0 loses it).
-    #                      "shock": as a Lagrangian-remap code with a shock viscosity (Lare) — the
-    #                      explicit ν, η (:mhd_dissipation, :mhd_anomalous_eta) heat in full, the
-    #                      DynSGS viscosity only where the flow is compressed, ρ μ (∇·v)₋², and the
-    #                      DynSGS resistivity not at all.
+    #                      "shock": the explicit ν, η (:mhd_dissipation, :mhd_anomalous_eta) heat in
+    #                      full, the DynSGS viscosity only where the flow is compressed, ρ μ (∇·v)₋²,
+    #                      and the DynSGS resistivity not at all (a scalar shock viscosity).
+    #                      "viscous": all the viscous dissipation (DynSGS and ν) and the explicit η
+    #                      heat, the DynSGS resistivity not at all: Lare's default tensor shock
+    #                      viscosity, which acts in every cell and heats in shear too.
     if(!haskey(inputs, :dsgs_nodal_rho))
         inputs[:dsgs_nodal_rho] = false
     end

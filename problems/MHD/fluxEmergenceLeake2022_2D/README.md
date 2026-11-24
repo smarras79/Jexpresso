@@ -43,7 +43,7 @@ and the environment variables `LK2D_REF` (mesh, below), `LK2D_TEND`,
 
 `LK2D_DSGS=lk10` turns on the DynSGS of `problems/MHD/fluxEmergenceLeake2010`
 ("The DynSGS of the 2010 case", below): its energy-consistent energy slot with
-Lare-like heating, the induction-only resistivity sensor, the stability cap,
+shock-mode heating (`shock`: the DynSGS viscosity heats only where the flow is compressed. Lare's default tensor shock viscosity heats in shear too, which `LK2D_HEAT=viscous` does: `problems/MHD/fluxEmergenceLeake2010`, README, "The heat of the DynSGS"), the induction-only resistivity sensor, the stability cap,
 the curl-form resistivity and a tenth of the mass diffusion; each can be set
 alone (`LK2D_ENERGY=thermal`, `LK2D_HEAT=shock`, `LK2D_ETA=induction`,
 `LK2D_STABCAP=0.2`, `LK2D_CURLB=1`, `LK2D_RHOFAC=0.1`). Unset, the deck is
@@ -327,7 +327,7 @@ python3 $P $RUN --var Bz --symmetric --steps 1,11,21    # iter_N numbers
 ## The DynSGS of the 2010 case
 
 `problems/MHD/fluxEmergenceLeake2010` runs with an energy-consistent energy
-slot, Lare-like heating, an induction-only resistivity sensor, a stability
+slot, shock-mode heating, an induction-only resistivity sensor, a stability
 cap, the curl-form resistivity and a tenth of the mass diffusion
 (`LK2D_DSGS=lk10` here). On this case at `LK2D_REF = 1`, the cross-section of
 the 3D `LK22_REF = 2` mesh (22 Nov 2026, 2 ranks each, the default deck
@@ -345,7 +345,7 @@ the rope, $(0, 2)$, sit at both floors and the largest temperature climbs to
 234 by $t = 6$ (166 in the default run): the tenth of the mass diffusion
 lets the density there fall to its floor, and with the full mass diffusion
 the pressure floor is still held two to three times as often as by default
-(Lare-like heating returns less of what the DynSGS dissipates). The
+(shock-mode heating returns less of what the DynSGS dissipates). The
 induction-only sensor alone, which lowers the resistivity of the rope three-
 to fivefold, changes neither the floors nor the rope: its peak axial field
 falls by a third in $10t_0$ either way (by half in $15t_0$, to 1.9 at
@@ -381,7 +381,7 @@ the `LK2D_REF = 4` run of "Resolution study" has them from $t \approx 35$.
 They are the DynSGS's own heat: the default energy slot diffuses $E$ as a
 whole, so every bit of kinetic and magnetic energy the DynSGS removes from a
 passing wave stays as heat in those elements. With the energy-consistent slot
-and Lare-like heating (`LK2D_ENERGY=thermal LK2D_HEAT=shock`; the DynSGS then
+and shock-mode heating (`LK2D_ENERGY=thermal LK2D_HEAT=shock`; the DynSGS then
 heats only where it compresses, the explicit $\nu$, $\eta$ in full), same mesh,
 same times:
 
