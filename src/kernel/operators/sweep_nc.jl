@@ -1363,7 +1363,9 @@ function build_angular_dependency_graph(mesh, neighbor_elem; tol::Float64 = 1e-6
 
             em_jel = mesh.extra_mesh[jel]
 
-            if em_iel.extra_nelem == em_jel.extra_nelem &&
+            # identical angular meshes need no dependency map; compare shapes first: after angular refinement two
+            # meshes can have the same element count but different node counts (isapprox would throw)
+            if em_iel.extra_nelem == em_jel.extra_nelem && size(em_iel.extra_coords) == size(em_jel.extra_coords) &&
                isapprox(em_iel.extra_coords, em_jel.extra_coords; atol=tol)
                 continue
             end
