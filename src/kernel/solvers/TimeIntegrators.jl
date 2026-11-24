@@ -314,7 +314,11 @@ function time_loop!(inputs, params, u, args...)
                      " ......... END"; msg_rank = rank)
     end
 
+    # The integrator warm-up below runs the real callbacks for one throw-away step; the RT solve is skipped there
+    # (it would be a full extra solve) and forced on the first real step instead, so heating is still there from step 1.
+    rt_in_warmup = Ref(false); rt_force_next = Ref(false)
     function rad_condition(u, t, integrator)
+        rt_force_next[] && return true
         if (rem(t,rad_time) < 1e-3)
             return true
         else
@@ -323,6 +327,8 @@ function time_loop!(inputs, params, u, args...)
     end
 
     function do_radiation!(integrator)
+        rt_in_warmup[] && return nothing
+        rt_force_next[] = false
         _ensure_rt_loaded!()
 	if (params.inputs[:RT_atmos_coupling])
             println(" doing full 3D RT solve + heat flux calculations at t=", integrator.t)
@@ -697,6 +703,7 @@ function time_loop!(inputs, params, u, args...)
             # :use_named_tuples) we can't mutate it — that's fine, only
             # a few cases hit the affect!() inside this single step,
             # and the temp redirect is best-effort anyway.
+            rt_in_warmup[] = true
             warm_outdir  = mktempdir(; prefix = "jexpresso_intwarmup_")
             saved_outdir = inputs isa Dict ? inputs[:output_dir] : nothing
             inputs isa Dict && (inputs[:output_dir] = warm_outdir)
@@ -727,6 +734,7 @@ function time_loop!(inputs, params, u, args...)
                     rank == 0 && @warn "integrator warm-up failed; continuing without it" exception=e
                 end
             end
+            rt_in_warmup[] = false; rt_force_next[] = true      # RT runs on the first real step
             u .= u_snap
             params.qp.qnm1 .= qnm1_snap
             params.qp.qnm2 .= qnm2_snap
