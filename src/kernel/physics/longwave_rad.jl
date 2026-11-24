@@ -104,6 +104,8 @@ function user_rad_bc_longwave(x, y, z, θ, ϕ, nx_n, ny_n, nz_n,
     # Do NOT add secondary Ωz checks here — the caller already selected the
     # correct face normal for this direction via best_dot, so we trust it.
     if bdy.is_top(z)
+        ftop = LW_TOP_FN[]                       # :RT_lw_top_bc => :column (lw_top_column.jl)
+        ftop === nothing || return ftop(abs(cos(θ)))
         return σ_SB * lw.T_space^4 / π
 
     elseif bdy.is_bottom(z)

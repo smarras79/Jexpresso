@@ -197,8 +197,12 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
         if beam_mode == :slant
             tb = time()
             src_mode = Symbol(get(inputs, :RT_sw_beam_source, :projected))
+            # :RT_sw_beam_source_nsub (4): sub-cells per axis where the projected source is integrated by quadrature;
+            # :RT_sw_beam_source_steep (2.0): elements whose nodal F_dir or σ max/min exceeds this are integrated
             F_dir, G_dir, Q_dir, binfo = compute_direct_beam_raytrace(mesh, κ_sw, σ_sw, sw, comm;
-                                                                      project_source = src_mode == :projected)
+                                                                      project_source = src_mode == :projected,
+                                                                      source_nsub = Int(get(inputs, :RT_sw_beam_source_nsub, 4)),
+                                                                      source_steep = Float64(get(inputs, :RT_sw_beam_source_steep, 2.0)))
             tb = MPI.Allreduce(time() - tb, MPI.MAX, comm)
             fr = MPI.Allreduce(Float64[maximum(F_dir; init=0.0), -minimum(F_dir; init=Inf)], MPI.MAX, comm)
             beam_src_elem = haskey(binfo, :source_elem) ? binfo.source_elem : nothing
@@ -340,6 +344,7 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
         # Lateral treatment (lw_lateral.jl):
         #   :RT_lw_lateral_bc    :blackbody (σT_back⁴/π on real walls) | :plane_parallel (local-column 1D radiance)
         #   :RT_lw_periodic_mode :periodic | :walls (periodic faces become walls with local-column 1D inflow)
+        lw_top_setup!(mesh, atmos_data, bdy, inputs, comm)   # :RT_lw_top_bc (:vacuum default | :column), lw_top_column.jl
         #   :RT_lw_cold_init     :zero | :walls (cold solve starts from the :walls solution, then solves periodic)
         #                        | :column_mean (cold solve starts from the plane-parallel horizontal-mean column; default)
         #                        | :column_local (cold solve starts from each node's own column: ICA)

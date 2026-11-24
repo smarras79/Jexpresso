@@ -52,11 +52,11 @@ function atmos_to_rad_longwave(atmos_data, npoin)
     # ── Mass absorption cross sections (m²/kg) ────────────────────────────
     # Water vapor: Planck-mean over thermal IR, including continuum.
     # Typical range 0.01–0.10 m²/kg; 0.05 is a standard gray value.
-    k_vap = 0.05
+    k_vap = LW_GRAY_K_VAP   # 0.05 (lw_top_column.jl)
 
     # Dry air / well-mixed gases (CO₂, O₃, CH₄ etc.) — pressure scaled.
     # At surface conditions roughly 0.002 m²/kg for a CO₂-like gray gas.
-    k_dry = 0.002
+    k_dry = LW_GRAY_K_DRY   # 0.002 (lw_top_column.jl)
 
     # Liquid cloud: geometric optics, Q_abs ≈ 2, r_eff ≈ 10 μm, ρ_liq = 1000 kg/m³
     # k = 3 Q_abs / (4 ρ_liq r_eff) ≈ 3×2/(4×1000×10e-6) ≈ 150 m²/kg

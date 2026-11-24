@@ -185,6 +185,7 @@ include(joinpath( "kernel", "physics", "atmos_to_rad.jl"))
 
 include(joinpath( "kernel", "physics", "rt_timing.jl"))        # RT timing record (per-call phases, solves, memory)
 include(joinpath( "kernel", "physics", "lw_lateral.jl"))       # LW lateral inflow from local-column plane-parallel solutions
+include(joinpath( "kernel", "physics", "lw_top_column.jl"))    # LW top inflow from the column above the lid (:RT_lw_top_bc)
 include(joinpath( "kernel", "physics", "sw_ref_1d.jl"))        # SWRef1D: plane-parallel SW reference (1D DOM + doubling)
 include(joinpath( "kernel", "physics", "shortwave_rad.jl"))
 

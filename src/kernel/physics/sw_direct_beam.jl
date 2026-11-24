@@ -415,7 +415,7 @@ project_source = true also returns info.source_elem: the projected, positivity-l
 (sw_beam_projected_source), and its statistics in info.source_stats.
 """
 function compute_direct_beam_raytrace(mesh, κ_sw::Vector{Float64}, σ_sw::Vector{Float64}, sw::SWParams, comm;
-                                      project_source::Bool=false)
+                                      project_source::Bool=false, source_nsub::Int=4, source_steep::Float64=2.0)
     npoin = length(mesh.x)
     R = sw_beam_ray(mesh, κ_sw .+ σ_sw, sw, comm)
     μ0 = sw.μ₀
@@ -426,7 +426,7 @@ function compute_direct_beam_raytrace(mesh, κ_sw::Vector{Float64}, σ_sw::Vecto
         end
     end
     src = nothing; sst = nothing
-    project_source && ((src, sst) = sw_beam_projected_source(mesh, R, σ_sw, F_dir, sw))
+    project_source && ((src, sst) = sw_beam_projected_source(mesh, R, σ_sw, F_dir, sw; nsub=source_nsub, steep_ratio=source_steep))
     nf = MPI.Allreduce(R.nfail, MPI.SUM, comm)
     nf == 0 || error("compute_direct_beam_raytrace: $nf rays left the element set (point location failed)")
     G_dir = μ0 > 0 ? F_dir ./ μ0 : zeros(npoin)

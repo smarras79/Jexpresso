@@ -92,13 +92,15 @@ end
     return B_in * a + (B_out - B_in) * (1 - a / t)
 end
 
-function lw_column_radiance(c::LWColumn, μ::Float64)
+# top_fn = false: start from c.I_top even with :RT_lw_top_bc => :column (used for the column above the lid itself)
+function lw_column_radiance(c::LWColumn, μ::Float64; top_fn::Bool=true)
     n = length(c.z); I = zeros(n)
     if abs(μ) < 1e-6
         I .= c.B; return I
     end
     if μ < 0
-        I[n] = c.I_top
+        ftop = top_fn ? LW_TOP_FN[] : nothing    # :RT_lw_top_bc => :column (lw_top_column.jl); nothing = vacuum (I_top)
+        I[n] = ftop === nothing ? c.I_top : ftop(abs(μ))
         for k = n-1:-1:1
             t = 0.5 * (c.κ[k] + c.κ[k+1]) * (c.z[k+1] - c.z[k]) / abs(μ)
             I[k] = I[k+1] * exp(-t) + lw_layer(c.B[k+1], c.B[k], t)
