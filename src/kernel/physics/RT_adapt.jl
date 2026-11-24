@@ -114,6 +114,7 @@ end
 function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, params, dψ, ψ, ω, PhysConst, inputs;
                                      rt_max_iter::Int=200, rt_tol::Float64=1e-5)
     comm = get_mpi_comm()
+    rt_weights_begin!(mesh, inputs)                                     # cost weights for repartitioning (:RT_rebalance)
     tm = RTTiming()                                                     # RT timing record (rt_timing.jl)
     bdy = make_boundary_predicates(mesh)
 
@@ -422,6 +423,7 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
 
     micro.rt_nelem_saved = mesh.nelem
     rt_timing_enabled(inputs) && rt_timing_report!(tm, mesh, infra, comm, inputs)
+    rt_rebalance_check!(mesh, inputs, comm)                             # sets RT_REBALANCE_DUE (time loop acts on it)
 end
 
 # A posteriori angular-resolution indicator. NOT compiled or run.

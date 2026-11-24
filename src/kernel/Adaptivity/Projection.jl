@@ -3154,7 +3154,15 @@ function amr_strategy!(args...)
     
     inputs[:lrestart] = false
     inputs[:lrestart_amr] = false
-    sem, partitioned_model_new, uaux_new = sem_setup(inputs, params.nparts, params.distribute, ref_coarse_flags, partitioned_model, params.mesh, params.interp, params.project, params.uaux)
+    # RT heating (micro.flux_sw, flux_lw) travels with the state, so the forcing survives the rebuild until the
+    # next RT call; the cost weights of the last RT call (if any) are used by the redistribution (partition_weights.jl)
+    t_amr0 = time_ns()
+    nst = size(params.uaux, 2)
+    ext = hcat(params.uaux, params.mp.flux_sw, params.mp.flux_lw)
+    rt_release_state!(params)                     # old RT infrastructure and plan caches are not needed any more
+    GC.gc(true)
+    sem, partitioned_model_new, ext_new = sem_setup(inputs, params.nparts, params.distribute, ref_coarse_flags, partitioned_model, params.mesh, params.interp, params.project, ext)
+    uaux_new = ext_new[:, 1:nst]
 
     
     qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
@@ -3170,14 +3178,121 @@ function amr_strategy!(args...)
                               tspan)
     
     uaux2u!(nu, uaux_new, nparams.neqs, nparams.mesh.npoin)
+    nparams.mp.flux_sw .= @view ext_new[:, nst + 1]
+    nparams.mp.flux_lw .= @view ext_new[:, nst + 2]
     prob = ODEProblem(rhs!,
                     nu,
                     nparams.tspan,
                     nparams);
-    
+    if PART_WEIGHTED_LAST[]                       # this AMR step also rebalanced by cost
+        RT_REBALANCE_DUE[] = false; RT_CALLS_SINCE_REBAL[] = 0
+    end
+    RT_T_END_PREV[] != 0 && (RT_T_END_PREV[] += time_ns() - t_amr0)   # the rebuild is not dynamics time
     return prob, partitioned_model_new
 end
 
+
+"""
+    rt_rebalance_strategy!(inputs, params, u, t, partitioned_model) -> (prob, partitioned_model)
+
+Repartition by cost (RT sweeps + dynamics) without changing the mesh: a no-op adapt of the current forest, then a
+p4est redistribution with the cost weights of the last RT call (PART_W_OLD, partition_weights.jl), state transfer,
+and a rebuild of sem/params as in amr_strategy!. The RT heating (micro.flux_sw, flux_lw) is carried with the state,
+so the dynamics keeps its forcing until the next RT call. The RT warm start is not carried (the next call is cold).
+"""
+function rt_rebalance_strategy!(inputs, params, u, t, partitioned_model)
+    comm = get_mpi_comm(); rank = MPI.Comm_rank(comm)
+    t0 = time_ns()
+    neqs = params.neqs; npoin = params.mesh.npoin
+    u2uaux!(@view(params.uaux[:,:]), u, neqs, npoin)
+    nst = size(params.uaux, 2)
+    ext = hcat(params.uaux, params.mp.flux_sw, params.mp.flux_lw)    # state + RT heating, transferred together
+    flags = KernelAbstractions.zeros(CPU(), TInt, Int64(params.mesh.nelem))   # nothing_flag everywhere
+    params.mesh.lneed_redistribute = true         # one rebuild: redistribute directly with the weights (no adapt)
+    PART_FORCE[] = true
+    # RT warm starts (per element and direction) move with their elements; the rest of the RT state is dropped
+    nel_old = Int(params.mesh.nelem)
+    ws_lw = params.mp.rt_sol_lw_available ? params.mp.rt_sol_lw : nothing
+    ws_sw = params.mp.rt_sol_sw_available ? params.mp.rt_sol_sw : nothing
+    rt_release_state!(params)                     # old RT infrastructure and plan caches are not needed any more
+    GC.gc(true)
+    inputs[:lrestart] = false
+    inputs[:lrestart_amr] = false
+    sem, partitioned_model_new, ext_new = sem_setup(inputs, params.nparts, params.distribute, flags, partitioned_model,
+                                                    params.mesh, params.interp, params.project, ext)
+    PART_FORCE[] = false
+    qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
+    nparams, nu = params_setup(sem, qp, inputs, OUTPUT_DIR, TFloat, [t, inputs[:tend]])
+    uaux_new = ext_new[:, 1:nst]
+    uaux2u!(nu, uaux_new, nparams.neqs, nparams.mesh.npoin)
+    nparams.mp.flux_sw .= @view ext_new[:, nst + 1]
+    nparams.mp.flux_lw .= @view ext_new[:, nst + 2]
+    glue = PART_LAST_GLUE[]; PART_LAST_GLUE[] = nothing
+    nel_new = Int(nparams.mesh.nelem); moved = String[]
+    if glue !== nothing
+        for (old, lw) in ((ws_lw, true), (ws_sw, false))
+            old === nothing && continue
+            new = redistributed_elem_dict(old, glue, nel_old, nel_new, ngl_of(nparams.mesh))
+            ok = MPI.Allreduce(new === nothing ? 0 : 1, MPI.MIN, comm) == 1
+            ok || continue
+            if lw; nparams.mp.rt_sol_lw = new; nparams.mp.rt_sol_lw_available = true
+            else;  nparams.mp.rt_sol_sw = new; nparams.mp.rt_sol_sw_available = true; end
+            push!(moved, lw ? "LW" : "SW")
+        end
+    end
+    ws_lw = nothing; ws_sw = nothing
+    prob = ODEProblem(rhs!, nu, nparams.tspan, nparams)
+    RT_REBALANCE_DUE[] = false; RT_CALLS_SINCE_REBAL[] = 0
+    dt_reb = time_ns() - t0
+    RT_T_END_PREV[] != 0 && (RT_T_END_PREV[] += dt_reb)          # the rebuild is not dynamics time
+    ne = MPI.Allgather(Int(nparams.mesh.nelem), comm)
+    rank == 0 && println(@sprintf(" # RT repartition at t=%.4f: %.1f s; elements per rank min %d max %d; warm starts moved: %s",
+                                  t, dt_reb * 1e-9, minimum(ne), maximum(ne), isempty(moved) ? "none" : join(moved, ", ")))
+    return prob, partitioned_model_new
+end
+
+
+ngl_of(mesh) = Int(mesh.ngl)
+
+# Moves per-(element, direction) arrays (an RT solution, Dict{(iel,d) => Vector}) along a redistribution glue, as
+# redistributed_q! moves nodal fields. Needs the same number of directions on every element (else nothing: cold start).
+function redistributed_elem_dict(old, glue, nel_old::Int, nel_new::Int, ngl::Int)
+    (old isa AbstractDict && !isempty(old)) || return nothing
+    n3 = ngl^3
+    nd = maximum(k[2] for k in keys(old))
+    (length(old) == nel_old * nd && all(length(v) == n3 for v in values(old))) || return nothing
+    comm = get_mpi_comm()
+    lids_rcv, lids_snd, parts_rcv, parts_snd, new2old = GridapDistributed.get_glue_components(glue, Val(false))
+    id2send = local_views(lids_snd).item_ref[]
+    nsend = id2send.ptrs[end] - 1
+    buf = zeros(Float64, nsend * nd * n3); own = zeros(TInt, nsend * nd * n3)
+    cnt = 1
+    for (i, part) in enumerate(local_views(parts_snd).item_ref[])
+        for idx in getindex(id2send, i)
+            for dd = 1:nd
+                v = old[(Int(idx), dd)]
+                for q = 1:n3; buf[cnt] = v[q]; own[cnt] = part - 1; cnt += 1; end
+            end
+        end
+    end
+    rcv, _ = send_and_receive(buf, own, comm)
+    new = Dict{Tuple{Int,Int},Vector{Float64}}()
+    id2recv = local_views(lids_rcv).item_ref[]
+    cnt = 1
+    for (i, part) in enumerate(local_views(parts_rcv).item_ref[])
+        for idx in getindex(id2recv, i)
+            for dd = 1:nd
+                Int(idx) <= nel_new && (new[(Int(idx), dd)] = Float64.(rcv[cnt:cnt+n3-1]))
+                cnt += n3
+            end
+        end
+    end
+    for (id, o) in enumerate(local_views(new2old).item_ref[])
+        (o == 0 || id > nel_new || o > nel_old) && continue
+        for dd = 1:nd; new[(id, dd)] = copy(old[(Int(o), dd)]); end
+    end
+    return length(new) == nel_new * nd ? new : nothing
+end
 
 function redistributed_q!(u, u_old, glue_redistribute, connijk, old_connijk, ngl, SD::NSD_2D)
 

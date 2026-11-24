@@ -610,6 +610,13 @@ function time_loop!(inputs, params, u, args...)
         lrad                                  && push!(_cbs, cb_rad)
         is_coupled && cb_coupling !== nothing  && push!(_cbs, cb_coupling)
         cb_heartbeat !== nothing               && push!(_cbs, cb_heartbeat)
+        # Repartitioning by cost (:RT_rebalance => true): an RT call that predicts an imbalance above the threshold
+        # sets RT_REBALANCE_DUE; this callback (after cb_rad) stops the integrator, the loop after the solve
+        # repartitions (rt_rebalance_strategy!) and continues. AMR runs rebalance at their AMR steps instead.
+        lreb = lrad && get(inputs, :RT_rebalance, false) == true
+        cb_rebal = DiscreteCallback((u, t, integrator) -> RT_REBALANCE_DUE[], integrator -> terminate!(integrator);
+                                    save_positions = (false, false))
+        (lreb && !inputs[:lamr]) && push!(_cbs, cb_rebal)
 
         # Per-rank step profile (opt-in, debugging): JEXPRESSO_STEP_TIMES=1 or :lstep_times => true.
         # Every rank records, per step: wall time since the previous step end, GC time and bytes
@@ -846,6 +853,21 @@ function time_loop!(inputs, params, u, args...)
                                  inputs[:tend],
                                  length=inputs[:ndiagnostics_outputs]))
         end
+        while lreb && !inputs[:lamr] && RT_REBALANCE_DUE[] && solution.t[end] < inputs[:tend]
+            prob, partitioned_model = rt_rebalance_strategy!(inputs, prob.p, solution.u[end][:], solution.t[end], partitioned_model)
+            params = prob.p                     # the callbacks (radiation, output, restart) read `params`
+            solution = nothing; GC.gc(true)     # the old solution holds the old problem, mesh and RT state
+            solution = with_logger(solve_logger) do
+                solve(prob,
+                      inputs[:ode_solver], dt=dt,
+                      callback = callbacks_main, tstops = tstops_all,
+                      save_everystep = false,
+                      adaptive=inputs[:ode_adaptive_solver],
+                      saveat = range(inputs[:tinit],
+                                     inputs[:tend],
+                                     length=inputs[:ndiagnostics_outputs]))
+            end
+        end
 
         # End-of-simulation per-function timing & allocation summary.
         # Set ENV["JEXPRESSO_ALLOC_SUMMARY"]="1" or :lalloc_summary => true
@@ -886,12 +908,13 @@ function time_loop!(inputs, params, u, args...)
     if inputs[:lamr] == true
         while solution.t[end] < inputs[:tend]
             @mpi_time prob, partitioned_model = amr_strategy!(inputs, prob.p, solution.u[end][:], solution.t[end], partitioned_model)
+            params = prob.p                     # the callbacks (radiation, output, restart) read `params`
             ad_lvl_max = MPI.Allreduce(maximum(prob.p.mesh.ad_lvl; init=0), MPI.MAX, comm)
             dt         = Float32(inputs[:Δt]/(2.0^(ad_lvl_max)))
             println_rank(" #  dt=", dt; msg_rank = rank)
             @mpi_time solution = solve(prob,
                                 inputs[:ode_solver], dt=Float32(dt),
-                                callback = lfilter ? CallbackSet(cb_filter, cb_amr, cb_restart) : CallbackSet(cb_amr, cb_restart), tstops = dosetimes,
+                                callback = CallbackSet((lfilter ? Any[cb_filter] : Any[])..., cb_amr, cb_restart, (lrad ? Any[cb_rad] : Any[])...), tstops = dosetimes,
                                 save_everystep = false,
                                 adaptive=inputs[:ode_adaptive_solver],
                                 saveat = []);

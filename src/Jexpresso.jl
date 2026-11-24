@@ -137,6 +137,7 @@ include(joinpath( "auxiliary", "timing.jl"))
 include(joinpath( "kernel", "abstractTypes.jl"))
 
 include(joinpath( "kernel", "mesh", "meshStructs.jl"))
+include(joinpath( "kernel", "mesh", "partition_weights.jl"))   # p4est repartitioning by cost
 
 include(joinpath( "kernel", "elementLearningStructs.jl"))
 
@@ -534,6 +535,104 @@ const _AMR_LOADED = Ref(true)
 # making OctreeDistributedDiscreteModel inaccessible from compiled code.
 function _ensure_amr_loaded!()
     return nothing
+end
+
+# p4est partitions that keep refined elements together, for the RT sweep: its neighbour tables
+# (resolve_periodic_or_rankcut_neighbors_ncf) need the 4 fine neighbours of a coarse face on ONE rank.
+# GridapP4est partitions with p8est_partition(allow_for_coarsening = 0), which can split them between two ranks.
+#   JEXPRESSO_P4EST_KEEP_FAMILIES=1  allow_for_coarsening = 1: families whose 8 children are all leaves stay on one rank
+#                                    (enough for one refinement level).
+#   JEXPRESSO_P4EST_KEEP_FAMILIES=2  whole trees (= elements of the base mesh) stay on one rank: cuts only between trees,
+#                                    balanced on element counts, or on the summed element weights when the partition is
+#                                    weighted (any number of levels). Falls back to mode 1 when there are fewer trees
+#                                    than ranks.
+# Opt-in for now. It replaces GridapP4est.pXest_partition! for 3D forests at module load: methods of another package
+# cannot be redefined while Jexpresso precompiles.
+const P4EST_KEEP_FAMILIES = Ref(false)
+const P4EST_PARTITION_MODE = Ref(0)
+
+function _p8est_partition_families!(ptr_pXest; weighted::Bool=false)
+    cb = weighted ? GridapP4est.pXest_weight_callback(GridapP4est.P8estType()) : C_NULL
+    GridapP4est.P4est_wrapper.p8est_partition(ptr_pXest, 1, cb)
+end
+
+# per tree on this rank: number of quadrants, and the sum of their Cint weights (quadrant user data) when weighted
+function _p8est_local_tree_sums(ptr_pXest, ntree::Int, weighted::Bool)
+    PW = GridapP4est.P4est_wrapper
+    forest = unsafe_load(ptr_pXest)
+    cnt = zeros(Int64, ntree); wsum = zeros(Int64, ntree)
+    for t = Int(forest.first_local_tree):Int(forest.last_local_tree)   # empty range on a rank without quadrants
+        arr = unsafe_load(PW.p8est_tree_array_index(forest.trees, t)).quadrants
+        n = Int(arr.elem_count); cnt[t + 1] = n
+        weighted || continue
+        for q = 0:n-1
+            qp = Ptr{PW.p8est_quadrant_t}(arr.array + q * arr.elem_size)
+            wsum[t + 1] += Int64(unsafe_load(Ptr{Cint}(unsafe_load(qp).p.user_data)))
+        end
+    end
+    return cnt, wsum
+end
+
+function _p8est_partition_by_tree!(ptr_pXest; weighted::Bool=false)
+    PW = GridapP4est.P4est_wrapper
+    forest = unsafe_load(ptr_pXest)
+    comm = get_mpi_comm(); np = MPI.Comm_size(comm); rank = MPI.Comm_rank(comm)
+    np == Int(forest.mpisize) || error("p4est partition by tree: forest has $(forest.mpisize) ranks, communicator $np")
+    ntree = Int(unsafe_load(forest.connectivity).num_trees)
+    if ntree < np
+        rank == 0 && println(" # p4est partition by tree: $ntree trees < $np ranks, keeping families only")
+        return _p8est_partition_families!(ptr_pXest; weighted=weighted)
+    end
+    cnt, wsum = _p8est_local_tree_sums(ptr_pXest, ntree, weighted)
+    g = MPI.Allreduce(cnt, +, comm)                             # quadrants of each tree, all ranks
+    ntot = sum(g); ntot == Int(forest.global_num_quadrants) || error("p4est partition by tree: counts $ntot != $(forest.global_num_quadrants)")
+    gw = weighted ? MPI.Allreduce(wsum, +, comm) : g            # what the cuts balance: weights or quadrants
+    cumq = cumsum(g)                                            # cumq[b] = quadrants in trees 1..b
+    cum = cumsum(gw); wtot = cum[end]
+    cuts = zeros(Int, np + 1); cuts[np + 1] = ntree             # rank r owns trees cuts[r+1]+1 .. cuts[r+2]
+    for k = 1:np-1
+        target = k * wtot / np
+        lo = cuts[k] + 1; hi = ntree - (np - k)                 # at least one tree per rank
+        b = searchsortedfirst(view(cum, lo:hi), target) + lo - 1
+        b = clamp(b, lo, hi)
+        b > lo && abs(cum[b - 1] - target) <= abs(cum[b] - target) && (b -= 1)
+        cuts[k + 1] = b
+    end
+    counts = PW.p4est_locidx_t[(cuts[r + 1] == 0 ? cumq[cuts[r + 2]] : cumq[cuts[r + 2]] - cumq[cuts[r + 1]]) for r = 0:np-1]
+    if rank == 0
+        mean = ntot / np
+        msg = " # p4est partition by tree: $ntree trees, $ntot elements on $np ranks; elements per rank " *
+              "min $(minimum(counts)) max $(maximum(counts)) (max/mean $(round(maximum(counts) / mean; digits=3)))"
+        if weighted
+            wr = [(cuts[r + 1] == 0 ? cum[cuts[r + 2]] : cum[cuts[r + 2]] - cum[cuts[r + 1]]) for r = 0:np-1]
+            msg *= "; weight per rank max/mean $(round(maximum(wr) / (wtot / np); digits=3)) (weighted cuts)"
+        end
+        println(msg)
+    end
+    PW.p8est_partition_given(ptr_pXest, counts)
+end
+
+function __init__()
+    ccall(:jl_generating_output, Cint, ()) == 1 && return
+    mode = get(ENV, "JEXPRESSO_P4EST_KEEP_FAMILIES", "0")
+    mode in ("1", "2") || return
+    P4EST_PARTITION_MODE[] = parse(Int, mode)
+    fam = _p8est_partition_families!; tree = _p8est_partition_by_tree!; m = P4EST_PARTITION_MODE
+    Core.eval(GridapP4est, quote
+        function pXest_partition!(pXest_type::P8estType, ptr_pXest; weights_set=false)
+            if weights_set && $m[] == 2
+                $tree(ptr_pXest; weighted=true)                 # weighted cuts between whole trees
+            elseif weights_set
+                wcallback = pXest_weight_callback(pXest_type)
+                p8est_partition(ptr_pXest, 1, wcallback)
+            elseif $m[] == 2
+                $tree(ptr_pXest)
+            else
+                $fam(ptr_pXest)
+            end
+        end
+    end)
+    P4EST_KEEP_FAMILIES[] = true
 end
 
 # PERF: only evaluate run.jl at module-body time when this file was

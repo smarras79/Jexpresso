@@ -1928,7 +1928,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         _ensure_amr_loaded!()
         if (omesh.lneed_redistribute)
             @outputrootonly begin
-                partitioned_model, glue_redistribute = redistribute(partitioned_model_coarse)
+                partitioned_model, glue_redistribute = redistribute(partitioned_model_coarse;
+                                                                     weights=part_cell_weights(partitioned_model_coarse))
             end
         else
             ref_coarse_flags = map(parts,partition(get_cell_gids(partitioned_model_coarse.dmodel))) do rank,indices
@@ -6105,6 +6106,9 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
     rank = MPI.Comm_rank(comm)
     lpreadapt = inputs[:lpreadapt]
     max_ad_lv = inputs[:preadapt_max_level]
+    (rank == 0 && P4EST_KEEP_FAMILIES[]) && println(P4EST_PARTITION_MODE[] == 2 ?
+        " # p4est partition keeps whole base-mesh elements (trees) on one rank (JEXPRESSO_P4EST_KEEP_FAMILIES=2)" :
+        " # p4est partition keeps sibling families on one rank (JEXPRESSO_P4EST_KEEP_FAMILIES=1)")
 
     adapt_flags, partitioned_model_coarse, omesh = _handle_optional_args4amr(args...)
     
@@ -6174,14 +6178,25 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
                                         nop=TInt(inputs[:nop]),
                                         ngr=TInt(inputs[:nop_laguerre]+1),
                                         SD=NSD_1D())
+            part_weights_begin!(omesh)                     # cost weights of omesh, if any (partition_weights.jl)
+            # omesh.lneed_redistribute: this rebuild is a redistribution only (no adapt), as a cost repartition asks:
+            # mod_mesh_read_gmsh! then returns the redistribution glue instead of a new-to-old element map
+            first_redist = omesh.lneed_redistribute
             partitioned_model_tmp, n2o_ele_map_tmp = mod_mesh_read_gmsh!(mesh_tmp, inputs, nparts, distribute, args...)
+            if first_redist
+                PART_LAST_GLUE[] = n2o_ele_map_tmp
+            else
+                part_weights_map!(n2o_ele_map_tmp, mesh_tmp.nelem)
+            end
             uaux    = args[end]
             project = args[end-1]
             interp  = args[end-2]
             uaux_refined = nothing
             if !isnothing(uaux)
                 uaux_refined = KernelAbstractions.zeros(CPU(),  TFloat, (mesh_tmp.npoin, size(uaux, 2)))
-                if !get(inputs, :lrestart_amr, false)
+                if first_redist
+                    redistributed_q!(uaux_refined, uaux, n2o_ele_map_tmp, mesh_tmp.connijk, omesh.connijk, mesh_tmp.ngl, mesh_tmp.SD)
+                elseif !get(inputs, :lrestart_amr, false)
                     p8est_transfer_q!(uaux_refined, uaux, omesh.ad_lvl, mesh_tmp.ad_lvl, mesh_tmp, omesh, n2o_ele_map_tmp, interp, project, mesh_tmp.SD)
                 end
             end
@@ -6208,6 +6223,7 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
                 partitioned_model_tmp, n2o_ele_map_tmp = mod_mesh_read_gmsh!(
                     mesh_tmp, inputs, nparts, distribute,
                     peri_conform_flags, partitioned_model_tmp, mesh_prev, interp, project, uaux_prev)
+                part_weights_map!(n2o_ele_map_tmp, mesh_tmp.nelem)
                 if !isnothing(uaux_refined)
                     uaux_refined = KernelAbstractions.zeros(CPU(), TFloat, (mesh_tmp.npoin, size(uaux_prev, 2)))
                     p8est_transfer_q!(uaux_refined, uaux_prev,
@@ -6218,6 +6234,7 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
                 total_peri_ncf = MPI.Allreduce(length(mesh_tmp.periodic_ncf_parent_gels), MPI.SUM, comm)
             end
 
+            part_weights_decide!(mesh_tmp, comm)            # with cost weights: redistribute on the weighted imbalance
             if (mesh_tmp.lneed_redistribute && !isnothing(uaux))
                 # Initialize mesh struct: the arrays length will be increased in mod_mesh_read_gmsh
                 mesh = St_mesh{TInt,TFloat, CPU()}(nsd=TInt(inputs[:nsd]),
@@ -6227,6 +6244,9 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
                 partitioned_model, glue_redistribute = mod_mesh_read_gmsh!(mesh, inputs, nparts, distribute, adapt_flags, partitioned_model_tmp, mesh_tmp)
                 uaux_new = KernelAbstractions.zeros(CPU(),  TFloat, (mesh.npoin, size(uaux, 2)))
                 redistributed_q!(uaux_new, uaux_refined, glue_redistribute, mesh.connijk, mesh_tmp.connijk, mesh.ngl, mesh.SD)
+                # a cost-weighted partition is unbalanced in element counts by design: do not let the count check
+                # send the next AMR step down the unweighted redistribution path
+                PART_WEIGHTED_LAST[] && (mesh.lneed_redistribute = false)
             else
                 mesh = mesh_tmp
                 partitioned_model = partitioned_model_tmp

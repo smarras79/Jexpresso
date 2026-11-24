@@ -804,6 +804,8 @@ function run_unified_case_solve(setup, metrics, comm, case::RadiativeCase;
                                   tb[1], tb[2], case.phase_g_mode, Int(pd[1]), Int(pd[2]), Int(pd[3]), Int(pd[4]), tb[3], tb[4]))
 
     t_src = Float64[]; t_swp = Float64[]; t_tot = Float64[]
+    # per-element RT cost prediction: the repartitioning weights (:RT_rebalance)
+    cost_pred = RT_W_ON[] ? rt_predict_costs(mesh, metrics, dψ, ω, κ, ngl, collect(Int, n_dirs), cache.faceinfo) : nothing
     gc_prev = ro.gc_mode == :sync ? GC.enable(false) : true      # sync mode: the sweep collects on a schedule
 
     function apply_G(flat::Vector{Float64})
@@ -1010,6 +1012,15 @@ function run_unified_case_solve(setup, metrics, comm, case::RadiativeCase;
 
     # ---- report (collective) ----
     nmv = length(t_tot)
+    # repartitioning weights: predicted element work of this solve (per sweep) times its sweeps
+    # dense pairs held in the LU cache cost a full solve once, then RTC_DENSE_HIT per later sweep
+    cached_cnt = zeros(Int, Int(mesh.nelem))
+    if USE_FASTDIAG[]
+        for k in keys(cache.factors); cached_cnt[k[1]] += 1; end
+    end
+    if RT_W_ON[] && cost_pred !== nothing && length(RT_W_ELEM) == length(cost_pred.w)
+        RT_W_ELEM .+= nmv .* cost_pred.w .- max(nmv - 1, 0) .* cached_cnt .* (RTC_DENSE[] - RTC_DENSE_HIT[])
+    end
     T = MPI.Allreduce(vcat(t_src, t_swp, t_tot), MPI.MAX, comm)              # max over ranks, per matvec
     rss = MPI.Allreduce(Sys.maxrss()/1e9, MPI.MAX, comm)
     if rank == 0
@@ -1108,5 +1119,61 @@ end
 
 function invalidate_angular_caches!()
     clear_face_plans!()                 # plans, local/flat/angular plans, ASYNC_LAYOUTS, ASYNC_DEPS, GS_CYCLE_CACHE
+    return nothing
+end
+
+
+# ---- repartitioning by cost (:RT_rebalance => true) ------------------------------------------------------------
+# Each RT call accumulates the predicted element work of its solves (rt_predict_costs × sweeps) per element; with a
+# dynamics term (wall time between RT calls, per element) this gives the cost weight of every element over one RT
+# interval. When the predicted max/mean over ranks exceeds :RT_rebalance_threshold (default 1.15), and at least
+# :RT_rebalance_min_interval RT calls (default 1) have passed since the last repartition, RT_REBALANCE_DUE is set:
+# the time loop stops the integrator and calls rt_rebalance_strategy! (p4est weighted partition, state transfer).
+const RT_W_ON = Ref(false)
+const RT_W_ELEM = Float64[]
+const RT_REBALANCE_DUE = Ref(false)
+const RT_CALLS_SINCE_REBAL = Ref(0)
+const RT_T_END_PREV = Ref{UInt64}(0)
+const RT_T_DYN = Ref(0.0)
+
+function rt_weights_begin!(mesh, inputs)
+    RT_W_ON[] = get(inputs, :RT_rebalance, false) == true
+    RT_W_ON[] || return nothing
+    RT_T_DYN[] = RT_T_END_PREV[] == 0 ? 0.0 : (time_ns() - RT_T_END_PREV[]) * 1e-9
+    resize!(RT_W_ELEM, Int(mesh.nelem)); fill!(RT_W_ELEM, 0.0)
+    return nothing
+end
+
+function rt_rebalance_check!(mesh, inputs, comm)          # collective
+    RT_W_ON[] || return nothing
+    rank = MPI.Comm_rank(comm)
+    RT_CALLS_SINCE_REBAL[] += 1
+    nel = Int(mesh.nelem)
+    # dynamics: the wall time between RT calls is set by the rank with the most elements
+    td = MPI.Allreduce(RT_T_DYN[], MPI.MAX, comm); nmax = MPI.Allreduce(nel, MPI.MAX, comm)
+    cdyn = td > 0 ? td * 1e6 / max(nmax, 1) : 0.0                            # µs per element per RT interval
+    w = RT_W_ELEM .+ cdyn
+    S = MPI.Allgather(sum(w) * 1e-6, comm); R = MPI.Allgather(sum(RT_W_ELEM) * 1e-6, comm); np = length(S)
+    imb = maximum(S) / max(sum(S) / np, 1e-300)
+    thr = Float64(get(inputs, :RT_rebalance_threshold, 1.15)); PART_THRESHOLD[] = thr
+    minint = Int(get(inputs, :RT_rebalance_min_interval, 1))
+    PART_W_OLD[] = w; PART_W_MESH[] = mesh
+    RT_REBALANCE_DUE[] = imb > thr && RT_CALLS_SINCE_REBAL[] >= minint
+    rank == 0 && println(@sprintf(" # RT load balance (predicted): cost per RT interval max/mean %.3f (threshold %.2f); RT element work max %.1f s, mean %.1f s; dynamics %.1f s per interval (%.0f µs/element)%s",
+                                  imb, thr, maximum(R), sum(R) / np, td, cdyn, RT_REBALANCE_DUE[] ? " -> repartition requested" : ""))
+    RT_T_END_PREV[] = time_ns()
+    return nothing
+end
+
+# Before a mesh rebuild (AMR step or cost repartition): drop everything RT keeps for the old mesh, so it is not held
+# while the new mesh and its RT infrastructure are built (the plan caches are keyed by identity of old objects).
+function rt_release_state!(params)
+    mp = params.mp
+    hasproperty(mp, :rt_infra) && (mp.rt_infra = nothing)
+    hasproperty(mp, :rt_sol_sw) && (mp.rt_sol_sw = [])
+    hasproperty(mp, :rt_sol_lw) && (mp.rt_sol_lw = [])
+    invalidate_angular_caches!()
+    FD_AFFINE[] = nothing
+    LIMITED_ELEMS[] = Int32[]; UNLIMITED_SOLUTION[] = nothing
     return nothing
 end
