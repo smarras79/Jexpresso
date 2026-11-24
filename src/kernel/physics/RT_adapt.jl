@@ -192,6 +192,7 @@ function get_rt_heat_fluxes_sweeps!(q, qe, mesh, micro, metrics, atmos_data, par
         #                        :reference_column (one central column's vertical τ for every node; exact only for
         #                        horizontally uniform atmospheres; the behaviour before 2026-11-18)
         beam_mode = Symbol(get(inputs, :RT_sw_direct_beam, :slant))
+        SW_BEAM_EXACT[] = get(inputs, :RT_sw_beam_exact, true) == true   # exact segment integrals in the slant beam
         beam_mode in (:slant, :reference_column) || error(":RT_sw_direct_beam must be :slant or :reference_column")
         if beam_mode == :slant
             tb = time()

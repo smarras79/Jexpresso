@@ -28,6 +28,13 @@ struct SWBeamElements
     cell :: Vector{Vector{Int}}
     steep :: BitVector             # nodal κ_ext max/min > 4 in the element (cloud edge): always refine segments
     dom_lo :: NTuple{3,Float64}; dom_hi :: NTuple{3,Float64}
+    bw :: Vector{Float64}          # barycentric weights of the reference nodes on [-1, 1] (box elements: affine map)
+end
+
+# reference-node barycentric weights 1/Π_{m≠i}(ξ_i − ξ_m), from one element's 1D nodes mapped to [-1, 1]
+function sw_beam_ref_weights(xn1::AbstractVector{Float64})
+    n = length(xn1); ξ = 2 .* (xn1 .- xn1[1]) ./ (xn1[end] - xn1[1]) .- 1
+    return [1 / prod(ξ[i] - ξ[m] for m = 1:n if m != i) for i = 1:n]
 end
 
 # 7-point Gauss–Legendre on [-1, 1] (Golub–Welsch)
@@ -90,7 +97,8 @@ function sw_beam_gather_elements(mesh, κ_ext::Vector{Float64}, comm)
     end
     for c in cell; sort!(c; by = e -> lo[3, e]); end
     steep = BitVector([maximum(view(kap, :, :, :, e)) > 4 * max(minimum(view(kap, :, :, :, e)), 1e-300) for e = 1:neg])
-    return SWBeamElements(lo, hi, xn, kap, dlo[1], dlo[2], bdx, bdy, nbx, nby, cell, steep, dlo, dhi)
+    return SWBeamElements(lo, hi, xn, kap, dlo[1], dlo[2], bdx, bdy, nbx, nby, cell, steep, dlo, dhi,
+                          sw_beam_ref_weights(xn[:, 1, 1]))
 end
 
 # element containing point p (first match; points on shared faces may belong to either neighbour)
@@ -108,21 +116,28 @@ function sw_beam_locate(B::SWBeamElements, p)
     return 0
 end
 
-@inline function sw_beam_lagrange(xn, a, e, x, ngl, out)
-    @inbounds for i = 1:ngl
-        l = 1.0; xi = xn[i, a, e]
-        for m = 1:ngl
-            m == i && continue
-            l *= (x - xn[m, a, e]) / (xi - xn[m, a, e])
+# Lagrange basis values at x on element e's axis a: l_i = w_i Π_{m≠i}(ξ − ξ_m) in the reference coordinate ξ, with
+# the products from prefix/suffix sweeps (no divisions; nodes are an affine image of the reference nodes)
+@inline function sw_beam_lagrange(xn, a, e, x, ngl, out, bw)
+    @inbounds begin
+        x1 = xn[1, a, e]; sc = 2 / (xn[ngl, a, e] - x1)
+        p = 1.0
+        for i = 1:ngl                                   # prefix products Π_{m<i}
+            out[i] = p
+            p *= (x - xn[i, a, e]) * sc
         end
-        out[i] = l
+        p = 1.0
+        for i = ngl:-1:1                                # times suffix products Π_{m>i}, times w_i
+            out[i] *= p * bw[i]
+            p *= (x - xn[i, a, e]) * sc
+        end
     end
     return out
 end
 
 function sw_beam_kappa(B::SWBeamElements, e, p, ngl, lx, ly, lz)
-    sw_beam_lagrange(B.xn, 1, e, p[1], ngl, lx); sw_beam_lagrange(B.xn, 2, e, p[2], ngl, ly)
-    sw_beam_lagrange(B.xn, 3, e, p[3], ngl, lz)
+    sw_beam_lagrange(B.xn, 1, e, p[1], ngl, lx, B.bw); sw_beam_lagrange(B.xn, 2, e, p[2], ngl, ly, B.bw)
+    sw_beam_lagrange(B.xn, 3, e, p[3], ngl, lz, B.bw)
     s = 0.0
     @inbounds for k = 1:ngl, j = 1:ngl
         t = ly[j] * lz[k]
@@ -149,12 +164,91 @@ function sw_beam_segment(B, e, q, s, z0, za, zb, nsub, ngl, lx, ly, lz)
     return acc, clipped
 end
 
+# ── Exact segment integral ∫ max(κ_poly, 0) dz ────────────────────────────────────────────────────────────────────────
+# Along a straight ray inside one element, κ_poly is a single polynomial of degree ≤ 3(ngl−1) in the ray parameter.
+# Its values at the n+1 Chebyshev–Lobatto points (n = 3(ngl−1)) give its Chebyshev coefficients exactly; if
+# c₀ − Σ|c_k| ≥ 0 it is non-negative on the segment and the integral is the exact Chebyshev integral. Otherwise the
+# sign is scanned on 4n sub-intervals (cheap Clenshaw evaluations), roots are refined by bisection, and only the
+# positive parts are integrated exactly. Replaces 64 pieces × 7 Gauss points (448 evaluations of the 3D element
+# polynomial) by n+1 = 13 evaluations at ngl = 5. :RT_sw_beam_exact => false restores the 64-piece rule.
+const SW_BEAM_EXACT = Ref(true)
+
+struct SWBeamCheb
+    n :: Int
+    t :: Vector{Float64}            # Chebyshev–Lobatto points cos(πj/n), j = 0..n
+    M :: Matrix{Float64}            # values at t → Chebyshev coefficients (p = Σ c_k T_k)
+    f :: Vector{Float64}; c :: Vector{Float64}; T :: Vector{Float64}
+end
+function SWBeamCheb(ngl::Int)
+    n = 3 * (ngl - 1)
+    M = zeros(n + 1, n + 1)
+    for k = 0:n, j = 0:n
+        M[k+1, j+1] = (2 / n) * ((j == 0 || j == n) ? 0.5 : 1.0) * cos(π * j * k / n)
+    end
+    M[1, :] .*= 0.5; M[n+1, :] .*= 0.5
+    return SWBeamCheb(n, [cos(π * j / n) for j = 0:n], M, zeros(n + 1), zeros(n + 1), zeros(n + 2))
+end
+
+@inline function sw_cheb_eval(C::SWBeamCheb, t)
+    c = C.c; b1 = 0.0; b2 = 0.0
+    @inbounds for k = C.n:-1:1
+        b1, b2 = 2t * b1 - b2 + c[k+1], b1
+    end
+    return t * b1 - b2 + c[1]
+end
+
+# antiderivative of Σ c_k T_k at t:  ∫T₀ = t, ∫T₁ = t²/2, ∫T_k = (T_{k+1}/(k+1) − T_{k−1}/(k−1))/2
+@inline function sw_cheb_prim(C::SWBeamCheb, t)
+    c = C.c; T = C.T; n = C.n
+    @inbounds begin
+        T[1] = 1.0; T[2] = t
+        for k = 2:n+1; T[k+1] = 2t * T[k] - T[k-1]; end
+        s = c[1] * t + (n >= 1 ? c[2] * t * t / 2 : 0.0)
+        for k = 2:n
+            s += c[k+1] * (T[k+2] / (k + 1) - T[k] / (k - 1)) / 2
+        end
+    end
+    return s
+end
+
+function sw_beam_segment_exact(B, e, q, s, z0, za, zb, ngl, lx, ly, lz, C::SWBeamCheb)
+    hz = 0.5 * (zb - za); cz = 0.5 * (za + zb); n = C.n
+    @inbounds for j = 0:n
+        zg = cz + hz * C.t[j+1]
+        C.f[j+1] = sw_beam_kappa(B, e, (q[1] + s[1] * (zg - z0), q[2] + s[2] * (zg - z0), zg), ngl, lx, ly, lz)
+    end
+    mul!(C.c, C.M, C.f)
+    bound = C.c[1]
+    @inbounds for k = 2:n+1; bound -= abs(C.c[k]); end
+    bound >= 0 && return hz * (sw_cheb_prim(C, 1.0) - sw_cheb_prim(C, -1.0)), false
+    m = 4n; acc = 0.0
+    a = -1.0; pa = sw_cheb_eval(C, a); Fa = sw_cheb_prim(C, a)
+    for i = 1:m
+        b = -1.0 + 2.0 * i / m; pb = sw_cheb_eval(C, b); Fb = sw_cheb_prim(C, b)
+        if pa >= 0 && pb >= 0
+            acc += Fb - Fa
+        elseif (pa >= 0) != (pb >= 0)
+            lo = a; hi = b; plo = pa                       # bisection for the sign change
+            for _ = 1:52
+                mid = 0.5 * (lo + hi); pm = sw_cheb_eval(C, mid)
+                ((pm >= 0) == (plo >= 0)) ? (lo = mid; plo = pm) : (hi = mid)
+                hi - lo < 1e-14 && break
+            end
+            r = 0.5 * (lo + hi); Fr = sw_cheb_prim(C, r)
+            acc += pa >= 0 ? Fr - Fa : Fb - Fr
+        end
+        a = b; pa = pb; Fa = Fb
+    end
+    return hz * max(acc, 0.0), true
+end
+
 # Ray context for τ at arbitrary points (nodes, or quadrature points for the projected beam source)
 mutable struct SWBeamRay
     B :: SWBeamElements
     per :: Tuple{Bool,Bool}; L :: NTuple{2,Float64}; ztop :: Float64; δ :: Float64; s0 :: NTuple{2,Float64}
     ngl :: Int; lx :: Vector{Float64}; ly :: Vector{Float64}; lz :: Vector{Float64}
     nfail :: Int; nclip :: Int; nseg_max :: Int
+    cheb :: SWBeamCheb
 end
 
 function sw_beam_ray(mesh, ext::Vector{Float64}, sw::SWParams, comm)        # COLLECTIVE
@@ -165,7 +259,7 @@ function sw_beam_ray(mesh, ext::Vector{Float64}, sw::SWParams, comm)        # CO
     ngl = mesh.ngl
     return SWBeamRay(B, (pf[1] == 1, pf[2] == 1), (B.dom_hi[1] - B.dom_lo[1], B.dom_hi[2] - B.dom_lo[2]), B.dom_hi[3],
                      1e-7 * (B.dom_hi[3] - B.dom_lo[3]), (-tanθ * cos(sw.φ₀), -tanθ * sin(sw.φ₀)),
-                     ngl, zeros(ngl), zeros(ngl), zeros(ngl), 0, 0, 0)
+                     ngl, zeros(ngl), zeros(ngl), zeros(ngl), 0, 0, 0, SWBeamCheb(ngl))
 end
 
 # Vertical-path-integrated extinction τ from (x, y, z) to the model top along the ray toward the sun.
@@ -199,9 +293,19 @@ function sw_beam_tau(R::SWBeamRay, x::Float64, y::Float64, z::Float64)
         # 7-point Gauss is exact for the polynomial. Where it can dip below 0 (clipping makes kinks) integrate on 64
         # pieces: elements with a steep nodal κ_ext (max/min > 4: cloud edges; dips can fall between Gauss points)
         # and any segment where a Gauss point was clipped
-        acc, clipped = B.steep[e] ? (0.0, true) : sw_beam_segment(B, e, q, s, z, z, zb, 1, ngl, R.lx, R.ly, R.lz)
-        if clipped
-            acc, _ = sw_beam_segment(B, e, q, s, z, z, zb, 64, ngl, R.lx, R.ly, R.lz); R.nclip += 1
+        if SW_BEAM_EXACT[]
+            # exact positive-part integral (steep elements directly; others when a Gauss point was clipped)
+            acc, clipped = B.steep[e] ? sw_beam_segment_exact(B, e, q, s, z, z, zb, ngl, R.lx, R.ly, R.lz, R.cheb) :
+                                        sw_beam_segment(B, e, q, s, z, z, zb, 1, ngl, R.lx, R.ly, R.lz)
+            if clipped && !B.steep[e]
+                acc, clipped = sw_beam_segment_exact(B, e, q, s, z, z, zb, ngl, R.lx, R.ly, R.lz, R.cheb)
+            end
+            clipped && (R.nclip += 1)
+        else
+            acc, clipped = B.steep[e] ? (0.0, true) : sw_beam_segment(B, e, q, s, z, z, zb, 1, ngl, R.lx, R.ly, R.lz)
+            if clipped
+                acc, _ = sw_beam_segment(B, e, q, s, z, z, zb, 64, ngl, R.lx, R.ly, R.lz); R.nclip += 1
+            end
         end
         τ += acc
         q[1] = wrap(q[1] + s[1] * (zb - z), 1); q[2] = wrap(q[2] + s[2] * (zb - z), 2)
