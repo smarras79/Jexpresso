@@ -323,23 +323,23 @@ end
 # Create output directory if it doesn't exist:
 #--------------------------------------------------------
 user_defined_output_dir = inputs[:output_dir]
+output_root = user_defined_output_dir == "none" ? case_name_dir :
+              joinpath(user_defined_output_dir, parsed_equations, parsed_equations_case_name)
 
 if inputs[:loverwrite_output]
-    outstring = string("output")
-else        
-    outstring = rank == 0 ? string("output-",  Dates.format(now(), "dduyyyy-HHMMSS")) : ""
-    outstring = MPI.bcast(outstring, 0, comm)
-end
-if user_defined_output_dir == "none"
-    OUTPUT_DIR = joinpath(case_name_dir, outstring)
-    inputs[:output_dir] = OUTPUT_DIR
+    OUTPUT_DIR = joinpath(output_root, "output")
+    if !isdir(OUTPUT_DIR)
+        mkpath(OUTPUT_DIR)
+    end
 else
-    OUTPUT_DIR = joinpath(user_defined_output_dir, parsed_equations, parsed_equations_case_name, outstring)
-    inputs[:output_dir] = OUTPUT_DIR
+    # A run of its own: "output-<start time to the second>", claimed by rank 0 with mkdir, which
+    # fails where the directory exists, so two runs started in the same second (jobs submitted
+    # together) do not write into one directory, each overwriting the other's snapshots; the second
+    # takes "output-<time>-2", and so on.
+    OUTPUT_DIR = rank == 0 ? claim_output_dir(joinpath(output_root, string("output-", Dates.format(now(), "dduyyyy-HHMMSS")))) : ""
+    OUTPUT_DIR = MPI.bcast(OUTPUT_DIR, 0, comm)
 end
-if !isdir(OUTPUT_DIR)
-    mkpath(OUTPUT_DIR)
-end
+inputs[:output_dir] = OUTPUT_DIR
 
 #--------------------------------------------------------
 # Create restart output/inupt directory if it doesn't exist:

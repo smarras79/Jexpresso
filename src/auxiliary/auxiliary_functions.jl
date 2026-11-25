@@ -1,3 +1,25 @@
+"""
+    claim_output_dir(base) -> String
+
+A new directory for one run's output: `base` itself, or `base-2`, `base-3`, ... if that exists.
+`mkdir` (not `mkpath`) fails where the directory exists, so two runs started in the same second
+(jobs submitted together, whose `output-<time>` names are equal to the second) never share a
+directory and overwrite each other's snapshots. Call it on one rank and broadcast the result.
+"""
+function claim_output_dir(base::AbstractString)
+    mkpath(dirname(base))
+    for k = 1:10_000
+        d = k == 1 ? String(base) : string(base, "-", k)
+        try
+            mkdir(d)
+            return d
+        catch e
+            (e isa Base.IOError && ispath(d)) || rethrow()
+        end
+    end
+    error("claim_output_dir: no free name from $(base) to $(base)-10000")
+end
+
 function check_memory(label)
     # Use the coupling-aware comm: in coupled mode rank 0 of COMM_WORLD
     # is Alya, so any rank-0 print or Allreduce keyed on COMM_WORLD
