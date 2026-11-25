@@ -1888,6 +1888,27 @@ Short runs on 4 cores; the full runs are for a cluster (above).
   that alone does not show the lag to be the discretization's. REF 3
   (`LK10_ref3.msh`, 23 km) is the check.
 
+  *The mesh it is* (cluster, 25 Nov 2026: REF 3, A's switches,
+  `JEXPRESSO_LK10_DT=0.0015`, to 1021 s, about 3 h on the cluster). Axis in Mm:
+
+  | t (s) | 510 | 696 | 742 | 835 | 920 | 974 | 1021 |
+  |---|---|---|---|---|---|---|---|
+  | REF 4 (47 km) | −0.84 | −0.41 | −0.33 | −0.19 | −0.10 | −0.04 | 0.02 |
+  | REF 3 (23 km) | −0.80 | −0.38 | −0.30 | −0.16 | −0.04 | 0.02 | 0.06 |
+  | erratum | −0.87 | −0.41 | −0.30 | −0.12 | −0.02 | 0.07 | 0.14 |
+
+  REF 3 is within 0.04 Mm of the erratum through 920 s; at 1021 s the lag
+  is 0.08 Mm against 0.12 (REF 4) and 0.18 (REF 1), a third less at each
+  halving of the core's spacing. The tube keeps itself too: at 920 s its
+  centre has 0.93 of the initial $B_z/\rho$ (REF 4: 0.82; 0.93–0.98 all the
+  way) and its in-plane flux 0.995 of the initial (REF 4: 0.958, the
+  ~40 G Mm the REF 4 runs lose before 920 s). Since a tenth of each DynSGS
+  coefficient changes REF 4's losses by 1 % at most (E, F, G), they are the
+  discretization's: REF 4 has 6–7 nodes across the tube's radius, REF 3
+  twice that. The emergence needs REF 3's core; whether that also closes
+  the gap after 1021 s, where the quadrupole runs on REF 4 fall 0.4 Mm
+  behind by 1380 s, is the next test.
+
 ## Files
 
 | file | content |
