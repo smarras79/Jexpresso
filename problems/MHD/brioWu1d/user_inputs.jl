@@ -42,35 +42,26 @@
 #   JEXPRESSO_BW_DOFS   degrees of freedom, sets the element count (default 600)
 #   JEXPRESSO_BW_NELX   element count, overrides JEXPRESSO_BW_DOFS
 #   JEXPRESSO_BW_DT     time step, overrides the rule above
-#   JEXPRESSO_BW_CMIN   the DynSGS background floor :dsgs_Cmin (default 0.06)
-#   JEXPRESSO_BW_C1     the DynSGS residual coefficient C_1, :dsgs_C1 (default 1):
-#                       ν = C_1 Δ² r where the residual is large, at the shocks
-#   JEXPRESSO_BW_FREEZE 1 or 0 forces :dsgs_freeze_stage (the coefficient once
-#                       per step, or at every stage); unset, mod_inputs.jl's
-#                       default applies: on with the residual sensor
+#
+# Every DynSGS setting (C_1, C_max, C_min, cutoff, hold, freeze, element or
+# nodal form, length-scale convention :bw_hscale) is a literal entry of the
+# Dict below; edit it there. The environment variables that used to override
+# them are refused (BW_DSGS_ENV_REMOVED).
 #---------------------------------------------------------------------------------
 const BW_DOFS_DEFAULT = 600
 const BW_DT_AT_DEFAULT = 5.0e-5
 
 _bw_nop()  = something(tryparse(Int,     get(ENV, "JEXPRESSO_BW_NOP",  "")), 4)
 _bw_dofs() = something(tryparse(Int,     get(ENV, "JEXPRESSO_BW_DOFS", "")), BW_DOFS_DEFAULT)
-_bw_hold() = something(tryparse(Int, get(ENV, "JEXPRESSO_BW_HOLD", "")), 2)
-_bw_cutoff() = something(tryparse(Float64, get(ENV, "JEXPRESSO_BW_CUTOFF", "")), 0.0)
-_bw_cmin() = something(tryparse(Float64, get(ENV, "JEXPRESSO_BW_CMIN", "")), 0.06)
-# C_1 (:dsgs_C1); JEXPRESSO_BW_CR, its name until Nov 2026, is still read, with a warning
-_bw_c1()   = (v = get(ENV, "JEXPRESSO_BW_C1", "");
-              isempty(v) && haskey(ENV, "JEXPRESSO_BW_CR") &&
-                  (@warn "JEXPRESSO_BW_CR is now JEXPRESSO_BW_C1"; v = ENV["JEXPRESSO_BW_CR"]);
-              something(tryparse(Float64, v), 1.0))
-_bw_freeze() = (v = strip(get(ENV, "JEXPRESSO_BW_FREEZE", ""));
-                isempty(v) ? nothing : v in ("1", "true", "yes"))
+const BW_DSGS_ENV_REMOVED = ("JEXPRESSO_BW_CMIN", "JEXPRESSO_BW_C1", "JEXPRESSO_BW_CR",
+                             "JEXPRESSO_BW_CUTOFF", "JEXPRESSO_BW_HOLD", "JEXPRESSO_BW_FREEZE",
+                             "JEXPRESSO_BW_NODAL", "JEXPRESSO_BW_HSCALE")
 
-# The coefficient per NODE (Dao & Nazarov's own form, their eq. 4.10) instead
-# of per element. At a fixed number of degrees of freedom the element form
+# :ldsgs_nodal — the coefficient per NODE (Dao & Nazarov's own form, their
+# eq. 4.10) instead of per element. At a fixed number of degrees of freedom the element form
 # gives the higher orders fewer, larger elements and therefore a coarser
 # staircase of nu, which is not a fair comparison across orders; the nodal
 # form has no such bias.
-_bw_nodal() = lowercase(strip(get(ENV, "JEXPRESSO_BW_NODAL", "false"))) in ("1", "true", "yes", "on")
 
 # Element length scale of the DynSGS coefficient. The kernels use
 # Δ = Δ_K/(k+1) (`ngl`), which is the paper's Δ_e = h_e/(N+1) (its eq. 15);
@@ -85,7 +76,7 @@ _bw_nodal() = lowercase(strip(get(ENV, "JEXPRESSO_BW_NODAL", "false"))) in ("1",
 # DOFs (from k = 4 to 7, 9 % more floor and cap, 20 % more residual
 # viscosity), while Dao & Nazarov's is order-independent. Δ enters the cap and
 # the floor linearly and the residual viscosity quadratically, so the
-# convention can be switched here without touching the kernels, by scaling
+# convention can be switched with :bw_hscale without touching the kernels, by scaling
 # the coefficients: C_max, C_min by (k+1)/k and C_1 by ((k+1)/k)².
 #
 # THIS CASE USES THE PAPER'S Δ_e = h_e/(N+1) BY DEFAULT, as every other case
@@ -95,17 +86,10 @@ _bw_nodal() = lowercase(strip(get(ENV, "JEXPRESSO_BW_NODAL", "false"))) in ("1",
 # Nothing outside this deck changes: `src/kernel/physics/SGS.jl` computes
 # Δ = Δ_K/ngl for every case.
 #
-#     JEXPRESSO_BW_HSCALE=ngl     Δ_K/(k+1) = h_e/(N+1), the paper's, unscaled (the default)
-#     JEXPRESSO_BW_HSCALE=nop     Dao & Nazarov's Δ_K/k
-const BW_HSCALE_DEFAULT = "ngl"
-
-_bw_hscale() = lowercase(strip(get(ENV, "JEXPRESSO_BW_HSCALE", BW_HSCALE_DEFAULT)))
-
-function _bw_hfac()
-    _bw_hscale() == "nop" || return 1.0
-    N = _bw_nop()
-    return (N + 1)/N
-end
+#     :bw_hscale => "ngl"     Δ_K/(k+1) = h_e/(N+1), the paper's, unscaled (the default)
+#     :bw_hscale => "nop"     Dao & Nazarov's Δ_K/k: user_inputs() multiplies the
+#                             :dsgs_C1, :dsgs_Cmax, :dsgs_Cmin it holds by
+#                             ((k+1)/k)², (k+1)/k, (k+1)/k
 
 function _bw_nelx()
     n = tryparse(Int, get(ENV, "JEXPRESSO_BW_NELX", ""))
@@ -122,6 +106,9 @@ function _bw_dt()
 end
 
 function user_inputs()
+    for v in BW_DSGS_ENV_REMOVED
+        haskey(ENV, v) && error(" problems/MHD/brioWu1d: ", v, " is no longer read; set the DynSGS settings in user_inputs.jl.")
+    end
     inputs = Dict(
         :ode_solver           => CarpenterKennedy2N54(),
         # Fastest signal: the fast magnetosonic speed of the right state,
@@ -152,20 +139,21 @@ function user_inputs()
         :μ                => [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         :visc_model       => DSGS_MHD(),
         :dsgs_sensor      => "residual",  # element-wise strong residual (DSGS.md §1.2); "legacy" = the pre-Sep-2026 sensor
-        # Smoothness cutoff on the normalized residual (JEXPRESSO_BW_CUTOFF,
-        # :dsgs_cutoff in mod_inputs.jl). This is the case that says whether a
+        # Smoothness cutoff on the normalized residual. This is the case
         # cutoff big enough to clear the smooth-flow floor still leaves a
         # compound wave alone: at a discontinuity the normalized ratio is
         # O(10^2), five orders above anything smooth flow produces.
-        :dsgs_cutoff      => _bw_cutoff(),
-        # Steps the coefficient is held at zero at the start (JEXPRESSO_BW_HOLD,
-        # :dsgs_hold_steps). The smooth vortex says a longer hold removes 96% of
+        :dsgs_cutoff      => 0.0,
+        # Steps the coefficient is held at zero at the start. The smooth vortex
         # the viscosity's damage there; this case says what a longer hold costs
         # where there ARE shocks, and the Brio-Wu initial condition is a
         # discontinuity at t = 0, so it is the hard test of it.
-        :dsgs_hold_steps  => _bw_hold(),
-        :dsgs_C1          => _bw_c1()*_bw_hfac()^2,   # JEXPRESSO_BW_C1 overrides
-        :dsgs_Cmax        => 0.5*_bw_hfac(),
+        :dsgs_hold_steps  => 2,
+        # The coefficient once per step, at tⁿ, held over the stages.
+        :dsgs_freeze_stage => true,
+        # C_1, C_max (and C_min below) on the length scale of :bw_hscale.
+        :dsgs_C1          => 1.0,
+        :dsgs_Cmax        => 0.5,
         # Background floor C_min (not in the paper), 6 % of the first-order
         # viscosity C_max·h·(|u|+c_f). (0.03 was enough before the residual's
         # time derivative was made stage-consistent, DSGS.md §4.4: the old
@@ -180,7 +168,11 @@ function user_inputs()
         # leaves a trace of them, 0.03 none (measured). Dao & Nazarov's P3
         # elements with exact quadrature do not show these ripples; the
         # collocated LGL flux of this code is the remaining difference.
-        :dsgs_Cmin        => _bw_cmin()*_bw_hfac(),  # JEXPRESSO_BW_CMIN overrides
+        :dsgs_Cmin        => 0.06,
+        # Length-scale convention of the coefficients (the "Element length
+        # scale" note at the top of this file): "ngl", the paper's h_e/(N+1), or "nop",
+        # Dao & Nazarov's Δ_K/k.
+        :bw_hscale        => "ngl",
         :dsgs_gamma       => 2.0,
         :dsgs_Prt         => 1.0,
         :dsgs_conserved   => true,
@@ -193,7 +185,7 @@ function user_inputs()
         # element form (the default) is kept here.
 #       :ldsgs_nodal      => true,    # false (the default) = one ν per element
         :dsgs_Cl          => 0.4,
-        :ldsgs_nodal      => _bw_nodal(),  # JEXPRESSO_BW_NODAL=1 for the paper's nodal form
+        :ldsgs_nodal      => false,   # true: the nodal form (Dao & Nazarov's own)
         :dsgs_norms       => "domain",  # residual normalized by the spread over the whole tube (the default; "rank" = this rank's elements only, which makes the answer depend on the partition)
         :energy_equation  => "energy",
         :lkep              => false,
@@ -221,7 +213,16 @@ function user_inputs()
         :loverwrite_output    => true,
         :output_dir           => "./output",
     )
-    f = _bw_freeze()
-    f === nothing || (inputs[:dsgs_freeze_stage] = f)
+    # :bw_hscale => "nop": Dao & Nazarov's Δ_K/k on top of the kernels' Δ_K/(k+1),
+    # by scaling the coefficients (Δ enters the cap and the floor linearly, the
+    # residual viscosity quadratically).
+    hs = lowercase(string(inputs[:bw_hscale]))
+    hs in ("ngl", "nop") || error(" problems/MHD/brioWu1d: :bw_hscale must be \"ngl\" or \"nop\" (got ", hs, ").")
+    if hs == "nop"
+        h = (inputs[:nop] + 1)/inputs[:nop]
+        inputs[:dsgs_C1]   *= h^2
+        inputs[:dsgs_Cmax] *= h
+        inputs[:dsgs_Cmin] *= h
+    end
     return inputs
 end

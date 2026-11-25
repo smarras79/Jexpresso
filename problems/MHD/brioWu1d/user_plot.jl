@@ -176,14 +176,15 @@ _bw_style(nop) = get(BW_STYLE, nop, (:darkorange, :dash, :xcross))
 
 # Element- and nodal-form runs are different methods, so they are stored
 # apart and only drawn together when the figure says which is which.
-# With JEXPRESSO_BW_HSCALE=nop the deck folds Dao & Nazarov's Δ_K/k into the
+# With :bw_hscale => "nop" the deck folds Dao & Nazarov's Δ_K/k into the
 # coefficients as a factor (k+1)/k on C_max, C_min. Divide it back out so the
 # figure reports the method's C_min and not the per-order number that
-# implements it. `_bw_hscale()` is the deck's own switch (user_inputs.jl):
-# "ngl", the default, is the paper's h_e/(N+1) and needs no factor; nothing
-# outside this case reads it.
+# implements it. :bw_hscale is the deck's own key (user_inputs.jl): "ngl",
+# the default, is the paper's h_e/(N+1) and needs no factor; nothing outside
+# this case reads it.
+_bw_hscale(inputs) = lowercase(string(get(inputs, :bw_hscale, "ngl")))
 function _bw_hfac(inputs)
-    _bw_hscale() == "nop" || return 1.0
+    _bw_hscale(inputs) == "nop" || return 1.0
     N = Int(get(inputs, :nop, 0))
     return N > 0 ? (N + 1)/N : 1.0
 end
@@ -197,7 +198,7 @@ end
 # normalized residual (:dsgs_cutoff).
 function _bw_form(inputs)
     f = get(inputs, :ldsgs_nodal, false) ? "nodal" : "elem"
-    _bw_hscale() == "nop" && (f = string(f, "H"))
+    _bw_hscale(inputs) == "nop" && (f = string(f, "H"))
     c1 = round(Float64(get(inputs, :dsgs_C1, 1.0))/_bw_hfac(inputs)^2; digits = 6)
     c1 == 1.0 || (f = string(f, "_C1_", c1))
     c = Float64(get(inputs, :dsgs_cutoff, 0.0))
