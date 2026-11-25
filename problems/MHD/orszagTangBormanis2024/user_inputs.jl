@@ -7,7 +7,6 @@ _ot_dt()   = something(tryparse(Float64, get(ENV, "JEXPRESSO_OT_DT",   "")), 0.7
 # 1000 (ρ is uniform at t = 0, so the floor WAS its normalization).
 _ot_hold() = something(tryparse(Int, get(ENV, "JEXPRESSO_OT_HOLD", "")), 2)
 _ot_rel()  = something(tryparse(Float64, get(ENV, "JEXPRESSO_OT_REL",  "")), 1.0)
-_ot_norms() = lowercase(strip(get(ENV, "JEXPRESSO_OT_NORMS", "domain")))
 
 function user_inputs()
 
@@ -93,27 +92,27 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc            => true,
         :μ                => [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-        # DynSGS sensor: "legacy" = the sensor this case was validated with
-        # (the assembled RHS against a fixed BDF2 of the stage state, in
-        # effect a |∂ₜq| sensor); "residual" (the default) = the element-wise
-        # strong residual with the stage-consistent stencil, DSGS.md §1.2.
+        # DynSGS sensor "residual": each element's own strong residual,
+        # BDF2(qⁿ, qⁿ⁻¹, qⁿ⁻²) − RHS_e/M_e, with the coefficient computed once
+        # per step at tⁿ (:dsgs_freeze_stage, on by default with this sensor).
+        # Until Nov 2026 this deck ran "legacy" (the assembled RHS against a
+        # BDF2 of the stage state, in effect a |∂ₜq| sensor).
         :visc_model       => DSGS_MHD(),
-        :dsgs_sensor      => "legacy",
+        :dsgs_sensor      => "residual",
         :dsgs_rel         => _ot_rel(),
         # Steps the coefficient is held at zero at the start (JEXPRESSO_OT_HOLD,
         # :dsgs_hold_steps): what a longer hold costs on a case whose shocks
         # form OUT of smooth data, as opposed to Brio-Wu's discontinuous start.
         :dsgs_hold_steps  => _ot_hold(),
-        # NORMALIZATION SCOPE. The code-wide default is "rank": every rank
-        # normalizes the residual by ITS OWN subdomain's spread, so ν — and
-        # with it the solution — depends on how the domain was cut. On this
-        # case at 120² elements over 128 ranks that draws the partition into
+        # NORMALIZATION SCOPE: the whole domain Ω, what the method means by the
+        # norm over Ω (two small Allreduces per evaluation of the coefficient).
+        # "rank" would normalize each rank by ITS OWN subdomain's spread, so ν —
+        # and with it the solution — would depend on how the domain was cut: on
+        # this case at 120² elements over 128 ranks that drew the partition into
         # the coefficient as vertical banding; measured on the smooth vortex
         # (nop 6, 32² elements): the error is 3.935e-7 on 2 ranks and 7.155e-6
-        # on 4, from nothing but the number of ranks. "domain" is two small
-        # Allreduces per RHS call and is what the method means by the norm
-        # over Ω. JEXPRESSO_OT_NORMS=rank restores the cheaper scope.
-        :dsgs_norms       => _ot_norms(),
+        # on 4, from nothing but the number of ranks.
+        :dsgs_norms       => "domain",
         :dsgs_C1          => 1.0,
         :dsgs_Cmax        => 0.5,
         :dsgs_gamma       => 5.0/3.0,

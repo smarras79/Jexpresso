@@ -72,7 +72,6 @@ other nor share a curve.
 | `JEXPRESSO_EV_SOLVER` | `ck54` | `vern9`, `vern7`, `dp8`, `ssprk54`, `tsit5` |
 | `JEXPRESSO_EV_CMIN` / `_C1` / `_CMAX` | 0, 1, 0.5 | the DynSGS coefficients |
 | `JEXPRESSO_EV_REL` | 1 | `:dsgs_rel`, the normalization floor |
-| `JEXPRESSO_EV_NORMS` | `domain` | `:dsgs_norms` |
 | `JEXPRESSO_EV_BDF` | 2 | `:dsgs_bdf_order`, the order of the residual sensor's backward difference; records `dsgs_bdf<k>` ([below](#the-order-of-the-sensors-time-difference)) |
 
 The meshes are the MHD case's — the same $[-5,5]^2$ doubly periodic quad grids,

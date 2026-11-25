@@ -29,13 +29,9 @@
 #   JEXPRESSO_SV_CMIN   the DynSGS background floor :dsgs_Cmin  (default 0)
 #   JEXPRESSO_SV_C1     :dsgs_C1                                 (default 1)
 #   JEXPRESSO_SV_REL    :dsgs_rel, the normalization floor        (default 1)
-#   JEXPRESSO_SV_NORMS  :dsgs_norms, "domain" (default) | "rank" | "element";
-#                       "rank" makes the answer depend on the rank count
 #   JEXPRESSO_SV_CMAX   :dsgs_Cmax                               (default 0.5)
 #   JEXPRESSO_SV_VISC   "dsgs" (default) or "none" for the plain Galerkin run,
 #                       the two panels of the paper's Fig. 1
-#   JEXPRESSO_SV_SENSOR "residual" (default, the element's own residual) or
-#                       "legacy" (the assembled rate)
 #   JEXPRESSO_SV_CUTOFF :dsgs_cutoff, the smoothness cutoff      (default 1e-3;
 #                       0 runs DynSGS without it)
 #   JEXPRESSO_SV_HOLD   :dsgs_hold_steps                         (default 2)
@@ -76,15 +72,8 @@ _sv_c1()   = (v = get(ENV, "JEXPRESSO_SV_C1", "");
 # kernels used before it, and reproduces the first-order convergence this case
 # was built to expose.
 _sv_rel()  = something(tryparse(Float64, get(ENV, "JEXPRESSO_SV_REL",  "")), 1.0)
-# "domain" (the default here) | "rank" | "element" — see :dsgs_norms below.
-_sv_norms() = lowercase(strip(get(ENV, "JEXPRESSO_SV_NORMS", "domain")))
 _sv_cmax() = something(tryparse(Float64, get(ENV, "JEXPRESSO_SV_CMAX", "")), 0.5)
 _sv_visc() = lowercase(strip(get(ENV, "JEXPRESSO_SV_VISC", "dsgs")))
-# "residual" (the default) measures the ELEMENT's own strong residual against
-# the BDF history; "legacy" measures the ASSEMBLED rate instead. Which one is
-# used decides whether an inter-element mismatch can reach the sensor, so the
-# convergence test needs to be able to run both.
-_sv_sensor() = lowercase(strip(get(ENV, "JEXPRESSO_SV_SENSOR", "residual")))
 
 function _sv_dt()
     d = tryparse(Float64, get(ENV, "JEXPRESSO_SV_DT", ""))
@@ -208,7 +197,10 @@ function user_inputs()
         :lvisc            => (_sv_visc() != "none"),
         :μ                => [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         :visc_model       => DSGS_MHD(),
-        :dsgs_sensor      => _sv_sensor(),
+        # "residual": each element's own strong residual against the BDF
+        # history (an inter-element mismatch reaches the sensor; the assembled
+        # rate of the former "legacy" sensor cancels it).
+        :dsgs_sensor      => "residual",
         :dsgs_rel         => _sv_rel(),
         :dsgs_C1          => _sv_c1(),
         :dsgs_Cmax        => _sv_cmax(),
@@ -234,7 +226,7 @@ function user_inputs()
         # no mesh refinement can go below. "domain" costs two small Allreduces
         # per RHS call (a few doubles) and is what Dao & Nazarov's eq. 4.8
         # means by the norm over Ω.
-        :dsgs_norms       => _sv_norms(),
+        :dsgs_norms       => "domain",
         # :dsgs_freeze_stage, the coefficient once per step instead of once
         # per stage, is mod_inputs.jl's default with the residual sensor: it
         # is what keeps the residual, and with it nu, from stalling at O(dt)
