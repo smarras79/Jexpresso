@@ -773,7 +773,7 @@ transition region), $2h_0$ over the region of the figures (to 12.75 Mm and
 |---|---|---|---|---|
 | 1 | 90 × 78 | 113 k | 0.62 $L_0$ (94 km) | `LK10_ref1.msh` (smoke tests) |
 | 2 | 180 × 156 | 451 k | 0.31 $L_0$ (47 km) | `LK10_ref2.msh` (default; the paper has 37.5 km) |
-| 3 | 362 × 312 | 1.8 M | 0.16 $L_0$ | `gmsh -2 LK10.geo -setnumber ref 3 -format msh41 -o LK10_ref3.msh` |
+| 3 | 362 × 312 | 1.8 M | 0.16 $L_0$ (23 km) | `LK10_ref3.msh` (8.6 MB; the convergence check of the tube's emergence: field-free, `JEXPRESSO_LK10_DT=0.0015`) |
 | 4 | 200 × 172 | 552 k | 0.31 $L_0$ (47 km) | `LK10_ref4.msh`: $h_0$ of REF 2 over the whole region of the figures |
 
 REF 2 has its core spacing only where the tube rises and crosses the surface;

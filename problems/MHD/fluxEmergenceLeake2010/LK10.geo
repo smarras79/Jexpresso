@@ -32,7 +32,7 @@
 //   ref = 1 -> h0 = 2.5  L0:  90 x  78 elements  LK10_ref1.msh  smoke test
 //   ref = 2 -> h0 = 1.25 L0: 180 x 156 elements  LK10_ref2.msh  ~ the paper's
 //              resolution at :nop => 4 (nodal spacing 0.31 L0 in the core)
-//   ref = 3 -> h0 = 0.625 L0: 362 x 312 elements LK10_ref3.msh (generate)
+//   ref = 3 -> h0 = 0.625 L0: 362 x 312 elements LK10_ref3.msh
 //   ref = 4 -> h0 = 1.25 L0 over the WHOLE figure region (|x| < 85, y < 130)
 //              and one grading level to ~10 h0 beyond it: 200 x 172 elements,
 //              LK10_ref4.msh. Nodal spacing 0.33 L0 (49 km) where the dome and
