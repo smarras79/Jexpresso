@@ -706,9 +706,14 @@ def core_row(g, mcz=1.3):
     tube = BZ > 0.02 * BZ.max()
     w = np.outer(_trapw(Y), _trapw(g["X"]))
     T = at(grid2d(g, g["fields"]["T"])) * 5700.0 if "T" in g["fields"] else np.nan
+    # the DynSGS coefficients at the axis (L0 v0), when the snapshot has them: momentum (with the case's nu),
+    # field (resistivity), mass
+    cof = lambda n: at(grid2d(g, g["fields"][n])) if n in g["fields"] else np.nan
+    en = next((n for n in ETA_NAMES if n in g["fields"]), None)
     return dict(axis=ya, logrho=at(L), dens=rho / rhoe, T=T, bz=at(BZ), q=at(BZ) / rho,
                 flux=A[-1] - float(np.interp(ya, Y, A)), ebz=float((w * BZ ** 2)[tube].sum()),
-                qmean=float((w * BZ * BZ / R)[tube].sum() / (w * BZ)[tube].sum()))
+                qmean=float((w * BZ * BZ / R)[tube].sum() / (w * BZ)[tube].sum()),
+                mu=cof(MU_NAME), eta=cof(en) if en else np.nan, mur=cof("mu_dsgs_ρ"))
 
 
 def cmd_core(a):
@@ -723,7 +728,7 @@ def cmd_core(a):
         mcz = float(_case_value(d0, "mcz", "1.3"))
         tube = int(float(_case_value(d0, "tube", "2")))
         q0 = tube_axis_initial(tube, mcz) if _case_value(d0, "tube_eq", "thermal") == "thermal" else np.nan
-        rows = [(t, core_row(load(f, ["Bz", "log10rho_cgs", "T"]), mcz)) for t, f in items]
+        rows = [(t, core_row(load(f, ["Bz", "log10rho_cgs", "T", MU_NAME, *ETA_NAMES, "mu_dsgs_ρ"]), mcz)) for t, f in items]
         rows = [(t, r) for t, r in rows if r is not None]
         if not rows:
             print(f"--- {lab}: no tube axis found"); continue
@@ -736,12 +741,13 @@ def cmd_core(a):
         print(f"--- {lab}: the plasma at the tube axis; B_z/rho of the initial tube {q0:.0f} G per photospheric density "
               f"(tube {tube}), kept at the axis in ideal MHD")
         print("    (read between the nodes, the axis of the initial state has 0.96 of it on REF 1 and 0.95 on REF 2 and 4)")
+        print("    and the DynSGS coefficients at the axis [L0 v0 = 970 km^2/s]: momentum (with the case's nu), field, mass")
         print(f"{'t [s]':>7} {'axis Mm':>8} {'log rho':>8} {'rho/rho_e':>9} {'T K':>8} {'Bz G':>7} {'Bz/rho':>8} {'/initial':>8} "
-              f"{'in-plane flux G Mm':>19} {'/first':>6} {'int Bz^2':>9} {'mean Bz/rho':>11}")
+              f"{'in-plane flux G Mm':>19} {'/first':>6} {'int Bz^2':>9} {'mean Bz/rho':>11} | {'mu':>7} {'eta':>7} {'mu_rho':>7}")
         for t, r in rows:
             print(f"{t:7.0f} {r['axis']:8.2f} {r['logrho']:8.2f} {r['dens']:9.3f} {r['T']:8.0f} {r['bz']:7.0f} {r['q']:8.0f} "
                   f"{r['q'] / q0:8.2f} {r['flux']:19.1f} {r['flux'] / first['flux']:6.3f} {r['ebz'] / first['ebz']:9.3f} "
-                  f"{r['qmean'] / first['qmean']:11.3f}")
+                  f"{r['qmean'] / first['qmean']:11.3f} | {r['mu']:7.3g} {r['eta']:7.3g} {r['mur']:7.3g}")
         axs[0].plot(T, col("axis"), "-o", ms=3, label=lab)
         axs[1].plot(T, col("q") / q0, "-o", ms=3, label=lab)
         axs[2].plot(T, col("dens"), "-o", ms=3, label=lab)
@@ -758,6 +764,53 @@ def cmd_core(a):
     out = fig_path(a, "core")
     fig.savefig(out, dpi=a.dpi); plt.close(fig)
     print("wrote", out)
+
+
+def cmd_lare(a):
+    """Our DynSGS momentum coefficient against the viscosity of the paper's code for the same flow. LareXd's tensor
+    viscosity (lagran.F90 of 2.6-2.9, built without Q_MONO) gives each component s_ij of the traceless strain rate
+    the stress L rho (0.1 c_f + 0.5 L |s_ij|) s_ij in every cell: a kinematic viscosity 0.05 c_f L + 0.25 L^2 |s_ij|
+    (here with the node's largest |s_ij|, from finite differences on the lattice: an upper bound where the flow is
+    resolved), L its cell, --lare-dx Mm (0.0375, the paper's cell near the surface). At each requested time, over
+    the regions around the tube (its axis as in 'axis'): in the tube (|B| > 300 G); above it, the field-free
+    atmosphere it pushes into (|x| < 3 Mm, from 0.5 Mm above the axis to 3 Mm, |B| <= 30 G); beside it in the
+    convection zone (3 < |x| < 8 Mm, -1.5 < y < 0 Mm): the median of each, the percentiles of their ratio node by
+    node, and the flow there (speed, Mach number at the 90th percentile). The coefficient is the momentum slot's
+    (mu_dsgs_rhou_rhov_rhow, with the case's factors); with JEXPRESSO_LK10_VISC=velocity that is still the whole
+    viscosity, mu_rho on the momentum plus (mu - mu_rho)_+ on the velocity."""
+    items = runs_of(a.run)
+    Lc = a.lare_dx / L0_MM
+    for tt in a.times:
+        t, f = min(items, key=lambda it: abs(it[0] - tt))
+        g = load(f, ["Bz", "p", "ρ", "u", "v", MU_NAME])
+        if MU_NAME not in g["fields"]:
+            raise SystemExit(f"lare: {f} has no {MU_NAME} (a run without :plot_dsgs)")
+        X, Y = g["xc"], g["yc"]
+        G = lambda n: grid2d(g, g["fields"][n])
+        R, p, u, v, mu = G("ρ"), G("p"), G("u"), G("v"), G(MU_NAME)
+        B2 = G("Bx") ** 2 + G("By") ** 2 + G("Bz") ** 2
+        cs = np.sqrt(np.maximum(GAMMA * p / R, 0.0)); cf = np.sqrt(cs ** 2 + B2 / R)
+        ux, uy = np.gradient(u, X, axis=1), np.gradient(u, Y, axis=0)
+        vx, vy = np.gradient(v, X, axis=1), np.gradient(v, Y, axis=0)
+        smax = np.maximum(np.maximum(np.abs(2 / 3 * ux - 1 / 3 * vy), np.abs(2 / 3 * vy - 1 / 3 * ux)), np.abs(0.5 * (uy + vx)))
+        nuL = 0.05 * cf * Lc + 0.25 * Lc * Lc * smax
+        Bt = np.sqrt(B2) * B0_GAUSS
+        ya = axis_height(g)
+        XX, YY = np.meshgrid(g["X"], g["Y"])
+        spd = np.sqrt(u ** 2 + v ** 2)
+        print(f"--- {os.path.basename(os.path.dirname(f))}, t = {t:.0f} s, tube axis at {ya:.2f} Mm; viscosities in L0 v0 "
+              f"(970 km^2/s); Lare's cell {a.lare_dx * 1000:.1f} km")
+        print(f"{'region':34s} {'nodes':>6} | {'ours':>7} {'Lare':>7} | {'ours/Lare p10':>13} {'p50':>6} {'p90':>6} | "
+              f"{'|v| km/s':>8} {'Mach p90':>8}")
+        regs = {"in the tube, |B| > 300 G": Bt > 300.0,
+                "above it, |x|<3, axis+0.5 to 3 Mm": (np.abs(XX) < 3) & (YY > ya + 0.5) & (YY < 3) & (Bt <= 30.0),
+                "beside it, 3<|x|<8, -1.5<y<0 Mm": (np.abs(XX) > 3) & (np.abs(XX) < 8) & (YY > -1.5) & (YY < 0)}
+        for k, m in regs.items():
+            if m.sum() == 0:
+                print(f"{k:34s} {0:6d}"); continue
+            r = np.percentile((mu / nuL)[m], [10, 50, 90])
+            print(f"{k:34s} {m.sum():6d} | {np.median(mu[m]):7.4f} {np.median(nuL[m]):7.4f} | {r[0]:13.1f} {r[1]:6.1f} {r[2]:6.1f} | "
+                  f"{np.median(spd[m]) * V0_KMS:8.2f} {np.percentile((spd / np.maximum(cs, 1e-12))[m], 90):8.2f}")
 
 
 def dome_top(g, thr=-13.0, ymax=19.0):
@@ -2315,6 +2368,11 @@ def main():
     s = sub.add_parser("core", parents=[common]); s.set_defaults(fn=cmd_core)
     s.add_argument("runs", nargs="+", help="RUN or LABEL=RUN")
     s.add_argument("--tmax", type=float, default=2600.0, help="limit of the time axis [s]")
+    s = sub.add_parser("lare", parents=[common]); s.set_defaults(fn=cmd_lare)
+    s.add_argument("run")
+    s.add_argument("--times", type=lambda t: [float(x) for x in t.split(",")], default=[464.0, 696.0, 920.0, 1044.0, 1380.0],
+                   help="times [s], comma-separated (default 464,696,920,1044,1380: the rise, the arrival at the surface, the emergence)")
+    s.add_argument("--lare-dx", type=float, default=0.0375, help="the paper's Lare cell [Mm] (default 0.0375, its cell at the surface)")
     s = sub.add_parser("lines", parents=[common]); s.set_defaults(fn=cmd_lines)
     s.add_argument("runs", nargs="+", help="RUN or LABEL=RUN")
     s.add_argument("--times", default="", help="comma-separated times in s of the tables (default: those of the erratum's Fig. 3)")

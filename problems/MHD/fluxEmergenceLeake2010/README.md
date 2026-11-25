@@ -100,7 +100,7 @@ below).
 | `JEXPRESSO_LK10_ETAFAC` | default 1 | factor on the DynSGS resistivity (the `:μ` multipliers of the B slots), a sensitivity test; a factor above 1 never carries the coefficient past the stability cap (`JEXPRESSO_LK10_STABCAP`) |
 | `JEXPRESSO_LK10_RHOFAC` | default 1 | factor on the DynSGS mass diffusion (the `:μ` multiplier of the ρ slot), a sensitivity test |
 | `JEXPRESSO_LK10_VISC` | `momentum` (default), `velocity`, `nodal` | the viscosity (DynSGS and ν) as the diffusion of the momentum $\rho\mathbf v/\rho_e$, or as a stress on the velocity gradient with the momentum of the mass the DynSGS diffuses; that stress weighs every node of an element with the density of its lightest (`velocity`), or each node with its own, up to what the lightest takes at the stability limit (`nodal`) (Equations and dissipation: The viscosity on the velocity). Opt-in while the cluster test runs |
-| `JEXPRESSO_LK10_RHOSENS` | `off` (default), `on`, `a0,a1,C` | the mass slot of an element whose density has a node-to-node part (the highest Legendre mode of $\log_{10}(\rho/\rho_e)$ along any of its lines, from `a0` to `a1` dex) gets at least `C` $\Delta\lvert(u, v)\rvert$; `on` is `0.03,0.15,1` (`:dsgs_rho_sensor`; Equations and dissipation: The density sensor). Opt-in while the cluster test runs |
+| `JEXPRESSO_LK10_RHOSENS` | `on` with `JEXPRESSO_LK10_VISC=velocity` or `nodal`, `off` with `momentum`; or `a0,a1,C` | the mass slot of an element whose density has a node-to-node part (the highest Legendre mode of $\log_{10}(\rho/\rho_e)$ along any of its lines, from `a0` to `a1` dex) gets at least `C` $\Delta\lvert(u, v)\rvert$; `on` is `0.03,0.15,1` (`:dsgs_rho_sensor`; Equations and dissipation: The density sensor) |
 | `JEXPRESSO_LK10_VISCFAC` | default 1 | factor on the DynSGS viscosity (the `:μ` multipliers of the momentum slots, applied after its caps; the case's ν is not scaled), a test of its drag on the plasma that drains from the dome (`drain`, its `visc` column) |
 | `JEXPRESSO_LK10_HEAT` | `shock` (default), `viscous`, a fraction | what the heat the DynSGS dissipates does (`:dsgs_heating`): `shock`, only the explicit ν, η and the DynSGS viscosity in compression heat; `viscous`, all the viscous dissipation (DynSGS and ν) and the explicit η heat, the DynSGS resistivity not, as Lare's default tensor shock viscosity heats (The heat of the DynSGS, below); or that fraction of all of it into the plasma (1 conserves energy, 0 loses it all) |
 | `JEXPRESSO_LK10_SENSOR` | `legacy` (default), `residual` | DynSGS sensor: $\lvert\partial_tq\rvert$ against the assembled RHS (the parent case's), or the element residual once per step (DSGS.md §1.2) |
@@ -656,8 +656,29 @@ paper's dissipation and its energy relaxation:
   The blob falls as without the row (12.25 km/s at 93 s, 12.32 without it,
   14.50 in free fall), and its mass and temperature are those of the run
   without the row to 3 %. The default is unchanged to the bit (the kick test
-  of "Positivity", the totals of mass and energy at steps 0, 100 and 200). On the cluster, from
-  1955 s with the switches of the `EINT=lowbeta` run of 23 Nov: not run yet.
+  of "Positivity", the totals of mass and energy at steps 0, 100 and 200).
+
+  *On the cluster* (REF 4, 24 Nov 2026): the `EINT=lowbeta` run of 23 Nov
+  restarted at 1955 s with the sensor, every other switch the same, to
+  2530 s. `noise` over $\lvert x\rvert \le 6$, 3–14 Mm, without / with:
+
+  | | 2185 s | 2530 s |
+  |---|---|---|
+  | largest node-to-node $\log\rho$ along $y$ (dex) | 1.30 / 0.12 | 1.78 / 0.12 |
+  | mean along $y$, along $x$ (dex) | 0.053, 0.016 / 0.023, 0.006 | 0.081, 0.032 / 0.029, 0.010 |
+  | nodes at the density floor | 192 / 56 | 1150 / 228 |
+  | of the nodes at 6.75–8.6 Mm | 0 / 0 | 4.7–10 % / 0–2 % |
+  | nodes at the temperature floor | 165 / 256 | 30 / 15 |
+
+  The density itself is the same: `profile`, the median of the centre
+  ($\lvert x\rvert \le 3$ Mm) at 4–8 Mm is within 0.17 dex of the run without the
+  sensor at 2185 and 2530 s, the flanks' within 0.07 (0.24 at 10 Mm), and the
+  10th percentile of the centre at 6–8 Mm is −14.1 to −14.5 at 2530 s where it
+  was at the floor (−15.0). What reaches the floor now is a patch at the top of
+  the drained dome (7 % of the centre's nodes at 9 Mm at 2530 s), smooth from
+  node to node (0.11 dex at most there), not rows. The temperature floor's nodes
+  at 2185 s (1–4 % at 5.8–8.6 Mm, filled with mass before its heat) are gone by
+  2530 s. The sensor is on by default with the viscosity on the velocity.
 
 ## What is not in the paper, and what was done
 
@@ -1722,9 +1743,18 @@ Short runs on 4 cores; the full runs are for a cluster (above).
   there.
 
   *What the DynSGS sees in the rising tube.* The coefficient there is
-  0.02–0.07 $L_0v_0$, 10–40 times the paper's kinematic viscosity at those
-  depths (0.0013–0.008), so that the tube rises at a Reynolds number of ~10
-  against several hundred in the paper. The legacy sensor is the time
+  0.02–0.07 $L_0v_0$ (at the axis of the `ETAFAC=0.1` run above, 0.023–0.13
+  from 93 to 1021 s, median 0.035), 10–40 times the paper's explicit
+  viscosity at those depths (0.0013–0.008), and no more than the viscosity of
+  the paper's code: Lare's tensor viscosity ("Equations and dissipation") is a
+  kinematic viscosity $0.05\,c_fL$ in every cell, which on the paper's 37.5 km
+  cell at the tube's axis is 0.052 $L_0v_0$ at $t = 0$, 0.045 at 232 s, 0.037
+  at 510 s, 0.029 at 742 s and 0.022 at 1021 s ($c_f$ at the axis of that run,
+  4.2 falling to 1.75 $v_0$). The tube rises at a Reynolds number $va/\nu$ of
+  8–20 with Lare's viscosity and 5–25 with the DynSGS's ($a$ = 0.3 Mm, $v$ the
+  speed of the axis), not at ~10 against several hundred, as this paragraph
+  said until 25 Nov 2026: the viscosity at the axis is not what holds the tube
+  back. The legacy sensor is the time
   derivative, ~$1.5\lvert\partial_t q\rvert$ against its mean (DSGS.md, "Selected
   stages"), so it fires on any structure that moves, resolved or not. A
   count over the tube's elements ($\lvert B_z\rvert > 1$ kG, REF 1, first 140 s,

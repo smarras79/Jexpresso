@@ -43,7 +43,7 @@
 #                            node-to-node part (the highest Legendre mode of log10(ρ/ρ_e), from
 #                            a0 to a1 dex) gets at least C Δ |(u, v)|, the first-order diffusivity
 #                            of a contact carried by the flow; on = 0.03,0.15,1 (README, "The
-#                            density sensor")                                   [off]
+#                            density sensor")    [on with VISC=velocity or nodal, off with momentum]
 #   JEXPRESSO_LK10_HEAT      what the heat the DynSGS dissipates does: "shock": only the
 #                            explicit ν, η and the DynSGS viscosity in compression heat;
 #                            "viscous": all the viscous dissipation and the explicit η heat,
@@ -162,9 +162,11 @@ function _lk10_stages()
     error(" problems/MHD/fluxEmergenceLeake2010: JEXPRESSO_LK10_DSGS_STAGES = \"$(w)\", expected all, 1,5 or 1.")
 end
 
-# JEXPRESSO_LK10_RHOSENS: nothing (off), or (a0, a1, C) (:dsgs_rho_sensor)
+# JEXPRESSO_LK10_RHOSENS: nothing (off), or (a0, a1, C) (:dsgs_rho_sensor); on by default with the
+# viscosity on the velocity, whose mass slot alone diffuses the density (README, "The density sensor")
 function _lk10_rhosens()
-    v = lowercase(_lk10_env("RHOSENS", "off"))
+    vel = _lk10_word("VISC", "momentum", "velocity", "nodal") != "momentum"
+    v = lowercase(_lk10_env("RHOSENS", vel ? "on" : "off"))
     v == "off" && return nothing
     v == "on" && return (0.03, 0.15, 1.0)
     p = [tryparse(Float64, strip(x)) for x in split(v, ",")]
