@@ -79,6 +79,7 @@ below).
 | `JEXPRESSO_LK10_DT` | $t_0$ units | overrides the time step |
 | `JEXPRESSO_LK10_MCZ` | default 1.3 | polytropic index $m$ of the convection zone, $p\propto T^{m+1}$ |
 | `JEXPRESSO_LK10_RELAX_YMIN` | $L_0$ units, default $-\infty$ | apply the energy relaxation only above this height |
+| `JEXPRESSO_LK10_RELAX_TAU` | `local` (default), `height` | the relaxation time $23\,\text{s}\,(\rho/\rho_{ph})^{-1.43}$ with the local density, or with the atmosphere's at the node's height (the paper's "$\tau(y)$"; Equations and dissipation) |
 | `JEXPRESSO_LK10_TUBE_EQ` | `thermal` (default), `relaxed` | tube in thermal equilibrium with its surroundings (the paper), or on the relaxed relation $\rho T_0(\rho) = p$ |
 | `JEXPRESSO_LK10_CURLB` | `1` (default), `0` | DynSGS resistivity of the in-plane field in curl form, or the component Laplacian of the parent case |
 | `JEXPRESSO_LK10_NU` | `dynamic` (default), `kinematic` | the paper's dynamic viscosity in the convection zone, held at its photospheric kinematic value above; or that kinematic value everywhere |
@@ -101,6 +102,7 @@ below).
 | `JEXPRESSO_LK10_RHOFAC` | default 1 | factor on the DynSGS mass diffusion (the `:μ` multiplier of the ρ slot), a sensitivity test |
 | `JEXPRESSO_LK10_VISC` | `momentum` (default), `velocity`, `nodal` | the viscosity (DynSGS and ν) as the diffusion of the momentum $\rho\mathbf v/\rho_e$, or as a stress on the velocity gradient with the momentum of the mass the DynSGS diffuses; that stress weighs every node of an element with the density of its lightest (`velocity`), or each node with its own, up to what the lightest takes at the stability limit (`nodal`) (Equations and dissipation: The viscosity on the velocity). Opt-in while the cluster test runs |
 | `JEXPRESSO_LK10_RHOSENS` | `on` with `JEXPRESSO_LK10_VISC=velocity` or `nodal`, `off` with `momentum`; or `a0,a1,C` | the mass slot of an element whose density has a node-to-node part (the highest Legendre mode of $\log_{10}(\rho/\rho_e)$ along any of its lines, from `a0` to `a1` dex) gets at least `C` $\Delta\lvert(u, v)\rvert$; `on` is `0.03,0.15,1` (`:dsgs_rho_sensor`; Equations and dissipation: The density sensor) |
+| `JEXPRESSO_LK10_EFAC` | default 1 | factor on the DynSGS diffusion of the internal energy (the `:μ` multiplier of the energy slot; the work and heat of the other slots are not scaled) |
 | `JEXPRESSO_LK10_VISCFAC` | default 1 | factor on the DynSGS viscosity (the `:μ` multipliers of the momentum slots, applied after its caps; the case's ν is not scaled), a test of its drag on the plasma that drains from the dome (`drain`, its `visc` column) |
 | `JEXPRESSO_LK10_HEAT` | `shock` (default), `viscous`, a fraction | what the heat the DynSGS dissipates does (`:dsgs_heating`): `shock`, only the explicit ν, η and the DynSGS viscosity in compression heat; `viscous`, all the viscous dissipation (DynSGS and ν) and the explicit η heat, the DynSGS resistivity not, as Lare's default tensor shock viscosity heats (The heat of the DynSGS, below); or that fraction of all of it into the plasma (1 conserves energy, 0 loses it all) |
 | `JEXPRESSO_LK10_SENSOR` | `legacy` (default), `residual` | DynSGS sensor: $\lvert\partial_tq\rvert$ against the assembled RHS (the parent case's), or the element residual once per step (DSGS.md §1.2) |
@@ -234,7 +236,13 @@ paper's dissipation and its energy relaxation:
   2.53 km/s with it only above the photosphere (`JEXPRESSO_LK10_RELAX_YMIN=0`),
   against 1.64 km/s in the erratum's Fig. 2(a). It acts everywhere by default.
   (`JEXPRESSO_LK10_TUBE_EQ=relaxed` starts the tube in the contracted state,
-  without the transient.)
+  without the transient.) The paper writes the time as
+  "$\tau(y) = 23\,(\rho(y)/\rho(y = 0))^{-1.43}$ s", which may be the atmosphere's
+  density at the height rather than the local one: `JEXPRESSO_LK10_RELAX_TAU=height`
+  takes $\rho_e(y)$. The two agree in the convection zone (to the tube's density
+  deficit, a factor 1.7 in the rate at its axis) and differ for the dense plasma
+  the tube lifts above the surface: at 0.5 Mm, plasma of photospheric density is
+  relaxed in ~20 s with the local density and in 2.6 × 10³ s with the height's.
 - **DynSGS** (`DSGS_MHD`, conserved form on the departure from the reference
   state, weighted by $\rho_e$; legacy sensor; element norms; fast-speed floors
   and thermal-energy residual for the low-β corona; $C_1 = 1$,
@@ -1037,7 +1045,7 @@ stops at once ("nothing to continue"), so a spare job in the chain is harmless.
   run with another record stops with the list of differences. The time step
   (`JEXPRESSO_LK10_DT`), the end time, the snapshot interval and the numerical
   switches may change (`JEXPRESSO_LK10_FLOORS`, `_CMIN`, `_CURLB` and those of
-  the DynSGS: `_ETA`, `_ETACAP`, `_ETAFAC`, `_VISC`, `_VISCFAC`, `_RHOFAC`, `_HEAT`, `_STABCAP`,
+  the DynSGS: `_ETA`, `_ETACAP`, `_ETAFAC`, `_VISC`, `_VISCFAC`, `_RHOFAC`, `_EFAC`, `_HEAT`, `_STABCAP`,
   `_SENSOR`, `_ENERGY`, `_DSGS_STAGES`, `_C1`, and `_TFLOOR`; the log says which did): that is
   how a run continues past a failure (below), or with another setting from the
   snapshot where it starts to matter.
@@ -1754,7 +1762,8 @@ Short runs on 4 cores; the full runs are for a cluster (above).
   went non-finite at 1062 s, where the tube flattens against the surface
   (first non-finite nodes on the axis at −0.37 Mm and at (−6.4, 0.75) Mm),
   after the first-order cap had run to 10⁵⁸–10¹⁰⁰: the resistivity is needed
-  there.
+  there, it seemed; more likely it was the field-free time step (below,
+  "Neither the viscosity nor the start").
 
   *What the DynSGS sees in the rising tube.* The coefficient there is
   0.02–0.07 $L_0v_0$ (at the axis of the `ETAFAC=0.1` run above, 0.023–0.13
@@ -1823,14 +1832,51 @@ Short runs on 4 cores; the full runs are for a cluster (above).
   high-tension tubes 1 and 3 stay at the photosphere. A center with 0.82 of
   its $B_z/\rho$ has two thirds of the magnetic pressure per unit mass.
 
-  *Under test* (cluster, REF 4, field-free corona, $t = 0$ to 1700 s,
-  `JEXPRESSO_LK10_DT=0.003`, the switches of the 22–24 Nov runs:
-  `VISC=velocity`, `RHOFAC=0.1`, `EINT=lowbeta`): (A) those switches; (B) A
-  with `VISCFAC=0.1`, the viscosity above the tube; (C) a hundredth of the
-  DynSGS resistivity and mass diffusion for the first 139 s
-  (`ETAFAC=0.01`, `RHOFAC=0.01`), then A's switches, the center's
-  $B_z/\rho$ through the transient. Against the erratum's Fig. 2(a) with
-  `axis` and `core`, and `lare` before 920 s.
+  *Neither the viscosity nor the start* (cluster, 24–25 Nov 2026; REF 4,
+  field-free corona, from $t = 0$, `JEXPRESSO_LK10_DT=0.003`, the switches of
+  the 22–24 Nov runs: `VISC=velocity`, `RHOFAC=0.1`, `EINT=lowbeta`). Three
+  runs: (A) those switches; (B) A with `VISCFAC=0.1`; (C) a hundredth of the
+  DynSGS resistivity and mass diffusion for the first 139 s (`ETAFAC=0.01`,
+  `RHOFAC=0.01`), then A's switches. Height of the axis in Mm (`core`), the
+  erratum's Fig. 2(a) read at the same times:
+
+  | t (s) | 464 | 603 | 696 | 742 | 835 | 920 | 1021 |
+  |---|---|---|---|---|---|---|---|
+  | A | −0.94 | −0.61 | −0.41 | −0.33 | −0.19 | −0.10 | 0.02 |
+  | B, `VISCFAC=0.1` | −0.94 | −0.61 | −0.40 | −0.34 | −0.21 | −0.11 | 0.00 |
+  | C, gentle start | −0.93 | −0.59 | −0.39 | −0.32 | −0.18 | −0.08 | 0.03 |
+  | erratum | −0.99 | −0.63 | −0.41 | −0.30 | −0.12 | −0.02 | 0.14 |
+
+  On REF 4 the tube rises through the convection zone at the erratum's pace,
+  a little ahead of it to 700 s (REF 1 lags from 510 s: its mesh), and falls
+  behind from ~740 s, when its top crosses the photosphere: 0.12 Mm by
+  1021 s. A tenth of the DynSGS viscosity changes the axis by at most
+  0.02 Mm (`lare` on A: in the tube 0.1–0.3 of Lare's viscosity to 696 s,
+  above it 1.2–2.5, at 920 s 1.0 and 4.9). The start costs the centre 4 % of
+  its $B_z/\rho$ on REF 4 (0.99 → 0.95 by 46 s with today's switches); then
+  it goes to 0.82 by 920 s while the axis keeps the erratum's pace, and the
+  gentle start leaves 0.84 and moves the axis by 0.01–0.02 Mm. The 0.78 of
+  the 20 Nov run at 920 s is its older switches. All three ran to 1021 s with
+  a fast speed of at most 19 $v_0$ (fast CFL number 0.32–0.37); the first
+  A and B, run to 1700 s, went non-finite at 1248 and 1448 s on the flank of
+  the dome ($x$ = −5 to −11 Mm, $y$ = 1–7 Mm), where the emerged field had
+  reached thin plasma with Alfvén speeds the field-free time step does not
+  hold (thousands of $v_0$ in its last first-order caps). The `ETAFAC=0.1`
+  REF 1 run above failed in the same place, (−6.4, 0.75) Mm, at 1062 s, and
+  most likely for the same reason, not for want of resistivity. Field-free
+  runs past ~1020 s take the quadrupole's step (`DT=0.0002`): the three
+  continue so from 1021 s to 1380 s.
+
+  *What acts from ~740 s.* The plasma the tube lifts above the photosphere
+  cools as it expands and drains back down the emerging field lines; two
+  terms of ours heat it where the paper's code may not: the energy
+  relaxation, with the local density in $\tau$ (above; `RELAX_TAU=height`
+  for the reading with the atmosphere's density), and the DynSGS diffusion
+  of the internal energy, at the momentum's coefficient (30–90 km² s⁻¹ above
+  the tube on REF 4; Lare has none). Plasma held warm drains less (the dome
+  stalled the same way when all of the DynSGS heat went into it, "The heat
+  of the DynSGS"). Under test: restarts of A from 696 s to 1021 s with
+  `RELAX_TAU=height`, `EFAC=0.1`, `RHOFAC=0.01` and `ETAFAC=0.1`, against A.
 
 ## Files
 

@@ -374,6 +374,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         error(" problems/MHD/fluxEmergenceLeake2010: :lk10_field = \"$(lk10_field[])\", expected \"none\", \"quadrupole\" or \"dipole\".")
     lk10_relax[]        = Bool(get(inputs, :lk10_relax, true))
     lk10_relax_ymin[]   = Float64(get(inputs, :lk10_relax_ymin, -Inf))
+    lk10_relax_tau_height[] = String(get(inputs, :lk10_relax_tau, "local")) == "height"
     lk10_glm_alpha[]    = Float64(get(inputs, :lk10_glm_alpha, 1.0))
     lk10_damp_xd[]      = Float64(get(inputs, :lk10_damp_xd, 250.0))
     lk10_damp_yd[]      = Float64(get(inputs, :lk10_damp_yd, 500.0))
@@ -539,7 +540,8 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         println(" GLM: c_h = $(round(c_h_mhd[], digits=3)), smallest nodal spacing Δh = $(round(lk10_glm_dh[], digits=4)), ",
                 "ψ damping rate α_p c_h/Δh = $(round(lk10_glm_alpha[]*c_h_mhd[]/lk10_glm_dh[], digits=2)) per t0; ",
                 "c_h Δt/Δh = $(round(c_h_mhd[]*inputs[:Δt]/lk10_glm_dh[], digits=3))")
-        println(" Energy relaxation: $(lk10_relax[] ? "on" : "OFF"), τ = $(round(lk10_tau0[], digits=4)) ρ^(-$(lk10_tau_exp[])) t0; ",
+        println(" Energy relaxation: $(lk10_relax[] ? "on" : "OFF"), τ = $(round(lk10_tau0[], digits=4)) ρ^(-$(lk10_tau_exp[])) t0 ",
+                "with ρ $(lk10_relax_tau_height[] ? "the atmosphere's at the node's height (JEXPRESSO_LK10_RELAX_TAU=height)" : "local"); ",
                 "above y = $(lk10_relax_ymin[]); damping layers |x| > $(lk10_damp_xd[]), y > $(lk10_damp_yd[]), rate $(lk10_damp_rate[])/t0 at the boundary")
         println(" Subnormal numbers: ", get_zero_subnormals() ? "flushed to zero" : "kept (IEEE; slow where the solution is ~1e-308)")
         println(" Switches set in the environment (JEXPRESSO_LK10_*): ", isempty(get(inputs, :lk10_env_set, "")) ? "none" : inputs[:lk10_env_set])
@@ -602,7 +604,8 @@ lk10_restart_fields() = ["ρ", "u", "v", "w", "p", "Bx", "By", "Bz", "ψ"]
 # switches of lk10_numeric_keys (to continue past a failure from an earlier snapshot);
 # the restart says which changed.
 lk10_numeric_keys() = ("curl_resistivity", "Cmin", "floors", "dsgs_energy", "eta_sensor", "dsgs_sensor", "eta_cap", "eta_factor", "visc_factor", "visc_form",
-                         "rho_factor", "heating", "stab_cap", "dsgs_stages", "C1", "tfloor", "energy_form", "rho_floor", "rho_sensor")
+                         "rho_factor", "heating", "stab_cap", "dsgs_stages", "C1", "tfloor", "energy_form", "rho_floor", "rho_sensor",
+                         "relax_tau", "e_factor")
 
 function lk10_case_record(inputs)
     return Pair{String,String}[
@@ -613,6 +616,7 @@ function lk10_case_record(inputs)
         "mcz"              => string(get(inputs, :lk10_mcz, 1.3)),
         "relax"            => string(get(inputs, :lk10_relax, true)),
         "relax_ymin"       => string(get(inputs, :lk10_relax_ymin, -Inf)),
+        "relax_tau"        => String(get(inputs, :lk10_relax_tau, "local")),
         "tube_eq"          => string(get(inputs, :lk10_tube_eq, "thermal")),
         "nu"               => string(get(inputs, :lk10_nu_mode, "")),
         "curl_resistivity" => string(get(inputs, :dsgs_curl_resistivity, false)),
@@ -624,6 +628,7 @@ function lk10_case_record(inputs)
         "eta_cap"          => get(inputs, :dsgs_eta_flow_cap, false) == true ? "flow" : "fast",
         "eta_factor"       => string(Float64(get(inputs, :μ, ones(9))[6])),
         "visc_factor"      => string(Float64(get(inputs, :μ, ones(9))[2])),
+        "e_factor"         => string(Float64(get(inputs, :μ, ones(9))[4])),
         "visc_form"        => get(inputs, :dsgs_velocity_viscosity, false) != true ? "momentum" :
                               (get(inputs, :dsgs_velocity_weight, "smin") == "node" ? "velocity, node weight" : "velocity"),
         "energy_form"      => (ef = String(get(inputs, :mhd_internal_energy, "off")); ef == "off" ? "total" : "internal where " * ef),
@@ -683,9 +688,10 @@ function lk10_record_mismatch(old::Dict{String,String}, rec; numerics::Bool=fals
         # (runs made before the partition was recorded had the uniform bins)
         # (and the legacy DynSGS sensor)
         w = get(old, k, k == "partition" ? "uniform" : k == "dsgs_sensor" ? "legacy" : k == "eta_cap" ? "fast" :
-                        k in ("eta_factor", "visc_factor", "rho_factor", "heating", "C1") ? "1.0" : k == "stab_cap" ? "0.0" :
+                        k in ("eta_factor", "visc_factor", "rho_factor", "e_factor", "heating", "C1") ? "1.0" : k == "stab_cap" ? "0.0" :
                         k == "dsgs_stages" ? "all" : k == "tfloor" ? "0.1" : k == "visc_form" ? "momentum" :
-                        k == "energy_form" ? "total" : k == "rho_floor" ? "momentum" : k == "rho_sensor" ? "off" : "(not recorded)")
+                        k == "energy_form" ? "total" : k == "rho_floor" ? "momentum" : k == "rho_sensor" ? "off" :
+                        k == "relax_tau" ? "local" : "(not recorded)")
         w == v || push!(bad, "$(k): $(w) there, $(v) here" *
                              (k == "partition" ? " (JEXPRESSO_LK10_PARTITION=$(w) to continue that run)" : ""))
     end

@@ -29,6 +29,8 @@
 #   JEXPRESSO_LK10_DT        time step in t0 (default: c_h Δt/Δh = 0.25, below)
 #   JEXPRESSO_LK10_MCZ       convection-zone polytropic index m (p ∝ T^(m+1))     [1.3]
 #   JEXPRESSO_LK10_RELAX_YMIN energy relaxation only above this height, in L0    [-Inf]
+#   JEXPRESSO_LK10_RELAX_TAU local | height: the relaxation time from the local density,
+#                            or from the atmosphere's density at the node's height  [local]
 #   JEXPRESSO_LK10_TUBE_EQ   thermal | relaxed: tube in thermal equilibrium (the paper),
 #                            or on the relaxed background relation ρT₀(ρ) = p      [thermal]
 #   JEXPRESSO_LK10_CMIN      DynSGS background floor C_min                        [0]
@@ -55,6 +57,8 @@
 #   JEXPRESSO_LK10_VISCFAC   factor on the DynSGS viscosity (the :μ multipliers of the ρu,
 #                            ρv, ρw slots; after its caps, the case's ν untouched), a test
 #                            of its drag on the plasma that drains from the dome     [1]
+#   JEXPRESSO_LK10_EFAC      factor on the DynSGS diffusion of the internal energy (the
+#                            :μ multiplier of the E slot; its work and heat untouched) [1]
 #   JEXPRESSO_LK10_VISC      momentum | velocity | nodal: the viscosity (DynSGS and ν)
 #                            diffuses the momentum ρv/ρ_e, or acts on the velocity gradient,
 #                            with the momentum of the mass the DynSGS diffuses; its stress
@@ -371,6 +375,9 @@ function user_inputs()
         :lk10_relax           => true,       # Eqs. 5-6
         :lk10_tube_eq         => lowercase(_lk10_env("TUBE_EQ", "thermal")),   # tube in thermal equilibrium (the paper) or "relaxed"
         :lk10_relax_ymin      => _lk10_num("RELAX_YMIN", -Inf),   # relaxation only above this height (L0)
+        # τ = 23 s (ρ/ρ_ph)^(−1.43) with the local ρ, or with the atmosphere's ρ_e(y) at the node: the paper's
+        # "τ(y) = 23 (ρ(y)/ρ(y = 0))^(−1.43) s" (user_source.jl; README, "Equations and dissipation")
+        :lk10_relax_tau       => _lk10_word("RELAX_TAU", "local", "height"),
         :lk10_glm_alpha       => 1.0,
         :lk10_damp_xd         => 250.0,      # 37.5 Mm
         :lk10_damp_yd         => 500.0,      # 75 Mm
@@ -388,8 +395,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => true,
         # (slots ρ, ρu, ρv, E, ρw, Bx, By, Bz, ψ; JEXPRESSO_LK10_VISCFAC scales the viscosity, _ETAFAC
-        # the resistivity, _RHOFAC the mass diffusion)
-        :μ                    => [_lk10_num("RHOFAC", 1.0), _lk10_num("VISCFAC", 1.0), _lk10_num("VISCFAC", 1.0), 1.0,
+        # the resistivity, _RHOFAC the mass diffusion, _EFAC the diffusion of the internal energy)
+        :μ                    => [_lk10_num("RHOFAC", 1.0), _lk10_num("VISCFAC", 1.0), _lk10_num("VISCFAC", 1.0), _lk10_num("EFAC", 1.0),
                                   _lk10_num("VISCFAC", 1.0), fill(_lk10_num("ETAFAC", 1.0), 3)..., 1.0],
         :visc_model           => DSGS_MHD(),
         # "legacy" (DSGS.md §1.2): the assembled RHS against a BDF2 of the RK stage state, which

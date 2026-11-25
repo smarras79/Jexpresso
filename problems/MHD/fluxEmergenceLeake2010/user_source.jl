@@ -22,6 +22,11 @@
 #    layer and the tube cools within ~1 s, keeping a density deficit of ~21%
 #    instead of 33% at its axis (tube 2). The paper does not say where the term
 #    acts; :lk10_relax_ymin (default −∞) restricts it to y > y_min.
+#    The paper writes "τ(y) = 23 (ρ(y)/ρ(y = 0))^(−1.43) s": with :lk10_relax_tau =>
+#    "height" (JEXPRESSO_LK10_RELAX_TAU) τ is that of the atmosphere at the node,
+#    τ₀ ρ_e(y)^(−1.43), the same in the convection zone (to the tube's density
+#    deficit) and far longer for the dense plasma the tube lifts above the surface
+#    (2.6e3 s at 0.5 Mm against ~20 s for plasma of photospheric density there).
 #
 # 3. GLM ψ damping (Dedner et al. 2002):   S_ψ = −(α_p c_h/Δh) ψ.
 #
@@ -54,6 +59,9 @@ if !@isdefined(lk10_relax)
 end
 if !@isdefined(lk10_relax_ymin)
     const lk10_relax_ymin    = Ref{Float64}(-Inf)         # relaxation only above this height (:lk10_relax_ymin)
+end
+if !@isdefined(lk10_relax_tau_height)
+    const lk10_relax_tau_height = Ref{Bool}(false)        # τ from the atmosphere's ρ_e(y) (:lk10_relax_tau => "height")
 end
 
 # Background temperature T₀ at the height where the initial density equals ρ
@@ -96,7 +104,7 @@ function user_source!(S,
     # energy relaxation to ε₀(ρ)
     if lk10_relax[] && ρ > lk10_relax_rhomin[] && y > lk10_relax_ymin[]
         p    = pressure_mhd(ρ, q[2], q[3], q[5], q[4], q[6], q[7], q[8], q[9])
-        rate = ρ^lk10_tau_exp[]/lk10_tau0[]
+        rate = (lk10_relax_tau_height[] ? qe[1] : ρ)^lk10_tau_exp[]/lk10_tau0[]
         S[4] -= rate*(p - ρ*lk10_T0_of_rho(ρ))/(γ_mhd - 1.0)
     end
 
