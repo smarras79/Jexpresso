@@ -70,9 +70,6 @@ other nor share a curve.
 | `JEXPRESSO_EV_TEND` | 1.0 | final time |
 | `JEXPRESSO_EV_VISC` | `dsgs` | `none` for the plain Galerkin run |
 | `JEXPRESSO_EV_SOLVER` | `ck54` | `vern9`, `vern7`, `dp8`, `ssprk54`, `tsit5` |
-| `JEXPRESSO_EV_CMIN` / `_C1` / `_CMAX` | 0, 1, 0.5 | the DynSGS coefficients |
-| `JEXPRESSO_EV_REL` | 1 | `:dsgs_rel`, the normalization floor |
-| `JEXPRESSO_EV_BDF` | 2 | `:dsgs_bdf_order`, the order of the residual sensor's backward difference; records `dsgs_bdf<k>` ([below](#the-order-of-the-sensors-time-difference)) |
 
 The meshes are the MHD case's — the same $[-5,5]^2$ doubly periodic quad grids,
 and two copies would only mean two things to regenerate. Nothing else is
@@ -80,7 +77,7 @@ shared: the per-case SEM cache and the error store live next to this deck.
 
 ## The order of the sensor's time difference
 
-`JEXPRESSO_EV_BDF` (`:dsgs_bdf_order`) sets the order $k$ of the backward
+`:dsgs_bdf_order` in `user_inputs.jl` sets the order $k$ of the backward
 difference the residual sensor takes $\partial_t q$ with (default 2, BDF2); the
 option, and the study `tools/smooth_vortex_bdf_study.sh` runs on both vortices,
 are described in the [MHD case's README](../../MHD/smoothVortex/README.md#the-order-of-the-sensors-time-difference-bdf-k).

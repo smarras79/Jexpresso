@@ -27,11 +27,10 @@
 #                        comparison with problems/MHD/smoothVortex
 #   JEXPRESSO_EV_VISC    "dsgs" (default) or "none" for plain Galerkin
 #   JEXPRESSO_EV_SOLVER  ck54 (default), vern9, vern7, dp8, ssprk54, tsit5
-#   JEXPRESSO_EV_CMIN / _C1 / _CMAX / _REL / _NORMS   the DynSGS coefficients
-#   JEXPRESSO_EV_BDF     :dsgs_bdf_order, the order k of the backward
-#                        difference the residual sensor takes ∂ₜq with
-#                        (default 2; see problems/MHD/smoothVortex/user_inputs.jl,
-#                        _sv_bdf)
+#
+# Every DynSGS setting (sensor, norms, C_1, C_max, C_min, rel, cutoff, hold,
+# BDF order, freeze) is a literal entry of the Dict below; edit it there. The
+# environment variables that used to override them are refused (below).
 #
 # THE MESHES ARE THE MHD CASE'S. They are the same [-5,5]² doubly periodic
 # quad grids, and duplicating them here would only mean two copies to
@@ -83,14 +82,10 @@ function _ev_positivity_floors()
     ρc = T^(1.0/(γ - 1.0))
     return (1.0e-6*ρc, 1.0e-6*ρc^γ)
 end
-_ev_cmin()  = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_CMIN",  "")), 0.0)
-# C_1 (:dsgs_C1); JEXPRESSO_EV_CR, its name until Nov 2026, is still read, with a warning
-_ev_c1()    = (v = get(ENV, "JEXPRESSO_EV_C1", "");
-               isempty(v) && haskey(ENV, "JEXPRESSO_EV_CR") &&
-                   (@warn "JEXPRESSO_EV_CR is now JEXPRESSO_EV_C1"; v = ENV["JEXPRESSO_EV_CR"]);
-               something(tryparse(Float64, v), 1.0))
-_ev_cmax()  = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_CMAX",  "")), 0.5)
-_ev_rel()   = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_REL",   "")), 1.0)
+const EV_DSGS_ENV_REMOVED = ("JEXPRESSO_EV_SENSOR", "JEXPRESSO_EV_NORMS", "JEXPRESSO_EV_C1",
+                             "JEXPRESSO_EV_CR", "JEXPRESSO_EV_CMAX", "JEXPRESSO_EV_CMIN",
+                             "JEXPRESSO_EV_REL", "JEXPRESSO_EV_CUTOFF", "JEXPRESSO_EV_HOLD",
+                             "JEXPRESSO_EV_BDF", "JEXPRESSO_EV_FREEZE")
 _ev_visc()  = lowercase(strip(get(ENV, "JEXPRESSO_EV_VISC",  "dsgs")))
 
 # The time integrator. As on the MHD case, a fourth-order one is not what
@@ -127,17 +122,6 @@ end
 # L = 15 puts the floor at 1e-12 and L = 20 at machine zero; generate those
 # meshes with SV_L=20 tools/smooth_vortex_mesh.sh.
 # The default is the box of the paper, [-10,10]^2, i.e. L = 20.
-_ev_hold() = something(tryparse(Int, get(ENV, "JEXPRESSO_EV_HOLD", "")), 2)
-_ev_cutoff() = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_CUTOFF", "")), 0.0)
-# :dsgs_bdf_order (JEXPRESSO_EV_BDF): this deck runs without a cutoff, so the
-# BDF2 truncation error of the sensor, −(Δt²/3)∂ₜ³q, is what its residual
-# reads on the resolved vortex; BDF-k leaves −Δtᵏ/(k+1)·∂ₜᵏ⁺¹q (and the
-# integrator's own O(Δt⁴) defect). Records "dsgs_bdf<k>" (user_plot.jl).
-_ev_bdf() = something(tryparse(Int, get(ENV, "JEXPRESSO_EV_BDF", "")), 2)
-# JEXPRESSO_EV_FREEZE=1 or 0 forces :dsgs_freeze_stage; unset, the key is left
-# to mod_inputs.jl, whose default is on with the residual sensor.
-_ev_freeze() = (v = strip(get(ENV, "JEXPRESSO_EV_FREEZE", ""));
-                isempty(v) ? nothing : v in ("1", "true", "yes"))
 _ev_lbox() = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_L", "")), 20.0)
 # The box is ALWAYS in the mesh name (vortex_L20_32x32.msh): a mesh whose name
 # does not say which box it is cannot be told apart from one that is a
@@ -148,6 +132,9 @@ _ev_mesh() = string("./problems/MHD/smoothVortex/vortex_", _ev_ltag(),
                        _ev_nelx(), "x", _ev_nelx(), ".msh")
 
 function user_inputs()
+    for v in EV_DSGS_ENV_REMOVED
+        haskey(ENV, v) && error(" problems/CompEuler/smoothVortex: ", v, " is no longer read; set the DynSGS settings in user_inputs.jl.")
+    end
     inputs = Dict(
         :ode_solver           => _ev_solver(),
         :Δt                   => _ev_dt(),
@@ -189,32 +176,30 @@ function user_inputs()
         # from the vortex the element term is 18x the assembled rate, and both
         # halve when dt halves).
         :dsgs_sensor      => "residual",
-        :dsgs_C1          => _ev_c1(),
-        :dsgs_Cmax        => _ev_cmax(),
-        :dsgs_Cmin        => _ev_cmin(),   # no background floor: it would be an
+        :dsgs_C1          => 1.0,
+        :dsgs_Cmax        => 0.5,
+        :dsgs_Cmin        => 0.0,          # no background floor: it would be an
                                            # order-independent O(h) error on a
                                            # smooth solution (see the README)
         :dsgs_Prt         => 0.7,
-        :dsgs_rel         => _ev_rel(),
+        :dsgs_rel         => 1.0,
         :dsgs_norms       => "domain",
-        # :dsgs_freeze_stage, the coefficient once per step instead of once
-        # per stage, is mod_inputs.jl's default with the residual sensor: it
-        # is what keeps the residual, and with it nu, from stalling at O(dt)
-        # and capping a high-order accuracy test. JEXPRESSO_EV_FREEZE=0 (or 1)
-        # forces it; see _ev_freeze and the end of this function.
-        # Smoothness cutoff on the normalized residual (JEXPRESSO_EV_CUTOFF,
-        # :dsgs_cutoff in mod_inputs.jl): nu is zero where the sensor is only
+        # The coefficient once per step instead of once per stage: it is what
+        # keeps the residual, and with it nu, from stalling at O(dt) and
+        # capping a high-order accuracy test.
+        :dsgs_freeze_stage => true,
+        # Smoothness cutoff on the normalized residual (0: none in this deck): nu is zero where the sensor is only
         # reading the element-local jump of a dt-proportional grid-scale
         # residue, which is the floor that caps this very study's order.
-        :dsgs_cutoff       => _ev_cutoff(),
-        # Steps the coefficient is held at zero at the start of a run
-        # (JEXPRESSO_EV_HOLD, :dsgs_hold_steps). 2 is the minimum the BDF2
+        :dsgs_cutoff       => 0.0,
+        # Steps the coefficient is held at zero at the start of a run. 2 is the minimum the BDF2
         # history needs and the long-standing behaviour; more is the probe of
         # whether the smooth-flow excess is a STARTUP dose.
-        :dsgs_hold_steps   => _ev_hold(),
-        # Order of the residual sensor's backward difference (JEXPRESSO_EV_BDF,
-        # :dsgs_bdf_order): 2 is the BDF2 the sensor has always had.
-        :dsgs_bdf_order    => _ev_bdf(),
+        :dsgs_hold_steps   => 2,
+        # Order k of the residual sensor's backward difference: with no cutoff
+        # the sensor reads its BDF2 truncation error, −(Δt²/3)∂ₜ³q, on the
+        # resolved vortex; BDF-k leaves −Δtᵏ/(k+1)·∂ₜᵏ⁺¹q (records "dsgs_bdf<k>").
+        :dsgs_bdf_order    => 2,
         :lrichardson      => false,
         :energy_equation  => "energy",
         :lkep             => false,
@@ -235,7 +220,5 @@ function user_inputs()
         :linitial_refine     => false,
         :ladapt              => false,
     ) #Dict
-    f = _ev_freeze()
-    f === nothing || (inputs[:dsgs_freeze_stage] = f)
     return inputs
 end
