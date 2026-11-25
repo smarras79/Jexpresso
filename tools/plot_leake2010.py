@@ -706,9 +706,14 @@ def core_row(g, mcz=1.3):
     tube = BZ > 0.02 * BZ.max()
     w = np.outer(_trapw(Y), _trapw(g["X"]))
     T = at(grid2d(g, g["fields"]["T"])) * 5700.0 if "T" in g["fields"] else np.nan
+    # the DynSGS coefficients at the axis (L0 v0), when the snapshot has them: momentum (with the case's nu),
+    # field (resistivity), mass
+    cof = lambda n: at(grid2d(g, g["fields"][n])) if n in g["fields"] else np.nan
+    en = next((n for n in ETA_NAMES if n in g["fields"]), None)
     return dict(axis=ya, logrho=at(L), dens=rho / rhoe, T=T, bz=at(BZ), q=at(BZ) / rho,
                 flux=A[-1] - float(np.interp(ya, Y, A)), ebz=float((w * BZ ** 2)[tube].sum()),
-                qmean=float((w * BZ * BZ / R)[tube].sum() / (w * BZ)[tube].sum()))
+                qmean=float((w * BZ * BZ / R)[tube].sum() / (w * BZ)[tube].sum()),
+                mu=cof(MU_NAME), eta=cof(en) if en else np.nan, mur=cof("mu_dsgs_ρ"))
 
 
 def cmd_core(a):
@@ -723,7 +728,7 @@ def cmd_core(a):
         mcz = float(_case_value(d0, "mcz", "1.3"))
         tube = int(float(_case_value(d0, "tube", "2")))
         q0 = tube_axis_initial(tube, mcz) if _case_value(d0, "tube_eq", "thermal") == "thermal" else np.nan
-        rows = [(t, core_row(load(f, ["Bz", "log10rho_cgs", "T"]), mcz)) for t, f in items]
+        rows = [(t, core_row(load(f, ["Bz", "log10rho_cgs", "T", MU_NAME, *ETA_NAMES, "mu_dsgs_ρ"]), mcz)) for t, f in items]
         rows = [(t, r) for t, r in rows if r is not None]
         if not rows:
             print(f"--- {lab}: no tube axis found"); continue
@@ -736,12 +741,13 @@ def cmd_core(a):
         print(f"--- {lab}: the plasma at the tube axis; B_z/rho of the initial tube {q0:.0f} G per photospheric density "
               f"(tube {tube}), kept at the axis in ideal MHD")
         print("    (read between the nodes, the axis of the initial state has 0.96 of it on REF 1 and 0.95 on REF 2 and 4)")
+        print("    and the DynSGS coefficients at the axis [L0 v0 = 970 km^2/s]: momentum (with the case's nu), field, mass")
         print(f"{'t [s]':>7} {'axis Mm':>8} {'log rho':>8} {'rho/rho_e':>9} {'T K':>8} {'Bz G':>7} {'Bz/rho':>8} {'/initial':>8} "
-              f"{'in-plane flux G Mm':>19} {'/first':>6} {'int Bz^2':>9} {'mean Bz/rho':>11}")
+              f"{'in-plane flux G Mm':>19} {'/first':>6} {'int Bz^2':>9} {'mean Bz/rho':>11} | {'mu':>7} {'eta':>7} {'mu_rho':>7}")
         for t, r in rows:
             print(f"{t:7.0f} {r['axis']:8.2f} {r['logrho']:8.2f} {r['dens']:9.3f} {r['T']:8.0f} {r['bz']:7.0f} {r['q']:8.0f} "
                   f"{r['q'] / q0:8.2f} {r['flux']:19.1f} {r['flux'] / first['flux']:6.3f} {r['ebz'] / first['ebz']:9.3f} "
-                  f"{r['qmean'] / first['qmean']:11.3f}")
+                  f"{r['qmean'] / first['qmean']:11.3f} | {r['mu']:7.3g} {r['eta']:7.3g} {r['mur']:7.3g}")
         axs[0].plot(T, col("axis"), "-o", ms=3, label=lab)
         axs[1].plot(T, col("q") / q0, "-o", ms=3, label=lab)
         axs[2].plot(T, col("dens"), "-o", ms=3, label=lab)
