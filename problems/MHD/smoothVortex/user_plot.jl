@@ -54,19 +54,19 @@ include(joinpath(@__DIR__, "convergence_figure.jl"))
 # The record's tag names what differs from the deck as committed: "dsgs" is
 # DynSGS as the deck runs it (residual sensor, coefficient frozen per step, the
 # smoothness cutoff SV_DSGS_CUTOFF), "dsgs_nocut" the same without the cutoff
-# (JEXPRESSO_SV_CUTOFF=0), "dsgs_cut" with another cutoff, "dsgs_hold" with a
+# (:dsgs_cutoff => 0.0), "dsgs_cut" with another cutoff, "dsgs_hold" with a
 # startup hold other than the 2 steps of the deck (it changes the viscosity
 # over the whole initial transient), and "galerkin" the plain Galerkin run.
 # Each is its own experiment, with its own record and its own curve, so that
 # none overwrites another's.
 #
-# SV_DSGS_CUTOFF is the deck's SV_CUTOFF_DEFAULT (user_inputs.jl); keep the two
+# SV_DSGS_CUTOFF is the deck's :dsgs_cutoff (user_inputs.jl); keep the two
 # equal. It is a constant of its own because tools/smooth_vortex_plot.jl reads
 # the store with this file alone. (Records stored before 20 Oct 2026, when the
 # deck ran without the cutoff, called that run "dsgs" and carry no cutoff= key:
 # _sv_load_errors reads them as "dsgs_nocut".)
 const SV_DSGS_CUTOFF = 1.0e-3
-# A sensor whose backward difference is of order k ≠ 2 (JEXPRESSO_SV_BDF,
+# A sensor whose backward difference is of order k ≠ 2 (
 # :dsgs_bdf_order) adds "_bdf<k>" to any DynSGS tag: "dsgs_nocut_bdf5" is the
 # run without the cutoff, with BDF5 (convergence_figure.jl, _conv_bdf_suffix).
 const SV_BASE_TAGS = ("dsgs", "dsgs_nocut", "dsgs_cut", "dsgs_hold")

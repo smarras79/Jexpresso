@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
 # The Brio-Wu shock tube at every polynomial order and resolution asked for,
-# for one or several values of the DynSGS floor C_min, and the figures of each
-# sweep. For every C_min the runs store their curves in
-# problems/MHD/brioWu1d/curves/Cmin<C_min>/, and when its last run is done
-# tools/brio_wu_plot.jl draws from them, in output/MHD/brioWu1d/output/Cmin<C_min>/:
+# with the DynSGS settings of the deck, and the figures of the sweep. The runs
+# store their curves in
+# problems/MHD/brioWu1d/curves/<store>/, and when the last run is done
+# tools/brio_wu_plot.jl draws from them, in output/MHD/brioWu1d/output/<store>/:
 #
 #   rho_By_dof<M>-it5.svg       every order at ~M DOFs, one figure per resolution:
 #                               ρ (left) and B_y (right) against the reference,
@@ -13,38 +13,33 @@
 #   density_dof<M>-it5.svg, density-it5.svg    the density alone
 #   convergence-it5.svg, convergence_smooth-it5.svg   error against 1/#DOFs
 #
-#   tools/brio_wu_order_scan.sh                       # N = 4 ... 7 at 600 and 1200 DOFs, C_min = 0.06
+#   tools/brio_wu_order_scan.sh                       # N = 4 ... 7 at 600 and 1200 DOFs
 #   BW_JOBS=4 tools/brio_wu_order_scan.sh             # the four orders at once
-#   BW_JOBS=4 BW_CMIN="0.06 0.03 0" tools/brio_wu_order_scan.sh   # one sweep per C_min, to compare
 #   BW_DOFS=600 tools/brio_wu_order_scan.sh           # the paper's resolution alone
 #   BW_DOFS="150 300 600 1200" tools/brio_wu_order_scan.sh   # for the convergence figures
 #   BW_NOPS="4 7" tools/brio_wu_order_scan.sh
-#   BW_CMIN=0.0 tools/brio_wu_order_scan.sh           # with the DynSGS floor off
-#   BW_CUTOFF="0 1e-3" tools/brio_wu_order_scan.sh    # without and with the smoothness cutoff
-#   BW_C1="1 4" tools/brio_wu_order_scan.sh           # the DynSGS residual coefficient C_1
-#   BW_HSCALE=nop tools/brio_wu_order_scan.sh         # Dao & Nazarov's Δ_K/k instead of h_e/(N+1)
-#   BW_NODAL=1 tools/brio_wu_order_scan.sh            # the nodal coefficient
-#   JEXPRESSO_BW_FREEZE=0 tools/brio_wu_order_scan.sh # DynSGS per stage, as before b956ccd
 #   JEXPRESSO_BW_FIGFMT=pdf tools/brio_wu_order_scan.sh   # PDF figures (default SVG)
 #   JULIA=/path/to/julia tools/brio_wu_order_scan.sh  # default: the macOS app's julia, else the PATH's
 #
-# C_min acts on the deck's length scale, the paper's h_e/(N+1) unless
-# BW_HSCALE=nop. With BW_HSCALE or BW_NODAL set, the store and the figure
-# directory carry it in their name too (Cmin0.06_nop, Cmin0.06_nodal), so that
-# different methods never share a figure. So do a smoothness cutoff c > 0
-# (:dsgs_cutoff, BW_CUTOFF, a list like BW_CMIN): Cmin0.06_cut1e-3, and a
-# residual coefficient other than 1 (:dsgs_C1, BW_C1, a list): Cmin0.06_C1_4.
+# THE DYNSGS SETTINGS ARE THE DECK'S. C_min, the cutoff, C_1, the length-scale
+# convention and the element/nodal form are literal entries of
+# problems/MHD/brioWu1d/user_inputs.jl (:dsgs_Cmin, :dsgs_cutoff, :dsgs_C1,
+# :bw_hscale, :ldsgs_nodal); to compare values, edit the deck and run the scan
+# again, once per value. The script reads them from the deck only to name the
+# store, <store> = Cmin<C_min>, plus _nop (:bw_hscale => "nop"), _nodal,
+# _C1_<C_1> (C_1 ≠ 1) and _cut<c> (c > 0): Cmin0.06, Cmin0.03_cut1e-3, ...
+# so that different methods never share a store or a figure.
 #
 # At ~M DOFs order N runs on M/N elements (150, 120, 100, 86 at 600 DOFs) with
 # Δt = 5e-5·600/M, so every order costs about the same.
 #
 # PARALLEL. BW_JOBS=n runs up to n orders at once, one Julia session per order
 # (each compiles the case once and then runs its resolutions one after the
-# other); the log of order N goes to output/MHD/brioWu1d/scan-Cmin<C_min>-nop<N>.log.
-# BW_JOBS=1, the default, is a single session per C_min.
+# other); the log of order N goes to output/MHD/brioWu1d/scan-<store>-nop<N>.log.
+# BW_JOBS=1, the default, is a single session.
 #
 # EACH SWEEP STARTS FROM AN EMPTY STORE: the store and the figures of the same
-# C_min from an earlier sweep are deleted first, so that a leftover curve can
+# settings from an earlier sweep are deleted first, so that a leftover curve can
 # never appear on the comparison. BW_KEEP=1 keeps them, to finish a partial
 # sweep. A run that fails is reported and the sweep goes on.
 set -u
@@ -55,16 +50,23 @@ CASE=problems/MHD/brioWu1d
 OUT=output/MHD/brioWu1d
 DOFS=${BW_DOFS:-"600 1200"}
 NOPS=${BW_NOPS:-"4 5 6 7"}
-CMINS=${BW_CMIN:-0.06}
-CUTOFFS=${BW_CUTOFF:-0}
-# BW_CR, the name of BW_C1 until Nov 2026, is still read
-[ -n "${BW_CR:-}" ] && [ -z "${BW_C1:-}" ] && echo "=== BW_CR is now BW_C1; reading it this time"
-C1S=${BW_C1:-${BW_CR:-1}}
 JOBS=${BW_JOBS:-1}
 export BW_DOFS="$DOFS"     # for the per-order children of a parallel sweep
-# the length scale: the deck's default (the paper's h_e/(N+1)) unless BW_HSCALE says otherwise
-[ -n "${BW_HSCALE:-}" ] && export JEXPRESSO_BW_HSCALE="$BW_HSCALE"
-[ -n "${BW_NODAL:-}" ] && export JEXPRESSO_BW_NODAL="$BW_NODAL"
+# The DynSGS knobs of this script before Nov 2026 are refused: those settings
+# are the deck's now (see the top of this file).
+for v in BW_CMIN BW_CUTOFF BW_C1 BW_CR BW_HSCALE BW_NODAL; do
+    [ -n "${!v:-}" ] && { echo "=== $v is no longer read: set the DynSGS settings in $CASE/user_inputs.jl"; exit 1; }
+done
+# The literal value of a key of the deck's Dict (an uncommented `:key => value,` line).
+deck_val() {
+    sed -n -E "s/^[[:space:]]*:$1[[:space:]]*=>[[:space:]]*\"?([^\",[:space:]]+)\"?[[:space:]]*,.*/\1/p" \
+        "$CASE/user_inputs.jl" | head -n 1
+}
+CMIN=$(deck_val dsgs_Cmin); CUT=$(deck_val dsgs_cutoff); C1=$(deck_val dsgs_C1)
+HSCALE=$(deck_val bw_hscale); NODAL=$(deck_val ldsgs_nodal)
+for v in CMIN CUT C1 HSCALE NODAL; do
+    [ -n "${!v}" ] || { echo "=== no literal value of $v in $CASE/user_inputs.jl"; exit 1; }
+done
 # the runs only store their curves; each sweep draws its figures once, at the end
 export JEXPRESSO_BW_DRAWSTORE=0
 # JULIA: as given, or else the first that starts of the macOS app's julia and
@@ -98,8 +100,7 @@ failed = String[]
 for r in runs
     n, d = split(r, ":")
     ENV["JEXPRESSO_BW_NOP"] = n; ENV["JEXPRESSO_BW_DOFS"] = d
-    println("=== Brio-Wu: N = ", n, ", ~", d, " DOFs, C_min = ", ENV["JEXPRESSO_BW_CMIN"],
-            ", cutoff = ", get(ENV, "JEXPRESSO_BW_CUTOFF", "0"), ", C_1 = ", get(ENV, "JEXPRESSO_BW_C1", "1"))
+    println("=== Brio-Wu: N = ", n, ", ~", d, " DOFs, store ", ENV["JEXPRESSO_BW_STORE"])
     t0 = time()
     try
         Jexpresso.run_case("MHD", "brioWu1d")
@@ -127,28 +128,20 @@ mkdir -p "$OUT"
 # sweeps drew theirs in output/Cmin<C_min>: stale, whatever they show
 rm -f "$OUT"/output/density_dof*-it* "$OUT"/output/density_nu*-it* "$OUT"/output/convergence*-it* \
       "$OUT"/output/rho_By*-it* "$OUT"/output/nu-it* "$OUT"/output/nu_*-it*
-suffix="${BW_HSCALE:+_$BW_HSCALE}${BW_NODAL:+_nodal}"
-for c in $CMINS; do
-  for k in $CUTOFFS; do
-   for r in $C1S; do
-    export JEXPRESSO_BW_CMIN="$c"
-    export JEXPRESSO_BW_CUTOFF="$k"
-    export JEXPRESSO_BW_C1="$r"
-    case "$k" in 0|0.0|0e0|0e-0) cut="" ;; *) cut="_cut$k" ;; esac
-    case "$r" in 1|1.0) crs="" ;; *) crs="_C1_$r" ;; esac
-    export JEXPRESSO_BW_STORE="Cmin$c$suffix$crs$cut"
-    figs="$OUT/output/$JEXPRESSO_BW_STORE"
-    [ "${BW_KEEP:-0}" = "1" ] || rm -rf "$CASE/curves/$JEXPRESSO_BW_STORE" "$figs"
-    echo "=== Brio-Wu order scan, C_min = $c, cutoff $k, C_1 $r: N [$NOPS] x DOFs [$DOFS], length scale \
-$([ "${JEXPRESSO_BW_HSCALE:-ngl}" = nop ] && echo 'Delta_K/k' || echo 'Delta_K/(k+1)')\
-${BW_NODAL:+, nodal coefficient}, $JOBS session(s)"
-    if [ "$JOBS" -gt 1 ]; then
-        printf '%s\n' $NOPS | xargs -P "$JOBS" -I{} "$SELF" --order {}
-    else
-        run_orders $NOPS
-    fi
-    echo "=== C_min = $c, cutoff $k, C_1 $r, the whole sweep, in $figs:"
-    "$JULIA" --project=. tools/brio_wu_plot.jl --out="$figs"
-   done
-  done
-done
+case "$HSCALE" in nop) suffix="_nop" ;; *) suffix="" ;; esac
+case "$NODAL" in true) suffix="${suffix}_nodal" ;; esac
+case "$CUT" in 0|0.0|0e0|0e-0) cut="" ;; *) cut="_cut$CUT" ;; esac
+case "$C1" in 1|1.0) crs="" ;; *) crs="_C1_$C1" ;; esac
+export JEXPRESSO_BW_STORE="Cmin$CMIN$suffix$crs$cut"
+figs="$OUT/output/$JEXPRESSO_BW_STORE"
+[ "${BW_KEEP:-0}" = "1" ] || rm -rf "$CASE/curves/$JEXPRESSO_BW_STORE" "$figs"
+echo "=== Brio-Wu order scan, the deck's DynSGS (C_min = $CMIN, cutoff $CUT, C_1 $C1, \
+length scale $([ "$HSCALE" = nop ] && echo 'Delta_K/k' || echo 'Delta_K/(k+1)')\
+$([ "$NODAL" = true ] && echo ', nodal coefficient')): N [$NOPS] x DOFs [$DOFS], $JOBS session(s)"
+if [ "$JOBS" -gt 1 ]; then
+    printf '%s\n' $NOPS | xargs -P "$JOBS" -I{} "$SELF" --order {}
+else
+    run_orders $NOPS
+fi
+echo "=== the whole sweep, in $figs:"
+"$JULIA" --project=. tools/brio_wu_plot.jl --out="$figs"

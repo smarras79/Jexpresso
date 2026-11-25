@@ -26,23 +26,13 @@
 #                       the time integrator; see the note by _sv_solver on why
 #                       a 4th-order one caps the measured rate at 4
 #   JEXPRESSO_SV_TEND   final time                              (default 1.0)
-#   JEXPRESSO_SV_CMIN   the DynSGS background floor :dsgs_Cmin  (default 0)
-#   JEXPRESSO_SV_C1     :dsgs_C1                                 (default 1)
-#   JEXPRESSO_SV_REL    :dsgs_rel, the normalization floor        (default 1)
-#   JEXPRESSO_SV_CMAX   :dsgs_Cmax                               (default 0.5)
 #   JEXPRESSO_SV_VISC   "dsgs" (default) or "none" for the plain Galerkin run,
 #                       the two panels of the paper's Fig. 1
-#   JEXPRESSO_SV_CUTOFF :dsgs_cutoff, the smoothness cutoff      (default 1e-3;
-#                       0 runs DynSGS without it)
-#   JEXPRESSO_SV_HOLD   :dsgs_hold_steps                         (default 2)
-#   JEXPRESSO_SV_BDF    :dsgs_bdf_order, the order k of the backward
-#                       difference the residual sensor takes ∂ₜq with
-#                       (default 2; 4 or 5 move the time-difference floor of
-#                       the sensor from Δt² to Δt⁴/Δt⁵ — see _sv_bdf below)
-#   JEXPRESSO_SV_FREEZE 1 or 0 forces :dsgs_freeze_stage         (default: on,
-#                       mod_inputs.jl's, with the residual sensor)
 #   JEXPRESSO_SV_L      the box width L; picks vortex_L<L>_<n>x<n>.msh (default 20)
 #
+# Every DynSGS setting (sensor, norms, C_1, C_max, C_min, rel, cutoff, hold,
+# BDF order, freeze) is a literal entry of the Dict below; edit it there. The
+# environment variables that used to override them are refused (below).
 # The time step follows the resolution, Δt ∝ 1/(nelx·nop), so the Courant
 # number is the same at every point of a sweep and the comparison is not
 # contaminated by a changing time error. The reference value below is a
@@ -56,23 +46,13 @@ const SV_DT_REF       = 2.0e-3    # at nelx*nop = 64
 _sv_nop()  = something(tryparse(Int,     get(ENV, "JEXPRESSO_SV_NOP",  "")), SV_NOP_DEFAULT)
 _sv_nelx() = something(tryparse(Int,     get(ENV, "JEXPRESSO_SV_NELX", "")), SV_NELX_DEFAULT)
 _sv_tend() = something(tryparse(Float64, get(ENV, "JEXPRESSO_SV_TEND", "")), 1.0)
-_sv_cmin() = something(tryparse(Float64, get(ENV, "JEXPRESSO_SV_CMIN", "")), 0.0)
-# C_1 and C_max as well, so that a run can keep the SENSOR (and its
-# diagnostics) while applying no viscosity at all: with both zero the
-# solution is the plain Galerkin one and the printed residual is the
-# residual of a clean solution, which is how one checks that the sensor
-# itself converges under refinement.
-# C_1 (:dsgs_C1); JEXPRESSO_SV_CR, its name until Nov 2026, is still read, with a warning
-_sv_c1()   = (v = get(ENV, "JEXPRESSO_SV_C1", "");
-              isempty(v) && haskey(ENV, "JEXPRESSO_SV_CR") &&
-                  (@warn "JEXPRESSO_SV_CR is now JEXPRESSO_SV_C1"; v = ENV["JEXPRESSO_SV_CR"]);
-              something(tryparse(Float64, v), 1.0))
-# :dsgs_rel — how far below its own physical scale a variable's spread may fall
-# before that scale normalizes its residual. 1 is the fix; 1e-3 is what the
-# kernels used before it, and reproduces the first-order convergence this case
-# was built to expose.
-_sv_rel()  = something(tryparse(Float64, get(ENV, "JEXPRESSO_SV_REL",  "")), 1.0)
-_sv_cmax() = something(tryparse(Float64, get(ENV, "JEXPRESSO_SV_CMAX", "")), 0.5)
+# The DynSGS settings are literal entries of the Dict in user_inputs(). These
+# environment variables used to override them and are no longer read: a run
+# that still sets one stops, instead of silently running the deck's value.
+const SV_DSGS_ENV_REMOVED = ("JEXPRESSO_SV_SENSOR", "JEXPRESSO_SV_NORMS", "JEXPRESSO_SV_C1",
+                             "JEXPRESSO_SV_CR", "JEXPRESSO_SV_CMAX", "JEXPRESSO_SV_CMIN",
+                             "JEXPRESSO_SV_REL", "JEXPRESSO_SV_CUTOFF", "JEXPRESSO_SV_HOLD",
+                             "JEXPRESSO_SV_BDF", "JEXPRESSO_SV_FREEZE")
 _sv_visc() = lowercase(strip(get(ENV, "JEXPRESSO_SV_VISC", "dsgs")))
 
 function _sv_dt()
@@ -127,34 +107,6 @@ end
 # L = 15 puts the floor at 1e-12 and L = 20 at machine zero; generate those
 # meshes with SV_L=20 tools/smooth_vortex_mesh.sh.
 # The default is the box of the paper, [-10,10]^2, i.e. L = 20.
-_sv_hold() = something(tryparse(Int, get(ENV, "JEXPRESSO_SV_HOLD", "")), 2)
-# The DynSGS smoothness cutoff, :dsgs_cutoff (SGS.jl, _dsgs_cut): the normalized
-# residual enters ν as max(0, ratio − cutoff). With the coefficient frozen per
-# step, the residual sensor still reads the BDF2 truncation error of a moving
-# smooth solution, (Δt²/3)∂ₜ³q, and that floor alone gives ν ∝ Δ²Δt² ∝ h⁴:
-# without a cutoff DynSGS caps the measured order near 4 from N = 5 on
-# (problems/MHD/setup_notes/dsgsCutoff.pdf). A shock's ratio is O(10²), so
-# 1e-3 removes the floor and leaves a shock as it was; with it, DynSGS
-# reproduces Galerkin bit for bit on this vortex (N = 6, 32², t = 0.5) and on
-# the Alfvén wave, whose default it also is. This is the deck's default; its
-# records are "dsgs". JEXPRESSO_SV_CUTOFF=0 runs without it, stored as
-# "dsgs_nocut", and any other value as "dsgs_cut" (user_plot.jl,
-# SV_DSGS_CUTOFF: keep that equal to the value here).
-const SV_CUTOFF_DEFAULT = 1.0e-3
-_sv_cutoff() = something(tryparse(Float64, get(ENV, "JEXPRESSO_SV_CUTOFF", "")), SV_CUTOFF_DEFAULT)
-# The ORDER of that time difference, :dsgs_bdf_order (mod_inputs.jl). The
-# floor above is the truncation error of BDF2; with BDF-k it is
-# −Δtᵏ/(k+1)·∂ₜᵏ⁺¹q, so ν ∝ Δ²Δtᵏ ∝ h^(k+2) instead of h⁴ — together with
-# CarpenterKennedy2N54's own defect, O(Δt⁴), which the residual of the
-# integrated solution also carries. JEXPRESSO_SV_BDF=4 or 5 with
-# JEXPRESSO_SV_CUTOFF=0 is the test of whether the order cap of DynSGS from
-# N = 5 on is that floor; their records are "dsgs_nocut_bdf4", "_bdf5"
-# (user_plot.jl). The startup hold is at least k steps.
-_sv_bdf() = something(tryparse(Int, get(ENV, "JEXPRESSO_SV_BDF", "")), 2)
-# JEXPRESSO_SV_FREEZE=1 or 0 forces :dsgs_freeze_stage; unset, the key is left
-# to mod_inputs.jl, whose default is on with the residual sensor.
-_sv_freeze() = (v = strip(get(ENV, "JEXPRESSO_SV_FREEZE", ""));
-                isempty(v) ? nothing : v in ("1", "true", "yes"))
 _sv_lbox() = something(tryparse(Float64, get(ENV, "JEXPRESSO_SV_L", "")), 20.0)
 # The box is ALWAYS in the mesh name (vortex_L20_32x32.msh): a mesh whose name
 # does not say which box it is cannot be told apart from one that is a
@@ -165,6 +117,9 @@ _sv_mesh() = string("./problems/MHD/smoothVortex/vortex_", _sv_ltag(),
                        _sv_nelx(), "x", _sv_nelx(), ".msh")
 
 function user_inputs()
+    for v in SV_DSGS_ENV_REMOVED
+        haskey(ENV, v) && error(" problems/MHD/smoothVortex: ", v, " is no longer read; set the DynSGS settings in user_inputs.jl.")
+    end
     inputs = Dict(
         :ode_solver           => _sv_solver(),
         :Δt                   => _sv_dt(),
@@ -201,10 +156,10 @@ function user_inputs()
         # history (an inter-element mismatch reaches the sensor; the assembled
         # rate of the former "legacy" sensor cancels it).
         :dsgs_sensor      => "residual",
-        :dsgs_rel         => _sv_rel(),
-        :dsgs_C1          => _sv_c1(),
-        :dsgs_Cmax        => _sv_cmax(),
-        :dsgs_Cmin        => _sv_cmin(),   # no background floor: it would be an
+        :dsgs_rel         => 1.0,   # floor = the variable's own physical scale (1e-3: the pre-Sep-2026 rule)
+        :dsgs_C1          => 1.0,
+        :dsgs_Cmax        => 0.5,
+        :dsgs_Cmin        => 0.0,          # no background floor: it would be an
                                            # order-independent O(h) error on a
                                            # smooth solution (see the README)
         :dsgs_gamma       => 5.0/3.0,
@@ -227,25 +182,26 @@ function user_inputs()
         # per RHS call (a few doubles) and is what Dao & Nazarov's eq. 4.8
         # means by the norm over Ω.
         :dsgs_norms       => "domain",
-        # :dsgs_freeze_stage, the coefficient once per step instead of once
-        # per stage, is mod_inputs.jl's default with the residual sensor: it
-        # is what keeps the residual, and with it nu, from stalling at O(dt)
-        # and capping a high-order accuracy test. JEXPRESSO_SV_FREEZE=0 (or 1)
-        # forces it; see _sv_freeze and the end of this function.
-        # Smoothness cutoff on the normalized residual (JEXPRESSO_SV_CUTOFF,
-        # :dsgs_cutoff in mod_inputs.jl), 1e-3 by default (SV_CUTOFF_DEFAULT
-        # above): nu is zero where the sensor is only reading the
-        # Δt²-proportional truncation error of its own time difference, which
-        # is the floor that caps this very study's order without it.
-        :dsgs_cutoff       => _sv_cutoff(),
-        # Steps the coefficient is held at zero at the start of a run
-        # (JEXPRESSO_SV_HOLD, :dsgs_hold_steps). 2 is the minimum the BDF2
-        # history needs and the long-standing behaviour; more is the probe of
-        # whether the smooth-flow excess is a STARTUP dose.
-        :dsgs_hold_steps   => _sv_hold(),
-        # Order of the residual sensor's backward difference (JEXPRESSO_SV_BDF,
-        # :dsgs_bdf_order): 2 is the BDF2 the sensor has always had.
-        :dsgs_bdf_order    => _sv_bdf(),
+        # The coefficient once per step instead of once per stage: it is what
+        # keeps the residual, and with it nu, from stalling at O(dt) and
+        # capping a high-order accuracy test.
+        :dsgs_freeze_stage => true,
+        # Smoothness cutoff on the normalized residual (SGS.jl, _dsgs_cut): ν
+        # takes max(0, ratio − cutoff). With the coefficient frozen per step the
+        # sensor still reads the BDF2 truncation error of a moving smooth
+        # solution, (Δt²/3)∂ₜ³q, which alone gives ν ∝ Δ²Δt² ∝ h⁴ and caps the
+        # measured order near 4 from N = 5 on (setup_notes/dsgsCutoff.pdf). A
+        # shock's ratio is O(10²), so 1e-3 removes the floor and leaves a shock
+        # as it was. Records: "dsgs" at 1e-3, "dsgs_nocut" at 0, "dsgs_cut"
+        # otherwise (user_plot.jl, SV_DSGS_CUTOFF: keep that equal to this).
+        :dsgs_cutoff       => 1.0e-3,
+        # Steps the coefficient is held at zero at the start of a run. 2 is the
+        # minimum the BDF2 history needs; more probes whether the smooth-flow
+        # excess is a STARTUP dose (records "dsgs_hold").
+        :dsgs_hold_steps   => 2,
+        # Order k of the residual sensor's backward difference: with BDF-k the
+        # floor above is −Δtᵏ/(k+1)·∂ₜᵏ⁺¹q (records "_bdf<k>" for k ≠ 2).
+        :dsgs_bdf_order    => 2,
         :lrichardson      => false,
         :energy_equation  => "energy",
         :lkep              => false,
@@ -266,7 +222,5 @@ function user_inputs()
         :linitial_refine     => false,
         :ladapt              => false,
     ) #Dict
-    f = _sv_freeze()
-    f === nothing || (inputs[:dsgs_freeze_stage] = f)
     return inputs
 end

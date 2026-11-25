@@ -1,14 +1,13 @@
-_ot_tend() = something(tryparse(Float64, get(ENV, "JEXPRESSO_OT_TEND", "")), 1.0)
-_ot_dt()   = something(tryparse(Float64, get(ENV, "JEXPRESSO_OT_DT",   "")), 0.7e-5)
-# :dsgs_rel — how far below its own physical scale a variable's spread may
-# fall before that scale, and not the spread, normalizes its residual.
-# 1 is the current rule; 1e-3 is what the kernels used before September 2026,
-# which for this problem amplified the continuity-equation residual by up to
-# 1000 (ρ is uniform at t = 0, so the floor WAS its normalization).
-_ot_hold() = something(tryparse(Int, get(ENV, "JEXPRESSO_OT_HOLD", "")), 2)
-_ot_rel()  = something(tryparse(Float64, get(ENV, "JEXPRESSO_OT_REL",  "")), 1.0)
+# Every setting is a literal entry of the Dict below. These environment
+# variables used to override some of them and are no longer read: a run that
+# still sets one stops, instead of silently running the deck's value.
+const OT_ENV_REMOVED = ("JEXPRESSO_OT_TEND", "JEXPRESSO_OT_DT", "JEXPRESSO_OT_HOLD",
+                        "JEXPRESSO_OT_REL", "JEXPRESSO_OT_NORMS")
 
 function user_inputs()
+    for v in OT_ENV_REMOVED
+        haskey(ENV, v) && error(" problems/MHD/orszagTangBormanis2024: ", v, " is no longer read; set it in user_inputs.jl.")
+    end
 
     lvl = 0
     inputs = Dict(
@@ -36,9 +35,6 @@ function user_inputs()
         #:Δt                   => 2.0e-4,  #64 nop4
         :Δt                   => 4.0e-4/2^lvl,  #32 nop4
         :tinit                => 0.0,
-        # JEXPRESSO_OT_TEND shortens the run without editing the deck — a
-        # smoke test of a change to the model is one short run, not 143 000
-        # steps.
         :tend                 => 1.0,   # the paper's t ∈ [0, 1] interval
         :diagnostics_at_times => (0.0:0.25:1.0),
         :conservation_every   => 1,        # mass and energy totals every step: conservation.dat
@@ -99,11 +95,14 @@ function user_inputs()
         # BDF2 of the stage state, in effect a |∂ₜq| sensor).
         :visc_model       => DSGS_MHD(),
         :dsgs_sensor      => "residual",
-        :dsgs_rel         => _ot_rel(),
-        # Steps the coefficient is held at zero at the start (JEXPRESSO_OT_HOLD,
-        # :dsgs_hold_steps): what a longer hold costs on a case whose shocks
+        # :dsgs_rel — how far below its own physical scale a variable's spread
+        # may fall before that scale normalizes its residual. 1 is the current
+        # rule; 1e-3 (before September 2026) amplified the continuity residual
+        # here by up to 1000 (ρ is uniform at t = 0, so the floor WAS its scale).
+        :dsgs_rel         => 1.0,
+        # Steps the coefficient is held at zero at the start (:dsgs_hold_steps): what a longer hold costs on a case whose shocks
         # form OUT of smooth data, as opposed to Brio-Wu's discontinuous start.
-        :dsgs_hold_steps  => _ot_hold(),
+        :dsgs_hold_steps  => 2,
         # NORMALIZATION SCOPE: the whole domain Ω, what the method means by the
         # norm over Ω (two small Allreduces per evaluation of the coefficient).
         # "rank" would normalize each rank by ITS OWN subdomain's spread, so ν —

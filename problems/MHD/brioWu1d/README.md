@@ -78,7 +78,6 @@ its own (order, DOFs) point:
 
 ```bash
 BW_JOBS=4 tools/brio_wu_order_scan.sh                    # orders 4-7 at 600 and 1200 DOFs, C_min = 0.06
-BW_JOBS=4 BW_CMIN="0.06 0.03 0" tools/brio_wu_order_scan.sh   # one complete sweep per C_min, to compare
 BW_JOBS=4 BW_DOFS=600 tools/brio_wu_order_scan.sh        # the paper's 600 DOFs alone
 BW_DOFS="150 300 600 1200" tools/brio_wu_order_scan.sh   # also 150 and 300: the convergence figure
 JULIA=/path/to/julia tools/brio_wu_order_scan.sh         # default: the macOS app's julia, else the PATH's
@@ -133,11 +132,8 @@ Overrides, all optional, so a sweep needs no file edits:
 | `JEXPRESSO_BW_DOFS` | 600 | degrees of freedom; sets the element count as DOFs/nop |
 | `JEXPRESSO_BW_NELX` | — | element count, overriding `JEXPRESSO_BW_DOFS` |
 | `JEXPRESSO_BW_DT` | — | time step, overriding the rule below |
-| `JEXPRESSO_BW_CMIN` | 0.06 | the DynSGS background floor `:dsgs_Cmin` |
-| `JEXPRESSO_BW_HSCALE` | `ngl` | the DynSGS length scale: `ngl` is the kernels' own $\Delta_K/(k+1) = h_e/(N+1)$, eq. (15) of the DynSGS-MHD paper; `nop` is Dao & Nazarov's $\Delta_K/k$ |
-| `JEXPRESSO_BW_NODAL` | 0 | 1 for the nodal coefficient (`:ldsgs_nodal`, their eq. 4.10) |
-| `JEXPRESSO_BW_C1` | 1 | the DynSGS residual coefficient $C_1$ (`:dsgs_C1`, eq. 14 of the DynSGS-MHD paper, where $C_{max}$ is $C_2$; Dao & Nazarov's $C_R$), on the deck's length scale: $\nu = C_1\Delta^2 r$ where the residual is large; a run with $C_1 \neq 1$ stores its curves as a method of its own (`elem_C1_<x>`), and the scan takes a list, `BW_C1="1 4"` (`Cmin0.06_C1_4`) |
-| `JEXPRESSO_BW_CUTOFF` | 0 | the DynSGS smoothness cutoff `:dsgs_cutoff`, ν from max(0, r − c); a run with c > 0 stores its curves as a method of its own (`elem_cut<c>`), and the scan takes a list, `BW_CUTOFF="0 1e-3"`, one store per value (`Cmin0.06_cut1e-3`) |
+
+The DynSGS settings — `:dsgs_Cmin` (0.06), `:dsgs_C1` (1), `:dsgs_cutoff` (0), `:dsgs_hold_steps` (2), `:dsgs_freeze_stage` (true), `:ldsgs_nodal` (false) and the length-scale convention `:bw_hscale` (`"ngl"`, the paper's $h_e/(N+1)$; `"nop"`, Dao & Nazarov's $\Delta_K/k$) — are literal entries of `user_inputs.jl`; edit them there. The environment variables that used to override them (`JEXPRESSO_BW_CMIN`, `_C1`, `_CUTOFF`, `_HOLD`, `_FREEZE`, `_NODAL`, `_HSCALE`) are refused, and so are the scan's `BW_CMIN`, `BW_CUTOFF`, `BW_C1`, `BW_HSCALE`, `BW_NODAL`: the scan runs the deck's settings and names its store after them (`Cmin0.06`, `Cmin0.03_cut1e-3`, …). To compare C_min values, run the scan once per value of `:dsgs_Cmin`.
 
 At a fixed DOF count the orders run at equal cost: 150, 120, 100 and 86
 elements for $N = 4, 5, 6, 7$ at 600 DOFs, i.e. 601, 601, 601 and 603 points.
@@ -205,8 +201,8 @@ accurately than $\mathbb{P}_1$ at equal degrees of freedom.
 and the $\Delta_e$ of eq. (15) of the DynSGS-MHD paper, so that $C_1 = 1$,
 $C_{max} = 0.5$ and $C_{min} = 0.06$ mean here what they mean in the paper and
 in every other case. Until October 2026 the default was Dao & Nazarov's
-$\Delta_K/k$, for the order comparison above; `JEXPRESSO_BW_HSCALE=nop`
-(`BW_HSCALE=nop` for the scan) still gives it. That is a *deck-level* switch:
+$\Delta_K/k$, for the order comparison above; `:bw_hscale => "nop"`
+in `user_inputs.jl` still gives it. That is a *deck-level* switch:
 `user_inputs.jl` folds the factor into this case's own coefficients —
 $C_{max}$ and $C_{min}$ by $(k+1)/k$, $C_1$ by $((k+1)/k)^2$, which is
 algebraically identical to changing $\Delta$ — and no kernel is touched. Two
@@ -218,7 +214,7 @@ $7.1\to5.6\times10^{-3}$ over the whole tube); that larger scale is also what
 pushed the rising bubble past the explicit viscous stability limit at
 start-up, which is why the kernels use $(k+1)$.
 
-`JEXPRESSO_BW_CMIN=0` removes the part of the viscosity that is independent of
+`:dsgs_Cmin => 0.0` removes the part of the viscosity that is independent of
 the solution altogether.
 
 ## What is implemented
@@ -325,7 +321,7 @@ of time stepping. At $t = 0.1$ (`density-it5.svg`; the per-variable figures with
   state, $2.9$–$3.2\times10^{-4}$ on the right one and at most
   $3.4$–$3.8\times10^{-4}$ behind the slow shock, the higher orders a little
   higher (the equal-DOF penalty of $h_e/(N+1)$ above). The residual part never
-  exceeds it: with the floor off (`JEXPRESSO_BW_CMIN=0`) it peaks at the
+  exceeds it: with the floor off (`:dsgs_Cmin => 0.0`) it peaks at the
   compound wave and at the slow shock at about the floor's size and falls to
   $10^{-5}$–$10^{-6}$ elsewhere (measured on $\Delta_K/k$);
 - the relative $L^1$ error of $\rho$ over the tube is $6.1$, $6.6$, $6.7$ and
@@ -349,11 +345,11 @@ of time stepping. At $t = 0.1$ (`density-it5.svg`; the per-variable figures with
   $C_{max}\Delta(|u| + c_f)$, enough to hold the shock to two nodes but not to
   make it monotone. (With the floor off, the residual part alone reaches about
   the same size, 15 % of the cap: spreading the shock lowers its residual,
-  which lowers $\nu$.) `JEXPRESSO_BW_CMIN=0.12` brings the overshoots under
+  which lowers $\nu$.) `:dsgs_Cmin => 0.12` brings the overshoots under
   1 % (0.25–0.9 % at $N = 5, 6$), at the price of a slow shock 3.3 nodes wide
   instead of 2 and a contact 40 % wider; the nodal coefficient changes
   nothing there;
-- a larger residual coefficient $C_1$ (`JEXPRESSO_BW_C1`, Nov 2026; $N = 4$–7,
+- a larger residual coefficient $C_1$ (`:dsgs_C1`, Nov 2026; $N = 4$–7,
   600 and 1200 DOFs) acts where the residual is large, but it is
   self-limiting: the stronger $\nu$ widens the shock, which lowers its
   residual, so $C_1 = 4$ raises $\nu$ at the slow shock only from 12 % to

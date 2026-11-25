@@ -81,8 +81,8 @@ normalized residual of a shock, $O(10^2)$: with it DynSGS reproduces Galerkin
 bit for bit wherever the vortex is resolved (measured here at $N = 6$, $32^2$,
 $t = 0.5$; on the Alfvén wave at $N = 5$–$7$ on every mesh but the coarsest),
 and still acts where it is not — on the coarsest meshes the residual exceeds
-$c$ and the viscosity switches on, as it should. `JEXPRESSO_SV_CUTOFF=0` runs
-without it.
+$c$ and the viscosity switches on, as it should. `:dsgs_cutoff => 0.0` in
+`user_inputs.jl` runs without it.
 
 **What changed since the sweep of 11 September 2026:**
 
@@ -118,11 +118,11 @@ experiment the record belongs to, so that no experiment overwrites another's:
 | tag | the run |
 |---|---|
 | `dsgs` | DynSGS as the deck runs it, with the cutoff |
-| `dsgs_nocut` | DynSGS without the cutoff (`JEXPRESSO_SV_CUTOFF=0`) |
+| `dsgs_nocut` | DynSGS without the cutoff (`:dsgs_cutoff => 0.0`) |
 | `dsgs_cut` | DynSGS with another cutoff |
 | `dsgs_hold` | DynSGS with a startup hold other than 2 steps |
 | `galerkin` | the plain Galerkin run (`JEXPRESSO_SV_VISC=none`) |
-| `<tag>_bdf<k>` | any DynSGS run above with the residual sensor's time difference of order $k \neq 2$ (`JEXPRESSO_SV_BDF=k`, [below](#the-order-of-the-sensors-time-difference-bdf-k)): `dsgs_nocut_bdf5` is DynSGS without the cutoff, with BDF5 |
+| `<tag>_bdf<k>` | any DynSGS run above with the residual sensor's time difference of order $k \neq 2$ (`:dsgs_bdf_order => k`, [below](#the-order-of-the-sensors-time-difference-bdf-k)): `dsgs_nocut_bdf5` is DynSGS without the cutoff, with BDF5 |
 
 Every run then prints the table of **every** error in the store that carries
 its final time and box, and draws the figures from them:
@@ -245,13 +245,6 @@ JEXPRESSO_SV_NOP=4 JEXPRESSO_SV_NELX=16 julia --project=. src/Jexpresso.jl MHD s
 | `JEXPRESSO_SV_SOLVER` | `ck54` | time integrator |
 | `JEXPRESSO_SV_TEND` | 1.0 | final time |
 | `JEXPRESSO_SV_VISC` | `dsgs` | `none` for the plain Galerkin run |
-| `JEXPRESSO_SV_CUTOFF` | $10^{-3}$ | `:dsgs_cutoff`; 0 for none |
-| `JEXPRESSO_SV_HOLD` | 2 | `:dsgs_hold_steps` |
-| `JEXPRESSO_SV_BDF` | 2 | `:dsgs_bdf_order`, the order of the residual sensor's backward difference (1 to 6) |
-| `JEXPRESSO_SV_FREEZE` | (on) | 1 or 0 forces `:dsgs_freeze_stage` |
-| `JEXPRESSO_SV_C1`, `JEXPRESSO_SV_CMAX` | 1, 0.5 | `:dsgs_C1`, `:dsgs_Cmax`; both zero keeps the sensor and applies no viscosity |
-| `JEXPRESSO_SV_CMIN` | 0 | the background floor `:dsgs_Cmin` |
-| `JEXPRESSO_SV_REL` | 1 | `:dsgs_rel`, the normalization floor; `1e-3` is what the kernels used before the fix of 11 Sep |
 | `JEXPRESSO_SV_PLOT_NOPS` | — | as `SV_PLOT_NOPS` |
 
 **The meshes** come from one parameterized `vortex_periodic.geo`;
@@ -282,8 +275,9 @@ The runs that isolated the cause are worth repeating after any change to the
 sensor:
 
 ```bash
-# the sensor with no viscosity applied: the solution is the Galerkin one
-JEXPRESSO_SV_C1=0 JEXPRESSO_SV_CMAX=0 JEXPRESSO_SV_NELX=16 \
+# the sensor with no viscosity applied (the solution is the Galerkin one):
+# first set :dsgs_C1 => 0.0 and :dsgs_Cmax => 0.0 in user_inputs.jl
+JEXPRESSO_SV_NELX=16 \
     julia --project=. src/Jexpresso.jl MHD smoothVortex
 ```
 
@@ -360,7 +354,7 @@ $(q^n, q^{n-1}, q^{n-2})$, and on a smooth, resolved solution its residual keeps
 that difference's truncation error, $-(\Delta t^2/3)\,\partial_t^3 q$: the floor
 [the cutoff](#the-dynsgs-setup) is there to remove, found on the Alfvén wave
 ([`setup_notes/dsgsCutoff.pdf`](../setup_notes/dsgsCutoff.pdf)).
-`:dsgs_bdf_order => k` (`JEXPRESSO_SV_BDF`, `SV_BDF`; 1 to 6, default 2) takes
+`:dsgs_bdf_order => k` (in `user_inputs.jl`; 1 to 6, default 2) takes
 $\partial_t q$ with the backward difference of order $k$ on
 $(q^n, \dots, q^{n-k})$ instead, whose truncation error is
 $-\Delta t^k/(k+1)\,\partial_t^{k+1} q$, so $\nu$'s floor becomes
@@ -505,7 +499,7 @@ periodic box, so a point does not move when the rank count changes.
 viscosity $C_{min}\Delta\lambda$ that is applied everywhere regardless of the
 residual; on a smooth solution it is an $O(h)$ error that no polynomial order
 can beat, so a sweep with the floor on measures the floor and not the scheme —
-every order would collapse onto slope 1. Turn it on with `JEXPRESSO_SV_CMIN`
+every order would collapse onto slope 1. Turn it on with `:dsgs_Cmin` in `user_inputs.jl`
 if that is what you want to see.
 
 ## Files
