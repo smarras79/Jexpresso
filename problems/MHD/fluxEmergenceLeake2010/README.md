@@ -1199,7 +1199,21 @@ $B_z/\rho$. In ideal 2.5D MHD the plasma at the O-point keeps its $B_z/\rho$
 (there is no in-plane field there to carry $B_z$ away along it) and the flux
 around the axis is kept: what a run loses of them, it loses to its
 resistivity and its mass diffusion. A table, `core_<label>.csv` and
-`…_core.png`.
+`…_core.png`; when the snapshots have them, the table ends with the DynSGS
+coefficients at the axis (momentum, field, mass, in $L_0v_0$).
+
+`lare` sets the DynSGS momentum coefficient against the viscosity of the
+paper's code for the same flow: LareXd's tensor viscosity (2.6–2.9, built
+without `Q_MONO`) is $L\rho(0.1c_f + 0.5L\lvert s_{ij}\rvert)s_{ij}$ on each
+component of the traceless strain rate, in every cell, a kinematic viscosity
+$0.05\,c_fL + 0.25L^2\lvert s_{ij}\rvert$ (`--lare-dx`, 0.0375 Mm, the paper's
+cell at the surface). At each of `--times` (default 464, 696, 920, 1044,
+1380 s), in the tube ($\lvert B\rvert$ > 300 G), above it in the atmosphere it
+pushes into ($\lvert x\rvert$ < 3 Mm, from 0.5 Mm above the axis to 3 Mm,
+$\lvert B\rvert$ ≤ 30 G) and beside it in the convection zone: the medians of
+both, the percentiles of their ratio node by node, and the speed and Mach
+number of the flow there. Leave out the first snapshot of a restarted run:
+its coefficient was evaluated before the sensor had a history.
 
 `drain` says why the lifted plasma drains or does not. For the plasma denser
 than $10^{-13}$ g cm⁻³ above 3 Mm, per snapshot: its mass; its median
@@ -1762,6 +1776,61 @@ Short runs on 4 cores; the full runs are for a cluster (above).
   energy's (at 14 s) and then the thermal residual's in every one; the
   induction residuals alone would give 0.01–0.03, the coefficient applied is
   0.03–0.09.
+
+  *Against Lare's viscosity, region by region* (25 Nov 2026; `lare`: the
+  DynSGS momentum coefficient against Lare's $0.05\,c_fL + 0.25L^2\lvert s\rvert$
+  for the snapshot's flow on the paper's 37.5 km cell, node by node). In the
+  `ETAFAC=0.1` REF 1 run above, the median of ours over Lare's:
+
+  | t (s) | axis (Mm) | in the tube ($\lvert B\rvert$ > 300 G) | above it ($\lvert x\rvert$ < 3 Mm, 0.5 Mm above the axis to 3 Mm, $\lvert B\rvert$ ≤ 30 G) | beside it (3 < $\lvert x\rvert$ < 8 Mm, −1.5 < y < 0) |
+  |---|---|---|---|---|
+  | 232 | −1.51 | 0.5 | 5.6 | 0.5 |
+  | 510 | −0.89 | 1.3 | 8.6 | 0.6 |
+  | 742 | −0.38 | 1.1 | 8.6 | 1.0 |
+  | 920 | −0.17 | 3.5 | 15 | 0.9 |
+  | 1021 | −0.04 | 10 | 31 | 1.1 |
+
+  Above the tube the flow is subsonic to 742 s (Mach number 0.15–0.65 at the
+  90th percentile; 1.2 at 920 s, 3.8 at 1021 s), and a quarter to a half of
+  the elements there are at the first-order cap $0.5\,\Delta(\lvert v\rvert + c_f)$,
+  ten times Lare's coefficient for a cell of the same size: the legacy sensor
+  reads the displacement of the resolved stratified atmosphere as a residual.
+  The REF 1 axis leaves the erratum's curve at about 510 s, when the tube
+  reaches that layer. On REF 4 (the 20 Nov run, quadrupole, from 920 s; the
+  rise was in the 18 Nov run, whose directory is gone) the tube is at or below
+  Lare's during the emergence: 0.9, 0.7 and 0.5 at 1044, 1160 and 1380 s
+  (90th percentile 6.0, 4.7, 2.0); above it at 1044 s, 5.8 in a supersonic
+  outflow (17 km/s, Mach 3.2), where Lare's remap would diffuse as well;
+  beside it, 0.1–0.2. The excess of REF 1 in the tube is its coarse mesh: the
+  residual part of the coefficient goes with $\Delta^2$, and REF 4 has half
+  its $\Delta$ there.
+
+  *What the REF 4 tube arrives with* (`core` on the same run). From 920 s to
+  2530 s the axis keeps 0.78–0.82 of the initial tube's $B_z/\rho$ (0.95 at
+  $t = 0$ on the discrete axis; one reading of 0.64 at 1380 s is off the
+  node) and 0.98–0.995 of its in-plane flux, at 1.2–1.45 times the
+  atmosphere's density: it rises to 0.05 Mm by 1160 s and stays at
+  0.00–0.07 Mm to 2530 s, where the erratum's rises to 0.41 Mm at 1378 s and
+  0.48 Mm at 1609–1956 s (its Fig. 2(a); 0.46–0.52 Mm at the O-point of its
+  Fig. 3). The 23–24 Nov run (`EINT=lowbeta`, the density sensor) has the
+  same axis at 1955–2530 s (0.04–0.06 Mm, 0.73–0.84). Whatever the tube loses
+  it loses before 920 s; on REF 1 most of it goes in the first 93 s (the
+  table above), while the relaxation contracts the tube and the DynSGS
+  coefficients there are 0.15–0.18. The paper's Sec. 3.2 (on the original
+  runs) puts the rise of tube 2's center on its low tension near the axis
+  and "higher buoyancy at its center": the mass at the center drains to the
+  ends of the crescent the tube becomes, while the centers of the
+  high-tension tubes 1 and 3 stay at the photosphere. A center with 0.82 of
+  its $B_z/\rho$ has two thirds of the magnetic pressure per unit mass.
+
+  *Under test* (cluster, REF 4, field-free corona, $t = 0$ to 1700 s,
+  `JEXPRESSO_LK10_DT=0.003`, the switches of the 22–24 Nov runs:
+  `VISC=velocity`, `RHOFAC=0.1`, `EINT=lowbeta`): (A) those switches; (B) A
+  with `VISCFAC=0.1`, the viscosity above the tube; (C) a hundredth of the
+  DynSGS resistivity and mass diffusion for the first 139 s
+  (`ETAFAC=0.01`, `RHOFAC=0.01`), then A's switches, the center's
+  $B_z/\rho$ through the transient. Against the erratum's Fig. 2(a) with
+  `axis` and `core`, and `lare` before 920 s.
 
 ## Files
 
