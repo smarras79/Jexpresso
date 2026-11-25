@@ -1743,9 +1743,18 @@ Short runs on 4 cores; the full runs are for a cluster (above).
   there.
 
   *What the DynSGS sees in the rising tube.* The coefficient there is
-  0.02–0.07 $L_0v_0$, 10–40 times the paper's kinematic viscosity at those
-  depths (0.0013–0.008), so that the tube rises at a Reynolds number of ~10
-  against several hundred in the paper. The legacy sensor is the time
+  0.02–0.07 $L_0v_0$ (at the axis of the `ETAFAC=0.1` run above, 0.023–0.13
+  from 93 to 1021 s, median 0.035), 10–40 times the paper's explicit
+  viscosity at those depths (0.0013–0.008), and no more than the viscosity of
+  the paper's code: Lare's tensor viscosity ("Equations and dissipation") is a
+  kinematic viscosity $0.05\,c_fL$ in every cell, which on the paper's 37.5 km
+  cell at the tube's axis is 0.052 $L_0v_0$ at $t = 0$, 0.045 at 232 s, 0.037
+  at 510 s, 0.029 at 742 s and 0.022 at 1021 s ($c_f$ at the axis of that run,
+  4.2 falling to 1.75 $v_0$). The tube rises at a Reynolds number $va/\nu$ of
+  8–20 with Lare's viscosity and 5–25 with the DynSGS's ($a$ = 0.3 Mm, $v$ the
+  speed of the axis), not at ~10 against several hundred, as this paragraph
+  said until 25 Nov 2026: the viscosity at the axis is not what holds the tube
+  back. The legacy sensor is the time
   derivative, ~$1.5\lvert\partial_t q\rvert$ against its mean (DSGS.md, "Selected
   stages"), so it fires on any structure that moves, resolved or not. A
   count over the tube's elements ($\lvert B_z\rvert > 1$ kG, REF 1, first 140 s,
