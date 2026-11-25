@@ -1875,8 +1875,18 @@ Short runs on 4 cores; the full runs are for a cluster (above).
   of the internal energy, at the momentum's coefficient (30–90 km² s⁻¹ above
   the tube on REF 4; Lare has none). Plasma held warm drains less (the dome
   stalled the same way when all of the DynSGS heat went into it, "The heat
-  of the DynSGS"). Under test: restarts of A from 696 s to 1021 s with
-  `RELAX_TAU=height`, `EFAC=0.1`, `RHOFAC=0.01` and `ETAFAC=0.1`, against A.
+  of the DynSGS"). Neither is the cause: restarts of A from 696 s to 1021 s
+  with (D) `RELAX_TAU=height`, (E) `EFAC=0.1`, (F) `RHOFAC=0.01` and (G)
+  `ETAFAC=0.1` have A's axis to 0.01 Mm at every snapshot (−0.33, −0.26,
+  −0.19, −0.14, −0.10, −0.04, 0.01–0.02 Mm from 742 to 1021 s) and its
+  centre's $B_z/\rho$ to 0.01 (G keeps 1 % more). So the first 0.12 Mm of the
+  lag answers to none of the DynSGS factors, to neither reading of the
+  relaxation time and not to the start. What has moved it is the mesh: at
+  742, 920 and 1021 s REF 1 (94 km) has −0.38, −0.17, −0.04 Mm, REF 4
+  (47 km) −0.33, −0.10, 0.02, the erratum (37.5 km, its own scheme) −0.30,
+  −0.02, 0.14; but REF 1's DynSGS coefficients are four times REF 4's, so
+  that alone does not show the lag to be the discretization's. REF 3
+  (`LK10_ref3.msh`, 23 km) is the check.
 
 ## Files
 
