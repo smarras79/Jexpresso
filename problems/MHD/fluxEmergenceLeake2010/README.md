@@ -1927,6 +1927,31 @@ Short runs on 4 cores; the full runs are for a cluster (above).
   becomes. A tenth of the viscosity (B) and the gentle start (C) had A's
   axis to 0.02 Mm at 1113 s; they were not continued.
 
+  *REF 3 stalls at the same height* (continued from 1021 s with
+  `JEXPRESSO_LK10_DT=0.0001`, and from 1299 s with 0.0005: the field-free
+  dome's fastest wave stays below ~110 $v_0$, a fast CFL number of 0.06 and
+  0.24 at those steps):
+
+  | t (s) | 1021 | 1067 | 1160 | 1206 | 1253 | 1299 | 1345 | 1380 |
+  |---|---|---|---|---|---|---|---|---|
+  | REF 3 | 0.06 | 0.10 | 0.11 | 0.11 | 0.08 | 0.08 | −0.02 | −0.02 |
+  | REF 4 | 0.02 | 0.05 | 0.10 | 0.12 | 0.12 | 0.12 | 0.12 | 0.12 |
+  | erratum | 0.14 | 0.17 | 0.24 | 0.28 | 0.31 | 0.35 | 0.38 | 0.41 |
+
+  The finer mesh brings the axis to the surface sooner and keeps the
+  centre's $B_z/\rho$ (0.93 to 1206 s), but the centre stops at ~0.1 Mm on
+  both meshes, at 1.5–1.7 times the atmosphere's density: photospheric
+  density and ~1 kG at 0.1 Mm. (The fall at 1345 s, with $B_z/\rho$ from 0.84
+  to 0.60, follows the step change at 1299 s and may be the axis finder
+  taking another point; the axis was already sinking at 1253 s.) Our tube 2
+  is the paper's ($B_0$, $a$, $\Theta_2 = c(1 - e^{-r^2/c_1^2})$, $c = 1/a$,
+  $c_1$ = 0.15 Mm, its $p_1$), and its centre keeps its $B_z/\rho$ and in-plane
+  flux on REF 3 nearly as ideal MHD would; with the relaxation holding it at
+  $T_0(\rho)$, it arrives at the surface twice as dense as the atmosphere
+  around it. To sit at 0.46 Mm as the erratum's does, a centre that keeps
+  $B_z/\rho$ must have expanded about fifteenfold, to ~0.07 $\rho_{ph}$ and
+  ~80 G: the crescent of the paper's Sec. 3.2. Ours does not expand. Open.
+
 ## Files
 
 | file | content |
