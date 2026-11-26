@@ -543,6 +543,8 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         println(" Energy relaxation: $(lk10_relax[] ? "on" : "OFF"), τ = $(round(lk10_tau0[], digits=4)) ρ^(-$(lk10_tau_exp[])) t0 ",
                 "with ρ $(lk10_relax_tau_height[] ? "the atmosphere's at the node's height (JEXPRESSO_LK10_RELAX_TAU=height)" : "local"); ",
                 "above y = $(lk10_relax_ymin[]); damping layers |x| > $(lk10_damp_xd[]), y > $(lk10_damp_yd[]), rate $(lk10_damp_rate[])/t0 at the boundary")
+        get(inputs, :lk10_etahat, false) == true &&
+            println(" Local resistivity of the original runs ON (JEXPRESSO_LK10_ETAHAT=on): η̂ = 0.1 exp(−r̂²/0.66²) L0 v0 at the origin, r̂ < 10")
         println(" Subnormal numbers: ", get_zero_subnormals() ? "flushed to zero" : "kept (IEEE; slow where the solution is ~1e-308)")
         println(" Switches set in the environment (JEXPRESSO_LK10_*): ", isempty(get(inputs, :lk10_env_set, "")) ? "none" : inputs[:lk10_env_set])
         println(" Dissipation: ν = $(round(LK10_NU, sigdigits=4)) ($(get(inputs, :lk10_nu_mode, "kinematic"))), anomalous η₀ = $(round(LK10_ETA0, sigdigits=4)), ",
@@ -605,7 +607,7 @@ lk10_restart_fields() = ["ρ", "u", "v", "w", "p", "Bx", "By", "Bz", "ψ"]
 # the restart says which changed.
 lk10_numeric_keys() = ("curl_resistivity", "Cmin", "floors", "dsgs_energy", "eta_sensor", "dsgs_sensor", "eta_cap", "eta_factor", "visc_factor", "visc_form",
                          "rho_factor", "heating", "stab_cap", "dsgs_stages", "C1", "tfloor", "energy_form", "rho_floor", "rho_sensor",
-                         "relax_tau", "e_factor")
+                         "relax_tau", "e_factor", "eta_hat")
 
 function lk10_case_record(inputs)
     return Pair{String,String}[
@@ -619,6 +621,7 @@ function lk10_case_record(inputs)
         "relax_tau"        => String(get(inputs, :lk10_relax_tau, "local")),
         "tube_eq"          => string(get(inputs, :lk10_tube_eq, "thermal")),
         "nu"               => string(get(inputs, :lk10_nu_mode, "")),
+        "eta_hat"          => get(inputs, :lk10_etahat, false) == true ? "on" : "off",
         "curl_resistivity" => string(get(inputs, :dsgs_curl_resistivity, false)),
         "Cmin"             => string(get(inputs, :dsgs_Cmin, 0.0)),
         "floors"           => string(get(inputs, :lk10_floors, false)),
@@ -691,7 +694,7 @@ function lk10_record_mismatch(old::Dict{String,String}, rec; numerics::Bool=fals
                         k in ("eta_factor", "visc_factor", "rho_factor", "e_factor", "heating", "C1") ? "1.0" : k == "stab_cap" ? "0.0" :
                         k == "dsgs_stages" ? "all" : k == "tfloor" ? "0.1" : k == "visc_form" ? "momentum" :
                         k == "energy_form" ? "total" : k == "rho_floor" ? "momentum" : k == "rho_sensor" ? "off" :
-                        k == "relax_tau" ? "local" : "(not recorded)")
+                        k == "relax_tau" ? "local" : k == "eta_hat" ? "off" : "(not recorded)")
         w == v || push!(bad, "$(k): $(w) there, $(v) here" *
                              (k == "partition" ? " (JEXPRESSO_LK10_PARTITION=$(w) to continue that run)" : ""))
     end

@@ -311,9 +311,16 @@ end
 # (as a dynamic viscosity it would grow to 10⁶ in the corona; README).
 # JEXPRESSO_LK10_NU=kinematic: 0.01326 everywhere. The anomalous resistivity
 # is the :mhd_anomalous_eta pair below; no other resistivity (the erratum
-# removed the local η̂ = 0.1 exp(−r̂²/0.66²) at the origin of the original runs).
+# removed the local η̂ = 0.1 exp(−r̂²/0.66²), r̂ < 10, at the origin of the original runs).
+# JEXPRESSO_LK10_ETAHAT=on puts that η̂ back (code units, L0 v0), the original runs' configuration: a test
+# of how the low-tension tube's centre answers a resistivity where it reaches the surface (README). It is
+# evaluated, as every coefficient of this hook, at the element centroids: on REF 4 the four elements around
+# the origin get 0.017 (76 % of the original's integral of η̂), on REF 3 the integral is the original's.
 lk10_nu_dynamic_cz() = !(lowercase(_lk10_env("NU", "dynamic")) in ("kinematic", "const", "constant"))
-lk10_dissipation(x, y) = ((lk10_nu_dynamic_cz() && y < 0.0) ? LK10_NU/lk10_temperature(y)^lk10_mcz[] : LK10_NU, 0.0)
+lk10_etahat_on() = _lk10_word("ETAHAT", "off", "on") == "on"
+lk10_etahat(x, y) = (r2 = x*x + y*y; r2 < 100.0 ? 0.1*exp(-r2/0.66^2) : 0.0)
+lk10_dissipation(x, y) = ((lk10_nu_dynamic_cz() && y < 0.0) ? LK10_NU/lk10_temperature(y)^lk10_mcz[] : LK10_NU,
+                          lk10_etahat_on() ? lk10_etahat(x, y) : 0.0)
 
 function user_inputs()
 
@@ -385,6 +392,7 @@ function user_inputs()
         :mhd_dissipation      => lk10_dissipation,
         :lk10_nu_mode         => lk10_nu_dynamic_cz() ? "dynamic below the photosphere, kinematic 0.01326 above" : "kinematic 0.01326 everywhere",
         :mhd_anomalous_eta    => (LK10_ETA0, LK10_JCRIT),
+        :lk10_etahat          => lk10_etahat_on(),   # the original runs' local resistivity at the origin (above)
         #---------------------------------------------------------------------------
         # DynSGS: the parent case's reference-weighted conserved-form operator
         # (problems/MHD/fluxEmergenceSon2025DSGS), with γ = 5/3, fast-speed floors

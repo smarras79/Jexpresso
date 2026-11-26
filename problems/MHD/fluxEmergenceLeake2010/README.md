@@ -1965,6 +1965,20 @@ Short runs on 4 cores; the full runs are for a cluster (above).
   1021 s. Open; the temperature floor, at which the emerging flanks sit
   from ~930 s (up to $10^9$ node hits), is the next test.
 
+  *The paper's tubes all settle higher.* The original paper's Fig. 9(a),
+  read from the vector paths of its EPS (`PAPER_FIG9A_TUBE1..3` in the tool),
+  has the centre of tube 2 at −0.26, 0.06, 0.13, 0.20, 0.27, 0.34, 0.41 Mm at
+  742, 920, 1021, 1113, 1206, 1299, 1380 s: the erratum's to 0.03 Mm (the
+  stray resistivity at the origin acts only from ~1400 s, when the
+  crescent's sheet forms and the centre climbs to ~9 Mm by 4000 s). The
+  high-tension tubes 1 and 3 settle at 0.27–0.34 Mm from 1300 s. Ours
+  settles at 0.1 Mm: the offset is that of every tube in the paper's code,
+  not of tube 2's crescent, so it lies in how an emerged tube comes to rest
+  at the photosphere. `JEXPRESSO_LK10_ETAHAT=on` puts the original runs'
+  $\hat\eta$ back (recorded, changeable at a restart; the element-centroid
+  sampling gives REF 4 76 % of its integral), for the original's later
+  evolution; it is not run here.
+
 ## Files
 
 | file | content |
