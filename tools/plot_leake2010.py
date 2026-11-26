@@ -312,7 +312,17 @@ def fig_path(a, variable, ext=None):
     return os.path.join(a.outdir, f"{PREFIX}{variable}.{ext or a.format}")
 
 
-def field_lines(ax, g, levels, color="w", lw=None, alpha=1.0):
+def _window(g, xlim, ylim):
+    """Row and column slices of the lattice covering the window xlim x ylim [Mm] and one node beyond each side. A map
+    is drawn there only: a REF 3 snapshot (1.8 M nodes) drawn whole, smooth-shaded, is a few million coloured
+    triangles per panel, and four panels of it exhaust a login node's memory."""
+    X, Y = g["X"], g["Y"]
+    i0 = max(int(np.searchsorted(X, xlim[0])) - 1, 0); i1 = min(int(np.searchsorted(X, xlim[1])) + 1, len(X) - 1)
+    j0 = max(int(np.searchsorted(Y, ylim[0])) - 1, 0); j1 = min(int(np.searchsorted(Y, ylim[1])) + 1, len(Y) - 1)
+    return slice(j0, j1 + 1), slice(i0, i1 + 1)
+
+
+def field_lines(ax, g, levels, color="w", lw=None, alpha=1.0, win=None):
     if isinstance(levels, str):            # "paper": the erratum's own lines, PAPER_A0 - k PAPER_DA (--paper-lines)
         A = a_gauged(g)
         if A is None:
@@ -321,7 +331,8 @@ def field_lines(ax, g, levels, color="w", lw=None, alpha=1.0):
         levels = np.sort(PAPER_A0 - k * PAPER_DA)
     else:
         A = a_grid(g)
-    ax.contour(g["X"], g["Y"], A, levels=levels, colors=color, linewidths=LINE_WIDTH if lw is None else lw,
+    rs, cs = win if win is not None else (slice(None), slice(None))   # A over the whole lattice, drawn in the window
+    ax.contour(g["X"][cs], g["Y"][rs], A[rs, cs], levels=levels, colors=color, linewidths=LINE_WIDTH if lw is None else lw,
                linestyles="solid", alpha=alpha)
     return A
 
@@ -411,11 +422,12 @@ def corner_text(ax, x, y, text, spec, size=9, **kw):
 
 def draw_map(ax, g, spec, clim, levels, xlim, ylim, arrows=()):
     """One panel: the map's quantity in its colours, the field lines, the B_x arrows; returns the image."""
-    Z = map_field(g, spec)
-    im = ax.pcolormesh(g["X"], g["Y"], np.clip(Z, clim[0], clim[1]), cmap=spec["cmap"], vmin=clim[0], vmax=clim[1],
+    rs, cs = _window(g, xlim, ylim)
+    Z = map_field(g, spec)[rs, cs]
+    im = ax.pcolormesh(g["X"][cs], g["Y"][rs], np.clip(Z, clim[0], clim[1]), cmap=spec["cmap"], vmin=clim[0], vmax=clim[1],
                        shading="gouraud", rasterized=True)
     if levels is not None:
-        field_lines(ax, g, levels, color=spec["line"], alpha=spec["alpha"])
+        field_lines(ax, g, levels, color=spec["line"], alpha=spec["alpha"], win=(rs, cs))
     if arrows:
         bx_arrows(ax, g, arrows)
     ax.set_xlim(xlim); ax.set_ylim(ylim); ax.set_aspect("equal")
@@ -606,10 +618,11 @@ def cmd_shear(a):
         g = load(f, ["Bz_G"])
         if levels is None:
             levels = a_levels(g, a.xlim, a.ylim, a.nlines)
-        Z = grid2d(g, g["fields"]["Bz_G"])
-        im = ax.pcolormesh(g["X"], g["Y"], np.clip(Z, a.bclim[0], a.bclim[1]), cmap="jet",
+        rs, cs = _window(g, a.xlim, a.ylim)
+        Z = grid2d(g, g["fields"]["Bz_G"])[rs, cs]
+        im = ax.pcolormesh(g["X"][cs], g["Y"][rs], np.clip(Z, a.bclim[0], a.bclim[1]), cmap="jet",
                            vmin=a.bclim[0], vmax=a.bclim[1], shading="gouraud", rasterized=True)
-        field_lines(ax, g, levels)
+        field_lines(ax, g, levels, win=(rs, cs))
         ax.set_xlim(a.xlim); ax.set_ylim(a.ylim); ax.set_aspect("equal")
         ax.text(0.03, 0.04, f"({chr(97 + k)}) {a.label if k == 0 else ''}", color="w", transform=ax.transAxes, fontsize=8)
         ax.text(0.97, 0.04, f"{t:.0f}s", color="w", transform=ax.transAxes, ha="right", fontsize=8)
@@ -1971,7 +1984,8 @@ def cmd_noise(a):
                                                 (np.where(atR, 1.0, np.where(atT, 0.5, 0.0)),
                                                  "nodes at a floor: grey T, black rho", "Greys", (0, 1)))):
             ax = axs[r, k]
-            im = ax.pcolormesh(X, Y, Z, cmap=cm, vmin=lim[0], vmax=lim[1], shading="nearest", rasterized=True)
+            rs, cs = _window(g, a.xlim, a.ylim)
+            im = ax.pcolormesh(X[cs], Y[rs], Z[rs, cs], cmap=cm, vmin=lim[0], vmax=lim[1], shading="nearest", rasterized=True)
             ax.set_xlim(a.xlim); ax.set_ylim(a.ylim); ax.set_aspect("equal")
             ax.set_title(f"{ttl}, t = {t:.0f} s", fontsize=9); fig.colorbar(im, ax=ax, shrink=0.8)
     fig.tight_layout()
