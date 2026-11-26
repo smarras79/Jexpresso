@@ -7,7 +7,7 @@ function user_inputs()
         # Doubly periodic domain [0, Lx] x [0, Ly]
         #---------------------------------------------------------------------------
         :ode_solver           => SSPRK54(),
-        :Δt                   => 50.0,
+        :Δt                   => 25.0,    # paper DGSEM dt (Bishnu et al. 2024, Sec. 6)
         :tinit                => 0.0,
         :tend                 => 100000.0,
         :diagnostics_at_times => (0:10000:100000),
@@ -18,7 +18,7 @@ function user_inputs()
         # Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes  => "lgl",
-        :nop                  => 4,
+        :nop                  => 10,      # paper: N = 5 elements, P = 10
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
@@ -35,7 +35,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lread_gmsh           => true,
         # Generate mesh: gmsh -2 problems/ShallowWater/TC2/SWE_TC2_periodic.geo
-        :gmsh_filename        => "./meshes/gmsh_grids/SWE_TC2_periodic.msh",
+        :gmsh_filename        => "./meshes/gmsh_grids/SWE_TC2_periodic_5x5.msh",
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------

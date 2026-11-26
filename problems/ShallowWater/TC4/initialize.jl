@@ -1,0 +1,87 @@
+function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
+    """
+    TC4: Topographic Rossby Wave (Bishnu et al. 2024, Sec. 2.8)
+
+    Linearized rotating SWE, f-plane, sloping bottom D(y) = H₀ + α₀y (see user_flux.jl).
+    Same domain, IC and wall BCs as TC3, with α₀ = β₀H₀/f₀ = 2e-4 (depth increases northward):
+      ∂η/∂t + ∂(D(y)u)/∂x + ∂(D(y)v)/∂y = 0
+      ∂u/∂t + g∂η/∂x                     =  f₀v
+      ∂v/∂t + g∂η/∂y                     = -f₀u
+
+    Initial condition: Gaussian perturbation in geostrophic balance.
+    """
+
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    if rank == 0
+        println(" Initialize fields for 2D Shallow Water TC4 (Topographic Rossby Wave) ...")
+    end
+
+    #---------------------------------------------------------------------------------
+    # Solution variables: q = [η, u, v]
+    #---------------------------------------------------------------------------------
+    qvars    = ["η", "u", "v"]
+    qoutvars = ["η", "u", "v"]
+    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
+
+    if (inputs[:backend] == CPU())
+        #---------------------------------------------------------------------------------
+        # Get domain size from the actual mesh
+        #---------------------------------------------------------------------------------
+        xmax_g = MPI.Allreduce(maximum(@view(mesh.coords[1,:])), MPI.MAX, comm)
+        xmin_g = MPI.Allreduce(minimum(@view(mesh.coords[1,:])), MPI.MIN, comm)
+        ymax_g = MPI.Allreduce(maximum(@view(mesh.coords[2,:])), MPI.MAX, comm)
+        ymin_g = MPI.Allreduce(minimum(@view(mesh.coords[2,:])), MPI.MIN, comm)
+        Lx = xmax_g - xmin_g
+        Ly = ymax_g - ymin_g
+
+        if rank == 0
+            println("  Domain size: Lx = $Lx m, Ly = $Ly m")
+        end
+
+        #---------------------------------------------------------------------------------
+        # Physical parameters (TC4: Bishnu et al. 2024, same as TC3)
+        #---------------------------------------------------------------------------------
+        H0   = 1.0e3     # mean depth [m]
+        g    = 9.81       # gravity [m/s²]
+        f0   = 1.0e-4     # base Coriolis [s⁻¹]
+
+        eta_hat  = 0.01   # perturbation amplitude [m]
+        Rx_frac  = 0.10   # Gaussian radius fraction
+        Ry_frac  = 0.10
+        Rx = Rx_frac * Lx
+        Ry = Ry_frac * Ly
+
+        # Domain center
+        x0 = (xmax_g + xmin_g) / 2.0
+        y0 = (ymax_g + ymin_g) / 2.0
+
+        for ip = 1:mesh.npoin
+            x = mesh.coords[1,ip]
+            y = mesh.coords[2,ip]
+
+            # Gaussian perturbation
+            gauss = exp(-((x - x0)^2 / (2.0 * Rx^2) + (y - y0)^2 / (2.0 * Ry^2)))
+            η0 = eta_hat * gauss
+
+            # Geostrophic initial velocities
+            u0 =  (g / (f0 * Ry^2)) * (y - y0) * η0
+            v0 = -(g / (f0 * Rx^2)) * (x - x0) * η0
+
+            q.qn[ip, 1] = η0
+            q.qn[ip, 2] = u0
+            q.qn[ip, 3] = v0
+
+            # Store initial state for reference
+            q.qe[ip, 1] = η0
+            q.qe[ip, 2] = u0
+            q.qe[ip, 3] = v0
+        end
+    end
+
+    if rank == 0
+        println(" Initialize fields for 2D Shallow Water TC4 (Topographic Rossby Wave) ... DONE")
+    end
+
+    return q
+end
