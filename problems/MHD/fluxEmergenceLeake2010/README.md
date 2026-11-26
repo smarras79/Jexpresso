@@ -1909,6 +1909,24 @@ Short runs on 4 cores; the full runs are for a cluster (above).
   the gap after 1021 s, where the quadrupole runs on REF 4 fall 0.4 Mm
   behind by 1380 s, is the next test.
 
+  *After 1021 s on REF 4* (A continued from 1021 s with
+  `JEXPRESSO_LK10_DT=0.0002`, to 1380 s; the fastest wave reaches 65–75 $v_0$
+  at 1300–1380 s, a fast CFL number of ~1.0 at the cheap step, against
+  0.08–0.10 here). The axis rises to 0.12 Mm by 1206 s and stays there:
+
+  | t (s) | 1113 | 1160 | 1206 | 1253 | 1299 | 1345 | 1380 |
+  |---|---|---|---|---|---|---|---|
+  | REF 4, A | 0.08 | 0.10 | 0.12 | 0.12 | 0.12 | 0.12 | 0.12 |
+  | erratum | 0.21 | 0.24 | 0.28 | 0.31 | 0.35 | 0.38 | 0.41 |
+
+  0.29 Mm behind at 1380 s (the quadrupole runs: 0.0–0.07 Mm there). The
+  centre keeps its $B_z/\rho$ (0.83–0.86) and in-plane flux from 1021 s on,
+  and stays at 1.5–1.6 times the atmosphere's density: it does not drain.
+  In the paper's account (Sec. 3.2) tube 2's centre rises as its mass drains
+  sideways along the field lines to the two ends of the crescent the tube
+  becomes. A tenth of the viscosity (B) and the gentle start (C) had A's
+  axis to 0.02 Mm at 1113 s; they were not continued.
+
 ## Files
 
 | file | content |
