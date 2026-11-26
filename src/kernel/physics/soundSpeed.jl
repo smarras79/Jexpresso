@@ -484,6 +484,24 @@ function dsgs_first_step_check(params, inputs, SD::Union{NSD_2D, NSD_3D})
 end
 dsgs_first_step_check(params, inputs, SD) = nothing
 
+# The largest rate (|u| + c)/Δx_i over the nodes of every rank, c the fast speed c_f for GLM-MHD (with the
+# uniform cleaning speed c_h over the smallest gap), the sound speed otherwise: a step Δt has the fast (acoustic)
+# CFL number rate·Δt that computeCFL prints. A CFL-following run (:cfl_dt, TimeIntegrators.jl) takes
+# Δt = CFL/rate. Δnode_v: nodal_length_scale of the mesh (computed once by the caller).
+function cfl_rate(npoin, neqs, mp, p, integrator, SD, Δnode_v)
+    comm = get_mpi_comm()
+    lmhd = positivity_is_mhd(integrator.p, Int(neqs))
+    _, _, _, _, cflc_dt_l = lmhd ? local_wave_speeds_mhd(npoin, integrator, Δnode_v) :
+                                   local_wave_speeds(npoin, neqs, mp, p, integrator, SD, Δnode_v)
+    r = MPI.Allreduce(Float64(cflc_dt_l), MPI.MAX, comm)
+    if lmhd
+        Δn = Float64(integrator.p.mesh.Δnode_s)
+        ch = glm_cleaning_speed()
+        (ch > 0.0 && isfinite(Δn) && Δn > 0.0) && (r = max(r, ch/Δn))
+    end
+    return r
+end
+
 function computeCFL(npoin, neqs, mp, p, dt, Δs, integrator, SD::NSD_1D; visc=[0.0])
     nothing
 end

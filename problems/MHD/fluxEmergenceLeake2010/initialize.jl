@@ -545,6 +545,9 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
                 "above y = $(lk10_relax_ymin[]); damping layers |x| > $(lk10_damp_xd[]), y > $(lk10_damp_yd[]), rate $(lk10_damp_rate[])/t0 at the boundary")
         get(inputs, :lk10_etahat, false) == true &&
             println(" Local resistivity of the original runs ON (JEXPRESSO_LK10_ETAHAT=on): η̂ = 0.1 exp(−r̂²/0.66²) L0 v0 at the origin, r̂ < 10")
+        Float64(get(inputs, :cfl_dt, 0.0)) > 0.0 &&
+            println(" Time step: follows the fast CFL number $(inputs[:cfl_dt]) (JEXPRESSO_LK10_CFL), updated every ",
+                    get(inputs, :cfl_dt_every, 10), " steps; Δt = $(round(inputs[:Δt], sigdigits=4)) is the first guess only")
         println(" Subnormal numbers: ", get_zero_subnormals() ? "flushed to zero" : "kept (IEEE; slow where the solution is ~1e-308)")
         println(" Switches set in the environment (JEXPRESSO_LK10_*): ", isempty(get(inputs, :lk10_env_set, "")) ? "none" : inputs[:lk10_env_set])
         println(" Dissipation: ν = $(round(LK10_NU, sigdigits=4)) ($(get(inputs, :lk10_nu_mode, "kinematic"))), anomalous η₀ = $(round(LK10_ETA0, sigdigits=4)), ",
@@ -607,7 +610,7 @@ lk10_restart_fields() = ["ρ", "u", "v", "w", "p", "Bx", "By", "Bz", "ψ"]
 # the restart says which changed.
 lk10_numeric_keys() = ("curl_resistivity", "Cmin", "floors", "dsgs_energy", "eta_sensor", "dsgs_sensor", "eta_cap", "eta_factor", "visc_factor", "visc_form",
                          "rho_factor", "heating", "stab_cap", "dsgs_stages", "C1", "tfloor", "energy_form", "rho_floor", "rho_sensor",
-                         "relax_tau", "e_factor", "eta_hat")
+                         "relax_tau", "e_factor", "eta_hat", "cfl")
 
 function lk10_case_record(inputs)
     return Pair{String,String}[
@@ -638,6 +641,7 @@ function lk10_case_record(inputs)
         "rho_factor"       => string(Float64(get(inputs, :μ, ones(9))[1])),
         "rho_sensor"       => (rs = get(inputs, :dsgs_rho_sensor, nothing); rs === nothing ? "off" : join(rs, ",")),
         "stab_cap"         => string(Float64(get(inputs, :dsgs_stab_cap, 0.0))),
+        "cfl"              => string(Float64(get(inputs, :cfl_dt, 0.0))),
         "dsgs_stages"      => (st = get(inputs, :dsgs_stages, nothing); st === nothing ? "all" : join(st, ",")),
         "C1"               => string(Float64(get(inputs, :lk10_C1, 1.0))),
         "tfloor"           => string(Float64(get(inputs, :lk10_floor_Tmin, 0.1))),
@@ -691,7 +695,7 @@ function lk10_record_mismatch(old::Dict{String,String}, rec; numerics::Bool=fals
         # (runs made before the partition was recorded had the uniform bins)
         # (and the legacy DynSGS sensor)
         w = get(old, k, k == "partition" ? "uniform" : k == "dsgs_sensor" ? "legacy" : k == "eta_cap" ? "fast" :
-                        k in ("eta_factor", "visc_factor", "rho_factor", "e_factor", "heating", "C1") ? "1.0" : k == "stab_cap" ? "0.0" :
+                        k in ("eta_factor", "visc_factor", "rho_factor", "e_factor", "heating", "C1") ? "1.0" : k in ("stab_cap", "cfl") ? "0.0" :
                         k == "dsgs_stages" ? "all" : k == "tfloor" ? "0.1" : k == "visc_form" ? "momentum" :
                         k == "energy_form" ? "total" : k == "rho_floor" ? "momentum" : k == "rho_sensor" ? "off" :
                         k == "relax_tau" ? "local" : k == "eta_hat" ? "off" : "(not recorded)")

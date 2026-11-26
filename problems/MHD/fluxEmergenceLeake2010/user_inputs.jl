@@ -27,6 +27,11 @@
 #   JEXPRESSO_LK10_TEND      final time in SECONDS                               [2530]
 #   JEXPRESSO_LK10_DOUT      snapshot interval in SECONDS (plus the figure times) [116 = 5 t0]
 #   JEXPRESSO_LK10_DT        time step in t0 (default: c_h Δt/Δh = 0.25, below)
+#   JEXPRESSO_LK10_CFL       > 0: the step follows the fastest wave, Δt = CFL/max((|u| + c_f)/Δx)
+#                            over the nodes and c_h/Δx_min, updated every 10 steps (it shrinks at
+#                            once and grows by at most 10% per update); DT is then only the first
+#                            step. CFL is the number the snapshots print as "Fast CFL"; 0.4 is the
+#                            tested value (README, "Meshes, time step and cost")         [0: off]
 #   JEXPRESSO_LK10_MCZ       convection-zone polytropic index m (p ∝ T^(m+1))     [1.3]
 #   JEXPRESSO_LK10_RELAX_YMIN energy relaxation only above this height, in L0    [-Inf]
 #   JEXPRESSO_LK10_RELAX_TAU local | height: the relaxation time from the local density,
@@ -242,9 +247,12 @@ function lk10_report_progress(t)
         lk10_progress[] = (now, t, now)
     elseif now - wl >= lk10_progress_every[] && t > t0
         left = (lk10_progress_tend[] - t)*(now - w0)/(t - t0)
+        # (with JEXPRESSO_LK10_CFL the step in use: the rate, and with it the estimate, changes with it)
+        dtn  = _DT_NOW[]
         print(string(" # progress: t = ", round(t, digits = 2), " t0 = ", round(Int, t*LK10_T0), " s of ",
                      round(Int, lk10_progress_tend[]*LK10_T0), " s; ", round((now - w0)/3600, digits = 2),
-                     " h so far, about ", round(max(left, 0.0)/3600, digits = 1), " h to go at this rate\n"))
+                     " h so far, about ", round(max(left, 0.0)/3600, digits = 1), " h to go at this rate",
+                     dtn > 0.0 ? string("; Δt = ", round(dtn, sigdigits = 3)) : "", "\n"))
         flush(stdout)
         lk10_progress[] = (w0, t0, now)
     end
@@ -330,7 +338,10 @@ function user_inputs()
     # 1.25, 0.625 L0 core elements at :nop => 4); c_h is the fastest wave of the
     # initial state, at the top of the transition region (README, "Cost").
     Δh   = 0.17267*(2.5, 1.25, 0.625, 1.25)[c.ref]   # ref 4: ref 2's core elements, over the whole figure region
-    Δt   = _lk10_num("DT", 0.25*Δh/c.cmax)
+    # JEXPRESSO_LK10_CFL > 0: the step follows the fastest wave (TimeIntegrators.jl, :cfl_dt); the DT
+    # above is then the first step only (and the step of the compile warm-up)
+    cfl  = max(_lk10_num("CFL", 0.0), 0.0)
+    Δt   = _lk10_num("DT", (cfl > 0.0 ? cfl : 0.25)*Δh/c.cmax)
     tend = _lk10_num("TEND", 2530.0)/LK10_T0
     # Snapshots every 5 t0 (116 s) and at the times of the erratum's figures
     # (Figs. 1 and 3: 920, 1380, 1610, 1955, 2070, 2185, 2254, 2530 s)
@@ -355,6 +366,7 @@ function user_inputs()
                                                                williamson_condition = false) :
                                           CarpenterKennedy2N54(),
         :Δt                   => Δt,
+        :cfl_dt               => cfl,        # JEXPRESSO_LK10_CFL: 0 = the fixed Δt
         :tinit                => 0.0,
         :tend                 => tend + Δt,   # one step past the last output (an output at tend itself is not written)
         :diagnostics_at_times => Tuple(tout),

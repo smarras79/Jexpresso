@@ -77,6 +77,7 @@ below).
 | `JEXPRESSO_LK10_TEND` | seconds, default 2530 | final time |
 | `JEXPRESSO_LK10_DOUT` | seconds, default 116 | snapshot interval (the figure times are always added) |
 | `JEXPRESSO_LK10_DT` | $t_0$ units | overrides the time step |
+| `JEXPRESSO_LK10_CFL` | default 0 (off) | > 0: the step follows the fastest wave, at this fast CFL number (updated every 10 steps; `JEXPRESSO_LK10_DT` is then the first step only; Meshes, time step and cost) |
 | `JEXPRESSO_LK10_MCZ` | default 1.3 | polytropic index $m$ of the convection zone, $p\propto T^{m+1}$ |
 | `JEXPRESSO_LK10_RELAX_YMIN` | $L_0$ units, default $-\infty$ | apply the energy relaxation only above this height |
 | `JEXPRESSO_LK10_RELAX_TAU` | `local` (default), `height` | the relaxation time $23\,\text{s}\,(\rho/\rho_{ph})^{-1.43}$ with the local density, or with the atmosphere's at the node's height (the paper's "$\tau(y)$"; Equations and dissipation) |
@@ -857,6 +858,55 @@ coefficient driven to its cap ($C_1$ = 1000): non-finite at 0.39 $t_0$ without
 the stability cap, with a viscous number of 0.71 at the snapshot before; with
 it, 0.26 and a clean run to 2 $t_0$ (flows decaying from 32 to 1.2 km/s,
 smallest pressure, density and temperature unchanged, $\psi$ at round-off).
+
+**A step that follows the CFL number** (`JEXPRESSO_LK10_CFL`, off by default;
+`:cfl_dt`, `src/kernel/solvers/TimeIntegrators.jl`). A fixed step must suit the
+fastest wave that the run will ever meet, and the field-free runs meet it late:
+16–25 $v_0$ to ~1000 s, then up to ~110 $v_0$ in the thin plasma over the dome.
+0.003 $t_0$ on REF 4 blew up at 1248 s. The 0.0006 that is safe after 1021 s gives
+a fast CFL number of 0.066 there, so 90% of the steps are wasted. With
+`JEXPRESSO_LK10_CFL=C` the step is
+$\Delta t = C/\max_i\big((\lvert\mathbf v\rvert + c_f)/\Delta x_i\big)$, where the
+maximum runs over the nodes of all ranks, together with $c_h/\Delta x_{min}$, and
+$\Delta x_i$ is the nodal spacing of the log's CFL numbers. The fast CFL number
+printed at a snapshot is therefore $C$ as of the last update.
+
+How the step is updated:
+
+- It is recomputed once at the start or the restart, then every 10 steps.
+- It drops at once to the new value and grows by at most 10% per update.
+- The integrator still lands on every snapshot time.
+- `JEXPRESSO_LK10_DT` is then the first step only, and the step of the compile
+  warm-up.
+- The DynSGS uses the step in force: its history gate, its time-derivative
+  stencil, and the stability cap $0.2\,\Delta x^2/\Delta t$.
+- Every snapshot prints the step next to its CFL numbers, and the progress line
+  ends with it.
+
+The update costs one pass over the nodes and one reduction every 10 steps, which
+is 50 right-hand sides.
+
+Measured here (REF 1, field-free, 4 ranks):
+
+- **From $t = 0$ to 70 s with `CFL=0.4`.** $\Delta t$ = 0.0109 $t_0$ throughout,
+  set by the GLM speed (15.86) over the smallest gap, 3.8 times the deck's
+  default step. The same run with a fixed `DT=0.01090401` agrees to
+  $3\times10^{-7}$ (relative; the digits of that step), so the update changes
+  nothing else.
+- **The `ETAFAC=0.1` run, restarted at 974 s with `CFL=0.4`.** This run went
+  non-finite at 1062 s with a fixed 0.006, which is a fast CFL number of about
+  0.5 at the speeds there (36 $v_0$). The restart ran to 1160 s:
+  - $\Delta t$ stayed at 0.0045–0.0049, fell to 0.0030 at ~1130 s where the
+    speed spiked, then recovered to 0.0040;
+  - the fast CFL numbers at the snapshots were 0.27–0.41;
+  - the floors caught one negative temperature on the dome's flank, at 1127 s.
+
+A fixed step blew up at fast CFL numbers of about 0.5 (this run) and about 1
+(runs A and B), well below the linear limit of 1.4 with the stability cap
+(above). **`JEXPRESSO_LK10_CFL=0.4` is the setting to use.** On REF 4 it gives
+0.0054 $t_0$ while the GLM speed binds, 0.0038 at 1021 s (fast speed 23 $v_0$)
+and ~0.0009 at the dome's 100 $v_0$. The fixed steps of the two-stage runs were
+0.003 and 0.0006. One job can run the whole field-free case from $t = 0$.
 
 **Where the time goes.** The cost is the number of steps: the fast speed of
 the corona (4500 km/s when the dome drains) over the smallest gap between two
@@ -1863,7 +1913,9 @@ Short runs on 4 cores; the full runs are for a cluster (above).
   reached thin plasma with Alfvén speeds the field-free time step does not
   hold (thousands of $v_0$ in its last first-order caps). The `ETAFAC=0.1`
   REF 1 run above failed in the same place, (−6.4, 0.75) Mm, at 1062 s, and
-  most likely for the same reason, not for want of resistivity. Field-free
+  most likely for the same reason, not for want of resistivity. (Restarted at
+  974 s with the step following a fast CFL number of 0.4, which gave 0.0045–0.0049
+  against the fixed 0.006, it ran on to 1160 s; Meshes, time step and cost.) Field-free
   runs past ~1020 s take the quadrupole's step (`DT=0.0002`): the three
   continue so from 1021 s to 1380 s.
 

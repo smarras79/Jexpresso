@@ -1022,6 +1022,13 @@ function _mhd_internal_energy_2d_kernel!(rhs_el::AbstractArray{TT,4}, ref::Abstr
     return nothing
 end
 
+# The time step in use: the fixed params.Δt, or the step that a CFL-following run (:cfl_dt,
+# TimeIntegrators.jl, cfl_rate in soundSpeed.jl) set last. The DynSGS reads it where it reads Δt: the gate of
+# its history rotation, the stage stencil's h and the stability cap μ ≤ stab·Δx²/Δt, which must follow the step
+# actually taken (a cap computed for a smaller step would let the diffusion past the explicit limit).
+const _DT_NOW = Ref{Float64}(0.0)
+@inline _dt_now(params) = (d = _DT_NOW[]; d > 0.0 ? oftype(params.Δt, d) : params.Δt)
+
 function _build_rhs!(RHS, u, params, time)
 
     T       = Float64
@@ -1206,15 +1213,15 @@ function _build_rhs!(RHS, u, params, time)
     if params.inputs[:lvisc] == true &&
         (params.VT == DSGS_MHD() || params.VT == DSGS() || params.VT == DSGS_SW())
         lag  = _visc_lag(params)
-        lagc = lag !== nothing && _visc_lag_clock(lag, time, params.Δt)::Bool
-        (lag !== nothing && !lagc) && _visc_lag_lost(lag, time, params.Δt)
+        lagc = lag !== nothing && _visc_lag_clock(lag, time, _dt_now(params))::Bool
+        (lag !== nothing && !lagc) && _visc_lag_lost(lag, time, _dt_now(params))
         # A new step: `time` has moved a full Δt past the last rotation or, with :dsgs_stages, sits
         # on the step start that the time loop's callback stamped. The first is one stage of every
         # step: the first stage until a step is shortened to land on an output time, some other
         # stage after it. The second is the first stage always, which a coefficient computed once
         # per step needs.
-        if (lagc ? _visc_lag_newstep(lag, time, params.dsgs_thist[], params.Δt)::Bool :
-                   time - params.dsgs_thist[] >= 0.999*params.Δt)
+        if (lagc ? _visc_lag_newstep(lag, time, params.dsgs_thist[], _dt_now(params))::Bool :
+                   time - params.dsgs_thist[] >= 0.999*_dt_now(params))
             # BDF-k, k > 2 (:dsgs_bdf_order): qⁿ⁻³ … qⁿ⁻ᵏ first, oldest out
             qh = params.dsgs_qhist
             for j = length(qh):-1:2
@@ -1230,7 +1237,7 @@ function _build_rhs!(RHS, u, params, time)
         # Stage-consistent time-derivative stencil for the residual (see
         # _dsgs_stencil): the weights depend on the stage time τ = t − tⁿ.
         τ = time - params.dsgs_thist[]
-        h = params.Δt
+        h = _dt_now(params)
         # :dsgs_freeze_stage (SGS.jl, _DSGS_FROZEN; see below): at a stage
         # after tⁿ the coefficient of the step is kept, once the history holds
         # the k+1 distinct states BDF-k needs (3 for BDF2, as it always was).
@@ -1280,7 +1287,7 @@ function _build_rhs!(RHS, u, params, time)
         _DSGS_FROZEN[] = frozen
         # :dsgs_stages: count the stage; at a listed stage after the first the operators are applied
         # again with the coefficient of the step (frozen), and the sensor is not evaluated
-        lagre = lagc && _visc_lag_stage!(lag, time, params.dsgs_thist[], params.Δt)::Bool
+        lagre = lagc && _visc_lag_stage!(lag, time, params.dsgs_thist[], _dt_now(params))::Bool
         lagre && (_DSGS_FROZEN[] = true)
         _DSGS_HELD[] = lagre
     end
@@ -1288,7 +1295,7 @@ function _build_rhs!(RHS, u, params, time)
     #-----------------------------------------------------------------------------------
     # Viscous rhs:
     #-----------------------------------------------------------------------------------
-    if (params.inputs[:lvisc] == true) && lagc && !lagre && _visc_lag_held(lag, time, params.dsgs_thist[], params.Δt)::Bool
+    if (params.inputs[:lvisc] == true) && lagc && !lagre && _visc_lag_held(lag, time, params.dsgs_thist[], _dt_now(params))::Bool
         # :dsgs_stages, a stage that is not listed: the viscous right-hand side of the last listed
         # stage, with the energy slot's work term taken again on this stage's state
         @timeit_debug JEXPRESSO_TIMER "visc_held" _visc_lag_apply!(params.RHS, lag, params.uaux, Int(npoin), Int(neqs))
@@ -2072,7 +2079,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                     lflowcap        = get(params.inputs, :dsgs_eta_flow_cap, false)::Bool,
                                     stab            = TT(get(params.inputs, :dsgs_stab_cap, 0.0)),
                                     Δgap            = get(params.inputs, :dsgs_stab_cap, 0.0) > 0 ? _dsgs_elem_gap(params.mesh, TT) : nothing,
-                                    Δt              = TT(params.Δt),
+                                    Δt              = TT(_dt_now(params)),
                                     νphys = νphys2d, ηphys = ηphys2d,
                                     rhosens = _dsgs_rho_sensor(params.inputs, TT),
                                     qref    = dsgs_ref_weight[] ? qe : nothing)
@@ -2123,9 +2130,9 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
         μstab_el = nothing
         if lvelvisc && get(params.inputs, :dsgs_velocity_weight, "smin")::String == "node"
             stabv = TT(get(params.inputs, :dsgs_stab_cap, 0.0))
-            (stabv > zero(TT) && params.Δt > 0) ||
+            (stabv > zero(TT) && _dt_now(params) > 0) ||
                 error(" :dsgs_velocity_weight => \"node\" needs :dsgs_stab_cap > 0 (the stability limit it holds the lightest node to).")
-            μstab_el = _dsgs_elem_mustab(params.mesh, TT, stabv, TT(params.Δt))
+            μstab_el = _dsgs_elem_mustab(params.mesh, TT, stabv, TT(_dt_now(params)))
         end
         if lvelvisc
             (lnodal_mhd2d || !dsgs_ref_weight[] || !dsgs_thermal_energy[]) &&
@@ -2722,7 +2729,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                 linduction    = get(params.inputs, :dsgs_induction_sensor, false)::Bool,
                                 stab          = TT(get(params.inputs, :dsgs_stab_cap, 0.0)),
                                 Δgap          = lstab3d ? _dsgs_elem_gap(params.mesh, TT) : nothing,
-                                Δt            = TT(params.Δt),
+                                Δt            = TT(_dt_now(params)),
                                 lnazarov_energy = lsplit3d,
                                 Pr_t          = TT(get(params.inputs, :dsgs_Prt, 0.7)),
                                 νphys = νphys, ηphys = ηphys)

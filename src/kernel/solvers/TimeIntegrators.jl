@@ -491,7 +491,8 @@ function time_loop!(inputs, params, u, args...)
             # if inputs[:ladapt] == false
 
                 ad_lvl_max = MPI.Allreduce(maximum(prob.p.mesh.ad_lvl; init=0), MPI.MAX, comm)
-                dt         = Float32(inputs[:Δt]/(2.0^(ad_lvl_max)))
+                dt         = Float32(_DT_NOW[] > 0.0 ? _DT_NOW[] : inputs[:Δt]/(2.0^(ad_lvl_max)))
+                _DT_NOW[] > 0.0 && println_rank(@sprintf(" #  Δt (following CFL %.3g): %.6e", Float64(inputs[:cfl_dt]), _DT_NOW[]); msg_rank = rank)
                 computeCFL(integrator.p.mesh.npoin, integrator.p.qp.neqs,
                         integrator.p.mp, integrator.p.uaux[:,end], Float32(dt),
                         integrator.p.mesh.Δeffective_s,
@@ -642,6 +643,38 @@ function time_loop!(inputs, params, u, args...)
             DiscreteCallback((u, t, integrator) -> integrator.iter % ncons == 0, cons_affect!; save_positions = (false, false)) :
             nothing
 
+        # :cfl_dt => CFL > 0: a step that follows the fastest wave. Every :cfl_dt_every steps (10), and once
+        # when the integration starts, Δt = CFL/r with r the largest (|u| + c_f)/Δx_i over all ranks and c_h/Δx_min
+        # (cfl_rate, soundSpeed.jl), set with set_proposed_dt! on the fixed-step integrator (as Trixi.jl's
+        # StepsizeCallback does): it shrinks at once and grows by at most :cfl_dt_growth (1.1) per update. The
+        # DynSGS reads that step (rhs.jl, _dt_now: its history gate, stencil and stability cap). Off by default.
+        cfl_target = Float64(get(inputs, :cfl_dt, 0.0))
+        _DT_NOW[]  = 0.0
+        cb_cfl     = nothing
+        if cfl_target > 0.0
+            get(inputs, :ode_adaptive_solver, false) == true &&
+                error(" :cfl_dt sets the step of a fixed-step integration (:ode_adaptive_solver => false).")
+            ad_lvl_cfl = MPI.Allreduce(maximum(prob.p.mesh.ad_lvl; init=0), MPI.MAX, comm)
+            ad_lvl_cfl == 0 || error(" :cfl_dt is not implemented with AMR levels.")
+            ncfl    = max(Int(get(inputs, :cfl_dt_every, 10)), 1)
+            gcfl    = Float64(get(inputs, :cfl_dt_growth, 1.1))
+            Δnode_c = Ref{Any}(nothing)
+            function cfl_dt_affect!(integrator)
+                Δnode_c[] === nothing && (Δnode_c[] = nodal_length_scale(integrator.p.mesh, integrator.p.SD))
+                r = cfl_rate(integrator.p.mesh.npoin, integrator.p.qp.neqs, integrator.p.mp,
+                             integrator.p.uaux[:,end], integrator, integrator.p.SD, Δnode_c[])
+                dtn = (isfinite(r) && r > 0.0) ? cfl_target/r : Float64(inputs[:Δt])
+                dto = _DT_NOW[]
+                dto > 0.0 && (dtn = min(dtn, gcfl*dto))
+                _DT_NOW[] = dtn
+                set_proposed_dt!(integrator, dtn)
+                u_modified!(integrator, false)
+            end
+            cb_cfl = DiscreteCallback((u, t, integrator) -> integrator.iter % ncfl == 0, cfl_dt_affect!;
+                                      initialize = (c, u, t, integrator) -> cfl_dt_affect!(integrator),
+                                      save_positions = (false, false))
+        end
+
         # :dsgs_stages — the right-hand side is told where every step starts (rhs.jl,
         # _visc_lag_step!): the stage times alone do not say, since a step is shortened to land on
         # an output time. Nothing is added to the callback set unless the option is on.
@@ -659,6 +692,8 @@ function time_loop!(inputs, params, u, args...)
 
         _cbs = Any[cb, cb_restart, cb_les_stat, cb_les_online]
         cb_visclag !== nothing                 && pushfirst!(_cbs, cb_visclag)
+        # (first: the step that the next one takes is set before :dsgs_stages stamps its start)
+        cb_cfl !== nothing                     && pushfirst!(_cbs, cb_cfl)
         cb_pod !== nothing                     && push!(_cbs, cb_pod)
         lrad                                  && push!(_cbs, cb_rad)
         is_coupled && cb_coupling !== nothing  && push!(_cbs, cb_coupling)
@@ -828,8 +863,11 @@ function time_loop!(inputs, params, u, args...)
                 print(YELLOW_FG(@sprintf("DONE (%.2f s)\n", (time_ns() - _t_wm) / 1e9)))
                 # State the heartbeat as it IS: the old fixed text ":lstep_heartbeat => true"
                 # was read as "the heartbeat is on" by decks that had it off.
-                @printf(" # Time loop running: next output at t = %.6g (%d steps of Δt = %g). %s\n",
-                        _next_out_t, max(1, ceil(Int, (_next_out_t - params.tspan[1])/Float64(inputs[:Δt]))), Float64(inputs[:Δt]),
+                # (:cfl_dt: the step that the warm-up's first update chose, which the run starts from)
+                _dt_msg = _DT_NOW[] > 0.0 ? _DT_NOW[] : Float64(inputs[:Δt])
+                @printf(" # Time loop running: next output at t = %.6g (%d steps of Δt = %g%s). %s\n",
+                        _next_out_t, max(1, ceil(Int, (_next_out_t - params.tspan[1])/_dt_msg)), _dt_msg,
+                        _DT_NOW[] > 0.0 ? @sprintf(", following the CFL number %g", cfl_target) : "",
                         cb_heartbeat === nothing ?
                             "Step heartbeat OFF: nothing is printed until then (set :lstep_heartbeat => true for a line every 100 steps)" :
                             "Step heartbeat ON: a line at steps 1-5, then every 100 steps")
@@ -895,6 +933,7 @@ function time_loop!(inputs, params, u, args...)
                                  length=inputs[:ndiagnostics_outputs]))
         end
         cons_io[] === nothing || close(cons_io[])
+        _DT_NOW[] = 0.0     # (:cfl_dt: a later run of the same session starts from its own Δt)
 
         # What DSGS did over the whole run (recorded by the DSGS_MHD kernels):
         # the largest normalized residual before the cutoff, and the largest
