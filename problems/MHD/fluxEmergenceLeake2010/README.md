@@ -1962,8 +1962,10 @@ Short runs on 4 cores; the full runs are for a cluster (above).
   ~0.45 Mm. A restart of A from 1021 s with `ETAFAC=10` (resistivity at
   the axis 0.01–0.04 $L_0v_0$, ten times A's) has A's axis to 0.01 Mm
   through 1380 s (0.11–0.12 Mm from 1206 s), as `ETAFAC=0.1` had it to
-  1021 s. Open; the temperature floor, at which the emerging flanks sit
-  from ~930 s (up to $10^9$ node hits), is the next test.
+  1021 s. Nor the temperature floor, at which the emerging flanks sit from
+  ~930 s (up to $10^9$ node hits): a restart of A from 696 s with
+  `TFLOOR=0.01` (57 K) has A's axis and centre temperature to the digit
+  through 1380 s. (D–G above covered 696–1021 s only, before the stall.)
 
   *The paper's tubes all settle higher.* The original paper's Fig. 9(a),
   read from the vector paths of its EPS (`PAPER_FIG9A_TUBE1..3` in the tool),
