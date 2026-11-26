@@ -11,6 +11,13 @@ using StaticArrays
 const PHYS_CONST = PhysicalConst{Float64}()
 const MicroConst = MicrophysicalConst{Float64}()
 
+# Time of the right-hand-side evaluation currently being built (the RK stage
+# time, not the step start). Set at the top of _build_rhs!. user_source! is
+# called without a time argument, and adding one would break every case's
+# signature, so a time-dependent source (e.g. a manufactured solution, see
+# problems/ShallowWater/TC6) reads `RHS_TIME[]` instead. CPU path only.
+const RHS_TIME = Ref{Float64}(0.0)
+
 function RHStoDU!(du, RHS, neqs, npoin)
     # Scalar (not range/@view) assignment so `du` can be an
     # OrdinaryDiffEq low-storage RK ArrayFuse, which only supports
@@ -711,6 +718,8 @@ end
 end
 
 function _build_rhs!(RHS, u, params, time)
+
+    RHS_TIME[] = Float64(time)   # read by time-dependent user_source! (see top of file)
 
     T       = Float64
     SD      = params.SD
