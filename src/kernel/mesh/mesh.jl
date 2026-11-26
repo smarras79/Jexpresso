@@ -3916,17 +3916,22 @@ function determine_colinearity(vec1, vec2)
     if AlmostEqual(norm(vec1), 0.0)
         return false
     end
-    # For 2D vectors
+    # For 2D vectors: same scale-independent test as the 3D branch below — the
+    # normalised cross product must vanish (parallel or antiparallel).
+    #
+    # The previous test compared raw coordinate components with AlmostEqual(·, 0),
+    # an ABSOLUTE tolerance of 2e-6. For a periodic pair across a seam of length L
+    # the separation vector is (dx, L) with dx pure gmsh round-off, which grows
+    # with L: on a 1e7 m domain it reaches ~1e-5 m. Such pairs fell through to
+    # `return false`, were never paired by restructure4periodicity_2D, and left
+    # parts of the seam as free, unconstrained boundary nodes — an exponential
+    # blow-up starting on the seam (SWE TC1/TC2 on freshly generated meshes;
+    # only meshes with exactly snapped coordinates worked).
     if size(vec1, 1) < 3
-        if AlmostEqual(vec1[1], 0.0) && AlmostEqual(vec2[1], 0.0)
-            return abs(vec1[2]) > 1e-7 && abs(vec2[2]) > 1e-7
-        elseif AlmostEqual(vec1[2], 0.0) && AlmostEqual(vec2[2], 0.0)
-            return abs(vec1[1]) > 1e-7 && abs(vec2[1]) > 1e-7
-        elseif abs(vec1[2]) > 1e-7 && abs(vec2[2]) > 1e-7 && abs(vec1[1]) > 1e-7 && abs(vec2[1]) > 1e-7
-            return AlmostEqual((vec1[1] + 1e-16) / (vec2[1] + 1e-16), (vec1[2] + 1e-16) / (vec2[2] + 1e-16))
-        else
-            return false
-        end
+        norm_v1 = sqrt(vec1[1] * vec1[1] + vec1[2] * vec1[2])
+        norm_v2 = sqrt(vec2[1] * vec2[1] + vec2[2] * vec2[2])
+        norm_v2 > 0 || return false
+        return abs(vec1[1] * vec2[2] - vec1[2] * vec2[1]) < 1e-7 * norm_v1 * norm_v2
 
     # For 3D vectors
     else
