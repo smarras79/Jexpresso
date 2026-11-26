@@ -1950,7 +1950,20 @@ Short runs on 4 cores; the full runs are for a cluster (above).
   $T_0(\rho)$, it arrives at the surface twice as dense as the atmosphere
   around it. To sit at 0.46 Mm as the erratum's does, a centre that keeps
   $B_z/\rho$ must have expanded about fifteenfold, to ~0.07 $\rho_{ph}$ and
-  ~80 G: the crescent of the paper's Sec. 3.2. Ours does not expand. Open.
+  ~80 G: the crescent of the paper's Sec. 3.2. Ours does not expand: maps of
+  the REF 3 run at 1021–1380 s (`shear`, `density`, $\lvert x\rvert$ < 4 Mm) show a
+  compact elliptical centre of ~0.8–1 kG at ~0.1 Mm, near photospheric
+  density, a narrow vertical tail of field lines below it and vortex pairs
+  on the flanks at $x$ ≈ ±2 Mm, $y$ ≈ −1 Mm; no crescent.
+
+  *Nor is it the resistivity.* The original runs' stray
+  $\hat\eta = 0.1\exp(-\hat r^2/0.66^2)$ sat at the origin, where the centre
+  arrives (centre to ~8 Mm); without it the erratum's centre reaches
+  ~0.45 Mm. A restart of A from 1021 s with `ETAFAC=10` (resistivity at
+  the axis 0.01–0.04 $L_0v_0$, ten times A's) has A's axis to 0.01 Mm
+  through 1380 s (0.11–0.12 Mm from 1206 s), as `ETAFAC=0.1` had it to
+  1021 s. Open; the temperature floor, at which the emerging flanks sit
+  from ~930 s (up to $10^9$ node hits), is the next test.
 
 ## Files
 
