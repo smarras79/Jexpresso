@@ -1,9 +1,22 @@
+#
+# Domain bounds of SWE_TC3_10x10.msh. The 2D RHS (src/kernel/operators/rhs.jl) passes
+# only x, y and ymax to user_source!, so xmin/xmax/ymin arrive as their 0.0 defaults.
+# With xmax = xmin = 0 the sponge width is 0 and ((sx - dx)/sx)^3 = Inf, which makes
+# σ = 0*Inf = NaN at every node on the first step. The CPU source therefore uses these
+# constants instead of the keyword arguments.
+#
+const TC3_XMIN = 0.0
+const TC3_XMAX = 1.0e6
+const TC3_YMIN = 0.0
+const TC3_YMAX = 1.0e6
+
 function user_source!(S,
                       q,
                       qe,
                       npoin::TInt,
                       ::CL, ::TOTAL;
                       neqs=3, x=0.0, y=0.0, ymin=0.0, ymax=0.0, xmin=0.0, xmax=0.0)
+    xmin, xmax, ymin, ymax = TC3_XMIN, TC3_XMAX, TC3_YMIN, TC3_YMAX
     #
     # Beta-plane Coriolis + sponge-layer damping for TC3:
     #   f(y) = f₀ + β₀ * y
@@ -66,6 +79,7 @@ function user_source!(S,
                       npoin::Int64,
                       ::CL, ::PERT;
                       neqs=3, x=0.0, y=0.0, ymin=0.0, ymax=0.0, xmin=0.0, xmax=0.0)
+    xmin, xmax, ymin, ymax = TC3_XMIN, TC3_XMAX, TC3_YMIN, TC3_YMAX
     f0    = 1.0e-4
     beta0 = 2.0e-11
     Lx = xmax - xmin
