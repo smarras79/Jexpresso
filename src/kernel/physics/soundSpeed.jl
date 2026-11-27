@@ -502,6 +502,40 @@ function cfl_rate(npoin, neqs, mp, p, integrator, SD, Δnode_v)
     return r
 end
 
+# Where the fastest wave of a GLM-MHD state is: the node with the largest (|u| + c_f)/Δx_i over all ranks,
+# returned on every rank as (rate, |u|, c_f, ρ, |B|, x, y, z, rank), the position in mesh units. For the CFL
+# report below and for the message of a CFL-following run that stops on :cfl_dt_min (TimeIntegrators.jl).
+function fastest_node_mhd(npoin, integrator, Δnode)
+    comm   = get_mpi_comm()
+    q      = integrator.u
+    qe     = integrator.p.qp.qe
+    coords = integrator.p.mesh.coords
+    lpert  = (integrator.p.SOL_VARS_TYPE == PERT())
+    γ      = Float64(get(integrator.p.inputs, :dsgs_gamma, 5.0/3.0))
+    tiny   = 1.0e-16
+    best   = -1.0
+    out    = zeros(Float64, 9)
+    @inbounds for ip = 1:npoin
+        s(k) = lpert ? Float64(q[(k-1)*npoin + ip]) + Float64(qe[ip,k]) :
+                       Float64(q[(k-1)*npoin + ip])
+        ρ   = max(s(1), tiny)
+        m2  = s(2)^2 + s(3)^2 + s(5)^2
+        B2  = s(6)^2 + s(7)^2 + s(8)^2
+        p   = (γ - 1.0)*(s(4) - 0.5*m2/ρ - 0.5*B2 - 0.5*s(9)^2)
+        vel = sqrt(m2)/ρ
+        cf  = sqrt((γ*max(p, 0.0) + B2)/ρ)
+        r   = (vel + cf)/Δnode[ip]
+        if r > best
+            best = r
+            out .= (r, vel, cf, ρ, sqrt(B2), Float64(coords[1,ip]), Float64(coords[2,ip]),
+                    size(coords, 1) > 2 ? Float64(coords[3,ip]) : 0.0, Float64(MPI.Comm_rank(comm)))
+        end
+    end
+    allv = MPI.Allgather(out, comm)
+    k    = argmax(allv[1:9:end])
+    return allv[9*(k-1)+1:9*k]
+end
+
 function computeCFL(npoin, neqs, mp, p, dt, Δs, integrator, SD::NSD_1D; visc=[0.0])
     nothing
 end
@@ -560,6 +594,10 @@ function computeCFL(npoin, neqs, mp, p, dt, Δs, integrator, SD::Union{NSD_2D, N
         println_rank(@sprintf(" #  Fast      CFL: %.6f   max(|u|+c_f)= %.4e  (max c_f = %.4e, γ = %.4g)",
                               cfl_c, wavemax, cmax,
                               Float64(get(integrator.p.inputs, :dsgs_gamma, 5.0/3.0))); msg_rank = rank)
+        # where: a step that a CFL-following run shrinks, or a blow-up, names its region
+        fn = fastest_node_mhd(npoin, integrator, Δnode_v)
+        println_rank(@sprintf(" #  Fastest wave : at (x, y) = (%.4g, %.4g), rank %d: |u| = %.4e, c_f = %.4e, ρ = %.4e, |B| = %.4e",
+                              fn[6], fn[7], Int(fn[9]), fn[2], fn[3], fn[4], fn[5]); msg_rank = rank)
         # The GLM wave ±c_h is uniform, so its number is c_h·Δt over the smallest gap.
         ch = glm_cleaning_speed()
         ch > 0.0 && println_rank(@sprintf(" #  GLM       CFL: %.6f   c_h         = %.4e",

@@ -32,6 +32,9 @@
 #                            once and grows by at most 10% per update); DT is then only the first
 #                            step. CFL is the number the snapshots print as "Fast CFL"; 0.4 is the
 #                            tested value (README, "Meshes, time step and cost")         [0: off]
+#   JEXPRESSO_LK10_DTMIN     with CFL: the run stops, saying where the fastest wave is, when the step
+#                            falls below this (t0): 1e-5 is a fast speed of ~8600 v0 on REF 4, ~4300
+#                            on REF 3, beyond any plasma of the model (0: never)            [1e-5]
 #   JEXPRESSO_LK10_MCZ       convection-zone polytropic index m (p ∝ T^(m+1))     [1.3]
 #   JEXPRESSO_LK10_RELAX_YMIN energy relaxation only above this height, in L0    [-Inf]
 #   JEXPRESSO_LK10_RELAX_TAU local | height: the relaxation time from the local density,
@@ -235,6 +238,9 @@ if !@isdefined(lk10_floor_Tmin)
 end
 # Progress line (rank 0): the snapshots are 116 s of simulated time apart, an hour of wall
 # time on the fine meshes, and nothing else is printed in between.
+if !@isdefined(lk10_progress_last)
+    const lk10_progress_last  = Ref{NTuple{2,Float64}}((0.0, 0.0))        # wall time and t of the last line
+end
 if !@isdefined(lk10_progress)
     const lk10_progress       = Ref{NTuple{3,Float64}}((0.0, 0.0, 0.0))   # wall time and t of the first call, wall time of the last line
     const lk10_progress_every = Ref{Float64}(600.0)                       # s of wall time between lines (0: none)
@@ -245,16 +251,22 @@ function lk10_report_progress(t)
     w0, t0, wl = lk10_progress[]
     if w0 == 0.0
         lk10_progress[] = (now, t, now)
+        lk10_progress_last[] = (now, t)
     elseif now - wl >= lk10_progress_every[] && t > t0
-        left = (lk10_progress_tend[] - t)*(now - w0)/(t - t0)
-        # (with JEXPRESSO_LK10_CFL the step in use: the rate, and with it the estimate, changes with it)
+        # the time left at the rate of the last interval: with JEXPRESSO_LK10_CFL the step, and with it the
+        # rate, can fall by orders of magnitude, which the average since the start hides for hours
+        wp, tp = lk10_progress_last[]
+        rate = t > tp ? (now - wp)/(t - tp) : Inf
+        left = (lk10_progress_tend[] - t)*rate
         dtn  = _DT_NOW[]
         print(string(" # progress: t = ", round(t, digits = 2), " t0 = ", round(Int, t*LK10_T0), " s of ",
                      round(Int, lk10_progress_tend[]*LK10_T0), " s; ", round((now - w0)/3600, digits = 2),
-                     " h so far, about ", round(max(left, 0.0)/3600, digits = 1), " h to go at this rate",
+                     " h so far, ", isfinite(left) ? string("about ", round(max(left, 0.0)/3600, digits = 1), " h to go") :
+                                                    "no progress", " at the rate of the last interval",
                      dtn > 0.0 ? string("; Δt = ", round(dtn, sigdigits = 3)) : "", "\n"))
         flush(stdout)
         lk10_progress[] = (w0, t0, now)
+        lk10_progress_last[] = (now, t)
     end
     return nothing
 end
@@ -367,6 +379,7 @@ function user_inputs()
                                           CarpenterKennedy2N54(),
         :Δt                   => Δt,
         :cfl_dt               => cfl,        # JEXPRESSO_LK10_CFL: 0 = the fixed Δt
+        :cfl_dt_min           => max(_lk10_num("DTMIN", 1.0e-5), 0.0),   # with CFL: stop below this step (0: never)
         :tinit                => 0.0,
         :tend                 => tend + Δt,   # one step past the last output (an output at tend itself is not written)
         :diagnostics_at_times => Tuple(tout),

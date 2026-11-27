@@ -547,7 +547,9 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             println(" Local resistivity of the original runs ON (JEXPRESSO_LK10_ETAHAT=on): η̂ = 0.1 exp(−r̂²/0.66²) L0 v0 at the origin, r̂ < 10")
         Float64(get(inputs, :cfl_dt, 0.0)) > 0.0 &&
             println(" Time step: follows the fast CFL number $(inputs[:cfl_dt]) (JEXPRESSO_LK10_CFL), updated every ",
-                    get(inputs, :cfl_dt_every, 10), " steps; Δt = $(round(inputs[:Δt], sigdigits=4)) is the first guess only")
+                    get(inputs, :cfl_dt_every, 10), " steps; Δt = $(round(inputs[:Δt], sigdigits=4)) is the first guess only; ",
+                    Float64(get(inputs, :cfl_dt_min, 0.0)) > 0.0 ? "the run stops if it falls below $(inputs[:cfl_dt_min]) (JEXPRESSO_LK10_DTMIN)" :
+                                                                  "no lower limit (JEXPRESSO_LK10_DTMIN=0)")
         println(" Subnormal numbers: ", get_zero_subnormals() ? "flushed to zero" : "kept (IEEE; slow where the solution is ~1e-308)")
         println(" Switches set in the environment (JEXPRESSO_LK10_*): ", isempty(get(inputs, :lk10_env_set, "")) ? "none" : inputs[:lk10_env_set])
         println(" Dissipation: ν = $(round(LK10_NU, sigdigits=4)) ($(get(inputs, :lk10_nu_mode, "kinematic"))), anomalous η₀ = $(round(LK10_ETA0, sigdigits=4)), ",

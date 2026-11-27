@@ -658,6 +658,10 @@ function time_loop!(inputs, params, u, args...)
             ad_lvl_cfl == 0 || error(" :cfl_dt is not implemented with AMR levels.")
             ncfl    = max(Int(get(inputs, :cfl_dt_every, 10)), 1)
             gcfl    = Float64(get(inputs, :cfl_dt_growth, 1.1))
+            # :cfl_dt_min: a step below it means a wave no plasma of the model has (a near vacuum under a
+            # strong field, or a blow-up the shrinking step only slows down): the run stops there, saying
+            # where, instead of crawling on (0: never)
+            dtmin   = Float64(get(inputs, :cfl_dt_min, 0.0))
             Δnode_c = Ref{Any}(nothing)
             function cfl_dt_affect!(integrator)
                 Δnode_c[] === nothing && (Δnode_c[] = nodal_length_scale(integrator.p.mesh, integrator.p.SD))
@@ -666,6 +670,19 @@ function time_loop!(inputs, params, u, args...)
                 dtn = (isfinite(r) && r > 0.0) ? cfl_target/r : Float64(inputs[:Δt])
                 dto = _DT_NOW[]
                 dto > 0.0 && (dtn = min(dtn, gcfl*dto))
+                if dtmin > 0.0 && !(dtn >= dtmin)
+                    msg = @sprintf(" # STOP at t = %.6g: the step that follows the CFL number %g is %.3e, below :cfl_dt_min = %.3e.",
+                                   integrator.t, cfl_target, dtn, dtmin)
+                    if positivity_is_mhd(integrator.p, Int(integrator.p.qp.neqs))
+                        fn  = fastest_node_mhd(integrator.p.mesh.npoin, integrator, Δnode_c[])
+                        msg *= @sprintf("\n #   The fastest wave is at (x, y) = (%.4g, %.4g), rank %d: |u| = %.4e, c_f = %.4e, ρ = %.4e, |B| = %.4e.",
+                                        fn[6], fn[7], Int(fn[9]), fn[2], fn[3], fn[4], fn[5])
+                    end
+                    msg *= "\n #   The snapshots written so far are kept; a restart from one of them can lower :cfl_dt_min (0: no limit)."
+                    println_rank(msg; msg_rank = MPI.Comm_rank(get_mpi_comm()))
+                    terminate!(integrator)
+                    return nothing
+                end
                 _DT_NOW[] = dtn
                 set_proposed_dt!(integrator, dtn)
                 u_modified!(integrator, false)

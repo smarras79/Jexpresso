@@ -27,6 +27,8 @@ t0 = 23.1946 s), the density in g cm^-3 and B_z in G, as in the paper.
   python3 tools/plot_leake2010.py drain RUN                   # why the lifted plasma drains or does not: how cold it is,
                                                               #   the field it sits on (flat, weak), its speed along the
                                                               #   field and how much of its weight its pressure carries
+  python3 tools/plot_leake2010.py fastest RUN --times 2070,2087   # where the fastest waves are (|v| + c_f): position,
+                                                              #   speeds, density, field, temperature (a step that collapses)
   python3 tools/plot_leake2010.py column RUN --times 1380,1610 --x 0   # the profiles on a vertical line as a table: density,
                                                               #   temperature, pressure, field, beta, velocity, DynSGS
   python3 tools/plot_leake2010.py null RUN [RUN2 ...]         # on x = 0 vs time: the top of the emerged flux (the null
@@ -1807,6 +1809,37 @@ def cmd_column(a):
                   f"{Bz[j] * B0_GAUSS:8.2f} {beta[j]:9.3g} {u[j]:8.2f} {v[j]:8.2f} {ang[j]:6.1f} {mu[j]:8.3g} {eta[j]:8.3g}")
 
 
+def cmd_fastest(a):
+    """Where the fastest wave is: at each requested time (default: the last three snapshots of the run), the --n
+    places with the largest |v| + c_f, at least --sep Mm apart, with c_f = sqrt((gamma p + B^2)/rho) as the solver
+    computes it. Printed for each: position [Mm], |v| and c_f [km/s], (|v| + c_f)/v0, log10 rho [g cm^-3], |B| [G],
+    T [K], beta. A run whose step collapses (JEXPRESSO_LK10_CFL) or that blows up names its region here."""
+    items = runs_of(a.run)
+    sel = nearest(items, a.times) if a.times else items[-3:]
+    for t, f in sel:
+        g = load(f, ["ρ", "p", "u", "v", "w", "Bz", "T", "log10rho_cgs"])
+        F = g["fields"]
+        rho = np.maximum(F["ρ"], 1e-300)
+        B2 = F["Bx"] ** 2 + F["By"] ** 2 + F["Bz"] ** 2
+        vel = np.sqrt(F["u"] ** 2 + F["v"] ** 2 + (F["w"] ** 2 if "w" in F else 0.0))
+        cf = np.sqrt((5.0 / 3.0 * np.maximum(F["p"], 0.0) + B2) / rho)
+        spd = vel + cf
+        x, y = g["x"] * L0_MM, g["y"] * L0_MM
+        picked = []
+        for i in np.argsort(-spd):
+            if all(np.hypot(x[i] - x[j], y[i] - y[j]) >= a.sep for j in picked):
+                picked.append(i)
+            if len(picked) == a.n:
+                break
+        print(f"--- t = {t:.1f} s ({os.path.basename(f)}): the {len(picked)} fastest places, {a.sep:g} Mm apart or more")
+        print(f"{'x Mm':>8} {'y Mm':>8} {'|v| km/s':>10} {'c_f km/s':>10} {'(|v|+c_f)/v0':>13} {'log rho':>8} "
+              f"{'|B| G':>9} {'T K':>9} {'beta':>9}")
+        for i in picked:
+            beta = F["p"][i] / max(0.5 * B2[i], 1e-300)
+            print(f"{x[i]:8.2f} {y[i]:8.2f} {vel[i] * V0_KMS:10.4g} {cf[i] * V0_KMS:10.4g} {spd[i]:13.4g} "
+                  f"{F['log10rho_cgs'][i]:8.2f} {np.sqrt(B2[i]) * B0_GAUSS:9.4g} {F['T'][i] * 5700.0:9.3g} {beta:9.3g}")
+
+
 def cmd_massbudget(a):
     """The mass budget node by node on a vertical line, for the stripes: at the snapshot nearest --time and on the mesh
     column nearest each --x, for every node between --ylim (an element face is marked |):
@@ -2344,6 +2377,12 @@ def main():
     s.add_argument("--x", type=float, default=0.0, help="the vertical line, x [Mm] (default 0)")
     s.add_argument("--ymin", type=float, default=0.0); s.add_argument("--ymax", type=float, default=16.0)
     s.add_argument("--dy", type=float, default=0.5, help="height step of the table [Mm]")
+    s = sub.add_parser("fastest", parents=[common]); s.set_defaults(fn=cmd_fastest)
+    s.add_argument("run")
+    s.add_argument("--times", type=lambda t: [float(x) for x in t.split(",")], default=None,
+                   help="times [s], comma-separated (default: the last three snapshots)")
+    s.add_argument("--n", type=int, default=5, help="how many places (default 5)")
+    s.add_argument("--sep", type=float, default=0.5, help="their least distance apart [Mm] (default 0.5)")
     s = sub.add_parser("massbudget", parents=[common]); s.set_defaults(fn=cmd_massbudget)
     s.add_argument("run")
     s.add_argument("--time", type=float, default=2185.0, help="the snapshot nearest this time [s] (default 2185); the next one gives the change")

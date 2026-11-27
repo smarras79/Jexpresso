@@ -78,6 +78,7 @@ below).
 | `JEXPRESSO_LK10_DOUT` | seconds, default 116 | snapshot interval (the figure times are always added) |
 | `JEXPRESSO_LK10_DT` | $t_0$ units | overrides the time step |
 | `JEXPRESSO_LK10_CFL` | default 0 (off) | > 0: the step follows the fastest wave, at this fast CFL number (updated every 10 steps; `JEXPRESSO_LK10_DT` is then the first step only; Meshes, time step and cost) |
+| `JEXPRESSO_LK10_DTMIN` | $t_0$ units, default $10^{-5}$ | with `CFL`: the run stops, naming where the fastest wave is, when the step falls below this (0: never) |
 | `JEXPRESSO_LK10_MCZ` | default 1.3 | polytropic index $m$ of the convection zone, $p\propto T^{m+1}$ |
 | `JEXPRESSO_LK10_RELAX_YMIN` | $L_0$ units, default $-\infty$ | apply the energy relaxation only above this height |
 | `JEXPRESSO_LK10_RELAX_TAU` | `local` (default), `height` | the relaxation time $23\,\text{s}\,(\rho/\rho_{ph})^{-1.43}$ with the local density, or with the atmosphere's at the node's height (the paper's "$\tau(y)$"; Equations and dissipation) |
@@ -908,6 +909,39 @@ A fixed step blew up at fast CFL numbers of about 0.5 (this run) and about 1
 and ~0.0009 at the dome's 100 $v_0$. The fixed steps of the two-stage runs were
 0.003 and 0.0006. One job can run the whole field-free case from $t = 0$.
 
+**When the step collapses.** A step that follows the CFL number can only slow
+a runaway down. The first field-free run taken past 1380 s at `CFL=0.4`
+(REF 4) ran normally to ~2070 s, at a step of ~9×10⁻⁵ $t_0$ for a fastest
+wave of 920 $v_0$. Within the next 17 s of model time:
+
+- the fastest wave reached 6×10⁴ $v_0$ (4×10⁵ km/s), with flows of
+  2.5×10⁴ $v_0$;
+- the step fell to 10⁻⁶–10⁻⁷;
+- the DynSGS coefficient sat at its stability cap on the ranks that hold the
+  top of the domain;
+- 13 s of model time took 4 hours.
+
+No plasma of the model moves like that. It is a near-vacuum under a strong
+field, or a blow-up in slow motion. So:
+
+- **Step floor.** `JEXPRESSO_LK10_DTMIN` (default $10^{-5}$ $t_0$, a fastest
+  wave of ~8600 $v_0$ on REF 4 and ~4300 on REF 3) stops the run there. It
+  prints where the fastest wave is: position, $\lvert\mathbf v\rvert$, $c_f$,
+  $\rho$ and $\lvert\mathbf B\rvert$. The snapshots written so far are kept.
+- **Location in every CFL report.** Every snapshot's report has a `Fastest
+  wave` line with the same data (`fastest_node_mhd`, `soundSpeed.jl`).
+- **The tool's `fastest` command** lists the fastest places of any snapshot.
+- **Time left.** The progress line's estimate of the time left uses the rate
+  of the last interval, not the average since the start, which hid the
+  collapse for hours.
+
+Tested here: the REF 1 `ETAFAC=0.1` run, restarted at 1090 s with
+`CFL=0.4` and the floor set to 0.0035. At 1113 s its report named the fastest
+wave at (−1.5, 0.94) Mm (|v| = 16 and $c_f$ = 26 $v_0$). At 1127.5 s the
+step fell to 0.0026 and the run stopped, naming (−3.4, 2.45) Mm: a flow of
+59 $v_0$ (380 km/s) at $\rho = 9\times10^{-7}$. That is where the floors of
+the run before had caught a negative temperature at the same time.
+
 **Where the time goes.** The cost is the number of steps: the fast speed of
 the corona (4500 km/s when the dome drains) over the smallest gap between two
 nodes (32 km) is 7 ms, the step 3.5–4.6 ms, and 1610 s from the emergence to
@@ -1174,6 +1208,7 @@ python3 tools/plot_leake2010.py drain    $RUN            # why that plasma drain
 python3 tools/plot_leake2010.py heat     $RUN            # what changes its temperature: each term as the code applies it, against the observed rate
 python3 tools/plot_leake2010.py column   $RUN --times 1380,1610 --x 0   # the state on a vertical line, as a table
 python3 tools/plot_leake2010.py balance  $RUN --times 1380,1610 --x 0   # the vertical forces on that line, and their integrals over the dome
+python3 tools/plot_leake2010.py fastest  $RUN --times 2070,2087   # where the fastest waves are (|v| + c_f): position, speeds, density, field, temperature, beta
 bash tools/lk10_report.sh $RUN --base $RUN0 --log job.out            # all of these tables and the log's lines in one text file
 ```
 
