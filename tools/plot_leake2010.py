@@ -908,10 +908,13 @@ def cmd_diag(a):
     CFL rate (|u| + c_f)/dx (dx the local node spacing; times the run's dt, the CFL number), current |curl B|,
     and the smallest p/p(t0), beta and T = p/rho (T_ph units), with where they are (Mm), the number of
     nodes at the temperature floor (--tfloor, 0.1 by default), the smallest rho/rho(t0), and the largest DynSGS
-    momentum coefficient (code units), where the operator works hardest.
+    momentum coefficient (code units), where the operator works hardest. Then, on a second line, the field:
+    the largest |B| [G] and the largest |psi| [G], with where they are. psi answers to the solver's own div B,
+    which the 2D update keeps at round-off (psi ~1e-12 G); a finite difference of the nodal B on the merged
+    grid would show the stencil's error near the tube instead, not that.
     Code units, as the run (README, "Units")."""
     items = runs_of(a.run)
-    names = ["ρ", "p", "u", "v", "w", "Bx", "By", "Bz", MU_NAME]
+    names = ["ρ", "p", "u", "v", "w", "Bx", "By", "Bz", "ψ", MU_NAME]
     g0 = load(items[0][1], names)          # the reference: the run's first snapshot, whatever --tmin
     if a.tmin is not None:
         items = [it for it in items if it[0] >= a.tmin - 1e-6]
@@ -956,6 +959,12 @@ def cmd_diag(a):
         sM, kM = arg(mu, np.nanargmax) if np.isfinite(mu).any() else (np.nan, (0, 0))
         print(f"{t:8.1f} {su * V0_KMS:7.1f}km/s {at(sp, ku):>16} {sc:9.1f} {sr * (a.dt or 1.0):11.3g} {at(rate, kr):>16} "
               f"{sj:9.3g} {at(j, kj):>16} {spp:9.3g} {at(p, kp):>16} {sb:9.3g} {at(beta, kb):>16} {sT:8.3g} {at(p, kT):>16} {nT:8d} {sR:12.3g} {at(p, kR):>16} {sM:9.3g} {at(p, kM):>16}")
+        # the field: its largest strength and psi (the GLM potential, which the solver's own div B drives)
+        Bm = np.sqrt(B2)
+        psi = np.abs(G(g, "ψ")) if "ψ" in g["fields"] else np.full(p.shape, np.nan)
+        sB, kB = arg(Bm, np.nanargmax)
+        sP, kP = arg(psi, np.nanargmax) if np.isfinite(psi).any() else (np.nan, (0, 0))
+        print(f"{'':8} {'field:':>9} max|B| {sB * B0_GAUSS:9.4g} G at {at(p, kB)}; max|psi| {sP * B0_GAUSS:9.3g} G at {at(p, kP)}")
 
 
 def cmd_atmos(a):
