@@ -145,9 +145,11 @@
 # discontinuity between a clamped node and a free one is not. Beyond s ~ 2h the
 # full-strength core |x| <= x0 - s vanishes and the beam stops being the paper's.
 #
-# And the injected flux is unchanged: the integral of phi over the boundary is x0
-# to five digits for every s, because the profile is antisymmetric about the lip.
-# So s alters the beam's shoulder shape, not how much mass or momentum enters.
+# The beam keeps its width: the integral of phi over the boundary is x0 exactly
+# for every s, because the profile is antisymmetric about the lip. It does not
+# keep its fluxes, which are not linear in phi (rho v = (phi rho_j + (1 - phi)
+# rho_a) phi u): less mass and momentum enter than through the top hat, by 2.4%
+# and 3.9% at s = h = 0.00625 (lvl 2), and by 9.7% and 15.7% at s = h = 0.025.
 # aj_smooth = 0 (user_flux.jl) restores the paper's exact top hat — which is the faithful
 # condition and was measured not to run with the earlier node-wise repair.
 #---------------------------------------------------------------------------------

@@ -112,9 +112,10 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     # s = h each element sees half of it. Beyond s ≈ 2h the full-strength core
     # |x| <= x0 - s vanishes and the beam is no longer the paper's beam.
     #
-    # The injected flux width is preserved either way: ∫φ dx = x0 to 5 digits for
-    # every s, because the profile is antisymmetric about the lip. So this changes
-    # the beam's shoulder shape, not how much mass or momentum enters.
+    # The beam's width is preserved either way: ∫φ dx = x0 exactly for every s,
+    # because the profile is antisymmetric about the lip. Its fluxes are not, as
+    # ρv and ρv² are not linear in φ: less mass and momentum enter than through
+    # the top hat, by 2.4% and 3.9% at s = h = 0.00625 and 9.7% and 15.7% at 0.025.
     #
     # THE ELEMENT SIZE MUST COME FROM mesh.Δelem_s, not from mesh.nelem. Δelem_s
     # is MPI.Allreduce(minimum(Δelem), MIN) — the globally smallest element, the

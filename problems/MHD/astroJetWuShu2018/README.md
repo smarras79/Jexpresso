@@ -38,7 +38,7 @@ The relevant MHD speed is the fast magnetosonic speed. For motion along **B**, a
 | nozzle lip, in x | C² smootherstep over 2s = 2 elements, centred on \|x\| = 0.05 | top hat | `aj_smooth = 0` |
 | beam turn-on, in t | smootherstep over τ = 2h/u_jet (125 steps) | impulsive | `aj_tramp = 0` |
 
-The blend acts on the primitives, so the injected mass and momentum flux are unchanged to five digits (∫φ dx = 0.05), and the beam is at full strength from t = τ = 3% of t_end. Its purpose is that the clamped nodes agree with their free neighbours: a top hat puts a 4400× jump in ρE between a clamped and a free node inside one element.
+The blend acts on the primitives. It keeps the beam's width exactly (∫φ dx = 0.05), but not its fluxes, since ρv and ρv² are not linear in φ: less mass and momentum enter than through the top hat, by 2.4% and 3.9% at h = 0.00625 (lvl 2, the deck as committed) and by 9.7% and 15.7% at h = 0.025 (lvl 0). The beam is at full strength from t = τ = 2h/u_jet: 0.8% of t_end at lvl 2, 3.1% at lvl 0. Its purpose is that the clamped nodes agree with their free neighbours: a top hat puts a 4400× jump in ρE between a clamped and a free node inside one element.
 
 **Outflow** (`"bottom"` outside the nozzle). Nothing is imposed except ψ = 0 (`user_bc.jl`). With every variable left free, the GLM pair (Bₙ, ψ) has no incoming condition. In the first run with the conservative limiter, ψ grew about 10× every 2·10⁻⁵, starting at the first free bottom-boundary node next to the nozzle patch. It reached 458 (B_a = 14) along y = 0 and at the corners, ate the ambient pressure through ½ψ², and the run blew up at the corner (−0.5, 0) at t = 5.0·10⁻⁴.
 
