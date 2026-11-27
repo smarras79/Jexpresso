@@ -1059,6 +1059,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :Pr))
         inputs[:Pr] = 0.1
     end
+    # The 3D moist (hl) form of DSGS() does NOT use :Pr: it diffuses hl with ν/Pr_t
+    # and qt, qp with ν/Sc_t, the turbulent numbers and kinematic convention of the
+    # Smagorinsky/Vreman 3D path, read from :Pr_t and :Sc_t (default
+    # PhysConst.Pr_t, PhysConst.Sc_t). See _dsgs_3d_general! in SGS.jl.
 
     #
     # Marras-Nazarov DynSGS (visc_model = DSGS_MHD()) parameters, named as
@@ -1333,6 +1337,9 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #                      whose full-flux residual at rest is the
     #                      interpolation error of the balance. Off by default:
     #                      a shock tube's qe is its initial jump.
+    #                      In 3D it also makes DSGS() diffuse the departure of
+    #                      the primitives from those of qe (as PERT does), not
+    #                      the full stratified fields: required for TOTAL moist.
     if(!haskey(inputs, :dsgs_reference))
         inputs[:dsgs_reference] = false
     end

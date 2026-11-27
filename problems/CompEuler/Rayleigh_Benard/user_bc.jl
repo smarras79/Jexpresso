@@ -53,7 +53,7 @@ function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::Abst
     
 end
 
-function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, coords, ::TOTAL)
+function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, coords, τ_f, wθ, ::TOTAL, PhysConst; kwargs...)
 
     if (tag == "bottom")
         F_edge[4] = 0.02*rand()*u[1]
@@ -63,7 +63,7 @@ function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, coords, ::TOTAL)
 
 end
 
-function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, coords, τ_f, wθ, CL)
+function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, coords, τ_f, wθ, ::PERT, PhysConst; kwargs...)
 
     if (tag == "bottom")
         F_edge[4] = 0.02*rand()*(u[1]+qe[1])

@@ -220,6 +220,7 @@ function params_setup(sem,
         flux_lag_gpu     = gpuAux_lag.flux_lag_gpu
         source_lag_gpu   = gpuAux_lag.source_lag_gpu
         qbdy_lag_gpu     = gpuAux_lag.qbdy_lag_gpu
+        lag_side_n, lag_far_n = laguerre_bc_normals_gpu(sem.mesh, T, backend)
         
         fy_t_lag         = transpose(sem.fy_lag)
         q_t_lag          = filter_lag.q_t_lag
@@ -253,6 +254,10 @@ function params_setup(sem,
     if sgs isa AbstractSGSModel
         sgs.lrichardson = get(inputs, :lrichardson, true)  # default true for SMAG/VREM
         sgs.ltheta_eqn  = !(haskey(inputs, :energy_equation) && inputs[:energy_equation] == "energy")
+        # Turbulent Prandtl (energy/θ, ieq 5) and Schmidt (other scalars) numbers of SMAG/VREM:
+        # scalar eddy diffusivity = μ_turb/(ρ Pr_t) or μ_turb/(ρ Sc_t). Default PhysConst values (0.7).
+        haskey(inputs, :Pr_t) && (sgs.Pr_t = TFloat(inputs[:Pr_t]))
+        haskey(inputs, :Sc_t) && (sgs.Sc_t = TFloat(inputs[:Sc_t]))
     end
     sgs_stress = zeros(TFloat, Int64(sem.mesh.npoin), 12)
     
@@ -490,12 +495,12 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     #------------------------------------------------------------------------------------
     # Dirichlet constraints inferred from user_bc_dirichlet! (1D/2D/3D, CPU, continuous
-    # Galerkin; see bc_constraints.jl). Laguerre (semi-infinite) meshes, DG, GPU runs and
-    # periodic 1D keep the legacy path (bc_cons = nothing).
+    # Galerkin; see bc_constraints.jl), including meshes with semi-infinite Laguerre
+    # elements in 1D and 2D. DG, GPU runs and periodic 1D keep the legacy path
+    # (bc_cons = nothing).
     #------------------------------------------------------------------------------------
     bc_cons = nothing
     if backend == CPU() && sem.AD isa ContGal &&
-        !(sem.mesh.lLaguerre || inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left]) &&
         !(sem.mesh.SD == NSD_1D() && inputs[:lperiodic_1d])
         bc_cons = build_bc_constraints(sem.mesh, sem.metrics, qp.qn, qp.qe, inputs, qp.neqs,
                                        xmin, xmax, ymin, ymax, zmin, zmax; t = tspan[1])
@@ -517,7 +522,7 @@ function params_setup(sem,
                   q_t, q_ti, q_tij, fqf, b, B,
                   q_t_lag, q_ti_lag, fqf_lag, b_lag, B_lag,
                   flux_lag_gpu, source_lag_gpu,
-                  qbdy_lag_gpu,
+                  qbdy_lag_gpu, lag_side_n, lag_far_n,
                   RHS, RHS_visc,
                   F_lag, G_lag, S_lag, 
                   F_surf, S_face, S_flux, M_surf_inv = sem.matrix.M_surf_inv, M_edge_inv = sem.matrix.M_edge_inv,

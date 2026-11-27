@@ -85,9 +85,9 @@ Outcome of a case:
 
 | Result | Meaning |
 |---|---|
-| ✅ pass | the run finished and every field matches the reference within `atol` |
+| ✅ pass | the run finished and every field matches the reference within tolerance ([what that means](#what-the-tolerance-actually-tests)) |
 | ⏭️ skipped | no reference solution committed yet — run `test/generate_ci_ref.jl` |
-| ❌ fail | the run crashed, produced no HDF5 output, or a field drifted beyond `atol` |
+| ❌ fail | the run crashed, produced no HDF5 output, or a field drifted beyond tolerance |
 
 ### Which workflow runs when
 
@@ -339,6 +339,98 @@ A shortcut worth knowing: the commit job only commits when the files actually
 changed. If the workflow run reports *"No reference files changed — nothing to
 commit"*, the runner reproduced your files byte for byte and there is nothing
 left to check.
+
+---
+
+## What the tolerance actually tests
+
+Each floating-point field of each output file is compared with
+`isapprox(ref, gen; atol, rtol)`, which for arrays means
+
+    ‖gen − ref‖₂ ≤ max(atol, rtol · max(‖gen‖₂, ‖ref‖₂))
+
+with the 2-norm taken over the **whole field** (every node in the file). Two
+consequences:
+
+* `atol` is not a pointwise bound. With N nodes, `atol = 1e-5` allows an RMS
+  difference of about `1e-5/√N` per node — for the 8405 nodes of
+  `CompEuler/3d`, about 1e-7. On a case run for thousands of steps that is
+  close to a bit-for-bit test.
+* The output holds **total** fields, not perturbations: ρθ ≈ 300·ρ. A
+  relative tolerance sized for the momenta would let ρθ drift by kelvins.
+  That is why `rtol` can be given per variable,
+  `rtol = [ρ, ρu, ρv, ρw, ρθ, …]` (`rtol[i]` applies to `var_i_*.h5`).
+
+The default is `rtol = 0` (absolute only). The `@error` line of a failing
+field prints `‖Δ‖₂`, `‖Δ‖₂/‖ref‖₂` and `max |Δ|`, which is what you need to
+tell round-off drift from a real change.
+
+## Round-off-sensitive cases: `CompEuler/3d` and DSGS
+
+`CompEuler/3d` (3D rising thermal, `:visc_model => DSGS()`, 2000 steps of
+Δt = 0.5 s to t = 1000 s) does not reproduce across machines. The
+`ubuntu-latest` pool mixes CPU types — seen in November 2026: Intel Xeon
+6975P (Granite Rapids), AMD EPYC 7763 (Zen 3), AMD EPYC 9V74 (Zen 4). Each
+type reproduces its own result bit for bit, but different types give
+different momenta. The solutions are physically the same — same structures,
+same amplitudes — but μ_dsgs differs slightly between them, and over 2000
+steps that difference grows to ~1% of the momentum field.
+
+So with `atol` alone, whether the case passes is decided by the CPU the job
+lands on, not by the PR. The committed reference is, bit for bit, the Intel
+output; the failing CI runs of #175–#177 (18 Nov 2026, none of which touches
+DSGS) are, bit for bit, the AMD EPYC 7763 output. The reference had already
+been regenerated once for the same reason (`dc8d92d9a`).
+
+Measured differences at t = 1000 s, `‖Δ‖₂/‖ref‖₂` per field. The runner
+outputs come from the Benchmarks workflow run on the same commit with the
+deck unchanged (DSGS) or with only `:visc_model => SMAG()`:
+
+| Pair compared | ρ | ρu | ρw | ρθ |
+|---|---|---|---|---|
+| **DSGS** Intel 6975P (= reference) vs AMD 7763 (= #175 CI) | 1.3e-5 | 1.1e-2 | 5.7e-3 | 7.7e-6 |
+| **DSGS** Intel 6975P vs macOS arm64 | 1.5e-5 | 5.9e-3 | 4.1e-3 | 7.8e-6 |
+| **DSGS** AMD 7763 vs macOS arm64 | 1.6e-5 | 1.1e-2 | 6.7e-3 | 6.1e-6 |
+| **SMAG** AMD 7763 vs AMD 9V74 | 0 | 0 | 0 | 0 |
+| **SMAG** AMD (either) vs macOS arm64 | 2.2e-14 | 1.2e-11 | 9.5e-12 | 3.0e-15 |
+| **DSGS** arm64 vs arm64 with θc·(1 + 1e-12) | 7.6e-6 | 6.2e-3 | 2.8e-3 | 5.9e-6 |
+| **SMAG** arm64 vs arm64 with θc·(1 + 1e-12) | 3.1e-14 | 1.4e-11 | 1.2e-11 | 3.1e-15 |
+| SMAG vs DSGS (a real model change, for scale) | 4.2e-4 | 3.6e-1 | 2.2e-1 | 7.3e-5 |
+
+(ρv is ~1e-11 everywhere — the case is a one-element-thick slab — and passes
+on `atol`. No SMAG job landed on an Intel runner.)
+
+Across platforms SMAG agrees to ~1e-11, DSGS to ~1e-2. The two perturbation
+rows isolate the cause without involving hardware: changing the warm-bubble
+amplitude θc by one part in 10¹² gives ~1e-11 in the SMAG momenta (no
+amplification) and 6e-3 in the DSGS momenta — amplified by ~10¹⁰, to the
+same level as the platform-to-platform differences. A better reference
+cannot avoid this: any round-off-level change (another CPU, compiler, libm or
+BLAS, a reordered sum in an unrelated part of the code) saturates at this
+level under DSGS.
+
+A plausible mechanism: the DSGS coefficient is built from the element
+residual normalised by the spread of the solution and then clipped by
+`Cmin`/`Cmax`. Where the flow is nearly at rest the residual itself is at
+round-off level, so μ_dsgs there carries round-off noise into the dissipation
+of the next step; the bubble's nonlinearity then amplifies it.
+
+**What CI does about it.** `CompEuler/3d` is registered with
+`rtol = [1e-4, 5e-2, 5e-2, 5e-2, 5e-5]` (ρ, ρu, ρv, ρw, ρθ): about 5× the
+largest drift observed on each field. Checked against the outputs above, every
+DSGS pair passes, and the SMAG-vs-DSGS change fails on all four of ρ, ρu, ρw
+and ρθ. Note how small a real change is on the total ρ and ρθ (4e-4, 7e-5): a
+loose relative tolerance on those fields would never fail.
+
+**For a new case**: if it uses DSGS (or any closure whose coefficient depends
+on a residual or on a max/min of the solution) and runs more than a few
+hundred steps, expect this. Measure it before choosing a tolerance — run the
+case twice locally with a 1e-12 change to the initial condition and compare
+the outputs: copy the first run's `test/CI-runs/<EQS>/<CASE>/output/` to
+`<DIR>/<EQS>/<CASE>/output/`, make the second run, then
+`julia --project=. test/compare_benchmarks.jl --ref <DIR> <EQS>/<CASE>`. If the difference is far above round-off, set a
+per-variable `rtol` a few times above it rather than regenerating the
+reference whenever the runner changes.
 
 ---
 

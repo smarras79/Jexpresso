@@ -30,11 +30,11 @@
 ==============================================================================#
 module CICases
 
-export CICase, CI_CASES, case_name, select_cases, matrix_json, validate,
+export CICase, CI_CASES, case_name, case_rtol, select_cases, matrix_json, validate,
        project_root, runs_dir, ref_dir, referenced_cases
 
 """
-    CICase(eqs, case; timeout, atol)
+    CICase(eqs, case; timeout, atol, rtol)
 
 One CI test case.
 
@@ -44,6 +44,21 @@ One CI test case.
   * `timeout` : per-case timeout in MINUTES used by the GitHub Actions jobs.
   * `atol`    : absolute tolerance used when comparing the HDF5 output
                 against the reference solution in `test/CI-ref/`.
+  * `rtol`    : relative tolerance for the same comparison (default 0, i.e.
+                absolute only). Each field passes when
+                    ‖gen − ref‖₂ ≤ max(atol, rtol·max(‖gen‖₂, ‖ref‖₂)),
+                the norm taken over the WHOLE field (all nodes of the file),
+                as `isapprox` does for arrays. `atol` is therefore not a
+                pointwise bound: with N nodes it allows an RMS difference of
+                about atol/√N per node.
+                A number applies to every file; a vector gives one value per
+                solution variable, `rtol[i]` for `var_i_*.h5` (0 for any other
+                file and for i beyond the vector). The output holds TOTAL
+                fields, so ρθ ≈ 300·ρ: a relative tolerance that suits the
+                momenta is far too loose for ρ and ρθ, hence the vector form.
+                Set `rtol` only for a case whose solution is sensitive to
+                round-off (see "Round-off-sensitive cases" in
+                test/CIdescription.md).
   * `vtk_smoke`: also run the case a second time writing VTK, and check that
                 the writer produced non-empty files. Off by default: it is a
                 second full run of the case, and it is a check on the writer,
@@ -55,6 +70,7 @@ Base.@kwdef struct CICase
     case::String
     timeout::Int     = 30
     atol::Float64    = 1e-5
+    rtol::Union{Float64,Vector{Float64}} = 0.0
     vtk_smoke::Bool  = false
 end
 
@@ -62,6 +78,19 @@ CICase(eqs::AbstractString, case::AbstractString; kwargs...) =
     CICase(; eqs = String(eqs), case = String(case), kwargs...)
 
 case_name(c::CICase) = string(c.eqs, "/", c.case)
+
+"""
+    case_rtol(c::CICase, file) -> Float64
+
+The relative tolerance of `c` for the output file `file` (see `rtol` above).
+"""
+function case_rtol(c::CICase, file::AbstractString)
+    c.rtol isa Float64 && return c.rtol
+    m = match(r"^var_(\d+)_", basename(file))
+    m === nothing && return 0.0
+    i = parse(Int, m.captures[1])
+    return i <= length(c.rtol) ? c.rtol[i] : 0.0
+end
 
 #------------------------------------------------------------------------------
 # THE REGISTRY
@@ -86,6 +115,11 @@ const CI_CASES = CICase[
     CICase(eqs = "CompEuler", case = "3d_amr", timeout = 30),
     CICase(eqs = "RadiativeTransfer", case = "2d_extra_coords", timeout = 30),
     CICase(eqs = "RadiativeTransfer", case = "3d_extra_coords", timeout = 30),
+    CICase(eqs = "AdvDiff", case = "2d_robin", timeout = 10),
+    CICase(eqs = "AdvDiff", case = "1d_neumann", timeout = 10),
+    CICase(eqs = "AdvDiff", case = "1d_insulated", timeout = 10),
+    CICase(eqs = "AdvDiff", case = "1d_robin", timeout = 10),
+    CICase(eqs = "AdvDiff", case = "1d_radiation", timeout = 10),
     #<< test/generate_ci_ref.jl inserts new cases above this line >>
 
     #--------------------------------------------------------------------------
@@ -101,7 +135,11 @@ const CI_CASES = CICase[
     #
     CICase(eqs = "CompEuler",    case = "thetaTracers",   timeout = 40),
     CICase(eqs = "CompEuler",    case = "theta_laguerre", timeout = 40),
-    CICase(eqs = "CompEuler",    case = "3d",             timeout = 40),
+    # DSGS amplifies round-off (test/CIdescription.md, "Round-off-sensitive
+    # cases"): runners and platforms differ by ~1e-2 relative in the momenta,
+    # ~1e-5 in ρ and ρθ, each tolerance ~5x that. One value per variable: ρ, ρu, ρv, ρw, ρθ.
+    CICase(eqs = "CompEuler",    case = "3d",             timeout = 40,
+           rtol = [1e-4, 5e-2, 5e-2, 5e-2, 5e-5]),
     CICase(eqs = "CompEuler",    case = "wave1d",         timeout = 20),
     CICase(eqs = "CompEuler",    case = "wave1d_lag",     timeout = 20),
     # CICase(eqs = "Burgers",      case = "case1",          timeout = 20),
@@ -387,6 +425,8 @@ function validate(; cases::AbstractVector{CICase} = CI_CASES,
 
         c.timeout > 0 || push!(problems, "$name: timeout must be positive")
         c.atol    > 0 || push!(problems, "$name: atol must be positive")
+        all(r -> isfinite(r) && 0 <= r < 1, c.rtol) ||
+            push!(problems, "$name: rtol must be in [0, 1)")
     end
 
     #--------------------------------------------------------------------------
