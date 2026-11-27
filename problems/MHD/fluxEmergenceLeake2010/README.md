@@ -934,8 +934,12 @@ the solution fails within 17 s:
 - the flows reach $1.6\times10^5$ km/s, with temperatures from the floor to
   $4\times10^{12}$ K.
 
-With this top boundary the field-free case therefore runs to ~2050 s; its
-centre's stall (to 1380 s) is far from it. So:
+With this top boundary the field-free case therefore runs to ~2050 s. The
+stall of its centre (to 1380 s) is unaffected. In the two runs of 27 Nov taken
+to 1380 s (`diag --ymin 30`), the corona above 30 Mm stays field-free
+throughout: the current is at round-off ($10^{-19}$) and β ~ $10^{32}$. It
+carries only sound waves from the emergence, at ≤ 20 km/s, rising at the
+coronal sound speed into the top layer. No node there reaches the floors. So:
 
 - **Step floor.** `JEXPRESSO_LK10_DTMIN` (default $10^{-5}$ $t_0$, a fastest
   wave of ~8600 $v_0$ on REF 4 and ~4300 on REF 3) stops the run there. It
