@@ -2019,6 +2019,23 @@ Short runs on 4 cores; the full runs are for a cluster (above).
   `TFLOOR=0.01` (57 K) has A's axis and centre temperature to the digit
   through 1380 s. (D–G above covered 696–1021 s only, before the stall.)
 
+  *Nor the relaxation time or the energy diffusion, through the stall.* D
+  (`RELAX_TAU=height`) and E (`EFAC=0.1`) were continued from 1021 s to
+  1380 s with `DT=0.0006`, three times the step of A's continuation. Both
+  settle with A. Axis in Mm:
+
+  | t (s) | 1113 | 1160 | 1206 | 1253 | 1299 | 1345 | 1380 |
+  |---|---|---|---|---|---|---|---|
+  | A | 0.08 | 0.10 | 0.12 | 0.12 | 0.12 | 0.12 | 0.12 |
+  | D, `RELAX_TAU=height` | 0.07 | 0.10 | 0.11 | 0.12 | 0.12 | 0.12 | 0.12 |
+  | E, `EFAC=0.1` | 0.08 | 0.11 | 0.12 | 0.12 | (0.20) | 0.12 | 0.12 |
+
+  E's 0.20 at 1299 s is a single snapshot. There the axis finder takes a point
+  with 1.3 times the initial $B_z/\rho$, which no plasma of the tube has; at
+  1345 s it is back at 0.12 Mm with 0.94 of it. The centres stay 1.4–1.6 times
+  the atmosphere's density. A run from $t = 0$ with A's switches (26 Nov)
+  reproduces A to every printed digit through 1021 s.
+
   *The paper's tubes all settle higher.* The original paper's Fig. 9(a),
   read from the vector paths of its EPS (`PAPER_FIG9A_TUBE1..3` in the tool),
   has the centre of tube 2 at −0.26, 0.06, 0.13, 0.20, 0.27, 0.34, 0.41 Mm at
@@ -2032,6 +2049,9 @@ Short runs on 4 cores; the full runs are for a cluster (above).
   $\hat\eta$ back (recorded, changeable at a restart; the element-centroid
   sampling gives REF 4 76 % of its integral), for the original's later
   evolution; it is not run here.
+  The next runs test that: our tube 3, and tube 2 in an adiabatic convection
+  zone (`MCZ=1.5`), with A itself repeated as their reference at the same
+  step (`JEXPRESSO_LK10_CFL=0.4`).
 
 ## Files
 
