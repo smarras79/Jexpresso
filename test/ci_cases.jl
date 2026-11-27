@@ -115,6 +115,7 @@ const CI_CASES = CICase[
     CICase(eqs = "CompEuler", case = "3d_amr", timeout = 30),
     CICase(eqs = "RadiativeTransfer", case = "2d_extra_coords", timeout = 30),
     CICase(eqs = "RadiativeTransfer", case = "3d_extra_coords", timeout = 30),
+    CICase(eqs = "CompEuler", case = "theta_laguerre_total", timeout = 24),
     CICase(eqs = "AdvDiff", case = "2d_robin", timeout = 10),
     CICase(eqs = "AdvDiff", case = "1d_neumann", timeout = 10),
     CICase(eqs = "AdvDiff", case = "1d_insulated", timeout = 10),

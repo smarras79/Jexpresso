@@ -661,18 +661,26 @@ function LagrangeInterpolatingPolynomials_classic(ξ, ξq, TFloat, backend)
     return (L, dLdx)
 end
 
+#
+# L_nop(beta*x), the Laguerre polynomial of degree nop in the scaled variable
+# beta*x (the scaled Laguerre functions are exp(-beta*x/2) L_n(beta*x)), and its
+# derivatives. The recurrence L_k = ((2k-1 - beta x) L_{k-1} - (k-1) L_{k-2})/k
+# must start from L_1 = 1 - beta*x: it used to start from 1 - x, so for beta != 1
+# the result was neither L_n(beta x) nor L_n(x), and the LGR nodes (refined
+# against it), the weights and the derivative matrix were wrong.
+#
 function ScaledLaguerreAndDerivative!(nop,SL::St_Laguerre,beta, backend)
   Laguerre = zeros(Float128,nop+1)
   if (nop == 0)
      Laguerre[1] = 1.0
   elseif (nop == 1)
      Laguerre[1] = 1.0
-     Laguerre[2] = -1.0
+     Laguerre[2] = -beta
   else
     Lkm2 = zeros(Float128,nop+1,1);
     Lkm2[nop+1] = 1;
     Lkm1 = zeros(Float128,nop+1,1);
-    Lkm1[nop] = -1;
+    Lkm1[nop] = -beta;
     Lkm1[nop+1] = 1;
 
     for k=2:nop

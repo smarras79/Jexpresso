@@ -56,3 +56,27 @@ the linear-solve path (`laguerre_side_columns_2D` in `bc_constraints.jl`).
 The semi-infinite elements are assembled together with the finite ones, before
 the boundary constraints are applied, so a node shared by both is constrained
 exactly like any other boundary node.
+
+## TOTAL and PERT variables
+
+Every scaled Laguerre function decays, ``e^{-\beta\xi/2}p(\xi)``, so the layer
+can only represent fields that vanish far from the domain. A perturbation does;
+a total field (the hydrostatic density and pressure, θ, the fluxes built from
+them) does not, and its derivative in the layer would be wrong.
+
+* **PERT**: nothing to do, the prognostic variables are the perturbation.
+* **TOTAL**: inside the semi-infinite elements the right-hand side is computed
+  on the departure from the reference state `qe`:
+  ``\nabla\cdot(F(q)-F(q_e)) - (S(q)-S(q_e))`` for the inviscid part and the
+  diffusion of `prim(q) - prim(qe)` for the viscous part. This is exactly the
+  TOTAL system wherever `qe` is a steady state (``\nabla\cdot F(q_e) = S(q_e)``,
+  e.g. hydrostatic balance) -- the same assumption PERT makes. The finite
+  elements are unchanged.
+
+## Filter
+
+`:lfilter => true` filters the semi-infinite elements too, with `:mu_x` along
+the base edge and `:mu_y` in the Laguerre direction (the reference directions
+ξ and η of the element), for TOTAL and PERT. The Laguerre modes of the filter
+use the same `:laguerre_beta` as the basis. With TOTAL the filter acts on
+`q - qe`.
