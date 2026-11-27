@@ -2101,9 +2101,31 @@ Short runs on 4 cores; the full runs are for a cluster (above).
   $\hat\eta$ back (recorded, changeable at a restart; the element-centroid
   sampling gives REF 4 76 % of its integral), for the original's later
   evolution; it is not run here.
-  The next runs test that: our tube 3, and tube 2 in an adiabatic convection
-  zone (`MCZ=1.5`), with A itself repeated as their reference at the same
-  step (`JEXPRESSO_LK10_CFL=0.4`).
+
+  *Our tube 3 stalls too, and an adiabatic convection zone is no better*
+  (cluster, 27 Nov: field-free, REF 4, A's switches, from $t = 0$ at
+  `JEXPRESSO_LK10_CFL=0.4`). Tube 3 at m = 1.3 (T3) and tube 2 at m = 1.5
+  (`MCZ=1.5`, M; run twice, identical to every printed digit, once on to
+  2088 s). Axis in Mm:
+
+  | t (s) | 696 | 920 | 1021 | 1113 | 1206 | 1299 | 1380 |
+  |---|---|---|---|---|---|---|---|
+  | A, tube 2 | −0.41 | −0.10 | 0.02 | 0.08 | 0.12 | 0.12 | 0.12 |
+  | erratum, tube 2 | −0.41 | −0.02 | 0.14 | 0.21 | 0.28 | 0.35 | 0.41 |
+  | T3, tube 3 | −0.40 | −0.07 | 0.03 | 0.08 | 0.11 | 0.11 | 0.09 |
+  | paper Fig. 9(a), tube 3 | −0.40 | −0.03 | 0.13 | 0.21 | 0.27 | 0.27 | 0.33 |
+  | M, tube 2, m = 1.5 | −0.57 | −0.25 | −0.16 | −0.08 | −0.02 | −0.01 | −0.01 |
+
+  - **Tube 3 behaves like tube 2.** It follows the paper's curve to ~700 s,
+    falls behind from ~750 s as it nears the surface, and stops at 0.1 Mm.
+    Its centre is 1.7–1.9 times the atmosphere's density, keeps 0.85–0.94 of
+    its $B_z/\rho$ and keeps 0.875 of its in-plane flux. The paper's tube 3
+    settles at 0.27–0.34 Mm. The offset is therefore common to the tubes, as
+    the paper's curves suggested.
+  - **m = 1.5 rises more slowly than the erratum.** It is already 0.16 Mm
+    behind at 696 s, and its centre settles lower, at −0.01 Mm (at 1.2 times
+    the atmosphere's density), and stays near 0 to 2088 s. The paper's rise
+    is that of the m ≈ 1.3 its Fig. 3(a) shows, which the deck fits.
 
 ## Files
 
