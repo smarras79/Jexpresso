@@ -31,7 +31,7 @@ function user_bc_dirichlet!(q,
 end
 
 
-function user_bc_neumann!(F_surf, u, u1, qe, qe1, tag, coords, τ_f, wθ, eqtype)
+function user_bc_neumann!(F_surf, u, u1, qe, qe1, tag, coords, τ_f, wθ, eqtype, PhysConst; kwargs...)
 
     if (tag == "wall_model_bottom" || tag == "wall_model_top")
         # Use the pre-computed wall shear stress components
