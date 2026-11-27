@@ -52,10 +52,10 @@ first-wall-layer nodes above the surface, exactly as `BCs.jl` does.
 `z_inside` per node mirrors the `z_inside` in `BCs.jl` (line 761):
     z_inside = |Δcoords · n̂|   (normal distance from surface node to first-wall node)
 
-Returns `nothing` if `:lwall_model` is false or no MOST faces are found.
+Returns `nothing` if the mesh has no MOST faces (`inputs[:_has_most]`, set in params_setup).
 """
 function build_les_bottom_cache(mesh, metrics, inputs)
-    get(inputs, :lwall_model, false) || return nothing
+    get(inputs, :_has_most, false) || return nothing
 
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)

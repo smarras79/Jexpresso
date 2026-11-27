@@ -25,7 +25,6 @@ function user_inputs()
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :user_heatflux        => 0.12,
-        :lwall_model          => true,
         :ifirst_wall_node_index=> 5, # This must be between 2 <= :first_wall_node_index <= nop+1
         :bdy_fluxes           => true,
         :lvisc                => true, #false by default

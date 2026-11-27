@@ -241,7 +241,10 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     # Allocate wall model arrays
     #------------------------------------------------------------------------------------
-    WM = allocate_Wall_model(sem.mesh.nfaces_bdy, sem.mesh.ngl, T, backend; lwall_model=inputs[:lwall_model], lmoist=inputs[:lmoist])
+    # Allocated when the mesh has a "MOST" boundary (there is no input flag): CM_MOST! writes the
+    # wall stress and surface fluxes into them, and the LES statistics read the MOST surface.
+    inputs[:_has_most] = mesh_has_most_tag(sem.mesh)
+    WM = allocate_Wall_model(sem.mesh.nfaces_bdy, sem.mesh.ngl, T, backend; lwall_model=inputs[:_has_most], lmoist=inputs[:lmoist])
     #------------------------------------------------------------------------------------
     # Allocate Thermodynamic params for bomex case
     #------------------------------------------------------------------------------------

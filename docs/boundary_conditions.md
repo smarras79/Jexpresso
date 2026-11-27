@@ -96,7 +96,14 @@ $$\text{RHS}_i \mathrel{+}= \oint_{\partial \Omega} F\,\psi_i\,dS ,$$
 to the assembled RHS, before the mass-matrix division and before the Dirichlet constraints of §2.1.1 are applied. For each boundary edge (2D) or face (3D):
 
 1. Periodic tags (`periodicx/y/z`, `periodic1/2/3`) and `Laguerre` are skipped: they are not physical boundaries;
-2. `F_surf` is filled at every node, by `bulk_surface_flux!` (`:bulk_fluxes`), by the Monin–Obukhov routine on the tag `"MOST"`, or otherwise by the user hook `user_bc_neumann!` (signature, arguments and examples in §4.1.1);
+2. `F_surf` is filled at every node, by `bulk_surface_flux!` (`:bulk_fluxes`), by the Monin–Obukhov routine on the tag `"MOST"` (its arrays are allocated automatically when the mesh has a `"MOST"` boundary; there is no input flag, and the old `:lwall_model` is ignored), or otherwise by the user hook
+
+   ```julia
+   user_bc_neumann!(F, q, q1, qe, qe1, tag, coords, τ_f, wθ, SOL_VARS_TYPE, PhysConst;
+                    t = 0.0, nx = 0.0, ny = 0.0, nz = 0.0, kwargs...)
+   ```
+
+   which writes the inward flux at the node into `F` (one entry per equation). It receives the node state `q` and reference `qe`, the same at the next node inward (`q1`, `qe1`), the boundary `tag`, the node `coords`, and as keywords the time `t` and the outward unit normal `(nx, ny, nz)`. `τ_f` and `wθ` are the wall-model arrays when the mesh has a `"MOST"` boundary, and zeroed work vectors otherwise. End the keyword list with `kwargs...`;
 3. `compute_segment_integral!` / `compute_surface_integral!` multiply by the quadrature weights and the edge/face Jacobian, and the result is assembled into `S_flux` and added to `RHS`.
 
 In 1D the "integral" is the flux at the two end nodes, tags `"left"` (normal −1) and `"right"` (normal +1); it is skipped for periodic 1D (`:lperiodic_1d`) and at an end attached to Laguerre elements.
