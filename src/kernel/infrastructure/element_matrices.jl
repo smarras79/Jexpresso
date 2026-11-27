@@ -1325,12 +1325,16 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
             mass_inverse!(M_surf_inv, M_surf, QT)
             M_edge_inv = KernelAbstractions.zeros(backend, TFloat, 1)
             
-        else
+        elseif SD == NSD_2D()
             M_surf_inv = KernelAbstractions.zeros(backend, TFloat, 1)
             M_edge = build_segment_mass_matrix(mesh.nedges_bdy, mesh.npoin, ω, basis.ψ, mesh.ngl, metrics.Jef, mesh.poin_in_bdy_edge, TFloat, mesh.Δx, inputs)
             assemble_mpi!(M_edge,g_dss_cache)
             M_edge_inv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
             mass_inverse!(M_edge_inv, M_edge, QT)
+        else
+            # 1D: the boundary "integral" is the flux at the two end nodes (BCs.jl); no edge mass.
+            M_surf_inv = KernelAbstractions.zeros(backend, TFloat, 1)
+            M_edge_inv = KernelAbstractions.zeros(backend, TFloat, 1)
         end
     else
         M_surf_inv = KernelAbstractions.zeros(backend, TFloat, 1)
@@ -1476,12 +1480,16 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
             mass_inverse!(M_surf_inv, M_surf, QT)
             M_edge_inv = KernelAbstractions.zeros(backend, TFloat, 1)
             
-        else
+        elseif SD == NSD_2D()
             M_surf_inv = KernelAbstractions.zeros(backend, TFloat, 1)
             M_edge = build_segment_mass_matrix(mesh.nedges_bdy, mesh.npoin, ω, basis.ψ, mesh.ngl, metrics.Jef, mesh.poin_in_bdy_edge, TFloat, mesh.Δx, inputs)
             assemble_mpi!(M_edge,g_dss_cache)
             M_edge_inv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
             mass_inverse!(M_edge_inv, M_edge, QT)
+        else
+            # 1D: the boundary "integral" is the flux at the two end nodes (BCs.jl); no edge mass.
+            M_surf_inv = KernelAbstractions.zeros(backend, TFloat, 1)
+            M_edge_inv = KernelAbstractions.zeros(backend, TFloat, 1)
         end
     else
         M_surf_inv = KernelAbstractions.zeros(backend, TFloat, 1)

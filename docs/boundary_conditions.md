@@ -57,8 +57,7 @@ On the CPU with continuous Galerkin, in 1D, 2D and 3D, the kernel no longer trea
 
 1. **Value constraint.** A component is constrained if `user_bc_dirichlet!` *changes* its value. The test is run on the initial state and on probe states (the initial state plus distinct, non-zero offsets on every component), so a constraint that the current state already satisfies — e.g. `w = 0` at a wall for a fluid at rest — is still detected. A component that is returned unchanged (passthrough, or tangential momentum on an axis-aligned wall) is *not* constrained.
 2. **No-penetration (free slip; 2D and 3D).** If the returned *total* momentum (equations 2:3 in 2D, 2:4 in 3D, adding `qe` in `PERT` form) equals the tangential projection of the input momentum, $\mathbf m - (\mathbf m\cdot\mathbf n)\,\mathbf n$, with $\mathbf n$ the boundary normal, the node is treated as a no-penetration node. This covers flat walls and walls with topography. Such nodes get a **node normal** built from all incident constrained boundary edges (2D) or faces (3D): the kernel accumulates $\sum \mathbf n\mathbf n^T$, eigen-decomposes it, and removes every direction whose eigenvalue exceeds 20 % of the largest. Nearly parallel normals (smooth terrain) therefore merge into one averaged normal, while distinct walls meeting at a corner (2D) or an edge or corner (3D) are all removed. In 1D a wall is simply ρu = 0, which rule 1 already covers.
-3. **Robin tags.** Tags whose name contains `robin` (any case, e.g. `"robin_bottom"`, `"ROBIN"`) are value + flux conditions: the values returned by `user_bc_dirichlet!` are applied, but **no tendency is constrained**, so a flux from `user_bc_neumann!` on the same tag acts.
-4. Periodic tags (`periodicx/y/z`, `periodic1/2/3`) and `Laguerre` edges are skipped, as before. In 1D the boundary nodes are the two end points, with tags `"left"` and `"right"`.
+3. Periodic tags (`periodicx/y/z`, `periodic1/2/3`) and `Laguerre` edges are skipped, as before. In 1D the boundary nodes are the two end points, with tags `"left"` and `"right"`.
 
 The resulting masks are assembled across MPI ranks and periodic copies, so every copy of a node is treated identically.
 
@@ -77,7 +76,6 @@ Neumann contributions (`user_bc_neumann!`, MOST, bulk fluxes, `S_flux`) are unch
 | `qbdy[2:4] = 0` | no-slip (all momentum components fixed) |
 | `qbdy[5] = f(q, x, t)` on a tag | component 5 fixed to the returned value on that tag |
 | `qbdy[k] = q[k]` | nothing (passthrough) |
-| any assignment on a tag named `*robin*` | values applied, no tendency constraint |
 
 **Limitations to be aware of:**
 
@@ -89,15 +87,21 @@ Neumann contributions (`user_bc_neumann!`, MOST, bulk fluxes, `S_flux`) are unch
 
 **Migration note for existing cases.** No file needs to change. Previously the returned values overwrote the state at the start of every RHS evaluation, and the zeroing of `RHS[ip, ieq]` done at that point was overwritten by the subsequent assembly, so boundary tendencies were effectively not constrained; values were only re-imposed at the next stage. Now the constrained tendencies are zeroed after the global assembly, so results at Dirichlet boundaries change slightly (more consistently with the imposed values), and free-slip walls constrain only the normal momentum. Coordinate-gated workarounds in `user_bc.jl` (e.g. setting only `qbdy[4]` for `z < 0.01`) are no longer needed.
 
-### 2.2 Neumann machinery
+### 2.2 Neumann machinery (boundary fluxes)
 
-`build_custom_bcs_neumann!` is invoked only when `inputs[:bdy_fluxes] = true`. For each boundary edge/face it:
+`build_custom_bcs_neumann!` runs at every RHS evaluation when `inputs[:bdy_fluxes] = true` (CPU, CG). It adds the boundary integral of the weak form,
 
-1. Zeroes `F_surf`;
-2. If `inputs[:bulk_fluxes]` is true, calls the analytic `bulk_surface_flux!`; for the special tag `"MOST"` in 3D it calls the Monin-Obukhov routine `CM_MOST!`;
-3. Otherwise calls the user routine `user_bc_neumann!(@view(F_surf[...]), uaux[ip,:], uaux[ip1,:], qe[ip,:], qe[ip1,:], bdy_edge_type[iedge], coords, ..., inputs[:SOL_VARS_TYPE])`;
-4. Integrates over the boundary segment/face with `compute_segment_integral!` or `compute_surface_integral!`;
-5. Performs DSS and adds the result to the global RHS: `RHS[:,ieq] .+= S_flux[:,ieq]`.
+$$\text{RHS}_i \mathrel{+}= \oint_{\partial \Omega} F\,\psi_i\,dS ,$$
+
+to the assembled RHS, before the mass-matrix division and before the Dirichlet constraints of §2.1.1 are applied. For each boundary edge (2D) or face (3D):
+
+1. Periodic tags (`periodicx/y/z`, `periodic1/2/3`) and `Laguerre` are skipped: they are not physical boundaries;
+2. `F_surf` is filled at every node, by `bulk_surface_flux!` (`:bulk_fluxes`), by the Monin–Obukhov routine on the tag `"MOST"`, or otherwise by the user hook `user_bc_neumann!` (signature, arguments and examples in §4.1.1);
+3. `compute_segment_integral!` / `compute_surface_integral!` multiply by the quadrature weights and the edge/face Jacobian, and the result is assembled into `S_flux` and added to `RHS`.
+
+In 1D the "integral" is the flux at the two end nodes, tags `"left"` (normal −1) and `"right"` (normal +1); it is skipped for periodic 1D (`:lperiodic_1d`) and at an end attached to Laguerre elements.
+
+Not covered: the GPU RHS, DG (whose boundary term lives in `surface_rhs_el!`), and the linear-solve path (§2.3), which builds only Dirichlet rows. There, a boundary without a Dirichlet value has the natural zero-flux condition.
 
 ### 2.3 Linear-solve machinery
 
@@ -209,6 +213,62 @@ end
 **What the kernel does at every RK stage.** The integrator calls `apply_boundary_conditions_dirichlet!`, which for every boundary node `ip` invokes the user routine with the local normal *(n_x, n_y)* taken from `metrics.nx`, `metrics.ny`, copies the returned `qbdy` into `uaux[ip,:]` and zeroes `RHS[ip,:]`. The result is then mapped back into `u` via `uaux2u!`.
 
 In 3D on the CPU the same `user_bc.jl` (with `nz` and `q[4]` added) is interpreted as described in §2.1.1: the projection is recognised as a free-slip wall, only the normal momentum and its tendency are constrained, and the tangential momentum evolves. The same function therefore works unchanged on flat walls, on terrain, and in closed boxes (edges and corners).
+
+### 4.1.1 Flux, Neumann and Robin conditions
+
+**Template:** `problems/AdvDiff/2d_robin/` (2D advection–diffusion, periodic in x, Robin walls at the bottom and top, with an exact solution to check against). Every row of the table below also has a small 1D example with an exact solution, all of them run in CI.
+
+**The rule.** For a diffusive equation $\partial_t u = \nabla\cdot(\nu\nabla u) + \dots$, write the boundary condition as an expression for the diffusive flux along the **outward** normal,
+
+$$\nu\,\frac{\partial u}{\partial n} = G(u, \mathbf x, t, \mathbf n),$$
+
+and return $G$ from `user_bc_neumann!`: `F[ieq] = G`. $F$ is the flux **entering** the domain, so it is positive when the boundary heats (adds $u$). On those tags, do **not** set a value in `user_bc_dirichlet!` and do not name the tag `periodic*` or `Laguerre`. Set `:bdy_fluxes => true` in `user_inputs.jl`.
+
+| Condition | Written as | `F[ieq] =` | Example (`problems/AdvDiff/`) |
+|---|---|---|---|
+| Neumann, prescribed inward flux $g$ | $\nu\,\partial u/\partial n = g$ | `g` | `1d_neumann` (time-dependent $g$, built with `t` and the normal) |
+| Insulated wall | $\partial u/\partial n = 0$ | nothing: no hook, `:bdy_fluxes => false` | `1d_insulated` |
+| Newton cooling, transfer coefficient $h$ | $-\nu\,\partial u/\partial n = h\,(u - u_\infty)$ | `h*(u∞ - u)` | `2d_robin` |
+| General Robin, $b \ne 0$ | $a\,u + b\,\nu\,\partial u/\partial n = g$ | `(g - a*u)/b` | `1d_robin` |
+| Nonlinear, e.g. radiation | $-\nu\,\partial u/\partial n = \epsilon\sigma(u^4 - u_\infty^4)$ | `ϵσ*(u∞^4 - u^4)` | `1d_radiation` |
+| Dirichlet ($b = 0$) | $u = g$ | not a flux: set `qbdy[ieq] = g` in `user_bc_dirichlet!` | `1d_neumann` (right end), `1d_radiation` (left end) |
+
+Here `u` is the boundary value of the variable: `q[ieq]` in `TOTAL` form, `q[ieq] + qe[ieq]` in `PERT` form. `a`, `b`, `g`, `h` and `u∞` may depend on position, time and the normal, which are passed in as below.
+
+**Why not split it into a value plus a flux?** A Robin condition is a natural condition: in the weak form it enters only through $\oint\psi F\,dS$. Anything written into `user_bc_dirichlet!` on the same tag constrains that component (§2.1.1): its value is imposed every stage and its tendency zeroed. The wall then becomes a Dirichlet wall and the flux has no effect. Leave the value free and it settles where the flux balance puts it.
+
+**The hook.**
+
+```julia
+function user_bc_neumann!(F, q, q1, qe, qe1, tag, coords, τ_f, wθ, SOL_VARS_TYPE, PhysConst;
+                          t = 0.0, nx = 0.0, ny = 0.0, nz = 0.0, kwargs...)
+    u = SOL_VARS_TYPE == PERT() ? q[1] + qe[1] : q[1]
+    if tag == "bottom"
+        F[1] = h * (u∞_bottom(coords[1], t) - u)
+    elseif tag == "top"
+        F[1] = h * (u∞_top - u)
+    end
+end
+```
+
+| Argument | Meaning |
+|---|---|
+| `F` | inward flux at the node, one entry per equation; zeroed before the call |
+| `q`, `qe` | solution and reference state at the boundary node (all equations) |
+| `q1`, `qe1` | the same at the next node inward (e.g. for a one-sided difference or a wall model) |
+| `tag` | physical name of the boundary in the mesh (`"left"` / `"right"` in 1D) |
+| `coords` | node coordinates `(x, y[, z])` |
+| `t` | time (keyword) |
+| `nx, ny, nz` | outward unit normal at the node (keywords; `ny = nz = 0` in 1D, `nz = 0` in 2D) |
+| `τ_f, wθ, PhysConst`, `θ, θ1, qn0, qn1` | used by the atmospheric wall models; ignore otherwise (zeroed work vectors unless the MOST wall model is in use) |
+
+Always end the keyword list with `kwargs...`, so new keywords added to the hook later do not break the case. The same hook serves 1D, 2D and 3D. It is called only for physical boundaries (§2.2), so it does not need to filter out periodic tags, only to tell its own tags apart.
+
+**Several equations.** Set `F[ieq]` for every equation with a flux condition. $F$ is the boundary flux of the *conserved* variable, so for a variable stored as ρφ it is the flux of ρφ. "Diffusive" means whatever the viscous operator of that equation is (`:μ[ieq]` for `AV`, the eddy diffusivity for `SMAG`/`DSGS`). The boundary flux replaces the operator's own flux at the wall. It is not added to it.
+
+**Time step.** The flux is explicit. A Robin coefficient $h$ adds a relaxation rate of about $2h/(\omega_0\,\Delta)$ at the boundary node, whose lumped mass per unit area is $\omega_0\Delta/2$ ($\omega_0$ = end LGL weight, $\omega_0 = 0.1$ for nop = 4; $\Delta$ = element size normal to the wall). This only matters when $h \gg \nu/\Delta$, and in that regime the condition is effectively Dirichlet, so impose it as one.
+
+**Checks** (template, nop = 4, $t = 1$): with the decaying mode switched off, the steady linear profile stays exact to round-off ($\sim 10^{-12}$). The full solution converges at about 6th order: maximum error $1.8\times10^{-7}$ on 10×5 elements, $3.0\times10^{-9}$ on 20×10. Two MPI ranks reproduce the serial run.
 
 ### 4.2 Elliptic problems leading to *A x = b*
 
