@@ -921,8 +921,21 @@ wave of 920 $v_0$. Within the next 17 s of model time:
   top of the domain;
 - 13 s of model time took 4 hours.
 
-No plasma of the model moves like that. It is a near-vacuum under a strong
-field, or a blow-up in slow motion. So:
+No plasma of the model moves like that. The `fastest` and `diag` commands
+(below) place it. Nothing confines the emerged flux in the field-free corona,
+and its front rises through the whole domain: above 30 Mm it reaches 31 Mm at
+1855 s, 43–46 Mm at 1955–1995 s, 52 Mm at 2041 s and 64–67 Mm at 2070 s (low
+β, $3\times10^{-5}$), with the side damping layers also reached by ~1950 s.
+When the front meets the top damping layer ($y$ > 75 Mm) and the closed top,
+the solution fails within 17 s:
+
+- the largest current there grows 300-fold;
+- |B| reaches 380–640 G, which the front did not carry;
+- the flows reach $1.6\times10^5$ km/s, with temperatures from the floor to
+  $4\times10^{12}$ K.
+
+With this top boundary the field-free case therefore runs to ~2050 s; its
+centre's stall (to 1380 s) is far from it. So:
 
 - **Step floor.** `JEXPRESSO_LK10_DTMIN` (default $10^{-5}$ $t_0$, a fastest
   wave of ~8600 $v_0$ on REF 4 and ~4300 on REF 3) stops the run there. It
