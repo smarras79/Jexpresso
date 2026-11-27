@@ -25,9 +25,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => false,
         #---------------------------------------------------------------------------
-        # Filter for stabilization (CG SEM needs this for wave propagation)
+        # Filter: off (as TC1, TC2, TC6 and the paper). Was on (erf, mu = 0.01).
         #---------------------------------------------------------------------------
-        :lfilter              => true,
+        :lfilter              => false,
         :mu_x                 => 0.01,
         :mu_y                 => 0.01,
         :filter_type          => "erf",
@@ -46,6 +46,23 @@ function user_inputs()
         :output_dir           => "./output",
         :loutput_pert         => false,
         #---------------------------------------------------------------------------
+        #---------------------------------------------------------------------------
+        # ML snapshot recording (RF-QRC proposal, Task 1.1), as in TC1/TC2: the POD
+        # recorder samples η, u, v at exactly uniform times; node coordinates
+        # come from the pod_<field> VTK of the same run.
+        #---------------------------------------------------------------------------
+        :lpod                 => true,
+        :pod_fields           => ["η", "u", "v"],
+        :pod_tstart           => 0.0,
+        :pod_tend             => 1727000.0,
+        :pod_nsnapshots       => 1570,      # intervals -> 1571 snapshots, Δt_save = 1100 s (window ends 1000 s before :tend)
+        :pod_nmodes           => 0,
+        :pod_write_snapshots  => true,     # the ML data
+        :pod_write_vtk        => true,     # carries the node coordinates for the snapshots
+        :pod_write_png        => false,
+        :pod_write_data       => true,
+        :pod_time_scale       => 1.0/3600.0,
+        :pod_time_label       => "t [h]",
     ) #Dict
 
     return inputs

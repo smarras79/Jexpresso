@@ -24,9 +24,11 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => false,
         #---------------------------------------------------------------------------
-        # Filter for stabilization (CG SEM needs this for wave propagation)
+        # Filter: off. With it on (erf, mu = 0.05) it was ~99% of TC1's error
+        # (~1e-7 vs ~1e-9 without, at 3-9 h) and not needed for stability; the
+        # paper's runs are unfiltered too.
         #---------------------------------------------------------------------------
-        :lfilter              => true,
+        :lfilter              => false,
         :mu_x                 => 0.05,
         :mu_y                 => 0.05,
         :filter_type          => "erf",
